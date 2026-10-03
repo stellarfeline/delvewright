@@ -1,96 +1,76 @@
 {
-  "question": "do the piece instruments bind a stranded body's inside and back when its ground is part of the piece",
+  "anchors": {
+    "anchor/back": {
+      "facing": "south",
+      "pos": [
+        24,
+        48,
+        112
+      ]
+    },
+    "anchor/entry": {
+      "facing": "east",
+      "pos": [
+        1,
+        4,
+        64
+      ],
+      "role": "entry"
+    },
+    "anchor/inside": {
+      "facing": "south",
+      "pos": [
+        24,
+        4,
+        72
+      ]
+    }
+  },
+  "audit": {
+    "stairs_examined": 8456,
+    "underspecified": 0,
+    "verdict": "pass"
+  },
+  "build_as_authored": {
+    "diagnostics": [
+      "DW0210 [error] build: 1 area(s) measure dark: 859 of the 9769 reachable walkable cell(s) measured in them are below light 3 under the darkest reachable (time, weather) sky (effective 15), with no `lighting` and no `mitigation` declaration. The darkest reachable walkable cell is at [14, 68, 54], measured at light 0 (< 3)."
+    ],
+    "exit": 2
+  },
+  "build_light_gate_stood_down": {
+    "bindings": [
+      "sea-seepage binding: horizon base `ocean` (ambient `ocean`); 9769 walk cell(s) examined, of which 2 are named by the critical path; 0 submerged and 0 wading, over 0 cell(s) the sea reaches inside 1 placed piece(s) from 0 cell(s) of open contact face and 704 block(s) the placement waterlogs.",
+      "DW0921 binding: 1 quest configuration(s), 210 route cell(s), 10931 cell(s) a body can reach by walking, falling, jumping or swimming (0 of them afloat), 110 it cannot leave"
+    ],
+    "diagnostics": [
+      "DW0921 [error] build: 38 place(s) a body can get into and not out of — the player is soft-locked there: 6 cell(s) around [4, 87, 42] (while `obj/inside` is next): a body gets in from [5, 93, 47] to [4, 87, 47] by a fall of 6 block(s), and no walk, fall, jump or swim leads from any of them back to the route; 4 cell(s) around [4, 92, 41] (while `obj/inside` is next): a body gets in from [5, 95, 41] to [4, 92, 41] by a fall of 3 block(s), and no walk, fall, jump or swim leads from any of them back to the route; 1 cell(s) around [4, 93, 37] (while `obj/inside` is next): a body gets in from [5, 97, 37] to [4, 93, 37] by a fall of 4 block(s), and no walk, fall, jump or swim leads from any of them back to the route; 8 cell(s) around [5, 90, 49] (while `obj/inside` is next): a body gets in from [6, 97, 49] to [5, 90, 49] by a fall of 7 block(s), and no walk, fall, jump or swim leads from any of them back to the route; 2 cell(s) around [5, 90, 63] (while `obj/inside` is next): a body gets in, and no walk, fall, jump or swim leads from any of them back to the route; 1 cell(s) around [5, 91, 22] (while `obj/inside` is next): a body gets in from [6, 100, 22] to [5, 91, 22] by a fall of 9 block(s), and no walk, fall, jump or swim leads from any of them back to the route; and 32 more. Reshape the place so whoever gets in can walk, fall, jump or climb out of the water (lower the wall they are ringed by, give them a step, or take away what they jumped in from); do not fence walkable-looking ground with an invisible barrier. A body afloat climbs out only onto ground one cell above the water's top, and does not dive. A room the story is meant to shut the party into holds the objective the story waits on, and is not this. Moves are cardinal: a diagonal jump or a climb (ladder, vine) is not counted, so a place left only that way reads as a trap."
+    ],
+    "exit": 3
+  },
   "engine": "delvec 1.7.1, dsl 0.35.0, mc 1.21.11",
   "fitter_revision": "648e88229f5105622eb2ad61182afed5936eb4d0",
   "form": {
-    "program": "tools/spike-organic-stranded/form.py",
-    "program_sha256": "72214e1b71928f985cd2bf323e0cb866fc4eb0ce4cecdf57e78a23de29a4394a",
-    "size_xyz": [
-      49,
-      62,
-      146
-    ],
     "cells": 443548,
+    "components_kept": 1,
     "filled": 131393,
+    "island_blocks_dropped": 0,
     "kinds": {
       "full": 118190,
       "slab": 2260,
       "slab_top": 2487,
       "stair": 8456
     },
-    "components_kept": 1,
-    "island_blocks_dropped": 0,
-    "sub": 4,
-    "seed": 1,
     "palette": "weathered",
-    "schem_sha256": "7daaf26577ada0368c10d8e59574fe8ad8096d03da3bb73f6715652b7f4215d6"
-  },
-  "nbt_sha256": {
-    "stranded-rig.x0y0z0.nbt": "8dbb7296b9f0dbccca5ae6fd8d4d6886b46c9e324cc4a9df741730d95953ca89",
-    "stranded-rig.x0y0z1.nbt": "e0d918433ceb1062f4317ed402f03d8c333f4f9c4420182d7bfe2782019ee7a4",
-    "stranded-rig.x0y0z2.nbt": "fae7e1dbb4f26e8f0eaa1b0d0beaaeb2312a2858194f865d4a2a4a78814bfb60",
-    "stranded-rig.x0y0z3.nbt": "2d40102c8eeeb883b90cf9ada4fa962cffd6720a758e81c1553b6dfc68ae493a",
-    "stranded-rig.x0y1z0.nbt": "f1bea17a7e0adc12368f3320620635db98772c27983307b5a8baa793ebe8ae89",
-    "stranded-rig.x0y1z1.nbt": "206a4681d53e9663dd9cada48f455f4d8ced7be9fb92129599cd799426734b40",
-    "stranded-rig.x0y1z2.nbt": "f978f5f16e1d67f6a3fcfee6eecb7b37a8db9ebc139ac9bc73c900c2386bb581",
-    "stranded-rig.x0y1z3.nbt": "c866c923d8b3186ad85c4fefc9437fd960b744b3df0f8b5ab9e83acd961c3e94",
-    "stranded-rig.x1y0z0.nbt": "3aae089b90a9f538952682178c561bd5f6533d870fca26d18e033389b5c2244b",
-    "stranded-rig.x1y0z1.nbt": "3aae089b90a9f538952682178c561bd5f6533d870fca26d18e033389b5c2244b",
-    "stranded-rig.x1y0z2.nbt": "3aae089b90a9f538952682178c561bd5f6533d870fca26d18e033389b5c2244b",
-    "stranded-rig.x1y0z3.nbt": "449251366136c818b7a66273b0b9c38e2ed9eb0a371169d9cc5f137d59a04fc9",
-    "stranded-rig.x1y1z0.nbt": "483fdd067e91712d11dcf1713b4e0109b0ca0bb4f1a1848949ab46dc478e2262",
-    "stranded-rig.x1y1z1.nbt": "483fdd067e91712d11dcf1713b4e0109b0ca0bb4f1a1848949ab46dc478e2262",
-    "stranded-rig.x1y1z2.nbt": "483fdd067e91712d11dcf1713b4e0109b0ca0bb4f1a1848949ab46dc478e2262",
-    "stranded-rig.x1y1z3.nbt": "eac0958e86ea64a71afcfe653b084083bb0e10ca1abb0ac06ca0d36541f6d1a1"
-  },
-  "parts": 16,
-  "anchors": {
-    "anchor/back": {
-      "pos": [
-        24,
-        48,
-        112
-      ],
-      "facing": "south"
-    },
-    "anchor/entry": {
-      "pos": [
-        1,
-        4,
-        64
-      ],
-      "facing": "east",
-      "role": "entry"
-    },
-    "anchor/inside": {
-      "pos": [
-        24,
-        4,
-        72
-      ],
-      "facing": "south"
-    }
-  },
-  "walk_y_written": 4,
-  "audit": {
-    "verdict": "pass",
-    "stairs_examined": 8456,
-    "underspecified": 0
-  },
-  "planes": {
-    "reading": {
-      "binding": {
-        "cells_on_the_walk_plane": 5460,
-        "standable_cells": 11108,
-        "water_cells": 0
-      },
-      "nbt_opened": 16,
-      "walk_y": 4,
-      "waterline_y": null
-    },
-    "said": [
-      "planes binding: wrote `walk_y: 4` (5460 cell(s) stand on that plane, of 11108 standable) and no `waterline_y` (this piece authors no water) into /private/tmp/claude-501/-Users-steve235lab-Documents-projects-Delvewright/4ebee809-36c5-47b4-91ae-6d9519dda942/scratchpad/rig/prefab/stranded-rig.json"
-    ]
+    "program": "tools/spike-organic-stranded/form.py",
+    "program_sha256": "72214e1b71928f985cd2bf323e0cb866fc4eb0ce4cecdf57e78a23de29a4394a",
+    "schem_sha256": "7daaf26577ada0368c10d8e59574fe8ad8096d03da3bb73f6715652b7f4215d6",
+    "seed": 1,
+    "size_xyz": [
+      49,
+      62,
+      146
+    ],
+    "sub": 4
   },
   "lighting": {
     "reading": {
@@ -131,23 +111,43 @@
       ]
     },
     "said": [
-      "DW0751 [warning] dark interior at sky light 4 (a clear night, the darkest the engine models): 3445 of 9768 floor cell(s) a player can walk to (35.3%) are below light 3 \u2014 2842 at light 0, 298 at light 1, 305 at light 2; darkest at 7,4,26; still 0 under full daylight"
+      "DW0751 [warning] dark interior at sky light 4 (a clear night, the darkest the engine models): 3445 of 9768 floor cell(s) a player can walk to (35.3%) are below light 3 — 2842 at light 0, 298 at light 1, 305 at light 2; darkest at 7,4,26; still 0 under full daylight"
     ]
   },
-  "build_as_authored": {
-    "exit": 2,
-    "diagnostics": [
-      "DW0210 [error] build: 1 area(s) measure dark: 859 of the 9769 reachable walkable cell(s) measured in them are below light 3 under the darkest reachable (time, weather) sky (effective 15), with no `lighting` and no `mitigation` declaration. The darkest reachable walkable cell is at [14, 68, 54], measured at light 0 (< 3)."
+  "nbt_sha256": {
+    "stranded-rig.x0y0z0.nbt": "8dbb7296b9f0dbccca5ae6fd8d4d6886b46c9e324cc4a9df741730d95953ca89",
+    "stranded-rig.x0y0z1.nbt": "e0d918433ceb1062f4317ed402f03d8c333f4f9c4420182d7bfe2782019ee7a4",
+    "stranded-rig.x0y0z2.nbt": "fae7e1dbb4f26e8f0eaa1b0d0beaaeb2312a2858194f865d4a2a4a78814bfb60",
+    "stranded-rig.x0y0z3.nbt": "2d40102c8eeeb883b90cf9ada4fa962cffd6720a758e81c1553b6dfc68ae493a",
+    "stranded-rig.x0y1z0.nbt": "f1bea17a7e0adc12368f3320620635db98772c27983307b5a8baa793ebe8ae89",
+    "stranded-rig.x0y1z1.nbt": "206a4681d53e9663dd9cada48f455f4d8ced7be9fb92129599cd799426734b40",
+    "stranded-rig.x0y1z2.nbt": "f978f5f16e1d67f6a3fcfee6eecb7b37a8db9ebc139ac9bc73c900c2386bb581",
+    "stranded-rig.x0y1z3.nbt": "c866c923d8b3186ad85c4fefc9437fd960b744b3df0f8b5ab9e83acd961c3e94",
+    "stranded-rig.x1y0z0.nbt": "3aae089b90a9f538952682178c561bd5f6533d870fca26d18e033389b5c2244b",
+    "stranded-rig.x1y0z1.nbt": "3aae089b90a9f538952682178c561bd5f6533d870fca26d18e033389b5c2244b",
+    "stranded-rig.x1y0z2.nbt": "3aae089b90a9f538952682178c561bd5f6533d870fca26d18e033389b5c2244b",
+    "stranded-rig.x1y0z3.nbt": "449251366136c818b7a66273b0b9c38e2ed9eb0a371169d9cc5f137d59a04fc9",
+    "stranded-rig.x1y1z0.nbt": "483fdd067e91712d11dcf1713b4e0109b0ca0bb4f1a1848949ab46dc478e2262",
+    "stranded-rig.x1y1z1.nbt": "483fdd067e91712d11dcf1713b4e0109b0ca0bb4f1a1848949ab46dc478e2262",
+    "stranded-rig.x1y1z2.nbt": "483fdd067e91712d11dcf1713b4e0109b0ca0bb4f1a1848949ab46dc478e2262",
+    "stranded-rig.x1y1z3.nbt": "eac0958e86ea64a71afcfe653b084083bb0e10ca1abb0ac06ca0d36541f6d1a1"
+  },
+  "parts": 16,
+  "planes": {
+    "reading": {
+      "binding": {
+        "cells_on_the_walk_plane": 5460,
+        "standable_cells": 11108,
+        "water_cells": 0
+      },
+      "nbt_opened": 16,
+      "walk_y": 4,
+      "waterline_y": null
+    },
+    "said": [
+      "planes binding: wrote `walk_y: 4` (5460 cell(s) stand on that plane, of 11108 standable) and no `waterline_y` (this piece authors no water) into /private/tmp/claude-501/-Users-steve235lab-Documents-projects-Delvewright/4ebee809-36c5-47b4-91ae-6d9519dda942/scratchpad/rig/prefab/stranded-rig.json"
     ]
   },
-  "build_light_gate_stood_down": {
-    "exit": 3,
-    "diagnostics": [
-      "DW0921 [error] build: 38 place(s) a body can get into and not out of \u2014 the player is soft-locked there: 6 cell(s) around [4, 87, 42] (while `obj/inside` is next): a body gets in from [5, 93, 47] to [4, 87, 47] by a fall of 6 block(s), and no walk, fall, jump or swim leads from any of them back to the route; 4 cell(s) around [4, 92, 41] (while `obj/inside` is next): a body gets in from [5, 95, 41] to [4, 92, 41] by a fall of 3 block(s), and no walk, fall, jump or swim leads from any of them back to the route; 1 cell(s) around [4, 93, 37] (while `obj/inside` is next): a body gets in from [5, 97, 37] to [4, 93, 37] by a fall of 4 block(s), and no walk, fall, jump or swim leads from any of them back to the route; 8 cell(s) around [5, 90, 49] (while `obj/inside` is next): a body gets in from [6, 97, 49] to [5, 90, 49] by a fall of 7 block(s), and no walk, fall, jump or swim leads from any of them back to the route; 2 cell(s) around [5, 90, 63] (while `obj/inside` is next): a body gets in, and no walk, fall, jump or swim leads from any of them back to the route; 1 cell(s) around [5, 91, 22] (while `obj/inside` is next): a body gets in from [6, 100, 22] to [5, 91, 22] by a fall of 9 block(s), and no walk, fall, jump or swim leads from any of them back to the route; and 32 more. Reshape the place so whoever gets in can walk, fall, jump or climb out of the water (lower the wall they are ringed by, give them a step, or take away what they jumped in from); do not fence walkable-looking ground with an invisible barrier. A body afloat climbs out only onto ground one cell above the water's top, and does not dive. A room the story is meant to shut the party into holds the objective the story waits on, and is not this. Moves are cardinal: a diagonal jump or a climb (ladder, vine) is not counted, so a place left only that way reads as a trap."
-    ],
-    "bindings": [
-      "sea-seepage binding: horizon base `ocean` (ambient `ocean`); 9769 walk cell(s) examined, of which 2 are named by the critical path; 0 submerged and 0 wading, over 0 cell(s) the sea reaches inside 1 placed piece(s) from 0 cell(s) of open contact face and 704 block(s) the placement waterlogs.",
-      "DW0921 binding: 1 quest configuration(s), 210 route cell(s), 10931 cell(s) a body can reach by walking, falling, jumping or swimming (0 of them afloat), 110 it cannot leave"
-    ]
-  }
+  "question": "do the piece instruments bind a stranded body's inside and back when its ground is part of the piece",
+  "walk_y_written": 4
 }

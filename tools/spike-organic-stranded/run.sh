@@ -3,8 +3,8 @@
 # whose ground is part of its own piece (spec-0087 §2). Spike code, not an
 # engine surface; the compiler consumes nothing from it.
 #
-#   fitter      the organic-voxel research spike at FITTER_REV, fetched by
-#               `git show` into <scratch>/fitter (never copied into this tree)
+#   fitter      the organic-voxel research spike, tools/spike-organic-voxel/,
+#               copied into <scratch>/fitter and run unchanged
 #   form        form.py — the rig's own body, over the research fitter
 #   admission   delvec schem convert (tiled at 48) → make_manifest.py → prefab audit
 #   readings    delvec prefab planes --write, delvec prefab lighting,
@@ -19,7 +19,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 delvec="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"; scratch="$2"
-FITTER_REV=648e88229f5105622eb2ad61182afed5936eb4d0
+fitter_src="$repo/tools/spike-organic-voxel"
 mkdir -p "$scratch"; scratch="$(cd "$scratch" && pwd)"
 base=stranded-rig
 pre="$scratch/prefab"; out="$scratch/out"; camp="$scratch/campaign"; build="$scratch/build"
@@ -27,12 +27,11 @@ rm -rf "$pre" "$out" "$camp" "$build" "$scratch/fitter"
 mkdir -p "$pre" "$out" "$camp" "$scratch/fitter"
 
 "$delvec" --version
-git -C "$repo" cat-file -e "$FITTER_REV^{commit}" 2>/dev/null || git -C "$repo" fetch -q origin research/organic-structures
 for f in voxelize.py schem.py sdf_whale.py make_manifest.py; do
-  git -C "$repo" show "$FITTER_REV:tools/spike-organic-voxel/$f" > "$scratch/fitter/$f"
+  cp "$fitter_src/$f" "$scratch/fitter/$f"
 done
 for f in world.json classes.json npcs.json quest-plan.json dialogue.json; do
-  git -C "$repo" show "$FITTER_REV:tools/spike-organic-voxel/campaign/$f" > "$camp/$f"
+  cp "$fitter_src/campaign/$f" "$camp/$f"
 done
 py=(uv run -q --with numpy==2.3.3 --with scipy==1.16.2 python)
 
@@ -142,9 +141,10 @@ echo "build exit $build_exit_mitigated"
 grep -E 'DW[0-9]{4} \[|DW0921 binding|DW0885|boundary|critical' "$out/build-mitigated.log" | cut -c1-500 || true
 
 echo "== record"
-python3 - "$scratch" "$out" "$pre" "$base" "$build_exit" "$("$delvec" --version)" "$FITTER_REV" "$build_exit_mitigated" > "$scratch/observations.json" <<'PY'
+python3 - "$scratch" "$out" "$pre" "$base" "$build_exit" "$("$delvec" --version)" "$(shasum -a 256 "$fitter_src/voxelize.py" | cut -d" " -f1)" "$build_exit_mitigated" > "$scratch/observations.json" <<'PY'
 import json, re, sys, hashlib
-scratch, out, pre, base, build_exit, engine, fitter_rev, build_exit_mitigated = sys.argv[1:9]
+sys.stdout.reconfigure(newline="\n")
+scratch, out, pre, base, build_exit, engine, fitter_sha, build_exit_mitigated = sys.argv[1:9]
 rep = json.load(open(f"{out}/{base}.report.json"))
 audit = json.load(open(f"{out}/{base}.audit.json")) if __import__("os").path.exists(f"{out}/{base}.audit.json") else None
 meta = json.load(open(f"{pre}/{base}.json"))
@@ -170,7 +170,7 @@ def sha(path):
 rec = {
     "question": "do the piece instruments bind a stranded body's inside and back when its ground is part of the piece",
     "engine": engine,
-    "fitter_revision": fitter_rev,
+    "fitter_voxelize_sha256": fitter_sha,
     "form": {"program": rep["program"], "program_sha256": rep["program_sha256"], "size_xyz": rep["size_xyz"],
              "cells": rep["size_xyz"][0] * rep["size_xyz"][1] * rep["size_xyz"][2],
              "filled": rep["filled"], "kinds": rep["kinds"], "components_kept": rep["components_kept"],
@@ -191,4 +191,5 @@ rec = {
 json.dump(rec, sys.stdout, indent=2); print()
 PY
 cp "$scratch/observations.json" "$here/observations.json"
+"$delvec" fmt "$here/observations.json"
 echo "wrote $here/observations.json"
