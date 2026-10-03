@@ -2066,6 +2066,20 @@ an empty event loop to exit 0 on, and channel start is a retried handshake
 (the readiness probe passing and the next connection being accepted are two
 events with a measured race between them).
 
+`tools/spike-organic-stranded/run.sh` (`tools/spike-organic-stranded/run.sh
+<delvec> <scratch>`, no server) reads what the piece instruments say about a
+hill-sized organic body that lies on ground belonging to its own piece
+(spec-0087 §2.2): it fetches the organic-structures research fitter by revision
+into the scratch directory, states a stranded body over it (`form.py`: a torso
+on a mud apron, a cavity entered through a wound at grade, a shelf onto the
+back, a blowhole), admits the result through `delvec schem convert` and `delvec
+prefab audit`, then runs `prefab planes --write`, `prefab lighting` and `delvec
+build` on a stub ocean campaign with reach objectives inside and on the back —
+once as authored and once with the stub's light gate stood down so the walk
+proofs are reached. Raw readings and every binding line:
+`tools/spike-organic-stranded/observations.json`. The compiler consumes nothing
+from it.
+
 `tools/spike-block-settling/run.sh` (`EULA=TRUE
 tools/spike-block-settling/run.sh [--out <path>]`) measures, on a throwaway
 pinned server booted on a DRY superflat, the two facts the `stair-shape`
