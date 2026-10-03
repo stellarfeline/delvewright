@@ -4,7 +4,7 @@
     {
       "doc": "quests.json",
       "op": "replace",
-      "path": "/content/triggers/6/effects/1/clip",
+      "path": "/content/triggers/7/effects/1/clip",
       "value": "fly"
     }
   ],

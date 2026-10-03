@@ -4,7 +4,7 @@
     {
       "doc": "quests.json",
       "op": "replace",
-      "path": "/content/state/6/scope",
+      "path": "/content/state/7/scope",
       "value": "player"
     }
   ],
