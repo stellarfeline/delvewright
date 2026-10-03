@@ -1,0 +1,13 @@
+{
+  "code": "DW0930",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/atmospheres/0/climate/temperature",
+      "value": 0.8
+    }
+  ],
+  "units": [],
+  "why": "The frost hall declares `precipitation: snow` and a `climate` at temperature 0.8. Vanilla snows only below 0.15, so the biome would rain, and every proof that reads `precipitation` would be reasoning about weather the party never stands in. One of the two statements has to give. It declares no unit: `climate` is bound by the frost hall's own consistent pair."
+}
