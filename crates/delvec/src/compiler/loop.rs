@@ -1169,8 +1169,15 @@ fn grow(
                 }
                 let eye = eye.expect("a seen cell names its eye");
                 if !in_built(c) {
-                    let word = if face == 3 {
-                        "up, into open sky"
+                    // Above a built column is the sky; anywhere else is the void
+                    // beside the build.
+                    let above = built.iter().any(|bx| {
+                        (bx.0[0]..=bx.1[0]).contains(&c[0])
+                            && (bx.0[2]..=bx.1[2]).contains(&c[2])
+                            && c[1] > bx.1[1]
+                    });
+                    let word = if above {
+                        "up, into open sky above the built volume"
                     } else {
                         FACE_WORDS[face]
                     };
@@ -1255,6 +1262,18 @@ fn block_writes(
     let mut out: Vec<(usize, String, ([i32; 3], [i32; 3]), String)> = Vec::new();
     let air = "minecraft:air".to_string();
     crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
+        // A loop the path exercises has its `on_cross` writes judged crossing
+        // by crossing, at the step that makes them; one it does not exercise
+        // may answer any body's crossing, so its writes are judged here, from
+        // the start.
+        if let crate::compiler::plan::EffectRoot::LoopCross(l) = site.root
+            && plan
+                .loop_exercises
+                .iter()
+                .any(|x| x.r#loop == l.id.as_str())
+        {
+            return;
+        }
         let step = crate::compiler::plan::root_step(plan, &site.root);
         let label = format!("`{}` at `{}`", e.verb.tag(), site.path);
         match &e.verb {
@@ -1703,14 +1722,23 @@ fn check_one(
     );
     volumes.retain(|(_, b)| boxes_meet(*b, both));
     row.volumes = volumes.len();
+    let span_cells: Vec<[i32; 3]> = (span.b.0[0]..=span.b.1[0])
+        .flat_map(|x| {
+            (span.b.0[1]..=span.b.1[1])
+                .flat_map(move |y| (span.b.0[2]..=span.b.1[2]).map(move |z| [x, y, z]))
+        })
+        .collect();
     for (label, b) in &volumes {
         let in_vol = |c: [i32; 3]| volumes.iter().any(|(_, v)| inside(*v, c));
-        if let Some(c) = visible.iter().find(|c| in_vol(**c) != in_vol(image(**c))) {
+        if let Some(c) = span_cells
+            .iter()
+            .find(|c| in_vol(**c) != in_vol(image(**c)))
+        {
             return Err(Failure {
                 code: DW_LOOP_TILING,
                 message: format!(
                     "loop `{}`: {label} {} lies in the periodic span without its image under the \
-                     offset — the visible cell {} is {} and the cell it is seen as from the slab, \
+                     offset — the span's cell {} is {} and the cell it stands for from the slab, \
                      {}, is {}. A pit the player sees in one bay and not the next is the frame \
                      jump by other means. Make the sections the same: put the same volume under \
                      the other bay, or move it out of the span",
@@ -1749,9 +1777,18 @@ fn check_one(
         });
     }
     // The exercise's own writes, crossing by crossing (spec-0086 §4.6).
+    let li = plan
+        .campaign
+        .quests
+        .content
+        .loops
+        .iter()
+        .position(|d| d.id.as_str() == l.id)
+        .unwrap_or(0);
     for e in plan.loop_exercises.iter().filter(|e| e.r#loop == l.id) {
         for (n, fired) in e.fired.iter().enumerate() {
             let mut any = false;
+            let mut named: Vec<String> = Vec::new();
             for &fi in fired {
                 let Some(eff) = l.on_cross.get(fi) else {
                     continue;
@@ -1773,15 +1810,20 @@ fn check_one(
                 {
                     acc.push(w);
                     any = true;
+                    named.push(format!(
+                        "`{}` at `/content/loops/{li}/on_cross/{fi}`",
+                        eff.verb.tag()
+                    ));
                 }
             }
             if any {
                 configs.push(Config {
                     label: format!(
-                        "after crossing {} of the exercise step (critical-path step {}), whose \
-                         `on_cross` writes from root `/content/loops/../on_cross`",
+                        "after crossing {} of the exercise step (critical-path step {}), which \
+                         runs {}",
                         n + 1,
-                        e.step
+                        e.step,
+                        named.join(", ")
                     ),
                     writes: acc.clone(),
                 });

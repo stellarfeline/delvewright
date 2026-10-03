@@ -192,6 +192,9 @@ pub struct DangerVisibility {
     /// Cells the party can walk to from everywhere it is PUT, over the world
     /// with lethality removed — the population `P`.
     pub population: usize,
+    /// The cells the population is flooded from — every place the party is PUT
+    /// ([`population_roots`]), a loop's landings included (spec-0086 §5.3).
+    pub roots: usize,
     /// One row per resolved volume, in declaration order.
     pub volumes: Vec<VolumeVisibility>,
     /// `shown_by` entries examined, over every volume.
@@ -293,6 +296,7 @@ impl DangerVisibility {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "population": self.population,
+            "roots": self.roots,
             "caught": self.caught(),
             "shown": self.shown(),
             "reads_as_safe_floor": self.caught() - self.shown(),
@@ -420,7 +424,9 @@ pub fn check_danger_is_visible(
     let body = delvewright_dsl::metrics::Body::PLAYER;
     // The counterfactual, not the world the router walks. See the note above.
     let open = world.without_exclusions();
-    let population = open.reachable_walkable(&population_roots(plan, entry));
+    let put = population_roots(plan, entry);
+    binding.roots = put.len();
+    let population = open.reachable_walkable(&put);
     binding.population = population.len();
     // The zero-binding question: can any player body get into each volume at
     // all — by walking, falling, jumping or swimming from the walked
@@ -1243,6 +1249,7 @@ mod tests {
     fn a_volume_no_body_reaches_is_a_dw0891_warning() {
         let d = DangerVisibility {
             population: 10,
+            roots: 1,
             volumes: vec![
                 row("lethal/well", None),
                 row("lethal/pit", Some("a player")),
@@ -1267,6 +1274,7 @@ mod tests {
     fn a_wave_member_binds_a_volume_no_player_reaches() {
         let mut d = DangerVisibility {
             population: 10,
+            roots: 1,
             volumes: vec![row("lethal/well", None)],
             declarations: 0,
             borne_out: 0,

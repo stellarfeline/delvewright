@@ -138,6 +138,10 @@ pub fn gallery_prefabs(tag: &str, cuts: &Cuts) -> PathBuf {
         &gallery_cells(cuts),
         gallery_anchors(),
     );
+    // A free-standing corridor in the void: every side is what a body that got
+    // outside would see, so the piece says so (`DW0885`), and a fixture that
+    // cuts a hole in it is judged by the loop proofs, not the seating rule.
+    super::declare_shown_faces(&dir, "long-gallery");
     dir
 }
 
