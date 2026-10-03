@@ -4292,7 +4292,7 @@ test("a drop beyond the fight's radius is not this fight's drop", async () => {
 
 // --- trigger steps: the bot does to the target what a player does ---------------
 
-import type { TriggerStep } from "../src/critical-path.ts";
+import type { LoopStep, TriggerStep } from "../src/critical-path.ts";
 
 /**
  * A fake server with one environment trigger's `interaction` hitbox at the
@@ -4874,5 +4874,121 @@ test("the bounties a staged clear pays into a wagered purse are taken back befor
   assert.equal(scores.get("dw.s_tallow")!.get("delve-bot"), 0);
   assert.ok(
     executor.stagedBodies().some((r) => r.kind === "player" && /set back from 26 to 0/.test(r.why)),
+  );
+});
+
+/**
+ * spec-0086 §6: a loop's slab. The fake server answers a walk toward a goal past
+ * the slab the way the pinned server does: the body reaches the slab, the
+ * physics tick reads it there, and a forced move by `answer` puts it back. A
+ * walk to any other goal arrives.
+ */
+class LoopFakeBot extends InteractFakeBot {
+  answer: [number, number, number] | null = [0, 0, -6];
+  moves = 0;
+  constructor() {
+    super();
+    this.entity.position = new FakeVec3(2.5, 67, 10.5);
+  }
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (...args: unknown[]): Promise<void> => {
+      const goal = args[0] as { x: number; y: number; z: number };
+      this.calls.push(`goto(${goal.x},${goal.y},${goal.z})`);
+      if (goal.z > 22) {
+        // Across the slab at z = 22: the body enters it, and the server answers.
+        this.entity.position = new FakeVec3(2.5, 67, 22.3);
+        this.emit("physicsTick");
+        if (this.answer) {
+          const [dx, dy, dz] = this.answer;
+          const p = this.entity.position;
+          this.entity.position = new FakeVec3(p.x + dx, p.y + dy, p.z + dz);
+          this.moves += 1;
+          this.emit("forcedMove");
+        }
+        await delay(30);
+        return;
+      }
+      this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+      this.emit("physicsTick");
+    },
+  };
+}
+
+const LOOP: LoopStep = {
+  action: "loop",
+  loop: "loop/gallery",
+  pos: [2, 67, 16],
+  cross: [2, 67, 22],
+  offset: [0, 0, -6],
+  times: 2,
+  transport: [2, 67, 16],
+};
+
+test("a loop step crosses, sees the exact offset, stops pathfinding, and repeats `times` times", async () => {
+  const bot = new LoopFakeBot();
+  const executor = attach(bot);
+  executor.useLoops([LOOP]);
+  await within("executor.exerciseLoop(LOOP)", executor.exerciseLoop(LOOP));
+  assert.equal(bot.moves, 2, "two moves seen");
+  // Every crossing aimed past the slab along z, and each move stopped the walk.
+  assert.equal(bot.calls.filter((c) => c === "goto(2,67,24)").length, 2, bot.calls.join(" "));
+  assert.ok(bot.pathfinderStops >= 2, `${bot.pathfinderStops} stop(s)`);
+  // …and the body is on the landing side, where the next leg begins.
+  assert.ok(bot.entity.position.z < 22, `bot at z ${bot.entity.position.z}`);
+});
+
+test("a loop step fails naming the loop and the delta when the move is not the offset", async () => {
+  const bot = new LoopFakeBot();
+  bot.answer = [0, 0, -5];
+  const executor = attach(bot);
+  await assert.rejects(
+    within("executor.exerciseLoop(wrong delta)", executor.exerciseLoop(LOOP)),
+    (e: unknown) =>
+      e instanceof Error &&
+      e.message.includes("loop/gallery") &&
+      e.message.includes("[0.000, 0.000, -5.000]") &&
+      e.message.includes("0 of 2"),
+  );
+});
+
+test("a loop step fails naming the count reached when no move comes", async () => {
+  const bot = new LoopFakeBot();
+  bot.answer = null;
+  const executor = attach(bot, { DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS: "200" });
+  await assert.rejects(
+    within("executor.exerciseLoop(no move)", executor.exerciseLoop(LOOP)),
+    (e: unknown) =>
+      e instanceof Error &&
+      e.message.includes("loop/gallery") &&
+      e.message.includes("no forced move") &&
+      e.message.includes("0 of 2"),
+  );
+});
+
+test("a forced move equal to a loop's offset during a plain walk fails that walk naming the loop", async () => {
+  const bot = new LoopFakeBot();
+  const executor = attach(bot);
+  executor.useLoops([LOOP]);
+  // A plain reach across the slab, after the proof read the loop released.
+  const reach: ReachStep = {
+    action: "reach",
+    objective: "obj/end",
+    anchor: "anchor/end",
+    pos: [2, 67, 41],
+    radius: 1,
+    completion: { kind: "cube", lo: [1, 66, 40], hi: [3, 68, 42] },
+  };
+  await assert.rejects(
+    within("executor.reach(across a holding loop)", executor.reach(reach)),
+    (e: unknown) => e instanceof Error && e.message.includes("loop/gallery") && e.message.includes("plain walk"),
   );
 });
