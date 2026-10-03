@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Regenerate `crates/delvec/data/environment-attributes-1.21.11.json` and
-`crates/delvec/data/particle-types-1.21.11.json` from the pinned 1.21.11 jars
-(spec-0080 §2.4, §3.1.2).
+"""Regenerate `crates/delvec/data/environment-attributes-1.21.11.json` from the
+pinned 1.21.11 jars (spec-0080 §2.4, §3.1.2), and cross-check the one particle
+table (`crates/dsl/data/particles-1.21.11.json`) against the jar's bytecode.
 
 The environment-attribute registry is what `world.atmospheres[].attributes` is
 held to (`DW0928`): which ids exist, which a campaign may set, the shape of each
 value, and the range the pinned codec rejects outside of. The particle table is
-what an `ambient_particles` / `default_dripstone_particle` value is held to.
+what an `ambient_particles` / `default_dripstone_particle` value is held to; it
+is the same table the `particle` verb is held to (`DW0941`), written by
+`tools/maintenance/extract-particle-registry.py` from the booted registry, and
+this script reads the bytecode as a second method and refuses on any
+disagreement rather than writing a second copy.
 
 ## Inputs (never committed: Mojang EULA)
 
@@ -52,14 +56,15 @@ bytecode of `EnvironmentAttributes.<clinit>`, never typed.
 6. **Particles.** `ParticleTypes.<clinit>` names each particle type and whether
    it is registered through `register(String, boolean)` — a
    `SimpleParticleType`, written `{"type": id}` with no options — or through a
-   factory that takes options. Only simple types are `simple: true`.
+   factory that takes options. A simple type is one the table records as
+   `options: false`; every id and every answer must agree with it.
 
 Usage:
 
     python3 tools/maintenance/extract-environment-attributes.py \\
       --server-jar server.jar --client-jar client.jar --mappings server.txt \\
       --out-attributes crates/delvec/data/environment-attributes-1.21.11.json \\
-      --out-particles crates/delvec/data/particle-types-1.21.11.json
+      --check-particles crates/dsl/data/particles-1.21.11.json
 """
 
 from __future__ import annotations
@@ -344,7 +349,7 @@ def main() -> int:
     ap.add_argument("--client-jar", required=True, type=pathlib.Path)
     ap.add_argument("--mappings", required=True, type=pathlib.Path)
     ap.add_argument("--out-attributes", required=True, type=pathlib.Path)
-    ap.add_argument("--out-particles", required=True, type=pathlib.Path)
+    ap.add_argument("--check-particles", required=True, type=pathlib.Path)
     a = ap.parse_args()
     if sha(a.server_jar, "sha256") != SERVER_JAR_SHA256:
         return die(f"{a.server_jar} is not the pinned server jar")
@@ -413,20 +418,20 @@ def main() -> int:
         "records": records,
     }
     a.out_attributes.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
-    pdoc = {
-        "minecraft": "1.21.11",
-        "source": {
-            "server_jar_sha256": SERVER_JAR_SHA256,
-            "server_mappings_sha1": SERVER_MAPPINGS_SHA1,
-            "registry": "net.minecraft.core.particles.ParticleTypes.<clinit>",
-        },
-        "particle_types": parts,
-    }
-    a.out_particles.write_text(json.dumps(pdoc, indent=2, sort_keys=True) + "\n")
+    table = json.loads(a.check_particles.read_text())
+    read = {p["id"]: not p["simple"] for p in parts}
+    held = {k: v["options"] for k, v in table.items()}
+    if read != held:
+        return die(
+            f"the bytecode's particle types disagree with {a.check_particles}: "
+            f"only in the jar {sorted(set(read) - set(held))}, only in the table "
+            f"{sorted(set(held) - set(read))}, options differ "
+            f"{sorted(k for k in set(read) & set(held) if read[k] != held[k])}"
+        )
     print(
         f"{len(rows)} attribute(s): {counts['admitted']} admitted, {counts['overridden']} "
         f"overridden, {counts['gameplay']} gameplay; {len(parts)} particle type(s), "
-        f"{sum(p['simple'] for p in parts)} simple"
+        f"{sum(p['simple'] for p in parts)} simple, agreeing with {a.check_particles}"
     )
     return 0
 

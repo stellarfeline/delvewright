@@ -445,11 +445,13 @@ not third-party reconstructions.
   (spec-0080 §2.4), a `visual/` id an overworld timeline keys with `override`
   (`dimension_type/overworld.json`, `#minecraft:in_overworld` expanded) is
   `overridden`, the rest `admitted`. Feeds `DW0928`.
-- **`particle-types-1.21.11.json`** — every particle type (115), and whether it is a
-  `SimpleParticleType` (97), written `{"type": id}` with no options. Read by the
-  same script from `ParticleTypes.<clinit>` in the pinned server jar through the
-  same mappings: a type registered by `register(String, boolean)` returns a
-  `SimpleParticleType`; the 18 others take options. Feeds `DW0928`'s particle arm.
+- **The particle arm of `DW0928`** reads the one particle table,
+  `crates/dsl/data/particles-1.21.11.json` (above, written by
+  `tools/maintenance/extract-particle-registry.py`). The same script reads
+  `ParticleTypes.<clinit>` in the pinned server jar through the same mappings as
+  a second method — a type registered by `register(String, boolean)` returns a
+  `SimpleParticleType`; at 1.21.11, 115 types, 97 simple, 18 taking options —
+  and refuses when that reading disagrees with the table in any id or answer.
 
 ### What vanilla data does NOT provide (and what the compiler does about it)
 
