@@ -514,3 +514,50 @@ fn a_door_opened_behind_an_undatable_gate_is_not_credited() {
         Ok(_) => panic!("expected DW0317: the door opens behind a gate no ordered walk can decide"),
     }
 }
+
+/// A flag only an environment trigger sets is set on a path only once the path
+/// performs that trigger. The hold path's own `open-gate` (on `obj/watch`) is
+/// guarded `requires_flags [flag/warded]`, and the only producer of
+/// `flag/warded` is a `use` trigger on the spawn stone that opens no way and
+/// that no objective reads — so the path never performs it. Nothing the path
+/// fires opens the door, and the walk out is `DW0317`.
+#[test]
+fn a_door_opened_behind_a_flag_only_an_unperformed_trigger_sets_is_not_credited() {
+    let tmp = TempCampaign::new("ambient-flag-gate");
+    tmp.patch("quests", |q| {
+        let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
+            .as_array_mut()
+            .unwrap();
+        let gate = bundle
+            .iter_mut()
+            .find(|e| e["type"] == "open-gate")
+            .expect("fixture drift: obj/watch must carry the hold branch's open-gate");
+        gate["when"] = json!({ "requires_flags": ["flag/warded"] });
+        let content = q["content"].as_object_mut().unwrap();
+        let triggers = content
+            .entry("triggers".to_string())
+            .or_insert_with(|| json!([]));
+        triggers.as_array_mut().unwrap().push(json!({
+            "id": "trigger/ward-the-door",
+            "at": "spawn",
+            "on": { "on": "use" },
+            "effects": [ { "type": "set-flag", "flag": "flag/warded" } ]
+        }));
+    });
+
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("`anchor/door`")
+                    && message.contains("a line whose gate does not hold where this path plays it"),
+                "the diagnostic must name the door and why nothing opens it: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => panic!(
+            "expected DW0317: the door opens behind a flag only a trigger the path never \
+             performs sets"
+        ),
+    }
+}
