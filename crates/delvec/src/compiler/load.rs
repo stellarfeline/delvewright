@@ -111,6 +111,11 @@ pub struct LoadedCampaign {
     /// i18n l10n sidecars found under `l10n/`: language code (filename stem) →
     /// raw sidecar bytes. Empty when the campaign ships no `l10n/` directory.
     pub l10n: BTreeMap<String, Vec<u8>>,
+    /// The images `world.textures[]` rows name (spec-0084), read from
+    /// `textures/`: campaign-relative path (`textures/<id>.png`,
+    /// `textures/<id>.png.mcmeta`) → raw bytes. Empty when the campaign ships no
+    /// `textures/` directory. Every one is also a manifest input.
+    pub textures: BTreeMap<String, Vec<u8>>,
     /// `walk-record.json`, verbatim, when the campaign directory ships one —
     /// see [`WALK_RECORD_FILE`] for why it travels beside the stage documents
     /// rather than among them.
@@ -346,6 +351,13 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     for (code, bytes) in &l10n {
         inputs.insert(format!("l10n/{code}.json"), bytes.clone());
     }
+    // spec-0084: a replaced texture's image reaches the resource pack verbatim,
+    // so its bytes are a build input exactly as a sidecar's are, and the
+    // manifest hashes them.
+    let textures = load_textures_dir(dir)?;
+    for (path, bytes) in &textures {
+        inputs.insert(path.clone(), bytes.clone());
+    }
     Ok(LoadedCampaign {
         raw: RawCampaign {
             world,
@@ -365,7 +377,32 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
         design_files,
         inputs,
         l10n,
+        textures,
     })
+}
+
+/// Read every `<name>.png` and `<name>.png.mcmeta` in a campaign's `textures/`
+/// directory → campaign-relative path → raw bytes. Empty when the directory
+/// does not exist. Sorted for determinism (ADR-0006).
+fn load_textures_dir(dir: &Path) -> std::io::Result<BTreeMap<String, Vec<u8>>> {
+    let root = dir.join(crate::compiler::textures::TEXTURES_DIR);
+    let mut out = BTreeMap::new();
+    if !root.is_dir() {
+        return Ok(out);
+    }
+    for entry in std::fs::read_dir(&root).map_err(|e| named("textures", e))? {
+        let path = entry.map_err(|e| named("textures", e))?.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !(name.ends_with(".png") || name.ends_with(".png.mcmeta")) || !path.is_file() {
+            continue;
+        }
+        let rel = format!("{}/{name}", crate::compiler::textures::TEXTURES_DIR);
+        let bytes = std::fs::read(&path).map_err(|e| named(&rel, e))?;
+        out.insert(rel, bytes);
+    }
+    Ok(out)
 }
 
 /// Read every `<code>.json` sidecar in an `l10n/` directory → `code` (filename

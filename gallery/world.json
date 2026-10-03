@@ -115,8 +115,20 @@
     "min_players": 1,
     "outro": "Every case in the hall has been read.",
     "premise": "One hall, every surface the DSL declares, written once and built on every pull request.",
+    "require_resource_pack": true,
     "seed": 20260819,
     "target_minutes": 5,
+    "textures": [
+      {
+        "id": "hall-stone",
+        "license": {
+          "note": "One flat colour written by prefabs/gallery-generator, deliberately not art, so a render of the annex, whose tiles are stone bricks, shows which block the pack replaced.",
+          "source": "original",
+          "spdx": "original"
+        },
+        "replaces": "minecraft:block/stone_bricks"
+      }
+    ],
     "theme": "A lit stone hall divided by a barred wall.",
     "time": {
       "moon": "just-risen",

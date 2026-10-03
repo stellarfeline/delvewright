@@ -2742,3 +2742,131 @@ fn dw0938_shrinking_the_box_or_choosing_a_clip_that_reaches_it_builds() {
     );
     assert_eq!(assembly_verdict(&clip("strike"), rig()), None);
 }
+
+// ---------------------------------------------------------------------------
+// spec-0084 — a delve wears its own textures: each refusal's named move
+// ---------------------------------------------------------------------------
+
+/// hello-world plus one `world.textures[]` row and the files beside it.
+fn texture_campaign(tag: &str, row: serde_json::Value, files: &[(&str, Vec<u8>)]) -> PathBuf {
+    let camp = campaign(&format!("tex-{tag}"), None);
+    let path = camp.join("world.json");
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    world["content"]["textures"] = serde_json::json!([row]);
+    std::fs::write(&path, serde_json::to_string_pretty(&world).unwrap()).unwrap();
+    std::fs::create_dir_all(camp.join("textures")).unwrap();
+    for (name, bytes) in files {
+        std::fs::write(camp.join("textures").join(name), bytes).unwrap();
+    }
+    camp
+}
+
+fn flat_png(w: u32, h: u32) -> Vec<u8> {
+    let px: Vec<u8> = (0..w * h).flat_map(|_| [180u8, 40, 40, 255]).collect();
+    delvec::compiler::png::encode_rgba(w, h, &px)
+}
+
+fn validate_tex(camp: &Path) -> (i32, String) {
+    let prefabs = common::prefabs_dir();
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **`DW0939` names the census path; naming it validates.** The refusal of the
+/// pre-pin moon strip prints the nearest paths the census holds; the row that
+/// takes one of them is admitted.
+#[test]
+fn dw0939_naming_a_census_path_admits_the_row() {
+    let row = |replaces: &str| {
+        serde_json::json!({ "id": "moon", "replaces": replaces,
+            "license": { "spdx": "original", "source": "original" } })
+    };
+    let before = texture_campaign(
+        "dw0939-a",
+        row("minecraft:environment/moon_phases"),
+        &[("moon.png", flat_png(32, 32))],
+    );
+    let (code, said) = validate_tex(&before);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("DW0939"), "{said}");
+    let named = "minecraft:environment/celestial/moon/full_moon";
+    assert!(
+        said.contains(named),
+        "the refusal names the path the move takes:\n{said}"
+    );
+    let after = texture_campaign("dw0939-b", row(named), &[("moon.png", flat_png(32, 32))]);
+    let (code, said) = validate_tex(&after);
+    assert_eq!(code, 0, "{said}");
+}
+
+/// **`DW0940` names the size; resizing to it validates.**
+#[test]
+fn dw0940_resizing_to_the_named_size_admits_the_image() {
+    let row = serde_json::json!({ "id": "moon",
+        "replaces": "minecraft:environment/celestial/moon/full_moon",
+        "license": { "spdx": "original", "source": "original" } });
+    let before = texture_campaign("dw0940-a", row.clone(), &[("moon.png", flat_png(48, 48))]);
+    let (code, said) = validate_tex(&before);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("DW0940") && said.contains("multiple k of 32"),
+        "{said}"
+    );
+    let after = texture_campaign("dw0940-b", row, &[("moon.png", flat_png(64, 64))]);
+    let (code, said) = validate_tex(&after);
+    assert_eq!(code, 0, "{said}");
+}
+
+/// **`DW0741` names the missing field; recording it validates.** A CC BY image
+/// with no credit line is refused naming `license.attribution`; with it, the
+/// row is admitted.
+#[test]
+fn dw0741_recording_the_credit_admits_a_cc_by_image() {
+    let row = |attribution: Option<&str>| {
+        let mut lic = serde_json::json!({ "spdx": "CC-BY-4.0", "source": "a site",
+            "url": "https://example.org/licence" });
+        if let Some(a) = attribution {
+            lic["attribution"] = serde_json::json!(a);
+        }
+        serde_json::json!({ "id": "moon",
+            "replaces": "minecraft:environment/celestial/moon/full_moon", "license": lic })
+    };
+    let before = texture_campaign("dw0741-a", row(None), &[("moon.png", flat_png(32, 32))]);
+    let (code, said) = validate_tex(&before);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("DW0741") && said.contains("license.attribution"),
+        "{said}"
+    );
+    let after = texture_campaign(
+        "dw0741-b",
+        row(Some("An Artist — A Title")),
+        &[("moon.png", flat_png(32, 32))],
+    );
+    let (code, said) = validate_tex(&after);
+    assert_eq!(code, 0, "{said}");
+}
+
+/// **`DW0309` names the path; adding the file there validates.**
+#[test]
+fn dw0309_adding_the_named_file_admits_the_texture_row() {
+    let row = serde_json::json!({ "id": "moon",
+        "replaces": "minecraft:environment/celestial/moon/full_moon",
+        "license": { "spdx": "original", "source": "original" } });
+    let before = texture_campaign("dw0309-a", row.clone(), &[]);
+    let (code, said) = validate_tex(&before);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("DW0309") && said.contains("textures/moon.png"),
+        "{said}"
+    );
+    let after = texture_campaign("dw0309-b", row, &[("moon.png", flat_png(32, 32))]);
+    let (code, said) = validate_tex(&after);
+    assert_eq!(code, 0, "{said}");
+}

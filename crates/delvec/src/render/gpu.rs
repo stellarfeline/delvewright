@@ -84,8 +84,20 @@ pub struct RenderParams {
 }
 
 /// Load a resource pack (client jar / zip / dir).
-pub fn load_pack(path: &str) -> Result<ResourcePackSource, String> {
-    ResourcePackSource::from_file(path).map_err(|e| format!("load resource pack `{path}`: {e:?}"))
+///
+/// With `over`, that pack is layered above `path` (spec-0084 §5.1) — Nucleation
+/// applies packs lowest priority first, so the jar is named first and the
+/// delve's pack overlays it — and the layering is said on stderr.
+pub fn load_pack(path: &str, over: Option<&str>) -> Result<ResourcePackSource, String> {
+    match over {
+        None => ResourcePackSource::from_file(path)
+            .map_err(|e| format!("load resource pack `{path}`: {e:?}")),
+        Some(top) => {
+            eprintln!("textures: {top} layered above {path}");
+            ResourcePackSource::from_files([path, top])
+                .map_err(|e| format!("load resource packs `{top}` over `{path}`: {e:?}"))
+        }
+    }
 }
 
 /// Nucleation's view direction for an orbit yaw/pitch (degrees): the unit vector

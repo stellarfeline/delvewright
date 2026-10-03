@@ -122,6 +122,48 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("ItemDrop", "name", Inventoried),
     ("KitItem", "item", Reference),
     ("KitItem", "name", Inventoried),
+    (
+        "LicenseEvidence",
+        "archived_proof",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "attribution",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "note",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "source",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "spdx",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "url",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
     ("LethalVolume", "message", Inventoried),
     ("LethalVolume", "shown_by", Reference),
     ("Forfeit", "kind", Machine),
@@ -231,6 +273,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
                           never rendered (spec-0031)",
         ),
     ),
+    ("TextureOverride", "id", Reference),
+    ("TextureOverride", "replaces", Reference),
     ("Trigger", "type", Machine),
     ("TriggerOn", "on", Machine),
     ("WaveMob", "entity", Reference),

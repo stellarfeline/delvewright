@@ -51,9 +51,14 @@ fi
 #     /image/server.properties template (view-distance) and the vanilla jar's
 #     built-in default (simulation-distance), two files nobody in this repo owns.
 #     What renders and what ticks would then be a property of the host.
+#
+#     `require-resource-pack` (spec-0084 §11) is the campaign's declaration that
+#     its pack is required; underived, the image would prompt where the campaign
+#     said require.
 for key in difficulty:DIFFICULTY level-seed:SEED level-type:LEVEL_TYPE \
            generator-settings:GENERATOR_SETTINGS view-distance:VIEW_DISTANCE \
-           simulation-distance:SIMULATION_DISTANCE; do
+           simulation-distance:SIMULATION_DISTANCE \
+           require-resource-pack:RESOURCE_PACK_ENFORCE; do
   prop="${key%%:*}"; env_var="${key##*:}"
   if grep -q "prop $prop" "$SCRIPT" && grep -q "export $env_var=" "$SCRIPT"; then
     pass "entrypoint derives $env_var from the build's \`$prop\`"

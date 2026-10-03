@@ -1,0 +1,13 @@
+{
+  "code": "DW0939",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/textures/0/replaces",
+      "value": "minecraft:environment/moon_phases"
+    }
+  ],
+  "units": [],
+  "why": "The hall's `hall-stone` row replaces `minecraft:block/stone_bricks`. This edit points it at `minecraft:environment/moon_phases`, the single moon strip of a client before the pin; the pinned 1.21.11 client draws the moon from eight files under `environment/celestial/moon/` and ships no `moon_phases.png`. An override written to that path would bind nothing and refuse nothing: the build would succeed, the pack would carry the file, and no client would ever draw it. The census vendored from the pinned jar is what the row is resolved against, and the remedy the refusal names is a path from it."
+}

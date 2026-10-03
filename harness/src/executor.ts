@@ -116,6 +116,7 @@ import {
   type ClientLoadedState,
   type LoadWindow,
 } from "./client-loaded.ts";
+import type { PackPush, ResourcePackState } from "./resource-pack.ts";
 import {
   traceLoadWindows,
   type LoadWindowRecord,
@@ -1558,6 +1559,8 @@ export class MineflayerExecutor implements StepExecutor {
   private loadTracer: LoadWindowTracer | undefined;
   /** The bot's `player_loaded` tracker; `undefined` for a bot adopted by {@link attachBot}. */
   private clientLoaded: ClientLoadedState | undefined;
+  /** The resource packs the server pushed (spec-0084 §11); `undefined` for an adopted bot. */
+  private packState: ResourcePackState | undefined;
   /** How many `spawn` events this run has seen (login, then every respawn). */
   private spawnSeq = 0;
   /** {@link spawnSeq} at the moment of the last death — the respawn wait watches
@@ -1893,7 +1896,7 @@ export class MineflayerExecutor implements StepExecutor {
 
   /** Connect and resolve once the bot has spawned into the world. */
   async connect(): Promise<void> {
-    const { bot, loaded } = createHarnessBot({
+    const { bot, loaded, pack } = createHarnessBot({
       host: this.config.host,
       port: this.config.port,
       username: this.config.username,
@@ -1916,6 +1919,7 @@ export class MineflayerExecutor implements StepExecutor {
     });
     this.bot = bot;
     this.clientLoaded = loaded;
+    this.packState = pack;
     // Installed in the turn the bot is created, before its `login` can arrive:
     // the join is the first window it has to see.
     this.loadTracer = traceLoadWindows(bot as unknown as TracedBot, {
@@ -2610,6 +2614,11 @@ export class MineflayerExecutor implements StepExecutor {
    * to say to stop a harness fault reading as a content verdict on whichever stage
    * happened to be next.
    */
+  /** Every resource pack the server pushed to this bot — see resource-pack.ts. */
+  resourcePackPushes(): readonly PackPush[] {
+    return this.packState?.pushes() ?? [];
+  }
+
   /** Every load window this bot opened, in order — see load-window.ts. */
   loadWindows(): readonly LoadWindowRecord[] {
     return this.loadTracer?.windows() ?? [];

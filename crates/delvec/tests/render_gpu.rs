@@ -62,7 +62,7 @@ fn fidelity_gate_fixture_has_no_placeholder() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     let st = fidelity::fixture_structure();
     let params = RenderParams {
         yaw_deg: 25.0,
@@ -90,7 +90,7 @@ fn detector_catches_heavy_core_when_included() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     let st = nbt::Structure {
         size: [1, 2, 1],
         palette: vec![
@@ -128,7 +128,7 @@ fn opposite_facings_render_different_pictures() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     // A corridor with a distinctive block at one end only, so the two views
     // cannot coincide by symmetry.
     let mut blocks = Vec::new();
@@ -199,7 +199,7 @@ fn an_eye_view_is_not_mirrored() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     let mut blocks = Vec::new();
     for x in 0..5 {
         for y in 0..5 {
@@ -270,7 +270,7 @@ fn piece_double_render_is_stable() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     let p = prefab("keep-gate-room.nbt");
     let st = nbt::parse_structure(&p).expect("parse");
     let meta = delvec::compiler::view::meta::PrefabMeta::beside_nbt(&p).expect("meta");
@@ -405,7 +405,7 @@ fn a_face_view_photographs_that_face() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     let st = one_gold_face([9, 9, 31]);
 
     let north = warm_share(&render_shot(&st, &pack, &plan_view(&st, "face=north"), 256));
@@ -440,7 +440,7 @@ fn a_face_view_fills_the_frame_where_the_planned_set_cannot() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     let st = one_gold_face([9, 9, 31]);
     let plan = shots::plan_piece(&st, None, &[]).expect("plan");
     let ext = plan.shots.iter().find(|s| s.name == "ext-ne").unwrap();
@@ -462,7 +462,7 @@ fn a_view_aimed_at_nothing_is_reported_as_dw0727() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     let st = one_gold_face([9, 9, 31]);
     let shot = plan_view(&st, "name=blind,face=north,zoom=400");
     let f = render_shot(&st, &pack, &shot, 256);
@@ -485,7 +485,7 @@ fn a_declared_view_renders_identically_twice() {
         eprintln!("skip: no client jar");
         return;
     };
-    let pack = gpu::load_pack(&tex).expect("load pack");
+    let pack = gpu::load_pack(&tex, None).expect("load pack");
     let st = one_gold_face([9, 9, 31]);
     for spec in ["face=north", "face=east,zoom=2", "yaw=25,pitch=15,fov=60"] {
         let shot = plan_view(&st, spec);

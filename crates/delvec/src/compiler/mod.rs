@@ -83,6 +83,7 @@
 //! - [`surround`]: horizon surround generation — the tiles that dress the world outside the placed pieces.
 //! - [`teleport`]: the `teleport` verb's one compile-time obligation, and the ledger saying what it looked at.
 //! - [`textfit`]: on-screen text that does not fit what draws it (`DW0330`/`DW0331`).
+//! - [`textures`]: a delve wears its own textures — `world.textures[]` against the pinned client's census and the campaign's files (`DW0939`/`DW0940`/`DW0309`), the pack entries, and the comparison sheet (spec-0084).
 //! - [`timeline`]: per-effect-timeline gate state — the static half of the `close-gate` model (`DW0410`).
 //! - [`trap_trigger`]: a trap's trigger cell holds the block its trigger kind names (`DW0917`).
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
@@ -169,6 +170,7 @@ pub mod strand;
 pub mod surround;
 pub mod teleport;
 pub mod textfit;
+pub mod textures;
 pub mod timeline;
 pub mod trap_trigger;
 pub mod traversal;
