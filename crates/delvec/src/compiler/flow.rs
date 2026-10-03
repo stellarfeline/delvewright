@@ -2288,6 +2288,25 @@ impl<'a> Flow<'a> {
         objective: &str,
         beat: &Beat,
     ) {
+        // **A value this list pinned, for the lines after it in the same list.**
+        // The lines of one list are consecutive commands of one function, which
+        // vanilla runs in one tick: no tick boundary falls between them, so no
+        // undated write — a death, a purchase, a strike — can land between a
+        // `set-state` and the gate that reads it a line later. A datum the walk
+        // cannot date is therefore known, inside this list only, from the line
+        // that pins it. Never inherited by a nested list (a `sequence` step or an
+        // `on_arrive` runs at a later tick) and never carried past the list.
+        let mut pinned: BTreeMap<String, i64> = BTreeMap::new();
+        let value = |st: &ReplayState, pinned: &BTreeMap<String, i64>, id: &str| match st
+            .state
+            .get(id)
+            .copied()
+        {
+            Some(Datum::Undatable) => pinned
+                .get(id)
+                .map_or(Datum::Undatable, |v| Datum::Known(*v)),
+            other => other.unwrap_or(Datum::Undatable),
+        };
         for (i, e) in effs.iter().enumerate() {
             let gated = !e
                 .requires_flags()
@@ -2300,12 +2319,10 @@ impl<'a> Flow<'a> {
             // the effect exactly as an unset flag does. `Some(false)` is the only
             // closing answer: `None` is undatable, and an undatable gate has not
             // been shown to close.
-            let numerically_closed = e.requires_state().iter().any(|cmp| {
-                st.state
-                    .get(cmp.state.as_str())
-                    .and_then(|d| d.satisfies(cmp))
-                    == Some(false)
-            });
+            let numerically_closed = e
+                .requires_state()
+                .iter()
+                .any(|cmp| value(st, &pinned, cmp.state.as_str()).satisfies(cmp) == Some(false));
             if gated || numerically_closed {
                 // A write this walk did NOT perform is what makes a later gate's
                 // value depend on more than the order — record it so a refusal
@@ -2319,9 +2336,8 @@ impl<'a> Flow<'a> {
             // Open, but only because a term could not be dated: the walk goes
             // on through it, and the line is recorded as not decided.
             let undatable = e.requires_state().iter().any(|cmp| {
-                st.state
-                    .get(cmp.state.as_str())
-                    .and_then(|d| d.satisfies(cmp))
+                value(st, &pinned, cmp.state.as_str())
+                    .satisfies(cmp)
                     .is_none()
             });
             if undatable {
@@ -2347,6 +2363,21 @@ impl<'a> Flow<'a> {
                 let initial = self.initial.get(&id).copied().unwrap_or(0);
                 let before = st.state.get(&id).copied().unwrap_or(Datum::Undatable);
                 let after = before.write(w, initial);
+                if after == Datum::Undatable {
+                    let pin = match w {
+                        StateWrite::Set(v) => Some(i64::from(v)),
+                        StateWrite::Clear => Some(initial),
+                        StateWrite::Add(v) => pinned.get(&id).map(|p| p + i64::from(v)),
+                    };
+                    match pin {
+                        Some(v) => {
+                            pinned.insert(id.clone(), v);
+                        }
+                        None => {
+                            pinned.remove(&id);
+                        }
+                    }
+                }
                 st.state.insert(id.clone(), after);
                 st.wrote.entry(id).or_default().push(StateWriteRecord {
                     beat: beat.clone(),

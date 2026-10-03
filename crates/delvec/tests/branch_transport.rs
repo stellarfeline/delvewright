@@ -442,7 +442,9 @@ fn a_path_cannot_cross_a_door_opened_only_under_another_branchs_flag() {
 /// Control: with nothing else writing the datum the walk dates it, the line is
 /// forced, and the campaign builds. Variant: the campaign's `on_death` also
 /// writes it, so its value at `obj/watch` is not a function of the path; the
-/// opening is then not credited and the hold path's walk out is `DW0317`.
+/// opening is then not credited and the hold path's walk out is `DW0317` —
+/// unless a line earlier in the same bundle pins the value, which no undated
+/// write can interrupt.
 #[test]
 fn a_door_opened_behind_an_undatable_gate_is_not_credited() {
     let tally = |tmp: &TempCampaign, on_death: bool| {
@@ -474,6 +476,28 @@ fn a_door_opened_behind_an_undatable_gate_is_not_credited() {
     tally(&control, false);
     try_build_campaign(control.path()).unwrap_or_else(|e| {
         panic!("a gate the walk can date and that holds must carry the route: {e:?}")
+    });
+
+    // The same undatable datum, pinned one line earlier in the same bundle: the
+    // two lines run in one tick, so nothing undated can land between them and
+    // the gate is decided open. The opening is credited and the campaign builds.
+    let pinned = TempCampaign::new("pinned-gate");
+    tally(&pinned, true);
+    pinned.patch("quests", |q| {
+        let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
+            .as_array_mut()
+            .unwrap();
+        let at = bundle
+            .iter()
+            .position(|e| e["type"] == "open-gate")
+            .unwrap();
+        bundle.insert(
+            at,
+            json!({ "type": "set-state", "state": "state/tally", "value": 0 }),
+        );
+    });
+    try_build_campaign(pinned.path()).unwrap_or_else(|e| {
+        panic!("a value pinned earlier in the same bundle decides the gate: {e:?}")
     });
 
     let tmp = TempCampaign::new("undatable-gate");
