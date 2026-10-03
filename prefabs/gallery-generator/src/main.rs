@@ -846,9 +846,10 @@ fn block_at(
     if x == 0 || x == SIZE[0] - 1 || z == 0 || z == SIZE[2] - 1 {
         return ("minecraft:stone", None);
     }
-    // The long gallery's stair: one course of rise per cell, climbing west
-    // along the far wall from the far hall's floor to the gallery's porch.
-    if z == LONG_GALLERY_STAIR_Z && (3..=9).contains(&x) && y <= 10 - x {
+    // The long gallery's stair: one course of rise per cell, climbing east
+    // along the far wall from the far hall's floor to the gallery's porch, in
+    // the corner away from the lane the boss marches.
+    if z == LONG_GALLERY_STAIR_Z && (21..=27).contains(&x) && y <= x - 20 {
         return ("minecraft:stone", None);
     }
     if z == DIVIDER_Z {
@@ -3205,11 +3206,11 @@ const fn corridor_bay(k: i32) -> i32 {
 const LONG_GALLERY_STAIR_Z: i32 = SIZE[2] - 3;
 
 /// A hall cell `(x, y, z)` in the gallery's own frame `(u, v, w)`: across the
-/// hall's west strip, up from the roof, and along the hall's length from the
-/// far wall toward the near one — so the porch stands over the stair and the
-/// gallery runs back toward the lectern.
+/// hall's east strip from its outer wall inward, up from the roof, and along
+/// the hall's length from the far wall toward the near one — so the porch
+/// stands over the stair and the gallery runs back toward the stall.
 fn long_gallery_frame(x: i32, y: i32, z: i32) -> Option<[i32; 3]> {
-    let (u, v, w) = (x, y - HALL_ROOF_Y, (SIZE[2] - 1) - z);
+    let (u, v, w) = ((SIZE[0] - 1) - x, y - HALL_ROOF_Y, (SIZE[2] - 1) - z);
     let inside = (0..CORRIDOR_SIZE[0]).contains(&u)
         && (0..CORRIDOR_SIZE[1]).contains(&v)
         && (0..CORRIDOR_SIZE[2]).contains(&w);
@@ -3218,7 +3219,7 @@ fn long_gallery_frame(x: i32, y: i32, z: i32) -> Option<[i32; 3]> {
 
 /// The hall cell of a gallery-frame cell — the inverse of [`long_gallery_frame`].
 const fn long_gallery_cell(u: i32, v: i32, w: i32) -> [i32; 3] {
-    [u, v + HALL_ROOF_Y, (SIZE[2] - 1) - w]
+    [(SIZE[0] - 1) - u, v + HALL_ROOF_Y, (SIZE[2] - 1) - w]
 }
 
 /// The cells cut through the hall's roof and the gallery's east wall so the
@@ -3226,9 +3227,9 @@ const fn long_gallery_cell(u: i32, v: i32, w: i32) -> [i32; 3] {
 /// the stair's three highest treads up to the passage's head height.
 fn in_stair_shaft(x: i32, y: i32, z: i32) -> bool {
     z == LONG_GALLERY_STAIR_Z
-        && (4..=6).contains(&x)
+        && (24..=26).contains(&x)
         && (HALL_ROOF_Y..=HALL_ROOF_Y + 2).contains(&y)
-        && !(x == 6 && y > HALL_ROOF_Y)
+        && !(x == 24 && y > HALL_ROOF_Y)
 }
 
 /// What stands at a hall cell the long gallery owns, or `None` off it.
