@@ -284,6 +284,11 @@ struct ReplayState {
     /// The JSON pointer of every effect the last step fired — its gate held
     /// where the replay reached it — in firing order. Cleared at each step.
     fired: Vec<String>,
+    /// The subset of `fired` whose gate held only because a numeric term read
+    /// an undatable datum: the replay walks on through it (withholding a
+    /// producer is the unsound direction there), and a proof that asks whether
+    /// the line is FORCED must not read it as such. Cleared at each step.
+    undecided: Vec<String>,
 }
 
 /// One datum's value during a replay.
@@ -368,6 +373,9 @@ enum Beat {
     /// A quest's `on_complete` bundle — after every objective of that quest, and
     /// before every beat of every quest it triggers.
     QuestComplete(String),
+    /// An environment trigger's `effects`, fired where the path performs it
+    /// ([`Walk::probe`]).
+    Trigger(String),
 }
 
 impl Beat {
@@ -376,6 +384,7 @@ impl Beat {
         match self {
             Beat::Objective(o) => format!("`{o}`'s completion bundle"),
             Beat::QuestComplete(q) => format!("`{q}`'s `on_complete` bundle"),
+            Beat::Trigger(t) => format!("trigger `{t}`'s effects"),
         }
     }
 }
@@ -461,6 +470,9 @@ pub struct JournalStep {
     /// included — read by the replay's own gate test where it reached each one.
     /// The one answer to "did this beat play", which the chronicle reads.
     pub fired: BTreeSet<String>,
+    /// The members of `fired` whose gate held only on an undatable numeric
+    /// term — played by the replay, never forced (`plan::firing_of`).
+    pub undecided: BTreeSet<String>,
 }
 
 /// One play order under construction ([`Flow::walk`]): the replay state
@@ -473,9 +485,38 @@ pub struct Walk<'f, 'a> {
     complete_at: Option<(usize, String)>,
     /// Steps taken so far.
     taken: usize,
+    /// Which ambient producers this walk credits. `None` is the replay's own
+    /// stance — every producer whose gate holds, because a player CAN fire it.
+    /// `Some(performed)` is the guaranteed stance ([`Flow::walk_performing`]):
+    /// only the producers of the triggers the path has performed so far, and no
+    /// other ambient producer at all (a trap disarm, a timed gate's disarm, a
+    /// purchase are acts nothing forces).
+    performed: Option<BTreeSet<String>>,
 }
 
 impl Walk<'_, '_> {
+    /// Whether this walk credits ambient producer `g` now.
+    fn credits(&self, g: &GatedFlag) -> bool {
+        match &self.performed {
+            None => true,
+            Some(done) => g.trigger.as_ref().is_some_and(|t| done.contains(t)),
+        }
+    }
+
+    /// The path performs trigger `id` here: from now on its producers are
+    /// credited (to fixpoint, under their own gates). A no-op on a walk that
+    /// already credits every producer.
+    pub fn perform(&mut self, id: &str) {
+        let Some(done) = self.performed.as_mut() else {
+            return;
+        };
+        done.insert(id.to_string());
+        let mut flags = std::mem::take(&mut self.st.flags);
+        self.flow
+            .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
+        self.st.flags = flags;
+    }
+
     /// Can `step` be completed now — the replay's own per-step test, and not
     /// already done.
     pub fn legal(&self, step: &PathStep) -> bool {
@@ -488,8 +529,17 @@ impl Walk<'_, '_> {
     pub fn take(&mut self, step: &PathStep) -> JournalStep {
         let before = self.st.clone();
         self.taken += 1;
-        self.flow
-            .advance(&mut self.st, step, self.taken, &mut self.complete_at);
+        let mut st = std::mem::take(&mut self.st);
+        let mut complete_at = self.complete_at.take();
+        self.flow.advance_with(
+            &mut st,
+            step,
+            self.taken,
+            &mut complete_at,
+            &|g: &GatedFlag| self.credits(g),
+        );
+        self.st = st;
+        self.complete_at = complete_at;
         JournalStep {
             quest: step.quest.clone(),
             objective: step.objective.clone(),
@@ -504,7 +554,39 @@ impl Walk<'_, '_> {
             flags_before: before.flags,
             flags_after: self.st.flags.clone(),
             fired: self.st.fired.iter().cloned().collect(),
+            undecided: self.st.undecided.iter().cloned().collect(),
         }
+    }
+
+    /// Fire `effs` — an environment trigger's `effects`, whose root pointer is
+    /// `base` — against the state this walk holds NOW, without advancing it, and
+    /// return what fired and which of those held only on an undatable term.
+    ///
+    /// The same [`Flow::fire`] every quest bundle goes through, so a trigger's
+    /// line is judged by the one gate test the replay applies everywhere.
+    pub fn probe(
+        &self,
+        trigger: &str,
+        effs: &[QuestEffect],
+        base: &str,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
+        let mut st = self.st.clone();
+        st.fired.clear();
+        st.undecided.clear();
+        let mut complete_at = self.complete_at.clone();
+        self.flow.fire(
+            effs,
+            base,
+            &mut st,
+            &mut complete_at,
+            self.taken,
+            "",
+            &Beat::Trigger(trigger.to_string()),
+        );
+        (
+            st.fired.into_iter().collect(),
+            st.undecided.into_iter().collect(),
+        )
     }
 
     /// Has `campaign-complete` fired? Nothing is walked after it.
@@ -1289,6 +1371,25 @@ impl<'a> Flow<'a> {
             st: self.initial_state(),
             complete_at: None,
             taken: 0,
+            performed: None,
+        }
+    }
+
+    /// [`Self::walk`] under the **guaranteed** stance: an ambient producer is
+    /// credited only once the path performs its trigger ([`Walk::perform`]), and
+    /// a producer no trigger owns is never credited. The same state machine
+    /// ([`Self::advance_with`], [`Self::saturate_ambient_with`]) the replay and
+    /// [`Self::trigger_debts`] run, with the one predicate that says which
+    /// producers have fired — so "this flag is set at this step" has one model,
+    /// asked at the strength the question needs. Read by the forcing rule
+    /// (`plan::PathFiring`).
+    pub fn walk_performing(&self) -> Walk<'_, 'a> {
+        Walk {
+            flow: self,
+            st: self.initial_state_with(&|_| false),
+            complete_at: None,
+            taken: 0,
+            performed: Some(BTreeSet::new()),
         }
     }
 
@@ -1457,6 +1558,9 @@ impl<'a> Flow<'a> {
                 self.objective_quest(y).is_some_and(|qy| ancestor(q, qy))
             }
             (Beat::QuestComplete(p), Beat::QuestComplete(q)) => ancestor(p, q),
+            // A trigger is a party act the quest DAG does not order: nothing
+            // provably precedes or follows it.
+            (Beat::Trigger(_), _) | (_, Beat::Trigger(_)) => false,
         }
     }
 
@@ -1875,6 +1979,7 @@ impl<'a> Flow<'a> {
     ) {
         st.done_obj.insert(step.objective.clone());
         st.fired.clear();
+        st.undecided.clear();
         if let Some(n) = step.talk_option {
             for f in self.option_sets(&step.objective, n) {
                 st.flags.insert(f);
@@ -2240,6 +2345,25 @@ impl<'a> Flow<'a> {
         objective: &str,
         beat: &Beat,
     ) {
+        // **A value this list pinned, for the lines after it in the same list.**
+        // The lines of one list are consecutive commands of one function, which
+        // vanilla runs in one tick: no tick boundary falls between them, so no
+        // undated write — a death, a purchase, a strike — can land between a
+        // `set-state` and the gate that reads it a line later. A datum the walk
+        // cannot date is therefore known, inside this list only, from the line
+        // that pins it. Never inherited by a nested list (a `sequence` step or an
+        // `on_arrive` runs at a later tick) and never carried past the list.
+        let mut pinned: BTreeMap<String, i64> = BTreeMap::new();
+        let value = |st: &ReplayState, pinned: &BTreeMap<String, i64>, id: &str| match st
+            .state
+            .get(id)
+            .copied()
+        {
+            Some(Datum::Undatable) => pinned
+                .get(id)
+                .map_or(Datum::Undatable, |v| Datum::Known(*v)),
+            other => other.unwrap_or(Datum::Undatable),
+        };
         for (i, e) in effs.iter().enumerate() {
             let gated = !e
                 .requires_flags()
@@ -2252,12 +2376,10 @@ impl<'a> Flow<'a> {
             // the effect exactly as an unset flag does. `Some(false)` is the only
             // closing answer: `None` is undatable, and an undatable gate has not
             // been shown to close.
-            let numerically_closed = e.requires_state().iter().any(|cmp| {
-                st.state
-                    .get(cmp.state.as_str())
-                    .and_then(|d| d.satisfies(cmp))
-                    == Some(false)
-            });
+            let numerically_closed = e
+                .requires_state()
+                .iter()
+                .any(|cmp| value(st, &pinned, cmp.state.as_str()).satisfies(cmp) == Some(false));
             if gated || numerically_closed {
                 // A write this walk did NOT perform is what makes a later gate's
                 // value depend on more than the order — record it so a refusal
@@ -2268,6 +2390,16 @@ impl<'a> Flow<'a> {
                 continue;
             }
             let path = format!("{base}/{i}");
+            // Open, but only because a term could not be dated: the walk goes
+            // on through it, and the line is recorded as not decided.
+            let undatable = e.requires_state().iter().any(|cmp| {
+                value(st, &pinned, cmp.state.as_str())
+                    .satisfies(cmp)
+                    .is_none()
+            });
+            if undatable {
+                st.undecided.push(path.clone());
+            }
             st.fired.push(path.clone());
             match &e.verb {
                 Verb::SetFlag { flag, .. } => {
@@ -2288,6 +2420,21 @@ impl<'a> Flow<'a> {
                 let initial = self.initial.get(&id).copied().unwrap_or(0);
                 let before = st.state.get(&id).copied().unwrap_or(Datum::Undatable);
                 let after = before.write(w, initial);
+                if after == Datum::Undatable {
+                    let pin = match w {
+                        StateWrite::Set(v) => Some(i64::from(v)),
+                        StateWrite::Clear => Some(initial),
+                        StateWrite::Add(v) => pinned.get(&id).map(|p| p + i64::from(v)),
+                    };
+                    match pin {
+                        Some(v) => {
+                            pinned.insert(id.clone(), v);
+                        }
+                        None => {
+                            pinned.remove(&id);
+                        }
+                    }
+                }
                 st.state.insert(id.clone(), after);
                 st.wrote.entry(id).or_default().push(StateWriteRecord {
                     beat: beat.clone(),
