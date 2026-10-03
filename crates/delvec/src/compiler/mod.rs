@@ -55,6 +55,7 @@
 //! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
 //! - [`link`]: a teleport the route proof takes as a link — the one enumeration of links and gathers, and the cutscene and carry-edge checks (`DW0932`/`DW0933`/`DW0934`).
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
+//! - [`r#loop`]: an endless corridor (spec-0086) — the slab, the closed view, identical blocks and light, and the loop's seal and exercise (`DW0945`–`DW0950`).
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
@@ -142,6 +143,7 @@ pub mod lethal;
 pub mod light;
 pub mod link;
 pub mod load;
+pub mod r#loop;
 pub mod loot;
 pub mod mark;
 pub mod massing;

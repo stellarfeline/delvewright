@@ -1,0 +1,20 @@
+{
+  "campaign_id": "long-gallery",
+  "content": {
+    "classes": [
+      {
+        "blurb": "Sturdy boots, no questions.",
+        "id": "class/wanderer",
+        "kit": [
+          {
+            "count": 1,
+            "item": "minecraft:leather_boots"
+          }
+        ],
+        "name": "Wanderer"
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "classes"
+}

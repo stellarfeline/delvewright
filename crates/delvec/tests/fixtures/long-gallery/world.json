@@ -1,0 +1,21 @@
+{
+  "campaign_id": "long-gallery",
+  "content": {
+    "areas": [
+      {
+        "id": "area/gallery",
+        "name": "The Long Gallery",
+        "prefab": "prefab/long-gallery"
+      }
+    ],
+    "premise": "A gallery of identical bays that does not end until it has been walked enough.",
+    "seed": 20261002,
+    "target_minutes": 5,
+    "theme": "A lamplit gallery that repeats itself.",
+    "time": "noon",
+    "title": "The Long Gallery",
+    "weather": "clear"
+  },
+  "dsl_version": "0.35.0",
+  "stage": "world"
+}

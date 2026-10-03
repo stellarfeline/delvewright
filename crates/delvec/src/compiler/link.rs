@@ -291,7 +291,20 @@ fn root_words(root: &EffectRoot<'_>) -> String {
         EffectRoot::ShopOffer => "a shop offer".to_string(),
         EffectRoot::OnKill(_) => "an `on_kill` bundle".to_string(),
         EffectRoot::AssemblyLand(m) => format!("assembly `{}`'s strike landing", m.id.as_str()),
+        EffectRoot::LoopCross(l) => format!("loop `{}`'s `on_cross`", l.id.as_str()),
     }
+}
+
+/// Every authored teleport's source volume — each link's `from`, then each
+/// gather's, in [`collect`] order. A teleport whose anchors do not resolve is in
+/// neither list (`DW0360` owns that failure). Read by spec-0086's slab and span
+/// checks, where a body in a teleport volume would be carried twice.
+pub fn source_volumes(plan: &crate::compiler::plan::Plan<'_>) -> Vec<([i32; 3], [i32; 3])> {
+    plan.links
+        .iter()
+        .map(|l| l.from)
+        .chain(plan.gathers.iter().map(|g| g.from))
+        .collect()
 }
 
 /// **The one enumeration of authored teleports**, split into links and

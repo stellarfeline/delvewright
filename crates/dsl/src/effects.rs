@@ -66,7 +66,7 @@
 
 use crate::envelope::Campaign;
 use crate::fight::Fight;
-use crate::stages::{Assembly, EnvTrigger, Quest, QuestEffect, Shop, Shortcut, Trap};
+use crate::stages::{Assembly, EnvTrigger, Loop, Quest, QuestEffect, Shop, Shortcut, Trap};
 
 /// The local part of a type-prefixed id (`npc/keeper` → `keeper`), the segment
 /// every l10n key is built from. Duplicated from `l10n::local` deliberately: this
@@ -133,12 +133,18 @@ pub enum EffectRootKind {
     /// step declares one, so `unbound_roots` tells the truth about a campaign
     /// with none.
     AssemblyLand,
+    /// A `loops[].on_cross` bundle (spec-0086) — the dungeon's answer to a body
+    /// the loop just moved, run from the server source after the move and the
+    /// count. A root rather than sugar because it hangs off an object with
+    /// runtime machinery of its own (the loop's tick poll and its move
+    /// function). Visited only where declared.
+    LoopCross,
 }
 
 impl EffectRootKind {
     /// Every root, in enumeration order. Not the *visit* order — see
     /// [`for_each_effect_root`], which interleaves R1/R2 per quest.
-    pub const ALL: [EffectRootKind; 10] = [
+    pub const ALL: [EffectRootKind; 11] = [
         EffectRootKind::ObjectiveComplete,
         EffectRootKind::QuestComplete,
         EffectRootKind::Trigger,
@@ -149,6 +155,7 @@ impl EffectRootKind {
         EffectRootKind::ShopOffer,
         EffectRootKind::OnKill,
         EffectRootKind::AssemblyLand,
+        EffectRootKind::LoopCross,
     ];
 
     /// How many roots there are. The binding ledger reports coverage against this.
@@ -165,7 +172,8 @@ impl EffectRootKind {
             | EffectRootKind::OnDeath
             | EffectRootKind::ShopOffer
             | EffectRootKind::OnKill
-            | EffectRootKind::AssemblyLand => "quests",
+            | EffectRootKind::AssemblyLand
+            | EffectRootKind::LoopCross => "quests",
             EffectRootKind::DialogueRespawn => "dialogue",
         }
     }
@@ -215,7 +223,10 @@ impl EffectRootKind {
             | EffectRootKind::TrapPayload
             | EffectRootKind::ShortcutUnlock
             // A blow lands from the strike machine on the tick, with no executor.
-            | EffectRootKind::AssemblyLand => false,
+            | EffectRootKind::AssemblyLand
+            // A loop's answer is the dungeon acting, as a trap's payload is: it
+            // runs from the server source, so `@s` has no body.
+            | EffectRootKind::LoopCross => false,
         }
     }
 
@@ -233,6 +244,7 @@ impl EffectRootKind {
             EffectRootKind::ShopOffer => "shop offer effects",
             EffectRootKind::OnKill => "fight on_kill",
             EffectRootKind::AssemblyLand => "assembly strike on_land",
+            EffectRootKind::LoopCross => "loop on_cross",
         }
     }
 }
@@ -296,6 +308,11 @@ pub enum EffectRootOwner<'a> {
     /// of its own and is **optional**: nobody is forced to stand where a blow
     /// lands. Carries the assembly; the step index is in the site's `path`.
     AssemblyLand(&'a Assembly),
+    /// A `loops[].on_cross` (spec-0086) — fired by a body crossing a holding
+    /// slab, so it has no objective step of its own; on the forced route it is
+    /// performed by the path's exercise step, elsewhere it is **optional**.
+    /// Carries the loop.
+    LoopCross(&'a Loop),
 }
 
 impl<'a> EffectRootOwner<'a> {
@@ -312,6 +329,7 @@ impl<'a> EffectRootOwner<'a> {
             EffectRootOwner::ShopOffer(_) => EffectRootKind::ShopOffer,
             EffectRootOwner::OnKill(_) => EffectRootKind::OnKill,
             EffectRootOwner::AssemblyLand(_) => EffectRootKind::AssemblyLand,
+            EffectRootOwner::LoopCross(_) => EffectRootKind::LoopCross,
         }
     }
 
@@ -345,7 +363,8 @@ impl<'a> EffectRootOwner<'a> {
             | EffectRootOwner::OnDeath
             | EffectRootOwner::ShopOffer(_)
             | EffectRootOwner::OnKill(_)
-            | EffectRootOwner::AssemblyLand(_) => None,
+            | EffectRootOwner::AssemblyLand(_)
+            | EffectRootOwner::LoopCross(_) => None,
         }
     }
 }
@@ -499,6 +518,7 @@ macro_rules! effect_root_walk {
         wave_owner: |$w:ident| $ownw:expr,
         actor_owner: |$a:ident| $owna:expr,
         assembly_owner: |$m:ident| $ownm:expr,
+        loop_owner: |$l:ident| $ownl:expr,
     ) => {{
         #[allow(unused_mut)]
         let mut visit = $visit;
@@ -684,6 +704,22 @@ macro_rules! effect_root_walk {
                 }
             }
         }
+        // R11 `loops[].on_cross` (spec-0086) — appended after R10, visited only
+        // where a loop declares a bundle, so a campaign with none keys and emits
+        // byte-identically and `RootBinding` can say it has none.
+        note(EffectRootKind::LoopCross);
+        for (li, $l) in $c.quests.content.loops.$iter().enumerate() {
+            let ll = local($l.id.as_str()).to_string();
+            let owner = $ownl;
+            if !$l.on_cross.is_empty() {
+                visit(
+                    (EffectRootKind::LoopCross, owner, None),
+                    format!("/content/loops/{li}/on_cross"),
+                    format!("fx.loop.{ll}"),
+                    $l.on_cross.$slice(),
+                );
+            }
+        }
     }};
 }
 
@@ -700,6 +736,7 @@ enum RawOwner<'a> {
     Shop(&'a Shop),
     Fight(Fight<'a>),
     Assembly(&'a Assembly),
+    Loop(&'a Loop),
 }
 
 impl<'a> RawOwner<'a> {
@@ -729,6 +766,7 @@ impl<'a> RawOwner<'a> {
             (RawOwner::Assembly(m), EffectRootKind::AssemblyLand) => {
                 EffectRootOwner::AssemblyLand(m)
             }
+            (RawOwner::Loop(l), EffectRootKind::LoopCross) => EffectRootOwner::LoopCross(l),
             (owner, kind) => unreachable!(
                 "effect root {kind:?} was handed an owner of the wrong shape ({})",
                 match owner {
@@ -741,6 +779,7 @@ impl<'a> RawOwner<'a> {
                     RawOwner::Shop(_) => "shop",
                     RawOwner::Fight(_) => "fight",
                     RawOwner::Assembly(_) => "assembly",
+                    RawOwner::Loop(_) => "loop",
                 }
             ),
         }
@@ -794,6 +833,7 @@ pub fn for_each_effect_root<'a>(
         (EffectRootKind::ShopOffer, 0usize),
         (EffectRootKind::OnKill, 0usize),
         (EffectRootKind::AssemblyLand, 0usize),
+        (EffectRootKind::LoopCross, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -849,6 +889,7 @@ pub fn for_each_effect_root<'a>(
         wave_owner: |w| RawOwner::Fight(Fight::Wave(w)),
         actor_owner: |a| RawOwner::Fight(Fight::Actor(a)),
         assembly_owner: |m| RawOwner::Assembly(m),
+        loop_owner: |l| RawOwner::Loop(l),
     );
 
     let missed: Vec<&str> = EffectRootKind::ALL
@@ -914,6 +955,7 @@ pub fn for_each_effect_root_mut<'a>(c: &'a mut Campaign, f: &mut RootVisitorMut<
         wave_owner: |_w| (),
         actor_owner: |_a| (),
         assembly_owner: |_m| (),
+        loop_owner: |_l| (),
     );
 }
 
@@ -938,6 +980,7 @@ mod tests {
                 (EffectRootKind::ShopOffer, 0),
                 (EffectRootKind::OnKill, 0),
                 (EffectRootKind::AssemblyLand, 0),
+                (EffectRootKind::LoopCross, 0),
             ],
             effects: 0,
         };

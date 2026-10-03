@@ -183,6 +183,12 @@ prefixed_id!(
     /// completability finding blames.
     LethalVolumeId, "lethal");
 prefixed_id!(
+    /// Loop id: `loop/<kebab>` (stage-5 `loops` section, spec-0086). Unique within
+    /// the stage-5 loop namespace; it names the loop's emitted functions, its
+    /// PackTest pair, its `on_cross` l10n keys and the loop a seamlessness or route
+    /// finding blames.
+    LoopId, "loop");
+prefixed_id!(
     /// Shop id: `shop/<kebab>` (stage-5 `shops` section, DSL v0.10, spec-0032).
     /// Unique within the stage-5 shop namespace; it names the shop's interaction
     /// affordance, its dialog, its `/trigger` routing value and its l10n keys.

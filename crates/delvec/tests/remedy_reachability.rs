@@ -2870,3 +2870,181 @@ fn dw0309_adding_the_named_file_admits_the_texture_row() {
     let (code, said) = validate_tex(&after);
     assert_eq!(code, 0, "{said}");
 }
+
+// ---------------------------------------------------------------------------
+// spec-0086: the loop's refusals, each answered by the move it names
+// ---------------------------------------------------------------------------
+
+/// The long-gallery fixture (`tests/fixtures/long-gallery`) with `quests.json`
+/// edited by `edit`.
+fn gallery(tag: &str, edit: impl FnOnce(&mut serde_json::Value)) -> PathBuf {
+    let camp = tmp(&format!("loop-{tag}"));
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("long-gallery"), &camp);
+    common::patch_file(&camp.join("quests.json"), edit);
+    camp
+}
+
+fn gallery_prefabs(tag: &str, cuts: &common::corridor::Cuts) -> PathBuf {
+    common::corridor::gallery_prefabs(&format!("remedy-{tag}"), cuts)
+}
+
+fn loop0(q: &mut serde_json::Value) -> &mut serde_json::Value {
+    &mut q["content"]["loops"][0]
+}
+
+/// `DW0945`: *move the landing* — the zero offset's remedy — and *reshape the
+/// slab* — a slab drawn over the wall's remedy. Each move reaches a green.
+#[test]
+fn dw0945_moving_the_landing_and_reshaping_the_slab_each_build() {
+    let prefabs = gallery_prefabs("dw0945", &common::corridor::Cuts::default());
+    let zero = gallery("dw0945-zero", |q| {
+        loop0(q)["to"] = serde_json::json!({ "anchor": "anchor/slab" });
+    });
+    let (code, said) = build("dw0945-zero", &zero, &prefabs);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0945") && said.contains("move the landing"),
+        "{said}"
+    );
+    let moved = gallery("dw0945-moved", |q| {
+        loop0(q)["to"] = serde_json::json!({ "anchor": "anchor/landing" });
+    });
+    let (code, said) = build("dw0945-moved", &moved, &prefabs);
+    assert_eq!(code, 0, "the landing moved one bay back builds:\n{said}");
+
+    let wide = gallery("dw0945-wide", |q| {
+        loop0(q)["region"]["extent"] = serde_json::json!([2, 1, 0]);
+    });
+    let (code, said) = build("dw0945-wide", &wide, &prefabs);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0945") && said.contains("Reshape the slab"),
+        "{said}"
+    );
+    let reshaped = gallery("dw0945-reshaped", |q| {
+        loop0(q)["region"]["extent"] = serde_json::json!([1, 1, 0]);
+    });
+    let (code, said) = build("dw0945-reshaped", &reshaped, &prefabs);
+    assert_eq!(
+        code, 0,
+        "the slab drawn over the passage alone builds:\n{said}"
+    );
+}
+
+/// `DW0946`: *make the sections the same* — a lantern missing from the landing
+/// bay is answered by hanging it back.
+#[test]
+fn dw0946_making_the_sections_the_same_builds() {
+    let lamp = [
+        2,
+        common::corridor::SIZE[1] - 2,
+        common::corridor::bay(2) + 1,
+    ];
+    let camp = gallery("dw0946", |_| {});
+    let missing = gallery_prefabs(
+        "dw0946-missing",
+        &common::corridor::Cuts {
+            air: vec![lamp],
+            ..Default::default()
+        },
+    );
+    let (code, said) = build("dw0946-missing", &camp, &missing);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0946") && said.contains("Make the two sections the same"),
+        "{said}"
+    );
+    let same = gallery_prefabs("dw0946-same", &common::corridor::Cuts::default());
+    let (code, said) = build("dw0946-same", &camp, &same);
+    assert_eq!(
+        code, 0,
+        "with the lantern hung back the sections tile:\n{said}"
+    );
+}
+
+/// `DW0947`: *close the view inside the span* — the window the eye escaped by,
+/// walled again.
+#[test]
+fn dw0947_closing_the_view_builds() {
+    let z = common::corridor::bay(2) + 1;
+    let camp = gallery("dw0947", |_| {});
+    let open = gallery_prefabs(
+        "dw0947-open",
+        &common::corridor::Cuts {
+            air: vec![[0, common::corridor::FLOOR_Y + 1, z]],
+            ..Default::default()
+        },
+    );
+    let (code, said) = build("dw0947-open", &camp, &open);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0947") && said.contains("Close the view inside the span"),
+        "{said}"
+    );
+    let closed = gallery_prefabs("dw0947-closed", &common::corridor::Cuts::default());
+    let (code, said) = build("dw0947-closed", &camp, &closed);
+    assert_eq!(code, 0, "the window walled, the view closes:\n{said}");
+}
+
+/// `DW0948`: *move the body out of the span* — a figure stood in the porch
+/// instead of the hall.
+#[test]
+fn dw0948_moving_the_body_out_of_the_span_builds() {
+    let prefabs = gallery_prefabs("dw0948", &common::corridor::Cuts::default());
+    let figure = |tag: &str, at: &str| -> PathBuf {
+        let camp = gallery(tag, |q| {
+            q["content"]["quests"][0]["cast"] = serde_json::json!({
+                "npc/curator": { "at": at, "dialogue": "dlg/hello", "doing": "waiting" }
+            });
+        });
+        common::patch_file(&camp.join("npcs.json"), |n| {
+            n["content"]["npcs"] = serde_json::json!([{
+                "anchor": at, "area": "area/gallery", "base_entity": "minecraft:villager",
+                "id": "npc/curator", "name": "The Curator", "role": "flavor",
+                "persona": {
+                    "archetype": "patient keeper", "backstory": "She keeps the gallery.",
+                    "demeanor": "Calm.", "motivation": "Order.", "secret": "None.",
+                    "speech_style": "Short."
+                }
+            }]);
+        });
+        common::patch_file(&camp.join("dialogue.json"), |t| {
+            t["content"]["dialogues"] = serde_json::json!([{
+                "npc": "npc/curator", "root": "dlg/hello",
+                "nodes": [ { "id": "dlg/hello", "text": "Mind the lamps.", "options": [] } ]
+            }]);
+        });
+        camp
+    };
+    let inside = figure("dw0948-inside", "anchor/in-the-hall");
+    let (code, said) = build("dw0948-inside", &inside, &prefabs);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0948") && said.contains("Move the body out of the span"),
+        "{said}"
+    );
+    let outside = figure("dw0948-outside", "anchor/porch");
+    let (code, said) = build("dw0948-outside", &outside, &prefabs);
+    assert_eq!(code, 0, "the figure in the porch builds:\n{said}");
+}
+
+/// `DW0949`: *a party datum, a flag, or a release the party reaches* — the
+/// count declared `party` instead of `player`.
+#[test]
+fn dw0949_a_party_datum_validates() {
+    let prefabs = gallery_prefabs("dw0949", &common::corridor::Cuts::default());
+    let player = gallery("dw0949-player", |q| {
+        q["content"]["state"][0]["scope"] = serde_json::json!("player");
+    });
+    let (code, said) = build("dw0949-player", &player, &prefabs);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0949") && said.contains("declare the datum `party`-scoped"),
+        "{said}"
+    );
+    let party = gallery("dw0949-party", |q| {
+        q["content"]["state"][0]["scope"] = serde_json::json!("party");
+    });
+    let (code, said) = build("dw0949-party", &party, &prefabs);
+    assert_eq!(code, 0, "the party datum builds:\n{said}");
+}

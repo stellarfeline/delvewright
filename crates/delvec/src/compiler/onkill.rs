@@ -147,6 +147,7 @@ fn root_repeats(owner: &EffectRootOwner<'_>) -> Option<&'static str> {
         EffectRootOwner::AssemblyLand(_) => {
             Some("an assembly's `on_land`, run on every blow that lands")
         }
+        EffectRootOwner::LoopCross(_) => Some("a loop's `on_cross`, run on every move it makes"),
     }
 }
 

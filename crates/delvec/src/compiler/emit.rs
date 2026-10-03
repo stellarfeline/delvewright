@@ -874,6 +874,10 @@ pub fn build_with_warnings(
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
     let mut lethal_gate: Option<crate::compiler::lethal::LethalGate> = None;
+    // The loop proofs' binding ledger (`compiler::loop`, spec-0086 §8). `None`
+    // for a campaign that declares no loop — no line, no artifact; a ledger that
+    // exists and reports zero is a finding.
+    let mut loop_gate: Option<crate::compiler::r#loop::LoopBinding> = None;
     // The firework proofs' binding ledger (`compiler::firework`, spec-0068 §5),
     // filled inside the world block below. `None` for a campaign that declares no
     // firework — no ledger, no artifact, no byte moved for anybody who has not
@@ -1362,6 +1366,30 @@ pub fn build_with_warnings(
                     crate::compiler::blind::check(plan, &world, campaign_spawn(plan));
                 eprintln!("{}", blind.line());
                 blind_verdict?;
+                // spec-0086 §4: a loop's slab, its closed view, the bodies in its
+                // span and its tiling, over the world as shipped (relight
+                // fixtures and world-load seals included). Before the route
+                // proofs, because a loop that cannot be polled or seen through is
+                // the cause, and a route closed by its slab is the consequence.
+                if !plan.loops.is_empty() {
+                    let (binding, refusal) =
+                        crate::compiler::r#loop::check(&crate::compiler::r#loop::Inputs {
+                            plan,
+                            world: &world,
+                            blocks: &assembled.blocks,
+                            placements: &relight.placements,
+                            seals: &assembled.gate_seals,
+                            wave_seats: &waves,
+                        });
+                    eprintln!("{}", binding.line());
+                    loop_gate = Some(binding);
+                    if let Some(f) = refusal {
+                        return Err(BuildFailure::Diagnostic {
+                            code: f.code,
+                            message: f.message,
+                        });
+                    }
+                }
                 // DW0311, with its binding stated whichever way it goes
                 // (spec-0083 §5): every leg partitioned into walked, carried by
                 // a crossing and carried by a link.
@@ -2411,6 +2439,9 @@ pub fn build_with_warnings(
     }
     if let Some(gate) = &lethal_gate {
         put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
+    }
+    if let Some(gate) = &loop_gate {
+        put_json(&mut out, "validation/loop-gate.json", &gate.to_json());
     }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
@@ -4567,6 +4598,9 @@ fn emit_functions(
     // spec-0031: lethal volumes. One driver line per declared volume; empty for a
     // campaign that declares none → byte-identical.
     tick.extend(lethal_tick(plan));
+    // spec-0086: loops. One poll line per declared loop; empty for a campaign
+    // that declares none → byte-identical.
+    tick.extend(loop_tick(plan));
     // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
     for beat in &plan.stealth_beats {
         tick.push(format!(
@@ -4620,6 +4654,8 @@ fn emit_functions(
     fns.extend(emit_stealth_functions(plan));
     // --- spec-0031 lethal-volume functions ---
     fns.extend(emit_lethal_functions(plan));
+    // --- spec-0086 loop functions ---
+    fns.extend(emit_loop_functions(plan));
     // --- spec-0032 trade and recovery-stake functions ---
     fns.extend(emit_shop_functions(plan));
     fns.extend(emit_stake_functions(plan, stake_table));
@@ -6307,6 +6343,9 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
         // A blow lands from the per-assembly strike machine on the tick, with
         // no executor (spec-0082 §4.3).
         K::AssemblyLand => Audience::Scheduled,
+        // A loop's answer (spec-0086 §3.5) is the dungeon acting, run from the
+        // server source after the move: no executor, like a trap's payload.
+        K::LoopCross => Audience::Scheduled,
     }
 }
 
@@ -10127,6 +10166,96 @@ fn emit_lethal_functions(plan: &Plan) -> Vec<(String, String)> {
     fns
 }
 
+/// The declaration behind a resolved loop — its gate is read off the one
+/// declaration rather than off a copy (spec-0086).
+fn loop_decl<'a>(
+    plan: &Plan<'a>,
+    l: &crate::compiler::r#loop::LoopPlan,
+) -> Option<&'a delvewright_dsl::Loop> {
+    plan.campaign
+        .quests
+        .content
+        .loops
+        .iter()
+        .find(|d| d.id.as_str() == l.id)
+}
+
+/// The per-tick driver lines for the campaign's loops (spec-0086 §7), in
+/// declaration order: one call into each loop's poll. Empty for a campaign that
+/// declares none, so the emitted `tick` is byte-identical for everybody else.
+fn loop_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    plan.loops
+        .iter()
+        .map(|l| format!("function {ns}:loop_{}_poll", l.safe))
+        .collect()
+}
+
+/// The one poll line of a loop (spec-0086 §7): the gate as the one gate
+/// formatter writes it, then every body in the slab — players and content
+/// bodies alike, each on its own — except an engine fixture and a player
+/// watching a cutscene, moved by its own function at its own position.
+fn loop_poll_line(plan: &Plan, l: &crate::compiler::r#loop::LoopPlan) -> String {
+    let ns = &plan.namespace;
+    let gate = loop_decl(plan, l)
+        .map(|d| gate_cond(plan, d.gate()))
+        .unwrap_or_default();
+    format!(
+        "execute{gate} as @e[{},tag=!{CUTSCENE_TAG}] at @s run function {ns}:loop_{}",
+        entity_box_selector(l.slab.0, l.slab.1),
+        l.safe
+    )
+}
+
+/// Generate a loop's functions (spec-0086 §7), in the shape of `lethal_<id>`.
+///
+/// * `loop_<id>_poll` — the gated selection, called from `tick`. A function of
+///   its own, as `lethal_<id>` is, so the PackTest pair drives the very line the
+///   tick runs, synchronously, on its own dummy.
+/// * `loop_<id>` — run as and at each selected body: the count first (so an
+///   `on_cross` guard reads the crossing it belongs to), then the move as
+///   vanilla's all-relative `tp @s ~dx ~dy ~dz` — which is what makes every
+///   component of the position packet relative (spec-0086 §2) — then the
+///   dungeon's answer.
+/// * `loop_<id>_cross` — the `on_cross` bundle, lowered under the root's own
+///   audience ([`Audience::Scheduled`]): no command in it addresses the body,
+///   exactly as a trap's payload addresses nobody.
+fn emit_loop_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for l in &plan.loops {
+        fns.push((
+            format!("loop_{}_poll", l.safe),
+            lines(&[loop_poll_line(plan, l)]),
+        ));
+        let mut body: Vec<String> = Vec::new();
+        if let Some(c) = &l.counts {
+            body.push(format!(
+                "scoreboard players add {} {} 1",
+                plan::PARTY,
+                plan::state_score(c)
+            ));
+        }
+        let [dx, dy, dz] = l.offset;
+        body.push(format!("tp @s ~{dx} ~{dy} ~{dz}"));
+        if !l.on_cross.is_empty() {
+            body.push(format!("function {ns}:loop_{}_cross", l.safe));
+        }
+        fns.push((format!("loop_{}", l.safe), lines(&body)));
+        if !l.on_cross.is_empty() {
+            fns.push((
+                format!("loop_{}_cross", l.safe),
+                lines(&emit_effect_bundle(
+                    plan,
+                    &l.on_cross,
+                    root_audience(delvewright_dsl::EffectRootKind::LoopCross),
+                )),
+            ));
+        }
+    }
+    fns
+}
+
 /// `DW0852`: **a stealth judge asks a player for something other than where they
 /// are.**
 ///
@@ -11592,6 +11721,7 @@ fn site_audience(root: &plan::EffectRoot<'_>) -> Audience {
         R::ShopOffer => root_audience(K::ShopOffer),
         R::OnKill(_) => root_audience(K::OnKill),
         R::AssemblyLand(_) => root_audience(K::AssemblyLand),
+        R::LoopCross(_) => root_audience(K::LoopCross),
     }
 }
 
@@ -21057,6 +21187,7 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 
     // spec-0031 lethal volumes: the runtime half, one template per volume.
     emit_lethal_packtests(plan, out);
+    emit_loop_packtests(plan, out);
     emit_economy_packtests(plan, out);
 
     // spec-0031 teleport: the runtime half of TOTALITY, one template per teleport.
@@ -21352,6 +21483,195 @@ fn emit_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// through the same `/damage` on a per-player re-bind and is asserted by the
 /// compiler unit tests, which read the emitted command text directly (PackTest's
 /// framework dummies are not a substitute for a real player here).
+/// spec-0086 PackTests: one pair per loop, in the shape of `lethal_<id>` /
+/// `lethal_<id>_claim`, each red for its own reason.
+///
+/// * `loop_<id>` opens the loop's gate, puts a NoAI dummy at the slab's anchor
+///   cell, drives the loop's own poll once — the line the tick runs — and asserts
+///   the dummy moved by exactly the offset, read at ×1000 off its `Pos`, and that
+///   the count rose by one. Stripping the `tp` reds it.
+/// * `loop_<id>_released` shuts the gate on one of its own terms, drives the same
+///   poll, and asserts the dummy did not move and the count did not rise.
+///   Stripping the gate guard from the poll reds it.
+///
+/// Both are synchronous — no `await` — so each runs as one uninterrupted
+/// function on the shared batch server, and the two never see each other's gate.
+fn emit_loop_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for l in &plan.loops {
+        let Some(decl) = loop_decl(plan, l) else {
+            continue;
+        };
+        let tag = format!("dw_looptest_{}", l.safe);
+        let sel = format!("@e[tag={tag},limit=1]");
+        let at = l.cross();
+        let summon = format!(
+            "summon minecraft:zombie {} {} {} \
+             {{Tags:[\"{tag}\"],NoAI:1b,Silent:1b,PersistenceRequired:1b,Invulnerable:1b}}",
+            f64::from(at[0]) + 0.5,
+            at[1],
+            f64::from(at[2]) + 0.5
+        );
+        let count = l.counts.as_ref().map(|c| plan::state_score(c));
+        let read = |t: &mut Vec<String>, phase: &str| {
+            for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+                t.push(format!(
+                    "execute store result score #lp_{axis}{phase}_{} dw.sys run data get \
+                     entity {sel} Pos[{i}] 1000",
+                    l.safe
+                ));
+            }
+        };
+        let delta = |t: &mut Vec<String>, want: [i32; 3]| {
+            for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+                let k = &l.safe;
+                t.push(format!(
+                    "scoreboard players operation #lp_{axis}1_{k} dw.sys -= #lp_{axis}0_{k} dw.sys"
+                ));
+                t.push(format!(
+                    "assert score #lp_{axis}1_{k} dw.sys matches {}",
+                    want[i] * 1000
+                ));
+            }
+        };
+        let open: Vec<String> = decl
+            .requires_flags
+            .iter()
+            .map(|f| {
+                format!(
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
+                    plan::flag_score(f.as_str())
+                )
+            })
+            .chain(decl.forbids_flags.iter().map(|f| {
+                format!(
+                    "scoreboard players reset {} {}",
+                    plan::PARTY,
+                    plan::flag_score(f.as_str())
+                )
+            }))
+            .chain(state_drive_lines(plan, &decl.requires_state, true))
+            .collect();
+
+        // --- the loop holds and moves the body by exactly its offset ---
+        let mut t = packtest_header(&format!(
+            "{title}: loop `{}` moves a body in its slab by exactly its offset (spec-0086)",
+            l.id
+        ));
+        t.push(format!("function {ns}:setup"));
+        t.push(format!("kill @e[tag={tag}]"));
+        t.extend(open.iter().cloned());
+        if let Some(c) = &count {
+            t.push(format!(
+                "execute store result score #lp_n0_{} dw.sys run scoreboard players get {} {c}",
+                l.safe,
+                plan::PARTY
+            ));
+        }
+        t.push(summon.clone());
+        // Bound, not assumed: the dummy really is in the poll's own box.
+        t.push(format!(
+            "execute store result score #lp_in_{} dw.sys if entity @e[tag={tag},{}]",
+            l.safe,
+            box_selector_args(l.slab.0, l.slab.1)
+        ));
+        t.push(format!("assert score #lp_in_{} dw.sys matches 1", l.safe));
+        read(&mut t, "0");
+        t.push(format!("function {ns}:loop_{}_poll", l.safe));
+        read(&mut t, "1");
+        delta(&mut t, l.offset);
+        if let Some(c) = &count {
+            t.push(format!(
+                "execute store result score #lp_n1_{} dw.sys run scoreboard players get {} {c}",
+                l.safe,
+                plan::PARTY
+            ));
+            t.push(format!(
+                "scoreboard players operation #lp_n1_{k} dw.sys -= #lp_n0_{k} dw.sys",
+                k = l.safe
+            ));
+            t.push(format!("assert score #lp_n1_{} dw.sys matches 1", l.safe));
+        }
+        t.push(format!("kill @e[tag={tag}]"));
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/loop_{}.mcfunction",
+                l.safe
+            ),
+            lines(&t).into_bytes(),
+        );
+
+        // --- the loop stood down moves nothing ---
+        let shut: Vec<String> = if let Some(f) = decl.forbids_flags.first() {
+            vec![format!(
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
+                plan::flag_score(f.as_str())
+            )]
+        } else if let Some(f) = decl.requires_flags.first() {
+            vec![format!(
+                "scoreboard players reset {} {}",
+                plan::PARTY,
+                plan::flag_score(f.as_str())
+            )]
+        } else {
+            state_drive_lines(plan, decl.requires_state.get(..1).unwrap_or(&[]), false)
+        };
+        let mut r = packtest_header(&format!(
+            "{title}: loop `{}` stood down moves nothing (spec-0086)",
+            l.id
+        ));
+        r.push(format!("function {ns}:setup"));
+        r.push(format!("kill @e[tag={tag}]"));
+        r.extend(open);
+        r.extend(shut);
+        let before = match &count {
+            Some(c) => {
+                r.push(format!(
+                    "execute store result score #lp_n0_{} dw.sys run scoreboard players get {} {c}",
+                    l.safe,
+                    plan::PARTY
+                ));
+                true
+            }
+            None => false,
+        };
+        r.push(summon);
+        r.push(format!(
+            "execute store result score #lp_in_{} dw.sys if entity @e[tag={tag},{}]",
+            l.safe,
+            box_selector_args(l.slab.0, l.slab.1)
+        ));
+        r.push(format!("assert score #lp_in_{} dw.sys matches 1", l.safe));
+        read(&mut r, "0");
+        r.push(format!("function {ns}:loop_{}_poll", l.safe));
+        read(&mut r, "1");
+        delta(&mut r, [0, 0, 0]);
+        if before && let Some(c) = &count {
+            r.push(format!(
+                "execute store result score #lp_n1_{} dw.sys run scoreboard players get {} {c}",
+                l.safe,
+                plan::PARTY
+            ));
+            r.push(format!(
+                "scoreboard players operation #lp_n1_{k} dw.sys -= #lp_n0_{k} dw.sys",
+                k = l.safe
+            ));
+            r.push(format!("assert score #lp_n1_{} dw.sys matches 0", l.safe));
+        }
+        r.push(format!("kill @e[tag={tag}]"));
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/loop_{}_released.mcfunction",
+                l.safe
+            ),
+            lines(&r).into_bytes(),
+        );
+    }
+}
+
 /// PackTest templates for the economy (spec-0032) — **exactly the two halves this
 /// tier can genuinely witness, and no template for the half it cannot.**
 ///
@@ -24822,6 +25142,13 @@ fn critical_path_json(
                     }
                     v
                 }
+                // spec-0086 §6: a loop exercised on the path. `transport` is the
+                // landing, written by the shared marker below from the same
+                // per-step transport the route proof reads.
+                Step::Loop { loop_id, pos, cross, offset, times, transport } => json!({
+                    "action": "loop", "loop": loop_id, "pos": pos, "cross": cross,
+                    "offset": offset, "times": times, "transport": transport
+                }),
                 Step::AssertComplete { objective, value } => {
                     let mut v = json!({
                         "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }

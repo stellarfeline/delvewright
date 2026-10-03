@@ -1813,9 +1813,16 @@ impl World {
         // forced one, being a wall that additionally may not be stood on, and a
         // flood beats them all, because a flooded cell is everything a walled cell
         // is (impassable) and one thing more (not floor).
+        // A holding slab walls like an unforced fill and is never floor
+        // (spec-0086 §5.1), so it joins that set here and nowhere else.
+        let walled: BTreeSet<[i32; 3]> = if st.held.is_empty() {
+            st.unforced.clone()
+        } else {
+            st.unforced.union(&st.held).copied().collect()
+        };
         self.with_cleared(&st.cleared)
             .with_sealed(&st.solid)
-            .with_unforced(&st.unforced)
+            .with_unforced(&walled)
             .with_flooded(&st.flooded, &st.flood_regions)
     }
 
@@ -4495,6 +4502,9 @@ pub fn needs_world(plan: &Plan) -> bool {
     // the assembled occupancy model too, as does the trap proof (DW0342, spec-0011).
         || !plan.checkpoints.is_empty()
         || !plan.stealth_beats.is_empty()
+    // A loop's slab, span and tiling are judged over the assembled world
+    // (spec-0086 §4).
+        || !plan.loops.is_empty()
         || !plan.traps.is_empty()
 }
 
@@ -4523,6 +4533,10 @@ struct VisitedPos {
     /// then also set, and the carry is counted as a link's rather than a
     /// crossing's.
     by_link: bool,
+    /// The party arrives here by a **loop**'s exercise move (spec-0086 §5.2) —
+    /// `transport_before` is then also set, and the carry is counted as a
+    /// loop's.
+    by_loop: bool,
 }
 
 /// **What the furniture exclusion bound on one build** (spec-0065 §4.3).
@@ -4658,30 +4672,42 @@ fn positions_of(
             talk_to: false,
             src_step: 0,
             by_link: false,
+            by_loop: false,
         });
     }
     let mut transport_pending = false;
     for (i, step) in steps.iter().enumerate() {
-        // A link (spec-0083 §3.2): the leg into it ends where the party stands
-        // to perform it, and the party goes on from where it is put down. The
-        // carry between the two is marked like a crossing, so every reader of
-        // this enumeration skips it as a ride.
-        if let Some(stand) = step.stand() {
+        // A carried step: a link's trigger step (spec-0083 §3.2) or a loop's
+        // exercise step (spec-0086 §5.2). The leg into it ends where the party
+        // stands to be carried, and the party goes on from where it is put down.
+        // The carry between the two is marked like a crossing, so every reader of
+        // this enumeration skips it as a ride; one branch for both carries, so a
+        // link and a loop look the same to every proof that reads positions
+        // (spec-0086 §5.4).
+        let carry = match step {
+            Step::Loop { pos, transport, .. } => Some((*pos, Some(*transport), false, true)),
+            _ => step
+                .stand()
+                .map(|stand| (stand, transports.get(i).copied().flatten(), true, false)),
+        };
+        if let Some((stand, to, by_link, by_loop)) = carry {
             out.push(VisitedPos {
                 pos: stand,
                 transport_before: transport_pending,
                 talk_to: false,
                 src_step: i,
                 by_link: false,
+                by_loop: false,
             });
             transport_pending = false;
-            if let Some(to) = transports.get(i).copied().flatten() {
+            if let Some(to) = to {
                 out.push(VisitedPos {
                     pos: to,
                     transport_before: true,
                     talk_to: false,
                     src_step: i,
-                    by_link: true,
+                    by_link,
+                    by_loop,
                 });
             }
             continue;
@@ -4695,6 +4721,7 @@ fn positions_of(
                 talk_to: matches!(step, Step::TalkTo { .. }),
                 src_step: i,
                 by_link: false,
+                by_loop: false,
             });
             transport_pending = false;
         }
@@ -4883,6 +4910,12 @@ struct RegionState {
     /// carried for the same reason `flood_regions` is, so a route failure can NAME
     /// the beat instead of reporting geometry that reads perfectly open.
     unforced_regions: Vec<UnforcedBox>,
+    /// Cells a **holding loop's slab** covers on this leg (spec-0086 §5.1) —
+    /// impassable and never floor, the unforced shape, kept apart so a route
+    /// failure names the loop and the gate term that still holds it.
+    held: BTreeSet<[i32; 3]>,
+    /// The slabs behind `held`, each with its loop and gate in words.
+    held_regions: Vec<UnforcedBox>,
 }
 
 /// One box an unforced fill writes, with the beat that lays it in words — the blame
@@ -4903,6 +4936,17 @@ impl RegionState {
             && self.cleared.is_empty()
             && self.flooded.is_empty()
             && self.unforced.is_empty()
+            && self.held.is_empty()
+    }
+
+    /// This state with every holding loop released — the counterfactual a
+    /// route failure is tested against to say a loop, and not the geometry,
+    /// closed the leg (spec-0086 §5.1).
+    fn released(&self) -> RegionState {
+        let mut st = self.clone();
+        st.held.clear();
+        st.held_regions.clear();
+        st
     }
 
     /// This state as it would be **if every unforced fill were credited** — the
@@ -4917,6 +4961,24 @@ impl RegionState {
         st.unforced.clear();
         st
     }
+}
+
+/// The holding slabs a route's `cells` pass through (spec-0086 §5.1), each named
+/// with its loop and the gate term that holds it.
+fn held_blame_over(regions: &[UnforcedBox], cells: &[[i32; 3]]) -> Vec<String> {
+    let mut out: Vec<String> = regions
+        .iter()
+        .filter(|((lo, hi), _)| {
+            cells
+                .iter()
+                .any(|c| (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i])))
+        })
+        .map(|(_, why)| why.clone())
+        .collect();
+    if out.is_empty() {
+        out.push("a loop's slab while the loop holds".to_string());
+    }
+    out
 }
 
 /// The unforced boxes a route's `cells` stand in or on, each named with the beat that
@@ -5053,6 +5115,10 @@ impl World {
                     &mut st.flooded
                 }
                 RegionWrite::Unseal => continue,
+                RegionWrite::Hold => {
+                    st.held_regions.push((region, blame));
+                    &mut st.held
+                }
             };
             into.extend(crate::compiler::assembled::region_cells(region.0, region.1));
         }
@@ -5451,6 +5517,8 @@ pub struct RouteBinding {
     pub crossings: usize,
     /// Of those, legs a link carries.
     pub carried: usize,
+    /// Of those, legs a loop's exercise move carries (spec-0086 §5.2).
+    pub looped: usize,
     /// Links the campaign declares.
     pub links: usize,
     /// Of those, links live at the end of some leg.
@@ -5465,12 +5533,14 @@ impl RouteBinding {
     /// The one line a build prints about this proof.
     pub fn line(&self) -> String {
         format!(
-            "DW0311 binding: {} leg(s); {} walked, {} carried by a crossing, {} carried by a link; \
-             {} link(s) declared, {} live on some leg, {} taken; {} gather(s) declared",
+            "DW0311 binding: {} leg(s); {} walked, {} carried by a crossing, {} carried by a link, \
+             {} carried by a loop; {} link(s) declared, {} live on some leg, {} taken; {} gather(s) \
+             declared",
             self.legs,
             self.walked,
             self.crossings,
             self.carried,
+            self.looped,
             self.links,
             self.live,
             self.taken,
@@ -5650,6 +5720,7 @@ fn decompose(
             talk_to: false,
             src_step: end.src_step,
             by_link: false,
+            by_loop: false,
         };
         if judge_leg(world, &[*from, stand_vp], region_events, ancestor).is_err() {
             misses.entry(li).or_insert(LinkMiss::Unreachable);
@@ -5661,6 +5732,7 @@ fn decompose(
             talk_to: false,
             src_step: origin_step,
             by_link: true,
+            by_loop: false,
         };
         used.push((li, stand));
         if judge_leg(world, &[to_vp, *end], region_events, ancestor).is_ok() {
@@ -5857,6 +5929,8 @@ fn route_with_links(
                 if let Some(Step::Trigger { trigger_id, .. }) = carries.steps.get(next.src_step) {
                     taken.insert(format!("{trigger_id}{:?}", next.pos));
                 }
+            } else if next.by_loop {
+                b.looped += 1;
             } else {
                 b.crossings += 1;
             }
@@ -5895,6 +5969,7 @@ fn route_with_links(
                     talk_to: false,
                     src_step: next.src_step,
                     by_link: true,
+                    by_loop: false,
                 };
                 continue;
             }
@@ -6009,6 +6084,17 @@ fn judge_leg(
         // pays nothing. Its blame ledger is taken by value for the same reason.
         let unforced_regions = st.unforced_regions.clone();
         let has_unforced = !st.unforced.is_empty();
+        // The loop counterfactual (spec-0086 §5.1): this leg with every holding
+        // slab released. Built only for a leg that has one, so every campaign
+        // without a loop routes over the identical single world.
+        let held_regions = st.held_regions.clone();
+        let released_owned;
+        let released: Option<&World> = if st.held.is_empty() {
+            None
+        } else {
+            released_owned = world.with_region_state(&st.released());
+            Some(&released_owned)
+        };
         let credited_owned;
         let credited: Option<&World> = if st.unforced.is_empty() {
             None
@@ -6210,6 +6296,31 @@ fn judge_leg(
             }
         };
         if leg_world.find_path(start, goal).is_none() {
+            // A holding loop first (spec-0086 §5.1): when the leg routes with the
+            // slab released and not with it held, the corridor is endless for
+            // this party here, and the remedy is a release, never a walk.
+            if let Some(free) = released
+                && let (Some(s2), Some(g2)) = (
+                    free.snap_endpoint(from, false),
+                    free.snap_endpoint(to, pair[1].talk_to),
+                )
+                && let Some(cells) = free.find_path(s2, g2)
+            {
+                let held = held_blame_over(&held_regions, &cells).join("; ");
+                return Err(Failure {
+                    code: DW_CRITICAL_UNROUTABLE,
+                    message: format!(
+                        "critical path: the only route from {from:?} (floor {start:?}) to \
+                         {to:?} (floor {goal:?}) crosses {held}. A body that enters a holding \
+                         slab is returned to the approach on every crossing, so the party never \
+                         reaches the far side while the loop holds, and nothing the forced path \
+                         performs before this leg releases it. Release the loop before this leg \
+                         — set the flag its gate forbids, or raise the count it reads — from an \
+                         objective the party is forced to complete first, or route the forced \
+                         path so it does not cross the slab while the loop holds."
+                    ),
+                });
+            }
             // Lethality first: it is the strictly more specific answer, and the
             // generic one below would send the author to fix open geometry.
             if let Some(open) = open
@@ -6641,19 +6752,29 @@ pub fn check_bodies_can_leave(
     let worlds: Vec<LeaveConfig<'_>> = configs
         .into_iter()
         .zip(&owned)
-        .map(|((_, first, seeds, live), w)| {
+        .map(|((st, first, seeds, live), w)| {
             let w = w.as_ref().unwrap_or(world);
             let exits: BTreeSet<[i32; 3]> = live
                 .iter()
                 .filter_map(|li| plan.links.get(*li))
                 .flat_map(|l| stand_cells(w, l))
                 .collect();
-            let when = plan
+            let mut when = plan
                 .critical_path
                 .get(first)
                 .and_then(|s| s.objective())
                 .map(|o| format!("while `{o}` is next"))
                 .unwrap_or_else(|| format!("from critical step {first}"));
+            // spec-0086 §5.3: the configuration names every loop's slab as it
+            // has it — a holding slab is a wall a body is returned from.
+            for l in &plan.loops {
+                let held = st.held_regions.iter().any(|(r, _)| *r == l.slab);
+                when.push_str(&format!(
+                    ", with the slab of loop `{}` {}",
+                    l.id,
+                    if held { "holding" } else { "clear" }
+                ));
+            }
             (w, when, seeds.into_iter().collect(), exits)
         })
         .collect();
@@ -12727,6 +12848,7 @@ mod tests {
             talk_to: false,
             src_step,
             by_link: false,
+            by_loop: false,
         }
     }
 
@@ -12864,6 +12986,44 @@ mod tests {
         );
     }
 
+    /// spec-0086 §5.2: an exercise step is walked to, the carry to its landing
+    /// is marked like a crossing, and the next leg begins at the landing — the
+    /// one enumeration every consumer reads.
+    #[test]
+    fn an_exercise_step_marks_the_leg_out_of_it_from_the_landing() {
+        let steps = vec![
+            Step::Loop {
+                loop_id: "loop/g".into(),
+                pos: [2, 67, 16],
+                cross: [2, 67, 22],
+                offset: [0, 0, -6],
+                times: 2,
+                transport: [2, 67, 16],
+            },
+            Step::Reach {
+                objective_id: "obj/end".into(),
+                anchor_id: "anchor/end".into(),
+                pos: [2, 67, 41],
+                radius: 1,
+                completion: crate::compiler::reach::reach_completion([2, 67, 41], 1),
+            },
+        ];
+        let transports = vec![Some([2, 67, 16]), None];
+        let got: Vec<([i32; 3], bool, usize)> = positions_of(Some([2, 67, 2]), &steps, &transports)
+            .iter()
+            .map(|p| (p.pos, p.transport_before, p.src_step))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ([2, 67, 2], false, 0),
+                ([2, 67, 16], false, 0),
+                ([2, 67, 16], true, 0),
+                ([2, 67, 41], false, 1),
+            ]
+        );
+    }
+
     fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
         VisitedPos {
             pos,
@@ -12871,6 +13031,7 @@ mod tests {
             talk_to: false,
             src_step: 0,
             by_link: false,
+            by_loop: false,
         }
     }
 
@@ -14005,6 +14166,7 @@ mod tests {
             talk_to: false,
             src_step,
             by_link: false,
+            by_loop: false,
         }
     }
 

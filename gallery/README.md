@@ -177,6 +177,14 @@ holding them at once.
 | `an-atmosphere-nobody-stands-in` | `DW0930` | `validate` | declaring a third sky no place carries and no beat paints |
 | `a-repaint-past-the-edge-of-the-world` | `DW0929` | `build` | widening the vantage's repaint four hundred blocks past every placed piece, into chunks nothing loads |
 | `a-repaint-that-names-both-a-box-and-a-place` | `DW0929` | `validate` | giving the vantage's repaint both an anchor-centred region and a whole place |
+| `a-landing-in-the-wall` | `DW0947` | `build` | moving the long gallery's landing two bays past its slab, so the view out of it runs through the end room's far wall into open air |
+| `a-lamp-missing-from-one-bay` | `DW0946` | `build` | swapping the lantern in the bay the loop lands a body in for a soul lantern, so that bay is a different block and a different light from the one behind it |
+| `a-light-round-the-corner` | `DW0946` | `build` | standing a lantern in the sealed cavity behind one bay's window, where no eye sees it but its light reaches one bay and not the next |
+| `a-slab-too-thin-to-catch-a-fall` | `DW0945` | `build` | turning the loop on its side: a slab one cell thick in y under a drop, which a falling body passes between two polls |
+| `a-crossing-that-moves-you-twice` | `DW0945` | `build` | drawing the slab seven courses thick while the landing stays one bay back, so a moved body is still in the slab and is moved again |
+| `a-release-one-player-holds` | `DW0949` | `validate` | declaring the count the long gallery's release reads `player`-scoped, so one player is released and another still looped |
+| `a-figure-in-the-hall` | `DW0948` | `build` | posting the hall moth in a bay of the long gallery, a body with an identity the move cannot repeat |
+| `a-hall-nobody-releases` | `DW0311` | `build` | raising the count the long gallery waits for from 1 to 99, so the forced path never releases the loop and the route across its slab never opens |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
@@ -491,6 +499,25 @@ Four probes show what the engine refuses about it:
 (the deck shrunk so no cell inside it reaches the tiller, `DW0932`),
 `a-crossing-the-cutscene-undoes` (the teleport at tick 0, `DW0933`) and
 `a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
+
+## The long gallery
+
+On the far hall's roof, up a stair at the hall's east end, is a corridor of three
+identical bays, each with two staggered baffles that close the view inside the bay: `loop/long-gallery` (spec-0086). Its slab
+crosses the gallery at bay 2's mouth and moves every body that crosses it one bay
+back, so the gallery goes on. It holds once `hall-open` is set and until
+`hall-sealed`, and at most until `state/gallery-crossings` passes 1: the first
+crossing counts 1 and lights a second lamp in every bay and the end room at once (`on_cross`, keyed by
+`when`), the second counts 2 and the gate shuts, and the same plane is floor.
+`obj/walk-the-long-gallery` waits at the gallery's far end, so the critical path
+carries a `loop` step that crosses twice.
+
+The build publishes `validation/loop-gate.json`: one loop, its 15 eyes, a span of
+325 cells closed by geometry, 144 visible cells compared as blocks and as light at
+two skies over 10 configurations, and one exercise step. The eight probes above
+whose names start with a landing, a lamp, a light, a slab, a crossing, a release,
+a figure and a hall are each this gallery plus one edit, and each is refused by
+the rule that edit breaks.
 
 ## The fight, and the floor it needs
 

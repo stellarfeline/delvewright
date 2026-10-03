@@ -22,6 +22,7 @@ import type {
   CollectStep,
   InteractStep,
   KillStep,
+  LoopStep,
   Step,
   ReachStep,
   RestStep,
@@ -1095,7 +1096,23 @@ const TRANSPORT_SETTLE_MS = 1_500;
  * pathfinder is reset, so a path computed in the OLD area cannot survive the jump and
  * strand the next step with a spurious "No path to the goal!".
  */
+/** spec-0086 §6: whether a forced move's delta is a loop's offset. */
+function sameDelta(delta: Vec3Tuple, offset: Vec3Tuple): boolean {
+  return delta.every((c, i) => Math.abs(c - offset[i]!) <= LOOP_DELTA_TOLERANCE);
+}
+
 const TRANSPORT_JUMP_BLOCKS = 64;
+/**
+ * spec-0086 §6: how close a forced move's delta must come to a loop's offset, on
+ * every axis, to be that loop's move. The spike measured the delta exact on 10
+ * of 10 moves (`tools/spike-seamless-loop/`), so this is a numeric tolerance,
+ * not a judgement.
+ */
+const LOOP_DELTA_TOLERANCE = 1e-3;
+/** spec-0086 §6: how long one crossing may take before the step fails. */
+const LOOP_CROSS_TIMEOUT_MS = 20_000;
+/** How far past the slab, in cells, the crossing walk aims along its axis. */
+const LOOP_GOAL_PAST = 2;
 /**
  * gap 8: after the jump lands, how long (ms) to wait for the destination
  * chunk to load and the bot to come to rest on solid ground before the next step
@@ -1666,12 +1683,31 @@ export class MineflayerExecutor implements StepExecutor {
    * pathfinder so a path computed in the old area cannot survive the jump.
    */
   private lastForcedPos: { x: number; y: number; z: number } | undefined;
+  /**
+   * spec-0086 §6: where the bot stood at the last physics tick — the position a
+   * server-forced move's delta is measured from. mineflayer applies the position
+   * packet between ticks and then emits `forcedMove`, so this is the position the
+   * move started from.
+   */
+  private tickPos: { x: number; y: number; z: number } | undefined;
+  /** The loops the path exercises, by id → offset (spec-0086 §6). A forced move
+   * during a plain walk whose delta is one of these fails that walk. */
+  private loopOffsets = new Map<string, Vec3Tuple>();
+  /** While a loop step crosses: every forced move's delta, in order. */
+  private loopWatch: { deltas: Vec3Tuple[] } | undefined;
+  /** A forced move during a plain walk that equals a loop's offset: the proof
+   * and the game disagree about the loop's gate. Thrown by the walk it ended. */
+  private loopFault: Error | undefined;
   /** Grace (ms) added onto a cutscene's declared length before giving up. */
   private readonly cutsceneGraceMs: number;
   /** Hard ceiling (ms) on the post-spawn entity-settle wait. Overridable
    * (`DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS`) so a test can shorten the give-up
    * path without waiting out the production default. */
   private readonly entitySettleTimeoutMs: number;
+  /** spec-0086 §6: how long one loop crossing may take. Overridable
+   * (`DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS`) so a test can reach the give-up path
+   * without waiting out the production default. */
+  private readonly loopCrossTimeoutMs: number;
   /**
    * The compiler's proven per-leg critical-path waypoints (keyed by
    * destination anchor). When a walked step's target has a leg here, `walkTo`
@@ -1882,6 +1918,10 @@ export class MineflayerExecutor implements StepExecutor {
     const settleParsed = settleRaw === undefined ? NaN : Number.parseInt(settleRaw, 10);
     this.entitySettleTimeoutMs =
       Number.isInteger(settleParsed) && settleParsed >= 0 ? settleParsed : ENTITY_SETTLE_TIMEOUT_MS;
+    const crossRaw = env["DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS"];
+    const crossParsed = crossRaw === undefined ? NaN : Number.parseInt(crossRaw, 10);
+    this.loopCrossTimeoutMs =
+      Number.isInteger(crossParsed) && crossParsed > 0 ? crossParsed : LOOP_CROSS_TIMEOUT_MS;
   }
 
   /**
@@ -2075,6 +2115,10 @@ export class MineflayerExecutor implements StepExecutor {
     // fought or resumed across the void (the "No path to the goal!" / "Path was
     // stopped" race documented in the nobodys-cave gap-8 field notes).
     bot.on("forcedMove", () => this.onForcedMove());
+    bot.on("physicsTick", () => {
+      const p = bot.entity?.position;
+      if (p) this.tickPos = { x: p.x, y: p.y, z: p.z };
+    });
   }
 
   /**
@@ -2089,8 +2133,112 @@ export class MineflayerExecutor implements StepExecutor {
     const now = { x: p.x, y: p.y, z: p.z };
     const prev = this.lastForcedPos;
     this.lastForcedPos = now;
+    // spec-0086 §6: the move's delta from the last physics tick.
+    const from = this.tickPos;
+    if (from) {
+      const delta: Vec3Tuple = [now.x - from.x, now.y - from.y, now.z - from.z];
+      if (this.loopWatch) {
+        this.loopWatch.deltas.push(delta);
+      } else {
+        for (const [id, offset] of this.loopOffsets) {
+          if (sameDelta(delta, offset)) {
+            this.loopFault = new Error(
+              `a forced move by [${delta.map((c) => c.toFixed(3)).join(", ")}] during a plain ` +
+                `walk is loop ${id}'s offset — the loop held where the compiler proved it ` +
+                `released, so the proof's configuration and the game disagree about its gate`,
+            );
+            this.stopPathfinding();
+            break;
+          }
+        }
+      }
+      this.tickPos = now;
+    }
     if (prev && Math.hypot(now.x - prev.x, now.z - prev.z) >= TRANSPORT_JUMP_BLOCKS) {
       this.stopPathfinding();
+    }
+  }
+
+  /** The latched {@link loopFault}, cleared as it is taken. */
+  private takeLoopFault(): Error | undefined {
+    const f = this.loopFault;
+    this.loopFault = undefined;
+    return f;
+  }
+
+  /**
+   * spec-0086 §6: the loops the path exercises, so a forced move during a plain
+   * walk that equals one of their offsets fails that walk naming the loop.
+   */
+  useLoops(steps: readonly Step[]): void {
+    this.loopOffsets = new Map(
+      steps.flatMap((s): Array<[string, Vec3Tuple]> =>
+        s.action === "loop" ? [[s.loop, s.offset]] : [],
+      ),
+    );
+  }
+
+  /**
+   * **Exercise a loop** (spec-0086 §6): walk to the step's approach cell, set a
+   * walk goal past the slab, and wait for the server's forced move. The move
+   * must be exactly the loop's offset — within {@link LOOP_DELTA_TOLERANCE} on
+   * each axis, measured from the physics tick before — and on it the pathfinder
+   * is stopped, so the stale goal does not walk the body into the slab again.
+   * Repeated until `times` moves are seen. A forced move with any other delta, or
+   * none within {@link LOOP_CROSS_TIMEOUT_MS}, fails the step naming the loop,
+   * the delta seen and the count reached. The move is identified by its delta,
+   * never by its size: {@link TRANSPORT_JUMP_BLOCKS} is not consulted.
+   */
+  async exerciseLoop(step: LoopStep): Promise<void> {
+    const bot = this.requireBot();
+    const label = `loop ${step.loop}`;
+    const axis = step.offset.findIndex((c) => c !== 0);
+    const dir = -Math.sign(step.offset[axis]!);
+    const goal: [number, number, number] = [step.cross[0], step.cross[1], step.cross[2]];
+    goal[axis] = goal[axis]! + dir * LOOP_GOAL_PAST;
+    await this.walkTo(step.pos, 1, `${label} — to its approach`);
+    for (let seen = 0; seen < step.times; seen++) {
+      if (seen > 0) {
+        await this.walkTo(step.pos, 1, `${label} — back to its approach`, false, undefined, [
+          step.pos,
+        ]);
+      }
+      this.loopWatch = { deltas: [] };
+      let deltas: Vec3Tuple[];
+      try {
+        const walk = this.nav
+          .goto(new goals.GoalNear(goal[0], goal[1], goal[2], 0))
+          .catch(() => undefined);
+        const moved = await this.waitFor(
+          () => (this.loopWatch?.deltas.length ?? 0) > 0,
+          this.loopCrossTimeoutMs,
+          REACH_POLL_MS,
+        );
+        this.stopPathfinding();
+        await walk;
+        deltas = this.loopWatch?.deltas ?? [];
+        if (!moved) {
+          throw new Error(
+            `${label}: no forced move within ${this.loopCrossTimeoutMs}ms of walking across ` +
+              `[${step.cross.join(", ")}] toward [${goal.join(", ")}]; bot at ` +
+              `${fmt(bot.entity.position)}; ${seen} of ${step.times} move(s) seen`,
+          );
+        }
+      } finally {
+        this.loopWatch = undefined;
+      }
+      const delta = deltas[0]!;
+      if (!sameDelta(delta, step.offset)) {
+        throw new Error(
+          `${label}: a forced move by [${delta.map((c) => c.toFixed(3)).join(", ")}] is not ` +
+            `the loop's offset [${step.offset.join(", ")}]; ${seen} of ${step.times} move(s) ` +
+            `seen before it`,
+        );
+      }
+      process.stderr.write(
+        `[loop] ${step.loop}: move ${seen + 1} of ${step.times} by ` +
+          `[${delta.map((c) => c.toFixed(3)).join(", ")}], bot now at ${fmt(bot.entity.position)}\n`,
+      );
     }
   }
 
@@ -4162,7 +4310,15 @@ export class MineflayerExecutor implements StepExecutor {
     this.walkLabel = label;
     try {
       await this.holdFullHealth("its start");
-      await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+      try {
+        await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+      } catch (err) {
+        const fault = this.takeLoopFault();
+        if (fault) throw fault;
+        throw err;
+      }
+      const fault = this.takeLoopFault();
+      if (fault) throw fault;
     } finally {
       this.walkLegs -= 1;
       this.walkLabel = outerLabel;

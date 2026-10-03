@@ -68,6 +68,7 @@ export const STEP_ACTIONS = [
   "interact",
   "rest",
   "trigger",
+  "loop",
   "assert-complete",
 ] as const;
 
@@ -286,6 +287,29 @@ export const TRANSPORT_NEAR = 4;
 /** The vertical tolerance of the same arrival predicate. */
 export const TRANSPORT_NEAR_Y = 4;
 
+/**
+ * Exercise a loop (spec-0086 §6): walk to `pos` on the approach, cross the slab
+ * at `cross`, be moved by exactly `offset`, and repeat until `times` moves have
+ * been seen. The party goes on from `transport` — `cross + offset`, the landing
+ * every crossing puts a body down on. A path EXPORT step, like `trigger`: it
+ * proves no objective.
+ */
+export interface LoopStep {
+  readonly action: "loop";
+  /** The `loop/<id>` exercised. */
+  readonly loop: string;
+  /** A standable cell on the approach, inside the loop's span, on the route. */
+  readonly pos: Vec3Tuple;
+  /** The slab cell the route crosses at. */
+  readonly cross: Vec3Tuple;
+  /** The loop's whole-block offset; never zero. */
+  readonly offset: Vec3Tuple;
+  /** How many crossings the step makes; at least one. */
+  readonly times: number;
+  /** `cross + offset`: where the party stands after the step. */
+  readonly transport: Vec3Tuple;
+}
+
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
 export interface AssertCompleteStep {
   readonly action: "assert-complete";
@@ -312,6 +336,7 @@ export type Step =
   | InteractStep
   | RestStep
   | TriggerStep
+  | LoopStep
   | AssertCompleteStep;
 
 /**
@@ -900,6 +925,49 @@ function parseStep(value: unknown, pointer: string): Step {
         ...(kind === "approach" ? { range: range as number } : {}),
         ...(stand === undefined ? {} : { stand }),
         ...carried,
+      };
+    }
+    case "loop": {
+      rejectUnknownKeys(
+        obj,
+        ["action", "loop", "pos", "cross", "offset", "times", "transport"],
+        pointer,
+      );
+      const loop = requireString(obj, "loop", pointer);
+      if (!/^loop\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(loop)) {
+        fail(`${pointer}/loop`, `must be a \`loop/<kebab>\` id, got ${JSON.stringify(loop)}`);
+      }
+      const offset = requireVec3(obj, "offset", pointer);
+      if (offset.every((c) => c === 0)) {
+        fail(`${pointer}/offset`, "must not be zero: a loop moves a body somewhere");
+      }
+      const times = obj["times"];
+      if (!Number.isInteger(times) || (times as number) < 1) {
+        fail(`${pointer}/times`, `must be an integer of at least 1, got ${describe(times)}`);
+      }
+      const cross = requireVec3(obj, "cross", pointer);
+      // One reading of `transport` for every carried step (spec-0086 §5.4): the
+      // same field a crossing and a link name, required here because an
+      // exercise always puts the party down somewhere.
+      const { transport } = transportFields(obj, pointer);
+      if (transport === undefined) {
+        fail(`${pointer}/transport`, "a loop step names where the party stands after it (`transport`)");
+      }
+      if (transport.some((c, i) => c !== cross[i]! + offset[i]!)) {
+        fail(
+          `${pointer}/transport`,
+          `must be cross + offset (${JSON.stringify(cross.map((c, i) => c + offset[i]!))}), ` +
+            `got ${JSON.stringify(transport)}`,
+        );
+      }
+      return {
+        action: "loop",
+        loop,
+        pos: requirePos(obj, pointer),
+        cross,
+        offset,
+        times: times as number,
+        transport,
       };
     }
     case "assert-complete": {
