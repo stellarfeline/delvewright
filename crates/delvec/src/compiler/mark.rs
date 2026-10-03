@@ -60,6 +60,8 @@ pub struct MarkBinding {
     pub offset_destinations: usize,
     /// Cast rows whose `at` is spelled as a mark object.
     pub cast_marks: usize,
+    /// Assemblies (spec-0082), every one standing at a mark.
+    pub assemblies: usize,
     /// Marks refused for leaving their anchor's piece (`DW0897`).
     pub refused: usize,
 }
@@ -69,13 +71,14 @@ impl MarkBinding {
     pub fn line(&self) -> String {
         format!(
             "mark binding: {} body site(s), {} with a non-zero offset; {} destination(s), {} with \
-             a non-zero offset; {} cast row(s) at a mark; {} refused for leaving the piece \
-             (DW0897).",
+             a non-zero offset; {} cast row(s) at a mark; {} assembl(ies) at a mark; {} refused \
+             for leaving the piece (DW0897).",
             self.bodies,
             self.offset_bodies,
             self.destinations,
             self.offset_destinations,
             self.cast_marks,
+            self.assemblies,
             self.refused
         )
     }
@@ -258,6 +261,24 @@ pub fn check_marks_in_piece(plan: &Plan<'_>) -> (MarkBinding, Result<(), Failure
                 );
             }
         }
+    }
+
+    // Assemblies (spec-0082): the rig's origin stands at the mark.
+    for (i, a) in c.quests.content.assemblies.iter().enumerate() {
+        b.assemblies += 1;
+        let Some((area, anchor_cell)) = plan.point_any_site(a.at.anchor.as_str()) else {
+            continue;
+        };
+        judge(
+            plan,
+            format!("assembly `{}`", a.id),
+            "quests",
+            format!("/content/assemblies/{i}/at/offset"),
+            &a.at,
+            &area,
+            anchor_cell,
+            &mut refused,
+        );
     }
 
     b.refused = refused.len();

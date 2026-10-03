@@ -66,6 +66,8 @@ pub struct LinkPlan {
     pub anchor_id: Option<String>,
     /// The watched NPC (`strike-npc` only).
     pub npc_id: Option<String>,
+    /// The watched assembly (`strike-assembly` only, spec-0082).
+    pub assembly_id: Option<String>,
     /// An `approach` trigger's radius.
     pub range: Option<u32>,
     /// The cells of the trigger's body: the anchor's point, or every cell of a
@@ -288,6 +290,7 @@ fn root_words(root: &EffectRoot<'_>) -> String {
         EffectRoot::OnDeath => "`on_death`".to_string(),
         EffectRoot::ShopOffer => "a shop offer".to_string(),
         EffectRoot::OnKill(_) => "an `on_kill` bundle".to_string(),
+        EffectRoot::AssemblyLand(m) => format!("assembly `{}`'s strike landing", m.id.as_str()),
     }
 }
 
@@ -359,6 +362,7 @@ pub fn collect(campaign: &Campaign, anchors: &AnchorTable) -> (Vec<LinkPlan>, Ve
                     on: trig.on.kind(),
                     anchor_id: trig.at_anchor().map(str::to_string),
                     npc_id: trig.on.npc_target().map(|n| n.as_str().to_string()),
+                    assembly_id: trig.on.assembly_target().map(|a| a.as_str().to_string()),
                     range: match trig.on {
                         TriggerOn::Approach { range } => Some(range),
                         _ => None,

@@ -1498,6 +1498,15 @@ export class MineflayerExecutor implements StepExecutor {
   /** The repaint ledger (spec-0080 §5.2), when the build repaints anything. */
   private repaintWatch: RepaintWatch | undefined;
   /**
+   * How many times each marker token has been broadcast this run. A repeatable
+   * trigger broadcasts its marker every time it fires, and a hit count on the
+   * path is N trigger steps (spec-0082 §10) — so the second and later steps owe
+   * a FRESH arrival, which the first-arrival map above cannot tell apart.
+   */
+  private readonly markerArrivals = new Map<string, number>();
+  /** How many times each trigger step has been performed this run. */
+  private readonly triggerPerformances = new Map<string, number>();
+  /**
    * The step index at which the campaign-completion marker arrived, if it has.
    * Endgame discipline: campaign completion belongs to the LAST objective step; its
    * arrival any earlier means the path is incoherent (a branch completed the
@@ -2357,6 +2366,7 @@ export class MineflayerExecutor implements StepExecutor {
       this.campaignCompleteAtStep ??= this.currentStep;
       return;
     }
+    this.markerArrivals.set(marker.token, (this.markerArrivals.get(marker.token) ?? 0) + 1);
     if (!this.completedObjectives.has(marker.token)) {
       this.completedObjectives.set(marker.token, this.currentStep);
     }
@@ -6537,7 +6547,8 @@ export class MineflayerExecutor implements StepExecutor {
    *
    * A `strike` is a real attack (`bot.attack`, the client's left-click packet) on
    * the `interaction` hitbox the compiler summoned at the anchor; a `use` is a
-   * real right-click on it; a `strike-npc` attacks the NPC's own hitbox at its
+   * real right-click on it; a `strike-assembly` attacks the assembly's own
+   * hitbox at its cell; a `strike-npc` attacks the NPC's own hitbox at its
    * beat's station; an `approach` is a walk into the trigger's range. Never a
    * server-side command: a trigger fired by one would prove the command, not
    * that a player can reach and hit the thing.
@@ -6549,6 +6560,11 @@ export class MineflayerExecutor implements StepExecutor {
   async fireTrigger(step: TriggerStep): Promise<void> {
     const bot = this.requireBot();
     const label = `trigger ${step.trigger} (${step.on})`;
+    // A repeated performance (a hit count) owes its own marker: count the
+    // arrivals before acting, and wait for one more.
+    const performed = this.triggerPerformances.get(step.trigger) ?? 0;
+    this.triggerPerformances.set(step.trigger, performed + 1);
+    const arrivalsBefore = this.markerArrivals.get(step.trigger) ?? 0;
     // spec-0083 §4: a trigger that carries the party is performed from INSIDE
     // its volume — the compiler names the cell. The bot walks there as a block
     // goal, and then acts without walking again; the sequencer awaits the
@@ -6595,7 +6611,23 @@ export class MineflayerExecutor implements StepExecutor {
         bot.attack(target);
       }
     }
-    await this.awaitObjectiveMarker(step.trigger, label);
+    if (performed > 0) {
+      const arrived = await this.waitFor(
+        () => (this.markerArrivals.get(step.trigger) ?? 0) > arrivalsBefore,
+        OBJECTIVE_TIMEOUT_MS,
+        SCORE_POLL_MS,
+      );
+      if (!arrived) {
+        throw new Error(
+          `${label}: performance ${performed + 1} broadcast no fresh ` +
+            `\`${markerLine(this.campaignId ?? "?", step.trigger)}\` marker within ` +
+            `${OBJECTIVE_TIMEOUT_MS}ms (${arrivalsBefore} seen before it); bot at ` +
+            `${fmt(bot.entity.position)}`,
+        );
+      }
+    } else {
+      await this.awaitObjectiveMarker(step.trigger, label);
+    }
     await delay(EFFECT_SETTLE_MS);
   }
 

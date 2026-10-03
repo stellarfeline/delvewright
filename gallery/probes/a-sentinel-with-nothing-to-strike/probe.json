@@ -1,0 +1,12 @@
+{
+  "code": "DW0936",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/assemblies/0/hitbox"
+    }
+  ],
+  "units": [],
+  "why": "The sentinel is struck through its hitbox, which `trigger/strike-the-sentinel` rides. This edit removes the hitbox and keeps the trigger: there is nothing for a player to strike, so the trigger can never fire, the counter's flag is never set, and the critical path waits forever at a statue that ignores every swing. It declares no unit: `Assembly.hitbox` is bound by the primary, and what the engine refuses is a `strike-assembly` naming an assembly that declares no hitbox."
+}

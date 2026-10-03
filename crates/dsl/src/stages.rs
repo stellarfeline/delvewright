@@ -14,10 +14,7 @@ use crate::firework::FireworkExplosion;
 use crate::layout::StationKind;
 
 use crate::ids::{
-    ActorId, AmbushId, AnchorId, AreaId, AtmosphereId, BranchId, BranchPointId, ClassId,
-    DialogueId, EditBatchId, EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId,
-    PrefabId, QuestId, RegionId, ShopId, ShortcutId, StakeId, StateId, TimedGateId, TrapId,
-    TriggerId, WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, AssemblyId, AtmosphereId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId, EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, RigId, ShopId, ShortcutId, StakeId, StateId, TimedGateId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -2384,6 +2381,12 @@ pub struct QuestsContent {
     ///, so a campaign that declares none stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stakes: Vec<Stake>,
+    /// Assemblies (spec-0082): fixed things built of display entities that
+    /// play clips from a library rig, can be struck in melee, and strike back
+    /// at a player who stands where they reach. Appear on `spawn-assembly`,
+    /// leave on `despawn-assembly`. Empty/absent = nothing emitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assemblies: Vec<Assembly>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The
@@ -2448,6 +2451,11 @@ impl QuestsContent {
     /// The declared stake with this id, if any (DSL v0.10, spec-0032).
     pub fn stake_decl(&self, id: &str) -> Option<&Stake> {
         self.stakes.iter().find(|s| s.id.as_str() == id)
+    }
+
+    /// The declared assembly with this id, if any (spec-0082).
+    pub fn assembly_decl(&self, id: &str) -> Option<&Assembly> {
+        self.assemblies.iter().find(|a| a.id.as_str() == id)
     }
 }
 
@@ -3282,23 +3290,48 @@ pub enum TriggerOn {
         /// The NPC (stage-2 ref) whose body is the target.
         npc: NpcId,
     },
+    /// The player attacks (left-clicks) an **assembly's hitbox** (spec-0082).
+    ///
+    /// The exact shape of [`TriggerOn::StrikeNpc`]: no `at`, because the target
+    /// is an object with a hitbox of its own, and the trigger rides it. Melee
+    /// only — the hitbox is a `minecraft:interaction`, and an arrow passes
+    /// through one without writing its `attack` record (spec-0082 §8 row 5).
+    /// `once: false` with an `add-state` is how a hit count is built.
+    StrikeAssembly {
+        /// The assembly (stage-5 `assemblies` ref) whose hitbox is the target.
+        assembly: AssemblyId,
+    },
 }
 
 impl TriggerOn {
-    /// The kebab tag (`strike` / `use` / `approach` / `strike-npc`).
+    /// The kebab tag (`strike` / `use` / `approach` / `strike-npc` /
+    /// `strike-assembly`).
     pub fn kind(&self) -> &'static str {
         match self {
             TriggerOn::Strike => "strike",
             TriggerOn::Use => "use",
             TriggerOn::Approach { .. } => "approach",
             TriggerOn::StrikeNpc { .. } => "strike-npc",
+            TriggerOn::StrikeAssembly { .. } => "strike-assembly",
         }
     }
 
     /// Whether this event needs an `at` anchor — true for everything that
-    /// watches a place, false for `strike-npc`, which watches a character.
+    /// watches a place, false for `strike-npc` and `strike-assembly`, which
+    /// watch an object that carries its own hitbox.
     pub fn needs_anchor(&self) -> bool {
-        !matches!(self, TriggerOn::StrikeNpc { .. })
+        !matches!(
+            self,
+            TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. }
+        )
+    }
+
+    /// The assembly whose hitbox this event watches (`strike-assembly` only).
+    pub fn assembly_target(&self) -> Option<&AssemblyId> {
+        match self {
+            TriggerOn::StrikeAssembly { assembly } => Some(assembly),
+            _ => None,
+        }
     }
 
     /// The NPC whose body this event watches (`strike-npc` only).
@@ -4643,6 +4676,106 @@ impl DespawnStyle {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Stage 5 — assemblies (spec-0082)
+// ---------------------------------------------------------------------------
+
+/// A fixed thing that can be hit and hits back (spec-0082): an object built of
+/// display entities standing at a [`Mark`], moving through the clips of a
+/// library [`rig`](crate::rig), struck in melee through an optional
+/// `minecraft:interaction` hitbox, and striking a player who stands in its
+/// arming region.
+///
+/// It is not a fight class and never dies: no health, equipment, traversal,
+/// health bar or kill credit. A hit count is an ordinary `state` datum a
+/// `strike-assembly` trigger adds to, and what happens at a count is an effect
+/// behind the ordinary gate.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Assembly {
+    /// Unique assembly id (`assembly/<kebab>`).
+    pub id: AssemblyId,
+    /// The library rig (`rig/<name>`, resolved to `rigs/<name>/rig.json`
+    /// beside the prefab library) whose parts and clips this assembly is.
+    pub rig: RigId,
+    /// Where the rig's origin stands: an anchor and an optional offset. The
+    /// rig's origin is the mark cell's centre at its floor plane.
+    pub at: Mark,
+    /// Which way the rig's `+z` front faces (default `south`). Applied by the
+    /// compiler to every frame, so the emitted entities stand at yaw 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facing: Option<Facing>,
+    /// The clip playing from spawn. Absent: the parts stand in the rig's rest
+    /// pose and no clip plays until a `play-clip`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial: Option<String>,
+    /// The `minecraft:interaction` a player strikes. Absent: the assembly
+    /// cannot be struck, and a `strike-assembly` on it is refused (`DW0936`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hitbox: Option<AssemblyHitbox>,
+    /// The blows it deals. Absent: it never strikes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strikes: Option<AssemblyStrikes>,
+}
+
+impl Assembly {
+    /// The declared facing, `south` when absent.
+    pub fn facing(&self) -> Facing {
+        self.facing.unwrap_or(Facing::South)
+    }
+}
+
+/// An assembly's hitbox (spec-0082 §3.2): a `minecraft:interaction` of
+/// `width × height` whose bottom centre is the mark's cell centre plus
+/// `offset`. Melee only: an arrow passes through an interaction.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssemblyHitbox {
+    /// Width in blocks (`0 < width <= 6`, `DW0936`).
+    pub width: f64,
+    /// Height in blocks (`0 < height <= 22`, `DW0936`).
+    pub height: f64,
+    /// Integer `[x, y, z]` block offset of the box's bottom centre from the
+    /// mark (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
+/// An assembly's strike pattern (spec-0082 §3.2).
+///
+/// The pattern runs, repeating from its first step, on every tick on which
+/// some player's body is in `while_in`, and stops at the end of the step in
+/// flight when nobody is.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssemblyStrikes {
+    /// The arming region: an anchor-centred box. Every landing box lies inside
+    /// it (`DW0938`), so a player who never entered it is never struck.
+    pub while_in: StealthZone,
+    /// The steps, in order.
+    pub pattern: Vec<StrikeStep>,
+}
+
+/// One step of a strike pattern: wind up, hold, strike, land.
+///
+/// How long the wind-up is and how hard the blow lands are the creator's
+/// judgement, by spec-0016's standing ruling: no telegraph rule and no
+/// one-shot rule.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StrikeStep {
+    /// The clip played first.
+    pub windup: String,
+    /// Ticks the windup's last frame is held before the strike clip starts.
+    pub hold: u32,
+    /// The clip the blow is.
+    pub strike: String,
+    /// Effects run, with no acting player, on the tick the strike clip's last
+    /// frame is applied. A step with none is a feint.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_land: Vec<QuestEffect>,
+}
+
 /// One step of a [`Verb::Sequence`] (DSL v0.6): a group of effects fired at
 /// an exact tick offset from the sequence's start.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -5409,6 +5542,30 @@ pub enum Verb {
     UnleashActor {
         /// The actor (stage-5 `actors` ref) to unleash.
         actor: ActorId,
+    },
+    // --- spec-0082 assembly verbs ---
+    /// Summons an assembly (spec-0082): its root, one display per rig part
+    /// riding the root, and its hitbox when declared, at its mark, playing its
+    /// `initial` clip. Idempotent: a spawn of a present assembly is a no-op.
+    SpawnAssembly {
+        /// The assembly (stage-5 `assemblies` ref) to summon.
+        assembly: AssemblyId,
+    },
+    /// Removes an assembly's root, parts and hitbox (spec-0082). They leave
+    /// unseen: a display entity has no death, so there is no `style`.
+    DespawnAssembly {
+        /// The assembly (stage-5 `assemblies` ref) to remove.
+        assembly: AssemblyId,
+    },
+    /// Switches the clip an assembly plays (spec-0082); its first frame is
+    /// applied on the next tick. While a strike step is in flight the switch
+    /// waits for the step to end, so a story beat never cuts a strike at the
+    /// frame before it lands.
+    PlayClip {
+        /// The assembly (stage-5 `assemblies` ref).
+        assembly: AssemblyId,
+        /// A clip the assembly's rig declares.
+        clip: String,
     },
     /// A deterministic timeline (DSL v0.6): one schedule chain firing effect groups
     /// at exact tick offsets. Effects are any in the stage-5 set except a nested
@@ -6508,6 +6665,9 @@ impl Verb {
             Verb::ClearEffect { .. } => "clear-effect",
             Verb::Teleport { .. } => "teleport",
             Verb::Firework { .. } => "firework",
+            Verb::SpawnAssembly { .. } => "spawn-assembly",
+            Verb::DespawnAssembly { .. } => "despawn-assembly",
+            Verb::PlayClip { .. } => "play-clip",
         }
     }
 }
@@ -6660,6 +6820,10 @@ impl QuestEffect {
             | Verb::Teleport { .. }
             // spec-0068's `firework` is v0.29.
             | Verb::Firework { .. }
+            // spec-0082's assembly verbs.
+            | Verb::SpawnAssembly { .. }
+            | Verb::DespawnAssembly { .. }
+            | Verb::PlayClip { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -8050,6 +8214,14 @@ pub enum EffectSite {
         /// The fight's id (`wave/<kebab>` or `actor/<kebab>`).
         fight: String,
     },
+    /// An assembly strike step's `on_land` bundle (spec-0082) — ambient, no
+    /// DAG position: nobody is forced to stand where a blow lands.
+    AssemblyLand {
+        /// The assembly id.
+        assembly: String,
+        /// The step's index within the pattern.
+        step: usize,
+    },
 }
 
 impl EffectSite {
@@ -8077,7 +8249,8 @@ impl EffectSite {
             | EffectSite::ShortcutUnlock { .. }
             | EffectSite::ShopOffer { .. }
             | EffectSite::OnDeath
-            | EffectSite::OnKill { .. } => None,
+            | EffectSite::OnKill { .. }
+            | EffectSite::AssemblyLand { .. } => None,
         }
     }
 }
@@ -8145,6 +8318,17 @@ pub fn for_each_campaign_effect<'a>(
             },
             crate::effects::EffectRootOwner::OnKill(f) => EffectSite::OnKill {
                 fight: f.id().to_string(),
+            },
+            crate::effects::EffectRootOwner::AssemblyLand(m) => EffectSite::AssemblyLand {
+                assembly: m.id.as_str().to_string(),
+                // `/content/assemblies/<m>/strikes/pattern/<s>/on_land`: segment
+                // 6 is the step index, parsed back as the shop arm does.
+                step: root
+                    .path
+                    .split('/')
+                    .nth(6)
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0),
             },
         };
         for (i, eff) in list.iter().enumerate() {
@@ -8502,6 +8686,23 @@ mod happening_subject_tests {
                 "firework",
                 serde_json::json!({"type":"firework","at":{"anchor":"anchor/court"},"explosions":[{"shape":"star","colors":["#ffd700"]}]}),
                 Some("anchor/court"),
+            ),
+            // spec-0082: an assembly is not a story subject (no `happening` is
+            // demanded of its verbs), so none of the three resolves one.
+            (
+                "spawn-assembly",
+                serde_json::json!({"type":"spawn-assembly","assembly":"assembly/limb"}),
+                None,
+            ),
+            (
+                "despawn-assembly",
+                serde_json::json!({"type":"despawn-assembly","assembly":"assembly/limb"}),
+                None,
+            ),
+            (
+                "play-clip",
+                serde_json::json!({"type":"play-clip","assembly":"assembly/limb","clip":"idle"}),
+                None,
             ),
         ];
         // The binding: the table answers for every verb the schema declares, and

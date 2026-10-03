@@ -1,0 +1,16 @@
+[package]
+name = "rig-gen"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "rig-gen"
+path = "src/main.rs"
+
+[dependencies]
+# The rig document an assembly reads (spec-0082 §3.1), written through the
+# engine's own type and checked by the engine's own rules before a byte is
+# written.
+delvewright-dsl.workspace = true
+serde_json.workspace = true

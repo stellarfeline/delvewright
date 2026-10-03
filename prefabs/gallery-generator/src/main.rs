@@ -458,6 +458,20 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/plinth",
+        pos: [23, 1, 12],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "where the sentinel stands — the gallery's assembly (spec-0082): a \
+               statue of display entities that sways, can be struck, and stamps \
+               the 3 x 3 of floor round its own feet. Its arming region and its \
+               landing box are this one cell, so a body is caught only from the \
+               ring of cells beside it. Three cells east of the walk through the \
+               near hall and two north of the counter, so the critical path never \
+               stands where it stamps",
+        role: None,
+    },
+    Anchor {
         name: "anchor/vantage",
         pos: [15, 1, 27],
         facing: Some("north"),
@@ -3233,6 +3247,7 @@ fn main() {
     write_yard(out);
     write_quay(out);
     write_bank(out);
+    write_rig(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.
@@ -3245,4 +3260,125 @@ fn main() {
     if let Some(d) = design {
         write_design(Path::new(&d));
     }
+}
+
+// ---------------------------------------------------------------------------
+// The sentinel's rig (spec-0082 §10)
+// ---------------------------------------------------------------------------
+
+/// The gallery's one rig: `rig/gallery-sentinel`, the assembly that stands on
+/// `anchor/plinth`.
+///
+/// Four parts, so every clip role an assembly has is written: a base, a body,
+/// a head and a stone hammer. `idle` loops a sway, `windup` lifts the hammer
+/// overhead, `strike` brings it down flat on the floor round the plinth — a
+/// 3 × 3 slab, the footprint the hall's landing box is declared under — and
+/// `retract` sinks the whole statue below the floor.
+///
+/// Written through `delvewright_dsl::rig::Rig`, the type the engine parses, so
+/// a field this generator could misspell is a field the compiler would refuse
+/// it for.
+const RIG_ID: &str = "gallery-sentinel";
+
+fn write_rig(out: &Path) {
+    use delvewright_dsl::rig::{self, Clip, PartKind, Rig, RigPart, RigProvenance, Transform};
+    let t = |translation: [f64; 3], scale: [f64; 3]| Transform {
+        translation,
+        left_rotation: [0.0, 0.0, 0.0, 1.0],
+        scale,
+        right_rotation: [0.0, 0.0, 0.0, 1.0],
+    };
+    // The three parts that do not swing, raised by `dy`.
+    let figure = |dy: f64| {
+        vec![
+            t([-0.5, dy, -0.5], [1.0, 1.0, 1.0]),
+            t([-0.45, dy + 1.0, -0.45], [0.9, 1.0, 0.9]),
+            t([-0.3, dy + 2.0, -0.3], [0.6, 0.6, 0.6]),
+        ]
+    };
+    let with_hammer = |dy: f64, hammer: Transform| {
+        let mut f = figure(dy);
+        f.push(hammer);
+        f
+    };
+    // The hammer hanging at the statue's side, held overhead, and laid flat.
+    let hanging = |sway: f64| t([0.55, 0.2 + sway, -0.15], [0.3, 1.4, 0.3]);
+    let raised = |lift: f64| t([0.55, 1.6 + lift, -0.15], [0.3, 1.4, 0.3]);
+    let mut clips = std::collections::BTreeMap::new();
+    clips.insert(
+        "idle".to_string(),
+        Clip {
+            ticks_per_frame: 10,
+            looping: true,
+            frames: vec![
+                with_hammer(0.0, hanging(0.0)),
+                with_hammer(0.0, hanging(0.1)),
+            ],
+        },
+    );
+    clips.insert(
+        "windup".to_string(),
+        Clip {
+            ticks_per_frame: 4,
+            looping: false,
+            frames: vec![with_hammer(0.0, raised(0.0)), with_hammer(0.0, raised(0.4))],
+        },
+    );
+    clips.insert(
+        "strike".to_string(),
+        Clip {
+            ticks_per_frame: 2,
+            looping: false,
+            frames: vec![
+                with_hammer(0.0, t([0.55, 1.0, 0.2], [0.3, 0.3, 1.4])),
+                with_hammer(0.0, t([-1.5, 0.0, -1.5], [3.0, 0.3, 3.0])),
+            ],
+        },
+    );
+    clips.insert(
+        "retract".to_string(),
+        Clip {
+            ticks_per_frame: 5,
+            looping: false,
+            frames: vec![with_hammer(-3.0, t([0.55, -2.8, -0.15], [0.3, 1.4, 0.3]))],
+        },
+    );
+    let part = |id: &str, block: &str| RigPart {
+        id: id.to_string(),
+        kind: PartKind::Block,
+        block: block.to_string(),
+        rest: None,
+    };
+    let r = Rig {
+        rig_version: rig::RIG_VERSION,
+        parts: vec![
+            part("base", "minecraft:polished_deepslate"),
+            part("body", "minecraft:deepslate_tiles"),
+            part("head", "minecraft:chiseled_deepslate"),
+            part("hammer", "minecraft:polished_blackstone"),
+        ],
+        clips,
+        provenance: RigProvenance {
+            generator: "prefabs/gallery-generator".to_string(),
+            source: "original".to_string(),
+            spdx: "GPL-3.0-or-later".to_string(),
+        },
+    };
+    let issues = rig::check(&r);
+    assert!(
+        issues.is_empty(),
+        "{RIG_ID}: the rig breaks a rig rule the engine refuses with DW0935: {issues:?}"
+    );
+    let dir = out.join(rig::RIGS_DIR).join(RIG_ID);
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("create {}: {e}", dir.display()));
+    let path = dir.join(rig::RIG_FILE);
+    let mut text = serde_json::to_string_pretty(&r).expect("a rig serializes");
+    text.push('\n');
+    std::fs::write(&path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    println!(
+        "wrote {} ({} part(s), {} clip(s))",
+        path.display(),
+        r.parts.len(),
+        r.clips.len()
+    );
 }
