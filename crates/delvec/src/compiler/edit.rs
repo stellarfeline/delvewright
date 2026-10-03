@@ -696,6 +696,25 @@ fn check_batch_invariants(
         )
         .1
         .map_err(ctx)?;
+        // spec-0086 §4 before the route proofs, here as in `emit::build`: a
+        // loop that cannot be polled, seen through or tiled is the cause, and a
+        // route its slab closes is the consequence. The seating pass has not
+        // run at this door, so the body arm reads every declared post and no
+        // wave seat; the final build reads both.
+        if !plan.loops.is_empty() {
+            let seats = BTreeMap::new();
+            let (_, refusal) = crate::compiler::r#loop::check(&crate::compiler::r#loop::Inputs {
+                plan,
+                world: &with_fixtures,
+                blocks: &assembled.blocks,
+                placements: &relight.placements,
+                seals: &assembled.gate_seals,
+                wave_seats: &seats,
+            });
+            if let Some(f) = refusal {
+                return Err(ctx(f));
+            }
+        }
         crate::compiler::nav::check_critical_path(plan, &with_fixtures).map_err(ctx)?;
         crate::compiler::nav::check_checkpoints(plan, &with_fixtures).map_err(ctx)?;
     }

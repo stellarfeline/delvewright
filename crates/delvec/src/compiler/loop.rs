@@ -204,6 +204,22 @@ impl LoopPlan {
         }
     }
 
+    /// Whether `cell` lies beyond the slab's plane **in line with it**: on the
+    /// far side from the approach, and inside the slab's own cross-section
+    /// widened by that cross-section's width on each other axis — where a body
+    /// arrives by passing through the slab, as opposed to somewhere else on the
+    /// far side of an infinite plane.
+    pub fn beyond_in_line(&self, cell: [i32; 3]) -> bool {
+        let Some(a) = self.axis() else {
+            return false;
+        };
+        self.beyond(cell)
+            && (0..3).filter(|&i| i != a).all(|i| {
+                let w = self.slab.1[i] - self.slab.0[i] + 1;
+                self.slab.0[i] - w <= cell[i] && cell[i] <= self.slab.1[i] + w
+            })
+    }
+
     /// The gate's terms in words, for a message naming what is still open.
     pub fn gate_words(&self) -> String {
         let mut out: Vec<String> = Vec::new();
@@ -795,9 +811,12 @@ impl LoopSplice {
     }
 
     /// **Before a step at `next` in `area`**: splice an exercise step for every
-    /// loop whose slab the leg there crosses while it holds — the party stands on
-    /// the slab's approach side and `next` lies beyond its plane, in the loop's
-    /// own area. A leg out of another area starts at that area's `entry`, where
+    /// loop whose slab the leg there crosses while it holds — `next` lies beyond
+    /// the slab's plane in line with the slab ([`LoopPlan::beyond_in_line`]) and
+    /// the party does not already stand there, in the loop's own area. This is read
+    /// before a block is placed, so it is a reading of the plan, not of the
+    /// span; a leg it misses is still judged by the route proof, which refuses
+    /// it naming the loop (`DW0311`). A leg out of another area starts at that area's `entry`, where
     /// the crossing puts the party down. Each spliced step is pushed onto
     /// `steps`, keyed into `acts` by its loop id, and recorded.
     pub fn before(
@@ -821,7 +840,7 @@ impl LoopSplice {
             let Some(from) = from else {
                 continue;
             };
-            if !(l.on_approach(from) && l.beyond(next)) {
+            if l.beyond_in_line(from) || !l.beyond_in_line(next) {
                 continue;
             }
             let st = self.replay.state(&self.flags, &self.data);

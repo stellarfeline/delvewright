@@ -233,6 +233,110 @@
         ]
       }
     ],
+    "loops": [
+      {
+        "counts": "state/gallery-crossings",
+        "forbids_flags": [
+          "flag/hall-sealed"
+        ],
+        "id": "loop/long-gallery",
+        "on_cross": [
+          {
+            "anchor": "anchor/long-gallery-lamp-0",
+            "block": "minecraft:lantern[hanging=true]",
+            "happening": {
+              "text": "a second lamp is lit in bay 0 of the long gallery",
+              "verb": "opens"
+            },
+            "type": "set-block",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/gallery-crossings",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-1",
+            "block": "minecraft:lantern[hanging=true]",
+            "happening": {
+              "text": "a second lamp is lit in bay 1 of the long gallery",
+              "verb": "opens"
+            },
+            "type": "set-block",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/gallery-crossings",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-2",
+            "block": "minecraft:lantern[hanging=true]",
+            "happening": {
+              "text": "a second lamp is lit in bay 2 of the long gallery",
+              "verb": "opens"
+            },
+            "type": "set-block",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/gallery-crossings",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-3",
+            "block": "minecraft:lantern[hanging=true]",
+            "happening": {
+              "text": "a second lamp is lit in bay 3 of the long gallery",
+              "verb": "opens"
+            },
+            "type": "set-block",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/gallery-crossings",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        ],
+        "region": {
+          "anchor": "anchor/long-gallery-slab",
+          "extent": [
+            1,
+            1,
+            0
+          ]
+        },
+        "requires_flags": [
+          "flag/hall-open"
+        ],
+        "requires_state": [
+          {
+            "op": "at-most",
+            "state": "state/gallery-crossings",
+            "value": 1
+          }
+        ],
+        "to": {
+          "anchor": "anchor/long-gallery-landing"
+        }
+      }
+    ],
     "loot": [
       {
         "anchor": "anchor/reliquary",
@@ -1134,7 +1238,7 @@
           },
           {
             "after": [
-              "obj/take-the-bone"
+              "obj/walk-the-long-gallery"
             ],
             "anchor": "anchor/loft",
             "forbids_flags": [
@@ -1179,6 +1283,28 @@
             ],
             "stealth": false,
             "title": "Reach the end of the hall",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/take-the-bone"
+            ],
+            "anchor": "anchor/long-gallery-end",
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "text": "The long gallery on the roof lets the party through to its end room.",
+              "verb": "arrives"
+            },
+            "hint": "Up the stair by the far wall. The gallery repeats until it has been walked enough.",
+            "id": "obj/walk-the-long-gallery",
+            "radius": 1,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "stealth": false,
+            "title": "Walk the long gallery",
             "type": "reach-anchor"
           }
         ],
@@ -2704,6 +2830,11 @@
         "initial": 0,
         "name": "Bounty",
         "note": "What the lane's kills pay into. Party-scoped, so one kill pays the party once, whoever lands it; the bay's kill rings when the bounty is already paid.",
+        "scope": "party"
+      },
+      {
+        "id": "state/gallery-crossings",
+        "note": "How many times a body has crossed the long gallery's slab.",
         "scope": "party"
       }
     ],

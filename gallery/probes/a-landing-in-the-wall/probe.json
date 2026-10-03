@@ -1,0 +1,20 @@
+{
+  "code": "DW0947",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loops/0/to",
+      "value": {
+        "anchor": "anchor/long-gallery-slab",
+        "offset": [
+          0,
+          0,
+          -12
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "The long gallery's landing moved two bays past the slab, through the end room's far wall and into the solid course the gallery stands in. The slab and the move are sound — one crossing axis, a move that clears the slab, a cross-section a body can be in — but no cell of the landing slab is one a body can stand in, so there is no eye the landing can be seen from and nothing the engine can prove seamless; it refuses rather than call an unseen view closed. This stands where spec-0086 §9 names `a-hall-that-ends-in-view`: in this gallery any opening a ray could leave the built volume through also lets the party's air out, and DW0885 refuses that first and rightly, so the window case is proven over a piece that declares its faces, in `crates/delvec/tests/endless_corridor.rs`. It declares no unit."
+}

@@ -1,0 +1,53 @@
+{
+  "code": "DW0946",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/swap-the-landing-lamp",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                2,
+                12,
+                19
+              ],
+              "min": [
+                2,
+                12,
+                19
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:soul_lantern[hanging=true]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/swap-the-landing-lamp",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/swap-the-landing-lamp",
+        "note": "The long gallery's bay-1 lantern swapped for a soul lantern."
+      }
+    }
+  ],
+  "units": [],
+  "why": "The lantern hung in the long gallery's bay 1 — the bay the loop lands a body in — swapped by a world edit for a soul lantern, every other bay's left as it was. From the landing the soul lantern hangs in sight; from the slab, its counterpart in bay 2 is a lantern, so the two views differ by a lamp. The refusal names the cell and both block states. A swap rather than the deletion spec-0086 §9 names: this hall declares `lighting.min_light`, so the relight pass hangs a deleted lantern straight back at the cell it left, and the world as shipped tiles again — the deletion is a defect the engine repairs, not one it refuses. It declares no unit."
+}

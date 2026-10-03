@@ -45,13 +45,21 @@ const DATA_VERSION: i32 = 4671;
 /// The piece's id — the `.nbt`/`.json` stem and what the invariants report against.
 const ID: &str = "gallery-hall";
 
-/// Structure extent: 31 (x) × 8 (y) × 31 (z).
+/// Structure extent: 31 (x) × 12 (y) × 31 (z): the hall, roofed at
+/// [`HALL_ROOF_Y`], and the long gallery standing on its roof.
 ///
-/// One room, deliberately. The gallery's job is to be exhaustive over the DSL
+/// One room, deliberately — and one corridor on top of it, reached by a stair
+/// from the far hall, because a place the party is carried to across the void
+/// would put the loop behind a crossing and its proofs behind a checkpoint the
+/// crossing outruns. The gallery's job is to be exhaustive over the DSL
 /// and **legible**, and a maze of chambers would make the second impossible: a
 /// reader looking up where `anchor/hearth` is should find it on one floor plan.
 /// Everything vertical the DSL can express is expressed against the same floor.
-const SIZE: [i32; 3] = [31, 8, 31];
+const SIZE: [i32; 3] = [31, 12, 31];
+
+/// The hall's roof course: the room is `y ∈ 1..HALL_ROOF_Y`, and the long
+/// gallery's floor IS this course.
+const HALL_ROOF_Y: i32 = 7;
 
 /// The z of the dividing wall that gives the hall a far side worth opening a
 /// gate onto. Everything with `z < DIVIDER_Z` is the near hall (spawn, the two
@@ -502,6 +510,24 @@ const ANCHORS: &[Anchor] = &[
         note: "the finale: the last thing a player reaches",
         role: None,
     },
+    Anchor {
+        name: "anchor/long-gallery-end",
+        pos: long_gallery_cell(2, 1, CORRIDOR_SIZE[2] - 2),
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the long gallery's end room, past its three bays: the beat the loop stands in \
+               front of until the party has crossed it enough",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-hall",
+        pos: long_gallery_cell(3, 1, corridor_bay(1) + 3),
+        facing: Some("north"),
+        trigger_block: None,
+        note: "a cell of the long gallery's bay 1, inside the loop's span: where a probe posts a \
+               figure the move cannot repeat",
+        role: None,
+    },
 ];
 
 /// **Container anchors** — the cells that hold a chest.
@@ -694,7 +720,7 @@ fn lanterns() -> Vec<[i32; 3]> {
         let mut x = 3;
         while x < SIZE[0] - 1 {
             if z != DIVIDER_Z {
-                out.push([x, SIZE[1] - 2, z]);
+                out.push([x, HALL_ROOF_Y - 1, z]);
             }
             x += 6;
         }
@@ -705,7 +731,7 @@ fn lanterns() -> Vec<[i32; 3]> {
     // dais's far corner at light 7 — one under the `lit` bar the metadata
     // claims. A floor the grid does not reach carries its own light rather than
     // the profile carrying a claim it cannot meet.
-    out.push([19, SIZE[1] - 2, 18]);
+    out.push([19, HALL_ROOF_Y - 1, 18]);
     out
 }
 
@@ -807,10 +833,22 @@ fn block_at(
         }
         return ("minecraft:stone", None);
     }
-    if y == SIZE[1] - 1 {
+    if y >= HALL_ROOF_Y {
+        // The long gallery on the roof and the shaft its stair climbs through;
+        // everything else above the roof is solid, so no air of the piece's own
+        // reaches its box boundary and nothing has to answer for an outside a
+        // body could stand in (`DW0886`).
+        if let Some(b) = long_gallery_at(x, y, z) {
+            return b;
+        }
         return ("minecraft:stone", None);
     }
     if x == 0 || x == SIZE[0] - 1 || z == 0 || z == SIZE[2] - 1 {
+        return ("minecraft:stone", None);
+    }
+    // The long gallery's stair: one course of rise per cell, climbing west
+    // along the far wall from the far hall's floor to the gallery's porch.
+    if z == LONG_GALLERY_STAIR_Z && (3..=9).contains(&x) && y <= 10 - x {
         return ("minecraft:stone", None);
     }
     if z == DIVIDER_Z {
@@ -1001,6 +1039,15 @@ fn assert_anchors_are_standable(s: &Structure) {
             at(a.pos),
             "minecraft:chest",
             "{ID}: container anchor `{}` is not a chest",
+            a.name
+        );
+    }
+    // A volume's centre hangs in the air it centres.
+    for a in VOLUME_ANCHORS {
+        assert_eq!(
+            at(a.pos),
+            "minecraft:air",
+            "{ID}: volume anchor `{}` is not in air",
             a.name
         );
     }
@@ -1451,7 +1498,7 @@ fn spatial_contract() -> serde_json::Value {
     let (lx0, lx1, lz0, lz1) = LOFT;
     let (fx0, fx1, fz0, fz1) = FLIGHT;
     let (in0, in1) = (1, SIZE[0] - 2); // the interior, wall to wall
-    let (top, floor) = (SIZE[1] - 2, 1);
+    let (top, floor) = (HALL_ROOF_Y - 1, 1);
 
     // A stair lands ON the dais, so the flight's run starts where the dais's
     // south face is. The decomposition below relies on that — with a gap
@@ -1553,7 +1600,12 @@ fn spatial_contract() -> serde_json::Value {
 fn metadata() -> serde_json::Value {
     use serde_json::{json, Map, Value};
     let mut anchors = Map::new();
-    for a in ANCHORS.iter().chain(CONTAINERS).chain(SOLID_ANCHORS) {
+    for a in ANCHORS
+        .iter()
+        .chain(CONTAINERS)
+        .chain(SOLID_ANCHORS)
+        .chain(VOLUME_ANCHORS)
+    {
         let mut m = Map::new();
         m.insert("pos".into(), json!(a.pos));
         if let Some(f) = a.facing {
@@ -3123,6 +3175,177 @@ fn write_quay(out: &Path) {
         meta["walk_y"], meta["waterline_y"], fluid.examined, fluid.at_edge
     );
 }
+
+// ---------------------------------------------------------------------------
+// The long gallery (spec-0086): a corridor of identical bays that never ends
+// ---------------------------------------------------------------------------
+
+/// The long gallery's extent in its own frame, `(width, height, length)`: 7
+/// across — the west wall, the passage 1..=3, the east wall with a glass window
+/// in every bay, a sealed cavity strip behind the windows, the outer wall — 5
+/// high (its floor is the hall's roof, the passage three courses, its own roof),
+/// and 27 long. Its frame is laid on the hall's roof by [`long_gallery_frame`].
+const CORRIDOR_SIZE: [i32; 3] = [7, 5, 27];
+
+/// How many courses one bay repeats over, along the gallery's length.
+const CORRIDOR_PERIOD: i32 = 6;
+
+/// The first of the three bays starts four courses in; the porch is 1..=3.
+const CORRIDOR_FIRST_BAY: i32 = 4;
+
+/// How many identical bays the gallery holds.
+const CORRIDOR_BAYS: i32 = 3;
+
+/// Bay `k`'s mouth, in the gallery's own frame.
+const fn corridor_bay(k: i32) -> i32 {
+    CORRIDOR_FIRST_BAY + CORRIDOR_PERIOD * k
+}
+
+/// The hall's `z` the stair climbs along, against the far wall.
+const LONG_GALLERY_STAIR_Z: i32 = SIZE[2] - 3;
+
+/// A hall cell `(x, y, z)` in the gallery's own frame `(u, v, w)`: across the
+/// hall's west strip, up from the roof, and along the hall's length from the
+/// far wall toward the near one — so the porch stands over the stair and the
+/// gallery runs back toward the lectern.
+fn long_gallery_frame(x: i32, y: i32, z: i32) -> Option<[i32; 3]> {
+    let (u, v, w) = (x, y - HALL_ROOF_Y, (SIZE[2] - 1) - z);
+    let inside = (0..CORRIDOR_SIZE[0]).contains(&u)
+        && (0..CORRIDOR_SIZE[1]).contains(&v)
+        && (0..CORRIDOR_SIZE[2]).contains(&w);
+    inside.then_some([u, v, w])
+}
+
+/// The hall cell of a gallery-frame cell — the inverse of [`long_gallery_frame`].
+const fn long_gallery_cell(u: i32, v: i32, w: i32) -> [i32; 3] {
+    [u, v + HALL_ROOF_Y, (SIZE[2] - 1) - w]
+}
+
+/// The cells cut through the hall's roof and the gallery's east wall so the
+/// stair's top courses have headroom and step into the porch: everything over
+/// the stair's three highest treads up to the passage's head height.
+fn in_stair_shaft(x: i32, y: i32, z: i32) -> bool {
+    z == LONG_GALLERY_STAIR_Z
+        && (4..=6).contains(&x)
+        && (HALL_ROOF_Y..=HALL_ROOF_Y + 2).contains(&y)
+        && !(x == 6 && y > HALL_ROOF_Y)
+}
+
+/// What stands at a hall cell the long gallery owns, or `None` off it.
+///
+/// Each bay is the same six courses: its mouth open (where the loop's slab
+/// stands), a lantern hung from the roof, a baffle across the passage's two
+/// western cells, two open courses with a window east, and a baffle across the
+/// two eastern cells. The two baffles stagger, so a line of sight down the
+/// passage closes inside one bay — the jog the loop's seamlessness proof asks
+/// for — and a body walks it as a zigzag. The end room past bay 2 opens exactly
+/// as a bay 3 would, with its lantern where bay 3's would hang, so the light a
+/// body sees from the slab is the light it sees from the landing.
+fn long_gallery_at(
+    x: i32,
+    y: i32,
+    z: i32,
+) -> Option<(
+    &'static str,
+    Option<&'static [(&'static str, &'static str)]>,
+)> {
+    if in_stair_shaft(x, y, z) {
+        return Some(("minecraft:air", None));
+    }
+    let [u, v, w] = long_gallery_frame(x, y, z)?;
+    let [su, sv, sw] = CORRIDOR_SIZE;
+    const LANTERN: Option<&[(&str, &str)]> = Some(&[("hanging", "true")]);
+    let shell = v == 0 || v == sv - 1 || w == 0 || w == sw - 1 || u == 0 || u == su - 1;
+    if shell {
+        return Some(("minecraft:stone", None));
+    }
+    let in_bays = (corridor_bay(0)..corridor_bay(CORRIDOR_BAYS)).contains(&w);
+    let o = (w - CORRIDOR_FIRST_BAY).rem_euclid(CORRIDOR_PERIOD);
+    if u == 4 {
+        if in_bays && o == 3 && v == 2 {
+            return Some(("minecraft:glass", None));
+        }
+        return Some(("minecraft:stone", None));
+    }
+    if u == 5 {
+        return Some(if in_bays {
+            ("minecraft:air", None)
+        } else {
+            ("minecraft:stone", None)
+        });
+    }
+    if in_bays {
+        let baffle = (o == 2 && (u == 1 || u == 2)) || (o == 5 && (u == 2 || u == 3));
+        if baffle {
+            return Some(("minecraft:stone", None));
+        }
+        if o == 1 && u == 2 && v == sv - 2 {
+            return Some(("minecraft:lantern", LANTERN));
+        }
+    }
+    if w == corridor_bay(CORRIDOR_BAYS) + 1 && u == 2 && v == sv - 2 {
+        return Some(("minecraft:lantern", LANTERN));
+    }
+    Some(("minecraft:air", None))
+}
+
+/// **The anchors that centre a volume rather than stand a body** — the loop's
+/// slab and its landing, each at the passage's mid-height so `± [1, 1, 0]` is
+/// exactly the open cross-section. They hang in air by design, so they are held
+/// to air and to an open cross-section, not to a floor.
+const VOLUME_ANCHORS: &[Anchor] = &[
+    Anchor {
+        name: "anchor/long-gallery-slab",
+        pos: long_gallery_cell(2, 2, corridor_bay(2)),
+        facing: None,
+        trigger_block: None,
+        note: "the mouth of the long gallery's bay 2, mid-height: the loop's slab is this cell \
+               ± [1, 1, 0], exactly the passage's open cross-section",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-landing",
+        pos: long_gallery_cell(2, 2, corridor_bay(1)),
+        facing: None,
+        trigger_block: None,
+        note: "the mouth of the long gallery's bay 1, one bay back toward the porch: where a body \
+               crossing the slab is put down",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-lamp-0",
+        pos: long_gallery_cell(1, 3, corridor_bay(0) + 3),
+        facing: None,
+        trigger_block: None,
+        note:
+            "under the long gallery's roof in bay 0: where the first crossing hangs a second lamp",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-lamp-1",
+        pos: long_gallery_cell(1, 3, corridor_bay(1) + 3),
+        facing: None,
+        trigger_block: None,
+        note: "the same cell of bay 1",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-lamp-2",
+        pos: long_gallery_cell(1, 3, corridor_bay(2) + 3),
+        facing: None,
+        trigger_block: None,
+        note: "the same cell of bay 2",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-lamp-3",
+        pos: long_gallery_cell(1, 3, corridor_bay(3) + 3),
+        facing: None,
+        trigger_block: None,
+        note: "the same cell of the end room, where a bay 3 would hang it",
+        role: None,
+    },
+];
 
 fn main() {
     let mut args = std::env::args().skip(1);

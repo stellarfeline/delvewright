@@ -61,11 +61,18 @@
         "node": "node/near-hall",
         "objective": "obj/look-into-the-well",
         "quest": "quest/the-reliquary"
+      },
+      {
+        "node": "node/long-gallery",
+        "objective": "obj/walk-the-long-gallery",
+        "quest": "quest/far-hall"
       }
     ],
     "critical_path": [
       "node/near-hall",
       "node/annex",
+      "node/far-hall",
+      "node/long-gallery",
       "node/far-hall",
       "node/loft",
       "node/far-hall",
@@ -179,6 +186,12 @@
         "b": "node/loft",
         "class": "vision",
         "id": "edge/loft-sightline"
+      },
+      {
+        "a": "node/far-hall",
+        "b": "node/long-gallery",
+        "class": "stair",
+        "id": "edge/long-gallery-stair"
       }
     ],
     "entry": "node/near-hall",
@@ -217,6 +230,12 @@
         "id": "node/exit",
         "intent": "goal-chamber",
         "size_class": "alcove"
+      },
+      {
+        "id": "node/long-gallery",
+        "intent": "side-gallery",
+        "note": "The long gallery on the hall's roof, up a stair from the far hall: three identical bays a body is returned through until it has crossed enough (spec-0086).",
+        "size_class": "room"
       }
     ]
   },

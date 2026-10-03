@@ -1,0 +1,13 @@
+{
+  "code": "DW0949",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/state/6/scope",
+      "value": "player"
+    }
+  ],
+  "units": [],
+  "why": "The count the long gallery's release reads, declared `player`-scoped: each player would keep their own count, and a party where one player has crossed enough and another has not is split into a released half and a looped half. The release is a fact about the party; the refusal names the datum and the gate term that reads it. It declares no unit."
+}

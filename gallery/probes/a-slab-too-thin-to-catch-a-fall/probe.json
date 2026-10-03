@@ -1,0 +1,30 @@
+{
+  "code": "DW0945",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loops/0/region/extent",
+      "value": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loops/0/to",
+      "value": {
+        "anchor": "anchor/long-gallery-slab",
+        "offset": [
+          0,
+          -1,
+          0
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "The loop turned on its side: the slab drawn one cell thick in y and the landing one course under it, so the move is a drop through a horizontal plane. A falling body approaches 3.92 blocks a tick (the fall law the seamless-loop rig measured), and a one-tick poll over a one-cell slab sees a body for a window of one cell plus its 1.8-block height — under the speed, so a long fall passes the slab between two polls; the rig caught 9 of 10 drops at one cell. The refusal names the window, the speed and the thickness that would catch it. It declares no unit."
+}

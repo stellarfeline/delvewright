@@ -1,0 +1,53 @@
+{
+  "code": "DW0946",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/lamp-behind-the-glass",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                5,
+                10,
+                23
+              ],
+              "min": [
+                5,
+                10,
+                23
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:lantern",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/lamp-behind-the-glass",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/lamp-behind-the-glass",
+        "note": "A lantern stood in the sealed cavity behind bay 0's window."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A lantern stood in the sealed cavity behind the long gallery's bay-0 window, where no eye in the landing bay can see it — glass stops a line of sight in the engine's sight model — and where its light still passes the glass into bay 0. Every visible block is unchanged; one bay is lit brighter than the bay it is seen as from the slab. The refusal names a cell, both light levels and the sky they were read at. It declares no unit."
+}
