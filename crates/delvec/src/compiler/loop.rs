@@ -1606,6 +1606,31 @@ fn check_one(
             cell_words(l.cross())
         )));
     }
+    // A body crossing a horizontal slab may be in the air: vanilla selects on
+    // hitbox intersection, so the slab must reach above the highest feet a jump
+    // from its floor puts a body at, or a jumping body passes over it unmoved.
+    // The apex is `MAX_JUMP_RISE_16` sixteenths and the next sixteenth is out of
+    // reach (`metrics`), so the slab's top face must stand at least that next
+    // sixteenth over the floor course's walk plane.
+    if a != 1 {
+        let above_16 =
+            i64::from(l.slab.1[1] + 1 - l.cross()[1]) * delvewright_dsl::metrics::FULL_16;
+        let need_16 = delvewright_dsl::metrics::MAX_JUMP_RISE_16 + 1;
+        if above_16 < need_16 {
+            return Err(slab_fault(format!(
+                "it is too low to catch a jumping body: its top face stands {above}/16 of a \
+                 block over the walk plane at {}, and a jump from that floor lifts a body's feet \
+                 to {apex}/16 (`metrics::MAX_JUMP_RISE_16`), so a body jumping across passes \
+                 over the slab between two polls. Draw the slab at least {courses} courses tall \
+                 from the passage floor",
+                cell_words(l.cross()),
+                above = above_16,
+                apex = delvewright_dsl::metrics::MAX_JUMP_RISE_16,
+                courses = (need_16 + delvewright_dsl::metrics::FULL_16 - 1)
+                    / delvewright_dsl::metrics::FULL_16,
+            )));
+        }
+    }
 
     // ---- §4.3 the periodic span ----
     let eyes = eyes(l, world);

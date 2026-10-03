@@ -315,6 +315,20 @@ fn dw0945_a_slab_over_a_lethal_keep_out() {
     );
 }
 
+/// A horizontal slab one course tall is crossed by a body that jumps: its feet
+/// rise above the slab's top face for several ticks, the selector stops
+/// meeting its hitbox, and it passes over unmoved.
+#[test]
+fn dw0945_a_slab_a_jump_clears() {
+    let run = build(&campaign("slab-low", |q| {
+        loop_mut(q)["region"] = json!({ "anchor": "anchor/in-the-slab", "extent": [0, 0, 0] });
+        loop_mut(q)["to"] = json!({ "anchor": "anchor/in-the-slab", "offset": [0, 0, -6] });
+    }));
+    let line = run.refused("DW0945");
+    assert!(line.contains("too low to catch a jumping body"), "{line}");
+    assert!(line.contains("16/16") && line.contains("20/16"), "{line}");
+}
+
 #[test]
 fn dw0945_a_slab_cell_a_body_cannot_be_in() {
     let run = build(&campaign("slab-wall", |q| {
