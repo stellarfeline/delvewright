@@ -136,7 +136,8 @@ fn a_night_design_under_a_noon_world_is_refused_at_validation_and_the_hour_repai
     assert_eq!(code, 1, "refused at validation:\n{before}");
     assert!(before.contains("DW0890"), "{before}");
     assert!(
-        before.contains("world times {noon}") && before.contains("stated times {night}"),
+        before.contains("world times {noon (day 0, 6000)}")
+            && before.contains("stated times {night (day 0, 13000)}"),
         "the refusal states both sets:\n{before}"
     );
     // Validation, not the build: nothing is placed to know this.
@@ -184,7 +185,7 @@ fn a_set_time_inside_a_sequence_step_moves_the_world_side_of_the_comparison() {
     assert_eq!(code, 1, "the buried effect is seen:\n{red}");
     assert!(red.contains("DW0890"), "{red}");
     assert!(
-        red.contains("reaches the time(s) {dawn} that no approved picture shows"),
+        red.contains("reaches the time(s) {dawn (day 0, 23000)} that no approved picture shows"),
         "the refusal names the hour the effect added:\n{red}"
     );
 

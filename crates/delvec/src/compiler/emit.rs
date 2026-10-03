@@ -2666,7 +2666,7 @@ fn sealing_commands(
         // rejected outright by 1.21.11 — the compiler's own command validator caught
         // `sendCommandFeedback` here before it could reach a world.)
         "gamerule send_command_feedback false".to_string(),
-        format!("time set {}", time.token()),
+        format!("time set {}", time.token(time.world_clock())),
     ];
     // Traps (DSL v0.6, spec-0011) exclude TNT as a payload — no gamerule separates
     // explosion *block* damage from *entity* damage, so a TNT trap would deform the
@@ -4607,7 +4607,11 @@ fn emit_functions(
             // v0.5: world time / weather cuts this option declares (dialogue
             // `set-time`/`set-weather`, spec-0010). Dimension-global instant cuts.
             for t in &opt.sets_time {
-                body.push(format!("time set {}", t.token()));
+                let world = c.world.content.time;
+                body.push(format!(
+                    "time set {}",
+                    t.token(t.clock(delvewright_dsl::TimeSite::Cut, world))
+                ));
             }
             for w in &opt.sets_weather {
                 body.push(format!("weather {}", w.token()));
@@ -6469,7 +6473,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // state persists until the next cut. No selector: `/time set` and
         // `/weather` act on the whole dimension.
         Verb::SetTime { time, .. } => {
-            body.push(format!("time set {}", time.token()));
+            // One token for every cut (spec-0081 §4.4): a keyword on day 0 is
+            // its keyword; any other clock — a celestial statement, or a keyword
+            // cut in a world whose moon stands on another day — is the integer.
+            let world = plan.campaign.world.content.time;
+            body.push(format!(
+                "time set {}",
+                time.token(time.clock(delvewright_dsl::TimeSite::Cut, world))
+            ));
         }
         Verb::SetWeather { weather, .. } => {
             body.push(format!("weather {}", weather.token()));
@@ -14806,10 +14817,11 @@ fn emit_packtest(
     sealed.push(String::new());
     sealed.push(format!("function {ns}:setup"));
     let sealed_time = c.world.content.time;
-    let sealed_ticks = sealed_time.daytime_ticks();
+    let sealed_clock = sealed_time.world_clock();
+    let sealed_ticks = sealed_clock.daytime;
     sealed.push(format!(
         "# time set {} -> daytime {sealed_ticks} (the sole sealing command with a",
-        sealed_time.token()
+        sealed_time.token(sealed_clock)
     ));
     sealed.push("# vanilla read-back path; gamerules are asserted at compile time).".to_string());
     sealed.push(
@@ -14818,6 +14830,47 @@ fn emit_packtest(
     sealed.push(format!(
         "assert score #sealtime_sealed dw.sys matches {sealed_ticks}"
     ));
+    // spec-0081 §4.4: a celestial world states the day too — the half of the
+    // clock the moon's phase is a function of — so its second read-back is
+    // asserted, and, where the moon is up, the phase itself, through a
+    // `time_check` predicate over the moon timeline's period. A keyword world
+    // is vanilla's hour on day 0 and its bytes do not move.
+    if !sealed_time.is_keyword() {
+        sealed.push(format!(
+            "# daytime {sealed_ticks} on day {} (dayTime {}): the moon shows {}.",
+            sealed_clock.day,
+            sealed_clock.absolute(),
+            sealed_clock.phase().name()
+        ));
+        sealed.push(
+            "execute store result score #sealday_sealed dw.sys run time query day".to_string(),
+        );
+        sealed.push(format!(
+            "assert score #sealday_sealed dw.sys matches {}",
+            sealed_clock.day
+        ));
+        if delvewright_dsl::celestial::moon_up(sealed_clock.daytime) {
+            let phase = sealed_clock.phase();
+            let pred = format!("moon_{}", phase.name());
+            let lo = phase.index() * delvewright_dsl::celestial::DAY_TICKS;
+            put_json(
+                out,
+                &format!("packtest-datapack/data/{ns}/predicate/{pred}.json"),
+                &serde_json::json!({
+                    "condition": "minecraft:time_check",
+                    "period": delvewright_dsl::celestial::moon_period_ticks(),
+                    "value": {
+                        "min": lo,
+                        "max": lo + delvewright_dsl::celestial::DAY_TICKS - 1,
+                    },
+                }),
+            );
+            sealed.push(format!(
+                "execute store success score #sealmoon_sealed dw.sys if predicate {ns}:{pred}"
+            ));
+            sealed.push("assert score #sealmoon_sealed dw.sys matches 1".to_string());
+        }
+    }
 
     out.insert(
         format!("packtest-datapack/data/{ns}/test/sealed_state.mcfunction"),
