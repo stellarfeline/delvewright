@@ -248,6 +248,9 @@ services:
       DELVEWRIGHT_RETRY_ON_DEATH:
       DELVEWRIGHT_CUTSCENE_GRACE_MS:
       DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS:
+      # spec-0086: how long one crossing of a `loop` step may take before the
+      # step fails (executor.ts, default 20 s).
+      DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS:
     volumes:
       - ${DELVE_OUTPUT:-./delve-output}/critical-path.json:/delve/critical-path.json:ro
       # The compiler-proven per-leg waypoint artifact

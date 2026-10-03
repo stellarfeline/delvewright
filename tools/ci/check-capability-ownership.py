@@ -353,6 +353,11 @@ EFFECT_BUNDLES = {
         "the point: 'the purse is dropped on death' is then ordinary content in a "
         "general mechanism rather than an engine feature."
     ),
+    "on_cross": (
+        "ROOT R10 (`EffectRootKind::LoopCross`) — a loop's answer to each crossing "
+        "(spec-0086), run under `Audience::Scheduled`. Added as a root with the "
+        "surface, for the reason `on_death` was."
+    ),
 }
 
 EFFECT_BUNDLE_FIELD = re.compile(r"^\s*(?:pub )?([a-z0-9_]+):\s*(?:Vec<QuestEffect>|BTreeMap<ObjectiveId, Vec<QuestEffect>>)")
