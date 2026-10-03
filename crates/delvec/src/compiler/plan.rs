@@ -4442,14 +4442,17 @@ fn build_critical_path(
     // NPC's cast row — the same journal `crate::compiler::branch`'s `DW0483` reads, so the
     // placement the ladder walks to and the placement the proofs check are chosen
     // by ONE model (see [`crate::compiler::cast::station`]).
-    let journal = flow.journal(path);
-    let flags_at: Vec<BTreeSet<String>> = journal.iter().map(|s| s.flags_before.clone()).collect();
+    let flags_at: Vec<BTreeSet<String>> = flow
+        .journal(path)
+        .into_iter()
+        .map(|s| s.flags_before)
+        .collect();
     let begun: BTreeSet<String> = path.quests.iter().cloned().collect();
 
     // The environment triggers this path performs, keyed by the path step each
     // is performed in front of. See [`path_triggers`].
     let due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
-    let (fired, undecided) = path_fired_lines(campaign, flow, path, &journal, &due);
+    let (fired, undecided) = path_fired_lines(campaign, flow, path, &due);
     let mut trigger_step: BTreeMap<String, usize> = BTreeMap::new();
 
     for (si, st) in path.steps.iter().enumerate() {
@@ -4975,29 +4978,23 @@ fn build_critical_path(
 
 /// **Every effect line a path fires** — the input [`PathFiring::fires`] reads.
 ///
-/// Two halves, one replay. The quest bundles are the flow journal's own
-/// `fired`/`undecided` over the path (the gate test the replay applies where it
-/// reaches each line — flags, and numeric terms against the value the walk
-/// holds there). A trigger's `effects` are fired by the same replay
-/// ([`crate::compiler::flow::Walk::probe`]) at the state the walk holds in front
-/// of the step the path performs it at (`due`), so a guarded line of a trigger is
-/// judged exactly as a guarded line of a quest bundle is.
+/// One walk of the replay under its **guaranteed** stance
+/// ([`crate::compiler::flow::Flow::walk_performing`]): a flag an ambient producer
+/// sets is held only once the path performs the trigger that owns it, and a
+/// producer no trigger owns (a trap or timed-gate disarm, a purchase) is never
+/// held. Each step's `fired`/`undecided` is the replay's own gate test where it
+/// reaches each line — flags, and numeric terms against the value the walk holds
+/// there. A trigger the path performs in front of a step (`due`) has its
+/// `effects` fired by the same replay ([`crate::compiler::flow::Walk::probe`]) at
+/// the state the walk holds there, and from then on its producers are credited.
 fn path_fired_lines(
     campaign: &Campaign,
     flow: &crate::compiler::flow::Flow<'_>,
     path: &crate::compiler::flow::Playthrough,
-    journal: &[crate::compiler::flow::JournalStep],
     due: &BTreeMap<usize, Vec<Step>>,
 ) -> (BTreeSet<String>, BTreeSet<String>) {
     let mut fired: BTreeSet<String> = BTreeSet::new();
     let mut undecided: BTreeSet<String> = BTreeSet::new();
-    for step in journal {
-        fired.extend(step.fired.iter().cloned());
-        undecided.extend(step.undecided.iter().cloned());
-    }
-    if due.is_empty() {
-        return (fired, undecided);
-    }
     // A trigger's effect list and its root pointer, from the one root walk.
     let mut roots: BTreeMap<&str, (String, &[QuestEffect])> = BTreeMap::new();
     for_each_effect_root(campaign, &mut |site, list| {
@@ -5005,20 +5002,22 @@ fn path_fired_lines(
             roots.insert(t.id.as_str(), (site.path.clone(), list));
         }
     });
-    let mut walk = flow.walk();
+    let mut walk = flow.walk_performing();
     for (si, step) in path.steps.iter().enumerate() {
         for performed in due.get(&si).into_iter().flatten() {
             let Step::Trigger { trigger_id, .. } = performed else {
                 continue;
             };
-            let Some((base, effs)) = roots.get(trigger_id.as_str()) else {
-                continue;
-            };
-            let (f, u) = walk.probe(trigger_id, effs, base);
-            fired.extend(f);
-            undecided.extend(u);
+            if let Some((base, effs)) = roots.get(trigger_id.as_str()) {
+                let (f, u) = walk.probe(trigger_id, effs, base);
+                fired.extend(f);
+                undecided.extend(u);
+            }
+            walk.perform(trigger_id);
         }
-        walk.take(step);
+        let taken = walk.take(step);
+        fired.extend(taken.fired);
+        undecided.extend(taken.undecided);
     }
     (fired, undecided)
 }

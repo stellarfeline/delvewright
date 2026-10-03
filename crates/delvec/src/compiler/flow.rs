@@ -485,9 +485,38 @@ pub struct Walk<'f, 'a> {
     complete_at: Option<(usize, String)>,
     /// Steps taken so far.
     taken: usize,
+    /// Which ambient producers this walk credits. `None` is the replay's own
+    /// stance — every producer whose gate holds, because a player CAN fire it.
+    /// `Some(performed)` is the guaranteed stance ([`Flow::walk_performing`]):
+    /// only the producers of the triggers the path has performed so far, and no
+    /// other ambient producer at all (a trap disarm, a timed gate's disarm, a
+    /// purchase are acts nothing forces).
+    performed: Option<BTreeSet<String>>,
 }
 
 impl Walk<'_, '_> {
+    /// Whether this walk credits ambient producer `g` now.
+    fn credits(&self, g: &GatedFlag) -> bool {
+        match &self.performed {
+            None => true,
+            Some(done) => g.trigger.as_ref().is_some_and(|t| done.contains(t)),
+        }
+    }
+
+    /// The path performs trigger `id` here: from now on its producers are
+    /// credited (to fixpoint, under their own gates). A no-op on a walk that
+    /// already credits every producer.
+    pub fn perform(&mut self, id: &str) {
+        let Some(done) = self.performed.as_mut() else {
+            return;
+        };
+        done.insert(id.to_string());
+        let mut flags = std::mem::take(&mut self.st.flags);
+        self.flow
+            .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
+        self.st.flags = flags;
+    }
+
     /// Can `step` be completed now — the replay's own per-step test, and not
     /// already done.
     pub fn legal(&self, step: &PathStep) -> bool {
@@ -500,8 +529,17 @@ impl Walk<'_, '_> {
     pub fn take(&mut self, step: &PathStep) -> JournalStep {
         let before = self.st.clone();
         self.taken += 1;
-        self.flow
-            .advance(&mut self.st, step, self.taken, &mut self.complete_at);
+        let mut st = std::mem::take(&mut self.st);
+        let mut complete_at = self.complete_at.take();
+        self.flow.advance_with(
+            &mut st,
+            step,
+            self.taken,
+            &mut complete_at,
+            &|g: &GatedFlag| self.credits(g),
+        );
+        self.st = st;
+        self.complete_at = complete_at;
         JournalStep {
             quest: step.quest.clone(),
             objective: step.objective.clone(),
@@ -1333,6 +1371,25 @@ impl<'a> Flow<'a> {
             st: self.initial_state(),
             complete_at: None,
             taken: 0,
+            performed: None,
+        }
+    }
+
+    /// [`Self::walk`] under the **guaranteed** stance: an ambient producer is
+    /// credited only once the path performs its trigger ([`Walk::perform`]), and
+    /// a producer no trigger owns is never credited. The same state machine
+    /// ([`Self::advance_with`], [`Self::saturate_ambient_with`]) the replay and
+    /// [`Self::trigger_debts`] run, with the one predicate that says which
+    /// producers have fired — so "this flag is set at this step" has one model,
+    /// asked at the strength the question needs. Read by the forcing rule
+    /// (`plan::PathFiring`).
+    pub fn walk_performing(&self) -> Walk<'_, 'a> {
+        Walk {
+            flow: self,
+            st: self.initial_state_with(&|_| false),
+            complete_at: None,
+            taken: 0,
+            performed: Some(BTreeSet::new()),
         }
     }
 

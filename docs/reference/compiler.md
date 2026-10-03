@@ -5822,11 +5822,16 @@ quest, a line of an environment trigger on a path that performs it, and the
 world's own load-time seals always; a bundle whose objective or quest is absent
 from the path (a branch the path does not take, a quest outside its closure) is
 unforced on that path whatever the quest's `mandatory` says. **A line is forced
-only where the path's replay fires it**: `PathFiring::fired` is the flow
-journal's `fired` over every step (the replay's own gate test — flags, and
+only where the path's replay fires it**: `PathFiring::fired` is every line one
+walk of the replay fires over the path (the replay's own gate test — flags, and
 numeric terms against the value the walk holds there), plus every line of every
 trigger the path performs, fired by the same replay at the state the walk holds
-in front of that step (`flow::Walk::probe`). A line whose `when` guard, or an
+in front of that step (`flow::Walk::probe`). That walk takes the replay's
+**guaranteed** stance (`flow::Flow::walk_performing`): a flag an ambient
+producer sets is held only once the path performs the trigger that owns it, and
+a flag only a trap or timed-gate disarm sets is never held — the replay itself
+credits every producer whose gate holds, because a player can fire it, and
+"can" is not "must". A line whose `when` guard, or an
 enclosing one, does not hold where the path reaches it is unforced, and so is a
 line whose gate held only on a datum no ordered walk can date
 (`PathFiring::undecided`). Inside one effect list the replay knows such a datum

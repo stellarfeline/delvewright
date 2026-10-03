@@ -521,9 +521,56 @@ fn a_door_opened_behind_an_undatable_gate_is_not_credited() {
 /// `flag/warded` is a `use` trigger on the spawn stone that opens no way and
 /// that no objective reads — so the path never performs it. Nothing the path
 /// fires opens the door, and the walk out is `DW0317`.
+///
+/// Control: `obj/watch` itself reads `flag/warded`, so the path owes the act and
+/// performs the trigger in front of it; the flag is then held where the opening
+/// fires, and the campaign builds.
 #[test]
 fn a_door_opened_behind_a_flag_only_an_unperformed_trigger_sets_is_not_credited() {
+    let control = TempCampaign::new("ambient-flag-gate-performed");
+    ward_the_door(&control);
+    control.patch("quests", |q| {
+        let watch = &mut quest(q, "quest/hold")["objectives"][0];
+        assert_eq!(watch["id"], "obj/watch", "fixture drift");
+        watch["requires_flags"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("flag/warded"));
+    });
+    let out = try_build_campaign(control.path())
+        .unwrap_or_else(|e| panic!("a trigger the path performs sets its flag: {e:?}"));
+    let path = json_at(&out, "critical-path.json");
+    assert!(
+        path["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["trigger"] == "trigger/ward-the-door"),
+        "the control must actually perform the trigger: {path:#}"
+    );
+
     let tmp = TempCampaign::new("ambient-flag-gate");
+    ward_the_door(&tmp);
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("`anchor/door`")
+                    && message.contains("a line whose gate does not hold where this path plays it"),
+                "the diagnostic must name the door and why nothing opens it: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => panic!(
+            "expected DW0317: the door opens behind a flag only a trigger the path never \
+             performs sets"
+        ),
+    }
+}
+
+/// Guard the hold path's own `open-gate` on `flag/warded`, and give the flag one
+/// producer: a `use` trigger on the spawn stone that opens no way.
+fn ward_the_door(tmp: &TempCampaign) {
     tmp.patch("quests", |q| {
         let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
             .as_array_mut()
@@ -544,20 +591,4 @@ fn a_door_opened_behind_a_flag_only_an_unperformed_trigger_sets_is_not_credited(
             "effects": [ { "type": "set-flag", "flag": "flag/warded" } ]
         }));
     });
-
-    match try_build_campaign(tmp.path()) {
-        Err(BuildFailure::Diagnostic { code, message }) => {
-            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
-            assert!(
-                message.contains("`anchor/door`")
-                    && message.contains("a line whose gate does not hold where this path plays it"),
-                "the diagnostic must name the door and why nothing opens it: {message}"
-            );
-        }
-        Err(other) => panic!("expected DW0317, got {other:?}"),
-        Ok(_) => panic!(
-            "expected DW0317: the door opens behind a flag only a trigger the path never \
-             performs sets"
-        ),
-    }
 }
