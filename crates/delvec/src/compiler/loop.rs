@@ -46,6 +46,7 @@ use delvewright_dsl::{
 };
 
 use crate::compiler::plan::{RegionEvent, RegionWrite, ResolvedAnchor};
+use crate::compiler::timeline::Region;
 
 /// `DW0945`: **the slab's geometry** (spec-0086 §4.2) — not a slab, a move that
 /// does not clear it, a slab too thin for the one-tick poll along its axis, a
@@ -424,7 +425,7 @@ pub struct Exercise {
     /// The region writes the crossings' `on_cross` effects perform, in order,
     /// as `(zone or gate anchor resolution, write)` — credited as forced at the
     /// step.
-    pub writes: Vec<(([i32; 3], [i32; 3]), RegionWrite)>,
+    pub writes: Vec<(Region, RegionWrite)>,
     /// The JSON pointers of the `on_cross` effects that fired, per crossing, in
     /// order — the configurations the world half checks.
     pub fired: Vec<Vec<usize>>,
@@ -530,7 +531,7 @@ impl LoopReplay {
         effs: &[QuestEffect],
         st: &mut GateState,
         anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-        writes: &mut Vec<(([i32; 3], [i32; 3]), RegionWrite)>,
+        writes: &mut Vec<(Region, RegionWrite)>,
     ) -> Vec<usize> {
         let mut fired = Vec::new();
         for (i, e) in effs.iter().enumerate() {
@@ -654,7 +655,7 @@ impl LoopReplay {
         l: &LoopPlan,
         st: &mut GateState,
         anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-        writes: &mut Vec<(([i32; 3], [i32; 3]), RegionWrite)>,
+        writes: &mut Vec<(Region, RegionWrite)>,
     ) -> Vec<usize> {
         if let Some(c) = &l.counts {
             if self.owned.contains(c) {
@@ -756,7 +757,7 @@ pub struct LoopSplice {
     flags: BTreeSet<String>,
     data: BTreeMap<String, Option<i64>>,
     spliced: Spliced,
-    writes: Vec<(usize, ([i32; 3], [i32; 3]), RegionWrite)>,
+    writes: Vec<(usize, Region, RegionWrite)>,
 }
 
 impl LoopSplice {
@@ -1126,7 +1127,11 @@ fn sight(
 /// `2a + 1` the high side.
 fn face_cells(b: ([i32; 3], [i32; 3]), face: usize) -> Vec<[i32; 3]> {
     let a = face / 2;
-    let v = if face % 2 == 0 { b.0[a] } else { b.1[a] };
+    let v = if face.is_multiple_of(2) {
+        b.0[a]
+    } else {
+        b.1[a]
+    };
     let mut out = Vec::new();
     for x in b.0[0]..=b.1[0] {
         for y in b.0[1]..=b.1[1] {
@@ -1177,7 +1182,7 @@ fn grow(
     loop {
         steps += 1;
         let mut grew = false;
-        for face in 0..6 {
+        for (face, face_word) in FACE_WORDS.iter().enumerate() {
             for c in face_cells(b, face) {
                 if world.blocks_camera(c) {
                     continue;
@@ -1198,7 +1203,7 @@ fn grow(
                     let word = if above {
                         "up, into open sky above the built volume"
                     } else {
-                        FACE_WORDS[face]
+                        face_word
                     };
                     return Err(format!(
                         "the eye at [{:.2}, {:.2}, {:.2}] (fog end {} blocks) sees the open cell \
@@ -1231,7 +1236,7 @@ fn grow(
                         c[0],
                         c[1],
                         c[2],
-                        FACE_WORDS[face]
+                        face_word
                     ));
                 }
                 grew = true;
@@ -1270,15 +1275,13 @@ fn grow(
 /// call it.
 struct Config {
     label: String,
-    writes: Vec<(([i32; 3], [i32; 3]), String)>,
+    writes: Vec<(Region, String)>,
 }
 
 /// Every runtime write a configuration may apply, in path order, as
 /// `(step, label, region, block)` — air for a clear.
-fn block_writes(
-    plan: &crate::compiler::plan::Plan,
-) -> Vec<(usize, String, ([i32; 3], [i32; 3]), String)> {
-    let mut out: Vec<(usize, String, ([i32; 3], [i32; 3]), String)> = Vec::new();
+fn block_writes(plan: &crate::compiler::plan::Plan) -> Vec<(usize, String, Region, String)> {
+    let mut out: Vec<(usize, String, Region, String)> = Vec::new();
     let air = "minecraft:air".to_string();
     crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
         // A loop the path exercises has its `on_cross` writes judged crossing
@@ -1477,7 +1480,7 @@ fn check_one(
     i: &Inputs<'_>,
     l: &LoopPlan,
     built: &[([i32; 3], [i32; 3])],
-    writes: &[(usize, String, ([i32; 3], [i32; 3]), String)],
+    writes: &[(usize, String, Region, String)],
     skies: &[(&str, u8); 2],
     row: &mut LoopRow,
 ) -> Result<(), crate::compiler::failure::Failure> {
@@ -1720,7 +1723,7 @@ fn check_one(
         [both.1[0] + 16, top.max(both.1[1] + 16), both.1[2] + 16],
     );
     // Volumes in the span tile or are refused.
-    let mut volumes: Vec<(String, ([i32; 3], [i32; 3]))> = plan
+    let mut volumes: Vec<(String, Region)> = plan
         .lethal_volumes
         .iter()
         .map(|v| {
@@ -1784,7 +1787,7 @@ fn check_one(
         label: "the world as it is placed, before any runtime write".to_string(),
         writes: Vec::new(),
     }];
-    let mut acc: Vec<(([i32; 3], [i32; 3]), String)> = Vec::new();
+    let mut acc: Vec<(Region, String)> = Vec::new();
     for (step, label, r, block) in writes {
         if !boxes_meet(*r, clip) {
             continue;
