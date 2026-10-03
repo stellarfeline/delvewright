@@ -5979,34 +5979,29 @@ fn verify_bodies_can_leave(
             .copied()
             .filter(|c| w.is_standable(*c))
             .collect();
-        let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned);
-        let afloat = reached.iter().filter(|c| w.is_water_surface(**c)).count();
+        let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        let judged = w.trapped_places(&seeds, &seed_set, returned);
+        let afloat = judged
+            .reached
+            .iter()
+            .filter(|c| w.is_water_surface(**c))
+            .count();
         // A shortcut is opened from its far side by whoever stands at its lever,
         // and the completability model holds it shut. A pocket whose own reach
         // takes a body to a lever, and through the door that lever opens back to
         // the route, is not a pocket.
-        let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
-        let kept: Vec<Vec<[i32; 3]>> = pockets_of(&trapped)
-            .into_iter()
+        let kept: Vec<Vec<[i32; 3]>> = judged
+            .pockets
+            .iter()
             .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, shortcuts))
+            .cloned()
             .collect();
         let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
+        let reached = &judged.reached;
         let described: Vec<String> = kept
             .iter()
             .map(|pocket| {
-                let entry = pocket.iter().find_map(|c| {
-                    preds
-                        .get(c)
-                        .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
-                        .map(|p| (*p, *c))
-                });
-                let how = match entry {
-                    Some((from, to)) => format!(
-                        "a body gets in from {from:?} to {to:?} by {}",
-                        movement_words(w, from, to)
-                    ),
-                    None => "a body gets in".to_string(),
-                };
+                let how = w.way_in_words(pocket, &trapped, &judged.preds);
                 format!(
                     "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim \
                      leads from any of them back to the route",
@@ -6095,6 +6090,65 @@ fn pockets_of(trapped: &BTreeSet<[i32; 3]>) -> Vec<Vec<[i32; 3]>> {
     out
 }
 
+/// **What a body can get into and not out of** over one world — the closure a
+/// body reaches from `roots` by [`World::body_moves`], and within it the places
+/// from which no movement sequence reaches a way out. The one leave relation:
+/// `DW0921` judges a campaign's route with it ([`check_bodies_can_leave`]) and
+/// `delvec sculpt` judges a sculpted piece with it (spec-0087 §3.4), so the two
+/// cannot disagree about what a pocket is.
+#[derive(Debug, Clone, Default)]
+pub struct TrappedPlaces {
+    /// Every cell a body can stand or float in from the roots, roots included.
+    pub reached: BTreeSet<[i32; 3]>,
+    /// The cells of `reached` it cannot leave, split into touching places
+    /// (26-neighbourhood), each sorted, in the order of their least cell.
+    pub pockets: Vec<Vec<[i32; 3]>>,
+    /// Every reached cell's predecessors, so a report can say how a body got in.
+    pub preds: BTreeMap<[i32; 3], Vec<[i32; 3]>>,
+}
+
+impl World {
+    /// [`TrappedPlaces`] from `roots`, where reaching any cell of `ways_out` —
+    /// or a cell the boundary clock carries a body back from (`returned`, the
+    /// inclusive corners of the playable box) — counts as having left.
+    pub fn trapped_places(
+        &self,
+        roots: &[[i32; 3]],
+        ways_out: &BTreeSet<[i32; 3]>,
+        returned: Option<([i32; 3], [i32; 3])>,
+    ) -> TrappedPlaces {
+        let (reached, trapped, preds) = self.cells_a_body_cannot_leave(roots, ways_out, returned);
+        TrappedPlaces {
+            reached,
+            pockets: pockets_of(&trapped),
+            preds,
+        }
+    }
+
+    /// How a body first gets into `pocket` from outside `trapped`, in words for
+    /// a report: `a body gets in from [..] to [..] by a fall of 3 block(s)`.
+    pub fn way_in_words(
+        &self,
+        pocket: &[[i32; 3]],
+        trapped: &BTreeSet<[i32; 3]>,
+        preds: &BTreeMap<[i32; 3], Vec<[i32; 3]>>,
+    ) -> String {
+        let entry = pocket.iter().find_map(|c| {
+            preds
+                .get(c)
+                .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
+                .map(|p| (*p, *c))
+        });
+        match entry {
+            Some((from, to)) => format!(
+                "a body gets in from {from:?} to {to:?} by {}",
+                movement_words(self, from, to)
+            ),
+            None => "a body gets in".to_string(),
+        }
+    }
+}
+
 impl World {
     /// Whether a body in `pocket` gets back to `seeds` once it opens every shortcut
     /// whose lever its own reach stands it at — opened in rounds, since a door
@@ -6161,7 +6215,8 @@ impl World {
     #[allow(clippy::type_complexity)]
     fn cells_a_body_cannot_leave(
         &self,
-        seeds: &[[i32; 3]],
+        roots: &[[i32; 3]],
+        ways_out: &BTreeSet<[i32; 3]>,
         returned: Option<([i32; 3], [i32; 3])>,
     ) -> (
         BTreeSet<[i32; 3]>,
@@ -6169,7 +6224,7 @@ impl World {
         BTreeMap<[i32; 3], Vec<[i32; 3]>>,
     ) {
         let mut preds: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
-        let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        let mut seen: BTreeSet<[i32; 3]> = roots.iter().copied().collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
             for n in self.body_moves(cur) {
@@ -6179,12 +6234,13 @@ impl World {
                 }
             }
         }
-        // The ways out: the route itself, and every reached cell the boundary
-        // clock carries a body back from.
-        let mut back: BTreeSet<[i32; 3]> = seeds
+        // The ways out: the cells that count as having left (the route itself,
+        // for `DW0921`) that the closure reaches, and every reached cell the
+        // boundary clock carries a body back from.
+        let mut back: BTreeSet<[i32; 3]> = seen
             .iter()
             .copied()
-            .chain(seen.iter().copied().filter(|c| returned_from(returned, *c)))
+            .filter(|c| ways_out.contains(c) || returned_from(returned, *c))
             .collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {

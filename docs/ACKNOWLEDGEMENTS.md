@@ -269,6 +269,12 @@ here ships in a delve.
 | [NumPy](https://github.com/numpy/numpy) 2.3.3 · [SciPy](https://github.com/scipy/scipy) 1.16.2 | BSD-3-Clause. For SciPy, the GitHub API returns the SPDX id. For NumPy, the API returns NOASSERTION, so the PyPI classifier "BSD License" and the project's `LICENSE` text were read. The wheels also bundle runtime libraries under their own licences. | Array maths, connected-component labelling and filters for the spike's voxeliser. They are fetched by `uv run --with` at the pinned versions, never vendored. |
 | [Pillow](https://github.com/python-pillow/Pillow) | MIT-CMU (from the PyPI `license_expression`) | Contact sheets (`sheet.py`) |
 
+### Ported into `delvec sculpt` (spec-0087)
+
+| Source | License (verified) | What we use |
+|---|---|---|
+| The organic-voxel spike's back half, [`tools/spike-organic-voxel/voxelize.py`](../tools/spike-organic-voxel/voxelize.py) and the implicit-primitive grid of [`sdf_whale.py`](../tools/spike-organic-voxel/sdf_whale.py) | GPL-3.0-or-later — this repository's own code (`LICENSE`); the octant fitter is authored, not adopted (see the ObjToSchematic row below) | `crates/delvec/src/sculpt/` is a Rust port of its algorithm: the 2 × 2 × 2 octant least-error fit with its stair and slab cost bias, the thin-plate refit from the solid thickened by one sub-voxel, the island drop, the tone from smoothed normal, openness and seeded noise, and the axis by longest local run. Stair corners come from `delvec::schem::stairs::derive_shape`, which the spike itself ported. Nothing of NumPy's or SciPy's source is ported: the Rust port smooths with a cascade of box filters, labels components by its own flood, and draws its one random stream from the crate's seeded splitmix64 (`grammar::rng`) instead of NumPy's PCG64. |
+
 ### Surveyed for the organic spike, nothing ported
 
 | Source | License (verified) | Disposition |

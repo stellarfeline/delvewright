@@ -1,0 +1,25 @@
+{
+  "code": "DW0952",
+  "form": "gallery-carcass.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/solids/-",
+      "value": {
+        "from": [
+          13.0,
+          11.0,
+          25.0
+        ],
+        "op": "cut",
+        "shape": "box",
+        "to": [
+          17.0,
+          22.0,
+          29.0
+        ]
+      }
+    }
+  ],
+  "why": "A pit cut into the carcass's back, four courses below the line a body walks it on, with no way up out of it. A body walking the back falls in and no walk, fall, jump or swim gets it back to the ground at the piece's edge: the leave relation `DW0921` floods over a campaign, run here over the piece alone at generation, refuses it with the place named and the way in \u2014 so the creator learns of the pocket from the generator rather than from a build. The remedy is in the form: a `shelf` out of the pit, which the remedy-reachability test takes."
+}

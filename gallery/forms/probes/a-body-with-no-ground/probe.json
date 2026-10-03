@@ -1,0 +1,11 @@
+{
+  "code": "DW0951",
+  "form": "gallery-carcass.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/ground"
+    }
+  ],
+  "why": "A sculpted body with nothing under it. Every walk and light instrument seeds from grade on the box's vertical faces, and a body lying on ground that is part of its own piece is what gives them a grade; a body with none floats, and what it would need \u2014 instruments seeded from a declared entry instead \u2014 is follow-up A of spec-0087, not built. So the form is refused where it is read, before anything is fitted, and nothing is written."
+}
