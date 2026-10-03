@@ -1,0 +1,17 @@
+{
+  "code": "DW0932",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/6/effects/0/steps/1/effects/0/from/extent",
+      "value": [
+        0,
+        1,
+        1
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The ferry's deck shrunk to its middle column. The tiller stands three blocks east of the deck's east column and within a strike of it; from the middle column a body's eye is 3.5 blocks from the tiller's box, past vanilla's 3.0 reach, so no cell inside the volume pulls the tiller — the lever is outside its own boat, and whoever pulls it stands outside the box and is not carried. It declares no unit: `from.extent` is bound by the primary. The remedy the refusal names is the primary's: widen the volume so a cell inside it reaches the body."
+}

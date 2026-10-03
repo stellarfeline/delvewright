@@ -1,0 +1,110 @@
+{
+  "campaign_id": "ferry-site",
+  "content": {
+    "beats": [
+      {
+        "node": "node/near",
+        "objective": "obj/board",
+        "quest": "quest/the-crossing"
+      },
+      {
+        "node": "node/far",
+        "objective": "obj/far-shore",
+        "quest": "quest/the-crossing"
+      },
+      {
+        "node": "node/far",
+        "objective": "obj/board-back",
+        "quest": "quest/the-crossing"
+      },
+      {
+        "node": "node/near",
+        "objective": "obj/home",
+        "quest": "quest/the-crossing"
+      }
+    ],
+    "critical_path": [
+      "node/near",
+      "node/far",
+      "node/near"
+    ],
+    "edges": [
+      {
+        "a": "node/near",
+        "b": "node/far",
+        "class": "carry",
+        "gating": {
+          "flags": [
+            "flag/boarded"
+          ]
+        },
+        "id": "edge/near-ferry",
+        "one_way": "a-to-b"
+      },
+      {
+        "a": "node/far",
+        "b": "node/near",
+        "class": "carry",
+        "gating": {
+          "flags": [
+            "flag/far-shore"
+          ]
+        },
+        "id": "edge/far-ferry",
+        "one_way": "a-to-b"
+      }
+    ],
+    "entry": "node/near",
+    "goal": "node/near",
+    "nodes": [
+      {
+        "id": "node/near",
+        "intent": "boathouse",
+        "note": "The near boathouse: a jetty, and the near ferry moored at it.",
+        "size_class": "room",
+        "stations": [
+          {
+            "anchor": "anchor/hull",
+            "kind": "point",
+            "note": "inside the near ferry's hull"
+          },
+          {
+            "anchor": "anchor/tiller",
+            "kind": "point",
+            "note": "the near ferry's tiller, beside the hull"
+          },
+          {
+            "anchor": "anchor/home-landing",
+            "kind": "point",
+            "note": "where the far ferry puts the party down"
+          }
+        ]
+      },
+      {
+        "id": "node/far",
+        "intent": "boathouse",
+        "note": "The far boathouse across the strait, with its own ferry.",
+        "size_class": "room",
+        "stations": [
+          {
+            "anchor": "anchor/far-landing",
+            "kind": "point",
+            "note": "where the near ferry puts the party down"
+          },
+          {
+            "anchor": "anchor/far-hull",
+            "kind": "point",
+            "note": "inside the far ferry's hull"
+          },
+          {
+            "anchor": "anchor/far-tiller",
+            "kind": "point",
+            "note": "the far ferry's tiller"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "layout-graph"
+}

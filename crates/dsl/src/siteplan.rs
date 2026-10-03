@@ -1411,7 +1411,7 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
         let Some(edge) = edges.get(s.edge.0.as_str()) else {
             continue;
         };
-        if matches!(edge, Edge::Vision { .. }) {
+        if !edge.has_seam() {
             continue;
         }
         let (Some(a), Some(b)) = (
@@ -2193,7 +2193,7 @@ fn pack(
             links.push(None);
             continue; // `DW0824` refused the reference.
         };
-        if matches!(edge, Edge::Vision { .. }) {
+        if !edge.has_seam() {
             links.push(None);
             continue; // `DW0824` said this carries a sightline.
         }
@@ -2678,6 +2678,15 @@ fn agreement(
                 ),
                 d,
             ),
+            Some(Edge::Carry { .. }) => fault(
+                format!("/content/seams/{i}/edge"),
+                format!(
+                    "`{e}` is a `carry` connection: a body crosses it by being put down on the \
+                     far side by a link, so no opening is cut for it. Remove this seam.",
+                    e = s.edge,
+                ),
+                d,
+            ),
             Some(_) => {
                 seamed.entry(s.edge.0.as_str()).or_default().push(i);
             }
@@ -2691,6 +2700,15 @@ fn agreement(
                 format!(
                     "this sightline embeds `{e}`, which the layout graph declares no connection \
                      for.",
+                    e = s.edge,
+                ),
+                d,
+            ),
+            Some(Edge::Carry { .. }) => fault(
+                format!("/content/sightlines/{i}/edge"),
+                format!(
+                    "`{e}` is a `carry` connection: a body crosses it by being put down on the \
+                     far side by a link, so nothing is embedded for it. Remove this sightline.",
                     e = s.edge,
                 ),
                 d,
@@ -2712,6 +2730,11 @@ fn agreement(
         }
     }
     for (i, e) in graph.edges.iter().enumerate() {
+        // A carry is owed neither: a body crosses it by being put down on the
+        // far side, and the geometry has nothing to allocate for that.
+        if matches!(e, Edge::Carry { .. }) {
+            continue;
+        }
         let (what, held, other) = if e.is_traversal() {
             ("seam", &seamed, "seams")
         } else {
@@ -3538,7 +3561,7 @@ fn seams(
         let Some(edge) = edges.get(s.edge.0.as_str()) else {
             continue; // `DW0824` refused the reference.
         };
-        if matches!(edge, Edge::Vision { .. }) {
+        if !edge.has_seam() {
             continue; // `DW0824` said this carries a sightline.
         }
         let (Some(a), Some(b)) = (
@@ -3610,7 +3633,7 @@ fn seams(
                     sill(&ctx, opening, d);
                 }
             }
-            Edge::Vision { .. } => {}
+            Edge::Carry { .. } | Edge::Vision { .. } => {}
         }
         if matches!(edge, Edge::Stair { .. }) && s.stair_in.is_none() {
             d.push(Diagnostic::error(

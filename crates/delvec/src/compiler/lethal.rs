@@ -332,22 +332,39 @@ fn cell_shows(
     })
 }
 
-/// **Every cell the party is PUT at** — the roots of the population `P`
-/// (spec-0062 §2 decision 1).
+/// **Every cell the party MAY be put at** — the roots of the population `P`
+/// (spec-0062 §2 decision 1), named by its quantifier (spec-0083 §3.8).
 ///
-/// The entry spawn, every `set-checkpoint` and `bonfire` seat, and every
-/// transit-teleport destination. Rooted at all of them and not at the entry
-/// alone, as `DW0881`'s population is: a party teleported into an area stands on
-/// that area's floor, and a rule that judged only what walks from the door would
-/// be silent about every area reached by a teleport.
+/// The entry spawn, every `set-checkpoint` and `bonfire` seat, every crossing's
+/// entry point, and every `teleport` destination, link or gather. Rooted at all
+/// of them and not at the entry alone: a party teleported into an area stands
+/// on that area's floor, and a rule that judged only what walks from the door
+/// would be silent about every area reached by a carry. It roots `DW0891`,
+/// where a wider population can only refuse more.
 ///
-/// Deterministic: entry, then checkpoints in content order, then teleports in
-/// declaration order (ADR-0006).
-pub(crate) fn population_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
+/// Deterministic: entry, then checkpoints in content order, then crossings in
+/// objective order, then links and gathers in declaration order (ADR-0006).
+pub fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
-    out.extend(plan.transit_teleports.iter().map(|(_, to)| *to));
+    out.extend(plan.transport.values().copied());
+    out.extend(plan.links.iter().map(|l| l.to));
+    out.extend(plan.gathers.iter().map(|g| g.to));
+    out
+}
+
+/// **Every cell the party CERTAINLY stands at on the forced route** (spec-0083
+/// §3.8): the entry spawn, every checkpoint seat, every crossing's entry point
+/// and every link's `to` — and not a gather's destination, which an optional
+/// root may never fire. It roots `DW0924`'s party cells and `DW0881`'s
+/// population, where a wider population would hide a finding.
+pub fn stands_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
+    let mut out: Vec<[i32; 3]> = Vec::new();
+    out.extend(entry);
+    out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
+    out.extend(plan.transport.values().copied());
+    out.extend(plan.links.iter().map(|l| l.to));
     out
 }
 
@@ -402,7 +419,7 @@ pub fn check_danger_is_visible(
     let body = delvewright_dsl::metrics::Body::PLAYER;
     // The counterfactual, not the world the router walks. See the note above.
     let open = world.without_exclusions();
-    let population = open.reachable_walkable(&population_roots(plan, entry));
+    let population = open.reachable_walkable(&put_at_roots(plan, entry));
     binding.population = population.len();
     // The zero-binding question: can any player body get into each volume at
     // all — by walking, falling, jumping or swimming from the walked

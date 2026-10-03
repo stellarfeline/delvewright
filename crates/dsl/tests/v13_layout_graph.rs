@@ -668,3 +668,61 @@ fn dw0819_reads_what_the_body_can_be_holding() {
     let got = reachability(Some(g));
     assert!(got.contains(&"DW0819".to_string()), "{got:?}");
 }
+
+/// spec-0083 §7: **the closure crosses a gated `carry` once its gating is
+/// granted, and not before** — over a two-node graph drawn by hand: `jetty` is
+/// the entry, `far-shore` is reached only by the carry, and the carry demands
+/// `flag/boarded`. Granted at the jetty, the far shore is reached; granted
+/// nowhere, it is not.
+#[test]
+fn dw0816_the_closure_crosses_a_gated_carry_once_granted_and_not_before() {
+    use delvewright_dsl::layout::{Closure, Grant, Grants, LayoutGraphContent};
+    let graph: LayoutGraphContent = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "node/jetty", "intent": "jetty", "size_class": "room" },
+            { "id": "node/far-shore", "intent": "landing", "size_class": "room" }
+        ],
+        "edges": [
+            { "id": "edge/strait", "class": "carry", "a": "node/jetty", "b": "node/far-shore",
+              "one_way": "a-to-b", "gating": { "flags": ["flag/boarded"] } }
+        ],
+        "entry": "node/jetty",
+        "goal": "node/far-shore",
+        "critical_path": ["node/jetty", "node/far-shore"]
+    }))
+    .expect("the two-node graph parses");
+    let mut granted = Grants::default();
+    granted.by_node.insert(
+        "node/jetty".to_string(),
+        [Grant::Flag("flag/boarded".to_string())]
+            .into_iter()
+            .collect(),
+    );
+    let c = Closure::run(&graph, &granted);
+    assert!(c.reached.contains("node/far-shore"), "{:?}", c.reached);
+    let c = Closure::run(&graph, &Grants::default());
+    assert!(!c.reached.contains("node/far-shore"), "{:?}", c.reached);
+    // And the carry is one-way: from the far shore, nothing carries back.
+    let mut back = graph.clone();
+    back.entry = delvewright_dsl::ids::NodeId("node/far-shore".to_string());
+    let mut granted_far = Grants::default();
+    granted_far.by_node.insert(
+        "node/far-shore".to_string(),
+        [Grant::Flag("flag/boarded".to_string())]
+            .into_iter()
+            .collect(),
+    );
+    let c = Closure::run(&back, &granted_far);
+    assert!(!c.reached.contains("node/jetty"), "{:?}", c.reached);
+}
+
+/// spec-0083 §7: a `carry` edge with an empty `gating` is live from world load,
+/// a hole in the graph's own claim — refused like an ungated barred way.
+#[test]
+fn dw0818_a_carry_with_an_empty_gating() {
+    let g = graph_with(|v| {
+        edges(v)[1] = json!({ "id": "edge/hall-vault", "class": "carry", "a": "node/hall",
+                              "b": "node/vault", "gating": {} });
+    });
+    assert!(validate(Some(g)).contains(&"DW0818".to_string()));
+}

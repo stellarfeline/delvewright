@@ -810,3 +810,59 @@ test("a trigger step's fields are present exactly when its kind has them", () =>
     );
   }
 });
+
+// --- spec-0083: a trigger that carries the party --------------------------------
+
+test("a carrying trigger step parses its stand cell and its transport", () => {
+  const step = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/tiller",
+      on: "use",
+      anchor: "anchor/tiller",
+      pos: [7, 67, 4],
+      stand: [4, 67, 4],
+      transport: [13, 67, 4],
+    }),
+  ).steps[2];
+  assert.deepEqual(step, {
+    action: "trigger",
+    trigger: "trigger/tiller",
+    on: "use",
+    anchor: "anchor/tiller",
+    pos: [7, 67, 4],
+    stand: [4, 67, 4],
+    transport: [13, 67, 4],
+  });
+});
+
+test("a carrying trigger names both where to stand and where it lands", () => {
+  const base = { action: "trigger", trigger: "trigger/t", on: "use", anchor: "anchor/a", pos: [0, 64, 0] };
+  for (const [bad, pointer] of [
+    [{ ...base, stand: [1, 64, 0] }, "/steps/2/transport"],
+    [{ ...base, transport: [20, 64, 0] }, "/steps/2/stand"],
+  ] as const) {
+    assert.throws(
+      () => parseCriticalPath(withStep(bad as Record<string, unknown>)),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
+      JSON.stringify(bad),
+    );
+  }
+});
+
+test("a hop the arrival check would accept before the press is refused, naming both cells", () => {
+  const base = { action: "trigger", trigger: "trigger/t", on: "use", anchor: "anchor/a", pos: [0, 64, 0] };
+  // Seven blocks east: under 2 x TRANSPORT_NEAR on x, level on y.
+  assert.throws(
+    () => parseCriticalPath(withStep({ ...base, stand: [1, 64, 0], transport: [8, 64, 0] })),
+    (e: unknown) =>
+      e instanceof CriticalPathParseError &&
+      e.pointer === "/steps/2/transport" &&
+      /\[1, 64, 0\]/.test(e.message) &&
+      /\[8, 64, 0\]/.test(e.message) &&
+      /TRANSPORT_NEAR \(8\)/.test(e.message),
+  );
+  // Eight blocks east is observable, and so is a short hop five blocks down.
+  parseCriticalPath(withStep({ ...base, stand: [1, 64, 0], transport: [9, 64, 0] }));
+  parseCriticalPath(withStep({ ...base, stand: [1, 64, 0], transport: [2, 59, 0] }));
+});

@@ -2437,3 +2437,219 @@ fn dw0931_every_named_move_validates() {
         assert!(!after.contains("DW0931"), "{tag}:\n{after}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// spec-0083: the link's three refusals, each move taken
+// ---------------------------------------------------------------------------
+
+/// The ferry primary (`tests/fixtures/ferry`) with `quests.json` edited by
+/// `quests`, at a claimed scratch directory.
+fn ferry(tag: &str, quests: impl FnOnce(&mut serde_json::Value)) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("ferry"), &camp);
+    common::patch_file(&camp.join("quests.json"), quests);
+    camp
+}
+
+fn tiller(q: &mut serde_json::Value) -> &mut serde_json::Value {
+    &mut q["content"]["triggers"][0]
+}
+
+/// The refusal's code, read off the run's own `[error]` line; `None` for a green
+/// build.
+fn refused_with(status: i32, text: &str) -> Option<String> {
+    if status == 0 {
+        return None;
+    }
+    text.lines()
+        .find(|l| l.contains("[error]"))
+        .and_then(|l| l.split_whitespace().next())
+        .map(str::to_string)
+}
+
+#[test]
+fn dw0932_widening_the_volume_to_reach_the_body_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-no-stand", |q| {
+        tiller(q)["effects"][0]["from"]["extent"] = serde_json::json!([0, 1, 1]);
+    });
+    let (s, t) = build("link-no-stand", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(
+        t.contains("widen the volume"),
+        "the message names the move:\n{t}"
+    );
+    // The move: widen the volume so a cell inside it reaches the body.
+    common::patch_file(&camp.join("quests.json"), |q| {
+        tiller(q)["effects"][0]["from"]["extent"] = serde_json::json!([1, 1, 1]);
+    });
+    let (s, t) = build("link-no-stand-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_moving_to_off_the_volume_onto_footing_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-to-inside", |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/boat"});
+    });
+    let (s, t) = build("link-to-inside", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("move `to` off the volume"), "{t}");
+    common::patch_file(&camp.join("quests.json"), |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/far-landing"});
+    });
+    let (s, t) = build("link-to-inside-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_laying_the_floor_at_an_earlier_tick_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let onto_air = |q: &mut serde_json::Value, deck: bool| {
+        let mut steps = vec![];
+        if deck {
+            steps.push(serde_json::json!({"at_ticks": 0, "effects": [{
+                "type": "fill-region", "block": "minecraft:stone",
+                "region": {"anchor": "anchor/far-deck", "extent": [0, 0, 0]}}]}));
+        }
+        steps.push(serde_json::json!({"at_ticks": 2, "effects": [{
+            "type": "teleport",
+            "from": {"anchor": "anchor/boat", "extent": [1, 1, 1]},
+            "to": {"anchor": "anchor/far-air"}}]}));
+        tiller(q)["effects"] = serde_json::json!([{"type": "sequence", "steps": steps}]);
+    };
+    let camp = ferry("link-to-air", |q| onto_air(q, false));
+    let (s, t) = build("link-to-air", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("lay the floor at an earlier tick"), "{t}");
+    common::patch_file(&camp.join("quests.json"), |q| onto_air(q, true));
+    let (s, t) = build("link-to-air-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_using_a_crossing_for_another_area_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-two-areas", |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/keeper-stand"});
+    });
+    common::patch_file(&camp.join("world.json"), |w| {
+        w["content"]["areas"].as_array_mut().unwrap().push(
+            serde_json::json!({"id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room"}),
+        );
+    });
+    let (s, t) = build("link-two-areas", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("use a crossing for another area"), "{t}");
+    // The move the message names: put the next objective in that area and let
+    // the compiler carry the party there — the tiller goes, and the beat after
+    // boarding stands in the keep.
+    common::patch_file(&camp.join("quests.json"), |q| {
+        q["content"]["triggers"] = serde_json::json!([]);
+        let quests = q["content"]["quests"].as_array_mut().unwrap();
+        quests[0]["objectives"].as_array_mut().unwrap().truncate(1);
+        quests[0]["on_complete"] = serde_json::json!([]);
+        quests.push(serde_json::json!({
+            "id": "quest/keep",
+            "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The keep, across the water."},
+            "trigger": {"type": "quest-complete", "quest": "quest/cross"},
+            "objectives": [{"id": "obj/keep", "type": "reach-anchor", "anchor": "anchor/exit", "radius": 1,
+                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "They reach the keep's door."}}],
+            "on_complete": [{"type": "campaign-complete",
+                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The journey ends."}}]
+        }));
+    });
+    common::patch_file(&camp.join("quest-plan.json"), |p| {
+        p["content"]["finale"] = serde_json::json!("quest/keep");
+        p["content"]["quests"].as_array_mut().unwrap().push(serde_json::json!({
+            "act": 1, "area": "area/keep", "depends_on": ["quest/cross"],
+            "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
+        }));
+    });
+    let (s, t) = build("link-two-areas-moved", &camp, &prefabs);
+    assert_ne!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+}
+
+#[test]
+fn dw0933_putting_the_teleport_at_the_named_tick_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let at = |q: &mut serde_json::Value, tick: u32| {
+        tiller(q)["effects"] = serde_json::json!([{"type": "sequence", "steps": [
+            {"at_ticks": 0, "effects": [{"type": "cutscene", "seconds": 1, "path": [
+                {"anchor": "anchor/boat", "offset": [0, 2, 1]},
+                {"anchor": "anchor/boat", "offset": [2, 2, 1]}]}]},
+            {"at_ticks": tick, "effects": [{"type": "teleport",
+                "from": {"anchor": "anchor/boat", "extent": [1, 1, 1]},
+                "to": {"anchor": "anchor/far-landing"}}]}
+        ]}]);
+    };
+    let camp = ferry("link-cutscene", |q| at(q, 5));
+    let (s, t) = build("link-cutscene", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0933"), "{t}");
+    // The move, at the tick the message itself names.
+    let named: u32 = t
+        .split("`sequence` step at tick ")
+        .nth(1)
+        .and_then(|r| r.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("the message names a tick:\n{t}"));
+    common::patch_file(&camp.join("quests.json"), |q| at(q, named));
+    let (s, t) = build("link-cutscene-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+/// The ferry's layout graph with `edges`.
+fn ferry_graph(camp: &Path, edges: serde_json::Value) {
+    let graph = serde_json::json!({
+        "campaign_id": "ferry", "dsl_version": DSL_VERSION, "stage": "layout-graph",
+        "content": {
+            "nodes": [
+                {"id": "node/west-shore", "intent": "jetty", "size_class": "room",
+                 "stations": [{"anchor": "anchor/boat", "kind": "point"}]},
+                {"id": "node/east-shore", "intent": "landing", "size_class": "room",
+                 "stations": [{"anchor": "anchor/far-landing", "kind": "point"}]}
+            ],
+            "edges": edges,
+            "entry": "node/west-shore", "goal": "node/east-shore",
+            "critical_path": ["node/west-shore", "node/east-shore"],
+            "beats": [
+                {"quest": "quest/cross", "objective": "obj/board", "node": "node/west-shore"},
+                {"quest": "quest/cross", "objective": "obj/far-shore", "node": "node/east-shore"}
+            ]
+        }
+    });
+    std::fs::write(
+        camp.join("layout-graph.json"),
+        serde_json::to_string_pretty(&graph).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn dw0934_drawing_the_edge_or_making_it_one_way_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    // A link no edge joins: draw the edge.
+    let camp = ferry("link-no-edge", |_| {});
+    ferry_graph(&camp, serde_json::json!([]));
+    let (s, t) = build("link-no-edge", &camp, &prefabs);
+    assert!(t.contains("DW0934"), "{t}");
+    assert_ne!(s, 0);
+    assert!(t.contains("draw the edge"), "{t}");
+    let edge = serde_json::json!({"class": "carry", "id": "edge/strait", "a": "node/west-shore",
+        "b": "node/east-shore", "one_way": "a-to-b", "gating": {"flags": ["flag/boarded"]}});
+    ferry_graph(&camp, serde_json::json!([edge.clone()]));
+    let (s, t) = build("link-no-edge-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+    // An edge direction no link realises: make the edge one-way.
+    let camp = ferry("link-no-link", |_| {});
+    let mut both = edge.clone();
+    both.as_object_mut().unwrap().remove("one_way");
+    ferry_graph(&camp, serde_json::json!([both]));
+    let (s, t) = build("link-no-link", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0934"), "{t}");
+    assert!(t.contains("make the edge one-way"), "{t}");
+    ferry_graph(&camp, serde_json::json!([edge]));
+    let (s, t) = build("link-no-link-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}

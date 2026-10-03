@@ -1,0 +1,94 @@
+{
+  "campaign_id": "ferry-site",
+  "content": {
+    "boxes": [
+      {
+        "ceiling": {
+          "clearance": 6
+        },
+        "extent": [
+          12,
+          12
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          8200,
+          8200
+        ],
+        "node": "node/near"
+      },
+      {
+        "ceiling": {
+          "clearance": 6
+        },
+        "extent": [
+          12,
+          12
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          8240,
+          8200
+        ],
+        "node": "node/far"
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/grade",
+        "note": "The jetties' plane, level with the valley floor.",
+        "y": 64
+      }
+    ],
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/site-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-depth",
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/house-width",
+        "measure": {
+          "axis": "x",
+          "node": "node/near",
+          "of": "box-extent"
+        }
+      }
+    ],
+    "lighting": {
+      "fixture": "torch",
+      "min_light": 7
+    },
+    "region": {
+      "extent": [
+        80,
+        48,
+        48
+      ],
+      "min": [
+        8184,
+        48,
+        8184
+      ]
+    },
+    "seams": []
+  },
+  "dsl_version": "0.35.0",
+  "stage": "site-plan"
+}

@@ -966,12 +966,6 @@ pub struct World {
     /// other gate and never modelled as shut, because the clock clears them twice
     /// a cycle from world-load. See [`World::with_world_load_seals`].
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
-    /// **Where the party can be carried instead of walking** — every declared
-    /// `teleport`'s source volume ([`Plan::transit_teleports`]). A walked leg whose
-    /// start lies in one of these is not judged against a world-load gate seal: the
-    /// party may never stand there long enough to need the door. Empty for every
-    /// campaign that declares no `teleport`.
-    transit_teleports: Vec<([i32; 3], [i32; 3])>,
     /// Cells a **runtime fluid fill** has flooded on this view
     /// ([`crate::compiler::plan::RegionWrite::Flood`], [`World::with_flooded`]) — a subset of
     /// `flooded`, kept apart from the prefab-authored water only so the
@@ -1094,7 +1088,6 @@ pub struct Premises {
     furniture_regions: Vec<FurnitureRegion>,
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
-    transit_teleports: Vec<([i32; 3], [i32; 3])>,
     objective_cells: Vec<(String, [i32; 3])>,
 }
 
@@ -1125,7 +1118,6 @@ impl Premises {
             furniture_regions: plan.furniture.clone(),
             world_load_seals: seals,
             clocked_gates: plan.timed_gates.iter().map(|g| g.gate_region).collect(),
-            transit_teleports: plan.transit_teleports.clone(),
             // Where the party is required to stand, by name. A proof that finds
             // the walk region wet can then say WHICH objective is in the water
             // rather than only which cell is — the difference between a
@@ -1164,7 +1156,6 @@ impl Premises {
             furniture_regions: Vec::new(),
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
-            transit_teleports: Vec::new(),
             objective_cells: Vec::new(),
         }
     }
@@ -1214,15 +1205,6 @@ impl World {
     /// with no sealed gate on exactly its old routing.
     fn has_world_load_seals(&self) -> bool {
         self.modelled_seals().next().is_some()
-    }
-
-    /// Whether `cell` sits inside a declared `teleport` source volume — i.e. the
-    /// party may be carried off it rather than walk away from it
-    /// ([`Plan::transit_teleports`]).
-    fn is_teleport_source(&self, cell: [i32; 3]) -> bool {
-        self.transit_teleports.iter().any(|(lo, hi)| {
-            (0..3).all(|i| lo[i].min(hi[i]) <= cell[i] && cell[i] <= lo[i].max(hi[i]))
-        })
     }
 
     /// Every gate anchor whose world-load seal a route's `cells` pass through, in
@@ -1308,7 +1290,6 @@ impl World {
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1530,7 +1511,6 @@ impl World {
             pinned: CellSet::new(),
             world_load_seals: premises.world_load_seals,
             clocked_gates: premises.clocked_gates,
-            transit_teleports: premises.transit_teleports,
             flood_written: CellSet::new(),
             flood_regions: Vec::new(),
             ambient: premises.ambient,
@@ -1651,7 +1631,6 @@ impl World {
             pinned,
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1694,7 +1673,6 @@ impl World {
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1745,7 +1723,6 @@ impl World {
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1799,7 +1776,6 @@ impl World {
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1877,7 +1853,6 @@ impl World {
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: CellSet::new(),
             flood_regions: Vec::new(),
             ambient: self.ambient.clone(),
@@ -1949,7 +1924,6 @@ impl World {
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -4489,6 +4463,10 @@ struct VisitedPos {
     /// The originating `critical_path` step index (v0.6): lets the checkpoint /
     /// stealth proofs select the positions at or after a firing step.
     src_step: usize,
+    /// The party arrives here by a **link** (spec-0083) — `transport_before` is
+    /// then also set, and the carry is counted as a link's rather than a
+    /// crossing's.
+    by_link: bool,
 }
 
 /// **What the furniture exclusion bound on one build** (spec-0065 §4.3).
@@ -4623,10 +4601,35 @@ fn positions_of(
             transport_before: false,
             talk_to: false,
             src_step: 0,
+            by_link: false,
         });
     }
     let mut transport_pending = false;
     for (i, step) in steps.iter().enumerate() {
+        // A link (spec-0083 §3.2): the leg into it ends where the party stands
+        // to perform it, and the party goes on from where it is put down. The
+        // carry between the two is marked like a crossing, so every reader of
+        // this enumeration skips it as a ride.
+        if let Some(stand) = step.stand() {
+            out.push(VisitedPos {
+                pos: stand,
+                transport_before: transport_pending,
+                talk_to: false,
+                src_step: i,
+                by_link: false,
+            });
+            transport_pending = false;
+            if let Some(to) = transports.get(i).copied().flatten() {
+                out.push(VisitedPos {
+                    pos: to,
+                    transport_before: true,
+                    talk_to: false,
+                    src_step: i,
+                    by_link: true,
+                });
+            }
+            continue;
+        }
         // A `trigger` step stands somewhere like an objective does: the party walks
         // to what it strikes, so the leg to it is a leg the proof owes.
         if let Some(pos) = step.pos() {
@@ -4635,6 +4638,7 @@ fn positions_of(
                 transport_before: transport_pending,
                 talk_to: matches!(step, Step::TalkTo { .. }),
                 src_step: i,
+                by_link: false,
             });
             transport_pending = false;
         }
@@ -4668,12 +4672,65 @@ fn has_walkable_critical_leg(plan: &Plan) -> bool {
 /// a solid affordance — an altar, a wave marker, an NPC stand — the player walks up
 /// to, not into), exactly as `move-npc` planning does.
 pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), Failure> {
-    route_visited(
+    check_critical_path_bound(plan, world).1
+}
+
+/// [`check_critical_path`] with its binding (spec-0083 §5), returned beside the
+/// verdict so the build can print it whichever way the proof went.
+pub fn check_critical_path_bound(
+    plan: &Plan,
+    world: &World,
+) -> (RouteBinding, Result<(), Failure>) {
+    let (b, r) = route_with_links(
         world,
         &critical_positions(plan),
         &plan.region_events,
         &|g, s| plan.gate_fired_before(g, s),
+        &Carries::of_plan(plan),
+    );
+    (b, r.map(|_| ()))
+}
+
+/// **Which links the default path takes** (spec-0083 §3.4): the walk proof run
+/// over the plan's path, handing back each leg a walk could not cross and the
+/// links that carry it, keyed by the plan's own step indices — what
+/// [`Plan::relinked`] splices into the path. Empty for every campaign whose legs
+/// all walk.
+pub fn take_links(plan: &Plan, world: &World) -> Result<crate::compiler::plan::LinkTakes, Failure> {
+    route_with_links(
+        world,
+        &critical_positions(plan),
+        &plan.region_events,
+        &|g, s| plan.gate_fired_before(g, s),
+        &Carries::of_plan(plan),
     )
+    .1
+}
+
+/// [`take_links`] over one branch's path (spec-0083 §6): the same proof over
+/// the branch's own steps, live links and gate model, keyed by the branch's
+/// own step indices — what [`Plan::branch_critical_path_linked`] splices.
+pub fn take_branch_links(
+    plan: &Plan,
+    world: &World,
+    start: Option<[i32; 3]>,
+    cp: &crate::compiler::plan::CriticalPath,
+    region_events: &[RegionEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Result<crate::compiler::plan::LinkTakes, Failure> {
+    route_with_links(
+        world,
+        &positions_of(start, &cp.steps, &cp.transport_by_step),
+        region_events,
+        ancestor,
+        &Carries {
+            links: &plan.links,
+            gathers: &plan.gathers,
+            live: &cp.live_links_by_step,
+            steps: &cp.steps,
+        },
+    )
+    .1
 }
 
 /// **Every cell the party's own forced walk crosses**, attributed to the
@@ -4701,7 +4758,6 @@ pub(crate) fn critical_route_cells(plan: &Plan, world: &World) -> Vec<(usize, Ve
             let st = world.walked_leg_region_state(
                 &plan.region_events,
                 &ancestor,
-                pair[0].pos,
                 pair[0].src_step,
                 pair[1].src_step,
             );
@@ -4992,31 +5048,20 @@ impl World {
         self.region_state_without_world_load(region_events, to_step, &fired)
     }
 
-    /// [`World::leg_region_state`] for a leg the player is asked to WALK, with the
-    /// one exemption the world-load seal carries: a leg whose start sits inside a
-    /// declared `teleport` source volume is judged with the seals lifted.
-    ///
-    /// The party may be carried off that cell before they ever face the door, and
-    /// nothing in the critical path says whether they were — `transport_before`
-    /// marks only the compiler's own inter-area rides. Lifting the seal restores
-    /// exactly the pre-measurement verdict for such a leg, so DW0311's binding is
-    /// unchanged and no campaign that compiled green over a teleport goes red.
-    /// The single site that decides it, shared by the proof (`route_visited`) and
-    /// the exported routes (`route_walked_legs`), so the route the harness walks is
-    /// the route the proof passed.
+    /// [`World::leg_region_state`] for a leg the player is asked to WALK — the
+    /// single site that decides it, shared by the proof (`route_visited`) and the
+    /// exported routes (`route_walked_legs`), so the route the harness walks is the
+    /// route the proof passed. A leg that starts inside a teleport's volume is
+    /// judged like every other leg: where the teleport is a link, the leg is the
+    /// link (spec-0083 §3.4); where it is a gather, the party walks.
     fn walked_leg_region_state(
         &self,
         region_events: &[RegionEvent],
         ancestor: &dyn Fn(usize, usize) -> bool,
-        from_pos: [i32; 3],
         from_step: usize,
         to_step: usize,
     ) -> RegionState {
-        if self.is_teleport_source(from_pos) {
-            self.leg_region_state_without_world_load(region_events, ancestor, from_step, to_step)
-        } else {
-            self.leg_region_state(region_events, ancestor, from_step, to_step)
-        }
+        self.leg_region_state(region_events, ancestor, from_step, to_step)
     }
 }
 
@@ -5191,7 +5236,6 @@ fn route_walked_legs(
         let st = world.walked_leg_region_state(
             region_events,
             ancestor,
-            pair[0].pos,
             pair[0].src_step,
             pair[1].src_step,
         );
@@ -5300,22 +5344,597 @@ fn boxes_of(regions: &[([i32; 3], [i32; 3])]) -> String {
         .join(", ")
 }
 
+/// **What the route proof may be carried by** (spec-0083): the plan's links and
+/// gathers, the links live at each step of the path being judged, and that
+/// path's steps — so a performed trigger can be recognised as a link.
+pub(crate) struct Carries<'p> {
+    links: &'p [crate::compiler::link::LinkPlan],
+    gathers: &'p [crate::compiler::link::GatherPlan],
+    live: &'p [Vec<usize>],
+    steps: &'p [Step],
+}
+
+impl<'p> Carries<'p> {
+    /// Nothing to be carried by: the walk proof alone.
+    #[cfg(test)]
+    fn none() -> Carries<'static> {
+        Carries {
+            links: &[],
+            gathers: &[],
+            live: &[],
+            steps: &[],
+        }
+    }
+
+    /// The default path's carry record.
+    fn of_plan(plan: &'p Plan) -> Self {
+        Carries {
+            links: &plan.links,
+            gathers: &plan.gathers,
+            live: &plan.critical_path_live_links,
+            steps: &plan.critical_path,
+        }
+    }
+
+    /// The links live at path step `k`.
+    fn live_at(&self, k: usize) -> &[usize] {
+        self.live.get(k).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
+/// **What the walk proof judged** (`DW0311`, spec-0083 §5): every leg of the
+/// path partitioned by how the party crosses it, and the links and gathers the
+/// campaign declares. Printed on every build, whichever way the proof goes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RouteBinding {
+    /// Consecutive pairs of visited positions — visited positions minus one.
+    pub legs: usize,
+    /// Of those, legs the party walks.
+    pub walked: usize,
+    /// Of those, legs the compiler's own crossing carries.
+    pub crossings: usize,
+    /// Of those, legs a link carries.
+    pub carried: usize,
+    /// Links the campaign declares.
+    pub links: usize,
+    /// Of those, links live at the end of some leg.
+    pub live: usize,
+    /// Of those, links the path takes.
+    pub taken: usize,
+    /// Gathers the campaign declares.
+    pub gathers: usize,
+}
+
+impl RouteBinding {
+    /// The one line a build prints about this proof.
+    pub fn line(&self) -> String {
+        format!(
+            "DW0311 binding: {} leg(s); {} walked, {} carried by a crossing, {} carried by a link; \
+             {} link(s) declared, {} live on some leg, {} taken; {} gather(s) declared",
+            self.legs,
+            self.walked,
+            self.crossings,
+            self.carried,
+            self.links,
+            self.live,
+            self.taken,
+            self.gathers
+        )
+    }
+}
+
+/// The cells of `l`'s volume a body can stand in and perform its trigger from
+/// (spec-0083 §3.2), in cell order: standable on `w`, and — for a click — an
+/// eye within a strike of the body's box ([`crate::compiler::strand::strikes`], the
+/// rule `DW0924` reads), or — for `approach` — within the trigger's range of
+/// its anchor.
+fn stand_cells(w: &World, l: &crate::compiler::link::LinkPlan) -> Vec<[i32; 3]> {
+    let (lo, hi) = l.from;
+    let mut out = Vec::new();
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                let c = [x, y, z];
+                if !w.is_standable(c) {
+                    continue;
+                }
+                let reaches = match l.range {
+                    Some(r) => l.body.iter().any(|b| {
+                        let dx = f64::from(c[0]) + 0.5 - f64::from(b[0]);
+                        let dy = w.feet_y(c) - f64::from(b[1]);
+                        let dz = f64::from(c[2]) + 0.5 - f64::from(b[2]);
+                        (dx * dx + dy * dy + dz * dz).sqrt() <= f64::from(r)
+                    }),
+                    None => l
+                        .body
+                        .iter()
+                        .any(|b| crate::compiler::strand::strikes(w, c, *b, 1.0, 1.0)),
+                };
+                if reaches {
+                    out.push(c);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Whether `l`'s `to` is a cell a body stands on in the world as the link's own
+/// root leaves it at the teleport's tick (spec-0083 §3.6): `st` (the leg's
+/// region state), with the root's writes at an earlier tick applied — forced,
+/// since they fire with it — and its fills at the teleport's tick or later not
+/// yet laid.
+fn to_standable(w: &World, st: &RegionState, l: &crate::compiler::link::LinkPlan) -> bool {
+    let mut st = st.clone();
+    for wr in &l.writes {
+        let cells: Vec<[i32; 3]> =
+            crate::compiler::assembled::region_cells(wr.region.0, wr.region.1).collect();
+        if wr.tick >= l.tick {
+            if wr.fill {
+                for c in &cells {
+                    st.solid.remove(c);
+                    st.unforced.remove(c);
+                }
+            }
+            continue;
+        }
+        for c in cells {
+            st.solid.remove(&c);
+            st.cleared.remove(&c);
+            st.flooded.remove(&c);
+            st.unforced.remove(&c);
+            match (wr.fill, wr.fluid) {
+                (true, true) => {
+                    st.flooded.insert(c);
+                }
+                (true, false) => {
+                    st.solid.insert(c);
+                }
+                (false, _) => {
+                    st.cleared.insert(c);
+                }
+            }
+        }
+    }
+    let owned;
+    let at: &World = if st.is_empty() {
+        w
+    } else {
+        owned = w.with_region_state(&st);
+        &owned
+    };
+    at.is_standable(l.to)
+}
+
+/// Why one link did not carry a leg, for `DW0311`'s message.
+enum LinkMiss {
+    /// Its volume holds a stand cell, and the leg's start cannot walk to any.
+    Unreachable,
+    /// The party lands at `to` and cannot walk on to the leg's end.
+    NoOnward,
+}
+
+/// The nearest stand cell of `cands` to `from` by proven route length, ties
+/// broken by cell order (ADR-0006) — `None` when none is reachable.
+fn nearest_stand(w: &World, from: &VisitedPos, cands: &[[i32; 3]]) -> Option<[i32; 3]> {
+    let start = w.snap_endpoint(from.pos, false)?;
+    cands
+        .iter()
+        .filter_map(|c| w.find_path(start, *c).map(|p| (p.len(), *c)))
+        .min()
+        .map(|(_, c)| c)
+}
+
+/// Retry the leg `from → end` through the links live at `end` (spec-0083 §3.4):
+/// walk to a stand cell, be carried, and walk on — the last segment itself
+/// retried through the links not yet used on this leg. The first decomposition
+/// that routes is the leg's route, pushed onto `used` in the order taken.
+#[allow(clippy::too_many_arguments)]
+fn decompose(
+    world: &World,
+    from: &VisitedPos,
+    end: &VisitedPos,
+    origin_step: usize,
+    region_events: &[RegionEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+    used: &mut Vec<(usize, [i32; 3])>,
+    misses: &mut BTreeMap<usize, LinkMiss>,
+    faults: &mut Vec<(usize, String)>,
+) -> bool {
+    let st = world.walked_leg_region_state(region_events, ancestor, origin_step, end.src_step);
+    let owned;
+    let leg: &World = if st.is_empty() {
+        world
+    } else {
+        owned = world.with_region_state(&st);
+        &owned
+    };
+    for &li in carries.live_at(end.src_step) {
+        if used.iter().any(|(u, _)| *u == li) {
+            continue;
+        }
+        let Some(l) = carries.links.get(li) else {
+            continue;
+        };
+        let cands = stand_cells(leg, l);
+        if cands.is_empty() {
+            faults.push((
+                li,
+                format!(
+                    "no standable cell inside its volume {} performs the trigger — the body it \
+                     presses stands outside its own volume, so whoever presses it is not carried. \
+                     Fault: no stand cell. Remedy: move the body or widen the volume so a cell \
+                     inside it reaches the body",
+                    l.box_words()
+                ),
+            ));
+            continue;
+        }
+        if !to_standable(world, &st, l) {
+            faults.push((
+                li,
+                format!(
+                    "its `to` {:?} is not a cell a body stands on at the teleport's tick {} — a \
+                     route position is a cell a body stands on, and a link onto air is a drop. \
+                     Fault: `to` not standable. Remedy: move `to` off the volume and onto footing, \
+                     or lay the floor at an earlier tick of the same root",
+                    l.to, l.tick
+                ),
+            ));
+            continue;
+        }
+        let Some(stand) = nearest_stand(leg, from, &cands) else {
+            misses.entry(li).or_insert(LinkMiss::Unreachable);
+            continue;
+        };
+        let stand_vp = VisitedPos {
+            pos: stand,
+            transport_before: false,
+            talk_to: false,
+            src_step: end.src_step,
+            by_link: false,
+        };
+        if judge_leg(world, &[*from, stand_vp], region_events, ancestor).is_err() {
+            misses.entry(li).or_insert(LinkMiss::Unreachable);
+            continue;
+        }
+        let to_vp = VisitedPos {
+            pos: l.to,
+            transport_before: false,
+            talk_to: false,
+            src_step: origin_step,
+            by_link: true,
+        };
+        used.push((li, stand));
+        if judge_leg(world, &[to_vp, *end], region_events, ancestor).is_ok() {
+            return true;
+        }
+        if decompose(
+            world,
+            &to_vp,
+            end,
+            origin_step,
+            region_events,
+            ancestor,
+            carries,
+            used,
+            misses,
+            faults,
+        ) {
+            return true;
+        }
+        used.pop();
+        misses.insert(li, LinkMiss::NoOnward);
+    }
+    false
+}
+
+/// The link a performed `trigger` step stands for, and the cell the party
+/// stands on to perform it from `from` — `None` when the step's trigger is no
+/// link, or no stand cell of its volume is reachable from `from` (the press
+/// then happens outside the box and carries nobody).
+fn performed_link(
+    world: &World,
+    from: &VisitedPos,
+    step: usize,
+    region_events: &[RegionEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+) -> Result<Option<(usize, [i32; 3])>, Failure> {
+    let Some(Step::Trigger {
+        trigger_id,
+        stand: None,
+        ..
+    }) = carries.steps.get(step)
+    else {
+        return Ok(None);
+    };
+    let st = world.walked_leg_region_state(region_events, ancestor, from.src_step, step);
+    let owned;
+    let leg: &World = if st.is_empty() {
+        world
+    } else {
+        owned = world.with_region_state(&st);
+        &owned
+    };
+    for (li, l) in carries.links.iter().enumerate() {
+        if &l.trigger_id != trigger_id {
+            continue;
+        }
+        let cands = stand_cells(leg, l);
+        let Some(stand) = nearest_stand(leg, from, &cands) else {
+            continue;
+        };
+        if !to_standable(world, &st, l) {
+            return Err(Failure {
+                code: crate::compiler::plan::DW_TELEPORT_LINK,
+                message: format!(
+                    "link `{}` (the `teleport` at `{}`) is performed by the path from {stand:?}, \
+                     inside its volume {}, and puts the party on {:?}, which is not a cell a body \
+                     stands on at the teleport's tick {} — a route position is a cell a body \
+                     stands on, and a link onto air is a drop. Fault: `to` not standable. \
+                     Remedy: move `to` off the volume and onto footing, or lay the floor at an \
+                     earlier tick of the same root.",
+                    l.trigger_id,
+                    l.path,
+                    l.box_words(),
+                    l.to,
+                    l.tick
+                ),
+            });
+        }
+        return Ok(Some((li, stand)));
+    }
+    Ok(None)
+}
+
+/// The message for a leg no walk and no link carries (spec-0083 §3.1, §3.4):
+/// under `DW0311` a gather over the leg's start is named with the remedy that
+/// makes it a link; under any code of the leg family, every link considered on
+/// the leg is named with why it did not carry.
+fn widen_unroutable(
+    e: Failure,
+    from: &VisitedPos,
+    end: &VisitedPos,
+    carries: &Carries<'_>,
+    misses: &BTreeMap<usize, LinkMiss>,
+) -> Failure {
+    let considered: Vec<String> = carries
+        .links
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let why = if !carries.live_at(end.src_step).contains(&i) {
+                "shut at this step — its trigger's gate or the teleport's `when` does not hold \
+                 under what the path holds here"
+            } else {
+                match misses.get(&i) {
+                    Some(LinkMiss::Unreachable) => {
+                        "its volume holds a stand cell and the leg's start cannot walk to one"
+                    }
+                    Some(LinkMiss::NoOnward) => "the party lands at its `to` and cannot walk on",
+                    None => "not tried",
+                }
+            };
+            format!("`{}` (`{}`): {why}", l.trigger_id, l.path)
+        })
+        .collect();
+    if e.code == DW_CRITICAL_UNROUTABLE
+        && let Some(g) = carries.gathers.iter().find(|g| g.contains(from.pos))
+    {
+        return Failure {
+            code: DW_CRITICAL_UNROUTABLE,
+            message: format!(
+                "critical path: the party cannot walk from {:?} to {:?}, and the way the campaign \
+                 means is the `teleport` at `{}` — its volume holds the leg's start, and it \
+                 carries whoever is inside to {:?}. It fires from {}, a root the party cannot \
+                 fire again: the first body through it travels and the rest of the party is left \
+                 behind, so the proof does not lean on it. Host the same `teleport` in a \
+                 `triggers[]` entry of kind `use`, `strike` or `approach` declared \
+                 `\"once\": false`, whose volume holds a cell a body presses it from — a link a \
+                 straggler can take again.{}",
+                from.pos,
+                end.pos,
+                g.path,
+                g.to,
+                g.root,
+                if considered.is_empty() {
+                    String::new()
+                } else {
+                    format!(" Links considered on this leg: {}.", considered.join("; "))
+                }
+            ),
+        };
+    }
+    if considered.is_empty() {
+        return e;
+    }
+    Failure {
+        code: e.code,
+        message: format!(
+            "{} Links considered on this leg, none of which carries it: {}.",
+            e.message,
+            considered.join("; ")
+        ),
+    }
+}
+
+/// **The walk proof, with links** (spec-0083 §3.4): every leg of `positions`
+/// is walked; a leg whose walk fails is retried through the links live at its
+/// end; a performed `trigger` step whose trigger is a link the party stands in
+/// carries it. Returns the binding (always), and the links taken beside the
+/// verdict — keyed by the step indices of the path judged — so the build can
+/// splice them into the one path every consumer reads.
+fn route_with_links(
+    world: &World,
+    positions: &[VisitedPos],
+    region_events: &[RegionEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+) -> (
+    RouteBinding,
+    Result<crate::compiler::plan::LinkTakes, Failure>,
+) {
+    // The leg count is the population, stated before any leg is judged — the
+    // visited positions minus one, plus the legs a taken link adds — so a
+    // refusal prints the same denominator a pass does.
+    let mut b = RouteBinding {
+        legs: positions.len().saturating_sub(1),
+        links: carries.links.len(),
+        gathers: carries.gathers.len(),
+        ..RouteBinding::default()
+    };
+    let mut takes = crate::compiler::plan::LinkTakes::default();
+    let mut live: BTreeSet<usize> = BTreeSet::new();
+    let mut taken: BTreeSet<String> = BTreeSet::new();
+    let Some(first) = positions.first() else {
+        return (b, Ok(takes));
+    };
+    let mut cur = *first;
+    let mut result = Ok(());
+    for next in &positions[1..] {
+        live.extend(carries.live_at(next.src_step).iter().copied());
+        if next.transport_before {
+            if next.by_link {
+                b.carried += 1;
+                if let Some(Step::Trigger { trigger_id, .. }) = carries.steps.get(next.src_step) {
+                    taken.insert(format!("{trigger_id}{:?}", next.pos));
+                }
+            } else {
+                b.crossings += 1;
+            }
+            cur = *next;
+            continue;
+        }
+        // A trigger the path performs that is a link the party can stand in:
+        // the leg into it ends at the stand cell, and the party goes on from
+        // `to` (spec-0083 §3.4, last sentence).
+        match performed_link(world, &cur, next.src_step, region_events, ancestor, carries) {
+            Err(e) => {
+                result = Err(e);
+                break;
+            }
+            Ok(Some((li, stand))) => {
+                let l = &carries.links[li];
+                let stand_vp = VisitedPos {
+                    pos: stand,
+                    ..*next
+                };
+                if let Err(e) = judge_leg(world, &[cur, stand_vp], region_events, ancestor) {
+                    result = Err(e);
+                    break;
+                }
+                // `cur → trigger` became `cur → stand`, `stand → to`.
+                b.legs += 1;
+                b.walked += 1;
+                b.carried += 1;
+                taken.insert(format!("{}{:?}", l.trigger_id, l.to));
+                takes.performed.insert(next.src_step, (li, stand));
+                // The next leg starts here; whether a leg is a ride is read off
+                // its END, so this start marks nothing.
+                cur = VisitedPos {
+                    pos: l.to,
+                    transport_before: false,
+                    talk_to: false,
+                    src_step: next.src_step,
+                    by_link: true,
+                };
+                continue;
+            }
+            Ok(None) => {}
+        }
+        let walked = judge_leg(world, &[cur, *next], region_events, ancestor);
+        let Err(e) = walked else {
+            b.walked += 1;
+            cur = *next;
+            continue;
+        };
+        let mut used = Vec::new();
+        let mut misses = BTreeMap::new();
+        let mut faults = Vec::new();
+        if decompose(
+            world,
+            &cur,
+            next,
+            cur.src_step,
+            region_events,
+            ancestor,
+            carries,
+            &mut used,
+            &mut misses,
+            &mut faults,
+        ) {
+            b.legs += 2 * used.len();
+            b.walked += 1 + used.len();
+            b.carried += used.len();
+            for (li, _) in &used {
+                let l = &carries.links[*li];
+                taken.insert(format!("{}{:?}", l.trigger_id, l.to));
+            }
+            takes.spliced.insert(next.src_step, used);
+            cur = *next;
+            continue;
+        }
+        if let Some((li, why)) = faults.first() {
+            let l = &carries.links[*li];
+            result = Err(Failure {
+                code: crate::compiler::plan::DW_TELEPORT_LINK,
+                message: format!(
+                    "critical path: the party cannot walk from {:?} to {:?}, and the only carry \
+                     on that leg is link `{}` (the `teleport` at `{}`, volume {}, `to` {:?}), \
+                     whose geometry does not hold: {why}.",
+                    cur.pos,
+                    next.pos,
+                    l.trigger_id,
+                    l.path,
+                    l.box_words(),
+                    l.to
+                ),
+            });
+            break;
+        }
+        result = Err(widen_unroutable(e, &cur, next, carries, &misses));
+        break;
+    }
+    b.live = live.len().min(b.links);
+    b.taken = taken.len();
+    (b, result.map(|()| takes))
+}
+
+/// Route every walked leg between consecutive visited positions with no link to
+/// lean on — [`route_with_links`] over an empty carry record. The pure core the
+/// unit tests drive over synthetic worlds.
+#[cfg(test)]
 fn route_visited(
     world: &World,
     positions: &[VisitedPos],
     region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
-    for pair in positions.windows(2) {
+    route_with_links(world, positions, region_events, ancestor, &Carries::none())
+        .1
+        .map(|_| ())
+}
+
+/// Judge ONE walked leg, `pair[0] → pair[1]`, over its causally-sealed world —
+/// every refusal `DW0311` and its family give for a leg that does not route. A
+/// `transport_before` leg is a ride and is not judged.
+fn judge_leg(
+    world: &World,
+    pair: &[VisitedPos],
+    region_events: &[RegionEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Result<(), Failure> {
+    {
         let from = pair[0].pos;
         let to = pair[1].pos;
         if pair[1].transport_before {
-            continue; // an inter-area teleport hop: the player is moved, not walking
+            return Ok(()); // a carry: the player is moved, not walking
         }
         let st = world.walked_leg_region_state(
             region_events,
             ancestor,
-            pair[0].pos,
             pair[0].src_step,
             pair[1].src_step,
         );
@@ -5360,23 +5979,22 @@ fn route_visited(
         // campaign whose world actually authors a gate shut — everyone else routes
         // over the identical single world and pays nothing.
         let ungated_owned;
-        let ungated: Option<&World> =
-            if !world.has_world_load_seals() || world.is_teleport_source(from) {
-                None
+        let ungated: Option<&World> = if !world.has_world_load_seals() {
+            None
+        } else {
+            let st2 = world.leg_region_state_without_world_load(
+                region_events,
+                ancestor,
+                pair[0].src_step,
+                pair[1].src_step,
+            );
+            ungated_owned = if st2.is_empty() {
+                world.with_region_state(&RegionState::default())
             } else {
-                let st2 = world.leg_region_state_without_world_load(
-                    region_events,
-                    ancestor,
-                    pair[0].src_step,
-                    pair[1].src_step,
-                );
-                ungated_owned = if st2.is_empty() {
-                    world.with_region_state(&RegionState::default())
-                } else {
-                    world.with_region_state(&st2)
-                };
-                Some(&ungated_owned)
+                world.with_region_state(&st2)
             };
+            Some(&ungated_owned)
+        };
         let lethal_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let open = open?;
             let cell = open.snap_endpoint(at, talk_to)?;
@@ -5838,6 +6456,10 @@ pub struct LeaveBinding {
     pub afloat: usize,
     /// Of those, cells a body cannot leave.
     pub trapped: usize,
+    /// Reached cells that are stand cells of a link live in their
+    /// configuration — the third way out of a pocket (spec-0083 §3.9), counted
+    /// over configurations.
+    pub link_exits: usize,
 }
 
 impl LeaveBinding {
@@ -5845,8 +6467,14 @@ impl LeaveBinding {
     pub fn line(&self) -> String {
         format!(
             "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
-             by walking, falling, jumping or swimming ({} of them afloat), {} it cannot leave",
-            self.configurations, self.route_cells, self.reached, self.afloat, self.trapped
+             by walking, falling, jumping or swimming ({} of them afloat), {} it cannot leave; {} \
+             link stand cell(s) served as a way out",
+            self.configurations,
+            self.route_cells,
+            self.reached,
+            self.afloat,
+            self.trapped,
+            self.link_exits
         )
     }
 
@@ -5927,43 +6555,68 @@ pub fn check_bodies_can_leave(
     let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
     // One configuration per distinct region state, carrying the route cells of
     // every leg that arrives under it and the first step that does.
-    let mut configs: Vec<(RegionState, usize, BTreeSet<[i32; 3]>)> = Vec::new();
+    // Each configuration also carries the links live at any step that arrives
+    // under it: a link's stand cell is a way out of a pocket there (spec-0083
+    // §3.9), because a body standing in it performs the trigger and is put down
+    // on a route cell — and the link is repeatable by construction.
+    let mut configs: Vec<LeaveConfigSeed> = Vec::new();
     for (step, cells) in critical_route_cells(plan, world) {
         let st = world.region_state_at(&plan.region_events, step, &ancestor);
-        match configs.iter_mut().find(|(s, _, _)| *s == st) {
-            Some((_, first, seeds)) => {
+        let live: BTreeSet<usize> = plan
+            .critical_path_live_links
+            .get(step)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        match configs.iter_mut().find(|(s, _, _, _)| *s == st) {
+            Some((_, first, seeds, links)) => {
                 *first = (*first).min(step);
                 seeds.extend(cells);
+                links.extend(live);
             }
-            None => configs.push((st, step, cells.into_iter().collect())),
+            None => configs.push((st, step, cells.into_iter().collect(), live)),
         }
     }
     let owned: Vec<Option<World>> = configs
         .iter()
-        .map(|(st, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
+        .map(|(st, _, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
         .collect();
-    let worlds: Vec<(&World, String, Vec<[i32; 3]>)> = configs
+    let worlds: Vec<LeaveConfig<'_>> = configs
         .into_iter()
         .zip(&owned)
-        .map(|((_, first, seeds), w)| {
+        .map(|((_, first, seeds, live), w)| {
             let w = w.as_ref().unwrap_or(world);
+            let exits: BTreeSet<[i32; 3]> = live
+                .iter()
+                .filter_map(|li| plan.links.get(*li))
+                .flat_map(|l| stand_cells(w, l))
+                .collect();
             let when = plan
                 .critical_path
                 .get(first)
                 .and_then(|s| s.objective())
                 .map(|o| format!("while `{o}` is next"))
                 .unwrap_or_else(|| format!("from critical step {first}"));
-            (w, when, seeds.into_iter().collect())
+            (w, when, seeds.into_iter().collect(), exits)
         })
         .collect();
     verify_bodies_can_leave(&worlds, returned, &plan.shortcuts)
 }
 
+/// One configuration as it is gathered: its region state, the first step that
+/// arrives under it, its route cells, and the links live at those steps.
+type LeaveConfigSeed = (RegionState, usize, BTreeSet<[i32; 3]>, BTreeSet<usize>);
+
+/// One quest configuration `DW0921` judges: its world, the configuration in
+/// words, its route cells, and the stand cells of the links live in it.
+type LeaveConfig<'w> = (&'w World, String, Vec<[i32; 3]>, BTreeSet<[i32; 3]>);
+
 /// The pure core of [`check_bodies_can_leave`]: one `(world, when, route cells)`
 /// per quest configuration, where `when` names the configuration in words. Split
 /// out so it is unit-testable over a synthetic [`World`] without a [`Plan`].
 fn verify_bodies_can_leave(
-    worlds: &[(&World, String, Vec<[i32; 3]>)],
+    worlds: &[LeaveConfig<'_>],
     returned: Option<([i32; 3], [i32; 3])>,
     shortcuts: &[crate::compiler::plan::ShortcutPlan],
 ) -> (LeaveBinding, Result<(), Failure>) {
@@ -5973,13 +6626,22 @@ fn verify_bodies_can_leave(
     };
     // Each configuration is judged over its own world alone, so they are
     // judged in parallel and folded below in configuration order.
-    let judged = crate::par::map(worlds, |(w, when, seeds)| {
+    let judged = crate::par::map(worlds, |(w, when, seeds, exits)| {
         let seeds: Vec<[i32; 3]> = seeds
             .iter()
             .copied()
             .filter(|c| w.is_standable(*c))
             .collect();
-        let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned);
+        let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned, exits);
+        // A stand cell SERVES as a way out where, without the links, a body
+        // standing in it could not get back — counted against the same closure
+        // judged with no link at all, and only when this configuration has one.
+        let link_exits = if exits.is_empty() {
+            0
+        } else {
+            let (_, stuck, _) = w.cells_a_body_cannot_leave(&seeds, returned, &BTreeSet::new());
+            stuck.iter().filter(|c| exits.contains(*c)).count()
+        };
         let afloat = reached.iter().filter(|c| w.is_water_surface(**c)).count();
         // A shortcut is opened from its far side by whoever stands at its lever,
         // and the completability model holds it shut. A pocket whose own reach
@@ -6015,12 +6677,20 @@ fn verify_bodies_can_leave(
                 )
             })
             .collect();
-        (seeds.len(), reached.len(), afloat, trapped.len(), described)
+        (
+            seeds.len(),
+            reached.len(),
+            afloat,
+            trapped.len(),
+            described,
+            link_exits,
+        )
     });
     let mut pockets: Vec<String> = Vec::new();
     let mut pocket_count = 0usize;
-    for (route_cells, reached, afloat, trapped, described) in judged {
+    for (route_cells, reached, afloat, trapped, described, link_exits) in judged {
         binding.route_cells += route_cells;
+        binding.link_exits += link_exits;
         binding.reached += reached;
         binding.afloat += afloat;
         binding.trapped += trapped;
@@ -6163,6 +6833,7 @@ impl World {
         &self,
         seeds: &[[i32; 3]],
         returned: Option<([i32; 3], [i32; 3])>,
+        exits: &BTreeSet<[i32; 3]>,
     ) -> (
         BTreeSet<[i32; 3]>,
         BTreeSet<[i32; 3]>,
@@ -6179,12 +6850,17 @@ impl World {
                 }
             }
         }
-        // The ways out: the route itself, and every reached cell the boundary
-        // clock carries a body back from.
+        // The ways out: the route itself, every reached cell the boundary clock
+        // carries a body back from, and every reached stand cell of a live link
+        // (spec-0083 §3.9).
         let mut back: BTreeSet<[i32; 3]> = seeds
             .iter()
             .copied()
-            .chain(seen.iter().copied().filter(|c| returned_from(returned, *c)))
+            .chain(
+                seen.iter()
+                    .copied()
+                    .filter(|c| returned_from(returned, *c) || exits.contains(c)),
+            )
             .collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
@@ -8856,19 +9532,27 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
 /// ([`Plan::branch_gate_model`]) — never the default path's indices, which
 /// belong to a different sequence.
 pub fn check_branch_path(
+    plan: &Plan,
     world: &World,
     start: Option<[i32; 3]>,
-    steps: &[Step],
-    transports: &[Option<[i32; 3]>],
+    cp: &crate::compiler::plan::CriticalPath,
     region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
-    route_visited(
+    route_with_links(
         world,
-        &positions_of(start, steps, transports),
+        &positions_of(start, &cp.steps, &cp.transport_by_step),
         region_events,
         ancestor,
+        &Carries {
+            links: &plan.links,
+            gathers: &plan.gathers,
+            live: &cp.live_links_by_step,
+            steps: &cp.steps,
+        },
     )
+    .1
+    .map(|_| ())
 }
 
 /// The proven A* cell routes of one branch's walked legs — the branch
@@ -10559,7 +11243,6 @@ mod tests {
                 furniture_regions: Vec::new(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
-                transit_teleports: Vec::new(),
                 objective_cells: Vec::new(),
             },
         )
@@ -10601,7 +11284,6 @@ mod tests {
                     .unwrap_or_default(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
-                transit_teleports: Vec::new(),
                 objective_cells: Vec::new(),
             },
         )
@@ -11988,6 +12670,7 @@ mod tests {
             transport_before: false,
             talk_to: false,
             src_step,
+            by_link: false,
         }
     }
 
@@ -12131,6 +12814,7 @@ mod tests {
             transport_before,
             talk_to: false,
             src_step: 0,
+            by_link: false,
         }
     }
 
@@ -13264,6 +13948,7 @@ mod tests {
             transport_before: false,
             talk_to: false,
             src_step,
+            by_link: false,
         }
     }
 
@@ -15444,7 +16129,12 @@ mod leave_tests {
 
     fn judge(w: &World, seeds: &[[i32; 3]]) -> (LeaveBinding, Result<(), Failure>) {
         verify_bodies_can_leave(
-            &[(w, "from critical step 0".to_string(), seeds.to_vec())],
+            &[(
+                w,
+                "from critical step 0".to_string(),
+                seeds.to_vec(),
+                BTreeSet::new(),
+            )],
             None,
             &[],
         )
@@ -15587,7 +16277,12 @@ mod leave_tests {
         // A region whose box ends at x=5: the bed's floor at x=5..7 has cells
         // outside it, and the clock carries a body there back.
         let (_, verdict) = verify_bodies_can_leave(
-            &[(&w, "from critical step 0".to_string(), vec![[1, 1, 1]])],
+            &[(
+                &w,
+                "from critical step 0".to_string(),
+                vec![[1, 1, 1]],
+                BTreeSet::new(),
+            )],
             Some(([0, -8, 0], [5, 64, 13])),
             &[],
         );
