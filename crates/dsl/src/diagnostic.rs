@@ -1099,6 +1099,33 @@ pub mod codes {
     ///
     /// Error tier, validation (exit 1).
     pub const GATE_NEVER_OPENS: DwCode = DwCode::new("DW0847", ExitTier::Build);
+    /// (spec-0085 §4.3) **A particle the game does not draw from a bare id.** A
+    /// `particle` effect names an id the pinned registry
+    /// (`crates/dsl/data/particles-1.21.11.json`) does not hold, or one whose
+    /// type takes options (`dust`, `block`, `item`, …) — which the verb cannot
+    /// carry, so the emitted command would be refused by the game.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_UNKNOWN_PARTICLE: DwCode = DwCode::new("DW0941", ExitTier::Build);
+    /// (spec-0085 §3.3) **An audience on a party fact.** An effect states the
+    /// envelope's `audience` or `in` on a verb the emitter fires once for the
+    /// world ([`crate::stages::Verb::addresses_players`] answers `false`) — a
+    /// flag, a gate, a block, a region, a timeline, a rocket. A box has no party
+    /// and a world fact has no audience; a `sequence`'s steps each state their
+    /// own.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_AUDIENCE_ON_A_PARTY_FACT: DwCode = DwCode::new("DW0942", ExitTier::Build);
+    /// (spec-0085 §5.3) **A sight effect that ends under a camera.** In one
+    /// timeline, a `give-effect` of a sight effect
+    /// ([`crate::perception::SIGHT`]) overlaps a `cutscene` step and ends inside
+    /// it, or within the effect's wind-down after it, so the effect starts
+    /// ramping down on screen. The `give-effect` half of the findings-ledger
+    /// row whose general form is that a granted sight effect outlasts any
+    /// authored camera it can overlap.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_SIGHT_UNDER_A_CAMERA: DwCode = DwCode::new("DW0944", ExitTier::Build);
 }
 
 #[cfg(test)]

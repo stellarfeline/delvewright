@@ -308,11 +308,12 @@ fn the_schema_exports_the_explosion_and_its_colour_pattern() {
     );
 }
 
-/// The effect union names thirty-eight verbs, and `firework` is one of them —
+/// The effect union names thirty-nine verbs (spec-0085 added `particle`), and
+/// `firework` is one of them —
 /// the enumeration a `DW0100` refusal prints back at an author who wrote an
 /// unknown one.
 #[test]
-fn the_effect_union_names_thirty_eight_verbs() {
+fn the_effect_union_names_thirty_nine_verbs() {
     let schema = stage_schema(Stage::Quests);
     let branches = verb_branches(&schema);
     let verbs: Vec<&str> = branches.iter().filter_map(verb_tag).collect();
@@ -325,7 +326,7 @@ fn the_effect_union_names_thirty_eight_verbs() {
         verbs.contains(&"firework"),
         "the vocabulary carries `firework`: {verbs:?}"
     );
-    assert_eq!(verbs.len(), 38, "the effect vocabulary's size: {verbs:?}");
+    assert_eq!(verbs.len(), 39, "the effect vocabulary's size: {verbs:?}");
 }
 
 // ---------------------------------------------------------------------------

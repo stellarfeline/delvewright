@@ -108,6 +108,8 @@ pub struct LethalGate {
     pub packtests: usize,
     /// What `DW0891` looked at, per volume and over the campaign (spec-0062 §5).
     pub visibility: DangerVisibility,
+    /// What `DW0943` looked at, per blinding grant (spec-0085 §6.3).
+    pub blind: crate::compiler::blind::BlindReach,
 }
 
 impl LethalGate {
@@ -126,6 +128,7 @@ impl LethalGate {
             "packtest_templates": self.packtests,
             "unbound": self.unbound(),
             "danger_visibility": self.visibility.to_json(),
+            "blind_reach": self.blind.to_json(),
         })
     }
 }
@@ -809,6 +812,7 @@ pub fn gate(
         legs,
         packtests,
         visibility,
+        blind: crate::compiler::blind::BlindReach::default(),
     }
 }
 

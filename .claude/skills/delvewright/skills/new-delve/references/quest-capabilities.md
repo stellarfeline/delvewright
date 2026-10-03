@@ -137,8 +137,10 @@ this section is what they are *for* and the traps in each.
   beat a player completes, or a trigger declaring `audience: "presser"`, which
   runs as the player who clicked. These have **no** acting player and reject one
   (`DW0503`): an objective/trigger/trap *gate*, a party-audience trigger's
-  `effects`, a trap's `payload`, a shortcut's `on_unlock`, a `sequence` step and
-  a `move-npc`/`move-actor` `on_arrive`. Use `party` scope there.
+  `effects`, a trap's `payload`, a shortcut's `on_unlock`, a `move-npc`/
+  `move-actor` `on_arrive`, a `bonfire`'s `on_rest`, and a `sequence` step of a
+  timeline started in one of those. A timeline started where a player acted
+  keeps that player through every step. Use `party` scope there.
 
 ## The story layer
 
@@ -266,6 +268,44 @@ this section is what they are *for* and the traps in each.
   twenty, and that is a hazard they can see coming — judge it in playtest. A
   display of many rockets is a `sequence` of `firework` effects, not one
   overloaded rocket.
+- **Who sees, hears or receives an effect is the effect's own `audience` and
+  `in`.** Any effect a player sees, hears or receives — `narrate`, `play-sound`,
+  `particle`, `give-effect`, `clear-effect`, `damage-players`, `give-item` —
+  takes `"audience": "party"` (everyone) or `"audience": "actor"` (the one player
+  whose act fired the beat: the completer, the presser, the dying player, the
+  buyer, the killer), and `"in": {anchor, extent}` (only players standing in that
+  box when it fires). Leave `audience` out and the beat keeps its root's answer:
+  a quest completion speaks to the party, a `presser` trigger to its presser. A
+  polled trigger, a trap and a shortcut have no actor, and `actor` there is
+  refused; so are `audience` and `in` on an effect that changes the world rather
+  than a player (a flag, a block, a gate, a timeline, a rocket).
+- **A perception beat is a `sequence` of `give-effect`, `particle` and
+  `play-sound`** — the screen darkens and swims, a face fills it, something
+  sounds from behind. `particle {particle, at, count?, spread?, speed?}` spawns a
+  vanilla particle at a mark (`{anchor, offset?}`) or at `"players"` — each
+  addressed player; the full-screen face is `"particle":
+  "minecraft:elder_guardian", "at": "players"`. Only particle types a bare id
+  spawns are admitted (not `dust`, `block`, `item`, …). A sound behind the
+  listener is `"at": {"at": "players", "offset": [0, 0, -3]}` — the offset is in
+  the listener's own frame, `+z` the way they face. A timeline started from a
+  beat a player drove carries that player: `"audience": "actor"` on a step
+  reaches them alone. Three rules for the beat: **it is never the only signal** —
+  each of these effects sits behind a player setting the engine cannot read
+  (Distortion Effects, Darkness Pulsing, the sound sliders), so a change a
+  player must act on is also told by a `narrate`, a changed block or a gate;
+  write **`hide_particles: true`** on every grant, so a blinding reads as the
+  world rather than a potion; and know what the engine fixed for you — every
+  particle is written in force mode, every sound in the `master` category, and
+  every grant ends by its duration. **A blinding near a killing volume or a
+  deadly drop is refused**: a blinded player cannot see the hazard beside them.
+  Shorten `seconds`, draw `in` farther from the hazard, or use
+  `minecraft:nausea`, which leaves the floor visible. A grant of night vision,
+  blindness or darkness that ends while a cutscene beside it in the same
+  timeline or bundle is still rolling is refused too — give it the seconds the
+  error names. Two things to plan around: a second grant of an effect the
+  player already has shows nothing unless it is stronger or longer, so a beat
+  re-armed inside its own length re-applies nothing visible; and a timeline
+  started again before it ends re-times every step for both players.
 - **A teleport selects a REGION, never a block.** `teleport {from {anchor,
   extent}, to {anchor, offset?}}` moves **everything** inside the box to the
   destination mark —
@@ -496,16 +536,16 @@ this section is what they are *for* and the traps in each.
   destination on it ends on the floor beside it. A walk whose only way is over
   the table is refused naming it (`DW0510`): move the mark or open a way round.
 - **A status effect is a verb — and it ends by expiring, never by being
-  cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?, in?}`
-  grants any pinned-1.21.11 status effect; `in {anchor, extent}` narrows it to
-  the players inside a box, so "blind whoever is riding" does not blind the
-  delve. `seconds` is REQUIRED and there is no infinite form, on purpose: an
+  cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?}`
+  grants any pinned-1.21.11 status effect; the effect's `in {anchor, extent}`
+  narrows it to the players inside a box, so "blind whoever is riding" does not
+  blind the delve. `seconds` is REQUIRED and there is no infinite form, on purpose: an
   effect whose only removal is a later step is one the player keeps forever
   whenever that step does not run — a logout, a crash, a death mid-chain. So **do
   not write "grant, then clear at the end"**; write a duration that covers the
   beat plus slack and let it expire. Pairing a live grant with a `clear-effect`
-  of the same effect in the same bundle is `DW0540`. `clear-effect {effect?,
-  in?}` exists for effects the campaign did NOT grant (a potion the player
+  of the same effect in the same bundle is `DW0540`. `clear-effect {effect?}`
+  exists for effects the campaign did NOT grant (a potion the player
   drank, a `wither` a mob applied); omit `effect` to clear everything.
 - **A fight can show its health: `health_bar`.** A health bar is
   **optional** on any wave or actor: `"health_bar": { "range": 16 }`, with

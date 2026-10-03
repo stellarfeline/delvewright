@@ -103,6 +103,9 @@ pub fn validate_campaign_with(
     lane_checks(c, anchors, &mut d);
     difficulty_checks(c, &mut d);
     firework_checks(c, &mut d);
+    // spec-0085: the perception bundle — a particle's id, the envelope's audience
+    // on a party fact, and a sight grant that ends under a camera.
+    perception_checks(c, &mut d);
     // spec-0073: a fight's health bar. The walk is over every wave and actor;
     // a campaign that declares no bar and bills no fight `boss` gets nothing.
     crate::healthbar::health_bar_checks(c, &mut d);
@@ -2971,27 +2974,38 @@ fn check_player_state_not_scheduled(
                 ),
             ));
         }
-        match &e.verb {
-            // Dispatched per player; they reset the latch.
-            Verb::SetCheckpoint { on_respawn, .. } => {
-                check_player_state_not_scheduled(on_respawn, declared, stage, path, false, d);
-            }
-            Verb::BeginStealth { on_caught, .. } => {
-                check_player_state_not_scheduled(on_caught, declared, stage, path, false, d);
-            }
-            // The scheduler-only seams (see `emit::Audience::Scheduled`).
-            Verb::Sequence { steps } => {
-                for st in steps {
-                    check_player_state_not_scheduled(&st.effects, declared, stage, path, true, d);
-                }
-            }
-            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
-                check_player_state_not_scheduled(on_arrive, declared, stage, path, true, d);
-            }
-            Verb::Bonfire { on_rest, .. } => {
-                check_player_state_not_scheduled(on_rest, declared, stage, path, scheduled, d);
-            }
-            _ => {}
+        // spec-0085 §3.3: the fourth shape — an actor-addressed effect where
+        // emission has no acting player. One rule, *no `@s` where emission has
+        // none*, and one remedy.
+        if scheduled && e.audience == Some(crate::stages::EffectAudience::Actor) {
+            d.push(Diagnostic::error(
+                codes::STATE_SCOPE_UNREACHABLE,
+                stage,
+                path.to_string(),
+                format!(
+                    "a `{}` effect declares `audience: actor` in a bundle that runs with no \
+                     acting player (a polled trigger's effects, a trap's payload and a shortcut's \
+                     `on_unlock` run from the server command source; so do a `move-npc`/\
+                     `move-actor` `on_arrive`, a `bonfire`'s `on_rest`, and every step of a \
+                     timeline started there). There is no actor to address. Move the beat onto a \
+                     site a player drives (an objective's completion, a `presser` trigger, a \
+                     respawn), or drop `audience` to address the party",
+                    e.verb.tag()
+                ),
+            ));
+        }
+        // The seams are the DSL's one statement of them
+        // (`QuestEffect::nested_effect_dispatch`): a `sequence` step keeps the
+        // actor its timeline was started with (spec-0085 §3.2).
+        for (list, how) in e.nested_effect_dispatch() {
+            check_player_state_not_scheduled(
+                list,
+                declared,
+                stage,
+                path,
+                !how.has_actor(!scheduled),
+                d,
+            );
         }
     }
 }
@@ -3260,56 +3274,47 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
 }
 
 /// Reject a `carrier: "one"` `give-item` inside a **scheduler-only** bundle
-/// (`DW0371`, spec-0018).
+/// (`DW0357`, spec-0018).
 ///
 /// `carrier: "one"` means "hand this one quest prop to the player whose action
-/// earned it". A `sequence` step and a `move-npc`/`move-actor` `on_arrive` are
-/// re-invoked by the vanilla scheduler with the **server** command source: there
-/// is no acting player there, so the effect has no defensible recipient. The
-/// party-wide default (absent `carrier`) is always fine — it addresses `@a`.
+/// earned it". A bundle the vanilla scheduler re-invokes with the **server**
+/// command source has no acting player, so the effect has no defensible
+/// recipient. The party-wide default (absent `carrier`) is always fine — it
+/// addresses `@a`.
 ///
-/// `scheduled` latches on the way down and the walk deliberately **stops** at a
-/// `set-checkpoint`'s `on_respawn` and a `begin-stealth`'s `on_caught`: those
-/// bundles are dispatched per player (the respawning / spotted one), so they do
-/// have an `@s` even when the effect that installed them was scheduled.
+/// Which nested bundle has an acting player is the DSL's one statement of it,
+/// [`QuestEffect::nested_effect_dispatch`]: a `move-npc`/`move-actor`
+/// `on_arrive` and a `bonfire`'s `on_rest` never do; a `set-checkpoint`'s
+/// `on_respawn` and a `begin-stealth`'s `on_caught` always do; a `sequence`
+/// step has one exactly where the timeline was started with one, because the
+/// timeline carries its actor across its `schedule`s (spec-0085 §3.2). The
+/// root's own top level is not refused here — a polled root lowers a
+/// `carrier: "one"` give to the party, which is what an absent carrier says.
 fn check_carrier_one_not_scheduled(
     effs: &[QuestEffect],
     path: &str,
-    scheduled: bool,
+    has_actor: bool,
+    top: bool,
     d: &mut Vec<Diagnostic>,
 ) {
     for e in effs {
-        if scheduled && e.gives_to_one() {
+        if !has_actor && !top && e.gives_to_one() {
             d.push(Diagnostic::error(
                 codes::PARTY_CARRIER_SCHEDULED,
                 "quests",
                 path.to_string(),
                 "a `give-item` with `carrier: \"one\"` sits in a bundle only the scheduler ever \
-                 runs (a `sequence` step, or a `move-npc`/`move-actor` `on_arrive`). Those run \
-                 with the server command source — there is no acting player to hand the prop to, \
-                 so the give would silently reach nobody. Drop `carrier` to arm the whole party, \
-                 or move the hand-off onto the beat a player completes"
+                 runs with no acting player (a `move-npc`/`move-actor` `on_arrive`, a `bonfire`'s \
+                 `on_rest`, or a `sequence` step of a timeline started where nobody acted — a \
+                 trigger's effects, a trap's payload, a shortcut's `on_unlock`). Those run with \
+                 the server command source — there is no acting player to hand the prop to, so \
+                 the give would silently reach nobody. Drop `carrier` to arm the whole party, or \
+                 move the hand-off onto the beat a player completes"
                     .to_string(),
             ));
         }
-        match &e.verb {
-            // These bundles ARE dispatched per player; they reset the latch.
-            Verb::SetCheckpoint { on_respawn, .. } => {
-                check_carrier_one_not_scheduled(on_respawn, path, false, d);
-            }
-            Verb::BeginStealth { on_caught, .. } => {
-                check_carrier_one_not_scheduled(on_caught, path, false, d);
-            }
-            // These are the scheduler-only seams (see `emit::Audience::Scheduled`).
-            Verb::Sequence { steps } => {
-                for st in steps {
-                    check_carrier_one_not_scheduled(&st.effects, path, true, d);
-                }
-            }
-            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
-                check_carrier_one_not_scheduled(on_arrive, path, true, d);
-            }
-            _ => {}
+        for (list, how) in e.nested_effect_dispatch() {
+            check_carrier_one_not_scheduled(list, path, how.has_actor(has_actor), false, d);
         }
     }
 }
@@ -3469,8 +3474,20 @@ fn v06_checks(
         };
         walk_effects_deep(effs, &mut visit);
         check_no_nested_sequence(effs, path, d);
-        check_carrier_one_not_scheduled(effs, path, false, d);
     }
+    // `DW0357`, per root SITE: whether its bundle has an acting player is the
+    // site's own answer (a `presser` trigger does, every other trigger does not).
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        if site.stage == "quests" {
+            check_carrier_one_not_scheduled(
+                effs,
+                &site.path,
+                site.runs_with_acting_player(),
+                true,
+                d,
+            );
+        }
+    });
 
     // Wave-mob `equipment` item ids: every present slot must name a
     // pinned-1.21.11 item — the same registry and DW family as `give-item`
@@ -3813,6 +3830,190 @@ fn firework_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     });
     for (path, stage, message) in found {
         d.push(Diagnostic::error(codes::SCHEMA, stage, path, message));
+    }
+}
+
+/// **The perception surface, at every effect root** (spec-0085).
+///
+/// Four rules over one descent (the single root enumeration and the single
+/// nesting authority, so a beat inside a `sequence` step of a dialogue
+/// `on_respawn` is asked exactly what a top-level one is):
+///
+/// * `DW0941` — a `particle` id the pinned registry does not hold, or one whose
+///   type takes options;
+/// * `DW0100` — a `particle` `count` of zero, which the exported schema refuses
+///   (`minimum: 1`) and serde does not;
+/// * `DW0942` — the envelope's `audience` or `in` on a verb the emitter fires
+///   once for the world ([`Verb::addresses_players`]);
+/// * `DW0944` — in one timeline, a sight grant whose window overlaps a cutscene
+///   step's and ends inside it or within its own wind-down after it.
+fn perception_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    fn descend(stage: &'static str, path: String, eff: &QuestEffect, d: &mut Vec<Diagnostic>) {
+        perception_one(stage, &path, eff, d);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            if !matches!(eff.verb, Verb::Sequence { .. }) {
+                // A nested bundle is a timeline of one step, at tick 0.
+                sight_under_camera(stage, &[(0, format!("{path}/{pseg}"), list)], d);
+            }
+            for (j, inner) in list.iter().enumerate() {
+                descend(stage, format!("{path}/{pseg}/{j}"), inner, d);
+            }
+        }
+    }
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        // A root's bundle fires all at once: a timeline of one step, at tick 0.
+        sight_under_camera(site.stage, &[(0, site.path.clone(), effs)], d);
+        for (i, eff) in effs.iter().enumerate() {
+            descend(site.stage, format!("{}/{i}", site.path), eff, d);
+        }
+    });
+}
+
+/// One effect's perception rules, at the pointer it was found at.
+fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Vec<Diagnostic>) {
+    use crate::perception;
+    if let Verb::Particle {
+        particle, count, ..
+    } = &eff.verb
+    {
+        match perception::particle_takes_options(particle) {
+            None => d.push(Diagnostic::error(
+                codes::PERCEPTION_UNKNOWN_PARTICLE,
+                stage,
+                format!("{path}/particle"),
+                format!(
+                    "`particle` `{particle}` is not a particle type the pinned 1.21.11 game \
+                     registers ({} types, `crates/dsl/data/particles-1.21.11.json`). Use a \
+                     registered id — the full-screen face is `minecraft:elder_guardian`",
+                    perception::particle_registry().len()
+                ),
+            )),
+            Some(true) => d.push(Diagnostic::error(
+                codes::PERCEPTION_UNKNOWN_PARTICLE,
+                stage,
+                format!("{path}/particle"),
+                format!(
+                    "`particle` `{particle}` is a type that takes options (a colour, a block, an \
+                     item, a destination), and the `particle` verb carries none, so the game would \
+                     refuse the command. A particle with options is excluded until the engine \
+                     states what each one takes; choose a type a bare id spawns"
+                ),
+            )),
+            Some(false) => {}
+        }
+        if *count == Some(0) {
+            d.push(Diagnostic::error(
+                codes::SCHEMA,
+                stage,
+                format!("{path}/count"),
+                "`particle` `count` is 0. Zero is vanilla's spelling of a different thing — one \
+                 particle given a velocity — and the schema's minimum is 1. Write the number of \
+                 particles, at least 1"
+                    .to_string(),
+            ));
+        }
+    }
+    if !eff.addresses_players() {
+        for (field, present) in [
+            ("audience", eff.audience.is_some()),
+            ("in", eff.within.is_some()),
+        ] {
+            if present {
+                d.push(Diagnostic::error(
+                    codes::PERCEPTION_AUDIENCE_ON_A_PARTY_FACT,
+                    stage,
+                    format!("{path}/{field}"),
+                    format!(
+                        "`{}` declares `{field}`, and a `{}` fires once for the world — it \
+                         addresses no player, so there is no audience to narrow. `audience` and \
+                         `in` belong on the effects a player sees, hears or receives (`narrate`, \
+                         `play-sound`, `particle`, `give-effect`, `clear-effect`, \
+                         `damage-players`, `give-item`); a `sequence`'s steps each state their \
+                         own. Remove `{field}` here, or move it onto those effects",
+                        eff.verb.tag(),
+                        eff.verb.tag()
+                    ),
+                ));
+            }
+        }
+    }
+    if let Verb::Sequence { steps } = &eff.verb {
+        let groups: Vec<(u32, String, &[QuestEffect])> = steps
+            .iter()
+            .enumerate()
+            .map(|(si, st)| {
+                (
+                    st.at_ticks,
+                    format!("{path}/steps/{si}/effects"),
+                    st.effects.as_slice(),
+                )
+            })
+            .collect();
+        sight_under_camera(stage, &groups, d);
+    }
+}
+
+/// `DW0944`: in one timeline, a sight grant that ends under a camera
+/// (spec-0085 §5.3). A bundle — a root's list or a nested one — fires all at
+/// once, so it is judged as a timeline of one step at tick 0; a `sequence` is
+/// judged step by step.
+///
+/// A grant's window is `[at_ticks, at_ticks + 20 × seconds)`; a cutscene step's
+/// is `[at_ticks, at_ticks + 20 × Σ shot seconds)`. A grant that overlaps a
+/// shot's window and ends at or after its start and before its end plus the
+/// effect's wind-down ([`crate::perception::sight_wind_down_ticks`]) starts
+/// ramping down on screen. Nothing outside one timeline is examined: a grant
+/// with no cutscene in its timeline is not this rule's business.
+fn sight_under_camera(
+    stage: &'static str,
+    groups: &[(u32, String, &[QuestEffect])],
+    d: &mut Vec<Diagnostic>,
+) {
+    let mut shots: Vec<(String, u32, u32)> = Vec::new();
+    for (at, list_path, effects) in groups {
+        for (ei, e) in effects.iter().enumerate() {
+            if let Some(list) = e.cutscene_shots().filter(|l| !l.is_empty()) {
+                let len: u32 = list.iter().map(|s| s.resolved_seconds() * 20).sum();
+                shots.push((format!("{list_path}/{ei}"), *at, at + len));
+            }
+        }
+    }
+    if shots.is_empty() {
+        return;
+    }
+    for (at, list_path, effects) in groups {
+        for (ei, e) in effects.iter().enumerate() {
+            let Some((effect, seconds, _, _, _)) = e.give_effect() else {
+                continue;
+            };
+            let Some(wind) = crate::perception::sight_wind_down_ticks(effect) else {
+                continue;
+            };
+            let begin = *at;
+            let end = begin + seconds * 20;
+            for (shot, c0, c1) in &shots {
+                let (c0, c1) = (*c0, *c1);
+                let overlaps = begin < c1 && end > c0;
+                if overlaps && end < c1 + wind {
+                    d.push(Diagnostic::error(
+                        codes::PERCEPTION_SIGHT_UNDER_A_CAMERA,
+                        stage,
+                        format!("{list_path}/{ei}"),
+                        format!(
+                            "`give-effect` `{effect}` runs from tick {begin} to tick {end} of \
+                             this timeline, and the cutscene at `{shot}` holds the camera from \
+                             tick {c0} to tick {c1}. The grant ends at tick {end}, inside the \
+                             shot or within {wind} tick(s) of its end — the effect's wind-down \
+                             — so it starts ramping down on screen. A granted sight effect \
+                             outlasts any authored camera it overlaps, plus its wind-down: write \
+                             a `seconds` of at least {need}, or start it after the shot (a later \
+                             `at_ticks`)",
+                            need = (c1 + wind - begin).div_ceil(20),
+                        ),
+                    ));
+                }
+            }
+        }
     }
 }
 

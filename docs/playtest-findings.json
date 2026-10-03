@@ -1469,7 +1469,7 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
+      "binding": {
         "files": [
           "world.json",
           "quests.json",
@@ -1479,9 +1479,9 @@
         "match": {
           "any_of": [
             {
-              "has": [
-                "mitigation"
-              ]
+              "eq": {
+                "mitigation": "night-vision"
+              }
             },
             {
               "eq": {
@@ -1501,26 +1501,15 @@
           ]
         }
       },
-      "binding": {
-        "files": [
-          "world.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has": [
-            "mitigation"
-          ]
-        }
-      },
       "campaign": "nobodys-cave-island",
       "carrier": {
-        "kind": "packtest",
-        "template": "v06_night_vision"
+        "kind": "invariant",
+        "test": "a_granted_sight_effect_outlasts_every_camera_it_overlaps"
       },
       "finding": "granted night vision expired and flickered part-way through the ending cutscene it was granted for",
       "general_form": "a granted sight effect outlasts any authored camera it can overlap, plus vanilla's wind-down, so it can never begin ramping down on screen",
       "id": "isl-52",
-      "note": "The precondition is a granted sight effect - an area's `mitigation` or a `give-effect` of night vision, blindness or darkness in any effect list of quests.json or dialogue.json - because the general form quantifies over the grant, and a cutscene with no sight effect granted anywhere has nothing to expire on screen. A potion in a class kit is not counted: the party drinks it on its own clock, so no authored camera is timed against it. The binding reaches only the `mitigation` grant, whose lease the compiler derives from the longest camera; a `give-effect` sight grant's author-chosen `seconds` has no check against the cameras it can overlap, so a campaign whose only sight grant is a `give-effect` is UNBOUND, correctly. No sight grant = the class measures zero.",
+      "note": "The binding counts every granted sight effect - an area's `mitigation` or a `give-effect` of night vision, blindness or darkness in any effect list of quests.json or dialogue.json - because the general form quantifies over the grant. Both halves are carried by one invariant test. The `mitigation` half is structural: the compiler derives the lease from the longest camera plus night vision's 200-tick wind-down (`dsl::perception::SIGHT`). The `give-effect` half is DW0944 (spec-0085): an author-chosen `seconds` that overlaps a cutscene in its own timeline - a `sequence`, or a bundle, which fires at one tick - and ends inside the shot or within its wind-down after it is refused. What no static check reaches is stated: a grant in one bundle against a camera in a different bundle that may happen to run while it lasts. A potion in a class kit is not counted: the party drinks it on its own clock, so no authored camera is timed against it. No sight grant = the class measures zero.",
       "round": 15,
       "triage": "capability"
     },
