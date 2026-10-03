@@ -236,6 +236,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("QuestEffect", "effect", Reference),
     ("QuestEffect", "falling_block", Reference),
     ("QuestEffect", "item", Reference),
+    ("QuestEffect", "particle", Reference),
     ("QuestEffect", "name", Inventoried),
     ("QuestEffect", "projectile", Reference),
     ("QuestEffect", "prompt", Inventoried),

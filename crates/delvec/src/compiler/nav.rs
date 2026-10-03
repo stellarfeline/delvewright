@@ -2575,6 +2575,62 @@ impl World {
         self.moves_of(c, &Footprint::player(), true)
     }
 
+    /// **Where a body standing in `c` can step off into a fall it does not
+    /// survive** (spec-0085 §6.2): the first neighbouring column, in the fixed
+    /// cardinal order, whose feet and head cells beside `c` are clear, whose cell
+    /// under them is no floor, and under which nothing arrests the fall within
+    /// [`unarmoured_survivable_fall_blocks`] — or the first thing that does is
+    /// lava. Water at any depth in range arrests it; so does any solid, tall
+    /// barrier or use-gate block, a floor or not, because the question is whether
+    /// the body survives the drop, never whether it can stand where it lands.
+    /// A neighbouring cell that is lava, or whose floor is lava, is a step into
+    /// it, and is answered the same way.
+    ///
+    /// Returns the neighbouring cell and whether what kills is lava (`true`) or
+    /// the fall itself (`false`).
+    ///
+    /// `None` when every side of `c` is wall, floor, or a survivable drop. Asked
+    /// of a world with its exclusions lifted, so a declared killing volume is not
+    /// what this finds — the keep-out answers for those.
+    pub fn fatal_step_off(&self, c: [i32; 3]) -> Option<([i32; 3], bool)> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let deepest = unarmoured_survivable_fall_blocks() as i32;
+        for (dx, dz) in HORIZ {
+            let side = [c[0] + dx, c[1], c[2] + dz];
+            let head = [side[0], side[1] + 1, side[2]];
+            let under = [side[0], side[1] - 1, side[2]];
+            // A pool of lava let into the floor, or standing at the feet: one
+            // step and the body is in it.
+            if self.lava.contains(&side)
+                || (!self.is_occupied(side)
+                    && !self.is_occupied(head)
+                    && self.lava.contains(&under))
+            {
+                return Some((side, true));
+            }
+            if self.is_occupied(side) || self.is_occupied(head) || self.use_gates.contains(&side) {
+                continue;
+            }
+            let arrests = |y: i32| {
+                let cell = [side[0], y, side[2]];
+                self.is_occupied(cell) || self.use_gates.contains(&cell)
+            };
+            if arrests(c[1] - 1) {
+                continue; // level ground beside: a walk, not a drop
+            }
+            // The body's feet are at `c[1]`; a landing at cell y puts them at y + 1.
+            let landing = ((c[1] - 1 - deepest)..=(c[1] - 2))
+                .rev()
+                .find(|&y| arrests(y));
+            match landing {
+                Some(y) if self.lava.contains(&[side[0], y, side[2]]) => return Some((side, true)),
+                Some(_) => continue,
+                None => return Some((side, false)),
+            }
+        }
+        None
+    }
+
     /// **Everywhere a mob in `c` can put itself in one movement** — the
     /// relation `DW0922` and `DW0923` flood from a wave's seats. It differs from
     /// [`World::body_moves`] in one respect only: a mob makes no gap jumps.
@@ -14692,7 +14748,6 @@ mod tests {
             beat(vec![
                 Verb::DamagePlayers {
                     amount: 40,
-                    within: None,
                     damage_type: None,
                 }
                 .into(),
@@ -16269,6 +16324,53 @@ mod leave_tests {
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert!(!w.body_moves([2, 1, 3]).contains(&[3, 0, 3]));
         assert!(!w.is_water_surface([3, 0, 3]));
+    }
+
+    /// `fatal_step_off` (spec-0085 §6.2): a lava pool let into the floor beside a
+    /// standing cell is a step into lava; level floor is not a step at all.
+    #[test]
+    fn a_step_into_a_lava_pool_is_fatal_and_level_floor_is_not() {
+        let mut solid = yard(6, 6);
+        solid.remove(&[3, 0, 3]);
+        solid.insert([3, -1, 3]);
+        let occ = crate::compiler::assembled::Occupancy {
+            solid,
+            tall: BTreeSet::new(),
+            use_gates: BTreeSet::new(),
+            flooded: [[3, 0, 3]].into_iter().collect(),
+            partial: BTreeMap::new(),
+            waterloggable: BTreeSet::new(),
+            lava: [[3, 0, 3]].into_iter().collect(),
+        };
+        let w = World::from_occupancy(occ, Premises::geometry_only());
+        assert_eq!(w.fatal_step_off([2, 1, 3]), Some(([3, 1, 3], true)));
+        assert_eq!(w.fatal_step_off([1, 1, 1]), None, "level floor all round");
+    }
+
+    /// `fatal_step_off`: a drop deeper than an unarmoured body survives is
+    /// fatal; one inside it is a landing.
+    #[test]
+    fn a_drop_past_the_survivable_fall_is_fatal_and_one_inside_it_is_not() {
+        let deepest = unarmoured_survivable_fall_blocks() as i32;
+        let ledge_over = |depth: i32| {
+            // A one-cell ledge walled on three sides, open to the east.
+            let mut solid = BTreeSet::new();
+            solid.insert([0, 0, 0]);
+            for wall in [[-1, 0], [0, -1], [0, 1]] {
+                for y in 1..=2 {
+                    solid.insert([wall[0], y, wall[1]]);
+                }
+            }
+            solid.insert([1, -depth, 0]);
+            World::from_solid_cells(solid)
+        };
+        // Feet at y=1; a landing whose top is at y=1-depth puts the feet at
+        // 1-depth+1, a fall of `depth` blocks.
+        assert_eq!(ledge_over(deepest).fatal_step_off([0, 1, 0]), None);
+        assert_eq!(
+            ledge_over(deepest + 1).fatal_step_off([0, 1, 0]),
+            Some(([1, 1, 0], false))
+        );
     }
 
     #[test]

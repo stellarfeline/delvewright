@@ -569,10 +569,13 @@ fn cells_of((lo, hi): ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
 fn landings(plan: &Plan, path: &str, effs: &[QuestEffect], out: &mut Vec<Landing>) {
     for (i, e) in effs.iter().enumerate() {
         let here = format!("{path}/{i}");
-        if let Verb::DamagePlayers { amount, within, .. } = &e.verb {
+        if let Verb::DamagePlayers { amount, .. } = &e.verb {
+            // spec-0085: `in` is the effect envelope's field, read through
+            // the one accessor every damage reader takes.
+            let within = e.damage_within();
             out.push(Landing {
                 path: here.clone(),
-                within: within.as_ref().and_then(|z: &StealthZone| plan.zone_box(z)),
+                within: within.and_then(|z: &StealthZone| plan.zone_box(z)),
                 declares_in: within.is_some(),
                 amount: *amount,
             });

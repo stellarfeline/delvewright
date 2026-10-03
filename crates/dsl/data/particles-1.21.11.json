@@ -1,0 +1,347 @@
+{
+  "minecraft:angry_villager": {
+    "options": false
+  },
+  "minecraft:ash": {
+    "options": false
+  },
+  "minecraft:block": {
+    "options": true
+  },
+  "minecraft:block_crumble": {
+    "options": true
+  },
+  "minecraft:block_marker": {
+    "options": true
+  },
+  "minecraft:bubble": {
+    "options": false
+  },
+  "minecraft:bubble_column_up": {
+    "options": false
+  },
+  "minecraft:bubble_pop": {
+    "options": false
+  },
+  "minecraft:campfire_cosy_smoke": {
+    "options": false
+  },
+  "minecraft:campfire_signal_smoke": {
+    "options": false
+  },
+  "minecraft:cherry_leaves": {
+    "options": false
+  },
+  "minecraft:cloud": {
+    "options": false
+  },
+  "minecraft:composter": {
+    "options": false
+  },
+  "minecraft:copper_fire_flame": {
+    "options": false
+  },
+  "minecraft:crimson_spore": {
+    "options": false
+  },
+  "minecraft:crit": {
+    "options": false
+  },
+  "minecraft:current_down": {
+    "options": false
+  },
+  "minecraft:damage_indicator": {
+    "options": false
+  },
+  "minecraft:dolphin": {
+    "options": false
+  },
+  "minecraft:dragon_breath": {
+    "options": true
+  },
+  "minecraft:dripping_dripstone_lava": {
+    "options": false
+  },
+  "minecraft:dripping_dripstone_water": {
+    "options": false
+  },
+  "minecraft:dripping_honey": {
+    "options": false
+  },
+  "minecraft:dripping_lava": {
+    "options": false
+  },
+  "minecraft:dripping_obsidian_tear": {
+    "options": false
+  },
+  "minecraft:dripping_water": {
+    "options": false
+  },
+  "minecraft:dust": {
+    "options": true
+  },
+  "minecraft:dust_color_transition": {
+    "options": true
+  },
+  "minecraft:dust_pillar": {
+    "options": true
+  },
+  "minecraft:dust_plume": {
+    "options": false
+  },
+  "minecraft:effect": {
+    "options": true
+  },
+  "minecraft:egg_crack": {
+    "options": false
+  },
+  "minecraft:elder_guardian": {
+    "options": false
+  },
+  "minecraft:electric_spark": {
+    "options": false
+  },
+  "minecraft:enchant": {
+    "options": false
+  },
+  "minecraft:enchanted_hit": {
+    "options": false
+  },
+  "minecraft:end_rod": {
+    "options": false
+  },
+  "minecraft:entity_effect": {
+    "options": true
+  },
+  "minecraft:explosion": {
+    "options": false
+  },
+  "minecraft:explosion_emitter": {
+    "options": false
+  },
+  "minecraft:falling_dripstone_lava": {
+    "options": false
+  },
+  "minecraft:falling_dripstone_water": {
+    "options": false
+  },
+  "minecraft:falling_dust": {
+    "options": true
+  },
+  "minecraft:falling_honey": {
+    "options": false
+  },
+  "minecraft:falling_lava": {
+    "options": false
+  },
+  "minecraft:falling_nectar": {
+    "options": false
+  },
+  "minecraft:falling_obsidian_tear": {
+    "options": false
+  },
+  "minecraft:falling_spore_blossom": {
+    "options": false
+  },
+  "minecraft:falling_water": {
+    "options": false
+  },
+  "minecraft:firefly": {
+    "options": false
+  },
+  "minecraft:firework": {
+    "options": false
+  },
+  "minecraft:fishing": {
+    "options": false
+  },
+  "minecraft:flame": {
+    "options": false
+  },
+  "minecraft:flash": {
+    "options": true
+  },
+  "minecraft:glow": {
+    "options": false
+  },
+  "minecraft:glow_squid_ink": {
+    "options": false
+  },
+  "minecraft:gust": {
+    "options": false
+  },
+  "minecraft:gust_emitter_large": {
+    "options": false
+  },
+  "minecraft:gust_emitter_small": {
+    "options": false
+  },
+  "minecraft:happy_villager": {
+    "options": false
+  },
+  "minecraft:heart": {
+    "options": false
+  },
+  "minecraft:infested": {
+    "options": false
+  },
+  "minecraft:instant_effect": {
+    "options": true
+  },
+  "minecraft:item": {
+    "options": true
+  },
+  "minecraft:item_cobweb": {
+    "options": false
+  },
+  "minecraft:item_slime": {
+    "options": false
+  },
+  "minecraft:item_snowball": {
+    "options": false
+  },
+  "minecraft:landing_honey": {
+    "options": false
+  },
+  "minecraft:landing_lava": {
+    "options": false
+  },
+  "minecraft:landing_obsidian_tear": {
+    "options": false
+  },
+  "minecraft:large_smoke": {
+    "options": false
+  },
+  "minecraft:lava": {
+    "options": false
+  },
+  "minecraft:mycelium": {
+    "options": false
+  },
+  "minecraft:nautilus": {
+    "options": false
+  },
+  "minecraft:note": {
+    "options": false
+  },
+  "minecraft:ominous_spawning": {
+    "options": false
+  },
+  "minecraft:pale_oak_leaves": {
+    "options": false
+  },
+  "minecraft:poof": {
+    "options": false
+  },
+  "minecraft:portal": {
+    "options": false
+  },
+  "minecraft:raid_omen": {
+    "options": false
+  },
+  "minecraft:rain": {
+    "options": false
+  },
+  "minecraft:reverse_portal": {
+    "options": false
+  },
+  "minecraft:scrape": {
+    "options": false
+  },
+  "minecraft:sculk_charge": {
+    "options": true
+  },
+  "minecraft:sculk_charge_pop": {
+    "options": false
+  },
+  "minecraft:sculk_soul": {
+    "options": false
+  },
+  "minecraft:shriek": {
+    "options": true
+  },
+  "minecraft:small_flame": {
+    "options": false
+  },
+  "minecraft:small_gust": {
+    "options": false
+  },
+  "minecraft:smoke": {
+    "options": false
+  },
+  "minecraft:sneeze": {
+    "options": false
+  },
+  "minecraft:snowflake": {
+    "options": false
+  },
+  "minecraft:sonic_boom": {
+    "options": false
+  },
+  "minecraft:soul": {
+    "options": false
+  },
+  "minecraft:soul_fire_flame": {
+    "options": false
+  },
+  "minecraft:spit": {
+    "options": false
+  },
+  "minecraft:splash": {
+    "options": false
+  },
+  "minecraft:spore_blossom_air": {
+    "options": false
+  },
+  "minecraft:squid_ink": {
+    "options": false
+  },
+  "minecraft:sweep_attack": {
+    "options": false
+  },
+  "minecraft:tinted_leaves": {
+    "options": true
+  },
+  "minecraft:totem_of_undying": {
+    "options": false
+  },
+  "minecraft:trail": {
+    "options": true
+  },
+  "minecraft:trial_omen": {
+    "options": false
+  },
+  "minecraft:trial_spawner_detection": {
+    "options": false
+  },
+  "minecraft:trial_spawner_detection_ominous": {
+    "options": false
+  },
+  "minecraft:underwater": {
+    "options": false
+  },
+  "minecraft:vault_connection": {
+    "options": false
+  },
+  "minecraft:vibration": {
+    "options": true
+  },
+  "minecraft:warped_spore": {
+    "options": false
+  },
+  "minecraft:wax_off": {
+    "options": false
+  },
+  "minecraft:wax_on": {
+    "options": false
+  },
+  "minecraft:white_ash": {
+    "options": false
+  },
+  "minecraft:white_smoke": {
+    "options": false
+  },
+  "minecraft:witch": {
+    "options": false
+  }
+}
