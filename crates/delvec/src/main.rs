@@ -333,6 +333,10 @@ enum Command {
     /// A prefab piece under admission: audit, socket, anchor, lighting, catalog
     /// card, gallery world, curation.
     Prefab(delvec::admit::cli::PrefabArgs),
+    /// Sculpt a prefab from a form document: a body stated as implicit solids
+    /// over its own ground (spec-0087). `delvec schema --stage sculpt-form`
+    /// prints the form's shape.
+    Sculpt(delvec::sculpt::cli::SculptArgs),
     /// An outside schematic: convert a Sponge `.schem` into a structure `.nbt`.
     Schem(delvec::schem::cli::SchemArgs),
     /// A playtest log: pair `[DelveNote]` stamps with the creator's notes into
@@ -564,6 +568,7 @@ fn main() -> ExitCode {
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
+        Command::Sculpt(args) => delvec::sculpt::cli::run(args.clone()),
         Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
         Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),
@@ -3530,8 +3535,9 @@ fn schema_stage_help() -> String {
          for the hand-written walk record (a campaign artifact, not a stage document); \
          `prefab-metadata` for a prefab library asset's sibling `<prefab-id>.json` (a \
          library asset, not a stage document); `cameras` for the showcase camera record \
-         `design/cameras.json` (a campaign artifact, not a stage document); or `all` for \
-         every stage document at once.",
+         `design/cameras.json` (a campaign artifact, not a stage document); `sculpt-form` for \
+         a `delvec sculpt` form (a library asset, not a stage document); or `all` for every \
+         stage document at once.",
         names.join(", ")
     )
 }
@@ -3605,6 +3611,18 @@ fn run_schema(stage: &str) -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
+        // A sculpt form is not a stage document either — it is a library ASSET
+        // `delvec sculpt` reads (spec-0087), exported for the reason prefab
+        // metadata is and absent from `all` for the same reason. The export
+        // names where forms live, which is how the gallery's coverage gate finds
+        // the documents it binds the form's units against.
+        "sculpt-form" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&delvec::sculpt::form::schema()).unwrap()
+            );
+            return ExitCode::SUCCESS;
+        }
         "all" => Stage::ALL.to_vec(),
         other => {
             let names: Vec<String> = Stage::ALL
@@ -3616,7 +3634,8 @@ fn run_schema(stage: &str) -> ExitCode {
                  stages), any stage by name — {names} — `walk-record` for the hand-written \
                  walk record, `prefab-metadata` for a prefab library asset's sibling \
                  `<prefab-id>.json`, `cameras` for the showcase camera record \
-                 `design/cameras.json`, or `all` for every stage document at once.",
+                 `design/cameras.json`, `sculpt-form` for a `delvec sculpt` form, or `all` for \
+                 every stage document at once.",
                 names = names.join(", "),
             );
             return ExitCode::from(EXIT_INTERNAL);

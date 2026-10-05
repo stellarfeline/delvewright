@@ -81,9 +81,10 @@ REPO = Path(__file__).resolve().parents[2]
 GALLERY = REPO / "gallery"
 
 # Beside the stage documents, and never part of a campaign: the committed hash
-# baseline, the overlay set, the refusal probes. A point is the gallery MINUS
+# baseline, the sculpt forms (library assets `gallery-prefabs.py` sculpts into the
+# prefab directory), the overlay set, the refusal probes. A point is the gallery MINUS
 # these, plus at most one of the points inside them.
-NOT_CAMPAIGN = ("baseline", "overlays", "probes")
+NOT_CAMPAIGN = ("baseline", "forms", "overlays", "probes")
 
 # A point's own manifest — what it declares it binds, or which refusal it
 # demonstrates — is tooling metadata, never a stage document.

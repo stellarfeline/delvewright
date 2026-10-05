@@ -1,0 +1,8 @@
+{
+  "campaign_id": "organic-whale",
+  "content": {
+    "dialogues": []
+  },
+  "dsl_version": "0.35.0",
+  "stage": "dialogue"
+}

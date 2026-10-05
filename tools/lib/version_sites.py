@@ -275,6 +275,11 @@ COUNTEREXAMPLES: dict[str, dict[str, object]] = {
             "revision — so a bump must not move it"
         ),
     },
+    "tools/spike-organic-stranded/observations.json": {
+        "statements": ['"engine": "delvec 1.7.1, dsl {v}, mc 1.21.11"'],
+        "reason": "a frozen measurement record: the `--version` line of the instrument the "
+        "spec-0087 rig was measured with, which names that build and must not move with a bump",
+    },
 }
 
 
