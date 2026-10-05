@@ -563,18 +563,54 @@ pub fn check_danger_is_visible(
     let as_built = open.reachable_walkable(&roots);
     binding.population = as_built.len();
 
-    // The configurations, for the staged volumes. Built only when one is
-    // declared, so a campaign that stages nothing measures exactly what it did.
+    // The configurations, for the staged volumes: every one the critical path
+    // passes, then every one each reachable branch's own path passes — a volume
+    // one branch arms is met on that branch's path and nowhere else. Built only
+    // when a staged volume is declared, so a campaign that stages nothing
+    // measures exactly what it did.
     let staged_any = plan.lethal_volumes.iter().any(|v| v.staged.is_some());
-    let (configs, per_step) = if staged_any {
-        crate::compiler::nav::path_configurations(plan, world)
-    } else {
-        (Vec::new(), Vec::new())
-    };
+    let mut configs: Vec<crate::compiler::nav::Configuration> = Vec::new();
+    // (path label, per step: (configuration, liveness)), the critical path first.
+    let mut paths: Vec<(String, Vec<(usize, Vec<crate::compiler::nav::Liveness>)>)> = Vec::new();
     let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
-    let step_live: Vec<Vec<crate::compiler::nav::Liveness>> = (0..per_step.len())
-        .map(|s| world.staged_liveness(&plan.region_events, s, &ancestor))
-        .collect();
+    if staged_any {
+        paths.push((
+            "the critical path".to_string(),
+            crate::compiler::nav::configurations_along(
+                world,
+                &plan.region_events,
+                &ancestor,
+                plan.critical_path.len(),
+                &mut configs,
+            ),
+        ));
+        let realized = crate::compiler::branch::realize(plan.campaign);
+        if !realized.is_empty() {
+            let flow = crate::compiler::flow::Flow::new(plan.campaign);
+            for r in &realized {
+                let Some(widx) = r.world else { continue };
+                // A branch whose path cannot be built is refused by the branch
+                // proofs, with its own message; it has no configurations here.
+                let Ok(cp) = plan.branch_critical_path(&flow, &flow.playthrough_in(widx)) else {
+                    continue;
+                };
+                let (events, ancestors) = plan.branch_gate_model(&cp);
+                let anc = |g: usize, s: usize| {
+                    g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
+                };
+                paths.push((
+                    format!("branch `{}`'s path", r.branch.id),
+                    crate::compiler::nav::configurations_along(
+                        world,
+                        &events,
+                        &anc,
+                        cp.steps.len(),
+                        &mut configs,
+                    ),
+                ));
+            }
+        }
+    }
     // Per configuration, built on first use: its lethality-free world, its
     // walked population, and its bytes.
     type Judged = (
@@ -587,8 +623,7 @@ pub fn check_danger_is_visible(
     let mut used_cfg: std::collections::BTreeSet<Option<usize>> = std::collections::BTreeSet::new();
 
     let body = delvewright_dsl::metrics::Body::PLAYER;
-    // (volume index, row) pairs, for the verdict.
-    let mut rows: Vec<(usize, VolumeVisibility, bool)> = Vec::new();
+    let mut rows: Vec<Judgement> = Vec::new();
     let mut staged_idx = 0usize;
     for (vi, v) in plan.lethal_volumes.iter().enumerate() {
         let (klo, khi) = delvewright_dsl::metrics::keep_out_box(body, v.region.0, v.region.1);
@@ -635,54 +670,77 @@ pub fn check_danger_is_visible(
         };
         let Some(gate) = &v.staged else {
             used_cfg.insert(None);
-            rows.push((vi, row_of(&open, &as_built, blocks, None, true), false));
+            rows.push(Judgement {
+                vi,
+                row: row_of(&open, &as_built, blocks, None, true),
+                before: false,
+                ci: None,
+                path: String::new(),
+                switch_at: 0,
+            });
             continue;
         };
         // Which configurations this volume is judged in: every one in which it
-        // may be live, and the one before each switch-on (marked `before`).
+        // may be live, and, on each path, the one before each switch-on
+        // (`before`, with the step it switches on at and the path it is on).
         let si = staged_idx;
         staged_idx += 1;
-        let mut wanted: Vec<(usize, bool)> = Vec::new();
-        for (s, &ci) in per_step.iter().enumerate() {
-            let may = step_live[s][si].may;
-            if may {
-                if !wanted.iter().any(|(c, _)| *c == ci) {
-                    wanted.push((ci, false));
+        // (configuration, before, path label, the step it first may be live at,
+        // path index)
+        let mut wanted: Vec<(usize, bool, String, usize, usize)> = Vec::new();
+        for (pi, (label, per_step)) in paths.iter().enumerate() {
+            for (s, (ci, live)) in per_step.iter().enumerate() {
+                if !live[si].may {
+                    continue;
                 }
-                if s > 0 && !step_live[s - 1][si].may {
-                    let prev = per_step[s - 1];
-                    if !wanted.iter().any(|(c, _)| *c == prev) {
-                        wanted.push((prev, true));
+                if !wanted.iter().any(|w| w.0 == *ci) {
+                    wanted.push((*ci, false, label.clone(), s, pi));
+                }
+                if s > 0 && !per_step[s - 1].1[si].may {
+                    let prev = per_step[s - 1].0;
+                    if !wanted.iter().any(|w| w.0 == prev) {
+                        wanted.push((prev, true, label.clone(), s, pi));
                     }
                 }
             }
         }
-        wanted.sort_by_key(|(ci, _)| configs[*ci].step);
+        // Path order, then each path's own step order.
+        wanted.sort_by_key(|w| (w.4, configs[w.0].step));
+        // The critical path's configurations — what the ledger counts against.
+        let critical: Vec<usize> = {
+            let mut seen: Vec<usize> = Vec::new();
+            for (ci, _) in paths.first().map(|p| p.1.as_slice()).unwrap_or(&[]) {
+                if !seen.contains(ci) {
+                    seen.push(*ci);
+                }
+            }
+            seen
+        };
         let mut srow = StagedRow {
             id: v.id.clone(),
             gate_terms: gate.terms.clone(),
             judged: wanted.len(),
-            may_live: configs
+            may_live: critical
                 .iter()
-                .filter(|c| c.live.get(si).is_some_and(|l| l.may))
+                .filter(|ci| configs[**ci].live.get(si).is_some_and(|l| l.may))
                 .count(),
-            is_live: configs
+            is_live: critical
                 .iter()
-                .filter(|c| c.live.get(si).is_some_and(|l| l.is))
+                .filter(|ci| configs[**ci].live.get(si).is_some_and(|l| l.is))
                 .count(),
-            of: configs.len(),
+            of: critical.len(),
             unmet: None,
         };
         if srow.is_live == 0 {
-            let first = wanted.first().map_or(0, |(ci, _)| configs[*ci].step);
-            let last = per_step.len().saturating_sub(1);
+            let first = wanted.first().map_or(0, |w| configs[w.0].step);
+            let last = plan.critical_path.len().saturating_sub(1);
             srow.unmet = Some((
                 first,
                 never_held_term(gate, &plan.region_events, last, &ancestor),
             ));
         }
         binding.staged.push(srow);
-        for (ci, before) in wanted {
+        for (ci, before, path, switch_at, _) in wanted {
             let (w, population, bytes) = judged_cfg.entry(ci).or_insert_with(|| {
                 let cw = configs[ci]
                     .world(world)
@@ -692,11 +750,14 @@ pub fn check_danger_is_visible(
                 (cw, pop, bytes)
             });
             used_cfg.insert(Some(ci));
-            rows.push((
+            rows.push(Judgement {
                 vi,
-                row_of(w, population, bytes, Some(configs[ci].step), !before),
+                row: row_of(w, population, bytes, Some(configs[ci].step), !before),
                 before,
-            ));
+                ci: Some(ci),
+                path,
+                switch_at,
+            });
         }
     }
     binding.configurations = used_cfg.len();
@@ -708,13 +769,13 @@ pub fn check_danger_is_visible(
             code: DW_LETHAL_INVISIBLE,
             message: format!(
                 "lethal volume `{}` is live from a story stage and the visibility proof judged it \
-                 in none of the {} configuration(s) the critical path passes: its gate may hold in \
-                 none of them, so no floor was examined for it. A staged volume the path can \
-                 never meet is either a gate nothing on the path can open — check the terms ({}) \
-                 against the beats that set them — or a defect of this enumeration; it is \
-                 refused rather than reported as checked.",
+                 in none of the {} configuration(s) the critical path and the branch paths pass: \
+                 its gate may hold in none of them, so no floor was examined for it. A staged \
+                 volume no path can meet is either a gate nothing on any path can open — check \
+                 the terms ({}) against the beats that set them — or a defect of this \
+                 enumeration; it is refused rather than reported as checked.",
                 r.id,
-                r.of,
+                configs.len(),
                 plan.lethal_volumes
                     .iter()
                     .find(|v| v.id == r.id)
@@ -723,7 +784,7 @@ pub fn check_danger_is_visible(
                     .unwrap_or_default(),
             ),
         };
-        binding.volumes = rows.into_iter().map(|(_, r, _)| r).collect();
+        binding.volumes = rows.into_iter().map(|j| j.row).collect();
         return (binding, Err(verdict));
     }
 
@@ -736,8 +797,8 @@ pub fn check_danger_is_visible(
             .iter()
             .filter(|b| {
                 rows.iter()
-                    .filter(|(i, _, _)| *i == vi)
-                    .any(|(_, r, _)| borne(r, b, plan, blocks, &configs, &per_step))
+                    .filter(|j| j.vi == vi)
+                    .any(|j| borne(j, b, blocks, &configs))
             })
             .count();
     }
@@ -746,8 +807,9 @@ pub fn check_danger_is_visible(
     // because a volume that catches floor is wrong about the world and a
     // fiction is only wrong about the document.
     let mut verdict: Option<Failure> = None;
-    for (vi, row, before) in &rows {
-        let v = &plan.lethal_volumes[*vi];
+    for j in &rows {
+        let (row, before) = (&j.row, &j.before);
+        let v = &plan.lethal_volumes[j.vi];
         let unseen: Vec<[i32; 3]> = row
             .caught
             .iter()
@@ -777,8 +839,8 @@ pub fn check_danger_is_visible(
         let cells = crate::compiler::failure::cells_by_floor(&unseen);
         let message = match (row.configuration, *before, &v.staged) {
             (Some(step), true, Some(gate)) => format!(
-                "lethal volume `{}` goes live at critical step {} and a body may be standing on \
-                 these cells when it does; nothing in the world before that beat says they kill: \
+                "lethal volume `{}` goes live at step {} of {} and a body may be standing on these \
+                 cells when it does; nothing in the world before that beat says they kill: \
                  {cells} ({} cell(s), the configuration arriving at critical step {step}, before \
                  its gate — {} — holds). A body standing in a volume's keep-out when its gate \
                  flips is killed in the same server tick, with no tick in which to step off, so \
@@ -791,15 +853,17 @@ pub fn check_danger_is_visible(
                  a place nobody walks, and do not fire the flag later to pass — a hazard that \
                  arrives silently under a body is the finding, wherever on the path it arrives.",
                 row.id,
-                next_step(*vi, plan, &per_step, &step_live, step),
+                j.switch_at,
+                j.path,
                 unseen.len(),
                 gate.words(),
             ),
             (configuration, _, _) => {
                 let in_config = match (configuration, &v.staged) {
                     (Some(step), Some(gate)) => format!(
-                        " In the configuration arriving at critical step {step}, where its gate \
+                        " In the configuration arriving at step {step} of {}, where its gate \
                          ({}) may hold.",
+                        j.path,
                         gate.words()
                     ),
                     _ => String::new(),
@@ -834,16 +898,13 @@ pub fn check_danger_is_visible(
     }
     if verdict.is_none() {
         'volumes: for (vi, v) in plan.lethal_volumes.iter().enumerate() {
-            let mine: Vec<&VolumeVisibility> = rows
-                .iter()
-                .filter(|(i, _, _)| *i == vi)
-                .map(|(_, r, _)| r)
-                .collect();
+            let mine: Vec<&VolumeVisibility> =
+                rows.iter().filter(|j| j.vi == vi).map(|j| &j.row).collect();
             for block in &v.shown_by {
                 if rows
                     .iter()
-                    .filter(|(i, _, _)| *i == vi)
-                    .any(|(_, r, _)| borne(r, block, plan, blocks, &configs, &per_step))
+                    .filter(|j| j.vi == vi)
+                    .any(|j| borne(j, block, blocks, &configs))
                 {
                     continue;
                 }
@@ -874,26 +935,34 @@ pub fn check_danger_is_visible(
             }
         }
     }
-    binding.volumes = rows.into_iter().map(|(_, r, _)| r).collect();
+    binding.volumes = rows.into_iter().map(|j| j.row).collect();
     (binding, verdict.map_or(Ok(()), Err))
 }
 
-/// Whether `row` bears out `block` on one of its caught cells, read in the
+/// One (volume, configuration) row with what the verdict needs beside it: the
+/// volume's index, whether the row is the configuration before a switch-on,
+/// the configuration's index (`None` for a volume live from world-load, judged
+/// over the world as built), the path the configuration was reached on, and
+/// the step of that path the volume first may be live at.
+struct Judgement {
+    vi: usize,
+    row: VolumeVisibility,
+    before: bool,
+    ci: Option<usize>,
+    path: String,
+    switch_at: usize,
+}
+
+/// Whether a row bears out `block` on one of its caught cells, read in the
 /// bytes of the configuration it judged.
 fn borne(
-    row: &VolumeVisibility,
+    j: &Judgement,
     block: &str,
-    _plan: &Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
     configs: &[crate::compiler::nav::Configuration],
-    per_step: &[usize],
 ) -> bool {
     let owned;
-    let bytes = match row
-        .configuration
-        .and_then(|s| per_step.get(s))
-        .and_then(|ci| configs.get(*ci))
-    {
+    let bytes = match j.ci.and_then(|ci| configs.get(ci)) {
         Some(c) => {
             owned = c.blocks(blocks);
             &owned
@@ -901,25 +970,7 @@ fn borne(
         None => blocks,
     };
     let one = [block.to_string()];
-    row.caught.iter().any(|&c| cell_shows(bytes, c, &one))
-}
-
-/// The first critical step at or after `from` at which staged volume `vi` may
-/// be live — where the switch-on a "before" row guards lands.
-fn next_step(
-    vi: usize,
-    plan: &Plan,
-    per_step: &[usize],
-    step_live: &[Vec<crate::compiler::nav::Liveness>],
-    from: usize,
-) -> usize {
-    let si = plan.lethal_volumes[..vi]
-        .iter()
-        .filter(|v| v.staged.is_some())
-        .count();
-    (from..per_step.len())
-        .find(|s| step_live[*s][si].may)
-        .unwrap_or(from)
+    j.row.caught.iter().any(|&c| cell_shows(bytes, c, &one))
 }
 
 /// The first term of `gate` that does not hold on the forced route at the

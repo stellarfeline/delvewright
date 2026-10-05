@@ -4470,6 +4470,10 @@ pub(crate) struct PathFiring {
     pub data_before: BTreeMap<String, BTreeMap<String, Option<i64>>>,
     /// Every declared datum's value once the path has played.
     pub data_end: BTreeMap<String, Option<i64>>,
+    /// The branch flags (`branch_points[].forks_on`) this path's world never
+    /// holds — the alternatives it does not take. No firing on this path sets
+    /// one, so the staged-volume readings credit none of their setters.
+    pub branch_excluded: BTreeSet<String>,
 }
 
 impl PathFiring {
@@ -4563,6 +4567,19 @@ fn build_critical_path(
     // is performed in front of. See [`path_triggers`].
     let due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
     let replay = path_fired_lines(campaign, flow, path, &due);
+    let held_at_end: BTreeSet<String> = flow
+        .journal(path)
+        .last()
+        .map(|s| s.flags_after.clone())
+        .unwrap_or_default();
+    let branch_excluded: BTreeSet<String> = campaign
+        .quest_plan
+        .content
+        .branch_points
+        .iter()
+        .flat_map(|b| b.forks_on.iter().map(|f| f.as_str().to_string()))
+        .filter(|f| !held_at_end.contains(f))
+        .collect();
     let talk_taken: BTreeMap<String, (String, usize)> = path
         .steps
         .iter()
@@ -5097,6 +5114,7 @@ fn build_critical_path(
             talk_taken,
             data_before: replay.data_before,
             data_end: replay.data_end,
+            branch_excluded,
         },
     })
 }
@@ -6437,7 +6455,12 @@ fn collect_region_events(
 ///   pressed whenever its own gate holds, which no step bounds — and, for the
 ///   option a `talk-to` on this path takes, forced at that objective's step too;
 /// - a trap's or a timed gate's `disarm.sets_flag`: unforced at step 0 — an act
-///   nothing forces.
+///   nothing forces;
+///
+/// and a setter in a bundle of a quest this path's world never completes, or an
+/// unforced setter of a branch flag this path's world never holds
+/// ([`PathFiring::branch_excluded`]), is dropped: the world that takes that
+/// alternative is a different path, judged on its own.
 ///
 /// The data are the guaranteed replay's values ([`PathFiring::data_before`]),
 /// keyed by critical-path step, plus every datum an unforced firing writes.
@@ -6457,6 +6480,17 @@ pub(crate) fn region_events_of(
         };
         let writes_state = e.writes_state().map(|(id, _)| id.as_str().to_string());
         if set.is_none() && writes_state.is_none() {
+            return;
+        }
+        // A bundle of a quest this path's world never completes never fires on
+        // it: the world that completes it is a different path, judged on its
+        // own.
+        let quest = match &site.root {
+            EffectRoot::ObjectiveComplete { quest, .. } => Some(*quest),
+            EffectRoot::QuestComplete(q) => Some(q.id.as_str()),
+            _ => None,
+        };
+        if quest.is_some_and(|q| !path.quests.contains(q)) {
             return;
         }
         let (fire_step, forced) = firing_of(site, path, &optional);
@@ -6517,6 +6551,9 @@ pub(crate) fn region_events_of(
             forced: false,
         });
     }
+    // A branch alternative this path's world does not take is set by nothing
+    // on this path, whatever root its setters hang off.
+    flags.retain(|e| e.forced || !path.branch_excluded.contains(&e.flag));
     let before = path
         .data_before
         .iter()

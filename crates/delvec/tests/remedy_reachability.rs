@@ -2238,7 +2238,9 @@ fn dw0953_naming_a_party_datum_validates() {
                 "note": "how hot the road has run"
             }]);
             // Written once, so the comparison is not decided at authoring (DW0501).
-            let bundle = v["content"]["quests"][0]["on_complete"].as_array_mut().unwrap();
+            let bundle = v["content"]["quests"][0]["on_complete"]
+                .as_array_mut()
+                .unwrap();
             if !bundle.iter().any(|e| e["type"] == "set-state") {
                 bundle.insert(
                     0,
@@ -2262,6 +2264,9 @@ fn dw0953_naming_a_party_datum_validates() {
     );
     edit_doc(&camp, "quests.json", declare("party"));
     let (code, after) = validate_camp(&camp, &dir);
-    assert!(!after.contains("DW0953"), "naming a party datum clears DW0953:\n{after}");
+    assert!(
+        !after.contains("DW0953"),
+        "naming a party datum clears DW0953:\n{after}"
+    );
     assert_eq!(code, 0, "and validates:\n{after}");
 }

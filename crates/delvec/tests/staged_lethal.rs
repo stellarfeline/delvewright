@@ -103,6 +103,7 @@ fn anchors() -> serde_json::Value {
         "spawn": { "pos": [2, 4, 4], "facing": "east", "role": "entry" },
         "anchor/keeper-stand": { "pos": [12, 4, 6], "facing": "west" },
         "anchor/exit-west": { "pos": [2, 4, 2] },
+        "anchor/exit": { "pos": [2, 4, 2] },
         "anchor/exit-east": { "pos": [12, 4, 2] },
         "anchor/seat": { "pos": [2, 4, 6] },
         "anchor/pit": { "pos": [PIT.0, 1, PIT.1] },
@@ -303,7 +304,10 @@ fn try_build(dir: &Path, lib: &Path) -> Result<(BuildOutput, Vec<String>), Build
         .into_iter()
         .filter(|d| d.severity == delvewright_dsl::Severity::Error)
         .collect();
-    assert!(refused.is_empty(), "the case does not validate: {refused:#?}");
+    assert!(
+        refused.is_empty(),
+        "the case does not validate: {refused:#?}"
+    );
     let c = campaign(dir);
     let prefabs = PrefabRegistry::load_dir(lib).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
@@ -703,7 +707,10 @@ fn raised(volume: &str) -> String {
 fn a_volume_raised_to_the_floor_is_the_fourth_shape_before_the_flip() {
     let (code, msg) = refusal(&Case::new(&raised(PIT_STAGED)).talk(DROP_LID), "raised");
     assert_eq!(code, "DW0891", "{msg}");
-    assert!(msg.contains("goes live at critical step 2"), "{msg}");
+    assert!(
+        msg.contains("goes live at step 2 of the critical path"),
+        "{msg}"
+    );
     assert!(
         msg.contains("the configuration arriving at critical step 0, before its gate"),
         "names the configuration before: {msg}"
@@ -1028,10 +1035,72 @@ fn a_staged_volume_judged_in_no_configuration_is_red() {
     let (dir, lib) = case.write("zero-validates");
     let d = validate(&dir, &lib);
     assert!(
-        !d.iter().any(|x| x.severity == delvewright_dsl::Severity::Error),
+        !d.iter()
+            .any(|x| x.severity == delvewright_dsl::Severity::Error),
         "the case is a valid campaign: {d:#?}"
     );
     let (code, msg) = refusal(&case, "zero");
     assert_eq!(code, "DW0891", "{msg}");
     assert!(msg.contains("judged it in none"), "{msg}");
+}
+
+/// The branch that arms the volume is refused on its own path, and the other
+/// is not: `branch-two-endings` in the lid room, the waist staged on the bolt
+/// branch's flag. The default playthrough (the hold branch) and the hold
+/// branch's own path walk the waist dead; the bolt branch's path walks it after
+/// the flag that wakes it, across the only way to the exit.
+#[test]
+fn the_branch_that_arms_the_volume_is_refused_on_its_own_path() {
+    let root = scratch("branch");
+    let lib = root.join("prefabs");
+    common::write_single_prefab(&lib, ROOM, SIZE, &cells(waist_room()), anchors());
+    let dir = root.join("campaign");
+    common::copy_dir_all(
+        &common::compiler_fixtures_dir().join("branch-two-endings"),
+        &dir,
+    );
+    common::patch_file(&dir.join("world.json"), |v| {
+        v["content"]["areas"][0]["prefab"] = serde_json::json!(format!("prefab/{ROOM}"));
+        v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
+    });
+    let staged_on = |flag: &str| {
+        let flag = flag.to_string();
+        move |v: &mut serde_json::Value| {
+            // The lid room has no door: every `open-gate` goes.
+            for q in v["content"]["quests"].as_array_mut().unwrap() {
+                if let Some(map) = q["on_objective_complete"].as_object_mut() {
+                    for list in map.values_mut() {
+                        list.as_array_mut()
+                            .unwrap()
+                            .retain(|e| e["type"] != "open-gate");
+                    }
+                }
+            }
+            let waist: serde_json::Value = serde_json::from_str(WAIST).unwrap();
+            let mut waist = waist;
+            waist["when"] = serde_json::json!({ "requires_flags": [flag] });
+            v["content"]["lethal_volumes"] = serde_json::json!([waist]);
+        }
+    };
+    common::patch_file(&dir.join("quests.json"), staged_on("flag/flee"));
+    match try_build(&dir, &lib) {
+        Ok(_) => panic!("the bolt branch walks the waist after it wakes"),
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            eprintln!("{code}: {message}");
+            assert_eq!(code.to_string(), "DW0510", "{message}");
+            assert!(message.starts_with("branch `branch/bolt`"), "{message}");
+        }
+        Err(e) => panic!("{e:?}"),
+    }
+    // Staged on a flag neither branch sets before its last leg, both paths
+    // walk the waist dead: green.
+    common::patch_file(&dir.join("quests.json"), staged_on("flag/never-set"));
+    common::patch_file(&dir.join("quests.json"), |v| {
+        let q = &mut v["content"]["quests"][1]["on_objective_complete"]["obj/bolt"];
+        q.as_array_mut().unwrap().insert(
+            0,
+            serde_json::json!({ "type": "set-flag", "flag": "flag/never-set" }),
+        );
+    });
+    try_build(&dir, &lib).unwrap_or_else(|e| panic!("both branches walk it dead: {e:?}"));
 }

@@ -6230,23 +6230,49 @@ impl Configuration {
 pub fn path_configurations(plan: &Plan, world: &World) -> (Vec<Configuration>, Vec<usize>) {
     let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
     let mut configs: Vec<Configuration> = Vec::new();
-    let mut per_step: Vec<usize> = Vec::new();
-    for step in 0..plan.critical_path.len() {
-        let st = world.region_state_at(&plan.region_events, step, &ancestor);
+    let per_step = configurations_along(
+        world,
+        &plan.region_events,
+        &ancestor,
+        plan.critical_path.len(),
+        &mut configs,
+    )
+    .into_iter()
+    .map(|(ci, _)| ci)
+    .collect();
+    (configs, per_step)
+}
+
+/// The configurations one path passes — `steps` arrivals over `events` in that
+/// path's own step space, under its own ancestry — appended to `configs` where
+/// they are new (a configuration is its region state, whichever path reaches
+/// it). Returns, per step, the configuration's index and every staged volume's
+/// [`Liveness`] at that step.
+pub fn configurations_along(
+    world: &World,
+    events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    steps: usize,
+    configs: &mut Vec<Configuration>,
+) -> Vec<(usize, Vec<Liveness>)> {
+    let mut out = Vec::new();
+    for step in 0..steps {
+        let st = world.region_state_at(events, step, ancestor);
+        let live = world.staged_liveness(events, step, ancestor);
         let idx = match configs.iter().position(|c| c.state == st) {
             Some(i) => i,
             None => {
                 configs.push(Configuration {
                     step,
-                    live: world.staged_liveness(&plan.region_events, step, &ancestor),
+                    live: live.clone(),
                     state: st,
                 });
                 configs.len() - 1
             }
         };
-        per_step.push(idx);
+        out.push((idx, live));
     }
-    (configs, per_step)
+    out
 }
 
 /// [`DW_BODY_CANNOT_LEAVE`] over a campaign's critical path. Returns the binding
@@ -16358,7 +16384,13 @@ mod staged_liveness_tests {
         let ev = events(&[("flag/lid", 2, true)]);
         assert_eq!(
             at(&g, &ev, 5),
-            vec![(false, false), (false, false), (false, false), (true, true), (true, true)]
+            vec![
+                (false, false),
+                (false, false),
+                (false, false),
+                (true, true),
+                (true, true)
+            ]
         );
     }
 
@@ -16398,13 +16430,21 @@ mod staged_liveness_tests {
         };
         assert_eq!(
             at(&g, &ev, 5),
-            vec![(false, false), (false, false), (false, false), (true, true), (true, true)]
+            vec![
+                (false, false),
+                (false, false),
+                (false, false),
+                (true, true),
+                (true, true)
+            ]
         );
         ev.data.unforced_writers.insert("state/water".to_string());
         assert!(at(&g, &ev, 3).iter().all(|(may, _)| *may));
         // An undatable value may hold, and is never decided.
         ev.data.unforced_writers.clear();
-        ev.data.before.insert(1, [("state/water".to_string(), None)].into_iter().collect());
+        ev.data
+            .before
+            .insert(1, [("state/water".to_string(), None)].into_iter().collect());
         assert_eq!(at(&g, &ev, 2)[1], (true, false));
     }
 
@@ -16448,11 +16488,17 @@ mod staged_liveness_tests {
         // This module calls it too; production callers are the two named.
         let production: Vec<&String> = callers
             .iter()
-            .filter(|c| !c.ends_with("::at") && !c.ends_with("::region_state_at_derives_the_lethal_set_through_liveness_of"))
+            .filter(|c| {
+                !c.ends_with("::at")
+                    && !c.ends_with("::region_state_at_derives_the_lethal_set_through_liveness_of")
+            })
             .collect();
         assert_eq!(
             production,
-            vec!["compiler/lethal.rs::never_held_term", "compiler/nav.rs::staged_liveness"],
+            vec![
+                "compiler/lethal.rs::never_held_term",
+                "compiler/nav.rs::staged_liveness"
+            ],
             "liveness_of is read by staged_liveness (the lethal set) and by DW0954's \
              per-term wording, and by nothing else: {callers:?}"
         );
