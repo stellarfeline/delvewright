@@ -401,7 +401,11 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
         footprint_class: None,
         extra: BTreeMap::new(),
     };
-    let metadata_json = metadata.to_json();
+    // Written in the repository's canonical form (`delvec fmt`), so the file a
+    // sculpt writes is the file a library commits: "regenerated, never edited"
+    // holds byte for byte under the canonical-form gate.
+    let metadata_json = delvewright_dsl::fmt::format_text(&metadata.to_json())
+        .map_err(|e| SculptError::Export(format!("the metadata is not canonicalisable: {e:?}")))?;
     Ok(Sculpture {
         id,
         model,
