@@ -1245,3 +1245,41 @@ fn a_campaign_with_no_loop_writes_no_ledger() {
             .contains("loop_")
     );
 }
+
+/// spec-0086 §4.6 × spec-0080 §4.2: **the view is judged in every fog
+/// configuration the route stands under.** The fogged straight hall of
+/// [`a_straight_hall_under_a_fogged_atmosphere_builds`], plus an approach
+/// trigger at the porch that paints the gallery back to the horizon's biome
+/// (`atmosphere: null`): after it the fog is gone and the hall's far end is in
+/// view, so a body moved by the loop sees the seam. The first tick's fog alone
+/// closes the view, so a proof reading only the first tick's map ships this
+/// hall; the refusal names the repaint the view opens under.
+#[test]
+fn dw0947_a_repaint_that_clears_the_fog_opens_the_view() {
+    let dir = campaign_with(
+        "straight-hall-fog-cleared",
+        |q| {
+            q["content"]["triggers"] = json!([{
+                "id": "trigger/the-air-clears",
+                "at": "anchor/porch",
+                "on": { "on": "approach", "range": 2 },
+                "effects": [
+                    { "type": "set-atmosphere", "atmosphere": null, "place": "area/gallery" }
+                ]
+            }]);
+        },
+        fogged,
+    );
+    let cuts = Cuts {
+        air: straight_hall_air(),
+        ..Cuts::default()
+    };
+    let run = build_over(&dir, &padded_prefabs("fog-cleared", &cuts, 16));
+    let line = run.refused("DW0947");
+    assert!(
+        line.contains(
+            "under the sky after the `set-atmosphere` at `/content/triggers/0/effects/0`"
+        ),
+        "the refusal names the repaint the view opens under: {line}"
+    );
+}

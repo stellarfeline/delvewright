@@ -175,6 +175,7 @@ pub fn vanilla_precipitates(biome: &str) -> Option<bool> {
 
 /// The biome every column a surround does not paint stands in: the one the
 /// `generator-settings` lays, and so the one the play area stands in.
+#[derive(Clone)]
 pub struct GroundBiome {
     /// The namespaced biome id `generator-settings` names.
     pub id: String,
@@ -280,6 +281,7 @@ impl Paint {
 /// (`BiomeManager.getBiome`) jitters the sample point, so a block within two of
 /// a 4-cell face may read its neighbour; a block whose coordinates are all 2
 /// mod 4 always reads its own cell, which is where the runtime proofs sample.
+#[derive(Clone)]
 pub struct BiomeMap {
     /// The paints, in bootstrap order.
     pub paints: Vec<Paint>,
@@ -303,6 +305,22 @@ impl BiomeMap {
             .map_or((self.ground.id.as_str(), self.ground.precipitates), |p| {
                 (p.biome.as_str(), p.precipitates)
             })
+    }
+
+    /// This map with one later paint over it — a `set-atmosphere` repaint of
+    /// the 4-cells `cells` to `biome` (spec-0080 §4.2), which wins every cell
+    /// it covers as a later `fillbiome` does.
+    pub fn repainted(&self, cells: ([i32; 3], [i32; 3]), biome: &str, source: PaintSource) -> Self {
+        let mut m = self.clone();
+        let precipitates = m.precipitates(biome);
+        m.paints.push(Paint {
+            fill: cells,
+            cells,
+            biome: biome.to_string(),
+            precipitates,
+            source,
+        });
+        m
     }
 
     /// The paints a carried place laid, in bootstrap order.
