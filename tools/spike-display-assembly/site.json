@@ -1,12 +1,60 @@
 {
-  "generator": "tools/spike-display-assembly/gen.py",
+  "asm_dx": 14,
   "ax": 4096,
   "az": 4116,
-  "wy": 64,
+  "clips": {
+    "idle": {
+      "frames": 60,
+      "index": 0,
+      "loop": true
+    },
+    "retract": {
+      "frames": 36,
+      "index": 2,
+      "loop": false
+    },
+    "rise": {
+      "frames": 36,
+      "index": 1,
+      "loop": false
+    },
+    "strike": {
+      "frames": 10,
+      "index": 4,
+      "loop": false
+    },
+    "windup": {
+      "frames": 8,
+      "index": 3,
+      "loop": false
+    }
+  },
   "fy": 63,
-  "asm_dx": 14,
-  "n_asm": 10,
-  "n_seg": 34,
+  "generator": "tools/spike-display-assembly/gen.py",
+  "hitbox": {
+    "aabb": [
+      4095.0,
+      64,
+      4115.0,
+      4098.0,
+      72.0,
+      4118.0
+    ],
+    "height": 8.0,
+    "width": 3.0
+  },
+  "hold_ticks": 20,
+  "interpolation_duration": 5,
+  "landing_cell": [
+    4097,
+    63,
+    4098
+  ],
+  "landing_tip_rel": [
+    0.803,
+    0.111,
+    -17.872
+  ],
   "lane": [
     4136,
     4152,
@@ -21,76 +69,14 @@
     4272,
     4288
   ],
-  "hitbox": {
-    "width": 3.0,
-    "height": 8.0,
-    "aabb": [
-      4095.0,
-      64,
-      4115.0,
-      4098.0,
-      72.0,
-      4118.0
-    ]
-  },
-  "trigger_box": {
-    "x": 4090,
-    "y": 63,
-    "z": 4090,
-    "dx": 12,
-    "dy": 4,
-    "dz": 22
-  },
-  "strike_box": {
-    "x": 4095,
-    "y": 63,
-    "z": 4096,
-    "dx": 4,
-    "dy": 3,
-    "dz": 4
-  },
-  "landing_tip_rel": [
-    0.803,
-    0.111,
-    -17.872
-  ],
-  "landing_cell": [
-    4097,
-    63,
-    4098
-  ],
-  "hold_ticks": 20,
-  "strike_damage": 6,
-  "retract_at_hits": 5,
-  "interpolation_duration": 5,
-  "clips": {
-    "idle": {
-      "index": 0,
-      "frames": 60,
-      "loop": true
-    },
-    "rise": {
-      "index": 1,
-      "frames": 36,
-      "loop": false
-    },
-    "retract": {
-      "index": 2,
-      "frames": 36,
-      "loop": false
-    },
-    "windup": {
-      "index": 3,
-      "frames": 8,
-      "loop": false
-    },
-    "strike": {
-      "index": 4,
-      "frames": 10,
-      "loop": false
-    }
-  },
+  "n_asm": 10,
+  "n_seg": 34,
   "positions": {
+    "arrow_summon": [
+      4096.5,
+      67,
+      4121.0
+    ],
     "attack": [
       4096.5,
       64,
@@ -105,11 +91,6 @@
       4096.5,
       67,
       4116.5
-    ],
-    "arrow_summon": [
-      4096.5,
-      67,
-      4121.0
     ],
     "in_strike": [
       4097.5,
@@ -126,5 +107,24 @@
       64,
       4124.5
     ]
-  }
+  },
+  "retract_at_hits": 5,
+  "strike_box": {
+    "dx": 4,
+    "dy": 3,
+    "dz": 4,
+    "x": 4095,
+    "y": 63,
+    "z": 4096
+  },
+  "strike_damage": 6,
+  "trigger_box": {
+    "dx": 12,
+    "dy": 4,
+    "dz": 22,
+    "x": 4090,
+    "y": 63,
+    "z": 4090
+  },
+  "wy": 64
 }
