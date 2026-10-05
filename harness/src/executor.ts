@@ -2705,6 +2705,7 @@ export class MineflayerExecutor implements StepExecutor {
     if (this.stagedVolumes.length === 0) return;
     const answers = new Map<string, boolean | undefined>();
     const live: Box[] = [];
+    const states: string[] = [];
     for (const v of this.stagedVolumes) {
       for (const t of v.gate.terms) {
         if (!answers.has(termKey(t))) answers.set(termKey(t), await this.askTerm(t));
@@ -2716,8 +2717,14 @@ export class MineflayerExecutor implements StepExecutor {
         );
       }
       if (verdict.kind !== "shut") live.push(v.region);
+      states.push(`${v.id} ${verdict.kind === "shut" ? "shut" : verdict.kind === "open" ? "live" : "unread"}`);
     }
     this.lethalBoxes = [...this.unstagedBoxes, ...live];
+    // The binding of the per-leg exclusion, stated on every leg it ran for.
+    process.stderr.write(
+      `[lethal] before the walk to ${this.walkLabel}: ${states.join(", ")} — ` +
+        `${live.length} of ${this.stagedVolumes.length} staged volume(s) excluded\n`,
+    );
   }
 
   /** Every walk into a lethal volume this run made, and what it observed. */
