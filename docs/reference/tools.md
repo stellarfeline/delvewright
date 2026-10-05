@@ -455,6 +455,23 @@ the sentence the command itself prints on every run.
 
 Exit: `0` ok · `2` input/usage · `3` output · `4` a gate went red.
 
+## 2b. `delvec sculpt` — a prefab from a declared form (`crates/delvec/src/sculpt`) · agent
+
+The second prefab back end (spec-0087): a body the box-split grammar cannot state — a smooth curve, a diagonal, a hill-sized organic form — is stated as a **form**: implicit solids over the ground the body lies on. The command writes the ordinary prefab (structure parts and metadata), so binding, placement and every proof downstream are the grammar's.
+
+```
+delvec schema --stage sculpt-form                      # the form's shape (forms live at forms/*.json)
+delvec sculpt <form.json> -o <dir> [--seed N] [--id <prefab-id>]
+```
+
+**The form**: `form_version`, `id` (`prefab/<kebab>`), `box`, `sub` (2 or 4), `ground {block, top}` (required), `sink`, `noise {amplitude, cell}`, `palette` (four tones `{full: [[block, weight]…], family}`), `solids[]` (`capsule`, `ellipsoid`, `disc`, `box` with `op: add|cut` and `noisy`; `shelf` with `path`, `width`, `clearance`, `depth`, `material`), `lights[] {at, block}`, `anchors` (`pos`, `facing`, `role`, `region`; one `role: entry`). Anchors are in the piece's frame; solids and lights in the body's, `piece y = body y + ground.top + 1 − sink`. The full field table is `compiler.md` §11.
+
+**What a run prints, every time**: the grammar's gate lines with binding counts; `sculpted` (cells, filled, stairs, slabs, where body `y = 0` lies); `fit` (thin plates refilled, apron laid, islands dropped); `entry` (standable cells, the walk from grade, and how many standing anchors it reaches); `pockets: P place(s), C cell(s), of R cell(s) a body can reach from E anchor(s)`; `walk_y`; `shown_faces`; and, on success, the light probe's entry and measured cells and the profile written.
+
+**Refusals**: `DW0951` exit 1, before anything is fitted, nothing written — no ground, no entry anchor, a block the pinned registry lacks (named by the `blocks-exist` gate), a family without both shapes, an emissive palette, ground or shelf material, a light that emits nothing, a shelf steeper than one block per block. `DW0952` exit 3, nothing written — an anchor that does not stand, an entry grade does not reach, or a pocket (the leave relation `DW0921` floods, run over the piece alone). A red gate exits 3 naming the gate. Exit 10: the form or the output could not be read or written.
+
+**The design loop**: sculpt, read the pocket line and the entry line, fix the form (a `shelf` out of a pocket, a `cut` that opens it, more `sink`), sculpt again; light the inside by placing `lights[]` where the room is designed and measure with `delvec prefab lighting`. The gallery's form is `gallery/forms/gallery-carcass.json`; `tools/ci/gallery-prefabs.py` sculpts every gallery form and re-runs its probes (`forms sculpted: N`).
+
 ## 3. `delvec prefab` — prefab admission (`crates/delvec/src/admit`) · agent + human
 
 The gate every prefab passes before the library will place it: mechanical palette

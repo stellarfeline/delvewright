@@ -137,7 +137,7 @@ pub fn run(args: SculptArgs) -> ExitCode {
     print_gates(&sculpture.gates);
     print_readings(r);
     eprintln!(
-        "  light          the probe bound {} grade entry cell(s) and measured {} cell(s): {}",
+        "  light: the probe bound {} grade entry cell(s) and measured {} cell(s): {}",
         r.light_entry_cells,
         r.light_measured_cells,
         sculpture
