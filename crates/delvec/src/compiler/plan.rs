@@ -542,6 +542,50 @@ pub struct LethalVolumePlan {
     /// The blocks the volume declares as showing it (spec-0062 §3), as
     /// declared. Read by `DW0891` against the assembled bytes, per caught cell.
     pub shown_by: Vec<String>,
+    /// The story stage this volume is live from (spec-0088), or `None` for a
+    /// volume live from world-load to the end.
+    pub staged: Option<StagedGate>,
+}
+
+/// A lethal volume's gate (spec-0088), resolved: the three axes as declared,
+/// and [`Plan::gate_terms`]'s reduction of them — the one reading the emitted
+/// tick guard, the PackTest templates and `death-plan.json` all take.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StagedGate {
+    /// Flags that must all be set for the volume to kill.
+    pub requires_flags: Vec<String>,
+    /// Flags whose being set withholds the volume.
+    pub forbids_flags: Vec<String>,
+    /// Numeric comparisons (every one on a `party` datum: `DW0953`).
+    pub requires_state: Vec<delvewright_dsl::StateCompare>,
+    /// [`Plan::gate_terms`] over the three, in its order.
+    pub terms: Vec<GateTerm>,
+}
+
+impl StagedGate {
+    /// The gate's terms in words, for a diagnostic: `requires flag/x`,
+    /// `forbids flag/y`, `state/z at-least 3`.
+    pub fn words(&self) -> String {
+        let mut out: Vec<String> = Vec::new();
+        out.extend(
+            self.requires_flags
+                .iter()
+                .map(|f| format!("requires `{f}`")),
+        );
+        out.extend(self.forbids_flags.iter().map(|f| format!("forbids `{f}`")));
+        out.extend(self.requires_state.iter().map(|c| {
+            format!(
+                "`{}` {} {}",
+                c.state.as_str(),
+                serde_json::to_value(c.op)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_default(),
+                c.value
+            )
+        }));
+        out.join(", ")
+    }
 }
 
 impl LethalVolumePlan {
@@ -864,7 +908,7 @@ impl RegionWrite {
 /// One resolved region write: the inclusive world box, and what the write leaves
 /// in it. A verb resolves to a LIST of these, because a way is a region of as
 /// many boxes as its contract gave it and each is written by its own `fill`.
-type ResolvedWrite = (([i32; 3], [i32; 3]), RegionWrite);
+type ResolvedWrite = (([i32; 3], [i32; 3]), RegionWrite, Option<String>);
 
 #[derive(Clone, Debug)]
 pub struct RegionEvent {
@@ -886,6 +930,13 @@ pub struct RegionEvent {
     /// The beat this firing hangs off, in words, for a diagnostic to name. Empty for
     /// a forced write, which never needs blaming.
     blame: String,
+    /// **The block this write lays**, as its emitted command writes it
+    /// (spec-0088 §5): the fill's block for a [`RegionWrite::Fill`] or
+    /// [`RegionWrite::Flood`], `None` for a clear or an unseal (air) and for a
+    /// world-load seal (the bytes already hold what the prefab put there).
+    /// Read only by [`crate::compiler::nav`]'s per-configuration block map, which
+    /// `DW0891` asks whether a cell is shown in that configuration.
+    block: Option<String>,
 }
 
 impl RegionEvent {
@@ -898,6 +949,7 @@ impl RegionEvent {
             fire_step,
             forced: true,
             blame: String::new(),
+            block: None,
         }
     }
 
@@ -915,7 +967,20 @@ impl RegionEvent {
             fire_step,
             forced: false,
             blame: blame.into(),
+            block: None,
         }
+    }
+
+    /// This write, stating the block its command lays (see [`Self::block`]).
+    #[must_use]
+    pub fn laying(mut self, block: &str) -> Self {
+        self.block = Some(block.to_string());
+        self
+    }
+
+    /// The block this write lays, when it lays one.
+    pub fn block(&self) -> Option<&str> {
+        self.block.as_deref()
     }
 
     /// Whether this write overwrites the region with a block
@@ -932,6 +997,92 @@ impl RegionEvent {
     /// The beat this firing hangs off, in words; empty when it is forced.
     pub fn blame(&self) -> &str {
         &self.blame
+    }
+}
+
+/// One `set-flag` the campaign can perform (spec-0088 §4.2): the flag, the
+/// critical-path step it fires at, and whether the party is forced to cause it —
+/// read by [`firing_of`] for an effect, off the path's own `talk-to` choice for
+/// a dialogue option, and unforced at step 0 for a disarm.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FlagEvent {
+    /// The flag set.
+    pub flag: String,
+    /// The `critical_path` step at which it fires.
+    pub fire_step: usize,
+    /// Whether the party is guaranteed to cause it.
+    pub forced: bool,
+}
+
+/// The replay's datum values along one path (spec-0088 §4.1): what each
+/// declared datum holds as the party walks up to each objective step, and at the
+/// end — `None` where no ordered walk can name it — plus every datum some
+/// unforced root writes. What a staged volume's numeric terms are read against.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DataReplay {
+    /// Critical-path step of an objective → every datum's value before it.
+    pub before: BTreeMap<usize, BTreeMap<String, Option<i64>>>,
+    /// Every datum's value once the path has played.
+    pub end: BTreeMap<String, Option<i64>>,
+    /// Datums an unforced firing writes.
+    pub unforced_writers: BTreeSet<String>,
+}
+
+impl DataReplay {
+    /// The values the party holds walking the leg that arrives at `arrival`:
+    /// the first objective step at or after it, else the end of the path.
+    pub fn at(&self, arrival: usize) -> &BTreeMap<String, Option<i64>> {
+        self.before
+            .range(arrival..)
+            .next()
+            .map_or(&self.end, |(_, v)| v)
+    }
+}
+
+/// **Everything the region model reads off one path**: the runtime region
+/// writes, and — for a lethal volume live from a story stage (spec-0088) — every
+/// flag write and the replay's datum values, in the same step space.
+///
+/// One value, so the exported path and each branch path ([`Plan::branch_gate_model`])
+/// hand the region model their own flags with their own writes, and no caller
+/// can route a leg with one path's writes and another's flags. Derefs to the
+/// writes, which is what every reader that predates staged volumes reads.
+#[derive(Clone, Debug, Default)]
+pub struct RegionEvents {
+    writes: Vec<RegionEvent>,
+    /// Every `set-flag` the campaign can perform, with its step and forcedness.
+    pub flags: Vec<FlagEvent>,
+    /// The replay's datum values along the path.
+    pub data: DataReplay,
+}
+
+impl From<Vec<RegionEvent>> for RegionEvents {
+    fn from(writes: Vec<RegionEvent>) -> Self {
+        RegionEvents {
+            writes,
+            ..RegionEvents::default()
+        }
+    }
+}
+
+impl std::ops::Deref for RegionEvents {
+    type Target = Vec<RegionEvent>;
+    fn deref(&self) -> &Vec<RegionEvent> {
+        &self.writes
+    }
+}
+
+impl<'a> IntoIterator for &'a RegionEvents {
+    type Item = &'a RegionEvent;
+    type IntoIter = std::slice::Iter<'a, RegionEvent>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.writes.iter()
+    }
+}
+
+impl std::ops::DerefMut for RegionEvents {
+    fn deref_mut(&mut self) -> &mut Vec<RegionEvent> {
+        &mut self.writes
     }
 }
 
@@ -1054,7 +1205,7 @@ pub struct Plan<'a> {
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::compiler::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
-    pub region_events: Vec<RegionEvent>,
+    pub region_events: RegionEvents,
     /// **Every contingent way the placed world stages** (spec-0042 §2.4), in
     /// area → placement → declaration order, with its world cells, its block and
     /// its direction read from the carrying piece's metadata. Empty for every
@@ -3172,7 +3323,7 @@ impl<'a> Plan<'a> {
         // v0.10 (spec-0031): where the party can be CARRIED rather than walk.
         let transit_teleports = collect_transit_teleports(campaign, &anchors);
 
-        let region_events = region_events;
+        let region_events = region_events_of(campaign, region_events, &path_firing, &npcs);
 
         // ---- what became of every staged way (spec-0042 §2.5, DW0548) ----
         //
@@ -3356,7 +3507,7 @@ impl<'a> Plan<'a> {
     pub fn branch_gate_model(
         &self,
         cp: &CriticalPath,
-    ) -> (Vec<RegionEvent>, BTreeMap<usize, BTreeSet<usize>>) {
+    ) -> (RegionEvents, BTreeMap<usize, BTreeSet<usize>>) {
         let mut region_events =
             collect_region_events(self.campaign, &self.anchors, &cp.firing, &self.ways);
         region_events.extend(self.shortcuts.iter().map(|sc| {
@@ -3368,7 +3519,10 @@ impl<'a> Plan<'a> {
             &cp.firing.trigger_step,
             cp.steps.len(),
         );
-        (region_events, ancestors)
+        (
+            region_events_of(self.campaign, region_events, &cp.firing, &self.npcs),
+            ancestors,
+        )
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
@@ -3594,65 +3748,12 @@ impl<'a> Plan<'a> {
     /// caller that splices it in unconditionally emits exactly what it emitted
     /// before DSL v0.10.
     pub fn gate_terms(&self, gate: delvewright_dsl::gate::Gate<'_>) -> Vec<GateTerm> {
-        let mut out: Vec<GateTerm> = Vec::new();
-        for f in gate.requires_flags {
-            out.push(GateTerm {
-                objective: flag_score(f.as_str()),
-                party: true,
-                min: Some(1),
-                max: Some(1),
-                negate: false,
-            });
-        }
-        for f in gate.forbids_flags {
-            out.push(GateTerm {
-                objective: flag_score(f.as_str()),
-                party: true,
-                min: Some(1),
-                max: Some(1),
-                negate: true,
-            });
-        }
-        out.extend(self.state_terms(gate.requires_state));
-        out
+        gate_terms_of(self.campaign, gate)
     }
 
-    /// The numeric half of a gate, as [`GateTerm`]s.
-    ///
-    /// `equals` and `not-equals` are the same one-value range under opposite
-    /// keywords; `at-least` and `at-most` are the half-open ranges. Who holds the
-    /// value is the datum's declared scope and nothing else — a `party` datum
-    /// lives on [`PARTY`], a `player` one on the acting player. An undeclared
-    /// datum (already `DW0500`) answers `party`, so a campaign that failed
-    /// validation still yields something well-formed rather than panicking
-    /// mid-build.
+    /// The numeric half of a gate, as [`GateTerm`]s ([`state_terms_of`]).
     pub fn state_terms(&self, cmps: &[delvewright_dsl::StateCompare]) -> Vec<GateTerm> {
-        use delvewright_dsl::{CompareOp, StateScope};
-        cmps.iter()
-            .map(|c| {
-                let party = !matches!(
-                    self.campaign
-                        .quests
-                        .content
-                        .state_decl(c.state.as_str())
-                        .map(|s| s.scope),
-                    Some(StateScope::Player)
-                );
-                let (min, max, negate) = match c.op {
-                    CompareOp::Equals => (Some(c.value), Some(c.value), false),
-                    CompareOp::NotEquals => (Some(c.value), Some(c.value), true),
-                    CompareOp::AtLeast => (Some(c.value), None, false),
-                    CompareOp::AtMost => (None, Some(c.value), false),
-                };
-                GateTerm {
-                    objective: state_score(c.state.as_str()),
-                    party,
-                    min,
-                    max,
-                    negate,
-                }
-            })
-            .collect()
+        state_terms_of(self.campaign, cmps)
     }
 
     /// The campaign's `on_death` bundle (DSL v0.10, spec-0031) — effect root R7,
@@ -4360,6 +4461,15 @@ pub(crate) struct PathFiring {
     /// The members of `fired` whose gate held only on an undatable numeric term.
     /// Played by the replay; never forced.
     pub undecided: BTreeSet<String>,
+    /// Each `talk-to` objective this path performs → `(npc, flat option index)`
+    /// of the option it takes (spec-0088: a dialogue `set-flag` is forced only
+    /// on the option the path takes).
+    pub talk_taken: BTreeMap<String, (String, usize)>,
+    /// Objective id → every declared datum's value as the guaranteed replay
+    /// walks up to it ([`crate::compiler::flow::Walk::data`]).
+    pub data_before: BTreeMap<String, BTreeMap<String, Option<i64>>>,
+    /// Every declared datum's value once the path has played.
+    pub data_end: BTreeMap<String, Option<i64>>,
 }
 
 impl PathFiring {
@@ -4452,7 +4562,19 @@ fn build_critical_path(
     // The environment triggers this path performs, keyed by the path step each
     // is performed in front of. See [`path_triggers`].
     let due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
-    let (fired, undecided) = path_fired_lines(campaign, flow, path, &due);
+    let replay = path_fired_lines(campaign, flow, path, &due);
+    let talk_taken: BTreeMap<String, (String, usize)> = path
+        .steps
+        .iter()
+        .filter_map(|st| {
+            let n = st.talk_option?;
+            let npc = objective_quest(campaign, &st.objective).and_then(|(_, o)| match o {
+                delvewright_dsl::Objective::TalkTo { npc, .. } => Some(npc.as_str().to_string()),
+                _ => None,
+            })?;
+            Some((st.objective.clone(), (npc, n)))
+        })
+        .collect();
     let mut trigger_step: BTreeMap<String, usize> = BTreeMap::new();
 
     for (si, st) in path.steps.iter().enumerate() {
@@ -4970,8 +5092,11 @@ fn build_critical_path(
             obj_step,
             trigger_step,
             quests: path.quests.iter().cloned().collect(),
-            fired,
-            undecided,
+            fired: replay.fired,
+            undecided: replay.undecided,
+            talk_taken,
+            data_before: replay.data_before,
+            data_end: replay.data_end,
         },
     })
 }
@@ -4992,7 +5117,8 @@ fn path_fired_lines(
     flow: &crate::compiler::flow::Flow<'_>,
     path: &crate::compiler::flow::Playthrough,
     due: &BTreeMap<usize, Vec<Step>>,
-) -> (BTreeSet<String>, BTreeSet<String>) {
+) -> PathReplay {
+    let mut data_before: BTreeMap<String, BTreeMap<String, Option<i64>>> = BTreeMap::new();
     let mut fired: BTreeSet<String> = BTreeSet::new();
     let mut undecided: BTreeSet<String> = BTreeSet::new();
     // A trigger's effect list and its root pointer, from the one root walk.
@@ -5015,11 +5141,33 @@ fn path_fired_lines(
             }
             walk.perform(trigger_id);
         }
+        data_before.insert(step.objective.clone(), data_now(&walk));
         let taken = walk.take(step);
         fired.extend(taken.fired);
         undecided.extend(taken.undecided);
     }
-    (fired, undecided)
+    PathReplay {
+        fired,
+        undecided,
+        data_before,
+        data_end: data_now(&walk),
+    }
+}
+
+/// What [`path_fired_lines`] reads off one walk of the guaranteed replay.
+struct PathReplay {
+    fired: BTreeSet<String>,
+    undecided: BTreeSet<String>,
+    data_before: BTreeMap<String, BTreeMap<String, Option<i64>>>,
+    data_end: BTreeMap<String, Option<i64>>,
+}
+
+/// Every declared datum's value the walk holds now, by id.
+fn data_now(walk: &crate::compiler::flow::Walk<'_, '_>) -> BTreeMap<String, Option<i64>> {
+    walk.data()
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
 }
 
 /// **The environment triggers a path performs, and where** — keyed by the index
@@ -6207,25 +6355,23 @@ fn collect_region_events(
             match (e.gate_region_write(), e.region_write(), e.way_write()) {
                 (Some((anchor, fills)), _, _) => gate_region_block_any(anchors, anchor.as_str())
                     .map(|(from, to, gate_block)| {
-                        vec![(
-                            (from, to),
-                            if fills {
-                                RegionWrite::of_block(&gate_block)
-                            } else {
-                                RegionWrite::Unseal
-                            },
-                        )]
+                        vec![if fills {
+                            (
+                                (from, to),
+                                RegionWrite::of_block(&gate_block),
+                                Some(gate_block),
+                            )
+                        } else {
+                            ((from, to), RegionWrite::Unseal, None)
+                        }]
                     })
                     .unwrap_or_default(),
                 (_, Some((zone, block)), _) => zone_box_in(anchors, zone)
                     .map(|r| {
-                        vec![(
-                            r,
-                            match block {
-                                Some(b) => RegionWrite::of_block(b),
-                                None => RegionWrite::Clear,
-                            },
-                        )]
+                        vec![match block {
+                            Some(b) => (r, RegionWrite::of_block(b), Some(b.to_string())),
+                            None => (r, RegionWrite::Clear, None),
+                        }]
                     })
                     .unwrap_or_default(),
                 // An unresolvable way reference is `DW0547`'s finding, raised by
@@ -6234,11 +6380,13 @@ fn collect_region_events(
                 (_, _, Some((piece, name))) => ways
                     .resolve(piece.as_str(), name)
                     .map(|w| {
-                        let write = match w.sign {
-                            crate::compiler::ways::Sign::Laid => RegionWrite::of_block(&w.block),
-                            crate::compiler::ways::Sign::Cleared => RegionWrite::Clear,
+                        let (write, laid) = match w.sign {
+                            crate::compiler::ways::Sign::Laid => {
+                                (RegionWrite::of_block(&w.block), Some(w.block.clone()))
+                            }
+                            crate::compiler::ways::Sign::Cleared => (RegionWrite::Clear, None),
                         };
-                        w.boxes.iter().map(|b| (*b, write)).collect()
+                        w.boxes.iter().map(|b| (*b, write, laid.clone())).collect()
                     })
                     .unwrap_or_default(),
                 _ => return,
@@ -6246,7 +6394,7 @@ fn collect_region_events(
         if resolved.is_empty() {
             return; // an unresolvable anchor is DW0142/DW0343/DW0360's finding
         }
-        for (region, write) in resolved {
+        for (region, write, laid) in resolved {
             // A trigger's FILL keeps the treatment it has always had — fired at
             // step 0 and forced, which seals every leg against it. Only its
             // openings are dated by the step that performs it: a wall is assumed
@@ -6263,14 +6411,126 @@ fn collect_region_events(
                 // survive it.
                 continue;
             }
-            out.push(if forced {
+            let ev = if forced {
                 RegionEvent::forced(region, write, fire_step)
             } else {
                 RegionEvent::unforced(region, write, fire_step, blame())
+            };
+            out.push(match &laid {
+                Some(b) => ev.laying(b),
+                None => ev,
             });
         }
     });
     out
+}
+
+/// **Every flag write and datum the region model reads off one path**
+/// (spec-0088 §4.2): the [`RegionEvents`] beside `writes`, in the path's own
+/// step space.
+///
+/// The flags are collected by the walk [`collect_region_events`] takes, and
+/// dated by the same [`firing_of`]:
+///
+/// - a `set-flag` effect at any root: [`firing_of`]'s step and forcedness;
+/// - a dialogue option's `set-flag`: unforced at step 0 — a button can be
+///   pressed whenever its own gate holds, which no step bounds — and, for the
+///   option a `talk-to` on this path takes, forced at that objective's step too;
+/// - a trap's or a timed gate's `disarm.sets_flag`: unforced at step 0 — an act
+///   nothing forces.
+///
+/// The data are the guaranteed replay's values ([`PathFiring::data_before`]),
+/// keyed by critical-path step, plus every datum an unforced firing writes.
+pub(crate) fn region_events_of(
+    campaign: &Campaign,
+    writes: Vec<RegionEvent>,
+    path: &PathFiring,
+    npcs: &[NpcPlan],
+) -> RegionEvents {
+    let optional = campaign.quest_plan.content.optional();
+    let mut flags: Vec<FlagEvent> = Vec::new();
+    let mut unforced_writers: BTreeSet<String> = BTreeSet::new();
+    for_each_gate_effect(campaign, &mut |site, e| {
+        let set = match &e.verb {
+            Verb::SetFlag { flag, .. } => Some(flag.as_str()),
+            _ => None,
+        };
+        let writes_state = e.writes_state().map(|(id, _)| id.as_str().to_string());
+        if set.is_none() && writes_state.is_none() {
+            return;
+        }
+        let (fire_step, forced) = firing_of(site, path, &optional);
+        if let Some(flag) = set {
+            flags.push(FlagEvent {
+                flag: flag.to_string(),
+                fire_step,
+                forced,
+            });
+        }
+        if let Some(id) = writes_state
+            && !forced
+        {
+            unforced_writers.insert(id);
+        }
+    });
+    for npc in npcs {
+        for opt in &npc.options {
+            for f in &opt.sets_flags {
+                flags.push(FlagEvent {
+                    flag: f.clone(),
+                    fire_step: 0,
+                    forced: false,
+                });
+                for (obj, (who, n)) in &path.talk_taken {
+                    if *who == npc.npc_id
+                        && i32::try_from(*n).is_ok_and(|n| n == opt.n)
+                        && let Some(&step) = path.obj_step.get(obj)
+                    {
+                        flags.push(FlagEvent {
+                            flag: f.clone(),
+                            fire_step: step,
+                            forced: true,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    let disarms = campaign
+        .quests
+        .content
+        .traps
+        .iter()
+        .filter_map(|t| t.disarm.as_ref().map(|d| d.sets_flag.as_str()))
+        .chain(
+            campaign
+                .quests
+                .content
+                .timed_gates
+                .iter()
+                .filter_map(|g| g.disarm.as_ref().map(|d| d.sets_flag.as_str())),
+        );
+    for f in disarms {
+        flags.push(FlagEvent {
+            flag: f.to_string(),
+            fire_step: 0,
+            forced: false,
+        });
+    }
+    let before = path
+        .data_before
+        .iter()
+        .filter_map(|(obj, vals)| Some((*path.obj_step.get(obj)?, vals.clone())))
+        .collect();
+    RegionEvents {
+        writes,
+        flags,
+        data: DataReplay {
+            before,
+            end: path.data_end.clone(),
+            unforced_writers,
+        },
+    }
 }
 
 /// **When a firing happens, and whether the party can avoid causing it** — read
@@ -6681,6 +6941,75 @@ fn collect_loot(
         .collect()
 }
 
+/// **A gate, reduced to scoreboard terms** — the one reduction ([`GateTerm`])
+/// every consumer takes: [`Plan::gate_terms`] for a site the plan holds, and a
+/// lethal volume's [`StagedGate`] before the plan exists. Empty for an ungated
+/// site.
+pub fn gate_terms_of(campaign: &Campaign, gate: delvewright_dsl::gate::Gate<'_>) -> Vec<GateTerm> {
+    let mut out: Vec<GateTerm> = Vec::new();
+    for f in gate.requires_flags {
+        out.push(GateTerm {
+            objective: flag_score(f.as_str()),
+            party: true,
+            min: Some(1),
+            max: Some(1),
+            negate: false,
+        });
+    }
+    for f in gate.forbids_flags {
+        out.push(GateTerm {
+            objective: flag_score(f.as_str()),
+            party: true,
+            min: Some(1),
+            max: Some(1),
+            negate: true,
+        });
+    }
+    out.extend(state_terms_of(campaign, gate.requires_state));
+    out
+}
+
+/// The numeric half of a gate, as [`GateTerm`]s.
+///
+/// `equals` and `not-equals` are the same one-value range under opposite
+/// keywords; `at-least` and `at-most` are the half-open ranges. Who holds the
+/// value is the datum's declared scope and nothing else — a `party` datum
+/// lives on [`PARTY`], a `player` one on the acting player. An undeclared
+/// datum (already `DW0500`) answers `party`, so a campaign that failed
+/// validation still yields something well-formed rather than panicking
+/// mid-build.
+pub fn state_terms_of(
+    campaign: &Campaign,
+    cmps: &[delvewright_dsl::StateCompare],
+) -> Vec<GateTerm> {
+    use delvewright_dsl::{CompareOp, StateScope};
+    cmps.iter()
+        .map(|c| {
+            let party = !matches!(
+                campaign
+                    .quests
+                    .content
+                    .state_decl(c.state.as_str())
+                    .map(|s| s.scope),
+                Some(StateScope::Player)
+            );
+            let (min, max, negate) = match c.op {
+                CompareOp::Equals => (Some(c.value), Some(c.value), false),
+                CompareOp::NotEquals => (Some(c.value), Some(c.value), true),
+                CompareOp::AtLeast => (Some(c.value), None, false),
+                CompareOp::AtMost => (None, Some(c.value), false),
+            };
+            GateTerm {
+                objective: state_score(c.state.as_str()),
+                party,
+                min,
+                max,
+                negate,
+            }
+        })
+        .collect()
+}
+
 /// Resolve every declared lethal volume (DSL v0.10, spec-0031) against the solved
 /// layout, in declaration order.
 ///
@@ -6713,6 +7042,20 @@ fn collect_lethal_volumes(
                     .damage_type
                     .unwrap_or(delvewright_dsl::DamageKind::Generic),
                 shown_by: v.shown_by.clone(),
+                staged: v.when.as_ref().map(|g| StagedGate {
+                    requires_flags: g
+                        .requires_flags
+                        .iter()
+                        .map(|f| f.as_str().to_string())
+                        .collect(),
+                    forbids_flags: g
+                        .forbids_flags
+                        .iter()
+                        .map(|f| f.as_str().to_string())
+                        .collect(),
+                    requires_state: g.requires_state.clone(),
+                    terms: gate_terms_of(campaign, v.gate()),
+                }),
             })
         })
         .collect()

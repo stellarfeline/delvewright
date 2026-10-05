@@ -611,6 +611,21 @@ pub mod codes {
     /// bytes, so nothing before assembly can answer it); the document arm here,
     /// by [`crate::validate`].
     pub const LETHAL_INVISIBLE: DwCode = DwCode::new("DW0891", ExitTier::Build);
+    /// (spec-0088) **A gate that cannot stage a lethal volume.** Two shapes,
+    /// refused at the document where they are entered:
+    ///
+    /// * **`when: {}`** — a stage with no term. An always-live volume is
+    ///   spelled by leaving `when` out; an empty gate says nothing and is not
+    ///   a stage.
+    /// * **A `requires_state` term on a `player`-scoped datum.** A volume's
+    ///   liveness is a fact about the place, so its gate is a fact about the
+    ///   party: a term one player satisfies and another does not would be a
+    ///   pit that kills one body and spares the one beside it, and the sweep's
+    ///   entity half has no player to read a per-player score from.
+    ///
+    /// The remedy is to leave `when` out, or to name a flag or a `party`
+    /// datum. Raised by [`crate::validate`] with no world built.
+    pub const LETHAL_STAGE_GATE: DwCode = DwCode::new("DW0953", ExitTier::Build);
     /// (spec-0031, DSL v0.10) **A grant whose removal is a later effect, not its
     /// own duration.** A `give-effect` is still live at the moment a
     /// `clear-effect` for the same effect fires in the same bundle, so the clear

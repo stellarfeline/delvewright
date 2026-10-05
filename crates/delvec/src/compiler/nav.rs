@@ -35,8 +35,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use delvewright_dsl::{Lethality, Mark, QuestEffect, TrapReset};
 
 use crate::compiler::plan::{
-    BodyScope, BodyStation, Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan,
-    body_station,
+    BodyScope, BodyStation, Plan, RegionEvent, RegionEvents, RegionWrite, ResolvedAnchor,
+    StagedGate, Step, TrapPlan, body_station,
 };
 use delvewright_dsl::Diagnostic;
 use delvewright_dsl::{DwCode, ExitTier};
@@ -871,6 +871,109 @@ pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
 /// the box being inclusive world-space corners.
 type LethalRegion = (String, ([i32; 3], [i32; 3]));
 
+/// One lethal volume **live from a story stage** (spec-0088), as the region
+/// model holds it: the id, the box, and the resolved gate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StagedVolume {
+    /// The authored id.
+    pub id: String,
+    /// Inclusive world-space corners.
+    pub region: ([i32; 3], [i32; 3]),
+    /// The gate the volume is live while.
+    pub gate: StagedGate,
+}
+
+/// A staged volume's two readings at one quest configuration (spec-0088 §4.1).
+///
+/// `may` is the route proofs' reading — live unless the campaign can prove it is
+/// not, so every proof that walks past it survives it; `is` is the ladder's —
+/// live only where the forced route guarantees it. `is` implies `may`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Liveness {
+    /// The volume may be live here.
+    pub may: bool,
+    /// The volume is live here on the forced route.
+    pub is: bool,
+}
+
+impl Liveness {
+    /// The state in words, for a diagnostic.
+    pub fn words(&self) -> &'static str {
+        match (self.may, self.is) {
+            (_, true) => "is live",
+            (true, false) => "may be live",
+            (false, false) => "is dead",
+        }
+    }
+}
+
+/// **The two readings of one gate at one arrival** (spec-0088 §4.1), over a
+/// path's flag writes and datum replay ([`RegionEvents`]) and the region model's
+/// own ancestry predicate.
+///
+/// - `may`: every required flag has a setter this configuration credits — a
+///   forced firing the arrival's ancestry contains, or ANY unforced one (credited
+///   at step 0, as an unforced fill is); no forbidden flag has a forced setter the
+///   ancestry contains (an unforced setter would make the volume passable, and an
+///   unguaranteed firing may never open); every numeric term may hold — the
+///   replay's value satisfies it, the replay cannot date it, or some unforced root
+///   writes the datum at all.
+/// - `is`: every required flag set by a forced firing the ancestry contains; no
+///   forbidden flag with any setter credited here; every numeric term decided
+///   true by the replay.
+///
+/// Flags are never cleared, so both readings are monotone in the flags along a
+/// path.
+pub(crate) fn liveness_of(
+    gate: &StagedGate,
+    events: &RegionEvents,
+    arrival: usize,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Liveness {
+    let forced_here = |f: &str| {
+        events
+            .flags
+            .iter()
+            .any(|e| e.flag == f && e.forced && ancestor(e.fire_step, arrival))
+    };
+    let any_here = |f: &str| {
+        events
+            .flags
+            .iter()
+            .any(|e| e.flag == f && (!e.forced || ancestor(e.fire_step, arrival)))
+    };
+    let values = events.data.at(arrival);
+    // `v` satisfies the term iff pinning the term's set to `v` leaves it
+    // non-empty — the gate's own arithmetic ([`DatumSet`]), never a second
+    // reading of what a comparison means.
+    //
+    // [`DatumSet`]: delvewright_dsl::gate::DatumSet
+    let satisfies = |c: &delvewright_dsl::StateCompare, v: i64| {
+        i32::try_from(v).is_ok_and(|v| {
+            let mut set = delvewright_dsl::gate::DatumSet::all();
+            set.require(c.op, c.value);
+            set.require(delvewright_dsl::CompareOp::Equals, v);
+            set.pick().is_some()
+        })
+    };
+    let may = gate.requires_flags.iter().all(|f| any_here(f))
+        && !gate.forbids_flags.iter().any(|f| forced_here(f))
+        && gate.requires_state.iter().all(|c| {
+            events.data.unforced_writers.contains(c.state.as_str())
+                || match values.get(c.state.as_str()) {
+                    Some(Some(v)) => satisfies(c, *v),
+                    _ => true,
+                }
+        });
+    let is = gate.requires_flags.iter().all(|f| forced_here(f))
+        && !gate.forbids_flags.iter().any(|f| any_here(f))
+        && gate
+            .requires_state
+            .iter()
+            .all(|c| matches!(values.get(c.state.as_str()), Some(Some(v)) if satisfies(c, *v)));
+    Liveness { may, is: is && may }
+}
+
 /// One placed furniture region as the navigation model carries it — the plan's
 /// own type, `(anchor name, inclusive world box)` (spec-0065). Same shape as
 /// [`LethalRegion`] for the same reason: a proof that refuses over it has to be
@@ -919,6 +1022,15 @@ pub struct World {
     /// difference between `DW0510` and a `DW0311` that sends the author to fix a
     /// prefab that was never wrong.
     lethal_regions: Vec<LethalRegion>,
+    /// The declared volumes **live from a story stage** (spec-0088), in
+    /// declaration order — absent from `lethal` and `lethal_regions`, because
+    /// whether one is there is a fact about a point in the quest DAG and not
+    /// about the world. [`World::region_state_at`] turns each into cells for the
+    /// configurations it may be live in ([`World::staged_liveness`]), so a staged
+    /// volume reaches a proof's world through that one door and no other. Empty
+    /// for every campaign that stages none, which keeps every world and every
+    /// region state byte-identical.
+    staged_lethal: Vec<StagedVolume>,
     /// Cells inside a declared **furniture** region (spec-0065): the blocks of a
     /// laid table, an altar, a counter, as the piece that built them declared.
     ///
@@ -1090,7 +1202,12 @@ pub struct Premises {
     /// (spec-0060 §10.7).
     base: &'static str,
     built: Vec<BuiltPiece>,
+    /// The volumes live from world-load to the end — every volume that declares
+    /// no `when`. A staged volume is not a premise of the world: it is
+    /// `staged_lethal`, held per quest configuration.
     lethal_regions: Vec<LethalRegion>,
+    /// The volumes live from a story stage (spec-0088).
+    staged_lethal: Vec<StagedVolume>,
     furniture_regions: Vec<FurnitureRegion>,
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
@@ -1120,7 +1237,19 @@ impl Premises {
             lethal_regions: plan
                 .lethal_volumes
                 .iter()
+                .filter(|v| v.staged.is_none())
                 .map(|v| (v.id.clone(), v.region))
+                .collect(),
+            staged_lethal: plan
+                .lethal_volumes
+                .iter()
+                .filter_map(|v| {
+                    Some(StagedVolume {
+                        id: v.id.clone(),
+                        region: v.region,
+                        gate: v.staged.clone()?,
+                    })
+                })
                 .collect(),
             furniture_regions: plan.furniture.clone(),
             world_load_seals: seals,
@@ -1161,6 +1290,7 @@ impl Premises {
             base: "void",
             built: Vec::new(),
             lethal_regions: Vec::new(),
+            staged_lethal: Vec::new(),
             furniture_regions: Vec::new(),
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
@@ -1303,6 +1433,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1521,6 +1652,7 @@ impl World {
                 .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
                 .collect(),
             lethal_regions: premises.lethal_regions,
+            staged_lethal: premises.staged_lethal,
             furniture: premises
                 .furniture_regions
                 .iter()
@@ -1646,6 +1778,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned,
@@ -1689,6 +1822,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1740,6 +1874,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1794,6 +1929,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1841,6 +1977,22 @@ impl World {
             .with_sealed(&st.solid)
             .with_unforced(&st.unforced)
             .with_flooded(&st.flooded, &st.flood_regions)
+            .with_staged_lethal(&st.lethal, &st.lethal_regions)
+    }
+
+    /// This world with the staged lethal volumes a configuration may hold live
+    /// (spec-0088) — the rule [`World::from_occupancy`] applies to a premise
+    /// volume: the cells join `lethal` (impassable, never floor) and the boxes
+    /// join `lethal_regions` (the walker's keep-out, and the name a refusal
+    /// gives). A configuration that may hold none returns the world unchanged.
+    fn with_staged_lethal(mut self, cells: &BTreeSet<[i32; 3]>, regions: &[LethalRegion]) -> World {
+        if regions.is_empty() {
+            return self;
+        }
+        self.lethal.extend(cells.iter().copied());
+        self.lethal.compact();
+        self.lethal_regions.extend(regions.iter().cloned());
+        self
     }
 
     /// Whether any cell of this world was flooded by a **runtime** fluid fill.
@@ -1872,6 +2024,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1944,6 +2097,7 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -4771,6 +4925,17 @@ struct RegionState {
     /// carried for the same reason `flood_regions` is, so a route failure can NAME
     /// the beat instead of reporting geometry that reads perfectly open.
     unforced_regions: Vec<UnforcedBox>,
+    /// Cells of every **staged** lethal volume that may be live at this point
+    /// (spec-0088, [`World::staged_liveness`]) — impassable, widened by the
+    /// walker's body, never floor, exactly as a volume live from world-load.
+    lethal: BTreeSet<[i32; 3]>,
+    /// The volumes behind `lethal`, as `(id, box)`, in declaration order, so a
+    /// refusal can name the volume.
+    lethal_regions: Vec<LethalRegion>,
+    /// Per region, the causally-latest **forced** write and the block it lays
+    /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
+    /// over the assembled bytes to give this configuration's block map.
+    laid: Vec<(([i32; 3], [i32; 3]), Option<String>)>,
 }
 
 /// One box an unforced fill writes, with the beat that lays it in words — the blame
@@ -4781,7 +4946,7 @@ type UnforcedBox = (([i32; 3], [i32; 3]), String);
 /// it leaves, whether the party is forced to cause it, and the beat to blame if they
 /// are not. Forcedness travels WITH the winner, so latest-write-wins needs no special
 /// case for a forced write landing on top of an unforced one.
-type LatestWrite = (usize, RegionWrite, bool, String);
+type LatestWrite = (usize, RegionWrite, bool, String, Option<String>);
 
 impl RegionState {
     /// Nothing has been written by this point — the caller routes the base world
@@ -4791,6 +4956,37 @@ impl RegionState {
             && self.cleared.is_empty()
             && self.flooded.is_empty()
             && self.unforced.is_empty()
+            && self.lethal.is_empty()
+    }
+
+    /// **This configuration's bytes** (spec-0088 §5): the assembled block map
+    /// with every forced write this configuration credits laid as the block its
+    /// emitted command writes — a fill's block, air for a clear or an unseal.
+    /// An unforced write is not laid: a block a beat nobody has to play lays is
+    /// no signal the party is shown. A write whose block the model does not know
+    /// (a world-load seal: the bytes already hold it) leaves the bytes as they
+    /// are.
+    ///
+    /// The one derivation of a configuration's block map, for whoever asks:
+    /// `DW0891` reads it to decide whether a caught cell is shown here.
+    pub(crate) fn blocks_over(
+        &self,
+        base: &crate::compiler::blockstate::BlockMap,
+    ) -> crate::compiler::blockstate::BlockMap {
+        let mut out = base.clone();
+        for ((lo, hi), block) in &self.laid {
+            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
+                match block {
+                    Some(b) => {
+                        out.insert(c, crate::compiler::blockstate::BlockState::new(b));
+                    }
+                    None => {
+                        out.remove(&c);
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// This state as it would be **if every unforced fill were credited** — the
@@ -4861,7 +5057,7 @@ fn unforced_blame_over(regions: &[UnforcedBox], cells: &[[i32; 3]]) -> Vec<Strin
 impl World {
     fn region_state_at(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
     ) -> RegionState {
@@ -4874,7 +5070,7 @@ impl World {
     /// were measured.
     fn region_state_without_world_load(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
     ) -> RegionState {
@@ -4883,7 +5079,7 @@ impl World {
 
     fn region_state_inner(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
         world_load: bool,
@@ -4910,6 +5106,7 @@ impl World {
                     ev.write,
                     ev.is_forced(),
                     ev.blame().to_string(),
+                    ev.block().map(str::to_string),
                 );
                 let e = latest.entry(ev.region).or_insert_with(|| key.clone());
                 if ev.fire_step >= e.0 {
@@ -4918,7 +5115,20 @@ impl World {
             }
         }
         let mut st = RegionState::default();
-        for (region, (_, write, forced, blame)) in latest {
+        for (region, (_, write, forced, blame, block)) in latest {
+            // The bytes this configuration holds: a forced write lays its block
+            // (or air); a fill whose block the model does not know — a world-load
+            // seal — leaves the bytes as the prefab built them.
+            if forced {
+                match write {
+                    RegionWrite::Clear | RegionWrite::Unseal => st.laid.push((region, None)),
+                    RegionWrite::Fill | RegionWrite::Flood => {
+                        if block.is_some() {
+                            st.laid.push((region, block));
+                        }
+                    }
+                }
+            }
             // An `Unseal` contributes to no set: it removes the gate's own block, and
             // the base world holds the gate cells empty. It matters above, in
             // latest-write-wins, where it is what cancels a fill — including the
@@ -4944,7 +5154,76 @@ impl World {
             };
             into.extend(crate::compiler::assembled::region_cells(region.0, region.1));
         }
+        // spec-0088: every staged lethal volume that may be live here.
+        for (v, live) in
+            self.staged_lethal
+                .iter()
+                .zip(self.staged_liveness(region_events, arrival, ancestor))
+        {
+            if live.may {
+                st.lethal.extend(crate::compiler::assembled::region_cells(
+                    v.region.0, v.region.1,
+                ));
+                st.lethal_regions.push((v.id.clone(), v.region));
+            }
+        }
         st
+    }
+
+    /// **Which staged lethal volumes may be, and are, live at this arrival**
+    /// (spec-0088 §4.1) — one [`Liveness`] per [`World::staged_lethal`] entry,
+    /// in declaration order. The one place a volume's gate is turned into a
+    /// lethal set; [`World::region_state_at`]'s derivation calls it and nothing
+    /// else decides it.
+    pub(crate) fn staged_liveness(
+        &self,
+        events: &RegionEvents,
+        arrival: usize,
+        ancestor: &dyn Fn(usize, usize) -> bool,
+    ) -> Vec<Liveness> {
+        self.staged_lethal
+            .iter()
+            .map(|v| liveness_of(&v.gate, events, arrival, ancestor))
+            .collect()
+    }
+
+    /// The staged lethal volumes this world holds, in declaration order.
+    pub(crate) fn staged_volumes(&self) -> &[StagedVolume] {
+        &self.staged_lethal
+    }
+
+    /// For a refusal that names `ids`: the staged ones among them, each with its
+    /// gate and its state at the configuration arriving at critical step
+    /// `arrival` (spec-0088 §4.2) — empty when none is staged, so a message
+    /// about a volume live from world-load reads as it always has.
+    pub(crate) fn staged_words(
+        &self,
+        ids: &[&str],
+        events: &RegionEvents,
+        arrival: usize,
+        ancestor: &dyn Fn(usize, usize) -> bool,
+    ) -> String {
+        let live = self.staged_liveness(events, arrival, ancestor);
+        let named: Vec<String> = self
+            .staged_lethal
+            .iter()
+            .zip(live)
+            .filter(|(v, _)| ids.contains(&v.id.as_str()))
+            .map(|(v, l)| {
+                format!(
+                    "`{}` is live from a story stage ({}) and {} in the configuration arriving at \
+                     critical step {arrival}",
+                    v.id,
+                    v.gate.words(),
+                    l.words()
+                )
+            })
+            .collect();
+        if named.is_empty() {
+            String::new()
+        } else {
+            format!(" In this configuration: {}.", named.join("; "))
+        }
     }
 
     /// The runtime-region state for the walked leg `from_step → to_step` — the
@@ -4970,7 +5249,7 @@ impl World {
     /// seals (step `0`) and every write the start's own branch made do.
     fn leg_region_state(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         ancestor: &dyn Fn(usize, usize) -> bool,
         from_step: usize,
         to_step: usize,
@@ -4983,7 +5262,7 @@ impl World {
     /// [`World::region_state_without_world_load`].
     fn leg_region_state_without_world_load(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         ancestor: &dyn Fn(usize, usize) -> bool,
         from_step: usize,
         to_step: usize,
@@ -5006,7 +5285,7 @@ impl World {
     /// the route the proof passed.
     fn walked_leg_region_state(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         ancestor: &dyn Fn(usize, usize) -> bool,
         from_pos: [i32; 3],
         from_step: usize,
@@ -5045,7 +5324,7 @@ fn leg_fired(
 /// parallel branch).
 fn gate_blame(
     gates: &[&crate::compiler::assembled::GateSeal],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
     arrival: usize,
 ) -> String {
@@ -5180,7 +5459,7 @@ pub fn reachable_under_every_quest_state(
 fn route_walked_legs(
     world: &World,
     positions: &[VisitedPos],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<(LegRoute, BTreeSet<[i32; 3]>)> {
     let mut out = Vec::new();
@@ -5303,7 +5582,7 @@ fn boxes_of(regions: &[([i32; 3], [i32; 3])]) -> String {
 fn route_visited(
     world: &World,
     positions: &[VisitedPos],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
     for pair in positions.windows(2) {
@@ -5747,7 +6026,7 @@ fn verify_checkpoints(
     world: &World,
     checkpoints: &[(String, [i32; 3], usize)],
     positions: &[VisitedPos],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
     for (anchor, pos, fire_step) in checkpoints {
@@ -8860,7 +9139,7 @@ pub fn check_branch_path(
     start: Option<[i32; 3]>,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
     route_visited(
@@ -8882,7 +9161,7 @@ pub fn branch_path_routes(
     start: Option<[i32; 3]>,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<LegRoute> {
     route_walked_legs(

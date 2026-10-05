@@ -59,6 +59,7 @@ pub fn validate_campaign_with(
     // and over the whole closed consumer set — an ungated site contributes no
     // terms and cannot contradict.
     gate_contradiction_checks(c, &mut d);
+    lethal_stage_checks(c, &mut d);
     // spec-0031: the status-effect verbs. Every walk inside is empty for a
     // campaign that declares neither verb. The status-effect registry is the
     // fixed vanilla list wave-mob effects are validated against, so no injected
@@ -2674,6 +2675,38 @@ fn gate_contradiction_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     });
 }
 
+/// The id of the lethal volume a `/content/lethal_volumes/<i>/…` pointer names,
+/// for a diagnostic's wording; the pointer itself when it names none.
+fn volume_id_at(c: &Campaign, path: &str) -> String {
+    path.strip_prefix("/content/lethal_volumes/")
+        .and_then(|rest| rest.split('/').next())
+        .and_then(|i| i.parse::<usize>().ok())
+        .and_then(|i| c.quests.content.lethal_volumes.get(i))
+        .map_or_else(|| path.to_string(), |v| v.id.as_str().to_string())
+}
+
+/// `DW0953`'s empty-gate shape (spec-0088 §3.2): a `when` with no term is not a
+/// stage. The player-scoped shape is raised beside `DW0503` in
+/// [`state_checks`], where every gate's `requires_state` is already read.
+fn lethal_stage_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, v) in c.quests.content.lethal_volumes.iter().enumerate() {
+        if v.when.is_some() && v.gate().is_empty() {
+            d.push(Diagnostic::error(
+                codes::LETHAL_STAGE_GATE,
+                "quests",
+                format!("/content/lethal_volumes/{i}/when"),
+                format!(
+                    "lethal volume `{}` declares `when: {{}}` — a stage with no term. An \
+                     always-live volume is spelled by leaving `when` out; to stage it, name a \
+                     flag (`requires_flags` / `forbids_flags`) or a `party` datum \
+                     (`requires_state`)",
+                    v.id.as_str()
+                ),
+            ));
+        }
+    }
+}
+
 fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let decls = &c.quests.content.state;
     // --- the declarations themselves ------------------------------------------
@@ -2791,6 +2824,23 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     // check for effects happens in the root walk below, which
                     // knows both the root's audience and the seams inside it.
                     if decl.scope == crate::stages::StateScope::Player
+                        && site.consumer == crate::gate::GateConsumer::LethalVolume
+                    {
+                        // The same fault as `DW0503` on any other party-read
+                        // gate, with the volume's own code and remedy
+                        // (spec-0088 §3.2): one check site, the code chosen by
+                        // the consumer.
+                        d.push(Diagnostic::error(
+                            codes::LETHAL_STAGE_GATE,
+                            stage,
+                            path,
+                            format!(
+                                "lethal volume `{}` is staged on `{}`, which is `player`-scoped —                                  a volume's liveness is a fact about the place, so a term one                                  player satisfies and another does not would be a pit that kills                                  one body and spares the one beside it, and the sweep's entity                                  half has no player to read a per-player score from. Name a flag                                  or a `party`-scoped datum in `when`, or leave `when` out",
+                                volume_id_at(c, &site.path),
+                                cmp.state.as_str()
+                            ),
+                        ));
+                    } else if decl.scope == crate::stages::StateScope::Player
                         && site.consumer.evaluates_per_player() == Some(false)
                     {
                         d.push(Diagnostic::error(
