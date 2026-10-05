@@ -128,7 +128,7 @@ impl Fog {
         // Every repaint, at the step its root fires (a root with no step of its
         // own — a trigger, a trap — at step 0, meeting every configuration),
         // in route order then declaration order (ADR-0006).
-        let mut repaints: Vec<(usize, String, ([i32; 3], [i32; 3]), String)> = Vec::new();
+        let mut repaints: Vec<(usize, String, Region, String)> = Vec::new();
         crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
             let Verb::SetAtmosphere { atmosphere, .. } = &e.verb else {
                 return;
