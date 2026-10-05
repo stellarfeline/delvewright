@@ -5676,14 +5676,15 @@ fn route_visited(
                 });
             }
             let names = names_of(&volumes);
+            let staged = world.staged_words(&volumes, region_events, pair[1].src_step, ancestor);
             Some(Failure {
                 code: DW_LETHAL_ON_CRITICAL_PATH,
                 message: format!(
                     "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
                      anchor {at:?} lies INSIDE lethal volume(s) {names} — a player who reaches \
-                     this objective is killed by standing where the objective is. Move the \
-                     volume off the anchor, shrink its `extent`, or move the objective; do NOT \
-                     delete the volume to silence the proof."
+                     this objective is killed by standing where the objective is.{staged} Move \
+                     the volume off the anchor, shrink its `extent`, or move the objective; do \
+                     NOT delete the volume to silence the proof."
                 ),
             })
         };
@@ -5835,15 +5836,18 @@ fn route_visited(
                     ));
                 }
                 let names = names_of(&volumes);
+                let staged =
+                    world.staged_words(&volumes, region_events, pair[1].src_step, ancestor);
                 return Err(Failure {
                     code: DW_LETHAL_ON_CRITICAL_PATH,
                     message: format!(
                         "critical path: the only route from {from:?} (floor {start:?}) to \
                          {to:?} (floor {goal:?}) runs THROUGH lethal volume(s) {names} — the \
                          party cannot reach this objective without dying on the way. The \
-                         geometry is walkable; the volume is what closes it. Move or shrink the \
-                         volume, or give the party a route around it; do NOT delete the volume \
-                         to silence the proof."
+                         geometry is walkable; the volume is what closes it.{staged} Move or \
+                         shrink the volume, give the party a route around it, or — for a volume \
+                         live from a story stage — move the beat that arms it after this leg; \
+                         do NOT delete the volume to silence the proof."
                     ),
                 });
             }
@@ -6191,6 +6195,60 @@ pub fn world_while_next(plan: &Plan, world: &World, step: usize) -> Option<World
     (!st.is_empty()).then(|| world.with_region_state(&st))
 }
 
+/// One quest configuration the critical path passes (spec-0088 §5): the first
+/// critical step that arrives under it, its region state, and every staged
+/// lethal volume's [`Liveness`] there.
+pub(crate) struct Configuration {
+    /// The first critical-path step whose arrival is judged under it.
+    pub step: usize,
+    state: RegionState,
+    /// One entry per [`World::staged_volumes`], in declaration order.
+    pub live: Vec<Liveness>,
+}
+
+impl Configuration {
+    /// This configuration's world: `base` with every runtime write it credits,
+    /// staged volumes included, or `None` when it writes nothing.
+    pub fn world(&self, base: &World) -> Option<World> {
+        (!self.state.is_empty()).then(|| base.with_region_state(&self.state))
+    }
+
+    /// This configuration's bytes ([`RegionState::blocks_over`]).
+    pub fn blocks(
+        &self,
+        base: &crate::compiler::blockstate::BlockMap,
+    ) -> crate::compiler::blockstate::BlockMap {
+        self.state.blocks_over(base)
+    }
+}
+
+/// **The quest configurations the critical path passes**, in path order — one per
+/// distinct region state, keyed by the first arrival under it — with `per_step`
+/// mapping every critical step to its configuration's index (spec-0088 §5). The
+/// enumeration `DW0891` judges a staged volume over, built from the same
+/// [`World::region_state_at`] every route proof asks.
+pub(crate) fn path_configurations(plan: &Plan, world: &World) -> (Vec<Configuration>, Vec<usize>) {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut configs: Vec<Configuration> = Vec::new();
+    let mut per_step: Vec<usize> = Vec::new();
+    for step in 0..plan.critical_path.len() {
+        let st = world.region_state_at(&plan.region_events, step, &ancestor);
+        let idx = match configs.iter().position(|c| c.state == st) {
+            Some(i) => i,
+            None => {
+                configs.push(Configuration {
+                    step,
+                    live: world.staged_liveness(&plan.region_events, step, &ancestor),
+                    state: st,
+                });
+                configs.len() - 1
+            }
+        };
+        per_step.push(idx);
+    }
+    (configs, per_step)
+}
+
 /// [`DW_BODY_CANNOT_LEAVE`] over a campaign's critical path. Returns the binding
 /// beside the verdict so the caller can print it whichever way the verdict went.
 ///
@@ -6232,6 +6290,22 @@ pub fn check_bodies_can_leave(
                 .and_then(|s| s.objective())
                 .map(|o| format!("while `{o}` is next"))
                 .unwrap_or_else(|| format!("from critical step {first}"));
+            // spec-0088: a pocket that exists only while a staged volume is dead
+            // (or only while it is live) is named with the volume's state.
+            let staged: Vec<String> = world
+                .staged_volumes()
+                .iter()
+                .zip(world.staged_liveness(&plan.region_events, first, &ancestor))
+                .map(|(v, l)| {
+                    let state = if l.may { "may be live" } else { "dead" };
+                    format!("lethal volume `{}` {state}", v.id)
+                })
+                .collect();
+            let when = if staged.is_empty() {
+                when
+            } else {
+                format!("{when}, {}", staged.join(", "))
+            };
             (w, when, seeds.into_iter().collect())
         })
         .collect();
@@ -10835,6 +10909,7 @@ mod tests {
                 base: "void",
                 built: Vec::new(),
                 lethal_regions: vec![("lethal/the-pit".to_string(), region)],
+                staged_lethal: Vec::new(),
                 furniture_regions: Vec::new(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
@@ -10875,6 +10950,7 @@ mod tests {
                 base: "void",
                 built: Vec::new(),
                 lethal_regions: Vec::new(),
+                staged_lethal: Vec::new(),
                 furniture_regions: region
                     .map(|r| vec![("anchor/table".to_string(), r)])
                     .unwrap_or_default(),
@@ -13048,10 +13124,24 @@ mod tests {
         let b = [4, 65, 1];
         assert!(world.standable(a) && world.standable(b));
         // Walked leg → unroutable → DW0311.
-        let err = route_visited(&world, &[vp(a, false), vp(b, false)], &[], &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[vp(a, false), vp(b, false)],
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // Same leg ridden by an inter-area transport → skipped, ok.
-        assert!(route_visited(&world, &[vp(a, false), vp(b, true)], &[], &linear).is_ok());
+        assert!(
+            route_visited(
+                &world,
+                &[vp(a, false), vp(b, true)],
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -13137,7 +13227,7 @@ mod tests {
             route_visited(
                 &world,
                 &[vp([0, 65, 1], false), vp([5, 65, 1], false)],
-                &[],
+                &RegionEvents::default(),
                 &linear
             )
             .is_ok()
@@ -13408,7 +13498,7 @@ mod tests {
         let err = route_visited(
             &world,
             &[vp(outside, false), vp(inside, false)],
-            &[],
+            &RegionEvents::default(),
             &linear,
         )
         .expect_err("a humanly impassable gateless fence ring must fail the proof");
@@ -13446,7 +13536,7 @@ mod tests {
             route_visited(
                 &world,
                 &[vp(outside, false), vp(inside, false)],
-                &[],
+                &RegionEvents::default(),
                 &linear
             )
             .is_ok()
@@ -13559,13 +13649,18 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&world, &[a, b], &[], &linear).is_ok(),
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_ok(),
             "the open corridor must route with no gate events"
         );
         // A close-gate seals the pass-through before the leg to `b` (fire_step 0 < 2).
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
-        let err =
-            route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
         assert!(
             err.message.contains("close-gate"),
@@ -13575,7 +13670,13 @@ mod tests {
         // Reopening the gate before the leg (open-gate at a later fire_step) restores it.
         let open = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Unseal, 1);
         assert!(
-            route_visited(&world, &[a, b], &[close, open], &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone(), open.clone()]),
+                &linear
+            )
+            .is_ok(),
             "a gate reopened by open-gate before the leg must route again"
         );
     }
@@ -13594,11 +13695,23 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         let fill = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&fill), &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![fill.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
         let clear = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Clear, 1);
         assert!(
-            route_visited(&world, &[a, b], &[fill, clear], &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![fill.clone(), clear.clone()]),
+                &linear
+            )
+            .is_ok(),
             "a region cleared before the leg must route again"
         );
     }
@@ -13634,7 +13747,7 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&world, &[a, b], &[], &linear).is_err(),
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_err(),
             "the chasm must not route before anything lays floor in it"
         );
         // FORCED, and it has to be: this test asserts the leg routes and exports,
@@ -13643,15 +13756,25 @@ mod tests {
         // `the_export_self_check_reads_a_legs_world_with_the_unforced_reading`.
         let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&plank), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![plank.clone()]),
+                &linear
+            )
+            .is_ok(),
             "the proof must credit floor the campaign lays from a beat the party cannot skip, \
              before the leg is walked"
         );
-        let legs: Vec<LegRoute> =
-            route_walked_legs(&world, &[a, b], std::slice::from_ref(&plank), &linear)
-                .into_iter()
-                .map(|(leg, _)| leg)
-                .collect();
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![plank.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
         assert_eq!(legs.len(), 1, "the walked leg must be exported");
         assert!(
             legs[0].cells.contains(&[2, 65, 0]),
@@ -13684,11 +13807,15 @@ mod tests {
         // FORCED for the same reason: the leg has to route at all before a later
         // pass can be shown to break it.
         let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
-        let legs: Vec<LegRoute> =
-            route_walked_legs(&world, &[a, b], std::slice::from_ref(&plank), &linear)
-                .into_iter()
-                .map(|(leg, _)| leg)
-                .collect();
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![plank.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
         // A later pass drops a block into a cell the proven route walks through.
         let mutated = world.with_sealed(&[[2, 65, 0]].into_iter().collect());
         let err = verify_exported_routes(&mutated, &legs)
@@ -13750,11 +13877,15 @@ mod tests {
 
         // --- forced: the leg routes, and the export self-check accepts it -------
         let forced = RegionEvent::forced(box_, RegionWrite::Fill, 0);
-        let legs: Vec<LegRoute> =
-            route_walked_legs(&world, &[a, b], std::slice::from_ref(&forced), &linear)
-                .into_iter()
-                .map(|(leg, _)| leg)
-                .collect();
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![forced.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
         assert_eq!(legs.len(), 1, "the forced plank must carry a walked leg");
         assert!(
             legs[0].cells.contains(&[2, 65, 0]),
@@ -13774,12 +13905,12 @@ mod tests {
             route_walked_legs(
                 &world,
                 &[a, b],
-                &[RegionEvent::unforced(
+                &RegionEvents::from(vec![RegionEvent::unforced(
                     box_,
                     RegionWrite::Fill,
                     0,
                     "a trap nobody must spring"
-                )],
+                )]),
                 &linear,
             )
             .is_empty(),
@@ -13820,10 +13951,11 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let legs: Vec<LegRoute> = route_walked_legs(&world, &[a, b], &[], &linear)
-            .into_iter()
-            .map(|(leg, _)| leg)
-            .collect();
+        let legs: Vec<LegRoute> =
+            route_walked_legs(&world, &[a, b], &RegionEvents::default(), &linear)
+                .into_iter()
+                .map(|(leg, _)| leg)
+                .collect();
         assert_eq!(legs.len(), 1);
         assert!(
             legs[0].proven_world(&world).is_none(),
@@ -13852,12 +13984,23 @@ mod tests {
         let floor_box = ([2, 64, 0], [2, 64, 0]);
         let solid_fill = RegionEvent::forced(floor_box, RegionWrite::Fill, 0);
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&solid_fill), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![solid_fill.clone()]),
+                &linear
+            )
+            .is_ok(),
             "filling a floor cell with a block leaves it floor"
         );
         let fluid_fill = RegionEvent::forced(floor_box, RegionWrite::Flood, 0);
-        let err =
-            route_visited(&world, &[a, b], std::slice::from_ref(&fluid_fill), &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![fluid_fill.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
         assert!(
             err.message.contains("[2, 64, 0]..[2, 64, 0]"),
@@ -13884,8 +14027,13 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         let flood = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Flood, 0);
-        let err =
-            route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         assert!(
             err.message.contains("FLUID"),
@@ -13914,7 +14062,13 @@ mod tests {
             vec![over_floor.clone(), wider_solid.clone()],
             vec![wider_solid, over_floor],
         ] {
-            let err = route_visited(&world, &[a, b], &events, &linear).unwrap_err();
+            let err = route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(events.to_vec()),
+                &linear,
+            )
+            .unwrap_err();
             assert_eq!(
                 err.code, DW_FLUID_FILL_ON_CRITICAL_PATH,
                 "a solid fill over the same cells must not dry the fluid out"
@@ -13941,7 +14095,13 @@ mod tests {
         // A different box (so it is a different region, with its own latest write)
         // covering the flooded floor cell and the air above it.
         let clear = RegionEvent::forced(([2, 64, 0], [2, 65, 0]), RegionWrite::Clear, 1);
-        let err = route_visited(&world, &[a, b], &[flood, clear], &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone(), clear.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH);
     }
 
@@ -13969,12 +14129,18 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&world, &[a, b], &[], &linear).is_err(),
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_err(),
             "the walled corridor must not route before the clear"
         );
         let clear = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Clear, 0);
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&clear), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![clear.clone()]),
+                &linear
+            )
+            .is_ok(),
             "the cleared wall must be passable from the DAG point the clear fires at"
         );
     }
@@ -13994,13 +14160,19 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&buried, &[a, b], &[], &linear).is_err(),
+            route_visited(&buried, &[a, b], &RegionEvents::default(), &linear).is_err(),
             "the debris blocks the corridor"
         );
         for write in [RegionWrite::Unseal, RegionWrite::Clear] {
             let ev = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), write, 0);
             assert!(
-                route_visited(&buried, &[a, b], std::slice::from_ref(&ev), &linear).is_err(),
+                route_visited(
+                    &buried,
+                    &[a, b],
+                    &RegionEvents::from(vec![ev.clone()]),
+                    &linear
+                )
+                .is_err(),
                 "{write:?} must not delete another proof's forced-solid cells"
             );
         }
@@ -14021,13 +14193,24 @@ mod tests {
         // (step 10) are three sibling branches — nothing at either end inherits it.
         let parallel = |g: usize, s: usize| !((g == 8 || g == 9) && (s == 9 || s == 10)) && g < s;
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&close), &parallel).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone()]),
+                &parallel
+            )
+            .is_ok(),
             "a close on a parallel branch must not seal a non-causal leg"
         );
         // Causal: step 8 (close) and step 9 are ancestors of step 10 (a forced
         // re-crossing with no reopen) → sealed → DW0311 (proof preserved).
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear)
-            .expect_err("a forced causal re-crossing of a sealed gate must fail");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        )
+        .expect_err("a forced causal re-crossing of a sealed gate must fail");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
     }
 
@@ -14044,23 +14227,33 @@ mod tests {
         // The close is the start's ancestor; neither it nor the start is the
         // arrival's.
         let unconnected = |g: usize, s: usize| !((g == 8 || g == 9) && s == 10) && g < s;
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close), &unconnected)
-            .expect_err("the start's own close shuts the leg");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &unconnected,
+        )
+        .expect_err("the start's own close shuts the leg");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // The start's own firing counts too: the close fires AT step 9.
         let at_start = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 9);
         let err = route_visited(
             &world,
             &[a, b],
-            std::slice::from_ref(&at_start),
+            &RegionEvents::from(vec![at_start.clone()]),
             &unconnected,
         )
         .expect_err("the close the start step fires shuts the leg");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // And the exported route agrees with the proof: no leg is routed.
         assert!(
-            route_walked_legs(&world, &[a, b], std::slice::from_ref(&close), &unconnected)
-                .is_empty(),
+            route_walked_legs(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone()]),
+                &unconnected
+            )
+            .is_empty(),
             "the harness is never handed a route the proof refused"
         );
     }
@@ -14075,14 +14268,16 @@ mod tests {
         let cps = vec![("cp/rest".to_string(), [0, 65, 0], 0usize)];
         let positions = vec![at_step([4, 65, 0], 1)];
         // Open gate → reachable.
-        assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
+        assert!(
+            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear).is_ok()
+        );
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = verify_checkpoints(
             &world,
             &cps,
             &positions,
-            std::slice::from_ref(&close),
+            &RegionEvents::from(vec![close.clone()]),
             &linear,
         )
         .unwrap_err();
@@ -14096,7 +14291,8 @@ mod tests {
         let world = split_world(65);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        let err = verify_checkpoints(&world, &cps, &positions, &[], &linear).unwrap_err();
+        let err = verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear)
+            .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
     }
 
@@ -14106,7 +14302,9 @@ mod tests {
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
+        assert!(
+            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear).is_ok()
+        );
     }
 
     #[test]
@@ -14114,7 +14312,8 @@ mod tests {
         // The checkpoint cell has no standable floor within snap radius.
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
-        let err = verify_checkpoints(&world, &cps, &[], &[], &linear).unwrap_err();
+        let err =
+            verify_checkpoints(&world, &cps, &[], &RegionEvents::default(), &linear).unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
     }
 
@@ -15271,12 +15470,17 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         let close = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Fill, 0);
-        let open_legs = route_walked_legs(&world, &[a, b], &[], &linear);
+        let open_legs = route_walked_legs(&world, &[a, b], &RegionEvents::default(), &linear);
         assert!(
             open_legs[0].0.cells.contains(&[2, 65, 0]),
             "with the gate open the export takes the short lane"
         );
-        let sealed_legs = route_walked_legs(&world, &[a, b], std::slice::from_ref(&close), &linear);
+        let sealed_legs = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        );
         assert_eq!(sealed_legs.len(), 1, "the leg is still routable via z=2");
         assert!(
             !sealed_legs[0].0.cells.contains(&[2, 65, 0]),
@@ -15308,7 +15512,7 @@ mod tests {
         let traps = [lethal_trap(tc, TrapReset::Rearm, None)];
         let spawn = [[0, 65, 0]];
 
-        let open_legs = route_walked_legs(&world, &[a, b], &[], &linear);
+        let open_legs = route_walked_legs(&world, &[a, b], &RegionEvents::default(), &linear);
         let open_required: BTreeSet<[i32; 3]> = open_legs
             .iter()
             .flat_map(|(l, _)| l.cells.clone())
@@ -15318,7 +15522,12 @@ mod tests {
             "with the gate open the plate is genuinely avoidable"
         );
 
-        let sealed_legs = route_walked_legs(&world, &[a, b], std::slice::from_ref(&close), &linear);
+        let sealed_legs = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        );
         let sealed_required: BTreeSet<[i32; 3]> = sealed_legs
             .iter()
             .flat_map(|(l, _)| l.cells.clone())
@@ -15578,13 +15787,24 @@ mod tests {
 
         let forced = RegionEvent::forced(gap, RegionWrite::Fill, 0);
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&forced), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![forced.clone()]),
+                &linear
+            )
+            .is_ok(),
             "a plank the party cannot avoid laying is floor they certainly have"
         );
 
         let unforced = RegionEvent::unforced(gap, RegionWrite::Fill, 0, "the payload of trap `t`");
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&unforced), &linear)
-            .expect_err("a plank laid by a skippable beat may not carry the forced path");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![unforced.clone()]),
+            &linear,
+        )
+        .expect_err("a plank laid by a skippable beat may not carry the forced path");
         assert_eq!(err.code, DW_UNFORCED_FOOTING); // DW0546
         assert!(
             err.message.contains("[2, 64, 0]..[2, 64, 0]"),
@@ -15616,8 +15836,13 @@ mod tests {
             0,
             "the payload of trap `t`",
         );
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&wall), &linear)
-            .expect_err("an unforced fill across the corridor is still a wall");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![wall.clone()]),
+            &linear,
+        )
+        .expect_err("an unforced fill across the corridor is still a wall");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
         assert!(
             err.message.contains("close-gate") && err.message.contains("NOT forced"),
@@ -15643,7 +15868,13 @@ mod tests {
             "the payload of trap `t`",
         );
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&repave), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![repave.clone()]),
+                &linear
+            )
+            .is_ok(),
             "a fill over a cell that was already floor takes nothing away"
         );
     }
@@ -15662,7 +15893,13 @@ mod tests {
             RegionEvent::forced(gap, RegionWrite::Fill, 2),
         ];
         assert!(
-            route_visited(&world, &[a, b], &events, &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(events.to_vec()),
+                &linear
+            )
+            .is_ok(),
             "a beat the party must complete re-lays the plank for certain"
         );
     }
@@ -15681,8 +15918,13 @@ mod tests {
             0,
             "the payload of trap `t`",
         );
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear)
-            .expect_err("a fluid fill takes the floor away whoever fires it");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone()]),
+            &linear,
+        )
+        .expect_err("a fluid fill takes the floor away whoever fires it");
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
     }
 }
