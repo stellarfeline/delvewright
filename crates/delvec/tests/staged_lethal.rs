@@ -113,6 +113,64 @@ fn anchors() -> serde_json::Value {
     })
 }
 
+/// Write the lid room into the library at `lib`: the metadata the shared
+/// helper writes, and the structure in a byte-stable encoding.
+///
+/// `common::structure_nbt` builds its compounds from a `HashMap`, whose
+/// iteration order — and so the template's bytes — differs between processes.
+/// The structure is copied into the datapack, so a manifest compared across
+/// processes would move for a reason that is not the engine's; this writes the
+/// same template through serde structs, whose field order is fixed.
+fn write_room(lib: &Path, room: Room) {
+    let cells = cells(room);
+    common::write_single_prefab(lib, ROOM, SIZE, &cells, anchors());
+    #[derive(serde::Serialize)]
+    struct Pal {
+        #[serde(rename = "Name")]
+        name: String,
+    }
+    #[derive(serde::Serialize)]
+    struct Blk {
+        pos: Vec<i32>,
+        state: i32,
+    }
+    #[derive(serde::Serialize)]
+    struct Root {
+        size: Vec<i32>,
+        #[serde(rename = "DataVersion")]
+        data_version: i32,
+        palette: Vec<Pal>,
+        blocks: Vec<Blk>,
+    }
+    let mut names: Vec<&str> = Vec::new();
+    let mut blocks: Vec<Blk> = Vec::new();
+    for (p, n) in &cells {
+        let state = names.iter().position(|x| x == n).unwrap_or_else(|| {
+            names.push(n);
+            names.len() - 1
+        });
+        blocks.push(Blk {
+            pos: p.to_vec(),
+            state: state as i32,
+        });
+    }
+    let root = Root {
+        size: SIZE.to_vec(),
+        data_version: 4671,
+        palette: names
+            .iter()
+            .map(|n| Pal {
+                name: (*n).to_string(),
+            })
+            .collect(),
+        blocks,
+    };
+    let raw = fastnbt::to_bytes(&root).unwrap();
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut enc, &raw).unwrap();
+    std::fs::write(lib.join(format!("{ROOM}.nbt")), enc.finish().unwrap()).unwrap();
+}
+
 /// A fresh directory under the test target's scratch space.
 fn scratch(tag: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -182,7 +240,7 @@ impl Case {
     fn write(&self, tag: &str) -> (PathBuf, PathBuf) {
         let root = scratch(tag);
         let lib = root.join("prefabs");
-        common::write_single_prefab(&lib, ROOM, SIZE, &cells(self.room), anchors());
+        write_room(&lib, self.room);
         let dir = common::campaign_bound_to(&root.join("campaign"), ROOM);
         // The cell over the lid measures dark under the ceiling's light; the
         // lighting gate is not what this file is about.
@@ -1053,7 +1111,7 @@ fn a_staged_volume_judged_in_no_configuration_is_red() {
 fn the_branch_that_arms_the_volume_is_refused_on_its_own_path() {
     let root = scratch("branch");
     let lib = root.join("prefabs");
-    common::write_single_prefab(&lib, ROOM, SIZE, &cells(waist_room()), anchors());
+    write_room(&lib, waist_room());
     let dir = root.join("campaign");
     common::copy_dir_all(
         &common::compiler_fixtures_dir().join("branch-two-endings"),
@@ -1103,4 +1161,75 @@ fn the_branch_that_arms_the_volume_is_refused_on_its_own_path() {
         );
     });
     try_build(&dir, &lib).unwrap_or_else(|e| panic!("both branches walk it dead: {e:?}"));
+}
+
+// --- AC1: a campaign that stages nothing builds as it did -------------------
+
+/// The manifest of a build: every output path and the sha256 of its bytes.
+fn manifest(out: &BuildOutput) -> BTreeMap<String, String> {
+    use sha2::{Digest, Sha256};
+    out.iter()
+        .map(|(k, v)| (k.clone(), format!("{:x}", Sha256::digest(v))))
+        .collect()
+}
+
+/// The two validation ledgers whose formats this change moves on purpose
+/// (spec-0088 §8, §9), and the build manifest that hashes them. Every other
+/// path must match the engine before staging, byte for byte.
+const MOVED_ON_PURPOSE: [&str; 3] = [
+    "validation/death-plan.json",
+    "validation/lethal-gate.json",
+    "manifest.json",
+];
+
+/// **The staged case with `when` removed builds as `2316b1c6` built it.**
+///
+/// `golden/staged-lethal/unstaged-at-2316b1c6.json` is the manifest of this
+/// very case built in-process by the engine at `2316b1c6` (the revision before
+/// staging), through the same fixture builder. Every emitted path is compared:
+/// the tick, every function, every PackTest template and every ledger match,
+/// except the three [`MOVED_ON_PURPOSE`] — `death-plan.json` carries format 4
+/// and an empty `gate` on every volume row, `lethal-gate.json` carries
+/// `staged[]` and one danger row per (volume, configuration), and the
+/// manifest hashes both. Each of the three is asserted to differ, so the
+/// exclusion stays justified: a path that stopped moving leaves it.
+#[test]
+fn the_unstaged_case_builds_as_the_engine_before_staging_built_it() {
+    let golden: BTreeMap<String, String> = serde_json::from_str(
+        &std::fs::read_to_string(
+            common::repo_root()
+                .join("crates/delvec/tests/golden/staged-lethal/unstaged-at-2316b1c6.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let (out, _) = build(&Case::new(PIT_ALWAYS).talk(DROP_LID), "unstaged-golden");
+    let now = manifest(&out);
+    let paths: std::collections::BTreeSet<&String> = golden.keys().chain(now.keys()).collect();
+    let mut moved: Vec<&str> = Vec::new();
+    for p in &paths {
+        if golden.get(*p) != now.get(*p) {
+            moved.push(p.as_str());
+        }
+    }
+    println!(
+        "unstaged golden: {} path(s) compared, {} moved: {moved:?}",
+        paths.len(),
+        moved.len()
+    );
+    let unexplained: Vec<&&str> = moved
+        .iter()
+        .filter(|p| !MOVED_ON_PURPOSE.contains(p))
+        .collect();
+    assert!(
+        unexplained.is_empty(),
+        "a campaign that stages nothing must build as the engine before staging built it; \
+         moved: {unexplained:?}"
+    );
+    for p in MOVED_ON_PURPOSE {
+        assert!(
+            moved.contains(&p),
+            "`{p}` no longer moves: drop it from MOVED_ON_PURPOSE"
+        );
+    }
 }
