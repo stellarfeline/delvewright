@@ -491,7 +491,13 @@ fn padded_prefabs(tag: &str, cuts: &Cuts, pad: i32) -> PathBuf {
         a["pos"][0] = json!(x + i64::from(pad));
     }
     let [sx, sy, sz] = corridor::SIZE;
-    common::write_single_prefab(&dir, "long-gallery", [sx + 2 * pad, sy, sz], &cells, anchors);
+    common::write_single_prefab(
+        &dir,
+        "long-gallery",
+        [sx + 2 * pad, sy, sz],
+        &cells,
+        anchors,
+    );
     common::declare_shown_faces(&dir, "long-gallery");
     dir
 }

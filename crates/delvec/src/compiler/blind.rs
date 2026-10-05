@@ -478,8 +478,7 @@ pub fn judge(
     if found.is_empty() {
         return (binding, Ok(()));
     }
-    let population =
-        open.reachable_walkable(&crate::compiler::lethal::put_at_roots(plan, entry));
+    let population = open.reachable_walkable(&crate::compiler::lethal::put_at_roots(plan, entry));
     let body = delvewright_dsl::metrics::Body::PLAYER;
     let keep_outs: Vec<(&str, Box3)> = plan
         .lethal_volumes

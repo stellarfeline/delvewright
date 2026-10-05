@@ -2073,19 +2073,31 @@ mod tests {
         let eye = [[0.5, 1.62, 0.5]];
         let target = [0, 1, 6];
         let open = world(&[], &[], &[]);
-        assert_eq!(sight(&open, &eye, &[FOG_END_DEFAULT], target).0, Sight::Seen);
+        assert_eq!(
+            sight(&open, &eye, &[FOG_END_DEFAULT], target).0,
+            Sight::Seen
+        );
         // A fence on every cell of the plane between: the fence's own class is
         // what blocks it, not a solid.
         let fence: Vec<[i32; 3]> = (-2..=2)
             .flat_map(|x| (-1..=4).map(move |y| [x, y, 3]))
             .collect();
         let fenced = world(&[], &fence, &[]);
-        assert_eq!(sight(&fenced, &eye, &[FOG_END_DEFAULT], target).0, Sight::Hidden);
+        assert_eq!(
+            sight(&fenced, &eye, &[FOG_END_DEFAULT], target).0,
+            Sight::Hidden
+        );
         let flooded = world(&[], &[], &fence);
-        assert_eq!(sight(&flooded, &eye, &[FOG_END_DEFAULT], target).0, Sight::Seen);
+        assert_eq!(
+            sight(&flooded, &eye, &[FOG_END_DEFAULT], target).0,
+            Sight::Seen
+        );
         // The target cell itself may be a wall: it is what the eye sees.
         let wall = world(&[target], &[], &[]);
-        assert_eq!(sight(&wall, &eye, &[FOG_END_DEFAULT], target).0, Sight::Seen);
+        assert_eq!(
+            sight(&wall, &eye, &[FOG_END_DEFAULT], target).0,
+            Sight::Seen
+        );
     }
 
     fn plan_loop(offset: [i32; 3]) -> LoopPlan {

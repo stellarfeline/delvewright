@@ -14,7 +14,10 @@ use crate::firework::FireworkExplosion;
 use crate::layout::StationKind;
 
 use crate::ids::{
-    ActorId, AmbushId, AnchorId, AreaId, AssemblyId, AtmosphereId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId, EndingId, FlagId, LethalVolumeId, LoopId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, RigId, ShopId, ShortcutId, StakeId, StateId, TimedGateId, TrapId, TriggerId, WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, AssemblyId, AtmosphereId, BranchId, BranchPointId,
+    ClassId, DialogueId, EditBatchId, EndingId, FlagId, LethalVolumeId, LoopId, LootId, NpcId,
+    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, RigId, ShopId, ShortcutId, StakeId, StateId,
+    TimedGateId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
