@@ -2927,6 +2927,12 @@ pub fn gate_flags(c: &Campaign) -> BTreeSet<String> {
             });
         }
     });
+    // spec-0088: a lethal volume live from a story stage reads its flags too.
+    for v in &c.quests.content.lethal_volumes {
+        let g = v.gate();
+        eat(g.requires_flags, &mut out);
+        eat(g.forbids_flags, &mut out);
+    }
     out
 }
 

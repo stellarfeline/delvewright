@@ -1,0 +1,563 @@
+{
+  "instrument": {
+    "server": "itzg/minecraft-server@sha256:3e7db256… (versions.toml [images.base]), vanilla 1.21.11, flat (stone top y 0), hard, view-distance 8",
+    "bot": "mineflayer 4.37.1 (harness pin), one body, standing still (no controls held)",
+    "rig": "tools/spike-staged-lethal/spikepack: tick `execute if score #party dwsl.f matches 1 run function dwsl:lethal`; volume A cells x100..102 y1..2 z100..102, volume B x110..112 y2..3 z100..102; `dwsl:arm` stamps `time query gametime` and sets the score in one function; `dwsl:lethal` stamps the tick it first matches a body and `damage @s 1000 minecraft:generic`s it",
+    "body": {
+      "half_width": 0.3,
+      "height": 1.8
+    },
+    "reps_per_point": 3,
+    "watch_ms": 3000
+  },
+  "control": {
+    "point": "inside",
+    "gate": "shut",
+    "pos": [
+      101.5,
+      1,
+      101.5
+    ],
+    "body_meets_box": true,
+    "health_before": 20,
+    "ticks_watched": 61,
+    "kill_tick": -1,
+    "kills_counted": 0,
+    "health_after": 20,
+    "client_death_events": 0
+  },
+  "trials": [
+    {
+      "point": "inside",
+      "volume": "A",
+      "rep": 1,
+      "requested": [
+        101.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        101.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        101,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 317,
+      "kill_tick": 317,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 324,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 104,
+      "died": true
+    },
+    {
+      "point": "inside",
+      "volume": "A",
+      "rep": 2,
+      "requested": [
+        101.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        101.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        101,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 432,
+      "kill_tick": 432,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 437,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 114,
+      "died": true
+    },
+    {
+      "point": "inside",
+      "volume": "A",
+      "rep": 3,
+      "requested": [
+        101.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        101.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        101,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 548,
+      "kill_tick": 548,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 552,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 126,
+      "died": true
+    },
+    {
+      "point": "ring-near",
+      "volume": "A",
+      "rep": 1,
+      "requested": [
+        103.25,
+        1,
+        101.5
+      ],
+      "pos": [
+        103.25,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        103,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 659,
+      "kill_tick": 659,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 664,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 91,
+      "died": true
+    },
+    {
+      "point": "ring-near",
+      "volume": "A",
+      "rep": 2,
+      "requested": [
+        103.25,
+        1,
+        101.5
+      ],
+      "pos": [
+        103.25,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        103,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 772,
+      "kill_tick": 772,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 777,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 130,
+      "died": true
+    },
+    {
+      "point": "ring-near",
+      "volume": "A",
+      "rep": 3,
+      "requested": [
+        103.25,
+        1,
+        101.5
+      ],
+      "pos": [
+        103.25,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        103,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 886,
+      "kill_tick": 886,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 892,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 124,
+      "died": true
+    },
+    {
+      "point": "ring-far",
+      "volume": "A",
+      "rep": 1,
+      "requested": [
+        103.75,
+        1,
+        101.5
+      ],
+      "pos": [
+        103.75,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        103,
+        1,
+        101
+      ],
+      "body_meets_box": false,
+      "health_before": 20,
+      "set_tick": 1001,
+      "kill_tick": null,
+      "ticks_from_arm_to_kill": null,
+      "gametime_at_end_of_watch": 1065,
+      "kills_counted": 0,
+      "health_after": 20,
+      "client_death_events": 0,
+      "client_death_ms_after_arm": null,
+      "died": false
+    },
+    {
+      "point": "ring-far",
+      "volume": "A",
+      "rep": 2,
+      "requested": [
+        103.75,
+        1,
+        101.5
+      ],
+      "pos": [
+        103.75,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        103,
+        1,
+        101
+      ],
+      "body_meets_box": false,
+      "health_before": 20,
+      "set_tick": 1093,
+      "kill_tick": null,
+      "ticks_from_arm_to_kill": null,
+      "gametime_at_end_of_watch": 1157,
+      "kills_counted": 0,
+      "health_after": 20,
+      "client_death_events": 0,
+      "client_death_ms_after_arm": null,
+      "died": false
+    },
+    {
+      "point": "ring-far",
+      "volume": "A",
+      "rep": 3,
+      "requested": [
+        103.75,
+        1,
+        101.5
+      ],
+      "pos": [
+        103.75,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        103,
+        1,
+        101
+      ],
+      "body_meets_box": false,
+      "health_before": 20,
+      "set_tick": 1184,
+      "kill_tick": null,
+      "ticks_from_arm_to_kill": null,
+      "gametime_at_end_of_watch": 1249,
+      "kills_counted": 0,
+      "health_after": 20,
+      "client_death_events": 0,
+      "client_death_ms_after_arm": null,
+      "died": false
+    },
+    {
+      "point": "outside",
+      "volume": "A",
+      "rep": 1,
+      "requested": [
+        104.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        104.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        104,
+        1,
+        101
+      ],
+      "body_meets_box": false,
+      "health_before": 20,
+      "set_tick": 1277,
+      "kill_tick": null,
+      "ticks_from_arm_to_kill": null,
+      "gametime_at_end_of_watch": 1342,
+      "kills_counted": 0,
+      "health_after": 20,
+      "client_death_events": 0,
+      "client_death_ms_after_arm": null,
+      "died": false
+    },
+    {
+      "point": "outside",
+      "volume": "A",
+      "rep": 2,
+      "requested": [
+        104.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        104.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        104,
+        1,
+        101
+      ],
+      "body_meets_box": false,
+      "health_before": 20,
+      "set_tick": 1372,
+      "kill_tick": null,
+      "ticks_from_arm_to_kill": null,
+      "gametime_at_end_of_watch": 1440,
+      "kills_counted": 0,
+      "health_after": 20,
+      "client_death_events": 0,
+      "client_death_ms_after_arm": null,
+      "died": false
+    },
+    {
+      "point": "outside",
+      "volume": "A",
+      "rep": 3,
+      "requested": [
+        104.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        104.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        104,
+        1,
+        101
+      ],
+      "body_meets_box": false,
+      "health_before": 20,
+      "set_tick": 1470,
+      "kill_tick": null,
+      "ticks_from_arm_to_kill": null,
+      "gametime_at_end_of_watch": 1534,
+      "kills_counted": 0,
+      "health_after": 20,
+      "client_death_events": 0,
+      "client_death_ms_after_arm": null,
+      "died": false
+    },
+    {
+      "point": "under",
+      "volume": "B",
+      "rep": 1,
+      "requested": [
+        111.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        111.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        111,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 1562,
+      "kill_tick": 1562,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 1568,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 128,
+      "died": true
+    },
+    {
+      "point": "under",
+      "volume": "B",
+      "rep": 2,
+      "requested": [
+        111.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        111.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        111,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 1674,
+      "kill_tick": 1674,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 1678,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 126,
+      "died": true
+    },
+    {
+      "point": "under",
+      "volume": "B",
+      "rep": 3,
+      "requested": [
+        111.5,
+        1,
+        101.5
+      ],
+      "pos": [
+        111.5,
+        1,
+        101.5
+      ],
+      "feet_cell": [
+        111,
+        1,
+        101
+      ],
+      "body_meets_box": true,
+      "health_before": 20,
+      "set_tick": 1787,
+      "kill_tick": 1787,
+      "ticks_from_arm_to_kill": 0,
+      "gametime_at_end_of_watch": 1793,
+      "kills_counted": 1,
+      "health_after": 20,
+      "client_death_events": 1,
+      "client_death_ms_after_arm": 160,
+      "died": true
+    }
+  ],
+  "summary": {
+    "inside": {
+      "trials": 3,
+      "body_meets_box": [
+        true
+      ],
+      "died": 3,
+      "ticks_from_arm_to_kill": [
+        0
+      ],
+      "kills_counted": [
+        1
+      ]
+    },
+    "ring-near": {
+      "trials": 3,
+      "body_meets_box": [
+        true
+      ],
+      "died": 3,
+      "ticks_from_arm_to_kill": [
+        0
+      ],
+      "kills_counted": [
+        1
+      ]
+    },
+    "ring-far": {
+      "trials": 3,
+      "body_meets_box": [
+        false
+      ],
+      "died": 0,
+      "ticks_from_arm_to_kill": [
+        null
+      ],
+      "kills_counted": [
+        0
+      ]
+    },
+    "outside": {
+      "trials": 3,
+      "body_meets_box": [
+        false
+      ],
+      "died": 0,
+      "ticks_from_arm_to_kill": [
+        null
+      ],
+      "kills_counted": [
+        0
+      ]
+    },
+    "under": {
+      "trials": 3,
+      "body_meets_box": [
+        true
+      ],
+      "died": 3,
+      "ticks_from_arm_to_kill": [
+        0
+      ],
+      "kills_counted": [
+        1
+      ]
+    }
+  }
+}

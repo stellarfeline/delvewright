@@ -1414,8 +1414,14 @@ pub fn build_with_warnings(
                         world.lethal_cells(),
                         lethal_seats,
                         crate::compiler::nav::critical_leg_count(plan),
-                        // One template per resolved volume (see `emit_packtest`).
-                        plan.lethal_volumes.len(),
+                        // One template per resolved volume, and a `_shut` one
+                        // more per staged volume (see `emit_lethal_packtests`).
+                        plan.lethal_volumes.len()
+                            + plan
+                                .lethal_volumes
+                                .iter()
+                                .filter(|v| v.staged.is_some())
+                                .count(),
                         danger,
                     ));
                     if let Some(g) = lethal_gate.as_mut() {
@@ -10057,12 +10063,116 @@ fn lethal_box(v: &crate::compiler::plan::LethalVolumePlan) -> String {
 /// The per-tick driver lines for the campaign's lethal volumes (spec-0031), in
 /// declaration order. Empty for a campaign that declares none, so the emitted
 /// `tick` is byte-identical for everybody who has not opted in.
+///
+/// A volume live from a story stage (spec-0088) is driven through its own
+/// `lethal_<id>_tick`, whose one line guards the volume on its gate; a volume
+/// live from world-load is driven directly, as it always has been.
 fn lethal_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     plan.lethal_volumes
         .iter()
-        .map(|v| format!("function {ns}:lethal_{}", v.safe))
+        .map(|v| match v.staged {
+            Some(_) => format!("function {ns}:lethal_{}_tick", v.safe),
+            None => format!("function {ns}:lethal_{}", v.safe),
+        })
         .collect()
+}
+
+/// The one line of a staged volume's `lethal_<id>_tick` (spec-0088 §7):
+/// `execute <terms> run function <ns>:lethal_<id>`, with `<terms>` the gate's
+/// [`crate::compiler::plan::GateTerm`]s each rendered by `clause(false)` — the
+/// formatter every effect guard and every trigger gate is written by, so the
+/// volume cannot disagree with them about what a term means.
+fn lethal_stage_line(ns: &str, safe: &str, gate: &crate::compiler::plan::StagedGate) -> String {
+    let terms: Vec<String> = gate.terms.iter().map(|t| t.clause(false)).collect();
+    format!(
+        "execute {} run function {ns}:lethal_{safe}",
+        terms.join(" ")
+    )
+}
+
+/// The scoreboard lines that put a staged volume's gate **open** (`open`) or
+/// **shut by exactly one term** (spec-0088 §7), for a PackTest template.
+///
+/// Open: every required flag 1, every forbidden flag reset, every numeric datum
+/// on the value [`delvewright_dsl::gate::DatumSet::pick`] chooses from the set
+/// its terms admit. Shut: the open state with one term broken — the first
+/// required flag reset, else the first forbidden flag set, else the first
+/// numeric datum on a value its first term refuses.
+fn lethal_gate_lines(gate: &crate::compiler::plan::StagedGate, open: bool) -> Vec<String> {
+    let party = plan::PARTY;
+    let mut out: Vec<String> = Vec::new();
+    for f in &gate.requires_flags {
+        out.push(format!(
+            "scoreboard players set {party} {} 1",
+            plan::flag_score(f)
+        ));
+    }
+    for f in &gate.forbids_flags {
+        out.push(format!(
+            "scoreboard players reset {party} {}",
+            plan::flag_score(f)
+        ));
+    }
+    let mut per: BTreeMap<&str, delvewright_dsl::gate::DatumSet> = BTreeMap::new();
+    for c in &gate.requires_state {
+        per.entry(c.state.as_str())
+            .or_default()
+            .require(c.op, c.value);
+    }
+    for (state, set) in &per {
+        if let Some(v) = set.pick() {
+            out.push(format!(
+                "scoreboard players set {party} {} {v}",
+                plan::state_score(state)
+            ));
+        }
+    }
+    if open {
+        return out;
+    }
+    if let Some(f) = gate.requires_flags.first() {
+        out.push(format!(
+            "scoreboard players reset {party} {}",
+            plan::flag_score(f)
+        ));
+    } else if let Some(f) = gate.forbids_flags.first() {
+        out.push(format!(
+            "scoreboard players set {party} {} 1",
+            plan::flag_score(f)
+        ));
+    } else if let Some(c) = gate.requires_state.first() {
+        let mut off = delvewright_dsl::gate::DatumSet::all();
+        off.forbid(c.op, c.value);
+        if let Some(v) = off.pick() {
+            out.push(format!(
+                "scoreboard players set {party} {} {v}",
+                plan::state_score(c.state.as_str())
+            ));
+        }
+    }
+    out
+}
+
+/// The lines that put back every score [`lethal_gate_lines`] touched, so a
+/// template leaves no campaign state for a sibling on the shared-batch server.
+fn lethal_gate_reset(gate: &crate::compiler::plan::StagedGate) -> Vec<String> {
+    let party = plan::PARTY;
+    let flags = gate.requires_flags.iter().chain(&gate.forbids_flags);
+    let mut out: Vec<String> = flags
+        .map(|f| format!("scoreboard players reset {party} {}", plan::flag_score(f)))
+        .collect();
+    let states: BTreeSet<&str> = gate
+        .requires_state
+        .iter()
+        .map(|c| c.state.as_str())
+        .collect();
+    out.extend(
+        states
+            .into_iter()
+            .map(|st| format!("scoreboard players reset {party} {}", plan::state_score(st))),
+    );
+    out
 }
 
 /// Generate one function per lethal volume (spec-0031).
@@ -10102,6 +10212,12 @@ fn emit_lethal_functions(plan: &Plan) -> Vec<(String, String)> {
     for v in &plan.lethal_volumes {
         let bx = lethal_box(v);
         let kind = v.damage_type.id();
+        if let Some(gate) = &v.staged {
+            fns.push((
+                format!("lethal_{}_tick", v.safe),
+                lines(&[lethal_stage_line(ns, &v.safe, gate)]),
+            ));
+        }
         let exempt: String = LETHAL_EXEMPT_TYPES
             .iter()
             .map(|t| format!(",type=!{t}"))
@@ -22054,12 +22170,61 @@ fn emit_lethal_packtests(plan: &Plan, out: &mut BuildOutput) {
             lethal_box(v)
         ));
         t.push("assert score #in_leth dw.sys matches 1".to_string());
-        t.push(format!("function {ns}:lethal_{}", v.safe));
+        // A staged volume (spec-0088) is driven through its guard with the gate
+        // set OPEN, so a stripped sweep reds this template; the `_shut` one
+        // below reds a stripped guard.
+        match &v.staged {
+            Some(gate) => {
+                t.extend(lethal_gate_lines(gate, true));
+                t.push(format!("function {ns}:lethal_{}_tick", v.safe));
+            }
+            None => t.push(format!("function {ns}:lethal_{}", v.safe)),
+        }
         t.push(format!(
             "execute store result score #hp_leth dw.sys run data get entity {sel} Health 100"
         ));
         t.push("assert score #hp_leth dw.sys matches ..0".to_string());
         t.push(format!("kill @e[tag={tag}]"));
+        if let Some(gate) = &v.staged {
+            t.extend(lethal_gate_reset(gate));
+            // --- the shut half: the guard withholds the volume completely ---
+            let stag = format!("dw_lethshut_{}", v.safe);
+            let ssel = format!("@e[tag={stag},limit=1]");
+            let mut sh = packtest_header(&format!(
+                "{title}: staged lethal volume `{}` withholds its kill while its gate is shut \
+                 (spec-0088)",
+                v.id
+            ));
+            sh.push(format!("function {ns}:setup"));
+            sh.push(format!("kill @e[tag={stag}]"));
+            sh.push(format!(
+                "summon minecraft:zombie {} {} {} \
+                 {{Tags:[\"{stag}\"],NoAI:1b,Silent:1b,PersistenceRequired:1b,Health:20f}}",
+                mid[0] as f64 + 0.5,
+                mid[1],
+                mid[2] as f64 + 0.5
+            ));
+            sh.push(format!(
+                "execute store result score #in_lshut dw.sys if entity @e[tag={stag},{}]",
+                lethal_box(v)
+            ));
+            sh.push("assert score #in_lshut dw.sys matches 1".to_string());
+            sh.extend(lethal_gate_lines(gate, false));
+            sh.push(format!("function {ns}:lethal_{}_tick", v.safe));
+            sh.push(format!(
+                "execute store result score #hp_lshut dw.sys run data get entity {ssel} Health"
+            ));
+            sh.push("assert score #hp_lshut dw.sys matches 20".to_string());
+            sh.push(format!("kill @e[tag={stag}]"));
+            sh.extend(lethal_gate_reset(gate));
+            out.insert(
+                format!(
+                    "packtest-datapack/data/{ns}/test/lethal_{}_shut.mcfunction",
+                    v.safe
+                ),
+                lines(&sh).into_bytes(),
+            );
+        }
         out.insert(
             format!(
                 "packtest-datapack/data/{ns}/test/lethal_{}.mcfunction",
