@@ -44,6 +44,7 @@ import {
   seatAtRespawn,
   stakesDropped,
   tableAnchor,
+  type Box,
   type DeathPlan,
   type GateTerm,
   type LethalTrial,
@@ -1425,5 +1426,20 @@ test("a staged volume shut at its trial is stated, counted apart, and exercises 
   assert.ok(
     stage.findings.some((f) => /was not live at its trial/.test(f) && /dw\.f_cold/.test(f)),
     JSON.stringify(stage.findings),
+  );
+});
+
+test("a blocked walk in reaches a rim three courses up, which the pathfinder walks to", () => {
+  // The gallery's lidded pit (spec-0088): its bottom is at the hall floor's own
+  // height inside the terrace annex, so the placement table's lip is the hall
+  // floor beside the annex at [8, 67, 3], and the way in is the annex's top at
+  // y 70, round the hole the beat opened over [8, 67, 5].
+  const pit: Box = { lo: [8, 67, 5], hi: [8, 67, 5] };
+  const rim = new Set(["7,70,5", "9,70,5", "8,70,4", "8,70,6", "8,67,3"]);
+  const got = wayInCandidates([8, 67, 3], pit, (c) => rim.has(c.join(",")));
+  assert.ok(got.length > 0, "a rim cell three courses up is a way in");
+  assert.ok(
+    got.every((c) => c[1] === 70),
+    `only the rim is nearer the volume than the lip: ${JSON.stringify(got)}`,
   );
 });
