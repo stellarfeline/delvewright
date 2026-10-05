@@ -974,6 +974,36 @@ pub(crate) fn liveness_of(
     Liveness { may, is: is && may }
 }
 
+/// A loop gate's terms in the words a route failure names (spec-0086 §5.1):
+/// `forbids_flags: flag/x`, `requires_state: state/n at-most 1`,
+/// `requires_flags: flag/y`, each in backticks, comma-separated.
+fn loop_gate_words(g: &StagedGate) -> String {
+    let mut out: Vec<String> = Vec::new();
+    out.extend(
+        g.forbids_flags
+            .iter()
+            .map(|f| format!("`forbids_flags: {f}`")),
+    );
+    out.extend(g.requires_state.iter().map(|c| {
+        format!(
+            "`requires_state: {} {} {}`",
+            c.state.as_str(),
+            c.op.token(),
+            c.value
+        )
+    }));
+    out.extend(
+        g.requires_flags
+            .iter()
+            .map(|f| format!("`requires_flags: {f}`")),
+    );
+    if out.is_empty() {
+        "{}".to_string()
+    } else {
+        out.join(", ")
+    }
+}
+
 /// One placed furniture region as the navigation model carries it — the plan's
 /// own type, `(anchor name, inclusive world box)` (spec-0065). Same shape as
 /// [`LethalRegion`] for the same reason: a proof that refuses over it has to be
@@ -1031,6 +1061,11 @@ pub struct World {
     /// for every campaign that stages none, which keeps every world and every
     /// region state byte-identical.
     staged_lethal: Vec<StagedVolume>,
+    /// Every loop's slab with its gate (spec-0086 §5.1): the slab is held —
+    /// impassable and never floor — in every configuration its gate may be open
+    /// in, read through [`liveness_of`] as a staged volume's is (spec-0088
+    /// §4.1). Empty for every campaign that declares no loop.
+    loop_slabs: Vec<StagedVolume>,
     /// Cells inside a declared **furniture** region (spec-0065): the blocks of a
     /// laid table, an altar, a counter, as the piece that built them declared.
     ///
@@ -1202,6 +1237,8 @@ pub struct Premises {
     lethal_regions: Vec<LethalRegion>,
     /// The volumes live from a story stage (spec-0088).
     staged_lethal: Vec<StagedVolume>,
+    /// Every loop's slab and gate (spec-0086).
+    loop_slabs: Vec<StagedVolume>,
     furniture_regions: Vec<FurnitureRegion>,
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
@@ -1244,6 +1281,15 @@ impl Premises {
                     })
                 })
                 .collect(),
+            loop_slabs: plan
+                .loops
+                .iter()
+                .map(|l| StagedVolume {
+                    id: l.id.clone(),
+                    region: l.slab,
+                    gate: l.staged_gate(plan.campaign),
+                })
+                .collect(),
             furniture_regions: plan.furniture.clone(),
             world_load_seals: seals,
             clocked_gates: plan.timed_gates.iter().map(|g| g.gate_region).collect(),
@@ -1283,6 +1329,7 @@ impl Premises {
             built: Vec::new(),
             lethal_regions: Vec::new(),
             staged_lethal: Vec::new(),
+            loop_slabs: Vec::new(),
             furniture_regions: Vec::new(),
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
@@ -1416,6 +1463,7 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1634,6 +1682,7 @@ impl World {
                 .collect(),
             lethal_regions: premises.lethal_regions,
             staged_lethal: premises.staged_lethal,
+            loop_slabs: premises.loop_slabs,
             furniture: premises
                 .furniture_regions
                 .iter()
@@ -1759,6 +1808,7 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned,
@@ -1802,6 +1852,7 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1853,6 +1904,7 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -1907,6 +1959,7 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -2008,6 +2061,7 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -2080,6 +2134,7 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
@@ -5113,8 +5168,12 @@ struct RegionState {
     /// Per region, the causally-latest **forced** write and the block it lays
     /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
     /// over the assembled bytes to give this configuration's block map.
-    laid: Vec<(crate::compiler::timeline::Region, Option<String>)>,
+    laid: Vec<LaidWrite>,
 }
+
+/// One region a forced write lays, with the block its command writes (`None` =
+/// air) — what [`RegionState::blocks_over`] lays over the assembled bytes.
+type LaidWrite = (([i32; 3], [i32; 3]), Option<String>);
 
 /// One box an unforced fill writes, with the beat that lays it in words — the blame
 /// unit [`DW_UNFORCED_FOOTING`] reports.
@@ -5334,8 +5393,6 @@ impl World {
                             st.laid.push((region, block));
                         }
                     }
-                    // spec-0086: a holding slab writes no byte.
-                    RegionWrite::Hold => {}
                 }
             }
             // An `Unseal` contributes to no set: it removes the gate's own block, and
@@ -5360,12 +5417,36 @@ impl World {
                     &mut st.flooded
                 }
                 RegionWrite::Unseal => continue,
-                RegionWrite::Hold => {
-                    st.held_regions.push((region, blame));
-                    &mut st.held
-                }
             };
             into.extend(crate::compiler::assembled::region_cells(region.0, region.1));
+        }
+        // spec-0086 §5.1: every loop slab whose gate may be open here holds,
+        // read through the same liveness a staged volume's gate is.
+        for (v, live) in
+            self.loop_slabs
+                .iter()
+                .zip(self.loop_liveness(region_events, arrival, ancestor))
+        {
+            if live.may {
+                st.held.extend(crate::compiler::assembled::region_cells(
+                    v.region.0, v.region.1,
+                ));
+                st.held_regions.push((
+                    v.region,
+                    format!(
+                        "the slab of loop `{}` ([{}, {}, {}]..[{}, {}, {}]), which holds at \
+                         critical-path step {arrival}: read there, its gate {} may be open",
+                        v.id,
+                        v.region.0[0],
+                        v.region.0[1],
+                        v.region.0[2],
+                        v.region.1[0],
+                        v.region.1[1],
+                        v.region.1[2],
+                        loop_gate_words(&v.gate)
+                    ),
+                ));
+            }
         }
         // spec-0088: every staged lethal volume that may be live here.
         for (v, live) in
@@ -5381,6 +5462,22 @@ impl World {
             }
         }
         st
+    }
+
+    /// **Whether each loop's slab may hold, and does, at this arrival**
+    /// (spec-0086 §5.1) — one [`Liveness`] per [`World::loop_slabs`] entry, in
+    /// declaration order, through [`liveness_of`]: the one reading of a gate
+    /// into a region state, shared with the staged lethal volumes.
+    pub(crate) fn loop_liveness(
+        &self,
+        events: &RegionEvents,
+        arrival: usize,
+        ancestor: &dyn Fn(usize, usize) -> bool,
+    ) -> Vec<Liveness> {
+        self.loop_slabs
+            .iter()
+            .map(|v| liveness_of(&v.gate, events, arrival, ancestor))
+            .collect()
     }
 
     /// **Which staged lethal volumes may be, and are, live at this arrival**
@@ -11895,6 +11992,7 @@ mod tests {
                 built: Vec::new(),
                 lethal_regions: vec![("lethal/the-pit".to_string(), region)],
                 staged_lethal: Vec::new(),
+                loop_slabs: Vec::new(),
                 furniture_regions: Vec::new(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
@@ -11935,6 +12033,7 @@ mod tests {
                 built: Vec::new(),
                 lethal_regions: Vec::new(),
                 staged_lethal: Vec::new(),
+                loop_slabs: Vec::new(),
                 furniture_regions: region
                     .map(|r| vec![("anchor/table".to_string(), r)])
                     .unwrap_or_default(),
@@ -12073,6 +12172,59 @@ mod tests {
     /// column, and a built volume covering exactly the plate. Vanilla runs that
     /// source off the plate and down: the shape of every shoreline piece placed
     /// against nothing.
+    /// spec-0083 × spec-0088: **a link's `to` is judged in the region state of
+    /// its leg** (`DW0932`'s "`to` not standable"), and that state carries every
+    /// staged lethal volume that may be live there: a landing on floor a volume
+    /// may hold live is not a cell a body stands on. The same floor with the
+    /// volume dead is.
+    #[test]
+    fn a_link_onto_floor_a_staged_volume_may_hold_live_is_not_standable() {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..12 {
+            blocks.insert([x, 63, 0], "minecraft:stone".to_string());
+        }
+        let occ = crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new());
+        let w = World::from_occupancy(occ, Premises::geometry_only());
+        let to = [10, 64, 0];
+        let link = crate::compiler::link::LinkPlan {
+            trigger_id: "trigger/t".to_string(),
+            on: "use",
+            anchor_id: Some("anchor/a".to_string()),
+            npc_id: None,
+            assembly_id: None,
+            range: None,
+            body: vec![[1, 64, 0]],
+            path: "/content/triggers/0/effects/0".to_string(),
+            from_anchor: "anchor/deck".to_string(),
+            from: ([0, 64, 0], [2, 65, 0]),
+            from_area: "area/a".to_string(),
+            to_anchor: "anchor/landing".to_string(),
+            to_area: "area/a".to_string(),
+            to,
+            tick: 0,
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
+            when_requires: Vec::new(),
+            when_forbids: Vec::new(),
+            writes: Vec::new(),
+        };
+        let dead = RegionState::default();
+        assert!(
+            to_standable(&w, &dead, &link),
+            "the landing floor stands, the volume dead"
+        );
+        let mut live = RegionState::default();
+        let pit = ([10, 64, 0], [10, 64, 0]);
+        live.lethal
+            .extend(crate::compiler::assembled::region_cells(pit.0, pit.1));
+        live.lethal_regions.push(("lethal/pit".to_string(), pit));
+        assert!(
+            !to_standable(&w, &live, &link),
+            "a landing a staged volume may hold live is not standable"
+        );
+    }
+
     fn plate_with_a_source_at_the_edge() -> World {
         let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
         for x in 0..3 {
@@ -17554,10 +17706,12 @@ mod staged_liveness_tests {
             production,
             vec![
                 "compiler/lethal.rs::never_held_term",
+                "compiler/nav.rs::loop_liveness",
                 "compiler/nav.rs::staged_liveness"
             ],
-            "liveness_of is read by staged_liveness (the lethal set) and by DW0954's \
-             per-term wording, and by nothing else: {callers:?}"
+            "liveness_of is read by staged_liveness (the lethal set), by loop_liveness \
+             (the held loop slabs, spec-0086) and by DW0954's per-term wording, and by \
+             nothing else: {callers:?}"
         );
         let nav = std::fs::read_to_string(root.join("compiler/nav.rs")).unwrap();
         let body = &nav[nav.find("fn region_state_inner(").unwrap()..];
@@ -17565,6 +17719,10 @@ mod staged_liveness_tests {
         assert!(
             body.contains(".staged_liveness(region_events, arrival, ancestor)"),
             "region_state_at's derivation calls staged_liveness"
+        );
+        assert!(
+            body.contains(".loop_liveness(region_events, arrival, ancestor)"),
+            "region_state_at's derivation calls loop_liveness"
         );
     }
 }

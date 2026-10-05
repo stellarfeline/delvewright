@@ -3124,12 +3124,13 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                             stage,
                             path,
                             format!(
-                                "lethal volume `{}` is staged on `{}`, which is `player`-scoped — \
-                                 a volume's liveness is a fact about the place, so a term one \
-                                 player satisfies and another does not would be a pit that kills \
-                                 one body and spares the one beside it, and the sweep's entity \
-                                 half has no player to read a per-player score from. Name a flag \
-                                 or a `party`-scoped datum in `when`, or leave `when` out",
+                                "lethal volume `{}` is staged on `{}`, which is `player`-scoped — a \
+                                 volume's liveness is a fact about the place, so a term one player \
+                                 satisfies and another does not would be a pit that kills one body \
+                                 and spares the one beside it, and the sweep's entity half has no \
+                                 player to read a per-player score from. Name a flag or a \
+                                 `party`-scoped datum in `when`, or leave `when` out to make the \
+                                 volume live from world-load",
                                 volume_id_at(c, &site.path),
                                 cmp.state.as_str()
                             ),

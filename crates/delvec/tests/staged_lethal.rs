@@ -113,6 +113,74 @@ fn anchors() -> serde_json::Value {
     })
 }
 
+/// Write the lid room into the library at `lib`: the metadata the shared
+/// helper writes, and the structure in a byte-stable encoding.
+///
+/// `common::structure_nbt` builds its compounds from a `HashMap`, whose
+/// iteration order — and so the template's bytes — differs between processes.
+/// The structure is copied into the datapack, so a manifest compared across
+/// processes would move for a reason that is not the engine's; this writes the
+/// same template through serde structs, whose field order is fixed.
+fn write_room(lib: &Path, room: Room) {
+    let cells = cells(room);
+    common::write_single_prefab(lib, ROOM, SIZE, &cells, anchors());
+    #[derive(serde::Serialize)]
+    struct Pal {
+        #[serde(rename = "Name")]
+        name: String,
+    }
+    #[derive(serde::Serialize)]
+    struct Blk {
+        pos: Vec<i32>,
+        state: i32,
+    }
+    #[derive(serde::Serialize)]
+    struct Root {
+        size: Vec<i32>,
+        #[serde(rename = "DataVersion")]
+        data_version: i32,
+        palette: Vec<Pal>,
+        blocks: Vec<Blk>,
+    }
+    // Every id the room is made of is judged against the pinned registry
+    // before a byte is written: an id the version lacks loads as air.
+    let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+    for (_, name) in &cells {
+        let verdict = registry.validate(name, &BTreeMap::new());
+        assert!(
+            verdict.is_ok(),
+            "the lid room's `{name}` is not a block: {verdict:?}"
+        );
+    }
+    let mut names: Vec<&str> = Vec::new();
+    let mut blocks: Vec<Blk> = Vec::new();
+    for (p, n) in &cells {
+        let state = names.iter().position(|x| x == n).unwrap_or_else(|| {
+            names.push(n);
+            names.len() - 1
+        });
+        blocks.push(Blk {
+            pos: p.to_vec(),
+            state: state as i32,
+        });
+    }
+    let root = Root {
+        size: SIZE.to_vec(),
+        data_version: 4671,
+        palette: names
+            .iter()
+            .map(|n| Pal {
+                name: (*n).to_string(),
+            })
+            .collect(),
+        blocks,
+    };
+    let raw = fastnbt::to_bytes(&root).unwrap();
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut enc, &raw).unwrap();
+    std::fs::write(lib.join(format!("{ROOM}.nbt")), enc.finish().unwrap()).unwrap();
+}
+
 /// A fresh directory under the test target's scratch space.
 fn scratch(tag: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -182,7 +250,7 @@ impl Case {
     fn write(&self, tag: &str) -> (PathBuf, PathBuf) {
         let root = scratch(tag);
         let lib = root.join("prefabs");
-        common::write_single_prefab(&lib, ROOM, SIZE, &cells(self.room), anchors());
+        write_room(&lib, self.room);
         let dir = common::campaign_bound_to(&root.join("campaign"), ROOM);
         // The cell over the lid measures dark under the ceiling's light; the
         // lighting gate is not what this file is about.
@@ -1053,7 +1121,7 @@ fn a_staged_volume_judged_in_no_configuration_is_red() {
 fn the_branch_that_arms_the_volume_is_refused_on_its_own_path() {
     let root = scratch("branch");
     let lib = root.join("prefabs");
-    common::write_single_prefab(&lib, ROOM, SIZE, &cells(waist_room()), anchors());
+    write_room(&lib, waist_room());
     let dir = root.join("campaign");
     common::copy_dir_all(
         &common::compiler_fixtures_dir().join("branch-two-endings"),

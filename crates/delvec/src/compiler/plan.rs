@@ -874,14 +874,6 @@ pub enum RegionWrite {
     /// unseal still takes part in latest-write-wins, which is how a later
     /// `open-gate` cancels an earlier `close-gate`.
     Unseal,
-    /// **A loop's slab, while the loop holds** (spec-0086 §5.1): no block is
-    /// written, and no body passes — a body that enters is returned to the
-    /// approach — and none stands on it either. Impassable and never floor, the
-    /// shape an unforced fill takes, and named apart from one because the route
-    /// failure it causes is a release the party has not reached, not a beat it
-    /// may skip. An [`RegionWrite::Unseal`] at the step the gate shuts is what
-    /// cancels it.
-    Hold,
 }
 
 impl RegionWrite {
@@ -957,21 +949,6 @@ impl RegionEvent {
             fire_step,
             forced: true,
             blame: String::new(),
-            block: None,
-        }
-    }
-
-    /// **A loop's slab, held** (spec-0086 §5.1): a [`RegionWrite::Hold`] at the
-    /// step the loop's gate opens, carrying the loop and the gate term that holds
-    /// it in words, for a route failure to name.
-    pub fn held(region: ([i32; 3], [i32; 3]), fire_step: usize, blame: impl Into<String>) -> Self {
-        RegionEvent {
-            region,
-            write: RegionWrite::Hold,
-            fire_step,
-            forced: true,
-            blame: blame.into(),
-            // A holding slab lays no block: it is a plane a body is moved from.
             block: None,
         }
     }
@@ -3538,7 +3515,10 @@ impl<'a> Plan<'a> {
                 },
             ));
         }
-        let region_events = region_events_of(campaign, region_events, &path_firing, &npcs);
+        let region_events = with_loop_exercises(
+            region_events_of(campaign, region_events, &path_firing, &npcs),
+            &loop_spliced,
+        );
 
         // ---- what became of every staged way (spec-0042 §2.5, DW0548) ----
         //
@@ -3771,7 +3751,10 @@ impl<'a> Plan<'a> {
             cp.steps.len(),
         );
         (
-            region_events_of(self.campaign, region_events, &cp.firing, &self.npcs),
+            with_loop_exercises(
+                region_events_of(self.campaign, region_events, &cp.firing, &self.npcs),
+                &cp.loops,
+            ),
             ancestors,
         )
     }
@@ -7219,6 +7202,46 @@ pub(crate) fn region_events_of(
             unforced_writers,
         },
     }
+}
+
+/// **The loop half of a path's datum replay and flags** (spec-0086 §5.2 ×
+/// spec-0088 §4.1): the data only loops write are dated by the path's exercise
+/// steps — each objective step after an exercise, and the end of the path,
+/// reads the loop-owned values the exercise left — and every flag an
+/// exercise's `on_cross` set is set, forced, at that step. So a loop slab's
+/// gate is read by [`crate::compiler::nav::liveness_of`] from the same events
+/// every staged gate is, and a loop-owned datum is never an undatable write.
+fn with_loop_exercises(
+    mut events: RegionEvents,
+    spliced: &crate::compiler::r#loop::Spliced,
+) -> RegionEvents {
+    for id in &spliced.owned {
+        events.data.unforced_writers.remove(id);
+    }
+    for ex in &spliced.exercises {
+        // The leg that arrives at the exercise step itself is walked before its
+        // crossings: it reads the values as they stood, not as they will be.
+        let standing = events.data.at(ex.step).clone();
+        events.data.before.entry(ex.step).or_insert(standing);
+        for (step, vals) in events.data.before.iter_mut() {
+            if *step > ex.step {
+                for (id, v) in &ex.owned_after {
+                    vals.insert(id.clone(), Some(*v));
+                }
+            }
+        }
+        for (id, v) in &ex.owned_after {
+            events.data.end.insert(id.clone(), Some(*v));
+        }
+        for f in &ex.flags_after {
+            events.flags.push(FlagEvent {
+                flag: f.clone(),
+                fire_step: ex.step,
+                forced: true,
+            });
+        }
+    }
+    events
 }
 
 /// **When a firing happens, and whether the party can avoid causing it** — read

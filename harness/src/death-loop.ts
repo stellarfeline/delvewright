@@ -808,8 +808,8 @@ export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
 }
 
 /**
- * **The cells a body could jump to that are nearer the volume than `feet`**:
- * within four columns and one down to two up, outside what the volume can reach
+ * **The cells a body could reach that are nearer the volume than `feet`**:
+ * within four columns and one down to four up, outside what the volume can reach
  * ({@link volumeReachesCell}), where a body can stand (`canStand`, the caller's
  * reading of the world), ordered nearest the volume's footprint first, then by
  * the smallest climb, then lexicographically (ADR-0006).
@@ -817,7 +817,10 @@ export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
  * What the walk in asks the pathfinder for when driving straight at the volume
  * is blocked — vesperhold's well is entered over a dry cut, onto a sill a
  * block and a half above the cut's floor, which is where the placement table's
- * lip lies.
+ * lip lies. Four up, because the cell is walked to by the pathfinder's own
+ * route, not jumped to: the gallery's lidded pit is nearest the hall floor beside
+ * the terrace annex, and its way in is the annex's top, three courses up, where
+ * the hole the beat opened is.
  */
 export function wayInCandidates(
   feet: Vec3Tuple,
@@ -833,7 +836,7 @@ export function wayInCandidates(
   const out: Vec3Tuple[] = [];
   for (let dx = -4; dx <= 4; dx++) {
     for (let dz = -4; dz <= 4; dz++) {
-      for (let dy = -1; dy <= 2; dy++) {
+      for (let dy = -1; dy <= 4; dy++) {
         const c: Vec3Tuple = [feet[0] + dx, feet[1] + dy, feet[2] + dz];
         if (toFootprint(c) >= here) continue;
         if (volumeReachesCell(c, box)) continue;
