@@ -290,6 +290,24 @@
         "shown_by": [
           "minecraft:magma_block"
         ]
+      },
+      {
+        "damage_type": "fall",
+        "id": "lethal/lid-pit",
+        "message": "The floor over the terrace pit was a lid, and the pit under it has no bottom you would survive.",
+        "region": {
+          "anchor": "anchor/lid-pit",
+          "extent": [
+            0,
+            0,
+            0
+          ]
+        },
+        "when": {
+          "requires_flags": [
+            "flag/lid-fell"
+          ]
+        }
       }
     ],
     "loops": [
@@ -828,6 +846,26 @@
             {
               "assembly": "assembly/sentinel",
               "type": "spawn-assembly"
+            },
+            {
+              "flag": "flag/lid-fell",
+              "type": "set-flag"
+            },
+            {
+              "happening": {
+                "subject": "anchor/lid",
+                "text": "The lid over the terrace pit drops away, and the pit's bottom starts to kill.",
+                "verb": "opens"
+              },
+              "region": {
+                "anchor": "anchor/lid",
+                "extent": [
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "type": "clear-region"
             }
           ],
           "obj/press-the-case": [
