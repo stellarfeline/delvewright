@@ -2698,7 +2698,7 @@ fn lethal_stage_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!(
                     "lethal volume `{}` declares `when: {{}}` — a stage with no term. An \
                      always-live volume is spelled by leaving `when` out; to stage it, name a \
-                     flag (`requires_flags` / `forbids_flags`) or a `party` datum \
+                     flag (`requires_flags` / `forbids_flags`) or a `party`-scoped datum \
                      (`requires_state`)",
                     v.id.as_str()
                 ),

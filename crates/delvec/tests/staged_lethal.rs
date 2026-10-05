@@ -297,6 +297,13 @@ fn structures(plan: &Plan, lib: &Path) -> BTreeMap<String, Vec<u8>> {
 
 /// Build the case through the real `emit::build` path, with its warnings.
 fn try_build(dir: &Path, lib: &Path) -> Result<(BuildOutput, Vec<String>), BuildFailure> {
+    // Every case is a campaign `delvec validate` accepts, so a build verdict
+    // here is the verdict a creator meets.
+    let refused: Vec<_> = validate(dir, lib)
+        .into_iter()
+        .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    assert!(refused.is_empty(), "the case does not validate: {refused:#?}");
     let c = campaign(dir);
     let prefabs = PrefabRegistry::load_dir(lib).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
@@ -1003,8 +1010,9 @@ fn the_binding_line_counts_volumes_configurations_and_pairs() {
 }
 
 /// A staged volume the path can never meet live or arm — its gate reads a
-/// party datum nothing writes, held below the value it asks for — is judged
-/// in no configuration, and that is a red, not a line.
+/// party datum the forced route writes once, to a value below the one it asks
+/// for, and nothing unforced writes — is judged in no configuration, and that
+/// is a red, not a line.
 #[test]
 fn a_staged_volume_judged_in_no_configuration_is_red() {
     let never = PIT_STAGED.replace(
@@ -1013,7 +1021,17 @@ fn a_staged_volume_judged_in_no_configuration_is_red() {
     );
     let state = r#", "state": [{ "id": "state/depth", "initial": 0, "scope": "party",
         "note": "how deep the floor has sunk" }]"#;
-    let (code, msg) = refusal(&Case::new(&never).talk(CLEAR_LID).extra(state), "zero");
+    let sink = r#"{ "type": "set-state", "state": "state/depth", "value": 1 }"#;
+    let case = Case::new(&never)
+        .talk(&format!("{CLEAR_LID}, {sink}"))
+        .extra(state);
+    let (dir, lib) = case.write("zero-validates");
+    let d = validate(&dir, &lib);
+    assert!(
+        !d.iter().any(|x| x.severity == delvewright_dsl::Severity::Error),
+        "the case is a valid campaign: {d:#?}"
+    );
+    let (code, msg) = refusal(&case, "zero");
     assert_eq!(code, "DW0891", "{msg}");
     assert!(msg.contains("judged it in none"), "{msg}");
 }

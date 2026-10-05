@@ -2185,3 +2185,83 @@ fn dw0721_removing_a_restated_sky_builds() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// DW0953 — the two moves a gate that cannot stage a volume names (spec-0088)
+// ---------------------------------------------------------------------------
+
+/// Validate `camp` through the binary: `(exit status, log)`.
+fn validate_camp(camp: &Path, prefabs: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **LEAVE `when` OUT.** The move `DW0953`'s empty-gate shape names: a volume
+/// live from world-load is spelled by declaring no stage at all.
+#[test]
+fn dw0953_leaving_an_empty_when_out_validates() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("stage-empty");
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert("when".into(), serde_json::json!({}));
+    });
+    let (code, before) = validate_camp(&camp, &dir);
+    assert_eq!(code, 1, "refused at validation:\n{before}");
+    assert!(
+        before.contains("DW0953") && before.contains("leaving `when` out"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).remove("when");
+    });
+    let (code, after) = validate_camp(&camp, &dir);
+    assert_eq!(code, 0, "leaving `when` out validates:\n{after}");
+    assert!(!after.contains("DW0953"), "{after}");
+}
+
+/// **NAME A `party` DATUM.** The move `DW0953`'s player-scoped shape names: the
+/// same comparison on a datum the party holds is a fact about the place.
+#[test]
+fn dw0953_naming_a_party_datum_validates() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("stage-player");
+    let declare = |scope: &str| {
+        let scope = scope.to_string();
+        move |v: &mut serde_json::Value| {
+            v["content"]["state"] = serde_json::json!([{
+                "id": "state/heat", "initial": 0, "scope": scope,
+                "note": "how hot the road has run"
+            }]);
+            // Written once, so the comparison is not decided at authoring (DW0501).
+            let bundle = v["content"]["quests"][0]["on_complete"].as_array_mut().unwrap();
+            if !bundle.iter().any(|e| e["type"] == "set-state") {
+                bundle.insert(
+                    0,
+                    serde_json::json!({ "type": "set-state", "state": "state/heat", "value": 1 }),
+                );
+            }
+            volume(v).insert(
+                "when".into(),
+                serde_json::json!({
+                    "requires_state": [{ "state": "state/heat", "op": "at-least", "value": 0 }]
+                }),
+            );
+        }
+    };
+    edit_doc(&camp, "quests.json", declare("player"));
+    let (code, before) = validate_camp(&camp, &dir);
+    assert_eq!(code, 1, "refused at validation:\n{before}");
+    assert!(
+        before.contains("DW0953") && before.contains("`party`-scoped datum"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", declare("party"));
+    let (code, after) = validate_camp(&camp, &dir);
+    assert!(!after.contains("DW0953"), "naming a party datum clears DW0953:\n{after}");
+    assert_eq!(code, 0, "and validates:\n{after}");
+}

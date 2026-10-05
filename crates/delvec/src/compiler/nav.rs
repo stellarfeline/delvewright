@@ -16290,3 +16290,178 @@ mod mob_reach_tests {
         assert!(opened.mob_moves([1, 1, 0], &zombie()).contains(&[2, 1, 0]));
     }
 }
+
+/// spec-0088 §4.1: **the two readings of one gate**, over synthetic flag
+/// writes and a synthetic replay, with the region model's own ancestry rule
+/// (a strict predecessor on a linear path, or step 0).
+#[cfg(test)]
+mod staged_liveness_tests {
+    use super::*;
+    use crate::compiler::plan::{DataReplay, FlagEvent};
+
+    fn linear(g: usize, s: usize) -> bool {
+        g == 0 || g < s
+    }
+
+    fn gate(req: &[&str], forb: &[&str], state: &[(&str, i32)]) -> StagedGate {
+        StagedGate {
+            requires_flags: req.iter().map(|s| s.to_string()).collect(),
+            forbids_flags: forb.iter().map(|s| s.to_string()).collect(),
+            requires_state: state
+                .iter()
+                .map(|(s, v)| delvewright_dsl::StateCompare {
+                    state: delvewright_dsl::StateId(s.to_string()),
+                    op: delvewright_dsl::CompareOp::AtLeast,
+                    value: *v,
+                })
+                .collect(),
+            terms: Vec::new(),
+        }
+    }
+
+    fn events(flags: &[(&str, usize, bool)]) -> RegionEvents {
+        let mut ev = RegionEvents::default();
+        ev.flags = flags
+            .iter()
+            .map(|(f, s, forced)| FlagEvent {
+                flag: f.to_string(),
+                fire_step: *s,
+                forced: *forced,
+            })
+            .collect();
+        ev
+    }
+
+    fn at(g: &StagedGate, ev: &RegionEvents, steps: usize) -> Vec<(bool, bool)> {
+        (0..steps)
+            .map(|s| {
+                let l = liveness_of(g, ev, s, &linear);
+                (l.may, l.is)
+            })
+            .collect()
+    }
+
+    /// A required flag only a trap payload sets: may be live from step 0, live
+    /// on the forced route nowhere.
+    #[test]
+    fn a_required_flag_only_a_trap_sets_may_live_from_zero_and_is_never_live() {
+        let g = gate(&["flag/sprung"], &[], &[]);
+        let ev = events(&[("flag/sprung", 0, false)]);
+        assert_eq!(at(&g, &ev, 4), vec![(true, false); 4]);
+    }
+
+    /// The same flag set by a forced objective at step k: both readings from
+    /// the first arrival whose ancestry contains k.
+    #[test]
+    fn a_required_flag_a_forced_beat_sets_is_live_from_the_next_arrival() {
+        let g = gate(&["flag/lid"], &[], &[]);
+        let ev = events(&[("flag/lid", 2, true)]);
+        assert_eq!(
+            at(&g, &ev, 5),
+            vec![(false, false), (false, false), (false, false), (true, true), (true, true)]
+        );
+    }
+
+    /// A forbidden flag a trap payload sets: may be live unchanged (an
+    /// unguaranteed firing may never open), live on the forced route nowhere.
+    #[test]
+    fn a_forbidden_flag_a_trap_sets_leaves_may_live_and_kills_is_live() {
+        let g = gate(&[], &["flag/cold"], &[]);
+        let ev = events(&[("flag/cold", 0, false)]);
+        assert_eq!(at(&g, &ev, 3), vec![(true, false); 3]);
+        // Set only by a forced beat at step 1: live on the forced route until
+        // it, dead after it.
+        let ev = events(&[("flag/cold", 1, true)]);
+        assert_eq!(
+            at(&g, &ev, 4),
+            vec![(true, true), (true, true), (false, false), (false, false)]
+        );
+    }
+
+    /// A numeric term the replay decides true at step k: both readings from k;
+    /// one an unforced root writes may hold everywhere.
+    #[test]
+    fn a_numeric_term_the_replay_decides_true_at_k_is_live_from_k() {
+        let g = gate(&[], &[], &[("state/water", 3)]);
+        let mut ev = RegionEvents::default();
+        let vals = |v: i64| {
+            [("state/water".to_string(), Some(v))]
+                .into_iter()
+                .collect::<BTreeMap<String, Option<i64>>>()
+        };
+        ev.data = DataReplay {
+            before: [(1, vals(0)), (2, vals(1)), (3, vals(3))]
+                .into_iter()
+                .collect(),
+            end: vals(3),
+            unforced_writers: BTreeSet::new(),
+        };
+        assert_eq!(
+            at(&g, &ev, 5),
+            vec![(false, false), (false, false), (false, false), (true, true), (true, true)]
+        );
+        ev.data.unforced_writers.insert("state/water".to_string());
+        assert!(at(&g, &ev, 3).iter().all(|(may, _)| *may));
+        // An undatable value may hold, and is never decided.
+        ev.data.unforced_writers.clear();
+        ev.data.before.insert(1, [("state/water".to_string(), None)].into_iter().collect());
+        assert_eq!(at(&g, &ev, 2)[1], (true, false));
+    }
+
+    /// The function under test is the one `region_state_at`'s derivation
+    /// calls, and the only reader of a gate into a lethal set: its callers, by
+    /// enumeration of this crate's source.
+    #[test]
+    fn region_state_at_derives_the_lethal_set_through_liveness_of() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut callers: Vec<String> = Vec::new();
+        let mut stack = vec![root.clone()];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    let text = std::fs::read_to_string(&p).unwrap();
+                    let mut current = String::new();
+                    for line in text.lines() {
+                        let t = line.trim_start();
+                        if let Some(rest) = t
+                            .strip_prefix("fn ")
+                            .or_else(|| t.strip_prefix("pub fn "))
+                            .or_else(|| t.strip_prefix("pub(crate) fn "))
+                        {
+                            current = rest.split(['(', '<']).next().unwrap_or("").to_string();
+                        }
+                        if t.contains("liveness_of(") && !t.contains("fn liveness_of") {
+                            callers.push(format!(
+                                "{}::{current}",
+                                p.strip_prefix(&root).unwrap().display()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        callers.sort();
+        callers.dedup();
+        // This module calls it too; production callers are the two named.
+        let production: Vec<&String> = callers
+            .iter()
+            .filter(|c| !c.ends_with("::at") && !c.ends_with("::region_state_at_derives_the_lethal_set_through_liveness_of"))
+            .collect();
+        assert_eq!(
+            production,
+            vec!["compiler/lethal.rs::never_held_term", "compiler/nav.rs::staged_liveness"],
+            "liveness_of is read by staged_liveness (the lethal set) and by DW0954's \
+             per-term wording, and by nothing else: {callers:?}"
+        );
+        let nav = std::fs::read_to_string(root.join("compiler/nav.rs")).unwrap();
+        let body = &nav[nav.find("fn region_state_inner(").unwrap()..];
+        let body = &body[..body.find("\n    }\n").unwrap()];
+        assert!(
+            body.contains(".staged_liveness(region_events, arrival, ancestor)"),
+            "region_state_at's derivation calls staged_liveness"
+        );
+    }
+}
