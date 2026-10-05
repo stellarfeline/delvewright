@@ -571,7 +571,7 @@ pub fn check_danger_is_visible(
     let staged_any = plan.lethal_volumes.iter().any(|v| v.staged.is_some());
     let mut configs: Vec<crate::compiler::nav::Configuration> = Vec::new();
     // (path label, per step: (configuration, liveness)), the critical path first.
-    let mut paths: Vec<(String, Vec<(usize, Vec<crate::compiler::nav::Liveness>)>)> = Vec::new();
+    let mut paths: Vec<(String, PathSteps)> = Vec::new();
     let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
     if staged_any {
         paths.push((
@@ -938,6 +938,10 @@ pub fn check_danger_is_visible(
     binding.volumes = rows.into_iter().map(|j| j.row).collect();
     (binding, verdict.map_or(Ok(()), Err))
 }
+
+/// One path's steps, each with its configuration's index and every staged
+/// volume's liveness there ([`crate::compiler::nav::configurations_along`]).
+type PathSteps = Vec<(usize, Vec<crate::compiler::nav::Liveness>)>;
 
 /// One (volume, configuration) row with what the verdict needs beside it: the
 /// volume's index, whether the row is the configuration before a switch-on,

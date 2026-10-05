@@ -4935,8 +4935,12 @@ struct RegionState {
     /// Per region, the causally-latest **forced** write and the block it lays
     /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
     /// over the assembled bytes to give this configuration's block map.
-    laid: Vec<(([i32; 3], [i32; 3]), Option<String>)>,
+    laid: Vec<LaidWrite>,
 }
+
+/// One region a forced write lays, with the block its command writes (`None` =
+/// air) — what [`RegionState::blocks_over`] lays over the assembled bytes.
+type LaidWrite = (([i32; 3], [i32; 3]), Option<String>);
 
 /// One box an unforced fill writes, with the beat that lays it in words — the blame
 /// unit [`DW_UNFORCED_FOOTING`] reports.
