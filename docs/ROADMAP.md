@@ -4,7 +4,7 @@ Where Delvewright is going. This page records direction, not the next fix; the i
 
 ## What you can do today
 
-- **Make an adventure map from a sentence.** Describe the adventure in Claude Code, and Delvewright writes a story-driven Minecraft map for one to four friends: classes with their own gear, branching dialogue, and more than one ending.
+- **Make an adventure map from a sentence.** Describe the adventure in Claude Code, and Delvewright writes a story-driven Minecraft map for one to four friends: classes with their own gear, branching dialogue, and more than one ending. You start from an empty folder and need no knowledge of the engine; nobody hand-edits what it builds.
 - **Know it can be finished before you play it.** Every map is checked by machine before it reaches you, and a bot plays every story branch through to its ending.
 - **Host it with one command.** A finished map is a single `docker run`; friends join from an unmodded Minecraft Java client.
 - **Play in your own language.** Players see the story's text in their client's language wherever the map ships that translation.
@@ -17,7 +17,6 @@ Delvewright grows by making maps. Each new map tries a theme or a way of playing
 ## Where it is heading
 
 - **Quests beyond a single line.** Quests that run side by side and branch, instead of one checkpoint after another, and quest points that are real things in the world rather than markers.
-- **A map from nothing but an idea.** Anyone can make a finished map starting from an empty folder, with no knowledge of the engine and no hand edits.
 - **Bigger, denser places.** Castles full of shortcuts that loop back on themselves and tightly packed rooms, once three playtests in a row turn up no mechanical problems.
 
 ## Further out
