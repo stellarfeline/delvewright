@@ -14,11 +14,6 @@ Where Delvewright is going. This page records direction, not the next fix; the i
 
 Delvewright grows by making maps. Each new map tries a theme or a way of playing that the earlier ones did not, and what it needs becomes part of the engine for every map after it.
 
-## Where it is heading
-
-- **Quests beyond a single line.** Quests that run side by side and branch, instead of one checkpoint after another, and quest points that are real things in the world rather than markers.
-- **Bigger, denser places.** Castles full of shortcuts that loop back on themselves and tightly packed rooms, once three playtests in a row turn up no mechanical problems.
-
 ## Further out
 
 Ideas we intend to keep possible, with no date yet:
