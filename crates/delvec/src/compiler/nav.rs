@@ -6198,7 +6198,7 @@ pub fn world_while_next(plan: &Plan, world: &World, step: usize) -> Option<World
 /// One quest configuration the critical path passes (spec-0088 §5): the first
 /// critical step that arrives under it, its region state, and every staged
 /// lethal volume's [`Liveness`] there.
-pub(crate) struct Configuration {
+pub struct Configuration {
     /// The first critical-path step whose arrival is judged under it.
     pub step: usize,
     state: RegionState,
@@ -6227,7 +6227,7 @@ impl Configuration {
 /// mapping every critical step to its configuration's index (spec-0088 §5). The
 /// enumeration `DW0891` judges a staged volume over, built from the same
 /// [`World::region_state_at`] every route proof asks.
-pub(crate) fn path_configurations(plan: &Plan, world: &World) -> (Vec<Configuration>, Vec<usize>) {
+pub fn path_configurations(plan: &Plan, world: &World) -> (Vec<Configuration>, Vec<usize>) {
     let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
     let mut configs: Vec<Configuration> = Vec::new();
     let mut per_step: Vec<usize> = Vec::new();
