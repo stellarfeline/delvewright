@@ -5113,7 +5113,7 @@ struct RegionState {
     /// Per region, the causally-latest **forced** write and the block it lays
     /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
     /// over the assembled bytes to give this configuration's block map.
-    laid: Vec<(([i32; 3], [i32; 3]), Option<String>)>,
+    laid: Vec<(crate::compiler::timeline::Region, Option<String>)>,
 }
 
 /// One box an unforced fill writes, with the beat that lays it in words — the blame

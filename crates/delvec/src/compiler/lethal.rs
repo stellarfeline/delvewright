@@ -649,7 +649,9 @@ pub fn check_danger_is_visible(
     let staged_any = plan.lethal_volumes.iter().any(|v| v.staged.is_some());
     let mut configs: Vec<crate::compiler::nav::Configuration> = Vec::new();
     // (path label, per step: (configuration, liveness)), the critical path first.
-    let mut paths: Vec<(String, Vec<(usize, Vec<crate::compiler::nav::Liveness>)>)> = Vec::new();
+    // (path label, per step: (configuration, liveness))
+    type PathConfigs = (String, Vec<(usize, Vec<crate::compiler::nav::Liveness>)>);
+    let mut paths: Vec<PathConfigs> = Vec::new();
     let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
     if staged_any {
         paths.push((
