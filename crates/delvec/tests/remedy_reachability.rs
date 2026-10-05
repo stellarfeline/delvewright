@@ -2185,3 +2185,149 @@ fn dw0721_removing_a_restated_sky_builds() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// DW0951 / DW0952 — `delvec sculpt` (spec-0087)
+// ---------------------------------------------------------------------------
+
+/// One sculpt refusal and the move its message names: the refused form exits
+/// with `code` and `refusal`'s text, and the moved form sculpts (exit 0).
+fn sculpt_move(
+    tag: &str,
+    refused: &serde_json::Value,
+    code: i32,
+    refusal: &str,
+    moved: &serde_json::Value,
+) {
+    let before = common::sculpt::sculpt(refused, &format!("remedy-{tag}-before"), &[]);
+    assert_eq!(before.code, code, "{}", before.said);
+    assert!(before.said.contains(refusal), "{}", before.said);
+    let after = common::sculpt::sculpt(moved, &format!("remedy-{tag}-after"), &[]);
+    assert_eq!(after.code, 0, "{tag}: the move sculpts: {}", after.said);
+    assert!(!after.said.contains(refusal), "{}", after.said);
+}
+
+fn op(o: &str, path: &str, value: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({"op": o, "path": path, "value": value})
+}
+
+/// `DW0951`, no ground: declaring `ground` sculpts.
+#[test]
+fn dw0951_declaring_the_ground_sculpts() {
+    use common::sculpt::{apply, gallery_form, probe_patch};
+    let refused = apply(gallery_form(), &probe_patch("a-body-with-no-ground"));
+    let ground = gallery_form()["ground"].clone();
+    let moved = apply(refused.clone(), &[op("add", "/ground", ground)]);
+    sculpt_move("ground", &refused, 1, "DW0951 [error]", &moved);
+}
+
+/// `DW0951`, a glowing tone: a tone of a block that emits nothing sculpts.
+#[test]
+fn dw0951_a_tone_that_emits_nothing_sculpts() {
+    use common::sculpt::{apply, gallery_form, probe_patch};
+    let refused = apply(gallery_form(), &probe_patch("a-body-paved-with-light"));
+    let moved = apply(
+        refused.clone(),
+        &[op(
+            "replace",
+            "/palette/0/full/0/0",
+            serde_json::json!("minecraft:bone_block"),
+        )],
+    );
+    sculpt_move("glow", &refused, 1, "emits light", &moved);
+}
+
+/// `DW0951`, no entry: giving an anchor `role: entry` sculpts.
+#[test]
+fn dw0951_declaring_an_entry_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let refused = apply(
+        gallery_form(),
+        &[serde_json::json!({"op": "remove", "path": "/anchors/anchor~1entry/role"})],
+    );
+    let moved = apply(
+        refused.clone(),
+        &[op(
+            "add",
+            "/anchors/anchor~1entry/role",
+            serde_json::json!("entry"),
+        )],
+    );
+    sculpt_move("entry", &refused, 1, "`role: entry`", &moved);
+}
+
+/// `DW0951`, a family with one shape missing: a family with both sculpts.
+#[test]
+fn dw0951_a_family_with_both_shapes_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let refused = apply(
+        gallery_form(),
+        &[op(
+            "replace",
+            "/palette/0/family",
+            serde_json::json!("calcite"),
+        )],
+    );
+    let moved = apply(
+        refused.clone(),
+        &[op(
+            "replace",
+            "/palette/0/family",
+            serde_json::json!("diorite"),
+        )],
+    );
+    sculpt_move("family", &refused, 1, "has no stair", &moved);
+}
+
+/// `DW0951`, a steep shelf: lengthening its path to one block per block sculpts.
+#[test]
+fn dw0951_a_shelf_lengthened_to_one_block_per_block_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let path = "/solids/6/path/1";
+    let original = gallery_form()["solids"][6]["path"][1].clone();
+    let refused = apply(
+        gallery_form(),
+        &[op("replace", path, serde_json::json!([24.5, 16.0, 32.0]))],
+    );
+    let moved = apply(refused.clone(), &[op("replace", path, original)]);
+    sculpt_move(
+        "steep",
+        &refused,
+        1,
+        "steeper than one block per block",
+        &moved,
+    );
+}
+
+/// `DW0952`, a pocket: a `shelf` out of the pit sculpts with no pocket.
+#[test]
+fn dw0952_a_shelf_out_of_the_pocket_sculpts() {
+    use common::sculpt::{apply, gallery_form, probe_patch};
+    let refused = apply(gallery_form(), &probe_patch("a-body-with-a-pocket"));
+    let shelf = serde_json::json!({"shape": "shelf", "path": [[15.0, 12.0, 27.0], [15.0, 17.0, 37.0]],
+                                   "width": 2.0, "clearance": 3.0, "depth": 2.0});
+    let moved = apply(refused.clone(), &[op("add", "/solids/-", shelf)]);
+    sculpt_move("pocket", &refused, 3, "DW0952 [error]", &moved);
+    let after = common::sculpt::sculpt(&moved, "remedy-pocket-again", &[]);
+    assert_eq!(after.pocket_places(), Some(0), "{}", after.said);
+}
+
+/// `DW0952`, a buried entry: moving the anchor onto the ground sculpts.
+#[test]
+fn dw0952_moving_a_buried_anchor_onto_the_ground_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let path = "/anchors/anchor~1entry/pos";
+    let original = gallery_form()["anchors"]["anchor/entry"]["pos"].clone();
+    let refused = apply(
+        gallery_form(),
+        &[op("replace", path, serde_json::json!([15, 9, 30]))],
+    );
+    let moved = apply(refused.clone(), &[op("replace", path, original)]);
+    sculpt_move(
+        "buried",
+        &refused,
+        3,
+        "is not a cell a body can stand in",
+        &moved,
+    );
+}

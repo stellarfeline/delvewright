@@ -5088,6 +5088,8 @@ exit 3).
 | `DW0447` | A payload verb centres its volume (`kill_zone` / `region_anchor`) on an anchor no placed prefab piece provides, so the box cannot be resolved. Reported rather than silently degenerating to an empty — and therefore vacuously "covered" — zone. Build-tier (exit 3), `compiler::emit`. |
 | `DW0918` | **A volley's cadence is a coin flip, not a timing read** (spec-0022 + the spec-0016 §4 floor). Of the interval between two salvos, the phases from which a body standing in the kill zone when a salvo lands can walk out before the next salvo is summoned cover less than **20%**. What is judged is the **escape**, because that is the counterplay spec-0022 names — every standable zone cell is fired on every salvo, so "escaping means LEAVING the zone, a decision, not a lucky strafe" — and because it is the only passage a volley can deny: a volley is finite and does not loop, so a body outside the zone is never forced through it (the chain ends; a `rearm` trap fires again only when someone steps on its trigger), while the body inside when it fires — the party's own step on a pressure plate fires salvo 0 the same tick — has exactly one decision left. Crossing the zone between salvos is deliberately not the rule: the saturation contract is that moving through the zone is punished, and the spec's default 10-tick interval admits no crossing of any zone more than one block deep. The route is from the standable zone cell whose walk out is longest to the nearest standable cell outside the zone (every exit is a step-rule neighbour of a zone cell), by the same A* and step rule as every route proof; the window is `nav::timing_read`, **the one body model `DW0378` is also taken under** — 4 t/block sprint, admitting phases `max(0, open − cross + 1)`, integer percentage rounded down — with `open = interval` and nothing shut. Projectile flight is not credited as extra time. A zone cell from which no standable cell outside the zone is reachable is the limit of the rule (no phase admits an escape) and is refused with its own message. A volley with `salvos: 1` has no cadence — there is no next salvo to walk out ahead of — and is not judged; whether it can be watched before it is triggered is `DW0388`'s question. A zone with no standable cell is `DW0444`'s. `compiler::nav::check_volley_cadence`, called from `plan_payload_verbs` right after the saturation proof, build-tier (exit 3); it emits nothing. Prescription: lengthen `interval`, or shrink `kill_zone` so no cell is deep inside it — never lower the floor. |
 | `DW0921` | **A place a body can get into and not out of.** From the critical path's route cells, a body moving the way a player does reaches a cell from which no movement sequence leads back to the route — a garden bed ringed by a hedge it jumped onto and dropped off, a pool whose rim stands two over the water. The player is soft-locked there. The movement is `World::body_moves`, over the assembled (edited) model, cardinal, player footprint: the walk step every route proof takes; a **fall** off an edge to the first standable floor no deeper than the fall an unarmoured body survives (`dsl::metrics::unarmoured_survivable_fall_blocks`, 22), or into water at any depth; a **jump** across a gap of air columns inside `dsl::metrics::JUMP_REACH` for its rise (launch column clear three cells up, every gap column clear from the lower of the two feet to that top); and, for a body **afloat** at the top of water (a water cell with open air over it; lava excluded, `Occupancy::lava`), a swim to the next surface cell, a climb out onto ground no more than `dsl::metrics::WATER_CLIMB_OUT_RISE` (1) cell above the water's top, or a step over a lower rim. Both constants are measured, not derived: `tools/spike-jump-arc/simulate.mjs` (the harness's own physics over the jump spike's rig, the jump pressed on any tick, minimum over runways 1–10; `--check` reproduces all 14 verdicts of the live spike; `--water` for the climb-out). No route proof uses these moves: a route is what the bot walks on cue, this is where a body can end up. Judged once per distinct quest configuration the critical path passes through (`region_state_at` of each leg's arrival), with that configuration's gates as they stand and **its own** route cells as the place to get back to — so a room the story shuts the party into holds the objective the story waits on, and is not refused; no declaration exists or is needed for it. Two further ways out: a cell outside the playable region (`boundary`, spec-0013), whose clock returns the body to the last checkpoint; and a shortcut lever a pocket's own reach stands a body at, opened in rounds (the completability model holds every shortcut shut). Not moves, and named in the message: diagonal jumps, climbing (ladders, vines), standing on a fence or wall top, diving — a place reached only that way is not seen, a place left only that way reads as a trap. `compiler::nav::check_bodies_can_leave`, called from `emit::build` right after `DW0315`/`DW0316`, build-tier (exit 3); it prints `DW0921 binding: …` whichever way it goes and writes `validation/leave-proof.json` when it holds. The message names each pocket (up to six, then a count): its size, a cell, the configuration, and the movement that got a body in. Measured cost on vesperhold (release, one machine): six configurations, 316,733 cells reached in all, 22.7 s and 28.4 s over two runs. Prescription: reshape the place — lower the wall, add a step, open a side, take away what the body jumped in from; never an invisible barrier over walkable-looking ground. |
+| `DW0951` | `delvec sculpt` | **The sculpt form is refused where it is read** (spec-0087; `sculpt::form`, exit 1, before anything is fitted, so no output directory is written). Shapes: a form that does not parse or declares a `form_version` this engine does not read; an `id` that is not `prefab/<kebab>`; an empty `box`; `sub` other than 2 or 4; **no `ground`** (a body with nothing under it is follow-up A of spec-0087); `ground.top` leaving no two clear courses; `sink` deeper than the ground; **no anchor with `role: entry`**; an anchor not named `anchor/<stem>`, with a facing that is not cardinal, or outside the box; **a block the pinned registry lacks** — palette full block, ground, family stair or slab, shelf material, light — refused by the grammar's own `blocks-exist` gate run over the declared states, its message the registry's (with suggestions); a family without both `<family>_stairs` and `<family>_slab`; a full or ground block that assembles its shape from neighbours or is not a full cube; **a palette, ground or shelf-material block that emits light**, read from `light::emission` (the relight pass's table) and nothing else; a `lights[]` block that emits none, or lies outside the box; a solid with non-finite or non-positive dimensions; **a `shelf` whose knots rise more than one block per block of path** (its fit is a wall; climbing is follow-up B). Remedy: the field named. |
+| `DW0952` | `delvec sculpt` | **The sculpted body is refused** (spec-0087; `sculpt`, exit 3, after the fit, before any file is written). Shapes: an anchor (furniture excepted) whose cell is not standable after the fit, with what the cell holds named; an `entry` anchor the walk from grade (`schem::nav::ground_entry` → `reachable_from`) does not reach; **a pocket** — from every anchor, the leave relation `DW0921` floods (`World::trapped_places` over `World::body_moves`, one function shared with `DW0921`) reaches a place from which no walk, fall, jump or swim gets back to the ground at the box's vertical faces, the box's outside counting as gone. The run prints `pockets: P place(s), C cell(s), of R cell(s) a body can reach from E anchor(s)` whatever the verdict, and refuses on `P > 0`, naming up to six places with the way in. Remedy, in the form: a `shelf` out of the pocket, a `cut` that opens it, more `sink`, a different profile; for an anchor, move it onto the body or the ground. |
 ### DW045x — body clearance and body traversal (`compiler::clearance` + `compiler::traversal` + `dsl::validate`; error + advisory)
 
 An entity is a box with a real size, and so is a block. These prove the two
@@ -8035,3 +8037,62 @@ a different size the next time anyone runs the command.
 the test reds until the version moves with it. A consumer that pins a metrics
 version is pinning values, and values that move under a fixed version are the
 drift the pin was bought to prevent.
+
+## 11. `delvec sculpt` — a prefab from a declared form (spec-0087)
+
+`delvec sculpt <form.json> -o <dir> [--seed N] [--id <prefab-id>]` (`crates/delvec/src/sculpt/`) is the second prefab back end beside the grammar: a form states a body as implicit solids over its own ground, and the command writes the ordinary prefab — structure parts plus a metadata document — so nothing downstream of admission changes. `delvec schema --stage sculpt-form` exports the form (`x-delvewright-file: forms/*.json`); it is a library asset, absent from `--stage all`.
+
+**Two frames.** Anchors are in the piece's frame and are written to the metadata as declared. Solids and lights are in the body's frame: `piece y = body y + ground.top + 1 − sink`; `x` and `z` agree.
+
+**The form document's fields**
+
+| Field | Where | What it is |
+|---|---|---|
+| `form_version` | top | `1.0.0`; any other is refused |
+| `id` | top | `prefab/<kebab>`; `--id` overrides the output id, never the provenance |
+| `box` | top | extent `[x, y, z]` in blocks |
+| `sub` | top | sub-voxels per block per axis, 2 or 4 |
+| `ground` | top | `{block, top}`: the apron, full blocks at piece `y ∈ [0, top]` wherever the fit leaves air; required |
+| `block` | ground, light | a block state |
+| `top` | ground | the apron's top course |
+| `sink` | top | courses of the body below the apron's top |
+| `noise` | top | `{amplitude, cell}`: weathering on `noisy` solids |
+| `amplitude` | noise | blocks at one standard deviation |
+| `cell` | noise | lattice spacing in blocks |
+| `palette` | top | four tones, bleached to weathered |
+| `full` | tone | `[[block, weight], …]` full blocks |
+| `family` | tone | the stem of `<family>_stairs` and `<family>_slab` |
+| `solids` | top | the body, stamped in order |
+| `shape` | solid | `capsule`, `ellipsoid`, `disc`, `box` or `shelf` |
+| `op` | solid | `add` or `cut` (not on a shelf) |
+| `noisy` | solid | weathered by `noise` |
+| `from` | capsule, box | one end or corner; also a region's low corner |
+| `to` | capsule, box | the other; also a region's high corner |
+| `radius_from` | capsule | radius at `from` |
+| `radius_to` | capsule | radius at `to` |
+| `stretch_y` | capsule | vertical stretch of the cross-section |
+| `centre` | ellipsoid, disc | the centre |
+| `radii` | ellipsoid | the three semi-axes |
+| `axis` | disc | the cylinder's axis |
+| `radius` | disc | its radius |
+| `height` | disc | its full height |
+| `path` | shelf | knots `[x, y_feet, z]` |
+| `width` | shelf | the walkway's width |
+| `clearance` | shelf | clear headroom over the feet surface |
+| `depth` | shelf | solid under the feet surface |
+| `material` | shelf | the walkway's own tone; the palette when absent |
+| `lights` | top | `{at, block}` light placed where the room is designed |
+| `at` | light | the cell, body frame |
+| `anchors` | top | prefab metadata's anchor shape: at least one `role: entry` |
+| `pos` | anchor | the cell, piece frame |
+| `facing` | anchor | cardinal |
+| `role` | anchor | `entry` or `furniture` |
+| `region` | anchor | `{from, to}` inclusive cell range |
+
+**What the form arm refuses** is `DW0951` (§5). Nothing is fitted until the form passes.
+
+**The pass order.** (1) stamp the solids into a `box × sub` grid, noise from the crate's seeded generator (`grammar::rng`); (2) octant fit — air, full, bottom or top slab, or a straight stair of any facing and half, by least occupancy error with a cost bias of 0.6 (stair) and 0.4 (slab); inside a shelf's tread a stair may only face the way the shelf climbs (`DW0430`'s rule, by construction); (3) thin-plate refit from the solid thickened by one sub-voxel, where the fit says air; (4) the apron; (5) islands under four blocks dropped and counted; (6) `lights[]`; (7) stair corners by `schem::stairs::derive_shape`; (8) tone from the smoothed normal, openness and seeded noise, block by tone, axis by longest local run, every state completed from the registry's defaults (never a shape-carrying property). Smoothing is a three-pass box-filter cascade, so no transcendental function touches the bytes.
+
+**What it checks before writing.** The grammar's always-on gates through the grammar's own functions (`blocks-exist`, `shape-complete`, `states-complete`, `stair-shape`, `fluid-contained`, `non-empty`), sealed by `gates::seal_zero_bindings`; then `DW0952` (§5): anchors stand, the entry is in the walk from grade, and no pocket. Every run prints the gate lines with binding counts, the fit counts, the entry walk (`… reaches N, and k of n standing anchor(s)`), the pocket line, `walk_y` and `shown_faces`.
+
+**What it writes.** Through `grammar::export::freeze_model` — the grammar export's palette, unknown-state refusal and 48-block tiling, over `convert::build_region`; one `<id>.nbt` when every axis is at most 48, else parts under a `structure_set` manifest. No schematic is constructed, so `DW0710` is not on the path. Metadata: `anchors` as declared; `lighting` **measured** by the piece light probe over the bytes (`unmeasured` only when it binds nothing — the grammar export's rule, which is what keeps the piece showable under `DW0894`); `walk_y` the lowest standable local `y`; `shown_faces` every side the bytes put a block on; `license` `original`, `GPL-3.0-or-later`, `generated_by {generator: "sculpt", program: <form id>, program_hash: sha256 over the form's canonical JSON, seed, region}`. Same form, seed and engine: byte-identical files.
