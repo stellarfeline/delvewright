@@ -105,7 +105,9 @@ def die(msg: str) -> "None":
 # the export is here; the export states its own path (`gallery_units.FILE_KEY`)
 # and the units come from the schema exactly as a stage document's do. The camera
 # record is one (spec-0079 §7): until it was, the gate enumerated 0 of its units.
-RECORD_EXPORTS = ("cameras",)
+# The sculpt form is another (spec-0087 §7.4): a library asset whose export names
+# a GLOB (`forms/*.json`), so every form the gallery keeps is bound.
+RECORD_EXPORTS = ("cameras", "sculpt-form")
 
 
 def schema_export(delvec: Path) -> dict:
@@ -166,12 +168,16 @@ def record_line(
     return "\n".join(lines), neither
 
 
-def load_stage_docs(campaign: Path, export: dict) -> dict[str, dict]:
-    out: dict[str, dict] = {}
+def load_stage_docs(campaign: Path, export: dict) -> dict[str, list[dict]]:
+    """stage -> the documents of it the campaign holds. A stage document or a
+    record at one path gives one; an export that names a glob (the sculpt forms)
+    gives every file it matches, in name order."""
+    out: dict[str, list[dict]] = {}
     for stage, fn in stage_files(export).items():
-        p = campaign / fn
-        if p.is_file():
-            out[stage] = json.loads(p.read_text())
+        paths = sorted(campaign.glob(fn)) if "*" in fn else [campaign / fn]
+        docs = [json.loads(p.read_text()) for p in paths if p.is_file()]
+        if docs:
+            out[stage] = docs
     return out
 
 
@@ -207,10 +213,11 @@ def materialise_point(kind: str, point: Path, dest: Path) -> None:
         die(f"{kind} `{point.name}` {e}")
 
 
-def bind(enumerator: Enumerator, export: dict, docs: dict[str, dict], label: str):
+def bind(enumerator: Enumerator, export: dict, docs: dict[str, list[dict]], label: str):
     b = Binder(enumerator)
-    for stage, doc in docs.items():
-        b.walk(export[stage], doc, label)
+    for stage, documents in docs.items():
+        for doc in documents:
+            b.walk(export[stage], doc, label)
     return b
 
 
@@ -498,7 +505,7 @@ def main() -> int:
     primary_docs = load_stage_docs(GALLERY, export)
     if not primary_docs:
         die(f"the gallery at `{GALLERY}` holds no stage documents")
-    docs_walked = len(primary_docs)
+    docs_walked = sum(len(d) for d in primary_docs.values())
 
     primary = bind(enumerator, export, primary_docs, "primary")
     bound: dict[str, list[str]] = {k: list(v) for k, v in primary.bound.items()}

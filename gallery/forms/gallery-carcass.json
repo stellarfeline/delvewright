@@ -244,6 +244,7 @@
         5.0,
         20.0
       ],
+      "noisy": true,
       "op": "cut",
       "shape": "box",
       "to": [
