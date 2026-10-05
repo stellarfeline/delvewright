@@ -2049,6 +2049,19 @@ politely and change nothing), and every sample batch is fenced by a `#sync`
 scoreboard round-trip so a desynchronised read aborts instead of shifting every
 later value by one.
 
+`tools/spike-staged-lethal/run.sh` (`EULA=TRUE tools/spike-staged-lethal/run.sh
+[--out <path>]`) measures, on the same throwaway pinned server, what a body
+already standing in a lethal volume meets when the volume's gate flips open —
+the switch-on spec-0088 §5 judges. The rig is the emitted shape with one party
+score standing in for the flag (a tick line `execute if score … run function
+dwsl:lethal`, two volume boxes, an `arm` function that stamps the server tick
+and flips the score in one act) and one mineflayer body standing still at five
+points, three trials each, plus a gate-shut control. Readings are the server's
+own tick counter and the body's `Health`, never the client's belief, with the
+client's death event reported beside them; every rcon reply goes through
+`tools/lib/rcon.mjs`. Raw data: `tools/spike-staged-lethal/observations.json`;
+the findings are in spec-0088 §2.5 directly.
+
 `tools/spike-fluid-plane/run.sh` (`EULA=TRUE tools/spike-fluid-plane/run.sh
 [--out <path>]`) measures, on the same throwaway pinned server booted with the
 delve ocean-superflat generator literal, the fluid physics spec-0038 rests on:
