@@ -42,7 +42,7 @@ order a player would:
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
-| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, two killing volumes, and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076) |
+| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076) |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch |
 | `world-edits.json` | the annex's piece-verb batches, the shards stamped by `fragment`, the barrier course, and the batches that dress the floor, lay the hearth, open the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
@@ -165,6 +165,10 @@ holding them at once.
 | `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
 | `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
 | `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
+| `a-floor-that-wakes-underfoot` | `DW0891` | `build` | raising the lidded pit's volume onto the lid, so the floor a body stands on before the beat is killed under it when the beat lands — the fourth shape, named in the configuration before the flip |
+| `a-way-onward-through-a-pit-that-woke` | `DW0891` | `build` | moving the lidded pit's volume onto the counter the party walks to after the beat; its keep-out catches floor walked before the beat, so the visibility proof refuses it before the route proof would (`DW0510`) |
+| `a-stage-with-no-term` | `DW0953` | `validate` | emptying the lidded pit's `when` to `{}` — a stage with no term |
+| `a-stage-one-player-holds` | `DW0953` | `validate` | staging the lidded pit on the tokens, a datum each player holds for themselves |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
@@ -491,7 +495,7 @@ ordering is the half a later edit can undo without moving a coordinate.
 The generator holds the geometry of all of it, on every run, and prints what it examined:
 
 ```
-gallery-hall: muster clearance bound — 2 killing volume(s), both across the wall at z=15 from the muster: anchor/west-pit 20.62, anchor/east-pit 18.68 (floor 8.0 block(s))
+gallery-hall: muster clearance bound — 3 killing volume(s), all across the wall at z=15 from the muster: anchor/west-pit 20.62, anchor/lid-pit 17.80, anchor/east-pit 22.80 (floor 8.0 block(s))
 gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [15, 1, 29], 10.00 block(s) away (floor 10.0)
 ```
 
