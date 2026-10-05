@@ -10502,6 +10502,10 @@ mod tests {
             // `main.rs`: `delvec snapshot`, where a camera is stood up against
             // blocks.
             ("main.rs", 1),
+            // `mod.rs` (`sculpt`): the pocket proof over a sculpted piece ALONE,
+            // before any campaign exists to state a premise (spec-0087 §3.4) — no
+            // horizon, no volume, no gate; the piece's own blocks are the question.
+            ("mod.rs", 1),
             // `nav.rs`: the synthetic constructors' own door
             // (`from_solid_and_flooded`), which every unit-test world goes
             // through.
