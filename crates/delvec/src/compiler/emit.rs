@@ -631,38 +631,8 @@ pub fn build_with_warnings(
     // both party populations below all read the same steps. A campaign whose
     // legs all walk takes nothing and keeps the plan it was handed, byte for
     // byte.
-    let relinked;
-    let plan: &Plan = if plan.links.is_empty() {
-        plan
-    } else {
-        // A leg nothing carries is not refused here: the walk proof below
-        // refuses it in its own place among the build's checks, so a campaign
-        // keeps the refusal order it has whether or not it declares a link.
-        let takes = crate::compiler::nav::take_links(plan, &world).unwrap_or_default();
-        if takes.is_empty() {
-            plan
-        } else {
-            relinked = plan
-                .relinked(prefabs, takes)
-                .map_err(|e| BuildFailure::Diagnostic {
-                    code: e.failure.code,
-                    message: e.failure.message,
-                })?;
-            // The relinked path is the proof's own decision: a second pass over
-            // it must take nothing more, or the path and the proof disagree.
-            let again = crate::compiler::nav::take_links(&relinked, &world)?;
-            if !again.is_empty() {
-                return Err(BuildFailure::Diagnostic {
-                    code: plan::DW_BUILD,
-                    message: "internal invariant violation: the route proof asked for a link on \
-                              a path that already carries every link it took (spec-0083 §3.4). \
-                              This is a compiler bug; stop and escalate"
-                        .to_string(),
-                });
-            }
-            &relinked
-        }
-    };
+    let relinked = crate::compiler::nav::with_links_taken(plan, prefabs, &world)?;
+    let plan: &Plan = relinked.as_ref().unwrap_or(plan);
 
     // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
     //

@@ -2356,6 +2356,12 @@ fn camera_from_shot(
     use delvec::compiler::render_plan;
     use delvec::compiler::snapshot::{Camera, DEFAULT_FOV};
 
+    // The path the build reads: the links the route proof takes spliced in
+    // (spec-0083), so a `pov/…` id names the leg the build's own render plan
+    // named.
+    let relinked = delvec::compiler::nav::with_links_taken(plan, prefabs, world)
+        .map_err(|f| format!("{}: {}", f.code, f.message))?;
+    let plan = relinked.as_ref().unwrap_or(plan);
     let pov = if id.starts_with("pov/") {
         let routes = delvec::compiler::nav::critical_path_routes(plan, world);
         render_plan::pov_shots(plan, &routes)
@@ -2464,8 +2470,16 @@ fn run_blocking_chart(
     );
     let blocks = assembled.blocks;
     let targets = delvec::compiler::snapshot::collect_targets(&plan);
+    // The build's path: the links the route proof takes spliced in (spec-0083).
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            eprintln!("{} [error] build: {}", f.code, f.message);
+            return ExitCode::from(f.code.exit_tier().exit_status());
+        }
+    };
     let corridor: std::collections::BTreeSet<[i32; 3]> =
-        delvec::compiler::nav::critical_path_routes(&plan, &world)
+        delvec::compiler::nav::critical_path_routes(relinked.as_ref().unwrap_or(&plan), &world)
             .into_iter()
             .flat_map(|leg| leg.cells)
             .collect();

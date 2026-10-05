@@ -4790,6 +4790,39 @@ pub fn take_links(plan: &Plan, world: &World) -> Result<crate::compiler::plan::L
     .1
 }
 
+/// **The plan every reader of the path reads** (spec-0083 §3.4): `plan` with
+/// the links the route proof takes over `world` spliced in, or `None` when it
+/// takes none and `plan` is already that path. The build, the snapshot camera
+/// and the blocking chart all go through here, so a `pov/…` shot, a corridor
+/// and the proof are taken over one path. A leg nothing carries is not refused
+/// here: the walk proof refuses it in its own place.
+pub fn with_links_taken<'a>(
+    plan: &Plan<'a>,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
+    world: &World,
+) -> Result<Option<Plan<'a>>, Failure> {
+    if plan.links.is_empty() {
+        return Ok(None);
+    }
+    let takes = take_links(plan, world).unwrap_or_default();
+    if takes.is_empty() {
+        return Ok(None);
+    }
+    let relinked = plan.relinked(prefabs, takes).map_err(|e| e.failure)?;
+    // The relinked path is the proof's own decision: a second pass over it
+    // must take nothing more, or the path and the proof disagree.
+    if !take_links(&relinked, world)?.is_empty() {
+        return Err(Failure {
+            code: crate::compiler::plan::DW_BUILD,
+            message: "internal invariant violation: the route proof asked for a link on a \
+                      path that already carries every link it took (spec-0083 §3.4). This \
+                      is a compiler bug; stop and escalate"
+                .to_string(),
+        });
+    }
+    Ok(Some(relinked))
+}
+
 /// [`take_links`] over one branch's path (spec-0083 §6): the same proof over
 /// the branch's own steps, live links and gate model, keyed by the branch's
 /// own step indices — what [`Plan::branch_critical_path_linked`] splices.
