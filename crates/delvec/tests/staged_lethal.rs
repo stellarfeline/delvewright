@@ -142,6 +142,16 @@ fn write_room(lib: &Path, room: Room) {
         palette: Vec<Pal>,
         blocks: Vec<Blk>,
     }
+    // Every id the room is made of is judged against the pinned registry
+    // before a byte is written: an id the version lacks loads as air.
+    let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+    for (_, name) in &cells {
+        let verdict = registry.validate(name, &BTreeMap::new());
+        assert!(
+            verdict.is_ok(),
+            "the lid room's `{name}` is not a block: {verdict:?}"
+        );
+    }
     let mut names: Vec<&str> = Vec::new();
     let mut blocks: Vec<Blk> = Vec::new();
     for (p, n) in &cells {
