@@ -3391,14 +3391,13 @@ fn in_stair_shaft(x: i32, y: i32, z: i32) -> bool {
 /// for — and a body walks it as a zigzag. The end room past bay 2 opens exactly
 /// as a bay 3 would, with its lantern where bay 3's would hang, so the light a
 /// body sees from the slab is the light it sees from the landing.
-fn long_gallery_at(
-    x: i32,
-    y: i32,
-    z: i32,
-) -> Option<(
+/// A block id and its optional block-state properties.
+type BlockWithState = (
     &'static str,
     Option<&'static [(&'static str, &'static str)]>,
-)> {
+);
+
+fn long_gallery_at(x: i32, y: i32, z: i32) -> Option<BlockWithState> {
     if in_stair_shaft(x, y, z) {
         return Some(("minecraft:air", None));
     }
