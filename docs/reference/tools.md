@@ -2066,6 +2066,20 @@ an empty event loop to exit 0 on, and channel start is a retried handshake
 (the readiness probe passing and the next connection being accepted are two
 events with a measured race between them).
 
+`tools/spike-post-beat-camera/anvil_rig.py` (`census <world>`, `rewrite <world>
+<out> [--minimal-level-dat] [--perturb FROM=TO]`, `compare <a.png> <b.png>`;
+standard library only) is the rig behind spec-0089 §2: it reads a server-written
+save as the pinned Chunky core reads it (region header, zlib chunk, packed
+palette indices, per the minecraft.wiki region and chunk format pages), counts
+what the save holds that a block map does not (entities, block entities, light
+arrays, heightmaps, proto-chunks), writes the same cells back as a minimal world
+of block states and biomes with every timestamp zero, proves the two writes
+byte-identical and every cell read back equal, and compares two rendered frames
+by identical-pixel count and luminance rms against a two-render noise floor.
+Its README carries the readings on the gallery's save: the minimal world renders
+inside the noise floor, and a visible block swapped for gold moves the rms
+sixteen-fold, so the equal readings are not a comparison that sees nothing.
+
 `tools/spike-block-settling/run.sh` (`EULA=TRUE
 tools/spike-block-settling/run.sh [--out <path>]`) measures, on a throwaway
 pinned server booted on a DRY superflat, the two facts the `stair-shape`
