@@ -11,28 +11,15 @@ Where the production line stands, and the blocks of work that come next, in orde
 
 ## Block 1 — what shipping Vesperhold found (now)
 
-Shipping Vesperhold surfaced defects in the engine's mechanisms, its proofs and its release plumbing. This block closes them.
-
-**Mechanism and proof defects**
-- A kill-objective body knocked off a ledge can survive where the party cannot reach ([issue](https://github.com/stellarfeline/delvewright/issues/811)).
-- The death-loop approach walks through live encounters ([issue](https://github.com/stellarfeline/delvewright/issues/829)).
-- The death loop's relics forfeit is gated in emission but stated unconditional in the plan ([issue](https://github.com/stellarfeline/delvewright/issues/810)).
-- The reseat proof's unleash half binds nothing live ([issue](https://github.com/stellarfeline/delvewright/issues/803)).
-- Navigation judges a leg the ancestry does not connect over the open world ([issue](https://github.com/stellarfeline/delvewright/issues/813)).
-- A readiness poll that the probe's own error message satisfies ([issue](https://github.com/stellarfeline/delvewright/issues/823)).
-- A test that says "the pinned tree" reads the dev symlink's working tree ([issue](https://github.com/stellarfeline/delvewright/issues/817)).
-- A committed NPC skin's bytes are reproducible, not only its pixels ([issue](https://github.com/stellarfeline/delvewright/issues/821)).
-- `DW0485` judges one play order per branch, so an optional beat after a seal is not refused ([issue](https://github.com/stellarfeline/delvewright/issues/857)).
+Shipping Vesperhold surfaced defects in the engine's mechanisms, its proofs and its release plumbing. This block closes the ones still open.
 
 **Creator-facing surface**
 - A creator warning for a villager-bodied NPC under open sky on a thunder beat, which can turn into a witch ([issue](https://github.com/stellarfeline/delvewright/issues/832)).
-- The sky is a per-camera parameter of `delvec` cameras ([issue](https://github.com/stellarfeline/delvewright/issues/838)).
 - Every dialogue button carries a tooltip (spec-0078).
 - A fallen player waits before respawning (spec-0077).
 
 **Content repository**
 - Vesperhold's program file moves to Git LFS ([issue](https://github.com/stellarfeline/delvewright-campaigns/issues/158)).
-- Pre-releases are published through the release workflow ([issue](https://github.com/stellarfeline/delvewright-campaigns/issues/160)).
 - Vesperhold 1.1, built on the engine that carries this block.
 
 **Exit:** every issue and pull request linked above is closed by a merged change (`gh issue view <n> --json state` reads `CLOSED`); spec-0077 and spec-0078 are each merged with their implementation or declined; and a `release/vesperhold/v1.1.0` release exists in the content repository, published by its release workflow.
