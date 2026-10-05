@@ -1194,7 +1194,7 @@ const MOVED_ON_PURPOSE: [&str; 3] = [
 
 /// **The staged case with `when` removed builds as `2316b1c6` built it.**
 ///
-/// `golden/staged-lethal/unstaged-at-2316b1c6.json` is the manifest of this
+/// `fixtures/staged-lethal-unstaged-at-2316b1c6.json` is the manifest of this
 /// very case built in-process by the engine at `2316b1c6` (the revision before
 /// staging), through the same fixture builder. Every emitted path is compared:
 /// the tick, every function, every PackTest template and every ledger match,
@@ -1208,7 +1208,7 @@ fn the_unstaged_case_builds_as_the_engine_before_staging_built_it() {
     let golden: BTreeMap<String, String> = serde_json::from_str(
         &std::fs::read_to_string(
             common::repo_root()
-                .join("crates/delvec/tests/golden/staged-lethal/unstaged-at-2316b1c6.json"),
+                .join("crates/delvec/tests/fixtures/staged-lethal-unstaged-at-2316b1c6.json"),
         )
         .unwrap(),
     )

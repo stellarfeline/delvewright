@@ -67,6 +67,12 @@ fn patched_prefabs() -> PathBuf {
             .get_mut("anchors")
             .and_then(|a| a.as_object_mut())
             .unwrap();
+        // A cell of air under the ceiling, out of every body's reach, for the
+        // staged lethal volume (spec-0088) the eighth consumer class needs.
+        anchors.insert(
+            "anchor/rafter".to_string(),
+            serde_json::json!({ "pos": [5, 4, 2] }),
+        );
         anchors.insert(
             "anchor/trap".to_string(),
             serde_json::json!({
@@ -132,6 +138,11 @@ static QUESTS: LazyLock<String> = LazyLock::new(|| {
             ] }
         ]
       }
+    ],
+    "lethal_volumes": [
+      { "id": "lethal/the-draught", "region": { "anchor": "anchor/rafter", "extent": [0, 0, 0] },
+        "message": "The draught under the rafters is colder than it should be.",
+        "when": { "requires_state": [ { "state": "state/toll", "op": "at-least", "value": 2 } ] } }
     ],
     "traps": [
       {
@@ -448,6 +459,15 @@ fn the_comparison_reaches_every_consumers_guard() {
     assert!(
         cast.contains("if score @s dw.s_nerve matches ..0"),
         "a cast placement's branch gate must carry the comparison:\n{cast}"
+    );
+
+    // 7. lethal volume — the tick guard of a volume live from a story stage
+    //    (spec-0088), a party predicate.
+    let draught = body(&out, "lethal_the_draught_tick");
+    assert_eq!(
+        draught.trim_end(),
+        "execute if score #party dw.s_toll matches 2.. run function cast-ledger:lethal_the_draught",
+        "a staged volume's guard must carry the comparison"
     );
 }
 
