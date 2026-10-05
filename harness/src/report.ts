@@ -474,6 +474,11 @@ export class RunReport {
                 forfeits_examined: this.deathLoopBinding.forfeitsExamined,
                 seats_matched: this.deathLoopBinding.seatsMatched,
                 walks_back: this.deathLoopBinding.walksBack,
+                // spec-0088: volumes live from a story stage, and how many read
+                // live when their trial opened — a staged volume shut at trial
+                // was not exercised.
+                staged_volumes: this.deathLoopBinding.stagedVolumes,
+                staged_live_at_trial: this.deathLoopBinding.stagedLiveAtTrial,
                 unbound: this.deathLoopBinding.deathsObserved === 0,
               },
         trials: this.lethalTrials.map((t) => ({
@@ -518,6 +523,7 @@ export class RunReport {
           abandoned: t.abandoned ?? null,
           approach_failure: t.approachFailure ?? null,
           walk_back_failure: t.walkBackFailure ?? null,
+          not_live_at_trial: t.notLiveAtTrial ?? null,
         })),
       },
       // What the die-retry stage EXAMINED, beside what it found. `unbound: true`

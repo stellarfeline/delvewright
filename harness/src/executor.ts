@@ -91,6 +91,8 @@ import {
   inBox,
   dropOf,
   gateVerdict,
+  volumeGateVerdict,
+  volumeIsStaged,
   lethalStepCost,
   markersAt,
   nearLip,
@@ -1624,6 +1626,13 @@ export class MineflayerExecutor implements StepExecutor {
    * every compile-time proof green.
    */
   private lethalBoxes: readonly Box[] = [];
+  /** The regions of the volumes live from world-load — always excluded. */
+  private unstagedBoxes: readonly Box[] = [];
+  /**
+   * The volumes live from a story stage (spec-0088): excluded per walk leg, by
+   * asking their gate's terms before the leg ({@link refreshStagedExclusion}).
+   */
+  private stagedVolumes: readonly DeathPlan["volumes"][number][] = [];
   /** Suspended for exactly one walk: the deliberate step INTO a volume. */
   private lethalExclusionSuspended = false;
   /** Every walk into a lethal volume this run made, and what it observed. */
@@ -2674,7 +2683,41 @@ export class MineflayerExecutor implements StepExecutor {
     // rules the NAVIGATOR should read is one question, and it is answered here
     // by the wider of the two — it excludes everything the keep-out box does,
     // plus the course at `hi.y + 1`, so nothing this branch proved is lost.
-    this.lethalBoxes = plan.volumes.map((v) => v.region);
+    //
+    // spec-0088: only the volumes live from world-load are excluded for the whole
+    // run. A volume live from a story stage is excluded per walk leg, by asking
+    // its gate before the leg — a leg walked before the flip crosses the cells
+    // the proof crossed, and a leg after goes round them.
+    this.unstagedBoxes = plan.volumes.filter((v) => !volumeIsStaged(v)).map((v) => v.region);
+    this.stagedVolumes = plan.volumes.filter(volumeIsStaged);
+    this.lethalBoxes = [...this.unstagedBoxes, ...this.stagedVolumes.map((v) => v.region)];
+  }
+
+  /**
+   * **Which staged volumes are live for the next walk leg** (spec-0088 §8): put
+   * every term of each staged volume's gate to the server through the one
+   * term-asking the stake trial uses ({@link askTerm}), and exclude the region
+   * of every volume whose gate reads open. A term the server answers neither way
+   * excludes the region — the conservative direction — and a `[lethal]` line
+   * says so.
+   */
+  private async refreshStagedExclusion(): Promise<void> {
+    if (this.stagedVolumes.length === 0) return;
+    const answers = new Map<string, boolean | undefined>();
+    const live: Box[] = [];
+    for (const v of this.stagedVolumes) {
+      for (const t of v.gate.terms) {
+        if (!answers.has(termKey(t))) answers.set(termKey(t), await this.askTerm(t));
+      }
+      const verdict = volumeGateVerdict(v, (t) => answers.get(termKey(t)));
+      if (verdict.kind === "unread") {
+        process.stderr.write(
+          `[lethal] ${v.id}: ${verdict.why}; excluded from this leg as if live\n`,
+        );
+      }
+      if (verdict.kind !== "shut") live.push(v.region);
+    }
+    this.lethalBoxes = [...this.unstagedBoxes, ...live];
   }
 
   /** Every walk into a lethal volume this run made, and what it observed. */
@@ -3187,6 +3230,29 @@ export class MineflayerExecutor implements StepExecutor {
           `recovering before the approach, because a corpse cannot walk into anything\n`,
       );
       await this.recoverFromDeath();
+    }
+    // spec-0088: a volume live from a story stage is entered only when its gate
+    // reads open. Shut, the trial records why and is not entered; unread, it
+    // establishes nothing, and that is the trial's failure.
+    if (volumeIsStaged(volume)) {
+      const answers = new Map<string, boolean | undefined>();
+      for (const t of volume.gate.terms) {
+        if (!answers.has(termKey(t))) answers.set(termKey(t), await this.askTerm(t));
+      }
+      const verdict = volumeGateVerdict(volume, (t) => answers.get(termKey(t)));
+      if (verdict.kind !== "open") {
+        const trial = openLethalTrial(volume, volume.region.lo, []);
+        if (verdict.kind === "shut") {
+          trial.notLiveAtTrial = verdict.why;
+          process.stderr.write(
+            `[death-loop] ${volume.id}: not live at trial — ${verdict.why}; not entered\n`,
+          );
+        } else {
+          trial.abandoned = `whether this staged volume is live could not be read — ${verdict.why}`;
+        }
+        this.lethalTrials.push(trial);
+        return;
+      }
     }
     const here = this.feetCell() ?? [0, 0, 0];
     const entryCell = entryCellOf(volume.region, here, (c) => this.bodyCanOccupy(c));
@@ -4115,6 +4181,7 @@ export class MineflayerExecutor implements StepExecutor {
     this.walkLabel = label;
     try {
       await this.holdFullHealth("its start");
+      await this.refreshStagedExclusion();
       await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
     } finally {
       this.walkLegs -= 1;
