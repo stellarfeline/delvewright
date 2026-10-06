@@ -382,11 +382,14 @@ move the mark or open a way round, never drop the declaration.
 ## Light inside a cave or a body
 
 Light the inside of a cave, a hollow or a body while you design the room, by
-these three rules, whichever route makes the piece:
+these three rules, whichever route makes the piece
+(`$DELVEWRIGHT_ENGINE/docs/reference/interior-lighting.md` §7):
 
-- **A natural source sits in the wall.** A glowing block the place could grow
-  (shroomlight, a vein of glowstone) is set flush into the rock or the flesh,
-  never stood on the floor and never paved across it.
+- **A natural source is part of the surface, and much of it is overhead.** Use
+  what a cave grows: glow lichen on the rock, cave vines with glow berries
+  hanging from the vault, and light across the ceiling the way glowworms light
+  a grotto. Set it in the walls and the vault, never stood on the floor and
+  never paved into it.
 - **An artificial source is hidden.** A lantern, lamp or torch sits recessed
   behind a partial block of the surface's own family (a slab, a stair, a
   trapdoor), so the room glows and the fixture does not show.
