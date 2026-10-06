@@ -257,8 +257,9 @@ pub enum Solid {
         /// Vertical stretch of the cross-section (1 when absent).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stretch_y: Option<f64>,
-        /// This solid's own material: every block whose centre it contains
-        /// takes this tone instead of the palette's.
+        /// This solid's own material: every block it reaches into (its
+        /// centre within half a block's diagonal of the shape) takes this tone
+        /// instead of the palette's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         material: Option<Tone>,
         /// Weathered by the form's noise.
@@ -273,8 +274,9 @@ pub enum Solid {
         centre: [f64; 3],
         /// The three semi-axes.
         radii: [f64; 3],
-        /// This solid's own material: every block whose centre it contains
-        /// takes this tone instead of the palette's.
+        /// This solid's own material: every block it reaches into (its
+        /// centre within half a block's diagonal of the shape) takes this tone
+        /// instead of the palette's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         material: Option<Tone>,
         /// Weathered by the form's noise.
@@ -293,8 +295,9 @@ pub enum Solid {
         radius: f64,
         /// The full height along the axis.
         height: f64,
-        /// This solid's own material: every block whose centre it contains
-        /// takes this tone instead of the palette's.
+        /// This solid's own material: every block it reaches into (its
+        /// centre within half a block's diagonal of the shape) takes this tone
+        /// instead of the palette's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         material: Option<Tone>,
         /// Weathered by the form's noise.
@@ -309,8 +312,9 @@ pub enum Solid {
         from: [f64; 3],
         /// The opposite corner.
         to: [f64; 3],
-        /// This solid's own material: every block whose centre it contains
-        /// takes this tone instead of the palette's.
+        /// This solid's own material: every block it reaches into (its
+        /// centre within half a block's diagonal of the shape) takes this tone
+        /// instead of the palette's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         material: Option<Tone>,
         /// Weathered by the form's noise.

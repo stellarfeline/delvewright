@@ -8080,7 +8080,7 @@ drift the pin was bought to prevent.
 | `width` | shelf | the walkway's width |
 | `clearance` | shelf | clear headroom over the feet surface |
 | `depth` | shelf | solid under the feet surface |
-| `material` | solid | the solid's own tone: a block takes the tone of the last solid with a material whose shape contains its centre (a shelf's tread); the palette when absent |
+| `material` | solid | the solid's own tone: a block takes the tone of the last solid with a material that reaches into it — its centre within half a block's diagonal of the shape, so the stairs and slabs on that shape's surface take it too (a shelf's tread as before); the palette when absent |
 | `lights` | top | light placed where the room is designed: `{at, block}` by hand, or `{block, hull}` set into the inside surface by the sculpt; exactly one of `at` and `hull` |
 | `at` | light | the cell, body frame |
 | `hull` | light | `{within, on, spacing, mode, cover?}`: sources drawn over the inside surface (§11, hull light) |

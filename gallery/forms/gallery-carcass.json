@@ -381,7 +381,7 @@
       ],
       "height": 1.0,
       "material": {
-        "family": "mossy_cobblestone",
+        "family": "mud_brick",
         "full": [
           [
             "minecraft:moss_block",

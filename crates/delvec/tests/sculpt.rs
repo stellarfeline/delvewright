@@ -1010,6 +1010,23 @@ fn a_solid_with_its_own_material_writes_its_blocks_in_it() {
         altar.iter().all(|n| n.contains("polished_blackstone")),
         "the box's own material, not the palette: {altar:?}"
     );
+    // The stairs and slabs the fit lays on a material solid's surface are its
+    // material too: the moss patch's rim is the disc's own family (mud brick),
+    // which no palette tone carries.
+    let mut rim = BTreeSet::new();
+    for x in 3..10 {
+        for z in 29..37 {
+            if let Some(b) = s.model.get([x, 5, z]) {
+                if b.name.ends_with("_stairs") || b.name.ends_with("_slab") {
+                    rim.insert(b.name.clone());
+                }
+            }
+        }
+    }
+    assert!(
+        rim.iter().any(|n| n.starts_with("minecraft:mud_brick_")),
+        "the patch's rim takes the disc's family: {rim:?}"
+    );
     // Without it, the palette.
     let mut bare = v.clone();
     for solid in bare["solids"].as_array_mut().unwrap() {

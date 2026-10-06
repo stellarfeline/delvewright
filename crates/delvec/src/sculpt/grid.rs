@@ -208,6 +208,10 @@ pub struct Owners {
     pub climb: Vec<u8>,
 }
 
+/// Half a block's space diagonal, `√3 / 2`: how far outside a solid with its
+/// own material a block's centre may lie and the block still take it.
+pub const HALF_DIAGONAL: f64 = 0.866_025_403_784_438_6;
+
 /// [`Owners::climb`] for a level stretch of walkway: no stair belongs there.
 pub const FLAT: u8 = 1;
 
@@ -290,8 +294,11 @@ pub fn stamp(form: &Form, seed: u64) -> (SubGrid, Owners) {
                     }
                     (d < 0.0).then_some(value)
                 });
-                // A solid with its own material owns every block whose centre
-                // it contains; a later one with a material takes it over.
+                // A solid with its own material owns every block it reaches
+                // into — its centre within half a block's diagonal of the
+                // shape, so the stairs and slabs the fit lays on the shape's
+                // surface are its material too; a later one with a material
+                // takes a block over.
                 if value && other.material().is_some() {
                     let lo_i = [0, 1, 2].map(|a| {
                         let v = if a == 1 { lo[a] + floor } else { lo[a] };
@@ -309,7 +316,7 @@ pub fn stamp(form: &Form, seed: u64) -> (SubGrid, Owners) {
                                 if noisy {
                                     d += noise.at([p[0], p[1] + floor, p[2]]);
                                 }
-                                if d < 0.0 {
+                                if d < HALF_DIAGONAL {
                                     owners.owner[(x * blocks[1] + y) * blocks[2] + z] = ordinal;
                                 }
                             }

@@ -188,7 +188,7 @@ None for the owner. Everything here is an engine-internal surface shaped by rule
 
 **What is refused where the form is read (`DW0951`).** Both or neither of `at` and `hull`; a `spacing` below 2 or not finite; `on` empty or naming a surface twice; `within` outside the box or inverted; `embedded` with a `cover`, or with a block that is not a full cube; `recessed` with no `cover`, or naming `floor` (its slot would be a hole in a surface a body walks); a `cover` that is not a bare stair or slab id, or that emits light.
 
-**A solid's own material (authored).** The `material` a `shelf` carries is a property of every solid: any `capsule`, `ellipsoid`, `disc` or `box` may declare `material`, and a block takes the tone of the last solid with a material whose shape contains the block's centre (a shelf's tread as before). A capability belongs to the object class it acts on; the shelf's field was the first instance of it, and the demo level's vantage (a mound of mud on the valley floor) is the second, which the palette — the body's tones — cannot make.
+**A solid's own material (authored).** The `material` a `shelf` carries is a property of every solid: any `capsule`, `ellipsoid`, `disc` or `box` may declare `material`, and a block takes the tone of the last solid with a material that reaches into it — its centre within half a block's diagonal of the shape, so the stairs and slabs the fit lays on that shape's surface take it too (a shelf's tread as before). A capability belongs to the object class it acts on; the shelf's field was the first instance of it, and the demo level's vantage (a mound of mud on the valley floor) is the second, which the palette — the body's tones — cannot make.
 
 ### Acceptance criteria (§9)
 
