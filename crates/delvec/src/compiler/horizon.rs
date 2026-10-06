@@ -431,11 +431,12 @@ pub fn camera_weight(map: &BiomeMap, eye: [f64; 3], biome: &str) -> f64 {
 ///
 /// The growth is bounded, each bound a rule and never a choice:
 /// - up and down, by the build height;
-/// - sideways, on a site-plan campaign, by the plan's `region` and by the
-///   chunks the place's own columns stand in, which world setup force-loads
-///   with the piece that holds them — a `fillbiome` into a chunk nothing loads
-///   is a silent no-op; an area places nothing around itself, so an area does
-///   not grow sideways;
+/// - sideways, by the place's own claim, the columns world setup force-loads
+///   for it (a `fillbiome` into a chunk nothing loads is a silent no-op): a
+///   site-plan box's claim is the plan's `region` and the chunks its own
+///   columns stand in, which world setup force-loads with the piece that holds
+///   them; an area's is [`area_claim`], its own 4-cells grown by the reach,
+///   which world setup force-loads with the area's pieces;
 /// - toward every other place whose sky differs from `atmosphere` (an uncarried
 ///   place stands under the horizon's), the growth stops short of that place's
 ///   own 4-cells grown by the same reach, so that a camera inside it reads its
@@ -458,9 +459,16 @@ pub fn place_paint(
     let mut hi = own.1.map(|v| v + BLEND_REACH);
     lo[1] = lo[1].max(BUILD_MIN_Y);
     hi[1] = hi[1].min(BUILD_MAX_Y);
+    let claim = plan
+        .areas
+        .iter()
+        .find(|a| a.area_id == place)
+        .filter(|_| plan.campaign.site_plan.is_none())
+        .map(area_claim);
     for k in [0, 2] {
-        let (bound_lo, bound_hi) = match &plan.campaign.site_plan {
-            Some(sp) => {
+        let (bound_lo, bound_hi) = match (&plan.campaign.site_plan, claim) {
+            (_, Some((clo, chi))) => (clo[k], chi[k]),
+            (Some(sp), None) => {
                 let r = &sp.content.region;
                 let rmax = r.max();
                 (
@@ -468,7 +476,7 @@ pub fn place_paint(
                     (rmax[k] as i32).min(max[k].div_euclid(16) * 16 + 15),
                 )
             }
-            None => (min[k], max[k]),
+            (None, None) => (min[k], max[k]),
         };
         // Whole 4-cells inside the bound, since a `fillbiome` paints every
         // 4-cell its range touches — the place's own cells excepted, below.
@@ -505,6 +513,49 @@ pub fn place_paint(
         hi[k] = hi[k].max(max[k]);
     }
     Some((lo, hi))
+}
+
+/// **An area's claim**: the columns its sky is seen from, its own 4-cells
+/// grown by [`BLEND_REACH`] on every side, over its own height. A hand-placed
+/// area stands alone in its [`AREA_SPACING`](crate::compiler::plan::AREA_SPACING)
+/// slot, so nothing else is built in its claim; world setup force-loads the
+/// claim's chunks with the area's pieces ([`claimed_areas`]), so its paint
+/// lands in loaded chunks, and the map's extent counts it.
+pub fn area_claim(area: &crate::compiler::plan::AreaPlacement) -> ([i32; 3], [i32; 3]) {
+    let (min, max) = area.bounds();
+    let own = crate::compiler::atmosphere::painted_box(min, max);
+    (
+        [own.0[0] - BLEND_REACH, min[1], own.0[2] - BLEND_REACH],
+        [own.1[0] + BLEND_REACH, max[1], own.1[2] + BLEND_REACH],
+    )
+}
+
+/// The claims world setup force-loads, in area order: one per area a paint
+/// reaches (an area carrying an atmosphere, or one a `set-atmosphere` names as
+/// its `place`) on a campaign without a site plan. Empty for every other
+/// campaign, which keeps its setup byte-identical.
+pub fn claimed_areas(plan: &crate::compiler::plan::Plan) -> Vec<([i32; 3], [i32; 3])> {
+    if plan.campaign.site_plan.is_some() {
+        return Vec::new();
+    }
+    let mut painted: std::collections::BTreeSet<String> = carried_places(plan.campaign)
+        .into_iter()
+        .filter(|(_, a)| a.is_some())
+        .map(|(p, _)| p)
+        .collect();
+    for (_, _, eff) in crate::compiler::atmosphere::set_atmospheres(plan.campaign) {
+        if let delvewright_dsl::Verb::SetAtmosphere {
+            place: Some(place), ..
+        } = &eff.verb
+        {
+            painted.insert(place.as_str().to_string());
+        }
+    }
+    plan.areas
+        .iter()
+        .filter(|a| painted.contains(&a.area_id))
+        .map(area_claim)
+        .collect()
 }
 
 /// What the camera reads inside one carried place: how many of its standing
@@ -667,22 +718,28 @@ pub const BUILD_MIN_Y: i32 = -64;
 /// See [`BUILD_MIN_Y`].
 pub const BUILD_MAX_Y: i32 = 319;
 
-/// The map's extent in columns: the rectangle a surround rings when the
-/// campaign states one ([`crate::compiler::plan::surround_rect`]), else the
-/// union of the placed pieces' footprints — the columns world setup
-/// force-loads. A `fillbiome` outside it reaches a chunk nothing loads, which
-/// is the same silent no-op an unloaded `place template` is.
+/// The map's extent in columns, the columns world setup force-loads: the
+/// rectangle the campaign states ([`crate::compiler::plan::surround_rect`]: a
+/// site plan's region, or a one-piece campaign's piece), the placed pieces'
+/// footprints, and the areas' claims ([`claimed_areas`]). A `fillbiome` outside
+/// it reaches a chunk nothing loads, which is the same silent no-op an unloaded
+/// `place template` is.
 fn extent_columns(plan: &crate::compiler::plan::Plan) -> Vec<[i32; 4]> {
-    if let Some((r, _)) = crate::compiler::plan::surround_rect(plan.campaign, &plan.areas) {
-        return vec![[r.min_x, r.min_z, r.max_x, r.max_z]];
+    let stated = crate::compiler::plan::surround_rect(plan.campaign, &plan.areas)
+        .map(|(r, _)| [r.min_x, r.min_z, r.max_x, r.max_z]);
+    if plan.campaign.site_plan.is_some() {
+        return stated.into_iter().collect();
     }
-    plan.areas
-        .iter()
-        .flat_map(|a| a.pieces.iter())
-        .map(|p| {
-            let (lo, hi) = p.bbox();
-            [lo[0], lo[2], hi[0], hi[2]]
-        })
+    stated
+        .into_iter()
+        .chain(
+            plan.areas
+                .iter()
+                .flat_map(|a| a.pieces.iter())
+                .map(|p| p.bbox())
+                .chain(claimed_areas(plan))
+                .map(|(lo, hi)| [lo[0], lo[2], hi[0], hi[2]]),
+        )
         .collect()
 }
 

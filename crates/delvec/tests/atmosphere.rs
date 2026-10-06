@@ -619,3 +619,120 @@ fn a_place_is_painted_as_far_as_the_camera_inside_it_reads() {
     );
     let _ = std::fs::remove_dir_all(&out);
 }
+
+/// The blend over an **area** (spec-0080 §2.2): an area is painted over its
+/// claim (`horizon::area_claim`, its own 4-cells grown by the reach on every
+/// side), world setup force-loads the claim and `place_verify` waits for its
+/// chunks, and the reach line stands an eye at every cell of the party walk
+/// inside the area. Without the claim an area does not grow sideways, an eye
+/// near its edge reads the declared fog thinned by the ground biome, and an
+/// unmeasured reach line says nothing about it.
+#[test]
+fn an_area_is_painted_over_its_claim_and_every_eye_in_it_is_measured() {
+    use delvec::compiler::horizon::{BLEND_REACH, area_claim};
+    let close_air = || {
+        json!([atmosphere(
+            "atmosphere/close-air",
+            "none",
+            json!({ "visual/fog_end_distance": 14.2 })
+        )])
+    };
+    let c = campaign(close_air(), Some("atmosphere/close-air"), vec![]);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let (min, max) = plan.areas[0].bounds();
+    let (clo, chi) = area_claim(&plan.areas[0]);
+    let q = delvec::compiler::atmosphere::quantize;
+    assert_eq!(
+        (clo, chi),
+        (
+            [q(min[0]) - BLEND_REACH, min[1], q(min[2]) - BLEND_REACH],
+            [
+                q(max[0]) + 3 + BLEND_REACH,
+                max[1],
+                q(max[2]) + 3 + BLEND_REACH
+            ]
+        )
+    );
+    let out = try_build(&c).expect("builds");
+    // The bootstrap paint spans the claim sideways and the reach up and down.
+    let mut lo = [i32::MAX; 3];
+    let mut hi = [i32::MIN; 3];
+    for l in file(
+        &out,
+        "datapack/data/hello-world/function/atmosphere_bootstrap.mcfunction",
+    )
+    .lines()
+    {
+        let n: Vec<i32> = l
+            .split_whitespace()
+            .skip(1)
+            .take(6)
+            .map(|t| t.parse().unwrap())
+            .collect();
+        for k in 0..3 {
+            lo[k] = lo[k].min(n[k]);
+            hi[k] = hi[k].max(n[k + 3]);
+        }
+    }
+    assert_eq!(
+        (lo, hi),
+        (
+            [clo[0], q(min[1]) - BLEND_REACH, clo[2]],
+            [chi[0], q(max[1]) + 3 + BLEND_REACH, chi[2]]
+        )
+    );
+    let setup = file(&out, "datapack/data/hello-world/function/setup.mcfunction");
+    assert!(
+        setup.contains(&format!(
+            "forceload add {} {} {} {}",
+            clo[0], clo[2], chi[0], chi[2]
+        )),
+        "{setup}"
+    );
+    let verify = file(
+        &out,
+        "datapack/data/hello-world/function/place_verify.mcfunction",
+    );
+    assert!(
+        verify.lines().any(|l| l.starts_with(&format!(
+            "execute if loaded {} {} {} ",
+            clo[0], clo[1], clo[2]
+        ))),
+        "the claim chunk no piece covers is waited for: {verify}"
+    );
+    // The reach line, through the binary: every eye in the area reads the
+    // atmosphere whole.
+    let dir = std::env::temp_dir().join(format!("delvec-atmosphere-area-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::hello_world_dir(), &dir.join("src"));
+    let mut world = hw("world.json");
+    world["content"]["atmospheres"] = close_air();
+    world["content"]["areas"][0]["atmosphere"] = json!("atmosphere/close-air");
+    std::fs::write(
+        dir.join("src/world.json"),
+        serde_json::to_string_pretty(&world).unwrap(),
+    )
+    .unwrap();
+    let run = std::process::Command::new(BIN)
+        .arg("build")
+        .arg(dir.join("src"))
+        .arg("-o")
+        .arg(dir.join("out"))
+        .arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(run.status.success(), "{stderr}");
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with("atmosphere reach: `area/keep`"))
+        .unwrap_or_else(|| panic!("no reach line for the area: {stderr}"));
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let (whole, eyes) = (words[4], words[6]);
+    assert!(eyes.parse::<usize>().unwrap() > 0, "{line}");
+    assert_eq!(whole, eyes, "{line}");
+    assert!(line.ends_with("the worst 100.0%"), "{line}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

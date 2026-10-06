@@ -338,6 +338,7 @@ own bounds and the sky is whole only where every cell within twelve blocks is
 painted: the first twelve blocks past the line are a gradient, and a place
 narrower than the blend never shows its fog at all. Every build prints
 `atmosphere reach: <place> — W of E standing eye(s) read <biome> whole` per
-carried site-plan box — read it: where the sky's look matters, most eyes should
+carried place (a box's eyes stand over its floor, an area's wherever the party
+can stand in it) — read it: where the sky's look matters, most eyes should
 read it whole, and when few do, widen the place. A `region` repaint is painted
 exactly as sized, so size it past the blend the same way.

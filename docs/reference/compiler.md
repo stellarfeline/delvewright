@@ -275,7 +275,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `difficulty` (opt) | The delve's combat difficulty: `easy` / `normal` / `hard`. Absent = the compiler's **derivation** — `easy` when the campaign fields any wave, `peaceful` when it fields none. Declaring it overrides the derivation in BOTH places a difficulty comes from: `server/server.properties` (what the shipped image and every compose profile boot from, via `validation/world-settings-entrypoint.sh`) and a `/difficulty <kw>` appended to the sealing baseline, so the declaration also holds when the datapack alone is dropped into another world. A declaring campaign also emits the `declared_difficulty` PackTest, which asserts the live world's difficulty via the bare `/difficulty` query command (vanilla returns `Difficulty#getId()`: peaceful 0, easy 1, normal 2, hard 3) — so properties, sealing and declaration are proven to agree on a real server. `peaceful` is refused (`DW0468`); fighting actors with no waves and no declaration is the advisory `DW0469`. **Retuning warning:** the derived `easy` HALVES incoming player damage (`min(dmg / 2 + 1, dmg)`) — content tuned under it that declares `normal` or `hard` must redo that arithmetic, not merely flip the keyword. | 0.6 |
 | `horizon` (opt) | The ground and the sky the map stands in. Either a **string shorthand** — `void` (default/absent) or `ocean` — or the **object form** `{base, …params}`. `void`: nothing outside the placed geometry. `ocean`: a pinned bedrock/stone/water superflat, sea level y=62, no structures or mobs; it drives `generator-settings` **and the area-origin datum**, placing ocean areas at y=60 = `sea_level − 2` so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane is the vanilla-normal one block above the sea (`DW0344`). `valley`: the one base that BUILDS terrain — see *The horizon's surround* below. Params: `ratio` (2.0..=3.0, default 2.5) and `rim_height` (16..=128, default 48), both `valley`-only, both `DW0853` out of range or beside another base. Any horizon whose ambient a body can ENTER — the sea, and a valley's gap floor — needs a `boundary` (`DW0320`); `void` is the only one it cannot, because there is nothing out there to stand on. | 0.19 |
 | `atmospheres[]` (opt) | spec-0080: **the skies a place can stand under**, declared once on the campaign. Each is `{id: atmosphere/<kebab>, attributes?, tint?, precipitation, climate?}` and ships as a datapack biome `<ns>:atmosphere/<kebab>` (see *World / build output*). `attributes` maps an environment-attribute id (`visual/sky_color`; the `minecraft:` prefix optional) to a value in its shape — the ids, scope, shapes and the range the pinned codec rejects outside of are vendored data (`crates/delvec/data/environment-attributes-1.21.11.json`, read from the pinned jar by `tools/maintenance/extract-environment-attributes.py`), so the one DSL unit is the map. **20 ids are admitted**; the 5 the overworld day cycle overrides (`sun_angle`, `moon_angle`, `star_angle`, `sunrise_sunset_color`, `moon_phase`) and the 20 `gameplay/` ids are `DW0928`. A float may also be written in vanilla's modifier form `{"argument": <n>, "modifier": add\|subtract\|multiply\|minimum\|maximum\|override}` (`alpha_blend` takes a `FloatWithAlpha` and is not admitted). `tint` is `{grass?, foliage?, dry_foliage?, water?}`, each `#rrggbb`. `precipitation` (`none`/`rain`/`snow`, required) derives `has_precipitation`, `temperature` and `downfall` (`rain` → true, 0.5, 0.5; `snow` → true, 0.0, 0.5; `none` → false, 0.5, 0.5), and is the fact `DW0496` reads at a cell; `climate {temperature, downfall}` overrides the derived pair and must agree with it (`DW0930`: snow below 0.15, rain at or above). The day timeline stacks over a biome: colours and `sky_light_factor` survive darkened at night, `star_brightness` takes the maximum (stars at noon are possible), and the sun cannot be moved from a place. One no place carries and no beat paints is `DW0930`. | 0.35 |
-| `areas[].atmosphere` (opt) | spec-0080: the atmosphere this place stands under **from the first tick** — painted by the bootstrap `atmosphere_bootstrap` function over the area's placed bounds (`AreaPlacement::bounds`) grown up and down by the client's blend reach (*The blend*, under *World / build output*). The volume is the placement's, never typed. Absent: the horizon's biome. The site plan's `boxes[].atmosphere` is the same capability on the other class of place with a world box. | 0.35 |
+| `areas[].atmosphere` (opt) | spec-0080: the atmosphere this place stands under **from the first tick** — painted by the bootstrap `atmosphere_bootstrap` function over the area's placed bounds (`AreaPlacement::bounds`) grown by the client's blend reach on every face, sideways within the area's claim (*The blend*, under *World / build output*). The volume is the placement's, never typed. Absent: the horizon's biome. The site plan's `boxes[].atmosphere` is the same capability on the other class of place with a world box. | 0.35 |
 | `min_players` (opt, 1..=4) | spec-0018: the party size the delve **requires**. Absent = 1 (a party of one is always legal). `>= 2` emits the **lobby gate**: `tick` recomputes the live count into `#lobby dw.sys`, the class-selection dialog driver is prefixed `if score #lobby dw.sys matches <n>..` (so the delve cannot START short-handed), and unclassed players get a self-updating `x / n` actionbar (`{"score":{"name":"#lobby","objective":"dw.sys"}}` — one emitted line, no per-count strings; a compiler default, not an l10n key). Out of range = `DW0356`; a mandatory-n declaration with no n-way division of labour = `DW0358`. `min_players: 1` emits **nothing** (byte-identical). | 0.6 |
 | `boundary {margin?,message?}` (opt) | spec-0013: declares a **derived** playable region (union of final placed-piece AABBs, inflated horizontally by `margin` (`0..=64`, default 16; else `DW0321`), unbounded up, floor = lowest placed block − 8). A 1s clock returns any player outside it to the last checkpoint (`dw:cp`) with an actionbar `message` (l10n `world.boundary.message`, English default when absent) + a soft sound; no damage, no item loss. `horizon:"ocean"` without a `boundary` = `DW0320`. | 0.6 |
 
@@ -1995,9 +1995,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   centre of the eldritch spike's approved 32×40×40 slab). So **a carried
   place is painted as far as a camera inside it reads**: its own 4-cells
   grown by `BLEND_REACH` (12) on every face, bounded up and down by the build
-  height; sideways, on a site-plan campaign, by the plan's `region` and the
-  chunks the place's own columns stand in (world setup force-loads them with
-  the piece that holds them), and not at all for an area; and toward every
+  height; sideways by the place's claim, the columns world setup
+  force-loads for it: for a site-plan box, the plan's `region` and the chunks
+  its own columns stand in (force-loaded with the piece that holds them); for
+  an area, `horizon::area_claim`, its own 4-cells grown by the reach on every
+  side, which world setup force-loads with the area's pieces (`forceload add`
+  in `setup`, each claim chunk no piece covers waited for by an `execute if
+  loaded` in `place_verify` and never released) and the map's extent counts,
+  for every area a paint reaches (carried, or named by a `set-atmosphere`
+  `place`) on a campaign without a site plan; and toward every
   other place under a different sky (an uncarried place stands under the
   horizon's) short of that place's own 4-cells grown by the same reach, along
   the axis that separates the two (`y`, then `x`, then `z`). It never cuts
@@ -2009,10 +2015,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   mixes is what the rule cannot reach: the cells within twelve blocks of a
   neighbour under another sky (the gradient across a threshold), and a place
   too narrow for the kernel. Every build that carries one prints, per carried
-  site-plan box, `atmosphere reach: <place> — W of E standing eye(s) read
-  <biome> whole; the best reads B% of it` (one eye per footprint column, at
-  the block centre, 1.62 over the floor, through `camera_weight`); an area
-  states no floor and prints `unmeasured`. The line is a measurement and
+  place, `atmosphere reach: <place> — W of E standing eye(s) read <biome>
+  whole; the best reads B% of it, the worst L%` (through `camera_weight`, each
+  eye at the block centre, 1.62 over its floor): a site-plan box stands one
+  eye per footprint column over its floor; an area, which states no floor,
+  stands one at every cell of the party walk
+  (`World::reachable_walkable_rooted` from every anchor) inside its placed
+  bounds. The line is a measurement and
   refuses nothing.
 - `horizon:"ocean"` (spec-0013) swaps `generator-settings` for a pinned
   superflat `{"biome":"minecraft:ocean","layers":[bedrock×1, stone×118,

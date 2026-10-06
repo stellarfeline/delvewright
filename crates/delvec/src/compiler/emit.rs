@@ -3620,6 +3620,17 @@ fn emit_functions(
             min[0], min[2], max[0], max[2],
         ));
     }
+    // An area's claim (spec-0080 §3.2, `horizon::area_claim`): the columns its
+    // sky is painted over, its 4-cells grown by the blend reach. Held for the
+    // whole session like the pieces, because a `set-atmosphere` with `place`
+    // repaints the same cells mid-play. Empty for a campaign no area paint
+    // reaches → setup byte-identical.
+    let claims = crate::compiler::horizon::claimed_areas(plan);
+    for (min, max) in &claims {
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            min[0], min[2], max[0], max[2],
+        ));
+    }
     // Stage-7 edit writes may land outside the piece bboxes (a leaning canopy,
     // a fragment stamped beside a piece) — forceload each batch's write AABB
     // too, or the `world_edits` setblocks would silently fail on unloaded
@@ -3647,6 +3658,22 @@ fn emit_functions(
             chunk_span(min, max)
         })
         .collect();
+    // The claim chunks no piece covers, each with a cell inside both the chunk
+    // and the claim: `place_verify` waits for them as it waits for the edit
+    // chunks below, so the bootstrap paint in `setup_finish` never reaches a
+    // chunk still loading, and they are never released.
+    let mut claim_chunks: BTreeMap<(i32, i32), [i32; 3]> = BTreeMap::new();
+    for (min, max) in &claims {
+        for (cx, cz) in chunk_span(*min, *max) {
+            if !piece_chunks.contains(&(cx, cz)) {
+                claim_chunks.entry((cx, cz)).or_insert([
+                    (cx * 16).max(min[0]),
+                    min[1],
+                    (cz * 16).max(min[2]),
+                ]);
+            }
+        }
+    }
     // Chunk → a representative block cell inside BOTH the chunk and the edit
     // AABB (`execute if loaded` takes a block pos). Deterministic: `BTreeMap`
     // keyed on the chunk coordinate, first AABB to reach a chunk wins.
@@ -3697,11 +3724,13 @@ fn emit_functions(
     // Folding them into `#placeok` reuses the placement retry loop verbatim:
     // the tick function re-runs `place_verify` until every sentinel AND every
     // edit chunk reports in. Empty for a campaign whose edits stay inside the
-    // pieces → `place_verify` byte-identical.
-    for ((cx, cz), cell) in &edit_chunks {
-        if piece_chunks.contains(&(*cx, *cz)) {
-            continue;
-        }
+    // pieces → `place_verify` byte-identical. The claim chunks join them on the
+    // same terms.
+    for (_, cell) in claim_chunks.iter().chain(
+        edit_chunks
+            .iter()
+            .filter(|(k, _)| !piece_chunks.contains(k) && !claim_chunks.contains_key(k)),
+    ) {
         place_verify.push(format!(
             "execute if loaded {} {} {} run scoreboard players add #placeok dw.sys 1",
             cell[0], cell[1], cell[2]
@@ -3938,7 +3967,7 @@ fn emit_functions(
     // addressing those chunks for the whole session. Empty for a campaign whose
     // edits stay inside the pieces → `setup_finish` byte-identical.
     for ((cx, cz), cell) in &edit_chunks {
-        if piece_chunks.contains(&(*cx, *cz)) {
+        if piece_chunks.contains(&(*cx, *cz)) || claim_chunks.contains_key(&(*cx, *cz)) {
             continue;
         }
         setup.push(format!("forceload remove {} {}", cell[0], cell[2]));
