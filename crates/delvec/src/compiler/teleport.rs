@@ -239,7 +239,7 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
         gathers: plan.gathers.len(),
         legs_carried: 0,
     };
-    if vols.is_empty() {
+    if vols.is_empty() && plan.loops.is_empty() {
         return Ok(gate);
     }
     // `(what it is, which one, where)` — the affordance authority, plus the seal
@@ -265,6 +265,44 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
         }
     }
     gate.affordances = posts.len();
+    // spec-0086 §4.2: a loop's slab moves whatever body is in it, so an
+    // affordance inside it is the same silence by a second verb — the body is
+    // moved off the thing it reached for.
+    // A checkpoint seat is a place a body is put down; inside a slab it is put
+    // down and moved in one tick.
+    let seats: Vec<(&'static str, String, [i32; 3])> = plan
+        .checkpoints
+        .iter()
+        .map(|cp| {
+            (
+                if cp.rest {
+                    "bonfire seat"
+                } else {
+                    "checkpoint seat"
+                },
+                format!("on anchor `{}`", cp.anchor),
+                cp.pos,
+            )
+        })
+        .collect();
+    for l in &plan.loops {
+        for (kind, label, pos) in posts.iter().chain(&seats) {
+            if !crate::compiler::r#loop::inside(l.slab, *pos) {
+                continue;
+            }
+            return Err(Failure {
+                code: DW_TELEPORT_BOUND_AFFORDANCE,
+                message: format!(
+                    "the slab of loop `{}` ({:?}..{:?}) moves every body inside it by \
+                     [{}, {}, {}], and it covers the {kind} {label} at {pos:?}. A body that steps \
+                     up to it is moved off the thing it reached for before it can press it. Move \
+                     the affordance out of the slab, or move the slab (its anchor and `extent`) \
+                     off the affordance.",
+                    l.id, l.slab.0, l.slab.1, l.offset[0], l.offset[1], l.offset[2]
+                ),
+            });
+        }
+    }
     for v in &vols {
         for (kind, label, pos) in &posts {
             if !v.contains(*pos) {

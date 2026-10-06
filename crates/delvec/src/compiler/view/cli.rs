@@ -42,6 +42,9 @@ pub struct ViewOpts {
     /// Resource pack for textures (the 1.21.11 client jar). Overrides the
     /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
     pub textures: Option<String>,
+    /// A delve's `resourcepack.zip`, layered above the textures (spec-0084
+    /// §5.1): a block texture the delve replaces is drawn as the delve draws it.
+    pub pack: Option<String>,
     /// Rendered frame dimension (square), in pixels.
     pub size: u32,
 }
@@ -259,6 +262,11 @@ pub enum ViewCommand {
         /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
         #[arg(long)]
         textures: Option<String>,
+        /// A delve's `resourcepack.zip`, read above the textures — the order a
+        /// client applies a server-sent pack in — so a block texture the delve
+        /// replaces (`world.textures[]`) is drawn as the delve draws it.
+        #[arg(long)]
+        pack: Option<String>,
     },
     /// Derive the appearance table (colour, coverage and model bounds per
     /// blockstate) for some prefabs, as JSON — what a palette actually looks
@@ -286,6 +294,11 @@ pub enum ViewCommand {
         /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
         #[arg(long)]
         textures: Option<String>,
+        /// A delve's `resourcepack.zip`, read above the textures — the order a
+        /// client applies a server-sent pack in — so a block texture the delve
+        /// replaces (`world.textures[]`) is drawn as the delve draws it.
+        #[arg(long)]
+        pack: Option<String>,
     },
     /// Emit a shot index (image ↔ expect pairs) from a build's `render-plan.json`,
     /// for handing shots to a reviewing agent / vision model.
@@ -315,6 +328,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: None,
+                    pack: None,
                     size: *size,
                 },
             ),
@@ -418,6 +432,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: None,
+                    pack: None,
                     size: DEFAULT_SIZE,
                 },
             ),
@@ -426,6 +441,7 @@ impl ViewCommand {
                 out,
                 title,
                 textures,
+                pack,
             } => run_viewer(
                 inputs,
                 out,
@@ -433,6 +449,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: textures.clone(),
+                    pack: pack.clone(),
                     size: DEFAULT_SIZE,
                 },
             ),
@@ -443,6 +460,7 @@ impl ViewCommand {
                 build,
                 place,
                 textures,
+                pack,
             } => run_palette(
                 inputs,
                 out,
@@ -451,6 +469,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: textures.clone(),
+                    pack: pack.clone(),
                     size: DEFAULT_SIZE,
                 },
             ),
@@ -460,6 +479,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: None,
+                    pack: None,
                     size: DEFAULT_SIZE,
                 },
             ),
@@ -1327,8 +1347,17 @@ fn load_models(paths: &[PathBuf]) -> Result<Vec<viewer::ViewerModel>, Diagnostic
 /// textures with.
 fn open_assets(vopts: &ViewOpts) -> Result<Assets, Diagnostic> {
     let path = resolve_textures(vopts.textures.as_deref())?;
-    Assets::open(Path::new(&path))
-        .map_err(|e| Diagnostic::error(DW_RENDER, format!("open asset source: {e}")))
+    let opened = match &vopts.pack {
+        // spec-0084 §5.1: the delve's pack above the pinned jar. Said on every
+        // run, so a page drawn with the delve's look is never mistaken for
+        // vanilla's, or the other way round.
+        Some(pack) => {
+            eprintln!("textures: {pack} layered above {path}");
+            Assets::open_layered(Path::new(pack), Path::new(&path))
+        }
+        None => Assets::open(Path::new(&path)),
+    };
+    opened.map_err(|e| Diagnostic::error(DW_RENDER, format!("open asset source: {e}")))
 }
 
 /// Report what the page could not draw as the game draws it, and every binding

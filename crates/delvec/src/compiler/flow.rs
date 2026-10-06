@@ -990,9 +990,18 @@ impl<'a> Flow<'a> {
             // when a player is CREDITED with a body, and a body may fall, burn or
             // be cut down by another mob with nobody credited, so no kill is
             // forced and nothing inside is a producer.
+            //
+            // An assembly's `on_land` (spec-0082) is the same shape again: a blow
+            // lands only on a player who chose to stand where it reaches, so no
+            // landing is forced and nothing inside is a producer.
             crate::compiler::plan::EffectRoot::DialogueRespawn
             | crate::compiler::plan::EffectRoot::OnDeath
-            | crate::compiler::plan::EffectRoot::OnKill(_) => {}
+            | crate::compiler::plan::EffectRoot::OnKill(_)
+            | crate::compiler::plan::EffectRoot::AssemblyLand(_)
+            // A loop's `on_cross` (spec-0086) runs on a crossing, which a mob makes
+            // as readily as a player: no ordered walk dates it, so nothing inside
+            // is a producer the mainline may rely on.
+            | crate::compiler::plan::EffectRoot::LoopCross(_) => {}
         });
         // `disarm.sets_flag` is a field, not an effect list, so it has no root of
         // its own; same ambient reasoning, same gate.
@@ -2814,6 +2823,14 @@ fn undatable_state(c: &Campaign) -> BTreeSet<String> {
     for s in &c.quests.content.stakes {
         out.insert(s.state.as_str().to_string());
     }
+    // A loop's `counts` (spec-0086 §3.4) moves on every crossing any body
+    // makes, which no ordered walk dates; the loop replay in `plan` reads it
+    // on its own terms.
+    for l in &c.quests.content.loops {
+        if let Some(counts) = &l.counts {
+            out.insert(counts.as_str().to_string());
+        }
+    }
     if crate::compiler::plan::min_players(c) >= 2 {
         for s in &c.quests.content.state {
             if s.scope == StateScope::Player {
@@ -2887,6 +2904,12 @@ pub fn gate_flags(c: &Campaign) -> BTreeSet<String> {
         eat(&t.requires_flags, &mut out);
         eat(&t.forbids_flags, &mut out);
     }
+    // A loop's gate is its release (spec-0086): a branch flag only a loop reads
+    // still decides which world the party walks.
+    for l in &c.quests.content.loops {
+        eat(&l.requires_flags, &mut out);
+        eat(&l.forbids_flags, &mut out);
+    }
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for o in &node.options {
@@ -2904,6 +2927,12 @@ pub fn gate_flags(c: &Campaign) -> BTreeSet<String> {
             });
         }
     });
+    // spec-0088: a lethal volume live from a story stage reads its flags too.
+    for v in &c.quests.content.lethal_volumes {
+        let g = v.gate();
+        eat(g.requires_flags, &mut out);
+        eat(g.forbids_flags, &mut out);
+    }
     out
 }
 

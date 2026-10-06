@@ -14,3 +14,7 @@ fastnbt.workspace = true
 flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# The rig document an assembly reads (spec-0082 §3.1): written through the
+# engine's own type, so the file this generator writes is the file the engine
+# parses, by construction.
+delvewright-dsl.workspace = true

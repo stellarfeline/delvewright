@@ -175,6 +175,7 @@ pub fn vanilla_precipitates(biome: &str) -> Option<bool> {
 
 /// The biome every column a surround does not paint stands in: the one the
 /// `generator-settings` lays, and so the one the play area stands in.
+#[derive(Clone)]
 pub struct GroundBiome {
     /// The namespaced biome id `generator-settings` names.
     pub id: String,
@@ -280,6 +281,7 @@ impl Paint {
 /// (`BiomeManager.getBiome`) jitters the sample point, so a block within two of
 /// a 4-cell face may read its neighbour; a block whose coordinates are all 2
 /// mod 4 always reads its own cell, which is where the runtime proofs sample.
+#[derive(Clone)]
 pub struct BiomeMap {
     /// The paints, in bootstrap order.
     pub paints: Vec<Paint>,
@@ -303,6 +305,22 @@ impl BiomeMap {
             .map_or((self.ground.id.as_str(), self.ground.precipitates), |p| {
                 (p.biome.as_str(), p.precipitates)
             })
+    }
+
+    /// This map with one later paint over it — a `set-atmosphere` repaint of
+    /// the 4-cells `cells` to `biome` (spec-0080 §4.2), which wins every cell
+    /// it covers as a later `fillbiome` does.
+    pub fn repainted(&self, cells: ([i32; 3], [i32; 3]), biome: &str, source: PaintSource) -> Self {
+        let mut m = self.clone();
+        let precipitates = m.precipitates(biome);
+        m.paints.push(Paint {
+            fill: cells,
+            cells,
+            biome: biome.to_string(),
+            precipitates,
+            source,
+        });
+        m
     }
 
     /// The paints a carried place laid, in bootstrap order.
@@ -396,6 +414,19 @@ pub const WHOLE: f64 = 1.0 - 1e-9;
 /// attributes exactly as declared; at 0.5 a fog end of 26 under a void sky
 /// reads 525.
 pub fn camera_weight(map: &BiomeMap, eye: [f64; 3], biome: &str) -> f64 {
+    camera_mix(map, eye)
+        .into_iter()
+        .find(|(b, _)| b == biome)
+        .map_or(0.0, |(_, w)| w)
+}
+
+/// **Every biome the camera at `eye` reads, with its weight** — the one port
+/// of the client's `GaussianSampler` ([`BLEND_REACH`]), as fractions of the
+/// whole kernel summing to 1, in biome-id order (ADR-0006). A spatially
+/// interpolated attribute reads as the weighted mean of each biome's value;
+/// [`camera_weight`] is one biome's share, and spec-0086's fog end
+/// (`compiler::loop::Fog`) is the mean of each biome's `visual/fog_end_distance`.
+pub fn camera_mix(map: &BiomeMap, eye: [f64; 3]) -> Vec<(String, f64)> {
     const KERNEL: [f64; 7] = [0.0, 1.0, 4.0, 6.0, 4.0, 1.0, 0.0];
     let axis = |v: f64| -> [(i32, f64); 6] {
         let c = v * 0.25 - 0.5;
@@ -409,19 +440,19 @@ pub fn camera_weight(map: &BiomeMap, eye: [f64; 3], biome: &str) -> f64 {
         })
     };
     let (wx, wy, wz) = (axis(eye[0]), axis(eye[1]), axis(eye[2]));
-    let (mut total, mut inside) = (0.0, 0.0);
+    let mut total = 0.0;
+    let mut by: BTreeMap<String, f64> = BTreeMap::new();
     for &(qx, a) in &wx {
         for &(qy, b) in &wy {
             for &(qz, c) in &wz {
                 let w = a * b * c;
                 total += w;
-                if map.at([qx * 4, qy * 4, qz * 4]).0 == biome {
-                    inside += w;
-                }
+                *by.entry(map.at([qx * 4, qy * 4, qz * 4]).0.to_string())
+                    .or_insert(0.0) += w;
             }
         }
     }
-    inside / total
+    by.into_iter().map(|(b, w)| (b, w / total)).collect()
 }
 
 /// **The cells a place's atmosphere is painted over**: the place's own 4-cells

@@ -101,22 +101,10 @@ struct Field {
     range: Option<(f64, Option<f64>)>,
 }
 
-#[derive(Deserialize)]
-struct ParticleDoc {
-    particle_types: Vec<Particle>,
-}
-
-#[derive(Deserialize)]
-struct Particle {
-    id: String,
-    simple: bool,
-}
-
 /// The pinned registries an atmosphere is held to.
 pub struct Registry {
     rows: BTreeMap<String, Row>,
     records: BTreeMap<String, BTreeMap<String, Field>>,
-    particles: BTreeMap<String, bool>,
     sounds: crate::compiler::registry::FullSoundRegistry,
 }
 
@@ -129,9 +117,6 @@ impl Registry {
                 "../../data/environment-attributes-1.21.11.json"
             ))
             .expect("the vendored environment-attribute registry parses");
-            let parts: ParticleDoc =
-                serde_json::from_str(include_str!("../../data/particle-types-1.21.11.json"))
-                    .expect("the vendored particle registry parses");
             Registry {
                 rows: doc
                     .attributes
@@ -139,11 +124,6 @@ impl Registry {
                     .map(|r| (r.id.clone(), r))
                     .collect(),
                 records: doc.records,
-                particles: parts
-                    .particle_types
-                    .into_iter()
-                    .map(|p| (p.id, p.simple))
-                    .collect(),
                 sounds: crate::compiler::registry::FullSoundRegistry::v1_21_11(),
             }
         })
@@ -325,15 +305,17 @@ impl Registry {
             .as_str()
             .map(namespaced)
             .ok_or_else(|| format!("a particle type id, got `{}`", obj["type"]))?;
-        match self.particles.get(&id) {
+        // The one particle table (`crates/dsl/data/particles-1.21.11.json`),
+        // read by the `particle` verb's `DW0941` and by this arm of `DW0928`.
+        match delvewright_dsl::perception::particle_takes_options(&id) {
             None => Err(format!(
                 "particle type `{id}` is not in the pinned `particle_type` registry"
             )),
-            Some(false) => Err(format!(
+            Some(true) => Err(format!(
                 "particle type `{id}` takes options, and an atmosphere admits only a simple \
                  particle written `{{\"type\": <id>}}`"
             )),
-            Some(true) => Ok(json!({ "type": id })),
+            Some(false) => Ok(json!({ "type": id })),
         }
     }
 

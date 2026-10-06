@@ -15,7 +15,8 @@ surface included, and read by the prefab generators through their dependency on
 it.
 `entity-tags-1.21.11.json` sits there for the sibling reason:
 both validation tiers ask which entity types do X, and the DSL crate cannot
-`include_str!` a file it does not ship. Every reproduce command below names the
+`include_str!` a file it does not ship. `particles-1.21.11.json` sits there for the
+same reason: the `particle` verb's id is refused in `dsl::validate` (`DW0941`). Every reproduce command below names the
 path it writes.
 
 ## Route taken
@@ -232,6 +233,16 @@ not third-party reconstructions.
   crates/delvec/data/sounds-1.21.11.json`. The script pins and checks the source
   SHA-256 and applies the transform `sorted(set("minecraft:"+i for i in sound_event))`,
   `json.dumps(indent=2, sort_keys=True)`.
+- **`particles-1.21.11.json`** (in `crates/dsl/data/`) — every particle type the
+  pinned game registers, each with `options`: whether the type takes options and
+  so cannot be written as a bare id. 115 types, 18 of them options-taking.
+  Validates the `particle` verb's id (`DW0941`, spec-0085). Taken from the pinned
+  server jar itself, not a mirror: `tools/maintenance/extract-particle-registry.py`
+  boots the game's registries, iterates the particle registry and asks each type
+  twice — is it a `SimpleParticleType`, and is the type itself a `ParticleOptions`
+  — refusing on any disagreement, then cross-checks the id set against the vanilla
+  data generator's own `registries.json` report from the same jar. `--check`
+  derives and compares against the committed file. Requires Java 21.
 
 - **`item-stack-sizes-1.21.11.json`** — every item's `minecraft:max_stack_size`
   default component, from `item_components/data.min.json` in the same summary,
@@ -434,11 +445,13 @@ not third-party reconstructions.
   (spec-0080 §2.4), a `visual/` id an overworld timeline keys with `override`
   (`dimension_type/overworld.json`, `#minecraft:in_overworld` expanded) is
   `overridden`, the rest `admitted`. Feeds `DW0928`.
-- **`particle-types-1.21.11.json`** — every particle type (115), and whether it is a
-  `SimpleParticleType` (97), written `{"type": id}` with no options. Read by the
-  same script from `ParticleTypes.<clinit>` in the pinned server jar through the
-  same mappings: a type registered by `register(String, boolean)` returns a
-  `SimpleParticleType`; the 18 others take options. Feeds `DW0928`'s particle arm.
+- **The particle arm of `DW0928`** reads the one particle table,
+  `crates/dsl/data/particles-1.21.11.json` (above, written by
+  `tools/maintenance/extract-particle-registry.py`). The same script reads
+  `ParticleTypes.<clinit>` in the pinned server jar through the same mappings as
+  a second method — a type registered by `register(String, boolean)` returns a
+  `SimpleParticleType`; at 1.21.11, 115 types, 97 simple, 18 taking options —
+  and refuses when that reading disagrees with the table in any id or answer.
 
 ### What vanilla data does NOT provide (and what the compiler does about it)
 
@@ -502,6 +515,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `block-defaults-1.21.11.json` | `98ba9886b8bdf648e8ff74ffe8c817932e987037111427343613eefa1c37da3d` |
 | `block-renames-1.21.11.json` | `255937f801a71bb38fe92e7a5c16da74de934b88311b7ba68b62a0929e6756b5` |
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
+| `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
 
 ## Not committed
 

@@ -1,0 +1,13 @@
+{
+  "code": "DW0938",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/strikes/pattern/0/strike",
+      "value": "sweep"
+    }
+  ],
+  "units": [],
+  "why": "The sentinel's strike step plays `strike`, whose last frame lays the hammer flat over the 3 x 3 round the plinth: the blow's one cell and the ring a body reaches into it from are exactly where the slab comes down. This edit makes the step strike with `sweep`, a clip whose last frame lays the hammer out five cells long in front of the statue, while the blow still lands on the plinth's one cell. The hammer comes down on four cells of floor no body standing there is caught from. It declares no unit: every field involved is bound by the primary, and what the engine refuses is a limb that comes down where its blow does not land (shape 2 of the strike rule, back) — a long limb's blow is a long area along where it lands. The refusal names the cells; the remedy is a landing box along the hammer, or a strike that comes down only where the blow lands."
+}

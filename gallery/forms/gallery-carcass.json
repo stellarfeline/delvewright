@@ -1,0 +1,446 @@
+{
+  "anchors": {
+    "anchor/altar": {
+      "facing": "north",
+      "pos": [
+        3,
+        5,
+        38
+      ],
+      "region": {
+        "from": [
+          2,
+          5,
+          38
+        ],
+        "to": [
+          4,
+          6,
+          40
+        ]
+      },
+      "role": "furniture"
+    },
+    "anchor/back": {
+      "facing": "south",
+      "pos": [
+        15,
+        16,
+        20
+      ]
+    },
+    "anchor/entry": {
+      "facing": "east",
+      "pos": [
+        1,
+        5,
+        21
+      ],
+      "role": "entry"
+    },
+    "anchor/flat": {
+      "facing": "east",
+      "pos": [
+        3,
+        5,
+        30
+      ]
+    },
+    "anchor/inside": {
+      "facing": "south",
+      "pos": [
+        15,
+        5,
+        25
+      ]
+    }
+  },
+  "box": [
+    30,
+    20,
+    44
+  ],
+  "form_version": "1.0.0",
+  "ground": {
+    "block": "minecraft:packed_mud",
+    "top": 4
+  },
+  "id": "prefab/gallery-carcass",
+  "lights": [
+    {
+      "at": [
+        15,
+        5,
+        22
+      ],
+      "block": "minecraft:lantern[hanging=false,waterlogged=false]"
+    },
+    {
+      "block": "minecraft:soul_lantern[hanging=false,waterlogged=false]",
+      "hull": {
+        "cover": "minecraft:andesite_stairs",
+        "mode": "recessed",
+        "on": [
+          "wall",
+          "vault"
+        ],
+        "spacing": 4.0,
+        "within": {
+          "from": [
+            9,
+            5,
+            14
+          ],
+          "to": [
+            21,
+            13,
+            30
+          ]
+        }
+      }
+    },
+    {
+      "block": "minecraft:crying_obsidian",
+      "hull": {
+        "mode": "embedded",
+        "on": [
+          "floor",
+          "wall"
+        ],
+        "spacing": 3.5,
+        "within": {
+          "from": [
+            9,
+            5,
+            14
+          ],
+          "to": [
+            21,
+            13,
+            30
+          ]
+        }
+      }
+    }
+  ],
+  "noise": {
+    "amplitude": 0.45,
+    "cell": 2.0
+  },
+  "palette": [
+    {
+      "family": "diorite",
+      "full": [
+        [
+          "minecraft:bone_block",
+          3
+        ],
+        [
+          "minecraft:dead_horn_coral_block",
+          3
+        ],
+        [
+          "minecraft:calcite",
+          2
+        ],
+        [
+          "minecraft:diorite",
+          2
+        ]
+      ]
+    },
+    {
+      "family": "andesite",
+      "full": [
+        [
+          "minecraft:dead_horn_coral_block",
+          3
+        ],
+        [
+          "minecraft:dead_bubble_coral_block",
+          3
+        ],
+        [
+          "minecraft:andesite",
+          2
+        ],
+        [
+          "minecraft:diorite",
+          2
+        ]
+      ]
+    },
+    {
+      "family": "andesite",
+      "full": [
+        [
+          "minecraft:andesite",
+          4
+        ],
+        [
+          "minecraft:dead_brain_coral_block",
+          3
+        ],
+        [
+          "minecraft:tuff",
+          3
+        ]
+      ]
+    },
+    {
+      "family": "mossy_cobblestone",
+      "full": [
+        [
+          "minecraft:tuff",
+          5
+        ],
+        [
+          "minecraft:mossy_cobblestone",
+          3
+        ],
+        [
+          "minecraft:andesite",
+          2
+        ]
+      ]
+    }
+  ],
+  "sink": 5,
+  "solids": [
+    {
+      "from": [
+        15.0,
+        8.0,
+        8.0
+      ],
+      "noisy": true,
+      "op": "add",
+      "radius_from": 9.0,
+      "radius_to": 7.0,
+      "shape": "capsule",
+      "stretch_y": 0.9,
+      "to": [
+        15.0,
+        8.0,
+        36.0
+      ]
+    },
+    {
+      "centre": [
+        15.0,
+        8.0,
+        6.0
+      ],
+      "noisy": true,
+      "op": "add",
+      "radii": [
+        8.0,
+        7.0,
+        6.0
+      ],
+      "shape": "ellipsoid"
+    },
+    {
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "centre": [
+        15.0,
+        5.5,
+        39.0
+      ],
+      "height": 2.0,
+      "noisy": true,
+      "op": "add",
+      "radius": 6.0,
+      "shape": "disc"
+    },
+    {
+      "from": [
+        2.0,
+        5.0,
+        38.0
+      ],
+      "material": {
+        "family": "polished_blackstone",
+        "full": [
+          [
+            "minecraft:polished_blackstone",
+            3
+          ],
+          [
+            "minecraft:chiseled_polished_blackstone",
+            1
+          ]
+        ]
+      },
+      "op": "add",
+      "shape": "box",
+      "to": [
+        5.0,
+        7.0,
+        41.0
+      ]
+    },
+    {
+      "centre": [
+        15.0,
+        5.0,
+        22.0
+      ],
+      "op": "cut",
+      "radii": [
+        5.0,
+        7.0,
+        7.0
+      ],
+      "shape": "ellipsoid"
+    },
+    {
+      "from": [
+        -1.0,
+        5.0,
+        20.0
+      ],
+      "op": "cut",
+      "shape": "box",
+      "to": [
+        12.0,
+        8.2,
+        23.0
+      ]
+    },
+    {
+      "clearance": 3.0,
+      "depth": 12.0,
+      "material": {
+        "family": "smooth_sandstone",
+        "full": [
+          [
+            "minecraft:bone_block",
+            3
+          ],
+          [
+            "minecraft:smooth_sandstone",
+            1
+          ]
+        ]
+      },
+      "path": [
+        [
+          25.5,
+          5.0,
+          40.0
+        ],
+        [
+          24.5,
+          9.0,
+          32.0
+        ],
+        [
+          22.0,
+          13.0,
+          24.0
+        ],
+        [
+          18.0,
+          16.0,
+          21.0
+        ]
+      ],
+      "shape": "shelf",
+      "width": 3.0
+    },
+    {
+      "from": [
+        25.0,
+        5.0,
+        2.0
+      ],
+      "noisy": true,
+      "op": "add",
+      "shape": "box",
+      "to": [
+        27.5,
+        7.0,
+        4.5
+      ]
+    },
+    {
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "centre": [
+        7.0,
+        4.5,
+        33.0
+      ],
+      "height": 1.0,
+      "material": {
+        "family": "mud_brick",
+        "full": [
+          [
+            "minecraft:moss_block",
+            1
+          ]
+        ]
+      },
+      "op": "add",
+      "radius": 2.2,
+      "shape": "disc"
+    },
+    {
+      "centre": [
+        8.0,
+        10.0,
+        5.0
+      ],
+      "material": {
+        "family": "blackstone",
+        "full": [
+          [
+            "minecraft:black_terracotta",
+            1
+          ]
+        ]
+      },
+      "op": "add",
+      "radii": [
+        1.2,
+        1.2,
+        1.2
+      ],
+      "shape": "ellipsoid"
+    },
+    {
+      "from": [
+        15.0,
+        14.5,
+        12.0
+      ],
+      "material": {
+        "family": "diorite",
+        "full": [
+          [
+            "minecraft:bone_block",
+            1
+          ]
+        ]
+      },
+      "op": "add",
+      "radius_from": 1.0,
+      "radius_to": 0.6,
+      "shape": "capsule",
+      "to": [
+        15.0,
+        17.0,
+        13.0
+      ]
+    }
+  ],
+  "sub": 4
+}

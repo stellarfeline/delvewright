@@ -1,0 +1,13 @@
+{
+  "code": "DW0948",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/actors/0/anchor",
+      "value": "anchor/long-gallery-hall"
+    }
+  ],
+  "units": [],
+  "why": "The hall moth posted in the long gallery's bay 1, inside the loop's span. A body has an identity the move cannot repeat: from the landing the figure stands in sight, and from the slab the cell it stands for is empty, so a body moved a bay back would see it appear. The refusal names the body and the span. It declares no unit."
+}

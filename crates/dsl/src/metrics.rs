@@ -105,7 +105,7 @@ pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::new("DW0813", ExitTier::Build)
 /// No document declares a metrics version and no surface is gated by one. What
 /// it needs is that the number cannot stand still while the table moves, and
 /// that is the digest test.
-pub const METRICS_VERSION: u32 = 2;
+pub const METRICS_VERSION: u32 = 3;
 
 /// Player collision-box width in blocks (`0.6 × 0.6 × 1.8` standing).
 pub const PLAYER_WIDTH: f64 = 0.6;
@@ -357,8 +357,39 @@ pub const JUMP_AIRBORNE_TICKS: f64 = 12.0;
 /// Player walking speed on the flat, in blocks per second (not sprinting).
 pub const WALK_SPEED_BLOCKS_PER_SECOND: f64 = 4.317;
 
+/// Player sprinting speed on the flat, in blocks per second [cited — Minecraft
+/// Wiki, *Sprinting*: "around 5.612 meters/second, which is 30 percent faster
+/// than the normal walking speed of around 4.317 m/s"]. The reach a `darkness`
+/// grant owes the blind-reach proof is taken at this speed, because darkness,
+/// unlike blindness, does not forbid the sprint (spec-0085 §6.2).
+pub const SPRINT_SPEED_BLOCKS_PER_SECOND: f64 = 5.612;
+
+/// The wiki page [`SPRINT_SPEED_BLOCKS_PER_SECOND`] is read from.
+pub const SPRINT_SPEED_PAGE: &str = "Sprinting";
+
 /// Server ticks per second.
 pub const TICKS_PER_SECOND: f64 = 20.0;
+
+/// The fastest horizontal displacement a body makes in one tick without an
+/// item, in blocks: sprint-jumping with the jump held (spec-0086 §2.1).
+///
+/// Measured by `tools/spike-seamless-loop/` (the bot's own physics,
+/// prismarine-physics at the harness pin, on the pinned server): walking
+/// `0.2159`, sprinting `0.2806`, sprint-jumping `0.5878`. It is the bound a
+/// loop's horizontal slab is held to — a one-tick poll catches every crossing
+/// whose fastest tick is under the slab's thickness plus the body's reach.
+pub const POLL_HORIZONTAL_BLOCKS_PER_TICK: f64 = 0.5878;
+
+/// The speed a falling body approaches, in blocks per tick (spec-0086 §2.1):
+/// the fixed point `k·g / (1 − k)` of the fall law `v′ = k·(v + g)` with
+/// `k = 0.980`, `g = 0.080`, fitted over 87 consecutive per-tick pairs of one
+/// 184-block drop.
+///
+/// Measured by `tools/spike-seamless-loop/` with the same physics. It is the
+/// bound a loop's vertical slab is held to, the limit rather than the fastest
+/// tick one fall happened to reach (`3.333`): a one-cell slab caught 9 of 10
+/// drops and a three-cell slab 10 of 10.
+pub const POLL_FALL_BLOCKS_PER_TICK: f64 = 3.92;
 
 /// The fall distance in blocks below which vanilla deals no fall damage: damage
 /// is `ceil(distance − 3)` points, so a 3-block fall is free and a 4-block fall
@@ -1119,6 +1150,18 @@ impl Metrics {
                     "A walking player covers 4.317 blocks a second on the flat; \
                      sprinting is faster and is not the pacing basis, because a route \
                      nobody has learnt is walked.",
+                ),
+            ),
+            (
+                "sprint.speed",
+                player(
+                    MetricValue::Number(SPRINT_SPEED_BLOCKS_PER_SECOND),
+                    "blocks/second",
+                    Provenance::VanillaRule,
+                    "A sprinting player covers 5.612 blocks a second on the flat (the \
+                     wiki's Sprinting page). Not a pacing basis; it is how far a body can \
+                     carry itself under a darkness grant, which leaves the sprint, in the \
+                     blind-reach proof.",
                 ),
             ),
             (

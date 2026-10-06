@@ -575,6 +575,17 @@ pub mod codes {
     /// body, remove the phase nobody can see, state the phase the party sees, or
     /// remove the restated phase.
     pub const CELESTIAL_TIME: DwCode = DwCode::new("DW0931", ExitTier::Build);
+    /// (spec-0082 §5.1, §5.5) **An assembly's rig cannot be emitted as
+    /// declared.** The library holds no `rigs/<name>/rig.json` for the
+    /// assembly's `rig`, or the file does not parse, or it breaks a structural
+    /// rule (no part, an unknown block, a clip with no frame, a frame short a
+    /// part, a cadence outside `1..=20`, a non-finite transform, a zero scale);
+    /// or an `initial`, a strike step's `windup`/`strike`, or a `play-clip`
+    /// names a clip the rig lacks — the message lists the rig's clips.
+    /// Validation-tier (exit 1). Prescription: regenerate the rig with its
+    /// generator, or name a clip the rig declares (`delvec rig describe`
+    /// prints them).
+    pub const ASSEMBLY_RIG: DwCode = DwCode::new("DW0935", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective
@@ -595,6 +606,18 @@ pub mod codes {
     /// wording is refused rather than papered over: a gate that reports green
     /// while the player learns nothing is exactly the vacuous pass CLAUDE.md names.
     pub const LETHAL_MESSAGE_BLANK: DwCode = DwCode::new("DW0512", ExitTier::Build);
+    /// (spec-0086 §3.2, §3.4, §3.5) **A loop whose release is not a fact about the
+    /// party, or that has none.**
+    ///
+    /// One rule — *the gate is the release, and the release is the party's* —
+    /// asked four ways: a loop with no gate term at all (it holds forever, a
+    /// soft-lock spelled out); a `requires_state` term naming a `player`-scoped
+    /// datum (one player released and another looped is a party split in two);
+    /// a `counts` naming a `player`-scoped datum (for the same reason); and a
+    /// `teleport` inside `on_cross` (the body was just moved, and a second move in
+    /// the same tick is two carries with one position). Validation-tier (exit 1).
+    /// Prescription: a `party` datum, a flag, or a release the party reaches.
+    pub const LOOP_GATE: DwCode = DwCode::new("DW0949", ExitTier::Build);
     /// (spec-0062) **A killing volume and what shows it disagree.**
     ///
     /// One rule, three shapes, and every remedy each names is admitted by the
@@ -620,6 +643,21 @@ pub mod codes {
     /// bytes, so nothing before assembly can answer it); the document arm here,
     /// by [`crate::validate`].
     pub const LETHAL_INVISIBLE: DwCode = DwCode::new("DW0891", ExitTier::Build);
+    /// (spec-0088) **A gate that cannot stage a lethal volume.** Two shapes,
+    /// refused at the document where they are entered:
+    ///
+    /// * **`when: {}`** — a stage with no term. An always-live volume is
+    ///   spelled by leaving `when` out; an empty gate says nothing and is not
+    ///   a stage.
+    /// * **A `requires_state` term on a `player`-scoped datum.** A volume's
+    ///   liveness is a fact about the place, so its gate is a fact about the
+    ///   party: a term one player satisfies and another does not would be a
+    ///   pit that kills one body and spares the one beside it, and the sweep's
+    ///   entity half has no player to read a per-player score from.
+    ///
+    /// The remedy is to leave `when` out, or to name a flag or a `party`
+    /// datum. Raised by [`crate::validate`] with no world built.
+    pub const LETHAL_STAGE_GATE: DwCode = DwCode::new("DW0953", ExitTier::Build);
     /// (spec-0031, DSL v0.10) **A grant whose removal is a later effect, not its
     /// own duration.** A `give-effect` is still live at the moment a
     /// `clear-effect` for the same effect fires in the same bundle, so the clear
@@ -695,8 +733,9 @@ pub mod codes {
     /// unadopted sidecar is a reported number on every run rather than silence
     /// that reads like a pass.
     pub const L10N_PROVENANCE_MISSING: DwCode = DwCode::new("DW0188", ExitTier::Build);
-    /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
-    /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
+    /// (v0.4, widened by spec-0084) An image id a campaign declares — a body's
+    /// `skin.texture_id` or a `world.textures[]` row's `id` — is malformed (not a bare kebab
+    /// token) or duplicated among the images of its kind (spec-0009). A missing `model` is a
     /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).
     pub const SKIN_INVALID: DwCode = DwCode::new("DW0190", ExitTier::Build);
     /// (v0.4) A `talk-to` objective has no **ungated** reachable completing
@@ -884,6 +923,15 @@ pub mod codes {
     /// played by ONE party of 1–4 (ADR/CLAUDE.md product definition), so a declared
     /// mandatory party size can never sit outside it. Validation-tier (exit 1).
     pub const PARTY_SIZE: DwCode = DwCode::new("DW0356", ExitTier::Build);
+    /// (spec-0077 §7) **A respawn wait that cannot be honoured.**
+    /// `world.respawn_wait.seconds` lies outside `1..=120`, or the campaign
+    /// declares a `respawn_wait` and no `set-checkpoint` or `bonfire` for a
+    /// fallen player to come back to (the wait hangs off the checkpoint respawn
+    /// edge, so with none it is a silently dead declaration). One rule about what
+    /// a wait needs, two ways to break it. Validation-tier (exit 1). The build's
+    /// own self-check that a shipped selector cannot read a waiter is `DW0926`.
+    /// Prescription: a value in `1..=120`, or a checkpoint, or drop the field.
+    pub const RESPAWN_WAIT_INVALID: DwCode = DwCode::new("DW0925", ExitTier::Build);
     /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is
     /// only ever reached from the **scheduler** (`move-npc`/`move-actor`
     /// `on_arrive`, a `sequence` step). `carrier: "one"` means "hand this single
@@ -1108,6 +1156,51 @@ pub mod codes {
     ///
     /// Error tier, validation (exit 1).
     pub const GATE_NEVER_OPENS: DwCode = DwCode::new("DW0847", ExitTier::Build);
+    /// An asset's licence is outside the ADR-0013 allowlist, or its record lacks
+    /// a field the allowlist's rule for that asset requires. One code for every
+    /// asset that records a licence: a prefab catalog card (`delvec prefab`,
+    /// `delvec::admit::diag::DW_LICENSE`) and an image a campaign declares in
+    /// `world.textures[]` (spec-0084 §6.3, `crate::license`).
+    pub const LICENSE_REFUSED: DwCode = DwCode::new("DW0741", ExitTier::Build);
+    /// (spec-0084 §6.1) A `world.textures[]` row's `replaces` names a texture the
+    /// pinned client does not ship — not the `minecraft` namespace, a path with
+    /// `textures/` or `.png` left on, another version's path, a misspelling — or
+    /// two rows replace one texture. Judged against the census vendored from the
+    /// pinned client jar (`delvec::compiler::textures`); the duplicate half is
+    /// judged in validation, where no census is needed.
+    pub const TEXTURE_PATH: DwCode = DwCode::new("DW0939", ExitTier::Build);
+    /// (spec-0084 §6.2) A `world.textures[]` row's file is not an image the
+    /// named texture can be replaced by: not a PNG, not `k·w₀ × k·h₀` of the
+    /// vanilla frame (or `k·w₀ × n·k·h₀` with a sidecar), a sidecar that does not
+    /// parse as vanilla's animation metadata, or bytes identical to vanilla's.
+    pub const TEXTURE_IMAGE: DwCode = DwCode::new("DW0940", ExitTier::Build);
+    /// (spec-0085 §4.3) **A particle the game does not draw from a bare id.** A
+    /// `particle` effect names an id the pinned registry
+    /// (`crates/dsl/data/particles-1.21.11.json`) does not hold, or one whose
+    /// type takes options (`dust`, `block`, `item`, …) — which the verb cannot
+    /// carry, so the emitted command would be refused by the game.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_UNKNOWN_PARTICLE: DwCode = DwCode::new("DW0941", ExitTier::Build);
+    /// (spec-0085 §3.3) **An audience on a party fact.** An effect states the
+    /// envelope's `audience` or `in` on a verb the emitter fires once for the
+    /// world ([`crate::stages::Verb::addresses_players`] answers `false`) — a
+    /// flag, a gate, a block, a region, a timeline, a rocket. A box has no party
+    /// and a world fact has no audience; a `sequence`'s steps each state their
+    /// own.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_AUDIENCE_ON_A_PARTY_FACT: DwCode = DwCode::new("DW0942", ExitTier::Build);
+    /// (spec-0085 §5.3) **A sight effect that ends under a camera.** In one
+    /// timeline, a `give-effect` of a sight effect
+    /// ([`crate::perception::SIGHT`]) overlaps a `cutscene` step and ends inside
+    /// it, or within the effect's wind-down after it, so the effect starts
+    /// ramping down on screen. The `give-effect` half of the findings-ledger
+    /// row whose general form is that a granted sight effect outlasts any
+    /// authored camera it can overlap.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_SIGHT_UNDER_A_CAMERA: DwCode = DwCode::new("DW0944", ExitTier::Build);
 }
 
 #[cfg(test)]

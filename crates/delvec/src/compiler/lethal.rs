@@ -108,6 +108,8 @@ pub struct LethalGate {
     pub packtests: usize,
     /// What `DW0891` looked at, per volume and over the campaign (spec-0062 §5).
     pub visibility: DangerVisibility,
+    /// What `DW0943` looked at, per blinding grant (spec-0085 §6.3).
+    pub blind: crate::compiler::blind::BlindReach,
 }
 
 impl LethalGate {
@@ -120,12 +122,29 @@ impl LethalGate {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "volumes": { "declared": self.declared, "resolved": self.resolved },
+            "staged": self.visibility.staged.iter().map(|r| serde_json::json!({
+                "id": r.id,
+                "gate_terms": r.gate_terms.iter().map(|t| serde_json::json!({
+                    "objective": t.objective,
+                    "holder": t.holder(),
+                    "min": t.min,
+                    "max": t.max,
+                    "negate": t.negate,
+                })).collect::<Vec<_>>(),
+                "configurations": {
+                    "judged": r.judged,
+                    "may_live": r.may_live,
+                    "is_live": r.is_live,
+                    "of": r.of,
+                },
+            })).collect::<Vec<_>>(),
             "cells": self.cells,
             "respawn_seats_examined": self.seats,
             "critical_path_legs_examined": self.legs,
             "packtest_templates": self.packtests,
             "unbound": self.unbound(),
             "danger_visibility": self.visibility.to_json(),
+            "blind_reach": self.blind.to_json(),
         })
     }
 }
@@ -143,11 +162,23 @@ impl LethalGate {
 /// here would be one number for two rules.
 pub const DW_LETHAL_INVISIBLE: DwCode = delvewright_dsl::codes::LETHAL_INVISIBLE;
 
-/// What `DW0891` examined for one volume (spec-0062 §5).
+/// What `DW0891` examined for one volume in one configuration (spec-0062 §5,
+/// spec-0088 §5) — one row of the ledger per (volume, configuration) pair.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VolumeVisibility {
     /// The volume's authored id.
     pub id: String,
+    /// The configuration this row judged: `None` for a volume live from
+    /// world-load, judged once over the world as built; for a staged volume the
+    /// first critical step whose arrival is judged under that configuration.
+    pub configuration: Option<usize>,
+    /// For a staged volume, whether it may be live in this configuration —
+    /// `false` is the last configuration before a switch-on, judged because a
+    /// body standing in the keep-out when the gate flips has no tick in which to
+    /// step out (spec-0088 §2.5).
+    pub live: bool,
+    /// The walked population this row was measured against.
+    pub population: usize,
     /// The cells a player body can be caught from —
     /// [`delvewright_dsl::metrics::keep_out_box`] of the resolved region.
     pub keep_out: ([i32; 3], [i32; 3]),
@@ -155,23 +186,26 @@ pub struct VolumeVisibility {
     /// lethality removed. Sorted (ADR-0006).
     pub caught: Vec<[i32; 3]>,
     /// Of [`Self::caught`], the cells whose floor or own block is one of
-    /// [`Self::shown_by`].
+    /// [`Self::shown_by`] in this configuration's bytes.
     pub shown: Vec<[i32; 3]>,
     /// The blocks the volume declares as showing it, as declared.
     pub shown_by: Vec<String>,
     /// The first body the engine models that can get its hitbox into the
-    /// volume, in words — a player moving from where the campaign puts the
-    /// party, else a wave member ([`DangerVisibility::credit_waves`]). `None`
-    /// is a zero binding: no modelled body can be caught here, so an empty
-    /// [`Self::caught`] says nothing about the floor.
+    /// volume in this configuration, in words — a player moving from where the
+    /// campaign puts the party, else a wave member
+    /// ([`DangerVisibility::credit_waves`]). `None` is a zero binding for this
+    /// row.
     pub reached_by: Option<String>,
 }
 
 impl VolumeVisibility {
-    /// This volume's row of the ledger.
+    /// This row of the ledger.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "id": self.id,
+            "configuration": self.configuration,
+            "live": self.live,
+            "population": self.population,
             "keep_out": { "lo": self.keep_out.0, "hi": self.keep_out.1 },
             "caught": self.caught.len(),
             "caught_cells": self.caught,
@@ -182,6 +216,28 @@ impl VolumeVisibility {
     }
 }
 
+/// One staged volume's configurations (spec-0088 §9): its gate as terms, and
+/// how many of the path's configurations were judged, may hold it live, and
+/// hold it live on the forced route, out of how many.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StagedRow {
+    /// The volume's authored id.
+    pub id: String,
+    /// The gate, as the bot tier and the emitter read it.
+    pub gate_terms: Vec<crate::compiler::plan::GateTerm>,
+    /// Configurations `DW0891` judged this volume in.
+    pub judged: usize,
+    /// Configurations in which it may be live.
+    pub may_live: usize,
+    /// Configurations in which it is live on the forced route.
+    pub is_live: usize,
+    /// Configurations the critical path passes.
+    pub of: usize,
+    /// When `is_live` is zero: the critical step the gate was first read at, and
+    /// the term that never held on the forced route (`DW0954`).
+    pub unmet: Option<(usize, String)>,
+}
+
 /// What `DW0891` examined over the whole campaign (spec-0062 §5).
 ///
 /// A volume that catches nothing prints its zero **beside the population**, so a
@@ -189,19 +245,32 @@ impl VolumeVisibility {
 /// rather than as *unbound*: the denominator is what tells the two apart.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DangerVisibility {
-    /// Cells the party can walk to from everywhere it is PUT, over the world
-    /// with lethality removed — the population `P`.
+    /// Resolved volumes — the denominator `N`.
+    pub declared: usize,
+    /// Cells the party can walk to from everywhere it is PUT, over the world as
+    /// built with lethality removed — the population a volume live from
+    /// world-load is judged against.
     pub population: usize,
+    /// The cells the population is flooded from — every place the party is PUT
+    /// ([`put_at_roots`]), a loop's landings included (spec-0086 §5.3).
+    pub roots: usize,
     /// One row per resolved volume, in declaration order.
+    /// Distinct configurations judged (the world as built counts as one when
+    /// any volume is live from world-load) — `C`.
+    pub configurations: usize,
+    /// One row per (volume, configuration) pair, volumes in declaration order
+    /// and configurations in path order — `K` rows.
     pub volumes: Vec<VolumeVisibility>,
+    /// One entry per staged volume, in declaration order — `S` entries.
+    pub staged: Vec<StagedRow>,
     /// `shown_by` entries examined, over every volume.
     pub declarations: usize,
-    /// Of those, the ones some caught cell bears out.
+    /// Of those, the ones some caught cell bears out in some judged row.
     pub borne_out: usize,
 }
 
 impl DangerVisibility {
-    /// Caught cells over every volume.
+    /// Caught cells over every row.
     pub fn caught(&self) -> usize {
         self.volumes.iter().map(|v| v.caught.len()).sum()
     }
@@ -211,35 +280,69 @@ impl DangerVisibility {
         self.volumes.iter().map(|v| v.shown.len()).sum()
     }
 
-    /// Volumes no body the engine models can get into.
+    /// The distinct volume ids with a row, in row order.
+    fn ids(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for v in &self.volumes {
+            if !out.contains(&v.id.as_str()) {
+                out.push(v.id.as_str());
+            }
+        }
+        out
+    }
+
+    /// Volumes no body the engine models can get into, in any row in which
+    /// the volume may be live.
     pub fn unreached(&self) -> usize {
+        self.ids()
+            .into_iter()
+            .filter(|id| {
+                !self
+                    .volumes
+                    .iter()
+                    .any(|v| v.id == *id && v.live && v.reached_by.is_some())
+            })
+            .count()
+    }
+
+    /// Rows a modelled body reaches — `P`.
+    fn reached_rows(&self) -> usize {
         self.volumes
             .iter()
-            .filter(|v| v.reached_by.is_none())
+            .filter(|v| v.reached_by.is_some())
             .count()
     }
 
     /// The one line this proof owes its reader.
     pub fn line(&self) -> String {
+        let pops = self.volumes.iter().map(|v| v.population);
+        let (lo, hi) = (pops.clone().min().unwrap_or(0), pops.max().unwrap_or(0));
         format!(
-            "danger-visibility binding: {} volume(s) examined against a walked population of {} \
-             cell(s); {} cell(s) caught, {} shown, {} read as safe floor; {} declaration(s) of {} \
-             borne out by the bytes; {} of {} volume(s) reached by a body the engine models.",
+            "danger-visibility binding: {} volume(s), {} staged; judged over {} configuration(s) \
+             as {} (volume, configuration) pair(s) against walked populations of {lo}..{hi} \
+             cell(s); {} caught, {} shown, {} read as safe floor; {} declaration(s) of {} borne out \
+             by the bytes; {} of {} volume(s) reached by a body the engine models (in {} of {} \
+             pairs).",
+            self.declared,
+            self.staged.len(),
+            self.configurations,
             self.volumes.len(),
-            self.population,
             self.caught(),
             self.shown(),
             self.caught() - self.shown(),
             self.borne_out,
             self.declarations,
-            self.volumes.len() - self.unreached(),
+            self.declared - self.unreached(),
+            self.declared,
+            self.reached_rows(),
             self.volumes.len(),
         )
     }
 
-    /// Credit every volume no player reaches with the first wave member that
+    /// Credit every row no player reaches with the first wave member that
     /// does (`DW0922` / `DW0923`'s findings). A body is a body: a volume only a
-    /// mob can enter is bound.
+    /// mob can enter is bound. Waves are judged against every volume as live
+    /// (spec-0088 §6), so the credit reaches every row of the volume.
     pub fn credit_waves(&mut self, waves: &WaveLethalBinding) {
         for v in &mut self.volumes {
             if v.reached_by.is_some() {
@@ -263,29 +366,67 @@ impl DangerVisibility {
     /// silent: an empty catch over a volume nothing can enter looks exactly like
     /// an empty catch over a volume that is clear of the floor.
     pub fn findings(&self) -> Vec<delvewright_dsl::Diagnostic> {
-        self.volumes
-            .iter()
-            .filter(|v| v.reached_by.is_none())
-            .map(|v| {
+        self.ids()
+            .into_iter()
+            .filter(|id| {
+                !self
+                    .volumes
+                    .iter()
+                    .any(|v| v.id == *id && v.live && v.reached_by.is_some())
+            })
+            .map(|id| {
+                let examined: Vec<String> = self
+                    .volumes
+                    .iter()
+                    .filter(|v| v.id == id && v.live)
+                    .filter_map(|v| v.configuration)
+                    .map(|s| format!("critical step {s}"))
+                    .collect();
+                let where_ = if examined.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        " It is live from a story stage, and the configurations examined in \
+                         which it may be live arrive at {}.",
+                        examined.join(", ")
+                    )
+                };
                 delvewright_dsl::Diagnostic::warning(
                     DW_LETHAL_INVISIBLE,
                     "build",
                     "danger-visibility binding",
                     format!(
-                        "lethal volume `{}` is reached by no body the engine models: no cell a \
+                        "lethal volume `{id}` is reached by no body the engine models: no cell a \
                          player can walk, fall, jump or swim to from where the campaign puts the \
                          party, and no cell a wave member can walk, fall or sink to within its \
-                         follow range, holds a body the volume catches. So the visibility proof \
-                         caught nothing here because nothing can be caught, not because the \
-                         volume is clear of the floor — this is a zero binding. A body may still \
-                         get in by a movement the model does not make (diving, a diagonal jump, \
-                         climbing), or nothing ever will. If a player is meant to be able to die \
-                         here, the engine has not proven they can get in, and the bot cannot be \
-                         sent there; if nothing is, delete the volume.",
-                        v.id
+                         follow range, holds a body the volume catches.{where_} So the \
+                         visibility proof caught nothing here because nothing can be caught, not \
+                         because the volume is clear of the floor — this is a zero binding. A \
+                         body may still get in by a movement the model does not make (diving, a \
+                         diagonal jump, climbing), or nothing ever will. If a player is meant to \
+                         be able to die here, the engine has not proven they can get in, and the \
+                         bot cannot be sent there; if nothing is, delete the volume."
                     ),
                 )
             })
+            .chain(self.staged.iter().filter_map(|r| {
+                let (step, term) = r.unmet.as_ref()?;
+                Some(delvewright_dsl::Diagnostic::warning(
+                    DW_LETHAL_STAGE_UNMET,
+                    "build",
+                    "danger-visibility binding",
+                    format!(
+                        "lethal volume `{}` is live from a story stage and the forced route \
+                         passes no configuration in which it is live: its gate, first read at \
+                         critical step {step}, never holds on the forced route — {term}. So the \
+                         ladder cannot exercise it, the bot's death loop will find it shut, and \
+                         only the configurations in which it may be live were judged for \
+                         visibility. No change is required: a hazard the party need never arm is \
+                         a design, and the bot's report will say it was not exercised.",
+                        r.id
+                    ),
+                ))
+            }))
             .collect()
     }
 
@@ -293,6 +434,9 @@ impl DangerVisibility {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "population": self.population,
+            "roots": self.roots,
+            "configurations": self.configurations,
+            "pairs": self.volumes.len(),
             "caught": self.caught(),
             "shown": self.shown(),
             "reads_as_safe_floor": self.caught() - self.shown(),
@@ -302,6 +446,13 @@ impl DangerVisibility {
         })
     }
 }
+
+/// `DW0954`: **a staged volume the forced route never meets live**
+/// (spec-0088 §9). Advisory: a hazard the party need never arm is a design, but
+/// the ladder cannot exercise it, the bot's death loop will find it shut, and
+/// only its may-be-live configurations were judged for visibility — so the
+/// build says so.
+pub const DW_LETHAL_STAGE_UNMET: DwCode = DwCode::new("DW0954", ExitTier::Build);
 
 /// Does the block under or in `cell` show one of `shown_by`?
 ///
@@ -336,11 +487,12 @@ fn cell_shows(
 /// (spec-0062 §2 decision 1), named by its quantifier (spec-0083 §3.8).
 ///
 /// The entry spawn, every `set-checkpoint` and `bonfire` seat, every crossing's
-/// entry point, and every `teleport` destination, link or gather. Rooted at all
-/// of them and not at the entry alone: a party teleported into an area stands
-/// on that area's floor, and a rule that judged only what walks from the door
-/// would be silent about every area reached by a carry. It roots `DW0891`,
-/// where a wider population can only refuse more.
+/// entry point, every `teleport` destination, link or gather, every cell of a
+/// loop's landing slab and every loop exercise step's landing (spec-0086 §5.3).
+/// Rooted at all of them and not at the entry alone: a party teleported into an
+/// area stands on that area's floor, and a rule that judged only what walks from
+/// the door would be silent about every area reached by a carry. It roots
+/// `DW0891`, where a wider population can only refuse more.
 ///
 /// Deterministic: entry, then checkpoints in content order, then crossings in
 /// objective order, then links and gathers in declaration order (ADR-0006).
@@ -351,21 +503,72 @@ pub fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
     out.extend(plan.gathers.iter().map(|g| g.to));
+    // spec-0086 §5.3: a loop puts a body down on every cell of its landing
+    // slab, and the party stands at each exercise step's landing.
+    out.extend(loop_landing_cells(plan));
+    out.extend(loop_exercise_landings(plan));
     out
 }
 
 /// **Every cell the party CERTAINLY stands at on the forced route** (spec-0083
 /// §3.8): the entry spawn, every checkpoint seat, every crossing's entry point
-/// and every link's `to` — and not a gather's destination, which an optional
-/// root may never fire. It roots `DW0924`'s party cells and `DW0881`'s
-/// population, where a wider population would hide a finding.
+/// every link's `to` and every loop exercise step's landing (spec-0086 §5.3) —
+/// and not a gather's destination, which an optional root may never fire, nor
+/// the rest of a loop's landing slab, where a body is put only if it crosses
+/// there. It roots `DW0924`'s party cells and `DW0881`'s population, where a
+/// wider population would hide a finding.
 pub fn stands_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
     out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
+    out.extend(loop_exercise_landings(plan));
     out
+}
+
+/// Every cell of every loop's landing slab (`region + to`, spec-0086 §5.3), in
+/// declaration order then x, y, z (ADR-0006): a loop may put a body down on
+/// any of them. A put-at root.
+fn loop_landing_cells(plan: &Plan) -> Vec<[i32; 3]> {
+    let mut out = Vec::new();
+    for l in &plan.loops {
+        let (lo, hi) = l.landing();
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    out.push([x, y, z]);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Each loop exercise step's landing on the forced route, in path order
+/// (spec-0086 §5.3): the party certainly stands there. A put-at and a
+/// stands-at root.
+fn loop_exercise_landings(plan: &Plan) -> Vec<[i32; 3]> {
+    plan.critical_path
+        .iter()
+        .filter_map(|s| match s {
+            crate::compiler::plan::Step::Loop { transport, .. } => Some(*transport),
+            _ => None,
+        })
+        .collect()
+}
+
+/// **The population `P`** (spec-0062 §2): every cell a player can walk to from
+/// the cells the campaign MAY put the party at ([`put_at_roots`]), over `open`
+/// — which `DW0891` passes as the lethality-free counterfactual
+/// ([`crate::compiler::nav::World::without_exclusions`]). The one derivation,
+/// read by `DW0891` and by `DW0938`'s caught cells (`compiler::assembly`).
+pub(crate) fn walked_population(
+    plan: &Plan,
+    open: &crate::compiler::nav::World,
+    entry: Option<[i32; 3]>,
+) -> std::collections::BTreeSet<[i32; 3]> {
+    open.reachable_walkable(&put_at_roots(plan, entry))
 }
 
 /// `DW0891`: **prove no killing volume reaches a cell the player would read as
@@ -404,6 +607,18 @@ pub fn stands_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
 /// hazard; what `DW0891` guarantees is that the cells the walk graph loses are
 /// cells a player could see were dangerous.
 ///
+/// # A staged volume is judged per configuration (spec-0088 §5)
+///
+/// A volume live from a story stage has no one assembled world: the floor round
+/// it may be plain stone before the flip and settled debris after. So it is
+/// judged in every configuration the critical path passes in which it may be
+/// live, and in the last configuration before each switch-on — a body standing
+/// in the keep-out when the gate flips is killed in the same server tick, so
+/// the floor it stood on must already have read as danger, in that
+/// configuration's own bytes ([`crate::compiler::nav::Configuration::blocks`]).
+/// A volume live from world-load is judged once, over the world as built, as it
+/// always was.
+///
 /// Returns the binding beside the verdict, so the line a run prints is a count
 /// over every volume rather than over the ones that preceded the failure.
 pub fn check_danger_is_visible(
@@ -412,146 +627,479 @@ pub fn check_danger_is_visible(
     blocks: &crate::compiler::blockstate::BlockMap,
     entry: Option<[i32; 3]>,
 ) -> (DangerVisibility, Result<(), Failure>) {
-    let mut binding = DangerVisibility::default();
+    let mut binding = DangerVisibility {
+        declared: plan.lethal_volumes.len(),
+        ..DangerVisibility::default()
+    };
     if plan.lethal_volumes.is_empty() {
         return (binding, Ok(()));
     }
-    let body = delvewright_dsl::metrics::Body::PLAYER;
+    let roots = put_at_roots(plan, entry);
     // The counterfactual, not the world the router walks. See the note above.
     let open = world.without_exclusions();
-    let population = open.reachable_walkable(&put_at_roots(plan, entry));
-    binding.population = population.len();
-    // The zero-binding question: can any player body get into each volume at
-    // all — by walking, falling, jumping or swimming from the walked
-    // population, or by a fall through it at any depth?
-    let roots: Vec<[i32; 3]> = population.iter().copied().collect();
-    let vols: Vec<([i32; 3], [i32; 3])> = plan.lethal_volumes.iter().map(|v| v.region).collect();
-    let body_reach = open.reach_into_volumes(
-        &roots,
-        &crate::compiler::nav::Footprint::player(),
-        false,
-        None,
-        &vols,
-    );
+    binding.roots = roots.len();
+    let as_built = open.reachable_walkable(&roots);
+    binding.population = as_built.len();
 
-    for (i, v) in plan.lethal_volumes.iter().enumerate() {
+    // The configurations, for the staged volumes: every one the critical path
+    // passes, then every one each reachable branch's own path passes — a volume
+    // one branch arms is met on that branch's path and nowhere else. Built only
+    // when a staged volume is declared, so a campaign that stages nothing
+    // measures exactly what it did.
+    let staged_any = plan.lethal_volumes.iter().any(|v| v.staged.is_some());
+    let mut configs: Vec<crate::compiler::nav::Configuration> = Vec::new();
+    // (path label, per step: (configuration, liveness)), the critical path first.
+    let mut paths: Vec<(String, PathSteps)> = Vec::new();
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    if staged_any {
+        paths.push((
+            "the critical path".to_string(),
+            crate::compiler::nav::configurations_along(
+                world,
+                &plan.region_events,
+                &ancestor,
+                plan.critical_path.len(),
+                &mut configs,
+            ),
+        ));
+        let realized = crate::compiler::branch::realize(plan.campaign);
+        if !realized.is_empty() {
+            let flow = crate::compiler::flow::Flow::new(plan.campaign);
+            for r in &realized {
+                let Some(widx) = r.world else { continue };
+                // A branch whose path cannot be built is refused by the branch
+                // proofs, with its own message; it has no configurations here.
+                let Ok(cp) = plan.branch_critical_path(&flow, &flow.playthrough_in(widx)) else {
+                    continue;
+                };
+                let (events, ancestors) = plan.branch_gate_model(&cp);
+                let anc = |g: usize, s: usize| {
+                    g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
+                };
+                paths.push((
+                    format!("branch `{}`'s path", r.branch.id),
+                    crate::compiler::nav::configurations_along(
+                        world,
+                        &events,
+                        &anc,
+                        cp.steps.len(),
+                        &mut configs,
+                    ),
+                ));
+            }
+        }
+    }
+    // Per configuration, built on first use: its lethality-free world, its
+    // walked population, and its bytes.
+    type Judged = (
+        crate::compiler::nav::World,
+        std::collections::BTreeSet<[i32; 3]>,
+        crate::compiler::blockstate::BlockMap,
+    );
+    let mut judged_cfg: std::collections::BTreeMap<usize, Judged> =
+        std::collections::BTreeMap::new();
+    let mut used_cfg: std::collections::BTreeSet<Option<usize>> = std::collections::BTreeSet::new();
+
+    let body = delvewright_dsl::metrics::Body::PLAYER;
+    let mut rows: Vec<Judgement> = Vec::new();
+    let mut staged_idx = 0usize;
+    for (vi, v) in plan.lethal_volumes.iter().enumerate() {
         let (klo, khi) = delvewright_dsl::metrics::keep_out_box(body, v.region.0, v.region.1);
-        let caught: Vec<[i32; 3]> = population
-            .iter()
-            .copied()
-            .filter(|c| (0..3).all(|i| klo[i] <= c[i] && c[i] <= khi[i]))
-            .collect();
-        let shown: Vec<[i32; 3]> = caught
-            .iter()
-            .copied()
-            .filter(|&c| cell_shows(blocks, c, &v.shown_by))
-            .collect();
+        let row_of = |w: &crate::compiler::nav::World,
+                      population: &std::collections::BTreeSet<[i32; 3]>,
+                      bytes: &crate::compiler::blockstate::BlockMap,
+                      configuration: Option<usize>,
+                      live: bool| {
+            let caught: Vec<[i32; 3]> = population
+                .iter()
+                .copied()
+                .filter(|c| (0..3).all(|i| klo[i] <= c[i] && c[i] <= khi[i]))
+                .collect();
+            let shown: Vec<[i32; 3]> = caught
+                .iter()
+                .copied()
+                .filter(|&c| cell_shows(bytes, c, &v.shown_by))
+                .collect();
+            let proots: Vec<[i32; 3]> = population.iter().copied().collect();
+            let reach = w.reach_into_volumes(
+                &proots,
+                &crate::compiler::nav::Footprint::player(),
+                false,
+                None,
+                &[v.region],
+            );
+            VolumeVisibility {
+                id: v.id.clone(),
+                configuration,
+                live,
+                population: population.len(),
+                keep_out: (klo, khi),
+                caught,
+                shown,
+                shown_by: v.shown_by.clone(),
+                reached_by: reach.hits[0].as_ref().map(|h| {
+                    format!(
+                        "a player, by {} from {:?}",
+                        h.how,
+                        h.path.last().copied().unwrap_or(klo)
+                    )
+                }),
+            }
+        };
+        let Some(gate) = &v.staged else {
+            used_cfg.insert(None);
+            rows.push(Judgement {
+                vi,
+                row: row_of(&open, &as_built, blocks, None, true),
+                before: false,
+                ci: None,
+                path: String::new(),
+                switch_at: 0,
+            });
+            continue;
+        };
+        // Which configurations this volume is judged in: every one in which it
+        // may be live, and, on each path, the one before each switch-on
+        // (`before`, with the step it switches on at and the path it is on).
+        let si = staged_idx;
+        staged_idx += 1;
+        // (configuration, before, path label, the step it first may be live at,
+        // path index)
+        let mut wanted: Vec<(usize, bool, String, usize, usize)> = Vec::new();
+        for (pi, (label, per_step)) in paths.iter().enumerate() {
+            for (s, (ci, live)) in per_step.iter().enumerate() {
+                if !live[si].may {
+                    continue;
+                }
+                if !wanted.iter().any(|w| w.0 == *ci) {
+                    wanted.push((*ci, false, label.clone(), s, pi));
+                }
+                if s > 0 && !per_step[s - 1].1[si].may {
+                    let prev = per_step[s - 1].0;
+                    if !wanted.iter().any(|w| w.0 == prev) {
+                        wanted.push((prev, true, label.clone(), s, pi));
+                    }
+                }
+            }
+        }
+        // Path order, then each path's own step order.
+        wanted.sort_by_key(|w| (w.4, configs[w.0].step));
+        // The critical path's configurations — what the ledger counts against.
+        let critical: Vec<usize> = {
+            let mut seen: Vec<usize> = Vec::new();
+            for (ci, _) in paths.first().map(|p| p.1.as_slice()).unwrap_or(&[]) {
+                if !seen.contains(ci) {
+                    seen.push(*ci);
+                }
+            }
+            seen
+        };
+        let mut srow = StagedRow {
+            id: v.id.clone(),
+            gate_terms: gate.terms.clone(),
+            judged: wanted.len(),
+            may_live: critical
+                .iter()
+                .filter(|ci| configs[**ci].live.get(si).is_some_and(|l| l.may))
+                .count(),
+            is_live: critical
+                .iter()
+                .filter(|ci| configs[**ci].live.get(si).is_some_and(|l| l.is))
+                .count(),
+            of: critical.len(),
+            unmet: None,
+        };
+        if srow.is_live == 0 {
+            let first = wanted.first().map_or(0, |w| configs[w.0].step);
+            let last = plan.critical_path.len().saturating_sub(1);
+            srow.unmet = Some((
+                first,
+                never_held_term(gate, &plan.region_events, last, &ancestor),
+            ));
+        }
+        binding.staged.push(srow);
+        for (ci, before, path, switch_at, _) in wanted {
+            let (w, population, bytes) = judged_cfg.entry(ci).or_insert_with(|| {
+                let cw = configs[ci]
+                    .world(world)
+                    .map_or_else(|| world.without_exclusions(), |w| w.without_exclusions());
+                let pop = cw.reachable_walkable(&roots);
+                let bytes = configs[ci].blocks(blocks);
+                (cw, pop, bytes)
+            });
+            used_cfg.insert(Some(ci));
+            rows.push(Judgement {
+                vi,
+                row: row_of(w, population, bytes, Some(configs[ci].step), !before),
+                before,
+                ci: Some(ci),
+                path,
+                switch_at,
+            });
+        }
+    }
+    binding.configurations = used_cfg.len();
+
+    // A staged volume judged in no configuration is a defect of the
+    // enumeration, never a line (spec-0088 §9).
+    if let Some(r) = binding.staged.iter().find(|r| r.judged == 0) {
+        let verdict = Failure {
+            code: DW_LETHAL_INVISIBLE,
+            message: format!(
+                "lethal volume `{}` is live from a story stage and the visibility proof judged it \
+                 in none of the {} configuration(s) the critical path and the branch paths pass: \
+                 its gate may hold in none of them, so no floor was examined for it. A staged \
+                 volume no path can meet is either a gate nothing on any path can open — check \
+                 the terms ({}) against the beats that set them — or a defect of this \
+                 enumeration; it is refused rather than reported as checked.",
+                r.id,
+                configs.len(),
+                plan.lethal_volumes
+                    .iter()
+                    .find(|v| v.id == r.id)
+                    .and_then(|v| v.staged.as_ref())
+                    .map(|g| g.words())
+                    .unwrap_or_default(),
+            ),
+        };
+        binding.volumes = rows.into_iter().map(|j| j.row).collect();
+        return (binding, Err(verdict));
+    }
+
+    // Declarations: a block is borne out when some judged row of its volume
+    // shows it on a caught cell, in that row's bytes.
+    for (vi, v) in plan.lethal_volumes.iter().enumerate() {
         binding.declarations += v.shown_by.len();
         binding.borne_out += v
             .shown_by
             .iter()
-            .filter(|s| {
-                caught
-                    .iter()
-                    .any(|&c| cell_shows(blocks, c, std::slice::from_ref(*s)))
+            .filter(|b| {
+                rows.iter()
+                    .filter(|j| j.vi == vi)
+                    .any(|j| borne(j, b, blocks, &configs))
             })
             .count();
-        binding.volumes.push(VolumeVisibility {
-            id: v.id.clone(),
-            keep_out: (klo, khi),
-            caught,
-            shown,
-            shown_by: v.shown_by.clone(),
-            reached_by: body_reach.hits[i].as_ref().map(|h| {
-                format!(
-                    "a player, by {} from {:?}",
-                    h.how,
-                    h.path.last().copied().unwrap_or(klo)
-                )
-            }),
-        });
     }
 
-    // The verdict, per volume in declaration order and both shapes per volume:
-    // caught floor that shows nothing first, because a volume that catches floor
-    // is wrong about the world and a fiction is only wrong about the document.
+    // The verdict, per row in order: caught floor that shows nothing first,
+    // because a volume that catches floor is wrong about the world and a
+    // fiction is only wrong about the document.
     let mut verdict: Option<Failure> = None;
-    'volumes: for (v, row) in plan.lethal_volumes.iter().zip(&binding.volumes) {
+    for j in &rows {
+        let (row, before) = (&j.row, &j.before);
+        let v = &plan.lethal_volumes[j.vi];
         let unseen: Vec<[i32; 3]> = row
             .caught
             .iter()
             .copied()
             .filter(|c| !row.shown.contains(c))
             .collect();
-        if !unseen.is_empty() {
-            let declared = if v.shown_by.is_empty() {
-                "It declares no `shown_by` at all".to_string()
-            } else {
+        if unseen.is_empty() {
+            continue;
+        }
+        let declared = if v.shown_by.is_empty() {
+            "It declares no `shown_by` at all".to_string()
+        } else {
+            format!(
+                "It declares `shown_by` {}, which no cell of this floor bears out{}",
+                v.shown_by
+                    .iter()
+                    .map(|b| format!("`{b}`"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if row.configuration.is_some() {
+                    " in this configuration's bytes"
+                } else {
+                    ""
+                }
+            )
+        };
+        let cells = crate::compiler::failure::cells_by_floor(&unseen);
+        let message = match (row.configuration, *before, &v.staged) {
+            (Some(step), true, Some(gate)) => format!(
+                "lethal volume `{}` goes live at step {} of {} and a body may be standing on these \
+                 cells when it does; nothing in the world before that beat says they kill: \
+                 {cells} ({} cell(s), the configuration arriving at critical step {step}, before \
+                 its gate — {} — holds). A body standing in a volume's keep-out when its gate \
+                 flips is killed in the same server tick, with no tick in which to step off, so \
+                 the floor it stood on must read as danger BEFORE the beat. {declared}. Roof or \
+                 wall the volume's cells off until the beat that opens them (the beat that arms \
+                 the volume is usually the beat that should open the way to it); lower the volume \
+                 so its keep-out's top course lies under the floor a body stands on before the \
+                 flip; or author one of the blocks vanilla hurts a body with under those cells, \
+                 visible before the flip, and declare it in `shown_by`. Do not declare the floor \
+                 a place nobody walks, and do not fire the flag later to pass — a hazard that \
+                 arrives silently under a body is the finding, wherever on the path it arrives.",
+                row.id,
+                j.switch_at,
+                j.path,
+                unseen.len(),
+                gate.words(),
+            ),
+            (configuration, _, _) => {
+                let in_config = match (configuration, &v.staged) {
+                    (Some(step), Some(gate)) => format!(
+                        " In the configuration arriving at step {step} of {}, where its gate \
+                         ({}) may hold.",
+                        j.path,
+                        gate.words()
+                    ),
+                    _ => String::new(),
+                };
                 format!(
-                    "It declares `shown_by` {}, which no cell of this floor bears out",
-                    v.shown_by
-                        .iter()
-                        .map(|b| format!("`{b}`"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            };
-            verdict = Some(Failure {
-                code: DW_LETHAL_INVISIBLE,
-                message: format!(
-                    "lethal volume `{}` catches {} cell(s) of floor the party walks, and \
-                         nothing in the world says so: {}. A volume kills by a box selector and \
-                         the server adjudicates that on hitbox INTERSECTION, so the cells a body \
-                         can be caught from are the volume's own box widened by half a body — the \
-                         keep-out {:?}..={:?} — and every one of these is standing room a player \
-                         reads as ordinary floor. {declared}. Danger is visible, or the engine \
-                         refuses it: no cell of the keep-out may be floor the party walks unless \
-                         the block under or in it is one of `shown_by`. Lower the volume so its \
-                         keep-out's top course lies UNDER the floor (a pit's volume sits at the \
-                         pit's bottom, on an anchor at the pit's bottom); draw its `extent` in so \
-                         the keep-out stops one cell short of the floor; or author one of the \
-                         blocks vanilla hurts a body with under those cells and declare it in \
-                         `shown_by`. Do NOT repair this by marking the floor unwalkable — the \
-                         compiler knows and the player does not.",
+                    "lethal volume `{}` catches {} cell(s) of floor the party walks, and nothing \
+                     in the world says so: {cells}.{in_config} A volume kills by a box selector \
+                     and the server adjudicates that on hitbox INTERSECTION, so the cells a body \
+                     can be caught from are the volume's own box widened by half a body — the \
+                     keep-out {:?}..={:?} — and every one of these is standing room a player \
+                     reads as ordinary floor. {declared}. Danger is visible, or the engine \
+                     refuses it: no cell of the keep-out may be floor the party walks unless the \
+                     block under or in it is one of `shown_by`. Lower the volume so its \
+                     keep-out's top course lies UNDER the floor (a pit's volume sits at the \
+                     pit's bottom, on an anchor at the pit's bottom); draw its `extent` in so \
+                     the keep-out stops one cell short of the floor; or author one of the \
+                     blocks vanilla hurts a body with under those cells and declare it in \
+                     `shown_by`. Do NOT repair this by marking the floor unwalkable — the \
+                     compiler knows and the player does not.",
                     row.id,
                     unseen.len(),
-                    crate::compiler::failure::cells_by_floor(&unseen),
                     row.keep_out.0,
                     row.keep_out.1,
-                ),
-            });
-            break 'volumes;
-        }
-        for block in &v.shown_by {
-            if row
-                .caught
-                .iter()
-                .any(|&c| cell_shows(blocks, c, std::slice::from_ref(block)))
-            {
-                continue;
+                )
             }
-            verdict = Some(Failure {
-                code: DW_LETHAL_INVISIBLE,
-                message: format!(
-                    "lethal volume `{}` declares `shown_by` block `{block}`, and it stands \
-                         under or in none of the {} cell(s) of walked floor this volume catches. \
-                         A declaration is a claim about the assembled bytes and this one is not \
-                         borne out by them{}. Delete the declaration, or author `{block}` under \
-                         the cells this volume catches.",
-                    row.id,
-                    row.caught.len(),
-                    if row.caught.is_empty() {
-                        " — the volume catches no walked floor at all, so it needs no signal \
+        };
+        verdict = Some(Failure {
+            code: DW_LETHAL_INVISIBLE,
+            message,
+        });
+        break;
+    }
+    if verdict.is_none() {
+        'volumes: for (vi, v) in plan.lethal_volumes.iter().enumerate() {
+            let mine: Vec<&VolumeVisibility> =
+                rows.iter().filter(|j| j.vi == vi).map(|j| &j.row).collect();
+            for block in &v.shown_by {
+                if rows
+                    .iter()
+                    .filter(|j| j.vi == vi)
+                    .any(|j| borne(j, block, blocks, &configs))
+                {
+                    continue;
+                }
+                let caught: usize = mine.iter().map(|r| r.caught.len()).sum();
+                let configs_words = if v.staged.is_some() {
+                    format!(" in any of the {} configuration(s) judged", mine.len())
+                } else {
+                    String::new()
+                };
+                verdict = Some(Failure {
+                    code: DW_LETHAL_INVISIBLE,
+                    message: format!(
+                        "lethal volume `{}` declares `shown_by` block `{block}`, and it stands \
+                         under or in none of the {caught} cell(s) of walked floor this volume \
+                         catches{configs_words}. A declaration is a claim about the assembled \
+                         bytes and this one is not borne out by them{}. Delete the declaration, \
+                         or author `{block}` under the cells this volume catches.",
+                        v.id,
+                        if caught == 0 {
+                            " — the volume catches no walked floor at all, so it needs no signal \
                              and the declaration is what is wrong"
-                    } else {
-                        ""
-                    },
-                ),
-            });
-            break 'volumes;
+                        } else {
+                            ""
+                        },
+                    ),
+                });
+                break 'volumes;
+            }
         }
     }
+    binding.volumes = rows.into_iter().map(|j| j.row).collect();
     (binding, verdict.map_or(Ok(()), Err))
+}
+
+/// One path's steps, each with its configuration's index and every staged
+/// volume's liveness there ([`crate::compiler::nav::configurations_along`]).
+type PathSteps = Vec<(usize, Vec<crate::compiler::nav::Liveness>)>;
+
+/// One (volume, configuration) row with what the verdict needs beside it: the
+/// volume's index, whether the row is the configuration before a switch-on,
+/// the configuration's index (`None` for a volume live from world-load, judged
+/// over the world as built), the path the configuration was reached on, and
+/// the step of that path the volume first may be live at.
+struct Judgement {
+    vi: usize,
+    row: VolumeVisibility,
+    before: bool,
+    ci: Option<usize>,
+    path: String,
+    switch_at: usize,
+}
+
+/// Whether a row bears out `block` on one of its caught cells, read in the
+/// bytes of the configuration it judged.
+fn borne(
+    j: &Judgement,
+    block: &str,
+    blocks: &crate::compiler::blockstate::BlockMap,
+    configs: &[crate::compiler::nav::Configuration],
+) -> bool {
+    let owned;
+    let bytes = match j.ci.and_then(|ci| configs.get(ci)) {
+        Some(c) => {
+            owned = c.blocks(blocks);
+            &owned
+        }
+        None => blocks,
+    };
+    let one = [block.to_string()];
+    j.row.caught.iter().any(|&c| cell_shows(bytes, c, &one))
+}
+
+/// The first term of `gate` that does not hold on the forced route at the
+/// arrival `at` — what `DW0954` names.
+fn never_held_term(
+    gate: &crate::compiler::plan::StagedGate,
+    events: &crate::compiler::plan::RegionEvents,
+    at: usize,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> String {
+    for f in &gate.requires_flags {
+        let one = crate::compiler::plan::StagedGate {
+            requires_flags: vec![f.clone()],
+            forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
+            terms: Vec::new(),
+        };
+        if !crate::compiler::nav::liveness_of(&one, events, at, ancestor).is {
+            return format!("`{f}` is required and no forced beat on the path sets it");
+        }
+    }
+    for f in &gate.forbids_flags {
+        let one = crate::compiler::plan::StagedGate {
+            requires_flags: Vec::new(),
+            forbids_flags: vec![f.clone()],
+            requires_state: Vec::new(),
+            terms: Vec::new(),
+        };
+        if !crate::compiler::nav::liveness_of(&one, events, at, ancestor).is {
+            return format!("`{f}` is forbidden and something can set it before the volume is met");
+        }
+    }
+    for c in &gate.requires_state {
+        let one = crate::compiler::plan::StagedGate {
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+            requires_state: vec![c.clone()],
+            terms: Vec::new(),
+        };
+        if !crate::compiler::nav::liveness_of(&one, events, at, ancestor).is {
+            return format!(
+                "`{}` is never decided true by the replay of the forced route",
+                c.state.as_str()
+            );
+        }
+    }
+    format!("the gate ({}) never holds", gate.words())
 }
 
 /// One posted place: what a diagnostic calls it, the cell the campaign puts a
@@ -768,6 +1316,7 @@ pub fn check_respawn_seats(
         let label = &place.label;
         let pos = place.cell;
         let (w, h) = (place.body.width, place.body.height);
+        let as_live = as_live_words(plan, &blamed);
         // One code, because it is one defect. What branches is the PRESCRIPTION:
         // an author can act on a post they wrote, and cannot act on a cell the
         // seating pass chose for them.
@@ -797,14 +1346,40 @@ pub fn check_respawn_seats(
             code: DW_LETHAL_RESPAWN_SEAT,
             message: format!(
                 "{label} at {pos:?} stands a body whose hitbox is {w} x {h} blocks INSIDE lethal \
-                 volume(s) {names}. A volume kills by a box selector and the server adjudicates \
-                 that on hitbox INTERSECTION, not on the cell a body stands in — so a body \
-                 reaches out of its own cell, and this place is inside the volume even where its \
-                 cell is not. {harm}"
+                 volume(s) {names}.{as_live} A volume kills by a box selector and the server \
+                 adjudicates that on hitbox INTERSECTION, not on the cell a body stands in — so \
+                 a body reaches out of its own cell, and this place is inside the volume even \
+                 where its cell is not. {harm}"
             ),
         });
     }
     Ok(seats.len())
+}
+
+/// The as-live quantifier a posted place's or a wave's refusal states when a
+/// volume it names is live from a story stage (spec-0088 §6): the body is judged
+/// against it as live whether or not it is live when the body is put there,
+/// because a post, a seat or a reach that meets it is the same defect arriving
+/// later.
+fn as_live_words(plan: &Plan, ids: &[&str]) -> String {
+    let staged: Vec<String> = plan
+        .lethal_volumes
+        .iter()
+        .filter(|v| v.staged.is_some() && ids.contains(&v.id.as_str()))
+        .map(|v| format!("`{}`", v.id))
+        .collect();
+    if staged.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " {} {} live from a story stage; the body is judged against it as live, whether or \
+             not it is live when the body is put there — a body in a pit that wakes later is \
+             deleted, re-seated or thinned when it wakes. Move the body before the beat (a \
+             `cast` placement, a `move-actor`), or move the volume.",
+            staged.join(", "),
+            if staged.len() == 1 { "is" } else { "are" }
+        )
+    }
 }
 
 /// The ledger for a finished build: what the campaign declared, what resolved,
@@ -826,6 +1401,7 @@ pub fn gate(
         legs,
         packtests,
         visibility,
+        blind: crate::compiler::blind::BlindReach::default(),
     }
 }
 
@@ -872,6 +1448,9 @@ pub struct WaveLethalFinding {
     pub hit: crate::compiler::nav::VolumeHit,
     /// For `DW0923`, the barriers left open on the way, as `(cell, block)`.
     pub opened: Vec<([i32; 3], String)>,
+    /// Whether the volume is live from a story stage (spec-0088 §6) — judged
+    /// as live, and said so.
+    pub staged: bool,
 }
 
 impl WaveLethalFinding {
@@ -900,9 +1479,16 @@ impl WaveLethalFinding {
         } else {
             format!(" by way of {}", turns.join(", "))
         };
+        let as_live = if self.staged {
+            " (the volume is live from a story stage; the wave is judged against it as live, \
+             because a wave that can walk into it thins itself once it wakes)"
+        } else {
+            ""
+        };
         format!(
             "wave `{}`'s `{}` seated at {seat:?} walks {} move(s){by_way} to {from:?} and gets \
-             into lethal volume `{}` by {} at {at:?}, inside its follow range of {} block(s)",
+             into lethal volume `{}`{as_live} by {} at {at:?}, inside its follow range of {} \
+             block(s)",
             self.wave,
             self.entity,
             self.hit.path.len().saturating_sub(1),
@@ -1130,6 +1716,7 @@ pub fn wave_reach(
                     volume: v.id.clone(),
                     hit: hit.clone(),
                     opened,
+                    staged: v.staged.is_some(),
                 };
                 if let Some(hit) = &built.hits[i] {
                     if !seen(&b.as_built) {
@@ -1209,6 +1796,9 @@ mod tests {
     fn row(id: &str, reached_by: Option<&str>) -> VolumeVisibility {
         VolumeVisibility {
             id: id.to_string(),
+            configuration: None,
+            live: true,
+            population: 10,
             keep_out: ([0, 0, 0], [0, 0, 0]),
             caught: Vec::new(),
             shown: Vec::new(),
@@ -1233,6 +1823,7 @@ mod tests {
             volume: volume.to_string(),
             hit: hit(),
             opened,
+            staged: false,
         }
     }
 
@@ -1241,11 +1832,15 @@ mod tests {
     #[test]
     fn a_volume_no_body_reaches_is_a_dw0891_warning() {
         let d = DangerVisibility {
+            declared: 2,
             population: 10,
+            roots: 1,
+            configurations: 1,
             volumes: vec![
                 row("lethal/well", None),
                 row("lethal/pit", Some("a player")),
             ],
+            staged: Vec::new(),
             declarations: 0,
             borne_out: 0,
         };
@@ -1265,8 +1860,12 @@ mod tests {
     #[test]
     fn a_wave_member_binds_a_volume_no_player_reaches() {
         let mut d = DangerVisibility {
+            declared: 1,
             population: 10,
+            roots: 1,
+            configurations: 1,
             volumes: vec![row("lethal/well", None)],
+            staged: Vec::new(),
             declarations: 0,
             borne_out: 0,
         };

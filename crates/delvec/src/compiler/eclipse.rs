@@ -210,8 +210,15 @@ struct Body {
     path: String,
 }
 
+/// The size every compiler-summoned press affordance has: `1.0 × 2.0`.
+pub(crate) const AFFORDANCE_SIZE: (f64, f64) = (AFFORDANCE_WIDTH, AFFORDANCE_HEIGHT);
+
 /// An interaction affordance: one `minecraft:interaction` entity at a cell.
 pub(crate) struct Affordance {
+    /// The box's `(width, height)`: [`AFFORDANCE_SIZE`] for every press body
+    /// the compiler summons, the declared size for an assembly's hitbox
+    /// (spec-0082).
+    pub(crate) size: (f64, f64),
     /// What declares it (`interact objective`, `trigger`, …), for the message.
     pub(crate) kind: &'static str,
     /// The declaring id (`obj/harden`).
@@ -294,8 +301,22 @@ fn body_box(pos: [i32; 3], width: f64, height: f64) -> [Span; 3] {
 
 /// The affordance's box — a 1.0 × 2.0 × 1.0 interaction entity at a cell centre,
 /// i.e. exactly that cell's column, two blocks tall.
+#[cfg(test)]
 fn affordance_box(pos: [i32; 3]) -> [Span; 3] {
     body_box(pos, AFFORDANCE_WIDTH, AFFORDANCE_HEIGHT)
+}
+
+impl Affordance {
+    /// This affordance's box: its size, centred on its cell, rising from the
+    /// cell's floor.
+    fn boxed(&self) -> [Span; 3] {
+        body_box(self.pos, self.size.0, self.size.1)
+    }
+
+    /// Whether this is a standard press body rather than a sized hitbox.
+    fn is_standard(&self) -> bool {
+        self.size == AFFORDANCE_SIZE
+    }
 }
 
 /// The verdict for one (body, affordance) pair.
@@ -446,6 +467,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             };
             let gate = o.gate();
             out.push(Affordance {
+                size: AFFORDANCE_SIZE,
                 kind: "interact objective",
                 id: id.as_str().to_string(),
                 anchor: anchor.as_str().to_string(),
@@ -489,6 +511,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             continue;
         };
         out.push(Affordance {
+            size: AFFORDANCE_SIZE,
             kind: "trigger",
             id: t.id.as_str().to_string(),
             anchor: at.to_string(),
@@ -500,6 +523,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     }
     for bf in plan.bonfires() {
         out.push(Affordance {
+            size: AFFORDANCE_SIZE,
             kind: "bonfire",
             id: format!("bonfire #{}", bf.index),
             anchor: bf.anchor.clone(),
@@ -509,6 +533,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     }
     for sc in &plan.shortcuts {
         out.push(Affordance {
+            size: AFFORDANCE_SIZE,
             kind: "shortcut unlock",
             id: sc.id.clone(),
             anchor: sc.unlock_anchor.clone(),
@@ -519,6 +544,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     for tr in &plan.traps {
         if let Some(d) = &tr.disarm {
             out.push(Affordance {
+                size: AFFORDANCE_SIZE,
                 kind: "trap disarm",
                 id: tr.id.clone(),
                 anchor: d.via_anchor.clone(),
@@ -530,6 +556,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     for g in &plan.timed_gates {
         if let Some(d) = &g.disarm {
             out.push(Affordance {
+                size: AFFORDANCE_SIZE,
                 kind: "timed-gate disarm",
                 id: g.id.clone(),
                 anchor: d.via_anchor.clone(),
@@ -547,10 +574,30 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             continue;
         };
         out.push(Affordance {
+            size: AFFORDANCE_SIZE,
             kind: "shop",
             id: format!("{} (#{i})", sh.id),
             anchor: sh.anchor.as_str().to_string(),
             pos,
+            arming: Arming::Persistent,
+        });
+    }
+    // spec-0082 assemblies: a declared hitbox is a compiler-summoned
+    // `minecraft:interaction` a player strikes, at the size the assembly
+    // declares — so a body posted on it is `DW0359` and another press body
+    // inside it is `DW0878`, exactly as for every press body.
+    for p in crate::compiler::assembly::placed(plan) {
+        let Some(h) = &p.decl.hitbox else {
+            continue;
+        };
+        out.push(Affordance {
+            size: (h.width, h.height),
+            kind: "assembly hitbox",
+            id: p.decl.id.as_str().to_string(),
+            anchor: p.decl.at.display(),
+            pos: p.hitbox_cell(),
+            // Between a `spawn-assembly` and a `despawn-assembly`; held to the
+            // persistent reading, the conservative direction for a contest.
             arming: Arming::Persistent,
         });
     }
@@ -596,7 +643,7 @@ pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, Failure> {
         let (w, h) = entity_dims(&b.entity);
         let bbox = body_box(b.pos, w, h);
         for a in &affordances {
-            match verdict(bbox, affordance_box(a.pos)) {
+            match verdict(bbox, a.boxed()) {
                 Verdict::Clear => {}
                 Verdict::Eclipsed => return Err(eclipse_error(b, a, w, h)),
                 Verdict::Crowded(gap) => warnings.push(crowding_warning(b, a, w, h, gap)),
@@ -668,6 +715,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
             .into_iter()
             .filter(|b| b.kind == "npc")
             .map(|b| Affordance {
+                size: AFFORDANCE_SIZE,
                 kind: "npc dialogue hitbox",
                 id: b.id,
                 anchor: b.anchor,
@@ -679,7 +727,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
         for cell in body.cells {
             let sbox = seal_box(cell);
             for a in &affordances {
-                let abox = affordance_box(a.pos);
+                let abox = a.boxed();
                 if (0..3).all(|i| sbox[i].overlaps(abox[i])) {
                     return Err(seal_collision_error(body.kind, &body.anchor, cell, a));
                 }
@@ -704,7 +752,18 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
     let affordances = affordances(plan);
     for (i, a) in affordances.iter().enumerate() {
         for b in affordances.iter().skip(i + 1) {
-            if a.pos == b.pos && can_share_a_moment(&a.arming, &b.arming) {
+            // Two standard press bodies contest when their cells coincide (the
+            // exact tie, see `DW_AFFORDANCE_CONTEST`). A sized hitbox — an
+            // assembly's (spec-0082) — contests whatever box it overlaps: the
+            // ray meets the larger box first from every stance outside it, so
+            // an affordance inside it is never reached.
+            let contest = if a.is_standard() && b.is_standard() {
+                a.pos == b.pos
+            } else {
+                let (x, y) = (a.boxed(), b.boxed());
+                (0..3).all(|i| x[i].overlaps(y[i]))
+            };
+            if contest && can_share_a_moment(&a.arming, &b.arming) {
                 return Err(affordance_contest_error(a, b));
             }
         }

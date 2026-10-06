@@ -120,6 +120,7 @@ inputs = [
   { glob = "validation/**", why = "`test_reclaim_ladder_images.py`, `test_render_shots_*.py`, `test_delvec_bin_sh.py`, `test_mutex_lock_dir_default.py` and `test_staging_gate.py` run or read scripts under `validation/`" },
   { glob = "docs/reference/compiler.md", why = "`test_check_dw_codes.py` and `test_staging_gate.py` read the DW catalogue; the publish-gate tests copy it as a version site" },
   { glob = "docs/playtest-findings.json", why = "`test_staging_gate.py` reads the live findings ledger" },
+  { glob = "docs/specs/spec-0082-a-fixed-thing-that-can-be-hit-and-hits-back.md", why = "`tools/lib/version_sites.py` names it in `COUNTEREXAMPLES` (its instrument line states a version that is not a pin), so the publish-gate tests (`test_crates_io_publish_same_crate.py`, `test_publish_gate_order.py`) read it as a version site" },
   { glob = "docs/reference/game-writing.md", why = "`tools/creator/i18n-translate.py` reads its target-language writing rules into every prompt, and `test_i18n_translate.py` builds those prompts" },
 ]
 

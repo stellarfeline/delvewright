@@ -1040,7 +1040,7 @@ fn is_direction_pair(value: &str) -> bool {
 /// Tolerant on purpose: this is a *validator's* front door, so a malformed
 /// state must reach the registry and be reported as an unknown block rather
 /// than be rejected by a parser with a different vocabulary.
-fn parse_state(state: &str) -> (&str, BTreeMap<String, String>) {
+pub(crate) fn parse_state(state: &str) -> (&str, BTreeMap<String, String>) {
     let Some(open) = state.find('[') else {
         return (state.trim(), BTreeMap::new());
     };

@@ -137,8 +137,10 @@ this section is what they are *for* and the traps in each.
   beat a player completes, or a trigger declaring `audience: "presser"`, which
   runs as the player who clicked. These have **no** acting player and reject one
   (`DW0503`): an objective/trigger/trap *gate*, a party-audience trigger's
-  `effects`, a trap's `payload`, a shortcut's `on_unlock`, a `sequence` step and
-  a `move-npc`/`move-actor` `on_arrive`. Use `party` scope there.
+  `effects`, a trap's `payload`, a shortcut's `on_unlock`, a `move-npc`/
+  `move-actor` `on_arrive`, a `bonfire`'s `on_rest`, and a `sequence` step of a
+  timeline started in one of those. A timeline started where a player acted
+  keeps that player through every step. Use `party` scope there.
 
 ## The story layer
 
@@ -196,6 +198,11 @@ this section is what they are *for* and the traps in each.
   so it takes a full sentence. Use it for the *said line*, not for hints or
   mechanics; the button still has to be readable on its own, since a player on a
   controller or reading fast never hovers. It translates under its own key.
+- **Every dialog button takes the same optional `tooltip`**: a dialogue option's
+  `tooltip`, a shop offer's `tooltip`, and a bonfire's `rest_tooltip` /
+  `save_tooltip` (beside `rest_label` / `save_label`). A class button's tooltip is
+  its required `blurb`. Each is optional, wraps, and translates under its own key;
+  state one only when the button's caption cannot say what pressing it does.
 - **Premise and exposition options must retire once their moment passes**, via
   the cast ledger's dialogue swap (declare a later root) or a flag gate. A "who
   are we" / "what is that thing" option must be **impossible** at the finale.
@@ -266,6 +273,32 @@ this section is what they are *for* and the traps in each.
   twenty, and that is a hazard they can see coming — judge it in playtest. A
   display of many rockets is a `sequence` of `firework` effects, not one
   overloaded rocket.
+- **A perception beat is a `sequence` of `give-effect`, `particle` and
+  `play-sound`** — the screen darkens and swims, a face fills it, something
+  sounds from behind. `particle {particle, at, count?, spread?, speed?}` spawns a
+  vanilla particle at a mark (`{anchor, offset?}`) or at `"players"` — each
+  addressed player; the full-screen face is `"particle":
+  "minecraft:elder_guardian", "at": "players"`. Only particle types a bare id
+  spawns are admitted (not `dust`, `block`, `item`, …). A sound behind the
+  listener is `"at": {"at": "players", "offset": [0, 0, -3]}` — the offset is in
+  the listener's own frame, `+z` the way they face. Three rules for the beat:
+  **it is never the only signal** —
+  each of these effects sits behind a player setting the engine cannot read
+  (Distortion Effects, Darkness Pulsing, the sound sliders), so a change a
+  player must act on is also told by a `narrate`, a changed block or a gate;
+  write **`hide_particles: true`** on every grant, so a blinding reads as the
+  world rather than a potion; and know what the engine fixed for you — every
+  particle is written in force mode, every sound in the `master` category, and
+  every grant ends by its duration. **A blinding near a killing volume or a
+  deadly drop is refused**: a blinded player cannot see the hazard beside them.
+  Shorten `seconds`, draw `in` farther from the hazard, or use
+  `minecraft:nausea`, which leaves the floor visible. A grant of night vision,
+  blindness or darkness that ends while a cutscene beside it in the same
+  timeline or bundle is still rolling is refused too — give it the seconds the
+  error names. Two things to plan around: a second grant of an effect the
+  player already has shows nothing unless it is stronger or longer, so a beat
+  re-armed inside its own length re-applies nothing visible; and a timeline
+  started again before it ends re-times every step for both players.
 - **A teleport selects a REGION, never a block.** `teleport {from {anchor,
   extent}, to {anchor, offset?}}` moves **everything** inside the box to the
   destination mark —
@@ -526,16 +559,16 @@ this section is what they are *for* and the traps in each.
   destination on it ends on the floor beside it. A walk whose only way is over
   the table is refused naming it (`DW0510`): move the mark or open a way round.
 - **A status effect is a verb — and it ends by expiring, never by being
-  cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?, in?}`
-  grants any pinned-1.21.11 status effect; `in {anchor, extent}` narrows it to
-  the players inside a box, so "blind whoever is riding" does not blind the
-  delve. `seconds` is REQUIRED and there is no infinite form, on purpose: an
+  cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?}`
+  grants any pinned-1.21.11 status effect; the effect's `in {anchor, extent}`
+  narrows it to the players inside a box, so "blind whoever is riding" does not
+  blind the delve. `seconds` is REQUIRED and there is no infinite form, on purpose: an
   effect whose only removal is a later step is one the player keeps forever
   whenever that step does not run — a logout, a crash, a death mid-chain. So **do
   not write "grant, then clear at the end"**; write a duration that covers the
   beat plus slack and let it expire. Pairing a live grant with a `clear-effect`
-  of the same effect in the same bundle is `DW0540`. `clear-effect {effect?,
-  in?}` exists for effects the campaign did NOT grant (a potion the player
+  of the same effect in the same bundle is `DW0540`. `clear-effect {effect?}`
+  exists for effects the campaign did NOT grant (a potion the player
   drank, a `wither` a mob applied); omit `effect` to clear everything.
 - **A fight can show its health: `health_bar`.** A health bar is
   **optional** on any wave or actor: `"health_bar": { "range": 16 }`, with
@@ -566,6 +599,65 @@ this section is what they are *for* and the traps in each.
     lists the words the game accepts. Leave them out to keep the game's defaults.
   - A rest that re-seats the fight re-seats the bar with it: it reads full
     again when the party walks back in.
+- **A thing that can be hit and hits back is an assembly, not a body.**
+  `assemblies[]` declares an object built of display entities that stands at a
+  mark — a limb rising from a pit, a statue that swings, a pendulum of chains —
+  plays clips, can be struck, and strikes a player who comes near. It has no
+  health and never dies, so it is never a fight: what striking it *does* is
+  yours, written with the ordinary verbs.
+  - *Its shape and motion come from a rig*, `"rig": "rig/<name>"`, a file a
+    generator writes into the prefab library (`rigs/<name>/rig.json`). You never
+    write keyframes. Read what a rig offers before you use it: the engine's
+    rig describe verb prints its parts, each clip with its length in ticks, and
+    the cells each clip's last frame stands in relative to the mark, turned the
+    way your assembly faces. `initial` is the clip it plays from
+    `spawn-assembly`; `play-clip {assembly, clip}` switches it; a `sequence`
+    times the beat after a clip from the tick lengths `rig describe` prints;
+    `despawn-assembly` removes it unseen. Naming a clip the rig lacks is refused
+    with the rig's clips listed.
+  - *It is struck in melee only.* Its `hitbox {width, height, offset?}` is an
+    invisible box a left-click registers on; **an arrow passes straight through
+    it**, so a ranged class cannot hit it and a party wants someone who fights
+    up close. The box must cover the parts the player sees, at most 6 wide and
+    22 tall, and when your critical path needs it struck, somewhere the party
+    can stand must be within arm's reach (3 blocks) of it.
+  - *A hit count is a `state` you declare*, not a field on the thing: a
+    `strike-assembly` trigger with `"once": false` that does `add-state` one per
+    blow, and the effects that happen at the count gated on `requires_state`
+    (play `retract`, set a flag, open the way). Give the trigger a
+    `forbids_flags` of the flag the last blow sets, so it stands down. When the
+    path depends on the count, the bot strikes it as many times as the gate
+    needs.
+  - *Where a blow lands is checked; when and how hard is yours.* `strikes
+    {while_in, pattern: [{windup, hold, strike, on_land}]}` winds up, holds,
+    strikes, and runs `on_land` the moment the strike clip's last frame has
+    finished drawing — usually a `damage-players` with an `in` box, and a sound.
+    Three things are refused, all so the danger stays visible: **a blow that
+    reaches a player who never stepped into the arming region** (keep every
+    landing box inside `while_in`); **a blow on a cell the limb does not come
+    down on** — within a block of the floor, where the player stands; a limb
+    hanging over their head has not landed on them; and **a limb that comes
+    down beyond the blow's area** — the area is what the animation shows, so a
+    long limb's blow is a long box along where it lies, not one cell, with one
+    cell of give round the box. Declare the box along the cells where the
+    strike clip's last frame lies on the floor (rig describe prints them).
+  - *The wind-up's length is two numbers, both yours*: the wind-up clip's
+    frames times its cadence (rig describe prints the ticks), then `hold`.
+    `ticks_per_frame` on a step plays its wind-up and strike at a pace you
+    choose (1–20 ticks a keyframe) instead of the clip's own. How long the
+    wind-up is, how long it holds and how much it hurts — down to no warning and
+    a blow that kills — are your judgement; nothing refuses them. For
+    reference, a single expected stimulus takes a person about a quarter of a
+    second to answer (roughly five ticks of clear movement), and a wind-up that
+    barely moves at first gives no warning at all however long it is.
+  - *It can turn to strike.* `"aim": {"facings": 8}` in `strikes` turns the
+    thing, at every wind-up, to whichever of 8 (or your number of) evenly spaced
+    facings points nearest the closest player in `while_in`, and the blow's box
+    turns with it. Write the box for the assembly's own `facing`; every facing a
+    player in `while_in` can make it take is checked the same way, so keep
+    `while_in` to the side the thing is meant to strike, and keep the
+    `damage-players` at the top of `on_land` (one inside another effect cannot
+    be turned and is refused).
 
 ## Sealed things, and pacing
 
