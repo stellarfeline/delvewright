@@ -24,7 +24,9 @@
     "seed": 20261002,
     "target_minutes": 5,
     "theme": "A weathered carcass of bone and coral, beached on a mud flat in a valley floor.",
-    "time": "day",
+    "time": {
+      "sun": "high"
+    },
     "title": "The Gallery",
     "weather": "clear"
   },
