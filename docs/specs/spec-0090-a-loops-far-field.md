@@ -116,9 +116,7 @@ A declared volume's tiling (spec-0086 §4.6) is judged in the near field. A volu
 | Code | Shape | Names |
 |---|---|---|
 | `DW0946` | a near-field difference, in block or in light | as spec-0086, plus the near range |
-| `DW0947` | open view (unchanged) | the eye, its fog end, the open cell, the face |
-| `DW0947` | **far field**: N far differences over the threshold | the worst: cell, both states or levels, configuration, eye, distance, shift, threshold |
-| `DW0947` | **far body** over the threshold | the body, its cell, eye, distance, shift, threshold |
+| `DW0947` | three shapes: open view (unchanged); **far field**, N far differences over the threshold; **far body** over the threshold | open view: the eye, its fog end, the open cell, the face. Far field: the worst difference's cell, both states or levels, configuration, eye, distance, shift, threshold. Far body: the body, its cell, eye, distance, shift, threshold |
 | `DW0948` | a body in the near field | as spec-0086, plus the near range |
 
 **Binding** (cited form, spec-0086 §8, extended): `loop binding: L loop(s); slab cells S; eyes E (fog end F..F′ blocks as the kernel reads it); span B cells closed in G steps, frontier cells closed by geometry Cg and by fog Cf, open faces 0; visible cells V compared as blocks and as light at 2 skies over C configuration(s), N of them in the near field (R..R′ blocks); far-field differences D, largest shift X° of T°; volumes in span M, bodies in the near field 0, bodies in the far field K; forced route meets … , exercise steps …`. It is printed on every build that declares a loop, refusals included, **at whichever pass refuses**: the world-edits batch replay prints its own binding before a refusal it raises. A batch it admits prints nothing, and the final build prints its own, so a build prints one binding line. `validation/loop-gate.json` gains `far_field: "spec-0090"`, `far_field_shift_degrees`, and per row `near_range`, `near_visible`, `far_differences`, `far_largest_shift_degrees`, `far_largest_shift_at {cell, eye}` and `bodies_in_far_field`; its `unchecked` gains the mid-jump eye.
