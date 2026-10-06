@@ -3435,6 +3435,34 @@ fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             ),
         ));
     }
+    // spec-0077 §7: a respawn wait is `1..=120` seconds, and it hangs off the
+    // checkpoint respawn edge, so it needs a checkpoint or bonfire to exist.
+    if let Some(w) = c.world.content.respawn_wait {
+        if !(1..=120).contains(&w.seconds) {
+            d.push(Diagnostic::error(
+                codes::RESPAWN_WAIT_INVALID,
+                "world",
+                "/content/respawn_wait/seconds".to_string(),
+                format!(
+                    "`respawn_wait.seconds` = {} is out of range — a fallen player waits 1 to 120 \
+                     seconds, so set it to a value in 1..=120, or drop `respawn_wait` for no wait",
+                    w.seconds
+                ),
+            ));
+        }
+        if !declares_checkpoint(c) {
+            d.push(Diagnostic::error(
+                codes::RESPAWN_WAIT_INVALID,
+                "world",
+                "/content/respawn_wait".to_string(),
+                "`respawn_wait` is declared but this campaign declares no `set-checkpoint` or \
+                 `bonfire` — the wait begins on the checkpoint respawn edge, so with nothing to \
+                 come back to it never runs. Add the checkpoint or bonfire a fallen player \
+                 returns to, or drop `respawn_wait`."
+                    .to_string(),
+            ));
+        }
+    }
     // Declared combat difficulty. `peaceful` is the
     // one keyword the compiler refuses: on peaceful the server discards every
     // hostile-category mob as it ticks it — summoned, `NoAI` and
@@ -3542,8 +3570,32 @@ fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// asks it, and so does the compiler's `fight_comes_back` where no plan exists
 /// yet (`DW0914`/`DW0915`).
 pub fn declares_bonfire(c: &Campaign) -> bool {
+    collected_effect_any(c, |eff| eff.bonfire().is_some())
+}
+
+/// Does the campaign declare any checkpoint a fallen player respawns at — a
+/// `set-checkpoint` or a `bonfire` — at a root the compiler collects checkpoints
+/// from: the roots [`declares_bonfire`] reads, plus a dialogue option's
+/// `set-checkpoint`. The reading `DW0925` needs.
+pub fn declares_checkpoint(c: &Campaign) -> bool {
+    collected_effect_any(c, |eff| {
+        eff.bonfire().is_some() || eff.set_checkpoint().is_some()
+    }) || c.dialogue.content.dialogues.iter().any(|tree| {
+        tree.nodes.iter().any(|node| {
+            node.options
+                .iter()
+                .any(|opt| opt.effects.iter().any(|e| e.set_checkpoint().is_some()))
+        })
+    })
+}
+
+/// Does any quest-effect at a root the compiler collects checkpoints and rest
+/// points from (a quest's bundles and an environment trigger's effects, at any
+/// nesting depth) satisfy `pred`? The match over the site is exhaustive, so a
+/// new root answers here.
+fn collected_effect_any(c: &Campaign, pred: impl Fn(&QuestEffect) -> bool) -> bool {
     use crate::stages::EffectSite;
-    let mut has_bonfire = false;
+    let mut found = false;
     crate::stages::for_each_campaign_effect(c, &mut |_, site, eff| {
         let collected = match site {
             EffectSite::Objective { .. }
@@ -3558,9 +3610,9 @@ pub fn declares_bonfire(c: &Campaign) -> bool {
             | EffectSite::AssemblyLand { .. }
             | EffectSite::LoopCross { .. } => false,
         };
-        has_bonfire |= collected && eff.bonfire().is_some();
+        found |= collected && pred(eff);
     });
-    has_bonfire
+    found
 }
 
 fn for_each_effect_deep(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEffect)) {

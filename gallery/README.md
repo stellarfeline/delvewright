@@ -38,7 +38,7 @@ order a player would:
 
 | Where | What it holds |
 | --- | --- |
-| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall; and and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required |
+| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall; and and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required; and the seconds a fallen player waits before rejoining the party |
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
@@ -189,6 +189,7 @@ holding them at once.
 | `a-way-onward-through-a-pit-that-woke` | `DW0891` | `build` | moving the lidded pit's volume onto the counter the party walks to after the beat; its keep-out catches floor walked before the beat, so the visibility proof refuses it before the route proof would (`DW0510`) |
 | `a-stage-with-no-term` | `DW0953` | `validate` | emptying the lidded pit's `when` to `{}` — a stage with no term |
 | `a-stage-one-player-holds` | `DW0953` | `validate` | staging the lidded pit on the tokens, a datum each player holds for themselves |
+| `a-wait-longer-than-two-minutes` | `DW0925` | `validate` | making a fallen player wait 121 seconds before rejoining, one past the two minutes a wait may last |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

@@ -168,6 +168,14 @@ pub struct WorldContent {
     /// flip (itzg's `RESOURCE_PACK_ENFORCE`), which is obeyed as given.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub require_resource_pack: bool,
+    /// **A fallen player waits before rejoining** (spec-0077). After clicking
+    /// *Respawn*, a player whose party still has somebody in play watches a
+    /// teammate as a spectator for `seconds`, and counts as down for the party
+    /// wipe while they wait. Absent = no wait, and emission is byte-identical to
+    /// a campaign that never had the field. Needs a checkpoint or bonfire to come
+    /// back to; `seconds` outside `1..=120`, or no checkpoint, is `DW0925`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub respawn_wait: Option<RespawnWait>,
 }
 
 /// One vanilla texture a campaign replaces (spec-0084 §3.1). The row is a
@@ -273,6 +281,19 @@ pub struct Climate {
     pub temperature: f64,
     /// `downfall`.
     pub downfall: f64,
+}
+
+/// How long a fallen player waits before rejoining the party (spec-0077 §3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespawnWait {
+    /// Seconds a fallen player waits after clicking *Respawn*, `1..=120`
+    /// (`DW0925`). Counted on the server only while the player is online.
+    pub seconds: u16,
+    /// Whether a player who comes back with nobody else present also waits.
+    /// Default `false`: a party of one never waits.
+    #[serde(default)]
+    pub alone: bool,
 }
 
 /// Who a granted item goes to (DSL v0.6, spec-0018).

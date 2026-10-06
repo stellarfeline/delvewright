@@ -116,6 +116,10 @@
     "outro": "Every case in the hall has been read.",
     "premise": "One hall, every surface the DSL declares, written once and built on every pull request.",
     "require_resource_pack": true,
+    "respawn_wait": {
+      "alone": false,
+      "seconds": 20
+    },
     "seed": 20260819,
     "target_minutes": 5,
     "textures": [
