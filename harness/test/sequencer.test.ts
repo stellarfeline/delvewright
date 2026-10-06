@@ -579,6 +579,26 @@ test("a trigger step just before the finale is not the beat the campaign marker 
   assert.deepEqual(seen, [[0, 1]]);
 });
 
+test("a final reach a landing completes moves the campaign marker's due step to the carry", async () => {
+  // The ferry lands the party inside the cabin's volume: the campaign completes
+  // during the carrying trigger step, and the reach after it walks nothing. The
+  // endgame check must not call that early.
+  const ferry: TriggerStep = { ...strikeTheWall, stand: [10, 67, 21], transport: [2, 67, 27] };
+  const landed: ReachStep = { ...reach, completedOnLanding: true };
+  const seen: Array<[number, number]> = [];
+  const executor = new (class extends RecordingExecutor {
+    assertEndgameNotReached(i: number, dueIndex: number): void {
+      seen.push([i, dueIndex]);
+    }
+  })();
+  await runSequence(path([selectClass, talkTo, ferry, landed, assertComplete]), executor);
+  assert.deepEqual(seen, [[0, 2], [1, 2]], "due at the carry, step 2 — never asked after it");
+  // Without the mark the reach is the due step, and the carry is checked.
+  seen.length = 0;
+  await runSequence(path([selectClass, talkTo, ferry, reach, assertComplete]), executor);
+  assert.deepEqual(seen, [[0, 3], [1, 3], [2, 3]]);
+});
+
 test("runSequence runs the executor's beforeStep ahead of each step's own action", async () => {
   const executor = new (class extends RecordingExecutor {
     beforeStep(step: Step): Promise<void> {

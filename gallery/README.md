@@ -468,8 +468,8 @@ see below.
 ## The ferry, and what a link is
 
 In the far hall's west corner is a **sealed cabin**: three walls and a roof,
-no door, no gap. The last beat of the delve, `obj/cross-the-strait`, stands
-inside it, and the only way in is the ferry. The party boards the deck
+no door, no gap. The beat `obj/cross-the-strait` stands inside it, and the only
+way in is the ferry. The party boards the deck
 (`obj/board-the-ferry`, which sets `flag/boarded`) and pulls the tiller:
 
 ```json
@@ -487,16 +487,32 @@ route proof takes where a walk fails, because a straggler left on the deck can
 pull the tiller again and follow. The build splices the pull into the path —
 `critical-path.json` carries a `trigger` step with `stand` (the deck cell the
 tiller is pulled from, inside the volume) and `transport` (the landing) — and
-the `DW0311 binding:` line counts one leg carried by a link. The hall's other
-teleport, on `obj/take-the-bone`'s completion, is a **gather**: whoever is in
-the march's box travels, once, and no proof leans on it. So
-`validation/teleport-gate.json` reads one link and one gather.
+the `DW0311 binding:` line counts the leg as carried by a link. The hall's
+other teleport, on `obj/take-the-bone`'s completion, is a **gather**: whoever is
+in the march's box travels, once, and no proof leans on it.
 
 The cutscene plays first and the teleport fires one tick after it ends: a
 cutscene's end puts every player back where it started, so a carry under the
 open bracket is undone. The layout graph draws the crossing as a `carry` edge
 from `node/exit` (the deck is its station) to `node/ferry-cabin` (the landing
 is its station), gated on the same flag, and nothing else joins the two.
+
+**The landing completes the beat.** The ferry sets the party down inside
+`obj/cross-the-strait`'s completion volume, so the server completes it on
+arrival, during the tiller's step. `critical-path.json` keeps the reach step and
+marks it `completed_on_landing`: the bot walks nothing for it and asserts the
+marker already came.
+
+**And a second link takes the party back out.** A sealed room nothing leaves
+would end every walk there — the bot's death loop starts where the path ends,
+and no lethal volume is reachable from inside the cabin. So the ferryman's chest
+carries `trigger/cabin-tiller`, `once: false`, whose teleport moves whoever
+stands in the cabin onto the exit; `edge/ferry-back` draws it, one way, from the
+cabin to `node/exit` (the exit anchor is its station). `obj/reach-the-end` is the
+last beat and comes after the crossing, and the return lands inside its volume
+too, so the final step of the path is a reach a landing completes — the shape
+whose campaign marker is due at the carrying step. `validation/teleport-gate.json`
+reads two links and one gather.
 
 Four probes show what the engine refuses about it:
 `a-way-onward-that-fires-once` (the teleport on the cabin beat's own completion

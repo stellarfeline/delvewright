@@ -1820,6 +1820,35 @@ impl Step {
     }
 }
 
+/// **Does the carry that ends step `i - 1` complete step `i`?** — the reach a
+/// landing puts the party inside.
+///
+/// A carried step's `transport` is where the party is put down before step `i`
+/// begins: a crossing's entry point, a link's `to`, a loop's landing. When step
+/// `i` is a `reach` whose completion volume holds that landing, the server
+/// completes the objective on arrival, during step `i - 1`, and nothing is left
+/// for step `i` to walk. A sealed room reached only by a ferry is the shape: its
+/// beat stands where the ferry lands. The path keeps the step (every proof and
+/// every step index reads it), and the export says it completes on the landing,
+/// so the bot asserts the objective there instead of finding the delve finished
+/// one step early. `walked` and `transports` are one path's aligned vectors —
+/// the exported path's or a branch's.
+pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i: usize) -> bool {
+    let Some(Step::Reach { completion, .. }) = walked.get(i) else {
+        return false;
+    };
+    let Some(prev) = i.checked_sub(1) else {
+        return false;
+    };
+    let (Some(carrier), Some(Some(landing))) = (walked.get(prev), transports.get(prev)) else {
+        return false;
+    };
+    // A loop moves the body by an offset from wherever it crossed; every other
+    // carry puts it on a fixed point.
+    let exact = !matches!(carrier, Step::Loop { .. });
+    completion.completes_on_landing(*landing, exact)
+}
+
 /// The **party holder** (spec-0018): the single fake player that carries every
 /// shared progression score.
 ///

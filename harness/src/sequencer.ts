@@ -18,6 +18,7 @@ import type {
   TalkToStep,
   TriggerStep,
 } from "./critical-path.ts";
+import { landingCarrier } from "./critical-path.ts";
 import { BotDeathError } from "./death.ts";
 
 /**
@@ -254,6 +255,16 @@ export async function runSequence(
     }
     return path.steps.length - 2;
   })();
+  // …and when that step is a reach the previous carry's landing completes
+  // (`completed_on_landing`), the campaign marker is due during the carrying
+  // step: the landing is the beat, and the reach after it walks nothing.
+  const completionDueIndex = (() => {
+    const last = path.steps[finalObjectiveIndex];
+    if (last?.action === "reach" && last.completedOnLanding) {
+      return landingCarrier(path.steps, finalObjectiveIndex) ?? finalObjectiveIndex;
+    }
+    return finalObjectiveIndex;
+  })();
 
   for (let i = 0; i < path.steps.length; i++) {
     const step = path.steps[i]!;
@@ -266,8 +277,8 @@ export async function runSequence(
         // Endgame discipline (AUDIT-P0): the campaign must not already be complete
         // while objective steps remain. Checked before the transport/cutscene waits
         // so an incoherent path fails at the step that revealed it, not later.
-        if (i < finalObjectiveIndex) {
-          executor.assertEndgameNotReached?.(i, finalObjectiveIndex);
+        if (i < completionDueIndex) {
+          executor.assertEndgameNotReached?.(i, completionDueIndex);
         }
         // gap 8: if completing this step teleports the player across areas, wait for
         // the jump to land before the next step starts pathfinding. Attributed to
