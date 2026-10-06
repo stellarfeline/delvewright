@@ -1016,10 +1016,10 @@ fn a_solid_with_its_own_material_writes_its_blocks_in_it() {
     let mut rim = BTreeSet::new();
     for x in 3..10 {
         for z in 29..37 {
-            if let Some(b) = s.model.get([x, 5, z]) {
-                if b.name.ends_with("_stairs") || b.name.ends_with("_slab") {
-                    rim.insert(b.name.clone());
-                }
+            if let Some(b) = s.model.get([x, 5, z])
+                && (b.name.ends_with("_stairs") || b.name.ends_with("_slab"))
+            {
+                rim.insert(b.name.clone());
             }
         }
     }
