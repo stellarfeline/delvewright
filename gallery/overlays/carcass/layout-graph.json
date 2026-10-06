@@ -73,6 +73,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.0",
+  "dsl_version": "0.35.1",
   "stage": "layout-graph"
 }

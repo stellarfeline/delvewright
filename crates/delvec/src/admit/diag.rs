@@ -36,37 +36,63 @@
 
 use serde::Serialize;
 
-pub const DW_ALLOWLIST: &str = "DW0730";
-pub const DW_FORBIDDEN: &str = "DW0731";
-pub const DW_INPUT: &str = "DW0732";
-pub const DW_UNKNOWN_BLOCK: &str = "DW0733";
-pub const DW_FRAGMENT: &str = "DW0739";
-pub const DW_CATALOG: &str = "DW0740";
+delvewright_dsl::dw_code! {
+    pub const DW_ALLOWLIST: &str = "DW0730";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_FORBIDDEN: &str = "DW0731";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_INPUT: &str = "DW0732";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_UNKNOWN_BLOCK: &str = "DW0733";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_FRAGMENT: &str = "DW0739";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_CATALOG: &str = "DW0740";
+}
 pub const DW_LICENSE: &str = delvewright_dsl::codes::LICENSE_REFUSED.id();
-pub const DW_TOOLING: &str = "DW0750";
-pub const DW_DARK: &str = "DW0751";
-pub const DW_UNBOUND: &str = "DW0752";
-pub const DW_NO_PROVENANCE: &str = "DW0753";
-pub const DW_GALLERY: &str = "DW0760";
-/// A piece's declared spatial contract disagrees with its own blocks
-/// (spec-0036 §2). The second door onto the one checker; the first is
-/// `delvec grammar expand`.
-pub const DW_CONTRACT: &str = "DW0782";
-/// **The second door did not judge these bytes**, with what it did not examine.
-///
-/// One rule — *this audit reports no contract verdict over this piece* — at two
-/// severities, because the same fact is a statement or a refusal depending on
-/// whether the door was entitled to stay shut. A warning where the declaration
-/// document legitimately declares no contract (or does not exist yet); an error
-/// where the door COULD NOT judge: the document does not parse, or it declares
-/// no contract while its own anchors carry the `resolves_to` only a contract can
-/// have produced.
-///
-/// Split from `DW0782` on purpose. That code means "the contract and the blocks
-/// disagree", which is a fact about a piece that HAS a contract; a piece nothing
-/// was asked about is a different rule and needs a different name, or the
-/// silence keeps reading as the pass.
-pub const DW_UNJUDGED: &str = "DW0783";
+delvewright_dsl::dw_code! {
+    pub const DW_TOOLING: &str = "DW0750";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_DARK: &str = "DW0751";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_UNBOUND: &str = "DW0752";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_NO_PROVENANCE: &str = "DW0753";
+}
+delvewright_dsl::dw_code! {
+    pub const DW_GALLERY: &str = "DW0760";
+}
+delvewright_dsl::dw_code! {
+    /// A piece's declared spatial contract disagrees with its own blocks
+    /// (spec-0036 §2). The second door onto the one checker; the first is
+    /// `delvec grammar expand`.
+    pub const DW_CONTRACT: &str = "DW0782";
+}
+delvewright_dsl::dw_code! {
+    /// **The second door did not judge these bytes**, with what it did not examine.
+    ///
+    /// One rule — *this audit reports no contract verdict over this piece* — at two
+    /// severities, because the same fact is a statement or a refusal depending on
+    /// whether the door was entitled to stay shut. A warning where the declaration
+    /// document legitimately declares no contract (or does not exist yet); an error
+    /// where the door COULD NOT judge: the document does not parse, or it declares
+    /// no contract while its own anchors carry the `resolves_to` only a contract can
+    /// have produced.
+    ///
+    /// Split from `DW0782` on purpose. That code means "the contract and the blocks
+    /// disagree", which is a fact about a piece that HAS a contract; a piece nothing
+    /// was asked about is a different rule and needs a different name, or the
+    /// silence keeps reading as the pass.
+    pub const DW_UNJUDGED: &str = "DW0783";
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]

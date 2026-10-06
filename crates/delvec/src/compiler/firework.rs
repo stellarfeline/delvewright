@@ -50,14 +50,16 @@ use delvewright_dsl::{DwCode, ExitTier, Verb};
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
 
-/// `DW0899`: a firework is fired under a roof, or bursts within
-/// [`delvewright_dsl::firework::BLAST_RADIUS`] blocks of a place the campaign
-/// posts a body (spec-0068 §5).
-///
-/// One code, because it is one rule — *a firework bursts where the campaign
-/// meant it to, and hurts nobody the campaign posted*. What branches is the
-/// prescription, and each shape's message names the cell it is about.
-pub const DW_FIREWORK_UNSAFE: DwCode = DwCode::new("DW0899", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0899`: a firework is fired under a roof, or bursts within
+    /// [`delvewright_dsl::firework::BLAST_RADIUS`] blocks of a place the campaign
+    /// posts a body (spec-0068 §5).
+    ///
+    /// One code, because it is one rule — *a firework bursts where the campaign
+    /// meant it to, and hurts nobody the campaign posted*. What branches is the
+    /// prescription, and each shape's message names the cell it is about.
+    pub const DW_FIREWORK_UNSAFE: DwCode = DwCode::new("DW0899", ExitTier::Build);
+}
 
 /// What one firework's proof examined.
 #[derive(Clone, Debug, PartialEq, Eq)]

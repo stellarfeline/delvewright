@@ -2169,68 +2169,80 @@ impl PlanError {
     }
 }
 
-/// `DW0300`: generic build/resolution failure (missing prefab metadata, unknown
-/// anchor, dependency cycle in the critical path).
-pub const DW_BUILD: DwCode = DwCode::new("DW0300", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0300`: generic build/resolution failure (missing prefab metadata, unknown
+    /// anchor, dependency cycle in the critical path).
+    pub const DW_BUILD: DwCode = DwCode::new("DW0300", ExitTier::Build);
+}
 
-/// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
-/// a layout, sealed gates are modelled as cut edges in the piece-connectivity
-/// graph; an objective whose anchor is only reachable through a gate that no
-/// earlier objective (in the quest/objective DAG order) has opened is a deadlock —
-/// the delve is unwinnable even though every anchor resolves. The canonical case:
-/// a key chest sealed behind the very gate its key opens.
-pub const DW_GATE_DEADLOCK: DwCode = DwCode::new("DW0306", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
+    /// a layout, sealed gates are modelled as cut edges in the piece-connectivity
+    /// graph; an objective whose anchor is only reachable through a gate that no
+    /// earlier objective (in the quest/objective DAG order) has opened is a deadlock —
+    /// the delve is unwinnable even though every anchor resolves. The canonical case:
+    /// a key chest sealed behind the very gate its key opens.
+    pub const DW_GATE_DEADLOCK: DwCode = DwCode::new("DW0306", ExitTier::Build);
+}
 
-/// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
-/// land at sea level — the piece floats above the sea or is drowned by it.
-///
-/// It is also the code this invariant's **zero binding** refuses under: a gate
-/// that examined nothing has proved nothing, and the gate that examined nothing
-/// is this one, so it answers under its own name rather than under a second
-/// code. See [`WaterlineBinding::seal`].
-pub const DW_OCEAN_WATERLINE: DwCode = DwCode::new("DW0344", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
+    /// land at sea level — the piece floats above the sea or is drowned by it.
+    ///
+    /// It is also the code this invariant's **zero binding** refuses under: a gate
+    /// that examined nothing has proved nothing, and the gate that examined nothing
+    /// is this one, so it answers under its own name rather than under a second
+    /// code. See [`WaterlineBinding::seal`].
+    pub const DW_OCEAN_WATERLINE: DwCode = DwCode::new("DW0344", ExitTier::Build);
+}
 
-/// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
-/// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
-/// a first-joining player, and cannot teleport a player who picks a class. The
-/// world then falls back to the vanilla spawn search, which a dedicated server
-/// resolves to the surface but the integrated (singleplayer) server resolves to
-/// the build floor — inside solid stone. Silent before; a hard build error now.
-pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::new("DW0345", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
+    /// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
+    /// a first-joining player, and cannot teleport a player who picks a class. The
+    /// world then falls back to the vanilla spawn search, which a dedicated server
+    /// resolves to the surface but the integrated (singleplayer) server resolves to
+    /// the build floor — inside solid stone. Silent before; a hard build error now.
+    pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::new("DW0345", ExitTier::Build);
+}
 
-/// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
-///
-/// An area has **one** place the party arrives at. Two claims to it is a
-/// question the compiler cannot answer and must not answer quietly: picking
-/// first-wins (by piece order, or by the `BTreeMap` order of two anchor names
-/// nobody chose for their sort) is how a spawn that moved becomes a mystery
-/// nothing in the build output mentions.
-///
-/// Only reachable through a declared role, which is the only way an area has an
-/// entry point at all. The remedy is to take the role off one of the two, which
-/// every producer can do where it wrote it: `delvec prefab anchor --no-role` on a
-/// hand-built or ingested piece, and dropping `role` from the `mark` on a
-/// grammar program.
-pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::new("DW0804", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
+    ///
+    /// An area has **one** place the party arrives at. Two claims to it is a
+    /// question the compiler cannot answer and must not answer quietly: picking
+    /// first-wins (by piece order, or by the `BTreeMap` order of two anchor names
+    /// nobody chose for their sort) is how a spawn that moved becomes a mystery
+    /// nothing in the build output mentions.
+    ///
+    /// Only reachable through a declared role, which is the only way an area has an
+    /// entry point at all. The remedy is to take the role off one of the two, which
+    /// every producer can do where it wrote it: `delvec prefab anchor --no-role` on a
+    /// hand-built or ingested piece, and dropping `role` from the `mark` on a
+    /// grammar program.
+    pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::new("DW0804", ExitTier::Build);
+}
 
-/// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
-/// party's forced route changes area, and the destination declares no entry
-/// point — so there is no cell to put the party down on and the crossing cannot
-/// be made.
-///
-/// Areas stand [`AREA_SPACING`] blocks apart across the void, so a leg that
-/// changes area is never a walk. Before this code the crossing was simply not
-/// emitted and nothing was said: the leg then fell through to the walkability
-/// proof, which reported `DW0311` — *the player cannot walk from … to …, a
-/// wedged doorway seam, a void gap, a fence ring* — a true sentence about a
-/// route nobody was ever going to walk, and an author who does what it says
-/// goes and widens a doorway.
-///
-/// [`DW_NO_ENTRY_ANCHOR`] is the same rule over the whole world (*no area at
-/// all declares one*); this is the same rule over the one area a body must be
-/// put down in. The quantifiers differ and so do the remedies, which is why
-/// they are two codes.
-pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::new("DW0872", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
+    /// party's forced route changes area, and the destination declares no entry
+    /// point — so there is no cell to put the party down on and the crossing cannot
+    /// be made.
+    ///
+    /// Areas stand [`AREA_SPACING`] blocks apart across the void, so a leg that
+    /// changes area is never a walk. Before this code the crossing was simply not
+    /// emitted and nothing was said: the leg then fell through to the walkability
+    /// proof, which reported `DW0311` — *the player cannot walk from … to …, a
+    /// wedged doorway seam, a void gap, a fence ring* — a true sentence about a
+    /// route nobody was ever going to walk, and an author who does what it says
+    /// goes and widens a doorway.
+    ///
+    /// [`DW_NO_ENTRY_ANCHOR`] is the same rule over the whole world (*no area at
+    /// all declares one*); this is the same rule over the one area a body must be
+    /// put down in. The quantifiers differ and so do the remedies, which is why
+    /// they are two codes.
+    pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::new("DW0872", ExitTier::Build);
+}
 
 /// **Where the party begins the delve**: the area it starts in, and the cell it
 /// stands on — the first area in declaration order that resolves an entry point
@@ -2255,21 +2267,23 @@ pub fn resolve_campaign_start(
         })
 }
 
-/// `DW0873`: **the party's first leg is a crossing, and nothing can carry it.**
-/// The campaign spawn and the first critical objective stand in different
-/// areas.
-///
-/// A crossing rides on the completion of the objective the party leaves from
-/// (see [`Plan::transport`]), and at the spawn the party has completed nothing.
-/// So the first leg can be neither ridden nor walked, and the delve cannot be
-/// started.
-///
-/// This is the member the old leg enumeration missed. It paired *consecutive
-/// objectives*, so the spawn — a leg's origin that is not an objective — was in
-/// no pair: such a campaign built clean, passed every game test, and stranded
-/// the party at the spawn with the harness reporting `No path to the goal!` and
-/// no diagnostic code at all.
-pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::new("DW0873", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0873`: **the party's first leg is a crossing, and nothing can carry it.**
+    /// The campaign spawn and the first critical objective stand in different
+    /// areas.
+    ///
+    /// A crossing rides on the completion of the objective the party leaves from
+    /// (see [`Plan::transport`]), and at the spawn the party has completed nothing.
+    /// So the first leg can be neither ridden nor walked, and the delve cannot be
+    /// started.
+    ///
+    /// This is the member the old leg enumeration missed. It paired *consecutive
+    /// objectives*, so the spawn — a leg's origin that is not an objective — was in
+    /// no pair: such a campaign built clean, passed every game test, and stranded
+    /// the party at the spawn with the harness reporting `No path to the goal!` and
+    /// no diagnostic code at all.
+    pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::new("DW0873", ExitTier::Build);
+}
 
 /// The plan's resolved anchors, **and what the pieces said they were for**.
 ///
@@ -2885,20 +2899,26 @@ mod waterline_binding_tests {
     }
 }
 
-/// `DW0932` (spec-0083 §3.2, §3.6): a **link** whose geometry does not hold —
-/// four faults under one code, because they are one claim, *a body in this
-/// volume is carried onto a route cell*: no standable cell inside the volume
-/// performs the trigger; `to` inside `from`; `to` not standable at the
-/// teleport's tick; `from` and `to` in different areas.
-pub const DW_TELEPORT_LINK: DwCode = DwCode::new("DW0932", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0932` (spec-0083 §3.2, §3.6): a **link** whose geometry does not hold —
+    /// four faults under one code, because they are one claim, *a body in this
+    /// volume is carried onto a route cell*: no standable cell inside the volume
+    /// performs the trigger; `to` inside `from`; `to` not standable at the
+    /// teleport's tick; `from` and `to` in different areas.
+    pub const DW_TELEPORT_LINK: DwCode = DwCode::new("DW0932", ExitTier::Build);
+}
 
-/// `DW0933` (spec-0083 §3.5): a `teleport` fires at or before the tick its
-/// root's `cutscene` ends, and `cs_end` undoes it. Validation tier.
-pub const DW_TELEPORT_UNDER_CUTSCENE: DwCode = DwCode::new("DW0933", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0933` (spec-0083 §3.5): a `teleport` fires at or before the tick its
+    /// root's `cutscene` ends, and `cs_end` undoes it. Validation tier.
+    pub const DW_TELEPORT_UNDER_CUTSCENE: DwCode = DwCode::new("DW0933", ExitTier::Build);
+}
 
-/// `DW0934` (spec-0083 §7): the layout graph and the quests disagree about
-/// carries. Validation tier.
-pub const DW_TELEPORT_CARRY_UNREALISED: DwCode = DwCode::new("DW0934", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0934` (spec-0083 §7): the layout graph and the quests disagree about
+    /// carries. Validation tier.
+    pub const DW_TELEPORT_CARRY_UNREALISED: DwCode = DwCode::new("DW0934", ExitTier::Build);
+}
 
 /// **Which links a path takes, and where** (spec-0083 §3.4) — the route
 /// proof's decision, handed back to the path builder so the steps it splices

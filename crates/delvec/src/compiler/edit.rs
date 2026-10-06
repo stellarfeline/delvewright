@@ -63,53 +63,63 @@ use crate::compiler::plan::{Plan, ResolvedAnchor};
 use crate::compiler::solver::stream_seed;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// A stage-7 edit's frame or region fails to resolve against the solved layout:
-/// a piece index out of range, a piece whose prefab differs from the frame's
-/// declared one (layout drift), an anchor the area does not resolve, or a verb
-/// whose target region resolves to zero cells (a silent no-op is always a
-/// defect). Build-tier (exit 3).
-pub const DW_EDIT_UNRESOLVED: DwCode = DwCode::new("DW0323", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// A stage-7 edit's frame or region fails to resolve against the solved layout:
+    /// a piece index out of range, a piece whose prefab differs from the frame's
+    /// declared one (layout drift), an anchor the area does not resolve, or a verb
+    /// whose target region resolves to zero cells (a silent no-op is always a
+    /// defect). Build-tier (exit 3).
+    pub const DW_EDIT_UNRESOLVED: DwCode = DwCode::new("DW0323", ExitTier::Build);
+}
 
-/// A stage-7 batch writes a block into a cell a trap's hardware occupies (its
-/// trigger/hazard cell, its dispenser socket, or its disarm affordance cell).
-/// `setup_finish` applies `world_edits` **before** `trap_setup`, so the edit
-/// wins and the trap is loaded into a block that is no longer there — vanilla's
-/// `item replace block … container.0` on a non-container fails with no output,
-/// shipping a dead trap past every green proof. Build-tier (exit 3).
-pub const DW_EDIT_TRAP_HARDWARE: DwCode = DwCode::new("DW0352", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// A stage-7 batch writes a block into a cell a trap's hardware occupies (its
+    /// trigger/hazard cell, its dispenser socket, or its disarm affordance cell).
+    /// `setup_finish` applies `world_edits` **before** `trap_setup`, so the edit
+    /// wins and the trap is loaded into a block that is no longer there — vanilla's
+    /// `item replace block … container.0` on a non-container fails with no output,
+    /// shipping a dead trap past every green proof. Build-tier (exit 3).
+    pub const DW_EDIT_TRAP_HARDWARE: DwCode = DwCode::new("DW0352", ExitTier::Build);
+}
 
-/// **Advisory.** A stage-7 batch writes inside a `close-gate` region: the
-/// gameplay seal fills that region with the gate anchor's block and `open-gate`
-/// clears it to air, so one close/open cycle destroys the edit visually. Every
-/// proof stays sound (the occupancy model already treats the region as
-/// gate-controlled), so this warns rather than rejects.
-pub const DW_EDIT_GATE_REGION: DwCode = DwCode::new("DW0353", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// **Advisory.** A stage-7 batch writes inside a `close-gate` region: the
+    /// gameplay seal fills that region with the gate anchor's block and `open-gate`
+    /// clears it to air, so one close/open cycle destroys the edit visually. Every
+    /// proof stays sound (the occupancy model already treats the region as
+    /// gate-controlled), so this warns rather than rejects.
+    pub const DW_EDIT_GATE_REGION: DwCode = DwCode::new("DW0353", ExitTier::Build);
+}
 
-/// A support-dependent block (torch, lantern, flora, …) the edit script placed
-/// has no valid support in the post-batch world — its support block was carved
-/// or replaced by a later batch, or flora was scattered onto a block flowers
-/// cannot stand on. Vanilla pops such a block off as an item the moment the
-/// chunk ticks, silently undoing the edit. **Advisory** for decoration;
-/// **error** when the popped block is a fixture the script's own `relight` verb
-/// placed (a declared minimum-light guarantee, not decoration).
-pub const DW_EDIT_SUPPORT: DwCode = DwCode::new("DW0354", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// A support-dependent block (torch, lantern, flora, …) the edit script placed
+    /// has no valid support in the post-batch world — its support block was carved
+    /// or replaced by a later batch, or flora was scattered onto a block flowers
+    /// cannot stand on. Vanilla pops such a block off as an item the moment the
+    /// chunk ticks, silently undoing the edit. **Advisory** for decoration;
+    /// **error** when the popped block is a fixture the script's own `relight` verb
+    /// placed (a declared minimum-light guarantee, not decoration).
+    pub const DW_EDIT_SUPPORT: DwCode = DwCode::new("DW0354", ExitTier::Build);
+}
 
-/// A placement verb delivered fewer items than its own
-/// declaration asks for, measured over the **whole domain it declared** rather
-/// than over the part of it that happened to be usable.
-///
-/// The owner's cherry-grove finding: a valley staged as a grove held a handful
-/// of trees and bare rock in every other direction, and the acceptance proxy
-/// was a rendered shot — which is a look at one bearing, not a count over a
-/// region. Nothing anywhere produced the number. `plant` declares a `count` and
-/// silently plants fewer when the region's standable, non-keep-clear,
-/// far-enough-apart candidates run out; `scatter` can dress nothing at all and
-/// return `Ok`.
-///
-/// The diagnostic states four numbers, and the denominator is the point: the
-/// declared quantity, what was delivered, how many cells the declared region
-/// holds, and how many of those the verb could act on.
-pub const DW_PLACEMENT_SHORTFALL: DwCode = DwCode::new("DW0864", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// A placement verb delivered fewer items than its own
+    /// declaration asks for, measured over the **whole domain it declared** rather
+    /// than over the part of it that happened to be usable.
+    ///
+    /// The owner's cherry-grove finding: a valley staged as a grove held a handful
+    /// of trees and bare rock in every other direction, and the acceptance proxy
+    /// was a rendered shot — which is a look at one bearing, not a count over a
+    /// region. Nothing anywhere produced the number. `plant` declares a `count` and
+    /// silently plants fewer when the region's standable, non-keep-clear,
+    /// far-enough-apart candidates run out; `scatter` can dress nothing at all and
+    /// return `Ok`.
+    ///
+    /// The diagnostic states four numbers, and the denominator is the point: the
+    /// declared quantity, what was delivered, how many cells the declared region
+    /// holds, and how many of those the verb could act on.
+    pub const DW_PLACEMENT_SHORTFALL: DwCode = DwCode::new("DW0864", ExitTier::Build);
+}
 
 /// What one placement verb declared and what it delivered, over the domain the
 /// author selected — the numbers `DW0864` is a statement about.

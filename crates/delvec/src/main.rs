@@ -181,6 +181,12 @@ enum Command {
         #[arg(long, value_name = "DIR")]
         gym: Option<PathBuf>,
     },
+    /// Every DW code this binary declares, one JSON object per line on stdout —
+    /// `code`, `tier` (`Analysis`, `Build`, or null for a code of a verb with
+    /// its own exit table), `subject`, the constant's `name` and `module` —
+    /// sorted by code. The list is the registry every `dw_code!` declaration
+    /// writes itself into, so it is what this binary can print.
+    Codes,
     /// Draft-render one frame of the assembled world + a scene manifest
     /// (spec-0015: the visual authoring loop). Stops after placement +
     /// assembly — it never emits a datapack.
@@ -478,6 +484,7 @@ fn main() -> ExitCode {
             cli.json,
         ),
         Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
+        Command::Codes => run_codes(),
         Command::Snapshot {
             campaign_dir,
             camera,
@@ -3681,6 +3688,20 @@ fn run_schema(stage: &str) -> ExitCode {
 /// table is engine data, so a table that contradicts itself is a defect in
 /// `dsl::metrics` and the person who has to act on it is whoever is holding the
 /// compiler.
+/// `delvec codes`: the DW-code registry, one JSON object per line, sorted by
+/// code; the count on stderr.
+fn run_codes() -> ExitCode {
+    let all = delvewright_dsl::diagnostic::declared();
+    let mut out = String::new();
+    for entry in &all {
+        out.push_str(&serde_json::to_string(entry).expect("a registry entry serializes"));
+        out.push('\n');
+    }
+    print!("{out}");
+    eprintln!("codes: {} DW code(s) declared by this binary", all.len());
+    ExitCode::SUCCESS
+}
+
 fn run_metrics(json: bool, gym_dir: Option<&std::path::Path>) -> ExitCode {
     use delvewright_dsl::metrics::{Metrics, export};
 

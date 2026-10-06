@@ -42,13 +42,15 @@ use crate::compiler::solver::{
 };
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// An L2 massing verb cannot apply to the solved layout (spec-0017): the
-/// target area is single-prefab (no jigsaw layout to mass), a piece
-/// index/prefab guard mismatches (layout drift), a swap/reseed candidate
-/// cannot re-mate every mated socket without overlap, an insert's socket is
-/// mated or its piece cannot attach, a removal targets the entry piece or a
-/// non-leaf, or a rewire names an out-of-range connector. Build-tier (exit 3).
-pub const DW_MASSING: DwCode = DwCode::new("DW0324", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// An L2 massing verb cannot apply to the solved layout (spec-0017): the
+    /// target area is single-prefab (no jigsaw layout to mass), a piece
+    /// index/prefab guard mismatches (layout drift), a swap/reseed candidate
+    /// cannot re-mate every mated socket without overlap, an insert's socket is
+    /// mated or its piece cannot attach, a removal targets the entry piece or a
+    /// non-leaf, or a rewire names an out-of-range connector. Build-tier (exit 3).
+    pub const DW_MASSING: DwCode = DwCode::new("DW0324", ExitTier::Build);
+}
 
 /// Whether a stage-7 edit verb is an L2 massing verb (applied at plan time)
 /// as opposed to an L3 detailing verb (applied at replay time).

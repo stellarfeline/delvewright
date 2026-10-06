@@ -49,9 +49,11 @@ use crate::compiler::plan::{EffectRoot, Plan};
 /// An inclusive cell box, `(lo, hi)`.
 type Box3 = ([i32; 3], [i32; 3]);
 
-/// `DW0943`: **a blinding grant whose reach meets a killing volume or a fatal
-/// drop** (spec-0085 §6).
-pub const DW_PERCEPTION_BLIND_REACH: DwCode = DwCode::new("DW0943", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0943`: **a blinding grant whose reach meets a killing volume or a fatal
+    /// drop** (spec-0085 §6).
+    pub const DW_PERCEPTION_BLIND_REACH: DwCode = DwCode::new("DW0943", ExitTier::Build);
+}
 
 /// What the proof examined for one blinding grant.
 #[derive(Clone, Debug, PartialEq, Eq)]

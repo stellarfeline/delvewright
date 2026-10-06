@@ -42,9 +42,11 @@ use delvewright_dsl::{
 use crate::compiler::commands::CommandTree;
 use crate::compiler::plan;
 
-/// `DW0911`: a `health_bar` `color` or `style` is not among the literals the
-/// pinned command tree lists for `bossbar set <id> color|style`.
-pub const DW_HEALTH_BAR_VOCABULARY: DwCode = DwCode::new("DW0911", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0911`: a `health_bar` `color` or `style` is not among the literals the
+    /// pinned command tree lists for `bossbar set <id> color|style`.
+    pub const DW_HEALTH_BAR_VOCABULARY: DwCode = DwCode::new("DW0911", ExitTier::Build);
+}
 
 /// Where the pinned tree lists the colours a custom boss bar can take.
 pub const COLOR_PATH: [&str; 4] = ["bossbar", "set", "id", "color"];

@@ -51,6 +51,8 @@ inputs = [
   { glob = "tools/ci/determinism-subject.sh", why = "`delvec-binary`'s Linux digest step and `determinism-cross-os` both run it" },
   { glob = "tools/ci/tree-digest.py", why = "`determinism-subject.sh` runs it to write the digest" },
   { glob = "tools/creator/refscore.py", why = "`crates/delvec/tests/view_sheet.rs` runs it" },
+  { glob = "tools/ci/check-dw-codes.py", why = "`crates/delvec/tests/codes.rs` runs it against the built binary's `delvec codes`" },
+  { glob = "tools/lib/mdtable.py", why = "`check-dw-codes.py`, which `crates/delvec/tests/codes.rs` runs, reads the catalog through it" },
   { glob = "tools/creator/i18n-translate.py", why = "`crates/delvec/tests/i18n_sidecar.rs` runs the fixture driver, which loads this tool's writer" },
   { glob = "tools/tests/fixtures/i18n-sidecar/**", why = "`crates/delvec/tests/i18n_sidecar.rs` runs `write_sidecar.py`" },
   { glob = "tools/spike-block-settling/**", why = "`crates/delvec/tests/schem_stair_shape_measured.rs` reads `observations.json`" },

@@ -72,19 +72,23 @@ use serde::Serialize;
 
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 
-/// `DW0812`: a document names a metrics entry the table does not define — a
-/// `size_class`, an `opening` or a `pitch` that resolves to nothing.
-pub const DW_METRIC_UNKNOWN: DwCode = DwCode::new("DW0812", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0812`: a document names a metrics entry the table does not define — a
+    /// `size_class`, an `opening` or a `pitch` that resolves to nothing.
+    pub const DW_METRIC_UNKNOWN: DwCode = DwCode::new("DW0812", ExitTier::Build);
+}
 
-/// `DW0813`: a verdict rests on a standard the gym has not walked.
-///
-/// This rule asks the campaign for nothing at all. It reports a property of the
-/// ENGINE's own table — that some number a check just used is a seed rather than
-/// a standard — so no campaign could adopt its way out of it. It is a warning
-/// (exit 0) for the same reason: a provisional number is still a number,
-/// the check still refuses, and what the line adds is that the green rests on
-/// something nobody has walked.
-pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::new("DW0813", ExitTier::Build).about_the_engine();
+crate::dw_code! {
+    /// `DW0813`: a verdict rests on a standard the gym has not walked.
+    ///
+    /// This rule asks the campaign for nothing at all. It reports a property of the
+    /// ENGINE's own table — that some number a check just used is a seed rather than
+    /// a standard — so no campaign could adopt its way out of it. It is a warning
+    /// (exit 0) for the same reason: a provisional number is still a number,
+    /// the check still refuses, and what the line adds is that the green rests on
+    /// something nobody has walked.
+    pub const DW_METRIC_PROVISIONAL: DwCode = DwCode::new("DW0813", ExitTier::Build).about_the_engine();
+}
 
 // ---------------------------------------------------------------------------
 // The player half — the one definition of each constant in this workspace.

@@ -108,12 +108,14 @@ use delvewright_dsl::{BodyRef, DwCode, ExitTier, QuestEffect, body_sites};
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
 
-/// `DW0896`: **two bodies whose lifetimes overlap are declared on one cell.**
-///
-/// Error tier, with no authorable exemption. A mark is a cell and a cell holds
-/// one body; the repair is a second mark — an offset from the same anchor — and
-/// it is always available (spec-0066).
-pub const DW_ONE_MARK_TWO_BODIES: DwCode = DwCode::new("DW0896", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0896`: **two bodies whose lifetimes overlap are declared on one cell.**
+    ///
+    /// Error tier, with no authorable exemption. A mark is a cell and a cell holds
+    /// one body; the repair is a second mark — an offset from the same anchor — and
+    /// it is always available (spec-0066).
+    pub const DW_ONE_MARK_TWO_BODIES: DwCode = DwCode::new("DW0896", ExitTier::Build);
+}
 
 /// One body, as this proof reads it: who it is, where it was declared, and the
 /// cell it is summoned onto.

@@ -57,9 +57,11 @@ use crate::compiler::failure::Failure;
 use crate::compiler::nav::{DEFAULT_FOLLOW_RANGE, Footprint, World, entity_footprint};
 use crate::compiler::plan::Plan;
 
-/// `DW0924`: a body a `kill` objective waits on can get to a place it survives
-/// and the party cannot strike it from.
-pub const DW_FIGHT_OUT_OF_REACH: DwCode = DwCode::new("DW0924", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0924`: a body a `kill` objective waits on can get to a place it survives
+    /// and the party cannot strike it from.
+    pub const DW_FIGHT_OUT_OF_REACH: DwCode = DwCode::new("DW0924", ExitTier::Build);
+}
 
 /// How far a player strikes, in blocks, from the eye to the target's box: the
 /// default of vanilla's `minecraft:entity_interaction_range` attribute for a

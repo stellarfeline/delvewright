@@ -48,31 +48,41 @@ use delvewright_dsl::{
 use crate::compiler::plan::{RegionEvent, RegionWrite, ResolvedAnchor};
 use crate::compiler::timeline::Region;
 
-/// `DW0945`: **the slab's geometry** (spec-0086 §4.2) — not a slab, a move that
-/// does not clear it, a slab too thin for the one-tick poll along its axis, a
-/// slab overlapping another loop's slab or landing, a `teleport` volume or a
-/// lethal keep-out, or a slab cell a body cannot be in. Build tier.
-pub const DW_LOOP_SLAB: DwCode = DwCode::new("DW0945", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0945`: **the slab's geometry** (spec-0086 §4.2) — not a slab, a move that
+    /// does not clear it, a slab too thin for the one-tick poll along its axis, a
+    /// slab overlapping another loop's slab or landing, a `teleport` volume or a
+    /// lethal keep-out, or a slab cell a body cannot be in. Build tier.
+    pub const DW_LOOP_SLAB: DwCode = DwCode::new("DW0945", ExitTier::Build);
+}
 
-/// `DW0946`: **a visible cell whose block or light differs from its image**
-/// under the loop's offset (spec-0086 §4.4–§4.6), in any configuration the
-/// route passes through, or a declared volume in the span without its image.
-/// Build tier.
-pub const DW_LOOP_TILING: DwCode = DwCode::new("DW0946", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0946`: **a visible cell whose block or light differs from its image**
+    /// under the loop's offset (spec-0086 §4.4–§4.6), in any configuration the
+    /// route passes through, or a declared volume in the span without its image.
+    /// Build tier.
+    pub const DW_LOOP_TILING: DwCode = DwCode::new("DW0946", ExitTier::Build);
+}
 
-/// `DW0947`: **the view out of the landing is open** (spec-0086 §4.3): the
-/// periodic span grows [`SPAN_REACH`] cells on some face, or into open sky,
-/// without geometry or the eye's fog closing it. Build tier.
-pub const DW_LOOP_OPEN_VIEW: DwCode = DwCode::new("DW0947", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0947`: **the view out of the landing is open** (spec-0086 §4.3): the
+    /// periodic span grows [`SPAN_REACH`] cells on some face, or into open sky,
+    /// without geometry or the eye's fog closing it. Build tier.
+    pub const DW_LOOP_OPEN_VIEW: DwCode = DwCode::new("DW0947", ExitTier::Build);
+}
 
-/// `DW0948`: **a compiler-placed body inside the periodic span** (spec-0086
-/// §4.6): a body has an identity the move cannot repeat. Build tier.
-pub const DW_LOOP_BODY: DwCode = DwCode::new("DW0948", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0948`: **a compiler-placed body inside the periodic span** (spec-0086
+    /// §4.6): a body has an identity the move cannot repeat. Build tier.
+    pub const DW_LOOP_BODY: DwCode = DwCode::new("DW0948", ExitTier::Build);
+}
 
-/// `DW0950`: **advisory — the forced route never meets the loop while it
-/// holds** (spec-0086 §5.2). A declared mechanism nobody is made to experience
-/// is reported, not refused.
-pub const DW_LOOP_UNMET: DwCode = DwCode::new("DW0950", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0950`: **advisory — the forced route never meets the loop while it
+    /// holds** (spec-0086 §5.2). A declared mechanism nobody is made to experience
+    /// is reported, not refused.
+    pub const DW_LOOP_UNMET: DwCode = DwCode::new("DW0950", ExitTier::Build);
+}
 
 /// `R`: how far the periodic span may grow from the landing slab on any face
 /// before the view is called open (spec-0086 §4.3). The campaign's render

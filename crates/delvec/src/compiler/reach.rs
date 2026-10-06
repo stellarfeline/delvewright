@@ -67,51 +67,55 @@ use crate::compiler::plan::{Plan, ResolvedAnchor, Step};
 use delvewright_dsl::stages::Objective;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0850`: **a `reach` the party can arrive at without completing.**
-///
-/// Either nothing in the completion volume is a cell a body can stand in, or the
-/// footing the route proof delivers the party to lies outside it. Both are the
-/// same sentence about the object class — *the place that completes this and the
-/// place a body can be are the same place* — and they are one code because the
-/// remedy is the same: move the anchor onto the footing, or give the footing to
-/// the anchor. Nudging the waypoint is never the fix; the waypoint is where the
-/// world put it.
-pub const DW_REACH_UNCOMPLETABLE: DwCode = DwCode::new("DW0850", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0850`: **a `reach` the party can arrive at without completing.**
+    ///
+    /// Either nothing in the completion volume is a cell a body can stand in, or the
+    /// footing the route proof delivers the party to lies outside it. Both are the
+    /// same sentence about the object class — *the place that completes this and the
+    /// place a body can be are the same place* — and they are one code because the
+    /// remedy is the same: move the anchor onto the footing, or give the footing to
+    /// the anchor. Nudging the waypoint is never the fix; the waypoint is where the
+    /// world put it.
+    pub const DW_REACH_UNCOMPLETABLE: DwCode = DwCode::new("DW0850", ExitTier::Build);
+}
 
-/// `DW0881`: **a raised `reach` anchor completes from the floor below it.**
-///
-/// The completion volume is centred on the anchor cell in all three axes, and
-/// vanilla adjudicates the selector against the body's whole AABB rather than
-/// against the cell its feet are in. A standing player is
-/// [`delvewright_dsl::metrics::PLAYER_HEIGHT`] tall, so a body on a floor one
-/// course below the volume's bottom layer already reaches into it. Put those two
-/// facts together and ANY raised anchor whose radius reaches a lower floor
-/// completes from that floor: the party never climbs, and the beat fires during
-/// whatever they were doing down there.
-///
-/// The rule this refuses under is stated over the FOOTPRINT rather than over the
-/// radius, because a number is the wrong thing to bound — a radius that is
-/// generous over a flat plaza and one that reaches through a mezzanine floor are
-/// the same number. The footprint is every standable cell a body could complete
-/// from ([`ReachCompletion::possibly_completes_from`]), and the demand is that
-/// every cell of it can walk to the anchor's own footing **without leaving the
-/// footprint**. A ramp or a stair inside the volume satisfies that and is meant
-/// to: a body on it is arriving. A hall floor three courses down does not,
-/// because nothing inside the volume joins the two floors.
-///
-/// **Directional, and deliberately so.** The question is whether a body standing
-/// on the offending cell can get to the anchor, not whether the anchor can get to
-/// it — a body can fall off a loft into the hall below, and that a body could
-/// arrive and then leave says nothing about the party who walked in at the bottom
-/// and never climbed. So the walk is run backwards from the footing over
-/// [`World::neighbors`], the engine's one step rule.
-///
-/// A code of its own rather than a [`DW_REACH_UNCOMPLETABLE`] variant, for the
-/// reason `DW0510` is one: `DW0850` says the objective cannot be completed and
-/// sends the author to look for missing footing. This says the opposite — the
-/// objective completes too easily, from a place that is not the place — and the
-/// remedy is the radius or the anchor, never more floor.
-pub const DW_REACH_OFF_FLOOR: DwCode = DwCode::new("DW0881", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0881`: **a raised `reach` anchor completes from the floor below it.**
+    ///
+    /// The completion volume is centred on the anchor cell in all three axes, and
+    /// vanilla adjudicates the selector against the body's whole AABB rather than
+    /// against the cell its feet are in. A standing player is
+    /// [`delvewright_dsl::metrics::PLAYER_HEIGHT`] tall, so a body on a floor one
+    /// course below the volume's bottom layer already reaches into it. Put those two
+    /// facts together and ANY raised anchor whose radius reaches a lower floor
+    /// completes from that floor: the party never climbs, and the beat fires during
+    /// whatever they were doing down there.
+    ///
+    /// The rule this refuses under is stated over the FOOTPRINT rather than over the
+    /// radius, because a number is the wrong thing to bound — a radius that is
+    /// generous over a flat plaza and one that reaches through a mezzanine floor are
+    /// the same number. The footprint is every standable cell a body could complete
+    /// from ([`ReachCompletion::possibly_completes_from`]), and the demand is that
+    /// every cell of it can walk to the anchor's own footing **without leaving the
+    /// footprint**. A ramp or a stair inside the volume satisfies that and is meant
+    /// to: a body on it is arriving. A hall floor three courses down does not,
+    /// because nothing inside the volume joins the two floors.
+    ///
+    /// **Directional, and deliberately so.** The question is whether a body standing
+    /// on the offending cell can get to the anchor, not whether the anchor can get to
+    /// it — a body can fall off a loft into the hall below, and that a body could
+    /// arrive and then leave says nothing about the party who walked in at the bottom
+    /// and never climbed. So the walk is run backwards from the footing over
+    /// [`World::neighbors`], the engine's one step rule.
+    ///
+    /// A code of its own rather than a [`DW_REACH_UNCOMPLETABLE`] variant, for the
+    /// reason `DW0510` is one: `DW0850` says the objective cannot be completed and
+    /// sends the author to look for missing footing. This says the opposite — the
+    /// objective completes too easily, from a place that is not the place — and the
+    /// remedy is the radius or the anchor, never more floor.
+    pub const DW_REACH_OFF_FLOOR: DwCode = DwCode::new("DW0881", ExitTier::Build);
+}
 
 /// The volume a body has to be in for a `reach` objective to complete.
 ///

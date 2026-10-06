@@ -81,18 +81,20 @@ use delvewright_dsl::{DwCode, ExitTier};
 use crate::admit::settling::{ByteFacts, JIGSAW};
 use crate::grammar::model::VoxelModel;
 
-/// `DW0888` — **a prefab document's declaration is not borne out by its own
-/// bytes.**
-///
-/// One code for the whole class, on `DW0887`'s precedent and for its reason: the
-/// question is always the same question, and a code per key would hand a creator
-/// eight numbers for one answer. Which declaration failed is [`ClaimKey`], said
-/// in the message and countable in the binding.
-///
-/// Build tier, exit 1 wherever a campaign names the piece; also raised by
-/// `delvec prefab audit` over one file, over a zone and over a whole library,
-/// from this same implementation.
-pub const DW_CLAIM_DENIED: DwCode = DwCode::new("DW0888", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0888` — **a prefab document's declaration is not borne out by its own
+    /// bytes.**
+    ///
+    /// One code for the whole class, on `DW0887`'s precedent and for its reason: the
+    /// question is always the same question, and a code per key would hand a creator
+    /// eight numbers for one answer. Which declaration failed is [`ClaimKey`], said
+    /// in the message and countable in the binding.
+    ///
+    /// Build tier, exit 1 wherever a campaign names the piece; also raised by
+    /// `delvec prefab audit` over one file, over a zone and over a whole library,
+    /// from this same implementation.
+    pub const DW_CLAIM_DENIED: DwCode = DwCode::new("DW0888", ExitTier::Build);
+}
 
 /// Which declaration a claim is about.
 ///

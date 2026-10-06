@@ -89,23 +89,27 @@ use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, HorizonBase};
 
 use crate::compiler::registry::PrefabRegistry;
 
-/// `DW0886` — **this pool cannot stand on this horizon.**
-///
-/// Validation tier, exit 1, on `DW0855`'s precedent: the whole verdict is a
-/// fact about the documents and the library, so nothing has to be placed to
-/// know it and a creator should not spend a build finding out. The `ExitTier`
-/// says what happens if the same rule ever refuses with a build under way,
-/// which it does — [`crate::compiler::plan`] derives an ocean area's origin
-/// from the same number and cannot proceed without it.
-pub const DW_UNSEATABLE: DwCode = DwCode::new("DW0886", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0886` — **this pool cannot stand on this horizon.**
+    ///
+    /// Validation tier, exit 1, on `DW0855`'s precedent: the whole verdict is a
+    /// fact about the documents and the library, so nothing has to be placed to
+    /// know it and a creator should not spend a build finding out. The `ExitTier`
+    /// says what happens if the same rule ever refuses with a build under way,
+    /// which it does — [`crate::compiler::plan`] derives an ocean area's origin
+    /// from the same number and cannot proceed without it.
+    pub const DW_UNSEATABLE: DwCode = DwCode::new("DW0886", ExitTier::Build);
+}
 
-/// `DW0887` — **a declared waterline is not in the piece's bytes.**
-///
-/// Validation tier, exit 1 when a campaign names the piece; also raised by
-/// `delvec prefab audit` over a whole library, from this same implementation.
-/// A declaration is a claim about the bytes, and until this existed nothing
-/// read the bytes.
-pub const DW_WATERLINE_FICTION: DwCode = DwCode::new("DW0887", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0887` — **a declared waterline is not in the piece's bytes.**
+    ///
+    /// Validation tier, exit 1 when a campaign names the piece; also raised by
+    /// `delvec prefab audit` over a whole library, from this same implementation.
+    /// A declaration is a claim about the bytes, and until this existed nothing
+    /// read the bytes.
+    pub const DW_WATERLINE_FICTION: DwCode = DwCode::new("DW0887", ExitTier::Build);
+}
 
 /// The block a waterline is a claim about. Spelled once: the generator that
 /// cuts a tide pool, the auditor that sweeps a library and the check that

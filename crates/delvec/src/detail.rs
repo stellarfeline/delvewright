@@ -51,13 +51,15 @@ use crate::{
     read_skins, read_structures, validate_stage,
 };
 
-/// `DW0882`: **the program asks for a value the whole does not hand.** A
-/// parameter declared under the `handed/` prefix names a seam this place does
-/// not have, or a name the handing does not use. Refused where entered — at
-/// `detail`, before the program is expanded — naming the parameter and every
-/// name the allocation hands this place, so the repair is a rename in the
-/// program and never a number.
-const DW_NOT_HANDED: DwCode = DwCode::new("DW0882", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0882`: **the program asks for a value the whole does not hand.** A
+    /// parameter declared under the `handed/` prefix names a seam this place does
+    /// not have, or a name the handing does not use. Refused where entered — at
+    /// `detail`, before the program is expanded — naming the parameter and every
+    /// name the allocation hands this place, so the repair is a rename in the
+    /// program and never a number.
+    const DW_NOT_HANDED: DwCode = DwCode::new("DW0882", ExitTier::Build);
+}
 
 /// Where a campaign keeps its detail programs: `<campaign>/programs/<place
 /// stem>.json`. The address is derived from the place, as the piece id is; the
