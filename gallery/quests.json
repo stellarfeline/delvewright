@@ -855,6 +855,11 @@
                 "anchor": "anchor/pocket"
               },
               "type": "move-npc"
+            },
+            {
+              "atmosphere": "atmosphere/frost-hall",
+              "place": "area/hall",
+              "type": "set-atmosphere"
             }
           ],
           "obj/take-the-emeralds": [
@@ -2974,6 +2979,18 @@
                 }
               ]
             }
+          },
+          {
+            "atmosphere": "atmosphere/still-air",
+            "region": {
+              "anchor": "anchor/east-bay",
+              "extent": [
+                3,
+                3,
+                3
+              ]
+            },
+            "type": "set-atmosphere"
           }
         ],
         "forbids_flags": [

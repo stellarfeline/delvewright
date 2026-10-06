@@ -1,0 +1,17 @@
+{
+  "code": "DW0929",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/3/effects/1/region/extent",
+      "value": [
+        400,
+        3,
+        3
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The vantage's repaint widened four hundred blocks east and west, far past every placed piece. `fillbiome` into a chunk nothing loads is a silent no-op, so most of the volume would keep its old sky with every proof green. The map's extent exists only once the pieces are placed, so this is refused by `delvec build`. It declares no unit: `region` is bound by the vantage's own repaint."
+}

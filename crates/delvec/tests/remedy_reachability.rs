@@ -2186,6 +2186,157 @@ fn dw0721_removing_a_restated_sky_builds() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// spec-0080: the atmosphere refusals, each move taken
+// ---------------------------------------------------------------------------
+
+/// hello-world with `edit` applied to its world and quests documents.
+fn atmosphere_campaign(
+    tag: &str,
+    edit: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+) -> PathBuf {
+    let camp = campaign(&format!("atm-{tag}"), None);
+    let read = |f: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(camp.join(f)).unwrap()).unwrap()
+    };
+    let (mut world, mut quests) = (read("world.json"), read("quests.json"));
+    quests["dsl_version"] = serde_json::json!(DSL_VERSION);
+    edit(&mut world, &mut quests);
+    for (f, v) in [("world.json", &world), ("quests.json", &quests)] {
+        std::fs::write(camp.join(f), serde_json::to_string_pretty(v).unwrap()).unwrap();
+    }
+    camp
+}
+
+/// `delvec validate`, as an exit code and everything it said.
+fn validate_atm(camp: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+fn declare(world: &mut serde_json::Value, atmospheres: serde_json::Value, carried: bool) {
+    world["content"]["atmospheres"] = atmospheres;
+    if carried {
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/wrong-place");
+    }
+}
+
+fn talk_bundle(quests: &mut serde_json::Value) -> &mut Vec<serde_json::Value> {
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+        .as_array_mut()
+        .unwrap()
+}
+
+/// `DW0928` names the move: remove the line the overworld day cycle overrules.
+#[test]
+fn dw0928_removing_the_overridden_line_validates() {
+    let wrong = |tag: &str, attrs: serde_json::Value| {
+        atmosphere_campaign(tag, |w, _| {
+            declare(
+                w,
+                serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none", "attributes": attrs }]),
+                true,
+            )
+        })
+    };
+    let (code, log) = validate_atm(&wrong(
+        "sun",
+        serde_json::json!({ "visual/sun_angle": 90.0, "visual/sky_color": "#3b4a1e" }),
+    ));
+    assert_ne!(code, 0, "{log}");
+    assert!(log.contains("DW0928"), "{log}");
+    let (code, log) = validate_atm(&wrong(
+        "sun-removed",
+        serde_json::json!({ "visual/sky_color": "#3b4a1e" }),
+    ));
+    assert_eq!(code, 0, "{log}");
+    assert!(!log.contains("DW0928"), "{log}");
+}
+
+/// `DW0929` names the move: keep exactly one of `region` / `place`; and, at the
+/// build, shrink the region so the whole volume stands inside the map.
+#[test]
+fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_verdict() {
+    let atm = serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none" }]);
+    let both = atmosphere_campaign("both", |w, q| {
+        declare(w, atm.clone(), false);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
+            "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] }, "place": "area/keep"
+        }));
+    });
+    let (code, log) = validate_atm(&both);
+    assert!(code != 0 && log.contains("DW0929"), "{log}");
+    let one = atmosphere_campaign("one", |w, q| {
+        declare(w, atm.clone(), false);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place", "place": "area/keep"
+        }));
+    });
+    let (code, log) = validate_atm(&one);
+    assert_eq!(code, 0, "{log}");
+    let wide = |tag: &str, extent: [u32; 3]| {
+        atmosphere_campaign(tag, |w, q| {
+            declare(w, atm.clone(), false);
+            talk_bundle(q).push(serde_json::json!({
+                "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
+                "region": { "anchor": "anchor/exit", "extent": extent }
+            }));
+        })
+    };
+    let (code, log) = build(
+        "atm-wide",
+        &wide("wide", [64, 1, 1]),
+        &common::prefabs_dir(),
+    );
+    assert!(code != 0 && log.contains("DW0929"), "{log}");
+    let (code, log) = build(
+        "atm-narrow",
+        &wide("narrow", [1, 1, 1]),
+        &common::prefabs_dir(),
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// `DW0930` names its moves: carry the atmosphere on its place; drop the
+/// `climate` that contradicts the precipitation; give a duplicate its own id.
+#[test]
+fn dw0930_carrying_it_dropping_the_climate_and_renaming_the_duplicate_all_validate() {
+    let one = serde_json::json!({ "id": "atmosphere/wrong-place", "precipitation": "snow" });
+    let (code, log) = validate_atm(&atmosphere_campaign("unbound", |w, _| {
+        declare(w, serde_json::json!([one.clone()]), false)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    let (code, log) = validate_atm(&atmosphere_campaign("carried", |w, _| {
+        declare(w, serde_json::json!([one.clone()]), true)
+    }));
+    assert_eq!(code, 0, "{log}");
+    let mut hot = one.clone();
+    hot["climate"] = serde_json::json!({ "temperature": 0.8, "downfall": 0.4 });
+    let (code, log) = validate_atm(&atmosphere_campaign("hot", |w, _| {
+        declare(w, serde_json::json!([hot]), true)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    let mut twin = one.clone();
+    let (code, log) = validate_atm(&atmosphere_campaign("twin", |w, _| {
+        declare(w, serde_json::json!([one.clone(), twin.clone()]), true)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    twin["id"] = serde_json::json!("atmosphere/other-place");
+    let (code, log) = validate_atm(&atmosphere_campaign("renamed", |w, q| {
+        declare(w, serde_json::json!([one.clone(), twin.clone()]), true);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/other-place", "place": "area/keep"
+        }));
+    }));
+    assert_eq!(code, 0, "{log}");
+}
+
 /// A hello-world campaign whose world states `time` and whose first objective
 /// cuts to each of `cuts`.
 fn celestial_campaign(tag: &str, time: serde_json::Value, cuts: &[serde_json::Value]) -> PathBuf {

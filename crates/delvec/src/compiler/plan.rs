@@ -1026,6 +1026,9 @@ pub struct Plan<'a> {
     /// (`crate::compiler::render_plan`) to name the objective each player-POV leg walks
     /// toward, and by the v0.6 checkpoint / stealth proofs to root a beat.
     pub objective_steps: BTreeMap<String, usize>,
+    /// What the exported path fires, and where — the one input every reader of
+    /// forcedness on that path takes ([`firing_of`]).
+    pub(crate) path_firing: PathFiring,
     /// Resolved traps (DSL v0.6, spec-0011), content-ordered.
     pub traps: Vec<TrapPlan>,
     /// Resolved shortcut doors (spec-0016 §2), content-ordered.
@@ -3068,9 +3071,11 @@ impl<'a> Plan<'a> {
         )?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
-        let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
-        let objective_steps = cp.obj_step;
-        let trigger_steps = cp.trigger_step;
+        let (checkpoints, stealth_beats) =
+            collect_v06_effects(campaign, &anchors, &cp.firing.obj_step);
+        let path_firing = cp.firing;
+        let objective_steps = path_firing.obj_step.clone();
+        let trigger_steps = path_firing.trigger_step.clone();
 
         // ---- v0.6 traps (spec-0011) ----
         let traps = collect_traps(campaign, &anchors, &dispenser_cells);
@@ -3143,8 +3148,7 @@ impl<'a> Plan<'a> {
         ways.seal().map_err(|e| e.with_warnings(warnings.clone()))?;
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
-        let mut region_events =
-            collect_region_events(campaign, &anchors, &objective_steps, &trigger_steps, &ways);
+        let mut region_events = collect_region_events(campaign, &anchors, &path_firing, &ways);
         // A shortcut gate is sealed from world-load and is opened only by an
         // OPTIONAL far-side interaction no proof can order (spec-0016 §2). Seal it
         // for the whole completability model — `fire_step: 0` precedes every leg —
@@ -3187,7 +3191,7 @@ impl<'a> Plan<'a> {
         // staged ways alone would skip in silence, which is how an effect comes to
         // emit nothing and be reported by nobody (the class `DW0360` exists for).
         let mut way_gate = None;
-        let openings = collect_way_openings(campaign, &objective_steps, &trigger_steps);
+        let openings = collect_way_openings(campaign, &path_firing);
         if !ways.ways.is_empty() || !openings.is_empty() {
             let elements = collect_required_elements(campaign, &anchors, &objective_steps);
             let precedes = |g: usize, s: usize| {
@@ -3243,6 +3247,7 @@ impl<'a> Plan<'a> {
             furniture,
             stealth_beats,
             objective_steps,
+            path_firing,
             traps,
             shortcuts,
             loot,
@@ -3352,20 +3357,15 @@ impl<'a> Plan<'a> {
         &self,
         cp: &CriticalPath,
     ) -> (Vec<RegionEvent>, BTreeMap<usize, BTreeSet<usize>>) {
-        let mut region_events = collect_region_events(
-            self.campaign,
-            &self.anchors,
-            &cp.obj_step,
-            &cp.trigger_step,
-            &self.ways,
-        );
+        let mut region_events =
+            collect_region_events(self.campaign, &self.anchors, &cp.firing, &self.ways);
         region_events.extend(self.shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
         let ancestors = compute_strict_ancestor_steps(
             self.campaign,
-            &cp.obj_step,
-            &cp.trigger_step,
+            &cp.firing.obj_step,
+            &cp.firing.trigger_step,
             cp.steps.len(),
         );
         (region_events, ancestors)
@@ -4331,14 +4331,43 @@ pub struct CriticalPath {
     pub transport_by_step: Vec<Option<[i32; 3]>>,
     pub sneak_by_step: Vec<bool>,
     pub cutscene_by_step: Vec<Option<u32>>,
+    /// What this path fires, and where ([`firing_of`]'s input).
+    pub(crate) firing: PathFiring,
+}
+
+/// **What one path fires, and at which of its steps** — everything
+/// [`firing_of`] reads, for one path (the exported one, or one branch's).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PathFiring {
     /// Objective id → its `critical_path` step index (v0.6): roots the checkpoint
     /// no-stranding proof (DW0315) and the stealth-zone reachability proof
     /// (DW0327) at the beat that fires the effect.
-    pub(crate) obj_step: BTreeMap<String, usize>,
+    pub obj_step: BTreeMap<String, usize>,
     /// Trigger id → the `trigger` step that performs it on this path. The
     /// region-write model fires a trigger's openings at this step and at no
     /// other; a trigger absent here opens nothing any proof may lean on.
-    pub(crate) trigger_step: BTreeMap<String, usize>,
+    pub trigger_step: BTreeMap<String, usize>,
+    /// The quests this path completes. A quest's `on_complete` fires on this
+    /// path exactly when its quest is here; one absent here is never forced on
+    /// the path — `obj_step` cannot answer that for a quest with no objectives.
+    pub quests: BTreeSet<String>,
+    /// The JSON pointer of every effect line this path fires: the flow
+    /// journal's `fired` over every step, plus every line of every trigger the
+    /// path performs, fired by the same replay at the state it holds there
+    /// ([`crate::compiler::flow::Walk::probe`]). A line whose own gate, or an
+    /// enclosing one, does not hold where the path reaches it is absent.
+    pub fired: BTreeSet<String>,
+    /// The members of `fired` whose gate held only on an undatable numeric term.
+    /// Played by the replay; never forced.
+    pub undecided: BTreeSet<String>,
+}
+
+impl PathFiring {
+    /// Whether this path is guaranteed to fire the line at `pointer`: the replay
+    /// reached it with its whole gate decided open.
+    pub fn fires(&self, pointer: &str) -> bool {
+        self.fired.contains(pointer) && !self.undecided.contains(pointer)
+    }
 }
 
 /// Build the critical path: select first class, then each objective of the
@@ -4423,6 +4452,7 @@ fn build_critical_path(
     // The environment triggers this path performs, keyed by the path step each
     // is performed in front of. See [`path_triggers`].
     let due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
+    let (fired, undecided) = path_fired_lines(campaign, flow, path, &due);
     let mut trigger_step: BTreeMap<String, usize> = BTreeMap::new();
 
     for (si, st) in path.steps.iter().enumerate() {
@@ -4936,9 +4966,60 @@ fn build_critical_path(
         transport_by_step,
         sneak_by_step,
         cutscene_by_step,
-        obj_step,
-        trigger_step,
+        firing: PathFiring {
+            obj_step,
+            trigger_step,
+            quests: path.quests.iter().cloned().collect(),
+            fired,
+            undecided,
+        },
     })
+}
+
+/// **Every effect line a path fires** — the input [`PathFiring::fires`] reads.
+///
+/// One walk of the replay under its **guaranteed** stance
+/// ([`crate::compiler::flow::Flow::walk_performing`]): a flag an ambient producer
+/// sets is held only once the path performs the trigger that owns it, and a
+/// producer no trigger owns (a trap or timed-gate disarm, a purchase) is never
+/// held. Each step's `fired`/`undecided` is the replay's own gate test where it
+/// reaches each line — flags, and numeric terms against the value the walk holds
+/// there. A trigger the path performs in front of a step (`due`) has its
+/// `effects` fired by the same replay ([`crate::compiler::flow::Walk::probe`]) at
+/// the state the walk holds there, and from then on its producers are credited.
+fn path_fired_lines(
+    campaign: &Campaign,
+    flow: &crate::compiler::flow::Flow<'_>,
+    path: &crate::compiler::flow::Playthrough,
+    due: &BTreeMap<usize, Vec<Step>>,
+) -> (BTreeSet<String>, BTreeSet<String>) {
+    let mut fired: BTreeSet<String> = BTreeSet::new();
+    let mut undecided: BTreeSet<String> = BTreeSet::new();
+    // A trigger's effect list and its root pointer, from the one root walk.
+    let mut roots: BTreeMap<&str, (String, &[QuestEffect])> = BTreeMap::new();
+    for_each_effect_root(campaign, &mut |site, list| {
+        if let EffectRoot::Trigger(t) = site.root {
+            roots.insert(t.id.as_str(), (site.path.clone(), list));
+        }
+    });
+    let mut walk = flow.walk_performing();
+    for (si, step) in path.steps.iter().enumerate() {
+        for performed in due.get(&si).into_iter().flatten() {
+            let Step::Trigger { trigger_id, .. } = performed else {
+                continue;
+            };
+            if let Some((base, effs)) = roots.get(trigger_id.as_str()) {
+                let (f, u) = walk.probe(trigger_id, effs, base);
+                fired.extend(f);
+                undecided.extend(u);
+            }
+            walk.perform(trigger_id);
+        }
+        let taken = walk.take(step);
+        fired.extend(taken.fired);
+        undecided.extend(taken.undecided);
+    }
+    (fired, undecided)
 }
 
 /// **The environment triggers a path performs, and where** — keyed by the index
@@ -5983,7 +6064,8 @@ fn zone_box_in(
 ///
 /// - a quest `on_objective_complete` fires at that objective's step, an
 ///   `on_complete` at the quest's completion step — the player is *forced* through
-///   both, so both directions are modelled;
+///   both on a path that plays them, so both directions are modelled; on a path
+///   that never plays them they are unforced ([`firing_of`]);
 /// - an environment trigger's **openings** fire at the `trigger` step the path
 ///   performs it in (`trigger_step`), and a trigger the path never performs opens
 ///   nothing; its **fills** are rooted at step 0, forced, which seals every leg
@@ -6016,8 +6098,7 @@ fn zone_box_in(
 fn collect_region_events(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-    obj_step: &BTreeMap<String, usize>,
-    trigger_step: &BTreeMap<String, usize>,
+    path: &PathFiring,
     ways: &crate::compiler::ways::WayStaging,
 ) -> Vec<RegionEvent> {
     // spec-0051 §8.6: the skippable-root class, widened. A bundle rooted in an
@@ -6065,19 +6146,44 @@ fn collect_region_events(
                 f.word(),
                 f.id()
             ),
-            // The two DAG roots reach this arm only when their owning quest is
-            // OPTIONAL (spec-0051 §8.6) — while it is mandatory they are forced
-            // and a forced event carries no blame. Naming the quest is the whole
-            // value: "a beat nobody has to play" is unactionable, and "the
-            // completion of optional quest `quest/crypt`" sends the author to
-            // the strand that laid the footing.
-            EffectRoot::ObjectiveComplete { quest, objective } => format!(
-                "the `{objective}` bundle of optional quest `{quest}`, which the party may \
-                 never play"
+            // The two DAG roots reach this arm when their owning quest is
+            // OPTIONAL (spec-0051 §8.6), or when this path never plays the beat
+            // at all (a branch the path does not take) — on a path that plays a
+            // mandatory beat it is forced and a forced event carries no blame.
+            // Naming the quest is the whole value: "a beat nobody has to play" is
+            // unactionable, and "the completion of optional quest `quest/crypt`"
+            // sends the author to the strand that laid the footing.
+            EffectRoot::ObjectiveComplete { quest, objective }
+                if !path.obj_step.contains_key(objective) =>
+            {
+                format!("the `{objective}` bundle of quest `{quest}`, which this path never plays")
+            }
+            EffectRoot::ObjectiveComplete { quest, objective } if optional.contains(quest) => {
+                format!(
+                    "the `{objective}` bundle of optional quest `{quest}`, which the party may \
+                     never play"
+                )
+            }
+            // On the path, mandatory, and still unforced: the line's own gate,
+            // or one enclosing it, does not hold where the path reaches it (or
+            // holds only on a value no ordered walk can date).
+            EffectRoot::ObjectiveComplete { objective, .. } => format!(
+                "the line at `{}` of the `{objective}` bundle, whose gate does not hold where \
+                 this path plays it",
+                site.path
             ),
-            EffectRoot::QuestComplete(q) => format!(
+            EffectRoot::QuestComplete(q) if !path.quests.contains(q.id.as_str()) => format!(
+                "the completion of quest `{}`, which this path never plays",
+                q.id
+            ),
+            EffectRoot::QuestComplete(q) if optional.contains(q.id.as_str()) => format!(
                 "the completion of optional quest `{}`, which the party may never play",
                 q.id
+            ),
+            EffectRoot::QuestComplete(q) => format!(
+                "the line at `{}` of quest `{}`'s completion, whose gate does not hold where \
+                 this path plays it",
+                site.path, q.id
             ),
             // A trigger this path never performs. Only its openings are unforced,
             // and an unforced opening is dropped before it is blamed; worded
@@ -6087,7 +6193,7 @@ fn collect_region_events(
                 t.id
             ),
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step, trigger_step, &optional);
+        let (fire_step, forced) = firing_of(site, path, &optional);
         // The three spellings of one write. A gate names a prefab gate anchor and
         // takes that anchor's box and its `replace`-filtered clear; a
         // `fill-region`/`clear-region` names its own anchor-centred box and clears
@@ -6177,7 +6283,10 @@ fn collect_region_events(
 ///
 /// - a quest `on_objective_complete` fires at that objective's step, an
 ///   `on_complete` at the quest's completion step — the player is *forced*
-///   through both;
+///   through both on a path that plays them; a path that never performs the
+///   objective, or never completes the quest (a branch it does not take), is
+///   unforced at step 0, whatever the quest's optionality says about the paths
+///   that do;
 /// - an environment trigger fires at the `trigger` step the path performs it in,
 ///   forced; one the path never performs is unforced at step 0;
 /// - a trap payload and a dialogue-hosted `on_respawn` bundle have no step of
@@ -6189,26 +6298,35 @@ fn collect_region_events(
 /// far side — are unforced: every shortcut gate is registered sealed at step 0 so
 /// the delve is proven completable with no shortcut ever taken, which is exactly
 /// "the party may never fire this bundle".
-fn firing_of(
-    root: &EffectRoot<'_>,
-    obj_step: &BTreeMap<String, usize>,
-    trigger_step: &BTreeMap<String, usize>,
+pub(crate) fn firing_of(
+    site: &GateSite<'_>,
+    path: &PathFiring,
     optional: &BTreeSet<&str>,
 ) -> (usize, bool) {
-    match root {
-        EffectRoot::ObjectiveComplete { quest, objective } => (
-            obj_step.get(*objective).copied().unwrap_or(0),
-            !optional.contains(*quest),
+    let fires = path.fires(&site.path);
+    match &site.root {
+        // Fired at the objective's own step on a path that performs it, and
+        // forced there only for a line the path's replay fires with its whole
+        // gate decided open. A path that never performs the objective never
+        // fires its bundle, so it is unforced there — exactly a trigger the
+        // path never performs — whatever the quest's optionality says about the
+        // paths that do.
+        EffectRoot::ObjectiveComplete { quest, objective } => match path.obj_step.get(*objective) {
+            Some(&s) => (s, fires && !optional.contains(*quest)),
+            None => (0, false),
+        },
+        // The same rule over the quest: its completion fires on a path that
+        // completes it, and on no other.
+        EffectRoot::QuestComplete(q) if path.quests.contains(q.id.as_str()) => (
+            quest_complete_step(q, &path.obj_step),
+            fires && !optional.contains(q.id.as_str()),
         ),
-        EffectRoot::QuestComplete(q) => (
-            quest_complete_step(q, obj_step),
-            !optional.contains(q.id.as_str()),
-        ),
+        EffectRoot::QuestComplete(_) => (0, false),
         // Performed by the path at its own `trigger` step, or not at all: a
         // trigger nobody on the path fires is as optional as a trap nobody
-        // springs.
-        EffectRoot::Trigger(t) => match trigger_step.get(t.id.as_str()) {
-            Some(&s) => (s, true),
+        // springs. A line of it is forced only where its gate holds at that step.
+        EffectRoot::Trigger(t) => match path.trigger_step.get(t.id.as_str()) {
+            Some(&s) => (s, fires),
             None => (0, false),
         },
         EffectRoot::TrapPayload(_)
@@ -6229,8 +6347,7 @@ fn firing_of(
 /// and is judged unforced there for the same reason its fill is.
 pub(crate) fn collect_way_openings(
     campaign: &Campaign,
-    obj_step: &BTreeMap<String, usize>,
-    trigger_step: &BTreeMap<String, usize>,
+    path: &PathFiring,
 ) -> Vec<crate::compiler::ways::WayOpening> {
     // The same widening as `collect_region_events`, for the same reason: an
     // `open-way` fired from an optional quest is a way the party may never open.
@@ -6240,7 +6357,7 @@ pub(crate) fn collect_way_openings(
         let Some((piece, name)) = e.way_write() else {
             return;
         };
-        let (fire_step, forced) = firing_of(&site.root, obj_step, trigger_step, &optional);
+        let (fire_step, forced) = firing_of(site, path, &optional);
         out.push(crate::compiler::ways::WayOpening {
             prefab_id: piece.as_str().to_string(),
             way: name.to_string(),

@@ -38,7 +38,7 @@ order a player would:
 
 | Where | What it holds |
 | --- | --- |
-| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon) |
+| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall |
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
@@ -170,6 +170,13 @@ holding them at once.
 | `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
 | `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
 | `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
+| `a-sky-the-sun-does-not-obey` | `DW0928` | `validate` | holding the hall's sun in place: the overworld's day timeline overrides `visual/sun_angle` every tick, so the line would ship and do nothing |
+| `an-attribute-the-game-never-heard-of` | `DW0928` | `validate` | spelling `visual/sky_colour`, which the pinned game does not register — the refusal names `visual/sky_color` |
+| `a-colour-that-is-a-number` | `DW0928` | `validate` | writing the hall's sky colour as an integer where vanilla's data writes `#rrggbb` |
+| `a-snow-at-summer-heat` | `DW0930` | `validate` | declaring snow in a climate at temperature 0.8, where vanilla rains |
+| `an-atmosphere-nobody-stands-in` | `DW0930` | `validate` | declaring a third sky no place carries and no beat paints |
+| `a-repaint-past-the-edge-of-the-world` | `DW0929` | `build` | widening the vantage's repaint four hundred blocks past every placed piece, into chunks nothing loads |
+| `a-repaint-that-names-both-a-box-and-a-place` | `DW0929` | `validate` | giving the vantage's repaint both an anchor-centred region and a whole place |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

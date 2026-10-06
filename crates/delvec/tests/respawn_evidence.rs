@@ -441,3 +441,115 @@ fn every_violating_pair_is_stated_in_one_build() {
         "and the message must say how many there are: {message}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Route 2's bearer half reads forcedness from the one rule (`plan::firing_of`)
+// ---------------------------------------------------------------------------
+
+/// The hostile at the exit is staged only by a `strike-npc` trigger riding the
+/// keeper, and every removal the bearer bound could lean on — the keeper's
+/// `despawn-npc` and the warden's own `despawn-actor` — sits in the completion
+/// of `quest/aside`. `on_path` decides whether the exported path plays that
+/// quest: mandatory with the trial depending on it, or optional and depended on
+/// by nothing.
+fn bearer_removed_by_aside(dst: &Path, on_path: bool) {
+    campaign_from("souls-bonfire", dst, |q| {
+        reseat(q, "anchor/door", "obj/shrine", json!([]));
+        move_wave(q, "wave/guards", "anchor/chest");
+        let content = q["content"].as_object_mut().unwrap();
+        content.insert(
+            "actors".to_string(),
+            json!([{ "id": "actor/warden", "entity": "minecraft:husk", "anchor": "anchor/exit" }]),
+        );
+        content
+            .get_mut("triggers")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "id": "trigger/wake",
+                "on": { "on": "strike-npc", "npc": "npc/keeper" },
+                "once": true,
+                "effects": [
+                    { "type": "spawn-actor", "actor": "actor/warden" },
+                    { "type": "unleash-actor", "actor": "actor/warden" }
+                ]
+            }));
+        content["quests"].as_array_mut().unwrap().push(json!({
+            "id": "quest/aside",
+            "trigger": { "type": "quest-complete", "quest": "quest/greet" },
+            "happening": { "verb": "arrives", "text": "The keeper steps away from his stand." },
+            "objectives": [{
+                "type": "reach-anchor", "id": "obj/aside", "anchor": "anchor/keeper-stand",
+                "radius": 2,
+                "happening": { "verb": "arrives", "text": "They stand where the keeper stood." }
+            }],
+            "on_objective_complete": {},
+            "on_complete": [
+                { "type": "despawn-npc", "npc": "npc/keeper" },
+                { "type": "despawn-actor", "actor": "actor/warden", "style": "vanish" }
+            ]
+        }));
+    });
+    let p = dst.join("quest-plan.json");
+    let mut plan: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    plan["content"]["quests"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id": "quest/aside",
+            "goal": "Stand where the keeper stood.",
+            "area": "area/keep",
+            "npcs": [],
+            "depends_on": ["quest/greet"],
+            "mandatory": on_path,
+            "act": 1
+        }));
+    if on_path {
+        for quest in plan["content"]["quests"].as_array_mut().unwrap() {
+            if quest["id"] == "quest/trial" {
+                quest["depends_on"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!("quest/aside"));
+            }
+        }
+    }
+    std::fs::write(&p, serde_json::to_string_pretty(&plan).unwrap()).unwrap();
+}
+
+/// **The bearer bound credits only removals the path is forced to make.** The
+/// warden is staged by a trigger riding the keeper, and the only removals of
+/// the keeper and of the warden hang off an optional quest the exported path
+/// never plays. A removal nobody has to cause closes no staging window, so the
+/// pair is compared and red (`DW0478`). Control: the same quest on the path,
+/// before the seat, and the bearer bound skips the pair.
+#[test]
+fn a_bearer_removed_only_by_a_beat_the_path_never_plays_closes_nothing() {
+    let control = TempCampaign::new("bearer-aside-on-path");
+    bearer_removed_by_aside(control.path(), true);
+    let out = build_from("souls-bonfire", control.path())
+        .expect("a bearer the path is forced to remove before the seat closes the window");
+    let l = ledger(&out);
+    let skipped = l["rest_points"][0]["not_compared"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the ledger states skipped pairs: {l}"));
+    assert!(
+        skipped
+            .iter()
+            .any(|s| s["id"] == "actor/warden" && s["kind"] == "bearer-bound"),
+        "the control must be decided by the bearer bound, or the red arm proves nothing: {l}"
+    );
+
+    let tmp = TempCampaign::new("bearer-aside");
+    bearer_removed_by_aside(tmp.path(), false);
+    let (code, message) = diagnostic(build_from("souls-bonfire", tmp.path()).expect_err(
+        "a bearer removed only by an optional beat is a bearer the party may never remove",
+    ));
+    assert_eq!(code, "DW0478", "{message}");
+    assert!(
+        message.contains("actor/warden") && message.contains("anchor/door"),
+        "{message}"
+    );
+}

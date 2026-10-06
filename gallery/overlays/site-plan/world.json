@@ -2,6 +2,16 @@
   "campaign_id": "gallery",
   "content": {
     "areas": [],
+    "atmospheres": [
+      {
+        "attributes": {
+          "visual/fog_color": "#8a9aa8",
+          "visual/sky_color": "#6f7f8f"
+        },
+        "id": "atmosphere/wet-court",
+        "precipitation": "rain"
+      }
+    ],
     "boundary": {
       "margin": 16,
       "message": "The hall ends here."

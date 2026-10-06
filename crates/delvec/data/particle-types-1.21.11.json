@@ -1,0 +1,470 @@
+{
+  "minecraft": "1.21.11",
+  "particle_types": [
+    {
+      "id": "minecraft:angry_villager",
+      "simple": true
+    },
+    {
+      "id": "minecraft:ash",
+      "simple": true
+    },
+    {
+      "id": "minecraft:block",
+      "simple": false
+    },
+    {
+      "id": "minecraft:block_crumble",
+      "simple": false
+    },
+    {
+      "id": "minecraft:block_marker",
+      "simple": false
+    },
+    {
+      "id": "minecraft:bubble",
+      "simple": true
+    },
+    {
+      "id": "minecraft:bubble_column_up",
+      "simple": true
+    },
+    {
+      "id": "minecraft:bubble_pop",
+      "simple": true
+    },
+    {
+      "id": "minecraft:campfire_cosy_smoke",
+      "simple": true
+    },
+    {
+      "id": "minecraft:campfire_signal_smoke",
+      "simple": true
+    },
+    {
+      "id": "minecraft:cherry_leaves",
+      "simple": true
+    },
+    {
+      "id": "minecraft:cloud",
+      "simple": true
+    },
+    {
+      "id": "minecraft:composter",
+      "simple": true
+    },
+    {
+      "id": "minecraft:copper_fire_flame",
+      "simple": true
+    },
+    {
+      "id": "minecraft:crimson_spore",
+      "simple": true
+    },
+    {
+      "id": "minecraft:crit",
+      "simple": true
+    },
+    {
+      "id": "minecraft:current_down",
+      "simple": true
+    },
+    {
+      "id": "minecraft:damage_indicator",
+      "simple": true
+    },
+    {
+      "id": "minecraft:dolphin",
+      "simple": true
+    },
+    {
+      "id": "minecraft:dragon_breath",
+      "simple": false
+    },
+    {
+      "id": "minecraft:dripping_dripstone_lava",
+      "simple": true
+    },
+    {
+      "id": "minecraft:dripping_dripstone_water",
+      "simple": true
+    },
+    {
+      "id": "minecraft:dripping_honey",
+      "simple": true
+    },
+    {
+      "id": "minecraft:dripping_lava",
+      "simple": true
+    },
+    {
+      "id": "minecraft:dripping_obsidian_tear",
+      "simple": true
+    },
+    {
+      "id": "minecraft:dripping_water",
+      "simple": true
+    },
+    {
+      "id": "minecraft:dust",
+      "simple": false
+    },
+    {
+      "id": "minecraft:dust_color_transition",
+      "simple": false
+    },
+    {
+      "id": "minecraft:dust_pillar",
+      "simple": false
+    },
+    {
+      "id": "minecraft:dust_plume",
+      "simple": true
+    },
+    {
+      "id": "minecraft:effect",
+      "simple": false
+    },
+    {
+      "id": "minecraft:egg_crack",
+      "simple": true
+    },
+    {
+      "id": "minecraft:elder_guardian",
+      "simple": true
+    },
+    {
+      "id": "minecraft:electric_spark",
+      "simple": true
+    },
+    {
+      "id": "minecraft:enchant",
+      "simple": true
+    },
+    {
+      "id": "minecraft:enchanted_hit",
+      "simple": true
+    },
+    {
+      "id": "minecraft:end_rod",
+      "simple": true
+    },
+    {
+      "id": "minecraft:entity_effect",
+      "simple": false
+    },
+    {
+      "id": "minecraft:explosion",
+      "simple": true
+    },
+    {
+      "id": "minecraft:explosion_emitter",
+      "simple": true
+    },
+    {
+      "id": "minecraft:falling_dripstone_lava",
+      "simple": true
+    },
+    {
+      "id": "minecraft:falling_dripstone_water",
+      "simple": true
+    },
+    {
+      "id": "minecraft:falling_dust",
+      "simple": false
+    },
+    {
+      "id": "minecraft:falling_honey",
+      "simple": true
+    },
+    {
+      "id": "minecraft:falling_lava",
+      "simple": true
+    },
+    {
+      "id": "minecraft:falling_nectar",
+      "simple": true
+    },
+    {
+      "id": "minecraft:falling_obsidian_tear",
+      "simple": true
+    },
+    {
+      "id": "minecraft:falling_spore_blossom",
+      "simple": true
+    },
+    {
+      "id": "minecraft:falling_water",
+      "simple": true
+    },
+    {
+      "id": "minecraft:firefly",
+      "simple": true
+    },
+    {
+      "id": "minecraft:firework",
+      "simple": true
+    },
+    {
+      "id": "minecraft:fishing",
+      "simple": true
+    },
+    {
+      "id": "minecraft:flame",
+      "simple": true
+    },
+    {
+      "id": "minecraft:flash",
+      "simple": false
+    },
+    {
+      "id": "minecraft:glow",
+      "simple": true
+    },
+    {
+      "id": "minecraft:glow_squid_ink",
+      "simple": true
+    },
+    {
+      "id": "minecraft:gust",
+      "simple": true
+    },
+    {
+      "id": "minecraft:gust_emitter_large",
+      "simple": true
+    },
+    {
+      "id": "minecraft:gust_emitter_small",
+      "simple": true
+    },
+    {
+      "id": "minecraft:happy_villager",
+      "simple": true
+    },
+    {
+      "id": "minecraft:heart",
+      "simple": true
+    },
+    {
+      "id": "minecraft:infested",
+      "simple": true
+    },
+    {
+      "id": "minecraft:instant_effect",
+      "simple": false
+    },
+    {
+      "id": "minecraft:item",
+      "simple": false
+    },
+    {
+      "id": "minecraft:item_cobweb",
+      "simple": true
+    },
+    {
+      "id": "minecraft:item_slime",
+      "simple": true
+    },
+    {
+      "id": "minecraft:item_snowball",
+      "simple": true
+    },
+    {
+      "id": "minecraft:landing_honey",
+      "simple": true
+    },
+    {
+      "id": "minecraft:landing_lava",
+      "simple": true
+    },
+    {
+      "id": "minecraft:landing_obsidian_tear",
+      "simple": true
+    },
+    {
+      "id": "minecraft:large_smoke",
+      "simple": true
+    },
+    {
+      "id": "minecraft:lava",
+      "simple": true
+    },
+    {
+      "id": "minecraft:mycelium",
+      "simple": true
+    },
+    {
+      "id": "minecraft:nautilus",
+      "simple": true
+    },
+    {
+      "id": "minecraft:note",
+      "simple": true
+    },
+    {
+      "id": "minecraft:ominous_spawning",
+      "simple": true
+    },
+    {
+      "id": "minecraft:pale_oak_leaves",
+      "simple": true
+    },
+    {
+      "id": "minecraft:poof",
+      "simple": true
+    },
+    {
+      "id": "minecraft:portal",
+      "simple": true
+    },
+    {
+      "id": "minecraft:raid_omen",
+      "simple": true
+    },
+    {
+      "id": "minecraft:rain",
+      "simple": true
+    },
+    {
+      "id": "minecraft:reverse_portal",
+      "simple": true
+    },
+    {
+      "id": "minecraft:scrape",
+      "simple": true
+    },
+    {
+      "id": "minecraft:sculk_charge",
+      "simple": false
+    },
+    {
+      "id": "minecraft:sculk_charge_pop",
+      "simple": true
+    },
+    {
+      "id": "minecraft:sculk_soul",
+      "simple": true
+    },
+    {
+      "id": "minecraft:shriek",
+      "simple": false
+    },
+    {
+      "id": "minecraft:small_flame",
+      "simple": true
+    },
+    {
+      "id": "minecraft:small_gust",
+      "simple": true
+    },
+    {
+      "id": "minecraft:smoke",
+      "simple": true
+    },
+    {
+      "id": "minecraft:sneeze",
+      "simple": true
+    },
+    {
+      "id": "minecraft:snowflake",
+      "simple": true
+    },
+    {
+      "id": "minecraft:sonic_boom",
+      "simple": true
+    },
+    {
+      "id": "minecraft:soul",
+      "simple": true
+    },
+    {
+      "id": "minecraft:soul_fire_flame",
+      "simple": true
+    },
+    {
+      "id": "minecraft:spit",
+      "simple": true
+    },
+    {
+      "id": "minecraft:splash",
+      "simple": true
+    },
+    {
+      "id": "minecraft:spore_blossom_air",
+      "simple": true
+    },
+    {
+      "id": "minecraft:squid_ink",
+      "simple": true
+    },
+    {
+      "id": "minecraft:sweep_attack",
+      "simple": true
+    },
+    {
+      "id": "minecraft:tinted_leaves",
+      "simple": false
+    },
+    {
+      "id": "minecraft:totem_of_undying",
+      "simple": true
+    },
+    {
+      "id": "minecraft:trail",
+      "simple": false
+    },
+    {
+      "id": "minecraft:trial_omen",
+      "simple": true
+    },
+    {
+      "id": "minecraft:trial_spawner_detection",
+      "simple": true
+    },
+    {
+      "id": "minecraft:trial_spawner_detection_ominous",
+      "simple": true
+    },
+    {
+      "id": "minecraft:underwater",
+      "simple": true
+    },
+    {
+      "id": "minecraft:vault_connection",
+      "simple": true
+    },
+    {
+      "id": "minecraft:vibration",
+      "simple": false
+    },
+    {
+      "id": "minecraft:warped_spore",
+      "simple": true
+    },
+    {
+      "id": "minecraft:wax_off",
+      "simple": true
+    },
+    {
+      "id": "minecraft:wax_on",
+      "simple": true
+    },
+    {
+      "id": "minecraft:white_ash",
+      "simple": true
+    },
+    {
+      "id": "minecraft:white_smoke",
+      "simple": true
+    },
+    {
+      "id": "minecraft:witch",
+      "simple": true
+    }
+  ],
+  "source": {
+    "registry": "net.minecraft.core.particles.ParticleTypes.<clinit>",
+    "server_jar_sha256": "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726",
+    "server_mappings_sha1": "5621e9253f05fd57872bbe7f8ddf5f9a7d525955"
+  }
+}
