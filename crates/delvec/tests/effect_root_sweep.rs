@@ -185,7 +185,9 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
         "a root this campaign has no bundle at is NAMED as unbound"
     );
     assert!(
-        binding.summary().contains("roots 10/10"),
+        binding
+            .summary()
+            .contains(&format!("roots {n}/{n}", n = EffectRootKind::COUNT)),
         "{}",
         binding.summary()
     );

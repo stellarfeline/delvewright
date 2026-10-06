@@ -1658,7 +1658,7 @@ fn check_one(
             )));
         }
     }
-    // spec-0083 struck `transit_teleports`; every authored teleport's source
+    // spec-0083 struck the seal-lifting list; every authored teleport's source
     // volume, link or gather, is the one list.
     for tp in &crate::compiler::link::source_volumes(plan) {
         if boxes_meet(l.slab, *tp) {
