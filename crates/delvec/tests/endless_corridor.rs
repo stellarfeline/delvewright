@@ -673,7 +673,7 @@ fn a_refusal_after_a_world_edits_batch_prints_the_loop_binding() {
         |d| {
             let doc = json!({
                 "campaign_id": "long-gallery",
-                "dsl_version": "0.35.0",
+                "dsl_version": delvewright_dsl::DSL_VERSION,
                 "stage": "world-edits",
                 "content": { "batches": [{
                     "area": "area/gallery",
