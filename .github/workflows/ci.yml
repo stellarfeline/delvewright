@@ -69,6 +69,7 @@ jobs:
       zone-audit: ${{ steps.reach.outputs.zone-audit }}
       gallery: ${{ steps.reach.outputs.gallery }}
       tier2-validation: ${{ steps.reach.outputs.tier2-validation }}
+      gallery-bot: ${{ steps.reach.outputs.gallery-bot }}
     steps:
       - uses: actions/checkout@v4
       - name: fetch the pull request's base
@@ -1442,6 +1443,76 @@ jobs:
             gallery-coverage.json
             gallery-coverage.md
             gallery-frames/
+
+  # spec-0039: the gallery is the engine's test surface, and the bot is the one
+  # instrument that walks it the way a player does. Every gate in the `gallery`
+  # job reads the build; nothing ran the build until this job, so a path the
+  # bot cannot finish — a carry that completes a beat a step early, a sealed end
+  # no death-loop walk leaves — merged green. The ladder is `bot-run.sh`'s: the
+  # critical path, the die-retry stage wherever the build ships a combat plan,
+  # and the death loop wherever it ships a death plan, each ON by the build's
+  # own declaration and never by a flag here.
+  #
+  # The engine is built here the way every other job builds it today. When one
+  # job builds `delvec` for the run and uploads it, this job takes that binary
+  # instead: the build step below is the only one that changes.
+  gallery-bot:
+    name: gallery bot (critical path + die-retry + death loop)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-bot == 'true'
+    runs-on: ubuntu-latest
+    # The ladder's own budget is DELVEWRIGHT_RUN_TIMEOUT_MS below; this bound is
+    # the job's, so a hung compose cannot hold a runner for six hours.
+    timeout-minutes: 60
+    env:
+      # The same standing acceptance as tier 2's: whoever runs this workflow
+      # accepts the Minecraft EULA (https://aka.ms/MinecraftEULA) for that run.
+      EULA: "TRUE"
+      DELVEWRIGHT_RUN_TIMEOUT_MS: "2400000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { key: gallery-bot }
+      - name: build the engine under test
+        run: cargo build --locked -p delvec --bin delvec
+      # The two committed acts that make the gallery's prefab directory, the
+      # same ones the `gallery` job runs.
+      - name: generate the gallery's pieces and skins
+        run: |
+          python3 tools/ci/gallery-prefabs.py \
+            --delvec target/debug/delvec --out gallery-prefabs
+      # The primary point, materialised and built, and refused unless the tree
+      # is the one `gallery/baseline/` recorded — so the bot walks the build the
+      # baseline measured, never a neighbour of it.
+      - name: build the primary point the baseline recorded
+        run: |
+          python3 tools/ci/gallery-build.py --point primary \
+            --delvec target/debug/delvec --prefabs gallery-prefabs
+      - name: the bot walks the gallery
+        run: |
+          bash validation/bot-run.sh --project dw-ci-gallery-bot \
+            --output ./delve-output-gallery-primary \
+            --run-out ./run-out/dw-ci-gallery-bot
+      - name: job summary
+        if: always()
+        run: |
+          {
+            echo "## Gallery bot"
+            echo
+            python3 - <<'PY' 2>/dev/null || echo "(no run report)"
+          import json
+          r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
+          for st in r["stages"]:
+              print(f"- stage `{st['stage']}`: ran {st['ran']}, passed {st['passed']}")
+          print(f"- die-retry binding: `{json.dumps(r.get('die_retry_binding'))}`")
+          print(f"- death-loop binding: `{json.dumps((r.get('death_loop') or {}).get('binding'))}`")
+          PY
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-bot-run
+          path: validation/run-out/dw-ci-gallery-bot/
 
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
