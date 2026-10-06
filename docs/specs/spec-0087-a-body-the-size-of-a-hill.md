@@ -170,7 +170,7 @@ None for the owner. Everything here is an engine-internal surface shaped by rule
 
 ## 9. Light set into the hull, and a solid's own material
 
-**Why.** A walk of the demo level found both bays lit only along the floor, by lanterns that read as set down in a cave, and the upper volume black. The craft rulings are given (cited: the owner's rulings, recorded in `docs/reference/interior-lighting.md` §7): a cave's natural light is embedded in its surface; an artificial-looking source is hidden behind a partial block in the surface; placement is staggered and irregular, never a grid, over walls and vault alike. §4.1 stands — light is placed in the design and the engine only checks it — so the form states the mode and the density, and the sculpt derives where each source goes, as it derives every other block from what the form states.
+**Why.** A walk of the demo level found both bays lit only along the floor, by lanterns that read as set down in a cave, and the upper volume black. The craft rules are recorded in `docs/reference/interior-lighting.md` §7 (cited there per rule): a cave's natural light is embedded in its surface; an artificial-looking source is hidden behind a partial block in the surface; placement is staggered and irregular, never a grid, over walls and vault alike. §4.1 stands — light is placed in the design and the engine only checks it — so the form states the mode and the density, and the sculpt derives where each source goes, as it derives every other block from what the form states.
 
 **The surface (authored).** A `lights[]` entry is either `{at, block}` (placed by hand, as before) or `{block, hull}`, exactly one of `at` and `hull`:
 
@@ -192,7 +192,7 @@ None for the owner. Everything here is an engine-internal surface shaped by rule
 
 ### Acceptance criteria (§9)
 
-Each is checked against the tree at `9992e628` (`feat/organic-giant`), where none holds.
+Each is checked against the tree at `9992e628`, where none holds.
 
 13. **Surface.** `delvec schema --stage sculpt-form` declares `hull` with `within`, `on`, `spacing`, `mode` and `cover`, and `material` on every solid shape; `compiler.md`'s form field table lists them (the existing two-direction test); `check-gallery-coverage.py` binds every new unit in the gallery form or names a refusal probe for it, 0 in neither state.
 14. **Staggered over walls and vault.** A test sculpts the gallery form and asserts sources on both walls and vault, every pair of one entry's surface blocks at least its `spacing` apart, sources at more than two heights, and no single stride on either horizontal axis; the same seed reproduces the sources and another seed moves them.

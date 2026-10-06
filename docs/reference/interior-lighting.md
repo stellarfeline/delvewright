@@ -514,8 +514,8 @@ From §1's `E − 3` rule and §7.2's three-step slot:
 | recessed soul lantern (10) | 7, in front of its slot | 4 more steps |
 
 So a recessed source lights a band about four blocks deep from the surface it is set in, and an
-embedded one about six. Measured on the demo level's bays (engine `feat/organic-giant`, release
-build): a 26-wide, 28-long bay lit only by recessed soul lanterns in its walls and vault left 437
+embedded one about six. Measured on the demo level's bays (a release build of the engine that
+carries this section): a 26-wide, 28-long bay lit only by recessed soul lanterns in its walls and vault left 437
 of its floor cells below light 3 at a spacing of 5; five slender columns cut that to 235, and a
 spacing of 3 on top to 104 — density alone does not reach the middle of a wide room. What did was
 **putting surface into the middle**: one mass of flesh standing in a 19-wide bay, floor to vault,
