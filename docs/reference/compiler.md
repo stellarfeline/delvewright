@@ -8366,9 +8366,9 @@ serde loses no field on a round trip, **and** the fixture on disk is in
 
 ### CI
 
-`python3 tools/ci/check-json-canonical.py`, a step of the
-`rust (fmt, clippy, test)` job (a step, not a job: every job name in `ci.yml` is
-a required status context). It runs `--check` over every JSON document git
+`python3 tools/ci/check-json-canonical.py --delvec target/debug/delvec`, a step of
+the `delvec binary (one build per run)` job, over the binary that job builds (a
+step, not a job: every job name in `ci.yml` is a required status context). It runs `--check` over every JSON document git
 tracks and states its binding count against that population on every run. A
 creator runs the same one command on a fresh clone; `--delvec <path>` skips the
 cargo build when a binary is already to hand.
