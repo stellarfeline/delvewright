@@ -89,19 +89,23 @@ pub const FOG_END_DEFAULT: f64 = 1024.0;
 pub const EXERCISE_CROSSINGS_MAX: u32 = 64;
 
 /// What the periodic span reads fog from (spec-0086 §4.3 × spec-0080): the
-/// biome map at the first tick and each declared atmosphere's
+/// biome map in every configuration the route can stand under — the first
+/// tick's, then after each `set-atmosphere` repaint in route order, accumulated
+/// as spec-0086 §4.6 accumulates block writes — and each declared atmosphere's
 /// `visual/fog_end_distance`. A biome no atmosphere declares reads the
 /// attribute's default.
 pub struct Fog {
-    map: Option<crate::compiler::horizon::BiomeMap>,
+    /// `(label, map)` per configuration; the first is the first tick's.
+    states: Vec<(String, crate::compiler::horizon::BiomeMap)>,
     /// Atmosphere biome id → its fog end, for every atmosphere that sets one.
     ends: BTreeMap<String, f64>,
 }
 
 impl Fog {
     /// The fog of a planned campaign: its biome map ([`crate::compiler::horizon::biome_map`],
-    /// the one authority for which biome a cell stands in) and every declared
-    /// atmosphere's fog end.
+    /// the one authority for which biome a cell stands in), every repaint a
+    /// route step can stand after ([`crate::compiler::horizon::repaint_volume`]),
+    /// and every declared atmosphere's fog end.
     pub fn of(plan: &crate::compiler::plan::Plan<'_>) -> Self {
         let ends = plan
             .campaign
@@ -120,10 +124,41 @@ impl Fog {
                 ))
             })
             .collect();
-        Fog {
-            map: Some(crate::compiler::horizon::biome_map(plan)),
-            ends,
+        let first = crate::compiler::horizon::biome_map(plan);
+        // Every repaint, at the step its root fires (a root with no step of its
+        // own — a trigger, a trap — at step 0, meeting every configuration),
+        // in route order then declaration order (ADR-0006).
+        let mut repaints: Vec<(usize, String, ([i32; 3], [i32; 3]), String)> = Vec::new();
+        crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
+            let Verb::SetAtmosphere { atmosphere, .. } = &e.verb else {
+                return;
+            };
+            let Some((lo, hi)) = crate::compiler::horizon::repaint_volume(plan, e) else {
+                return;
+            };
+            let biome = first.biome_of(atmosphere.as_ref().map(|a| a.as_str()));
+            repaints.push((
+                crate::compiler::plan::root_step(plan, &site.root),
+                format!(
+                    "after the `set-atmosphere` at `{}` (critical-path step {})",
+                    site.path,
+                    crate::compiler::plan::root_step(plan, &site.root)
+                ),
+                crate::compiler::atmosphere::painted_box(lo, hi),
+                biome,
+            ));
+        });
+        repaints.sort_by_key(|r| r.0);
+        let mut states = vec![("at the first tick".to_string(), first)];
+        for (_, label, cells, biome) in repaints {
+            let next = states.last().expect("the first tick's state").1.repainted(
+                cells,
+                &biome,
+                crate::compiler::horizon::PaintSource::Band,
+            );
+            states.push((label, next));
         }
+        Fog { states, ends }
     }
 }
 
@@ -152,10 +187,10 @@ fn fog_end_value(v: &serde_json::Value) -> f64 {
 /// mean of every nearby biome's `visual/fog_end_distance`, each biome weighed by
 /// [`crate::compiler::horizon::camera_mix`] over the painted biome map — the
 /// port [`crate::compiler::horizon::camera_weight`] reads. The one site the
-/// periodic span reads fog at; with no atmosphere painted, every biome reads
-/// the attribute's default.
-pub fn fog_end_at(fog: &Fog, eye: [f64; 3]) -> f64 {
-    let Some(map) = &fog.map else {
+/// periodic span reads fog at, in configuration `state` of [`Fog`]; with no
+/// atmosphere painted, every biome reads the attribute's default.
+pub fn fog_end_at(fog: &Fog, state: usize, eye: [f64; 3]) -> f64 {
+    let Some((_, map)) = fog.states.get(state) else {
         return FOG_END_DEFAULT;
     };
     crate::compiler::horizon::camera_mix(map, eye)
@@ -1730,14 +1765,16 @@ fn check_one(
         }
     }
 
-    // ---- §4.3 the periodic span ----
+    // ---- §4.3 the periodic span, in every fog configuration ----
+    //
+    // The view is judged under the biome map at the first tick and after each
+    // `set-atmosphere` repaint the route can stand after (spec-0086 §4.6 does
+    // the same for block writes): a repaint that clears the fog over the span
+    // opens a view the first tick's fog closed. The span is the union of the
+    // spans every configuration grows, and the visible set the union of what
+    // each configuration's eyes see inside their own fog.
     let eyes = eyes(l, world);
     row.eyes = eyes.len();
-    let fogs: Vec<f64> = eyes.iter().map(|e| fog_end_at(fog, *e)).collect();
-    row.fog = (
-        fogs.iter().copied().fold(f64::INFINITY, f64::min),
-        fogs.iter().copied().fold(0.0, f64::max),
-    );
     if eyes.is_empty() {
         row.open_faces = 1;
         return Err(Failure {
@@ -1751,43 +1788,74 @@ fn check_one(
             ),
         });
     }
-    let span = match grow(l, world, &eyes, &fogs, built) {
-        Ok(s) => s,
-        Err(why) => {
-            row.open_faces = 1;
-            return Err(Failure {
-                code: DW_LOOP_OPEN_VIEW,
-                message: format!(
-                    "loop `{}`: the view out of its landing is open — {why}. A body moved by \
-                     [{}, {}, {}] would see that cell stand {} blocks nearer. Close the view \
-                     inside the span: turn or jog the corridor, or put a door, a grille or a \
-                     pillar across the line — or give the place an atmosphere whose fog end the \
-                     eye reads whole",
-                    l.id,
-                    l.offset[0],
-                    l.offset[1],
-                    l.offset[2],
-                    l.offset[a].abs()
-                ),
-            });
+    let mut fog_lo = f64::INFINITY;
+    let mut fog_hi: f64 = 0.0;
+    let mut span: Option<Span> = None;
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for (k, (state_label, _)) in fog.states.iter().enumerate() {
+        let fogs: Vec<f64> = eyes.iter().map(|e| fog_end_at(fog, k, *e)).collect();
+        for f in &fogs {
+            fog_lo = fog_lo.min(*f);
+            fog_hi = fog_hi.max(*f);
         }
-    };
+        row.fog = (fog_lo, fog_hi);
+        let this = match grow(l, world, &eyes, &fogs, built) {
+            Ok(s) => s,
+            Err(why) => {
+                row.open_faces = 1;
+                let when = if k == 0 {
+                    String::new()
+                } else {
+                    format!(" under the sky {state_label}")
+                };
+                return Err(Failure {
+                    code: DW_LOOP_OPEN_VIEW,
+                    message: format!(
+                        "loop `{}`: the view out of its landing is open{when} — {why}. A body \
+                         moved by [{}, {}, {}] would see that cell stand {} blocks nearer. Close \
+                         the view inside the span: turn or jog the corridor, or put a door, a \
+                         grille or a pillar across the line — or give the place an atmosphere \
+                         whose fog end the eye reads whole in every configuration the route \
+                         stands under",
+                        l.id,
+                        l.offset[0],
+                        l.offset[1],
+                        l.offset[2],
+                        l.offset[a].abs()
+                    ),
+                });
+            }
+        };
+        for x in this.b.0[0]..=this.b.1[0] {
+            for y in this.b.0[1]..=this.b.1[1] {
+                for z in this.b.0[2]..=this.b.1[2] {
+                    let c = [x, y, z];
+                    if sight(world, &eyes, &fogs, c).0 == Sight::Seen {
+                        seen.insert(c);
+                    }
+                }
+            }
+        }
+        span = Some(match span {
+            None => this,
+            Some(prev) => Span {
+                b: (
+                    std::array::from_fn(|i| prev.b.0[i].min(this.b.0[i])),
+                    std::array::from_fn(|i| prev.b.1[i].max(this.b.1[i])),
+                ),
+                steps: prev.steps.max(this.steps),
+                closed_geometry: prev.closed_geometry.max(this.closed_geometry),
+                closed_fog: prev.closed_fog.max(this.closed_fog),
+            },
+        });
+    }
+    let span = span.expect("the first tick's configuration is always judged");
     row.span = Some(span.b);
     row.span_cells = box_cells(span.b);
     row.steps = span.steps;
     row.closed_geometry = span.closed_geometry;
     row.closed_fog = span.closed_fog;
-    let mut visible: Vec<[i32; 3]> = Vec::new();
-    for x in span.b.0[0]..=span.b.1[0] {
-        for y in span.b.0[1]..=span.b.1[1] {
-            for z in span.b.0[2]..=span.b.1[2] {
-                let c = [x, y, z];
-                if sight(world, &eyes, &fogs, c).0 == Sight::Seen {
-                    visible.push(c);
-                }
-            }
-        }
-    }
+    let visible: Vec<[i32; 3]> = seen.into_iter().collect();
     row.visible = visible.len();
 
     // ---- §4.6 bodies ----
