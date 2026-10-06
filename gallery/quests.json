@@ -784,7 +784,9 @@
               }
             },
             {
-              "time": "dusk",
+              "time": {
+                "sun": "high"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -853,6 +855,11 @@
                 "anchor": "anchor/pocket"
               },
               "type": "move-npc"
+            },
+            {
+              "atmosphere": "atmosphere/frost-hall",
+              "place": "area/hall",
+              "type": "set-atmosphere"
             }
           ],
           "obj/take-the-emeralds": [
@@ -2069,7 +2076,9 @@
               "type": "despawn-actor"
             },
             {
-              "time": "dawn",
+              "time": {
+                "sun": "setting"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -2088,7 +2097,9 @@
               }
             },
             {
-              "time": "night",
+              "time": {
+                "moon": "below"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -2107,7 +2118,10 @@
               }
             },
             {
-              "time": "midnight",
+              "time": {
+                "phase": "waxing-crescent",
+                "sun": "just-set"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -3012,6 +3026,18 @@
                 }
               ]
             }
+          },
+          {
+            "atmosphere": "atmosphere/still-air",
+            "region": {
+              "anchor": "anchor/east-bay",
+              "extent": [
+                3,
+                3,
+                3
+              ]
+            },
+            "type": "set-atmosphere"
           }
         ],
         "forbids_flags": [

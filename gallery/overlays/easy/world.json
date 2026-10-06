@@ -3,6 +3,7 @@
   "content": {
     "areas": [
       {
+        "atmosphere": "atmosphere/frost-hall",
         "id": "area/hall",
         "lighting": {
           "fixture": "lantern",
@@ -26,6 +27,83 @@
         "prefab_pool": "pool/gallery-annex"
       }
     ],
+    "atmospheres": [
+      {
+        "attributes": {
+          "audio/ambient_sounds": {
+            "additions": {
+              "sound": "minecraft:ambient.basalt_deltas.additions",
+              "tick_chance": 0.0111
+            },
+            "loop": "minecraft:ambient.basalt_deltas.loop",
+            "mood": {
+              "block_search_extent": 8,
+              "offset": 2.0,
+              "sound": "minecraft:ambient.cave",
+              "tick_delay": 6000
+            }
+          },
+          "audio/background_music": {
+            "default": {
+              "max_delay": 24000,
+              "min_delay": 12000,
+              "replace_current_music": false,
+              "sound": "minecraft:music.overworld.frozen_peaks"
+            }
+          },
+          "audio/firefly_bush_sounds": false,
+          "audio/music_volume": 0.6,
+          "visual/ambient_particles": [
+            {
+              "particle": {
+                "type": "minecraft:white_ash"
+              },
+              "probability": 0.01
+            }
+          ],
+          "visual/cloud_color": "#e0f0f4ff",
+          "visual/cloud_fog_end_distance": 128.0,
+          "visual/cloud_height": 160.0,
+          "visual/default_dripstone_particle": {
+            "type": "minecraft:dripping_dripstone_water"
+          },
+          "visual/fog_color": "#c8d4e0",
+          "visual/fog_end_distance": {
+            "argument": 0.6,
+            "modifier": "multiply"
+          },
+          "visual/fog_start_distance": 8.0,
+          "visual/sky_color": "#9fb8d8",
+          "visual/sky_fog_end_distance": 96.0,
+          "visual/sky_light_color": "#d0e0ff",
+          "visual/sky_light_factor": 0.9,
+          "visual/star_brightness": 0.2,
+          "visual/water_fog_color": "#1e3550",
+          "visual/water_fog_end_distance": 32.0,
+          "visual/water_fog_start_distance": -4.0
+        },
+        "climate": {
+          "downfall": 0.8,
+          "temperature": 0.05
+        },
+        "id": "atmosphere/frost-hall",
+        "precipitation": "snow",
+        "tint": {
+          "dry_foliage": "#a09080",
+          "foliage": "#7a9a90",
+          "grass": "#8fa8a0",
+          "water": "#3a5a80"
+        }
+      },
+      {
+        "attributes": {
+          "visual/fog_end_distance": 26.0,
+          "visual/sky_color": "#3b4a1e"
+        },
+        "id": "atmosphere/still-air",
+        "precipitation": "none"
+      }
+    ],
     "boundary": {
       "margin": 16,
       "message": "The hall ends here."
@@ -40,7 +118,10 @@
     "seed": 20260819,
     "target_minutes": 5,
     "theme": "A lit stone hall divided by a barred wall.",
-    "time": "day",
+    "time": {
+      "moon": "just-risen",
+      "phase": "new-moon"
+    },
     "title": "The Gallery",
     "weather": "clear"
   },

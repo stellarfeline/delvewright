@@ -177,10 +177,16 @@ fn all_functions(out: &BuildOutput) -> String {
 }
 
 /// A two-quest stage-4 plan: the hello-world finale,
-/// plus a second quest whose `mandatory` this arm varies. The second quest
-/// depends on nothing and nothing depends on it, so when it is declared
-/// optional it is legally off the finale's closure (spec-0051 §4).
+/// plus a second quest whose `mandatory` this arm varies. Declared optional, the
+/// second quest depends on nothing and nothing depends on it, so it is legally
+/// off the finale's closure (spec-0051 §4). Declared mandatory, the finale
+/// depends on it, so the exported path plays it — its objective stands on the
+/// near side of the door, so it can be played before the door opens. A mandatory
+/// quest the finale
+/// does not depend on is off the path the proof walks, and its bundles are
+/// unforced there exactly like an optional one's (`plan::firing_of`).
 fn plan_with_second_quest(mandatory: bool) -> String {
+    let finale_deps = if mandatory { r#"["quest/side"]"# } else { "[]" };
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
@@ -190,8 +196,8 @@ fn plan_with_second_quest(mandatory: bool) -> String {
     "finale": "quest/open-the-door",
     "quests": [
       {{ "id": "quest/open-the-door", "goal": "Get the Keeper to open the door and leave the keep.",
-         "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 }},
-      {{ "id": "quest/side", "goal": "Look at the doorstep.",
+         "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": {finale_deps}, "mandatory": true, "act": 1 }},
+      {{ "id": "quest/side", "goal": "Look at the doorway from the Keeper's stand.",
          "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": {mandatory}, "act": 1 }}
     ]
   }}
@@ -200,7 +206,8 @@ fn plan_with_second_quest(mandatory: bool) -> String {
 }
 
 /// The same two-quest campaign, with `LAY_THE_FLOOR` hung on the SECOND quest's
-/// `on_complete`. Only the stage-4 `mandatory` differs between the two calls.
+/// `on_complete`. Only stage 4 differs between the two calls: the second quest's
+/// `mandatory`, and the finale's dependency on it that puts it on the path.
 fn parse_two_quest(mandatory: bool) -> Campaign {
     let quests = format!(
         r#"{{
@@ -226,7 +233,7 @@ fn parse_two_quest(mandatory: bool) -> Campaign {
         "id": "quest/side",
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
-          {{ "type": "reach-anchor", "id": "obj/doorstep", "anchor": "anchor/doorstep", "radius": 2 }}
+          {{ "type": "reach-anchor", "id": "obj/look-at-the-doorway", "anchor": "anchor/keeper-stand", "radius": 2 }}
         ],
         "on_complete": [ {LAY_THE_FLOOR} ]
       }}
@@ -254,10 +261,10 @@ fn parse_two_quest(mandatory: bool) -> Campaign {
 
 /// spec-0051 §8.6 — **the skippable-root class reaches optional quests.**
 ///
-/// One declaration varied, nothing else. A fill hung on an optional quest's
+/// One stage-4 quest varied, nothing else. A fill hung on an optional quest's
 /// `on_complete` is a fill the party may never cause, so it seals and lays no
-/// footing; the same fill on the same box hung on a MANDATORY quest is forced
-/// and carries the route.
+/// footing; the same fill on the same box hung on a MANDATORY quest the finale
+/// depends on is forced and carries the route.
 ///
 /// The red arm is the one only this rule could produce. Before spec-0051
 /// `EffectRoot::QuestComplete` was hard-coded forced, so this campaign BUILT —
@@ -286,7 +293,8 @@ fn an_optional_quests_fill_lays_no_footing_the_forced_path_may_stand_on() {
         ),
     }
 
-    // The identical fill, the identical box, one word changed in stage 4.
+    // The identical fill, the identical box; in stage 4 the quest is mandatory and
+    // the finale depends on it, so the exported path plays it.
     try_build(&parse_two_quest(true), &dir).expect(
         "the same fill hung on a MANDATORY quest is forced and must carry the route — \
          if this fails, the red arm above proved nothing about optionality",

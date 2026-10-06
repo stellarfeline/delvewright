@@ -342,3 +342,253 @@ fn a_campaign_without_branch_only_crossings_gets_an_empty_overlay() {
         );
     }
 }
+
+/// A branch proof credits only what its own path fires. The variant drops the
+/// bolt branch's own `open-gate` (the flee-gated one on `obj/decide`), so the
+/// door to `anchor/exit` opens only at `obj/watch` — a hold-branch objective the
+/// bolt path never performs. The bolt branch must then fail its walk to
+/// `anchor/exit` with `DW0317` (a gate nothing forced opens), because nothing on
+/// its path opens the door; a bundle whose objective is absent from a path is
+/// never forced on that path.
+#[test]
+fn a_branch_cannot_cross_a_door_only_another_branch_opens() {
+    let tmp = TempCampaign::new("hold-only-door");
+    tmp.patch("quests", |q| {
+        let bundle = quest(q, "quest/decide")["on_objective_complete"]["obj/decide"]
+            .as_array_mut()
+            .unwrap();
+        let before = bundle.len();
+        bundle.retain(|e| e["type"] != "open-gate");
+        assert_eq!(
+            before - bundle.len(),
+            1,
+            "fixture drift: obj/decide must carry exactly one open-gate"
+        );
+    });
+
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
+            assert!(
+                message.starts_with("branch `branch/bolt`: "),
+                "the diagnostic must name the branch that cannot walk: {message}"
+            );
+            assert!(
+                message.contains("`anchor/door`")
+                    && message.contains("no firing the party is forced to make ever opens it")
+                    && message.contains("a beat of a branch this path does not take"),
+                "the diagnostic must name the door and why nothing opens it: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => {
+            panic!("expected DW0317: the bolt branch crosses a door only the hold branch opens")
+        }
+    }
+}
+
+/// A path proof credits only the lines its own flag state fires. The variant
+/// drops the hold branch's own `open-gate` (on `obj/watch`), so the only opening
+/// of the door left is the one on `obj/decide` guarded `when: requires_flags
+/// [flag/flee]` — an objective the hold path DOES play, under a guard that never
+/// holds on it. The hold path must then fail its walk out through the door with
+/// `DW0317`: a guarded effect is forced only where the path satisfies its guard.
+#[test]
+fn a_path_cannot_cross_a_door_opened_only_under_another_branchs_flag() {
+    let tmp = TempCampaign::new("flee-guarded-door");
+    tmp.patch("quests", |q| {
+        let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
+            .as_array_mut()
+            .unwrap();
+        let before = bundle.len();
+        bundle.retain(|e| e["type"] != "open-gate");
+        assert_eq!(
+            before - bundle.len(),
+            1,
+            "fixture drift: obj/watch must carry exactly one open-gate"
+        );
+        let decide = &quest(q, "quest/decide")["on_objective_complete"]["obj/decide"];
+        assert!(
+            decide
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["type"] == "open-gate"
+                    && e["when"]["requires_flags"] == json!(["flag/flee"])),
+            "fixture drift: obj/decide must carry the flee-guarded open-gate"
+        );
+    });
+
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("`anchor/door`")
+                    && message.contains("no firing the party is forced to make ever opens it")
+                    && message.contains("a line whose gate does not hold where this path plays it"),
+                "the diagnostic must name the door and why nothing opens it: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => panic!(
+            "expected DW0317: the hold path crosses a door opened only under the bolt branch's flag"
+        ),
+    }
+}
+
+/// A line whose gate holds only on a value no ordered walk can date is played by
+/// the replay and never forced. The hold path's own `open-gate` (on `obj/watch`)
+/// is gated `state/tally at-least 0` — true from the declared initial value.
+/// Control: with nothing else writing the datum the walk dates it, the line is
+/// forced, and the campaign builds. Variant: the campaign's `on_death` also
+/// writes it, so its value at `obj/watch` is not a function of the path; the
+/// opening is then not credited and the hold path's walk out is `DW0317` —
+/// unless a line earlier in the same bundle pins the value, which no undated
+/// write can interrupt.
+#[test]
+fn a_door_opened_behind_an_undatable_gate_is_not_credited() {
+    let tally = |tmp: &TempCampaign, on_death: bool| {
+        tmp.patch("quests", |q| {
+            q["content"]["state"] = json!([{
+                "id": "state/tally",
+                "initial": 0,
+                "scope": "party",
+                "note": "A count the watch keeps; only its datability is under test."
+            }]);
+            let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
+                .as_array_mut()
+                .unwrap();
+            let gate = bundle
+                .iter_mut()
+                .find(|e| e["type"] == "open-gate")
+                .expect("fixture drift: obj/watch must carry the hold branch's open-gate");
+            gate["when"] = json!({
+                "requires_state": [{ "state": "state/tally", "op": "at-least", "value": 0 }]
+            });
+            if on_death {
+                q["content"]["on_death"] =
+                    json!([{ "type": "add-state", "state": "state/tally", "amount": 1 }]);
+            }
+        });
+    };
+
+    let control = TempCampaign::new("datable-gate");
+    tally(&control, false);
+    try_build_campaign(control.path()).unwrap_or_else(|e| {
+        panic!("a gate the walk can date and that holds must carry the route: {e:?}")
+    });
+
+    // The same undatable datum, pinned one line earlier in the same bundle: the
+    // two lines run in one tick, so nothing undated can land between them and
+    // the gate is decided open. The opening is credited and the campaign builds.
+    let pinned = TempCampaign::new("pinned-gate");
+    tally(&pinned, true);
+    pinned.patch("quests", |q| {
+        let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
+            .as_array_mut()
+            .unwrap();
+        let at = bundle
+            .iter()
+            .position(|e| e["type"] == "open-gate")
+            .unwrap();
+        bundle.insert(
+            at,
+            json!({ "type": "set-state", "state": "state/tally", "value": 0 }),
+        );
+    });
+    try_build_campaign(pinned.path()).unwrap_or_else(|e| {
+        panic!("a value pinned earlier in the same bundle decides the gate: {e:?}")
+    });
+
+    let tmp = TempCampaign::new("undatable-gate");
+    tally(&tmp, true);
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("`anchor/door`"),
+                "the diagnostic must name the door: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => panic!("expected DW0317: the door opens behind a gate no ordered walk can decide"),
+    }
+}
+
+/// A flag only an environment trigger sets is set on a path only once the path
+/// performs that trigger. The hold path's own `open-gate` (on `obj/watch`) is
+/// guarded `requires_flags [flag/warded]`, and the only producer of
+/// `flag/warded` is a `use` trigger on the spawn stone that opens no way and
+/// that no objective reads — so the path never performs it. Nothing the path
+/// fires opens the door, and the walk out is `DW0317`.
+///
+/// Control: `obj/watch` itself reads `flag/warded`, so the path owes the act and
+/// performs the trigger in front of it; the flag is then held where the opening
+/// fires, and the campaign builds.
+#[test]
+fn a_door_opened_behind_a_flag_only_an_unperformed_trigger_sets_is_not_credited() {
+    let control = TempCampaign::new("ambient-flag-gate-performed");
+    ward_the_door(&control);
+    control.patch("quests", |q| {
+        let watch = &mut quest(q, "quest/hold")["objectives"][0];
+        assert_eq!(watch["id"], "obj/watch", "fixture drift");
+        watch["requires_flags"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("flag/warded"));
+    });
+    let out = try_build_campaign(control.path())
+        .unwrap_or_else(|e| panic!("a trigger the path performs sets its flag: {e:?}"));
+    let path = json_at(&out, "critical-path.json");
+    assert!(
+        path["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["trigger"] == "trigger/ward-the-door"),
+        "the control must actually perform the trigger: {path:#}"
+    );
+
+    let tmp = TempCampaign::new("ambient-flag-gate");
+    ward_the_door(&tmp);
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("`anchor/door`")
+                    && message.contains("a line whose gate does not hold where this path plays it"),
+                "the diagnostic must name the door and why nothing opens it: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0317, got {other:?}"),
+        Ok(_) => panic!(
+            "expected DW0317: the door opens behind a flag only a trigger the path never \
+             performs sets"
+        ),
+    }
+}
+
+/// Guard the hold path's own `open-gate` on `flag/warded`, and give the flag one
+/// producer: a `use` trigger on the spawn stone that opens no way.
+fn ward_the_door(tmp: &TempCampaign) {
+    tmp.patch("quests", |q| {
+        let bundle = quest(q, "quest/hold")["on_objective_complete"]["obj/watch"]
+            .as_array_mut()
+            .unwrap();
+        let gate = bundle
+            .iter_mut()
+            .find(|e| e["type"] == "open-gate")
+            .expect("fixture drift: obj/watch must carry the hold branch's open-gate");
+        gate["when"] = json!({ "requires_flags": ["flag/warded"] });
+        let content = q["content"].as_object_mut().unwrap();
+        let triggers = content
+            .entry("triggers".to_string())
+            .or_insert_with(|| json!([]));
+        triggers.as_array_mut().unwrap().push(json!({
+            "id": "trigger/ward-the-door",
+            "at": "spawn",
+            "on": { "on": "use" },
+            "effects": [ { "type": "set-flag", "flag": "flag/warded" } ]
+        }));
+    });
+}

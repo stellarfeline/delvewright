@@ -178,6 +178,9 @@ pub fn validate_campaign_with(
     // and `DW0496` do and needs the campaign's `design/` directory beside it.
     // No-op for a campaign that ships no `design.json`.
     crate::design::check(c, &mut d);
+    // spec-0081: the shape of every celestial time the documents state
+    // (`DW0931`). Empty for a campaign of keywords.
+    crate::celestial::check(c, &mut d);
 
     d
 }
@@ -1012,6 +1015,9 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
             chk!(pool, "world", format!("/content/areas/{i}/prefab_pool"));
         }
     }
+    for (i, a) in c.world.content.atmospheres.iter().enumerate() {
+        chk!(a.id, "world", format!("/content/atmospheres/{i}/id"));
+    }
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
         chk!(npc.id, "npcs", format!("/content/npcs/{i}/id"));
     }
@@ -1253,6 +1259,88 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     }
+
+    // spec-0080: an atmosphere is named by a place for its first tick and by a
+    // `set-atmosphere` for a repaint, and a repaint's `place` names an area or
+    // a site-plan box. Each is the plain unresolved-reference shape.
+    let atmosphere_ids: BTreeSet<&str> = c
+        .world
+        .content
+        .atmospheres
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+    let atmosphere_remedy = |id: &str| {
+        format!(
+            "unknown atmosphere `{id}` — declare it in `world.atmospheres[]` or correct the \
+             reference"
+        )
+    };
+    for (i, a) in c.world.content.areas.iter().enumerate() {
+        if let Some(id) = &a.atmosphere {
+            dangling(
+                d,
+                atmosphere_ids.contains(id.as_str()),
+                "world",
+                format!("/content/areas/{i}/atmosphere"),
+                atmosphere_remedy(id.as_str()),
+            );
+        }
+    }
+    let mut place_ids: BTreeSet<&str> = c
+        .world
+        .content
+        .areas
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+    if let Some(sp) = &c.site_plan {
+        for (i, b) in sp.content.boxes.iter().enumerate() {
+            place_ids.insert(b.node.as_str());
+            if let Some(id) = &b.atmosphere {
+                dangling(
+                    d,
+                    atmosphere_ids.contains(id.as_str()),
+                    "site-plan",
+                    format!("/content/boxes/{i}/atmosphere"),
+                    atmosphere_remedy(id.as_str()),
+                );
+            }
+        }
+    }
+    crate::stages::for_each_campaign_effect(c, &mut |path, site, e| {
+        let crate::stages::Verb::SetAtmosphere {
+            atmosphere, place, ..
+        } = &e.verb
+        else {
+            return;
+        };
+        let stage = match site {
+            crate::stages::EffectSite::DialogueRespawn { .. } => "dialogue",
+            _ => "quests",
+        };
+        if let Some(id) = atmosphere {
+            dangling(
+                d,
+                atmosphere_ids.contains(id.as_str()),
+                stage,
+                format!("{path}/atmosphere"),
+                atmosphere_remedy(id.as_str()),
+            );
+        }
+        if let Some(place) = place {
+            dangling(
+                d,
+                place_ids.contains(place.as_str()),
+                stage,
+                format!("{path}/place"),
+                format!(
+                    "`set-atmosphere` repaints unknown place `{place}` — name an `area/…` from \
+                     `world.areas[]` or a site-plan box's `node/…`"
+                ),
+            );
+        }
+    });
 
     for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
         dangling(

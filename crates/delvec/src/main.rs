@@ -837,6 +837,12 @@ fn validate_loaded(
             // (exit 1) — no-op for a campaign that uses neither surface.
             diags.extend(delvec::compiler::atmos::check_sounds(&campaign));
             diags.extend(delvec::compiler::atmos::check_art(&campaign, &sidecars));
+            // spec-0080: a campaign's atmospheres and its repaints, refused at
+            // the document they are written in — an attribute the pinned game
+            // does not accept here (DW0928), a repaint naming neither or both of
+            // its volumes (DW0929), an atmosphere declared against itself or
+            // against nothing (DW0930). No-op for a campaign that declares none.
+            diags.extend(delvec::compiler::atmosphere::check(&campaign));
             // On-screen narrate text that overruns the title/subtitle/art width
             // budget (DW0330). Advisory tier — see `textfit` for why this warns
             // rather than rejects. Runs over the English source and every
@@ -1038,6 +1044,9 @@ fn validate_loaded(
                 examined.push(dbind.line());
                 diags.extend(dd);
             }
+            // spec-0081 §5.5: every time value the campaign states, as the clock
+            // it resolves to — printed on every run, zeroes included.
+            examined.extend(delvec::compiler::clock::binding_lines(&campaign));
             print_diags(&diags, json);
             report_binding_notes(&campaign, &examined);
             Ok(Validated {
