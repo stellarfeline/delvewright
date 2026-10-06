@@ -38,7 +38,7 @@ order a player would:
 
 | Where | What it holds |
 | --- | --- |
-| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and two skies (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall |
+| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall |
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
@@ -148,7 +148,12 @@ holding them at once.
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
 | `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |
 | `a-sky-no-picture-shows` | `DW0890` | `validate` | moving the midnight row to `night`, leaving an hour the world reaches that no approved picture shows |
-| `a-sky-that-restates-its-picture` | `DW0721` | `build` | stating on `hall-exterior` the `noon`+`clear` sky of the very row it answers, in place of the `dusk`+`clear` it states |
+| `a-sky-that-restates-its-picture` | `DW0721` | `build` | stating on `hall-exterior` the `{"sun": "high"}`+`clear` sky of the very row it answers, in place of the sun just risen it states |
+| `a-moon-named-under-the-noon-sun` | `DW0931` | `validate` | naming the moon's phase on the counter's `{"sun": "high"}` cut, where the moon stands at the nadir |
+| `a-night-whose-moon-nobody-named` | `DW0931` | `validate` | deleting the phase from the world's new moon just risen, which the party sees from the first tick |
+| `a-sky-with-two-bodies` | `DW0931` | `validate` | naming both the moon just risen and the sun setting as the world's one time |
+| `a-phase-that-restates-the-world` | `DW0931` | `validate` | copying the world's `new-moon` onto the Curator's sunrise cut, which already keeps the world's moon |
+| `a-ninth-phase` | `DW0100` | `validate` | naming the world's moon `blood-moon`, a phase the pinned game does not have |
 | `a-walk-plane-the-void-still-owes` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on a `void` horizon |
 | `nothing-places-the-whole` | `DW0883` | `validate` | deleting the entry box's pinned `min`, so nothing places the site plan |
 | `two-faces-at-one-place` | `DW0880` | `build` | giving two recovery stakes that share a place two different marker items |

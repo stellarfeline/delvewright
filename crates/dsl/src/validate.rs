@@ -178,6 +178,9 @@ pub fn validate_campaign_with(
     // and `DW0496` do and needs the campaign's `design/` directory beside it.
     // No-op for a campaign that ships no `design.json`.
     crate::design::check(c, &mut d);
+    // spec-0081: the shape of every celestial time the documents state
+    // (`DW0931`). Empty for a campaign of keywords.
+    crate::celestial::check(c, &mut d);
 
     d
 }

@@ -24,6 +24,7 @@
 //! - [`cellset`]: copy-on-write cell sets and maps for the nav model, a bitset when dense, and a flood's visited set.
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
+//! - [`clock`]: the clock binding line — every time value the campaign states, as the clock it resolves to (spec-0081 §5.5).
 //! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
@@ -106,6 +107,7 @@ pub mod cast;
 pub mod cellset;
 pub mod claims;
 pub mod clearance;
+pub mod clock;
 pub mod cohabit;
 pub mod combat;
 pub mod commands;

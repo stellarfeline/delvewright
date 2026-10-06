@@ -196,9 +196,10 @@ pub(crate) struct RenderPlan {
 /// delve is played at (`crate::compiler::render_plan`'s `sky_fact`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Sky {
-    /// The keyword the author wrote (`dusk`) — for messages, never for the sun.
+    /// The author's spelling (`"dusk"`, or a celestial object) — for messages,
+    /// never for the sun.
     #[allow(dead_code)]
-    pub time: String,
+    pub time: serde_json::Value,
     /// The vanilla `daytime` tick value that keyword sets. **This** is what the
     /// sun is a function of, so a state vanilla does not name is worth as much
     /// as one it does.
@@ -478,43 +479,33 @@ pub(crate) fn round6(v: f64) -> f64 {
 
 /// **The sun of a Minecraft `daytime` tick value**, in Chunky's convention.
 ///
-/// Two published facts meet here and neither is invented.
+/// *Minecraft.* The sun the party sees is the pinned day timeline's
+/// `visual/sun_angle` track — two keyframes at tick 6000 (360 then 0) eased by
+/// `cubic_bezier [0.362, 0.241, 0.638, 0.759]` — which the client's
+/// `SkyRenderer` reads from the attribute system (spec-0081 §2.3). It is read
+/// here from the vendored file through [`delvewright_dsl::celestial`], the same
+/// curve the position table of a celestial time is derived from, so a frame and
+/// the table can never disagree about where the sun stands. The body travels a
+/// great circle through the zenith in the east–west plane, so the angle `α`
+/// from the zenith is an altitude of `90° − α` on the western half of the arc
+/// and `α − 270°` on the eastern half — piecewise linear, no trigonometry.
 ///
-/// *Minecraft.* The sun and moon "appear to rotate around the player, appearing
-/// directly overhead at midday and midnight, respectively", and rise in the east
-/// — so the track is a great circle through the zenith in the east–west plane,
-/// and one angle fixes the whole position. minecraft.wiki (*Daylight cycle*,
-/// §Sky angle) publishes that angle for a `daytime` tick `t`, with 0° at noon:
-///
-/// ```text
-/// α = (1 − cos(π · mod₁((t − 6000)/24000)) + mod₄((t − 6000)/6000)) · 60°
-/// ```
-///
-/// Cross-checked against the game's own `DimensionType.timeOfDay`
-/// (`α = 360° · (2·d + (1 − cos πd)/2)/3`, `d = frac(t/24000 − 0.25)`), which is
-/// a different expression of the same curve: the two agree to six decimals at
-/// every one of the six hours [`crate::compiler::view::scene`] can be handed
-/// (`the_two_published_sun_angle_formulas_agree`). The curve is deliberately not
-/// linear in `t` — that is the term that makes vanilla's sunrise and sunset
-/// linger near the horizon — so a linear interpolation would be a third, wrong
-/// answer.
+/// minecraft.wiki's closed form (*Daylight cycle*, §Sky angle), which this
+/// function used before the timeline was vendored, is kept as the second
+/// method: it agrees with the pinned track to 0.056°
+/// (`the_two_published_sun_angle_formulas_agree`).
 ///
 /// *Chunky.* The direction toward the sun is
 /// `(cos az · cos alt, sin alt, sin az · cos alt)`, verified against the pinned
 /// core's `Sun.initSun` bytecode; nothing clamps `altitude`, so a sun below the
 /// horizon is expressed as a negative one and the scene renders as the night it
-/// is.
-///
-/// Composing them: rotating the zenith by `α` toward the west gives a sun
-/// direction of `(−sin α, cos α, 0)`, hence `altitude = asin(cos α)` and an
-/// azimuth of exactly east or exactly west. At noon and midnight the sun is at
-/// the zenith or the nadir and the azimuth means nothing; east is emitted, so
-/// the bytes are still a function of the hour alone.
+/// is. The azimuth is exactly east or exactly west; at noon and midnight the sun
+/// is at the zenith or the nadir and the azimuth means nothing, so east is
+/// emitted and the bytes are still a function of the hour alone.
 pub fn sun_at(daytime_ticks: i64) -> ChunkySun {
-    let alpha = sky_angle_rad(daytime_ticks);
-    let altitude = alpha.cos().clamp(-1.0, 1.0).asin();
-    // sin α > 0 is the half of the day after noon: the sun has gone west.
-    let azimuth = if alpha.sin() > 0.0 {
+    let t = daytime_ticks as f64;
+    let altitude = delvewright_dsl::celestial::sun_altitude_degrees(t).to_radians();
+    let azimuth = if delvewright_dsl::celestial::sun_is_west(t) {
         std::f64::consts::PI
     } else {
         0.0
@@ -528,9 +519,17 @@ pub fn sun_at(daytime_ticks: i64) -> ChunkySun {
     }
 }
 
-/// minecraft.wiki's sky angle for a `daytime` tick value, in radians, 0 at noon
-/// and growing westward. See [`sun_at`] for the citation and the cross-check.
+/// The pinned track's sun angle for a `daytime` tick value, in radians, 0 at
+/// noon and growing westward. See [`sun_at`].
+#[cfg(test)]
 fn sky_angle_rad(daytime_ticks: i64) -> f64 {
+    delvewright_dsl::celestial::sun_angle_degrees(daytime_ticks as f64).to_radians()
+}
+
+/// minecraft.wiki's closed-form sky angle, in radians — the second method
+/// [`sun_at`]'s track is measured against.
+#[cfg(test)]
+fn closed_form_sky_angle_rad(daytime_ticks: i64) -> f64 {
     let t = daytime_ticks as f64 - 6000.0;
     let turn = (t / 24000.0).rem_euclid(1.0);
     let quarters = (t / 6000.0).rem_euclid(4.0);
@@ -580,7 +579,10 @@ pub(crate) fn plan_sky(plan: &RenderPlan) -> Result<SceneSky, Diagnostic> {
                  weather: rebuild the delve with this engine — `delvec build` writes the key \
                  from the campaign's declared `weather` — rather than rendering a plan an older \
                  one wrote",
-                sky.time,
+                sky.time
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| sky.time.to_string()),
                 env!("CARGO_PKG_VERSION")
             ),
         )
@@ -1293,13 +1295,13 @@ mod tests {
     const OCEAN_FIXTURE: &[u8] =
         include_bytes!("../../../tests/fixtures/view/render-plan-ocean.json");
 
-    /// **The two published formulas for Minecraft's sky angle agree**, at every
-    /// hour the DSL can state — minecraft.wiki's (`sky_angle_rad`, which
-    /// [`sun_at`] uses) and the game's own `DimensionType.timeOfDay` curve,
-    /// written out here independently. A measurement that is a deliverable is
-    /// cross-checked by a second method sharing no configuration with the
-    /// first, and the sun's position is exactly that: it decides what every
-    /// review frame looks like.
+    /// **The pinned track and the published closed form agree** (spec-0081
+    /// §2.3) — the vendored `sun_angle` track ([`sky_angle_rad`], which
+    /// [`sun_at`] reads) against minecraft.wiki's closed form and the game's
+    /// own pre-timeline `DimensionType.timeOfDay`, both written out here. A
+    /// measurement that is a deliverable is cross-checked by a second method
+    /// sharing no configuration with the first, and the sun's position is
+    /// exactly that: it decides what every review frame looks like.
     #[test]
     fn the_two_published_sun_angle_formulas_agree() {
         fn time_of_day_curve(ticks: i64) -> f64 {
@@ -1309,13 +1311,40 @@ mod tests {
             let e = 0.5 - (d * std::f64::consts::PI).cos() / 2.0;
             (d * 2.0 + e) / 3.0 * std::f64::consts::TAU
         }
+        let tau = std::f64::consts::TAU;
+        let wrap = |x: f64| {
+            let d = x.rem_euclid(tau);
+            d.min(tau - d)
+        };
+        // The two closed forms are one curve.
+        for t in 0..24_000 {
+            let a = closed_form_sky_angle_rad(t);
+            let b = time_of_day_curve(t);
+            assert!(wrap(a - b) < 1e-9, "tick {t}: wiki {a} vs game {b}");
+        }
+        // The pinned track against the closed form: every tick within 0.06°,
+        // and the worst tick is where the measurement says it is.
+        let mut worst = (0.0f64, 0);
+        for t in 0..24_000 {
+            let d = wrap(sky_angle_rad(t) - closed_form_sky_angle_rad(t)).to_degrees();
+            assert!(
+                d < 0.06,
+                "tick {t}: the track and the closed form differ by {d}°"
+            );
+            if d > worst.0 {
+                worst = (d, t);
+            }
+        }
+        assert!(
+            (worst.0 - 0.056).abs() < 0.0005 && (worst.1 - 11457).abs() <= 1,
+            "the worst disagreement moved: {worst:?}"
+        );
         let hours = [1000, 6000, 12000, 13000, 18000, 23000];
         for t in hours {
-            let a = sky_angle_rad(t).rem_euclid(std::f64::consts::TAU);
-            let b = time_of_day_curve(t).rem_euclid(std::f64::consts::TAU);
-            assert!((a - b).abs() < 1e-9, "hour {t}: wiki {a} vs game {b}");
+            let d = wrap(sky_angle_rad(t) - closed_form_sky_angle_rad(t)).to_degrees();
+            assert!(d <= 0.056, "hour {t}: {d}°");
         }
-        assert_eq!(hours.len(), 6, "every WorldTime the DSL states was checked");
+        assert_eq!(hours.len(), 6, "every keyword hour was checked");
     }
 
     /// The four facts a reader can check against the game without running it:
@@ -1517,10 +1546,10 @@ mod tests {
             );
             assert_eq!(daylight_class(&sun), class, "{}", t.keyword());
         }
-        // The dusk altitude the showcase record read off an emitted scene, to
-        // the four places it states (0.2169 rad).
+        // The dusk altitude an emitted scene carries on the pinned track, to
+        // four places (0.2159 rad, 12.37°; spec-0081 §2.3).
         let dusk = sun_at(T::Dusk.daytime_ticks()).altitude;
-        assert_eq!((dusk * 1e4).round() / 1e4, 0.2169, "{dusk}");
+        assert_eq!((dusk * 1e4).round() / 1e4, 0.2159, "{dusk}");
         let mut compared = 0;
         for class in DaylightClass::ALL {
             let rain = overcast_cell(class, WorldWeather::Rain).unwrap();

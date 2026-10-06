@@ -917,6 +917,27 @@ impl LightField {
 // Sky attenuation constants (per declared time × weather)
 // ---------------------------------------------------------------------------
 
+/// **The sky light this engine judges at a `daytime` tick** (spec-0081 §5.1): 15
+/// on the day plateau of the pinned `gameplay/sky_light_level` track (where it
+/// reads exactly 1.0), and 4 — the night plateau — everywhere else. A twilight is
+/// judged as night: the conservative direction, and the rule the six keywords
+/// already followed (`day`/`noon` 15; `dusk`, `night`, `midnight`, `dawn` 4).
+/// Reading the track's own value would raise `dusk` to 14 and `night`/`dawn` to
+/// 8 — a loosening of `DW0210` this engine does not make.
+pub fn sky_base_judged(daytime: i64) -> u8 {
+    if delvewright_dsl::celestial::sky_light_factor(daytime) >= 1.0 {
+        15
+    } else {
+        4
+    }
+}
+
+/// The game's own sky light at a `daytime` tick: 15 × the pinned track,
+/// rounded — printed beside the judged value so a creator sees the margin.
+pub fn sky_light_game(daytime: i64) -> u8 {
+    (15.0 * delvewright_dsl::celestial::sky_light_factor(daytime)).round() as u8
+}
+
 /// Effective sky light at a fully sky-open cell for a `(time, weather)` state.
 ///
 /// **1.21.11 baseline verified live** (delvewright itzg VANILLA, 2026-07-31): at a
@@ -941,15 +962,7 @@ impl LightField {
 /// hostile spawns (≤7). Weather darkening scales with the daylight factor (≈0 at
 /// night), so night/midnight stay at their 4 floor regardless of weather.
 pub fn effective_sky(time: WorldTime, weather: WorldWeather) -> u8 {
-    let base: u8 = match time {
-        WorldTime::Noon | WorldTime::Day => 15,
-        // Dusk (12000) is the sun going down and dawn (23000) is still before
-        // sunrise, so both are held at the vanilla night floor. The sky at those two
-        // instants is in fact brighter than midnight, so this is the CONSERVATIVE
-        // reading — it can only make the `dark`-needs-mitigation proof stricter,
-        // never weaker.
-        WorldTime::Dusk | WorldTime::Night | WorldTime::Midnight | WorldTime::Dawn => 4,
-    };
+    let base = sky_base_judged(time.daytime_ticks());
     if base <= 4 {
         // Night floor: weather darkening is negligible at night.
         return base;
@@ -988,24 +1001,26 @@ pub fn darkest_effective_sky(c: &Campaign) -> u8 {
 /// reader of the campaign's clock, so the two proofs can never disagree about
 /// what hours a delve reaches.
 ///
-/// Deterministic (ADR-0006): collected through `BTreeSet`s keyed on a stable
-/// discriminant, so the returned order is the declaration order of the enums and
-/// never hash order.
+/// Times are collected **by clock** (spec-0081 §3.3): two spellings of one
+/// clock are one state, kept under the first spelling the walk meets (the
+/// world's, then the effect roots in their fixed order, then dialogue).
+/// Deterministic (ADR-0006): ordered by clock, and weathers by their enum's
+/// declaration order, never hash order.
 pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather>) {
-    let mut times: BTreeSet<u8> = BTreeSet::new(); // discriminant via token order
+    let (clocks, weathers) = reachable_clocks(c);
+    (clocks.into_iter().map(|(_, t)| t).collect(), weathers)
+}
+
+/// [`reachable_time_weather`] with each time's clock beside it, in clock order.
+pub fn reachable_clocks(
+    c: &Campaign,
+) -> (Vec<(delvewright_dsl::Clock, WorldTime)>, Vec<WorldWeather>) {
+    use delvewright_dsl::{Clock, TimeSite};
+    let world = c.world.content.time;
+    let mut times: BTreeMap<Clock, WorldTime> = BTreeMap::new();
     let mut weathers: BTreeSet<u8> = BTreeSet::new();
-    // Exhaustive both ways (no wildcard arm): adding a `WorldTime` variant fails to
-    // compile until it is given a discriminant HERE and a case in `time_of` below,
-    // so the reachable-state scan can never silently skip a new time state.
-    let add_t = |t: WorldTime, set: &mut BTreeSet<u8>| {
-        set.insert(match t {
-            WorldTime::Day => 0,
-            WorldTime::Noon => 1,
-            WorldTime::Dusk => 2,
-            WorldTime::Night => 3,
-            WorldTime::Midnight => 4,
-            WorldTime::Dawn => 5,
-        });
+    let mut add_t = |t: WorldTime, site: TimeSite| {
+        times.entry(t.clock(site, world)).or_insert(t);
     };
     let add_w = |w: WorldWeather, set: &mut BTreeSet<u8>| {
         set.insert(match w {
@@ -1014,7 +1029,7 @@ pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather
             WorldWeather::Thunder => 2,
         });
     };
-    add_t(c.world.content.time, &mut times);
+    add_t(world, TimeSite::Sky);
     add_w(c.world.content.weather, &mut weathers);
     // Quest effects — every root, every depth. This scan hand-listed three of the
     // five roots AND was shallow, so a `set-time` inside a `sequence` step or an
@@ -1023,7 +1038,7 @@ pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather
     // `DW0496`), which is why the shallow half mattered as much as the root half.
     delvewright_dsl::for_each_campaign_effect(c, &mut |_path, _site, e| {
         if let Some(t) = e.set_time() {
-            add_t(t, &mut times);
+            add_t(t, TimeSite::Cut);
         }
         if let Some(w) = e.set_weather() {
             add_w(w, &mut weathers);
@@ -1039,7 +1054,7 @@ pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather
             for opt in &node.options {
                 for e in &opt.effects {
                     if let Some(t) = e.set_time() {
-                        add_t(t, &mut times);
+                        add_t(t, TimeSite::Cut);
                     }
                     if let Some(w) = e.set_weather() {
                         add_w(w, &mut weathers);
@@ -1048,21 +1063,13 @@ pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather
             }
         }
     }
-    let time_of = |d: u8| match d {
-        0 => WorldTime::Day,
-        1 => WorldTime::Noon,
-        2 => WorldTime::Dusk,
-        3 => WorldTime::Night,
-        4 => WorldTime::Midnight,
-        _ => WorldTime::Dawn,
-    };
     let weather_of = |d: u8| match d {
         0 => WorldWeather::Clear,
         1 => WorldWeather::Rain,
         _ => WorldWeather::Thunder,
     };
     (
-        times.into_iter().map(time_of).collect(),
+        times.into_iter().collect(),
         weathers.into_iter().map(weather_of).collect(),
     )
 }

@@ -129,7 +129,9 @@
   `kill`-adjudicated fight (or an actor the party can hurt) whose walkable ground
   reaches open sky, with an empty head slot, is a build error naming the sunlit
   cell, whenever some hour the fight can stand in burns. `dusk` burns: the pinned
-  game keeps undead burning until tick 12542. Declared `rain` or `thunder`
+  game keeps undead burning until tick 12542. A celestial time is read by the
+  same tick: `{"sun": "setting"}`, `{"sun": "just-set"}` and `{"sun": "rising"}`
+  do not burn; `{"sun": "high"}` does. Declared `rain` or `thunder`
   falls on the play area and protects every body standing in it. Roofing the
   arena clears it too. One species the helmet does not save — a
   phantom burns through it — so an open-air phantom fight has to be roofed or
@@ -149,3 +151,19 @@
   sky, backdrop — is part of the composition; a campaign of enclosed boxes wastes
   it. When an enclosed beat is necessary, prefer routing the player back into the
   open between beats over chaining interiors.
+
+## The hour, spelled
+
+- **A keyword night is a full moon.** `night`, `midnight` and `dawn` are vanilla's
+  hours on day 0, and day 0's moon is full. If the brief says *a new moon* or *no
+  moon*, a keyword cannot say it: write the celestial form
+  (`{"moon": "just-risen", "phase": "new-moon"}`), and check the world's `clock:`
+  line names the phase the brief asked for.
+- **A phase where nobody can see the moon is refused, and one the party can see is
+  owed**, both at `delvec validate`. Under a high sun, a sun just risen, or a moon below or just
+  set, drop `phase`; under any other position on `world.time`, state it.
+- **A cut keeps the moon.** A `set-time` with no `phase` — a keyword included —
+  stays on the world's day, so a new-moon delve that cuts to `noon` emits
+  `time set 102000`, not `time set noon`. A design row that states a keyword is
+  day 0: against a celestial world, write its row in the celestial form too, or
+  `DW0890` reads the two as hours that differ by their day.

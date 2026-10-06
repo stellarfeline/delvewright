@@ -291,6 +291,7 @@ sites = [
     "docs/experiments/m2-jigsaw-seed-stability/Dockerfile",
     "tools/spike-area-effect-arrow/run.sh",
     "tools/spike-block-settling/run.sh",
+    "tools/spike-celestial-time/run.sh",
     "tools/spike-death-teleport/run.sh",
     "tools/spike-fluid-plane/run.sh",
     "tools/spike-jump-arc/run.sh",
