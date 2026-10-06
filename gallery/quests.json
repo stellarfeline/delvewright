@@ -221,6 +221,9 @@
         "initial": "idle",
         "rig": "rig/gallery-sentinel",
         "strikes": {
+          "aim": {
+            "facings": 4
+          },
           "pattern": [
             {
               "hold": 20,
@@ -247,6 +250,7 @@
                 }
               ],
               "strike": "strike",
+              "ticks_per_frame": 3,
               "windup": "windup"
             }
           ],

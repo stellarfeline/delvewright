@@ -426,7 +426,7 @@ impl Transform {
     /// This transform turned by `a` radians about the vertical axis through the
     /// mark (right-handed about `+y`: `+z` turns toward `+x`) — what
     /// [`Self::faced`] does for a quarter turn, for any angle. An aimed
-    /// assembly's facings are turns of this kind (spec-0082 §5.5).
+    /// assembly's facings are turns of this kind (spec-0082 §5.7).
     pub fn turned(&self, a: f64) -> Transform {
         if a == 0.0 {
             return self.clone();
@@ -642,10 +642,12 @@ pub fn describe(id: &str, rig: &Rig, facing: Facing) -> String {
     for (name, clip) in &rig.clips {
         let last = last_frame_footprint(clip, facing);
         out.push_str(&format!(
-            "clip {name}: {} frame(s) every {} tick(s), {} tick(s) from switch to last frame, {}\n",
+            "clip {name}: {} frame(s) every {} tick(s), {} tick(s) from switch to last frame \
+             applied, {} until it is drawn whole (a blow from it lands then), {}\n",
             clip.frames.len(),
             clip.ticks_per_frame,
             clip.length_ticks(),
+            clip.landing_ticks(),
             if clip.looping {
                 "loops"
             } else {

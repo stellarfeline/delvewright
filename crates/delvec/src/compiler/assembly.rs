@@ -120,7 +120,7 @@ pub fn floor_footprint(f: [i32; 3]) -> ([f64; 3], [f64; 3]) {
 }
 
 /// The widening, in degrees, of each facing's sector when the compiler asks
-/// which facings a player in the arming region can draw (spec-0082 §5.5): the
+/// which facings a player in the arming region can draw (spec-0082 §5.7): the
 /// run-time choice reads the bearing as a whole number of `1/facings` degrees,
 /// so a bearing within this of a sector's edge may fall either side, and both
 /// facings are proved.
@@ -375,7 +375,7 @@ impl Subject<'_> {
 }
 
 // ---------------------------------------------------------------------------
-// Facings (spec-0082 §5.5)
+// Facings (spec-0082 §5.7)
 // ---------------------------------------------------------------------------
 
 /// The turn, in radians about `+y` (`+z` toward `+x`), of facing `k` of `n`
@@ -425,7 +425,7 @@ fn bearing(dx: f64, dz: f64) -> f64 {
     dx.atan2(dz)
 }
 
-/// **The facings a player in the arming region can draw** (spec-0082 §5.5):
+/// **The facings a player in the arming region can draw** (spec-0082 §5.7):
 /// those of the `n` facings (spaced from `base`, the declared facing's turn)
 /// whose sector — half a step either side, widened by
 /// [`AIM_SECTOR_MARGIN_DEG`] — meets the bearings, from the mark cell's
@@ -483,7 +483,7 @@ pub fn facing_for(mark: [i32; 3], cell: [i32; 3], n: u32, base: f64) -> u32 {
     k.rem_euclid(i64::from(n)) as u32
 }
 
-/// **A landing box turned to a facing** (spec-0082 §5.5): every cell whose
+/// **A landing box turned to a facing** (spec-0082 §5.7): every cell whose
 /// centre, turned back by `turn` about the vertical axis through the mark
 /// cell's centre, lies in the box; the box's own cells at turn 0. Every
 /// course of the box keeps its height.
@@ -594,9 +594,9 @@ pub fn caught_cells(
 }
 
 /// **What a landing and its limb disagree on** — the one rule of the strike's
-/// correspondence, both ways (spec-0082 §5.4 shape 2, settled by the owner's
-/// ruling that an attack's hit area corresponds as closely as it can to what
-/// its animation shows).
+/// correspondence, both ways (spec-0082 §5.4 shape 2, settled in §11: a
+/// strike's hit area corresponds as closely as it can to what its animation
+/// shows).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Correspondence {
     /// Standable cells of the landing region the strike clip's last frame does
@@ -618,12 +618,17 @@ pub struct Correspondence {
     pub comes_down: Vec<[i32; 3]>,
     /// The standable cells the last frame lands on.
     pub struck: Vec<[i32; 3]>,
+    /// Whether anything comes down within the blow's catch: some cell the
+    /// last frame lands on, and the first frame did not, is caught. A strike
+    /// clip that brings nothing down onto the landing — every part over it
+    /// stood there before the strike began — is no blow at all.
+    pub delivered: bool,
 }
 
 impl Correspondence {
     /// Whether the two agree.
     pub fn holds(&self) -> bool {
-        self.unstruck.is_empty() && self.uncaught.is_empty()
+        self.unstruck.is_empty() && self.uncaught.is_empty() && self.delivered
     }
 }
 
@@ -640,6 +645,7 @@ pub fn correspondence(
     let landing: BTreeSet<[i32; 3]> = region.iter().copied().filter(|c| population(*c)).collect();
     let caught = caught_cells(region, population);
     let comes_down: BTreeSet<[i32; 3]> = struck.difference(before).copied().collect();
+    let delivered = comes_down.iter().any(|c| caught.contains(c));
     Correspondence {
         unstruck: landing.difference(struck).copied().collect(),
         uncaught: comes_down.difference(&caught).copied().collect(),
@@ -647,6 +653,7 @@ pub fn correspondence(
         caught: caught.into_iter().collect(),
         comes_down: comes_down.into_iter().collect(),
         struck: struck.iter().copied().collect(),
+        delivered,
     }
 }
 
@@ -997,6 +1004,26 @@ pub fn judge(
                             } else {
                                 cells_named(&c.struck)
                             }
+                        ),
+                    ));
+                }
+                if c.unstruck.is_empty() && !c.landing.is_empty() && !c.delivered {
+                    out.push(Failure::new(
+                        DW_ASSEMBLY_STRIKE,
+                        format!(
+                            "assembly `{}`'s strike step {} lands a blow ({}){} that nothing \
+                             comes down onto: the strike clip `{}` lands on no cell the blow \
+                             catches that its first frame did not already stand on — what is \
+                             over the landing box when the blow lands was there before the \
+                             strike began, so a player there is hurt by a blow nobody saw \
+                             fall. Choose a strike clip that comes down on the landing box, or \
+                             move the box to where it comes down (`delvec rig describe` prints \
+                             the footprint)",
+                            s.id,
+                            step.index,
+                            l.path,
+                            facing_words(k, n),
+                            step.strike
                         ),
                     ));
                 }
@@ -1375,7 +1402,7 @@ fn spared_cell(population: &BTreeSet<[i32; 3]>, arming: CellBox) -> Option<[i32;
 pub const WITNESS_SLACK_TICKS: u32 = 40;
 
 /// **The critical-path steps that witness each strike pattern** (spec-0082
-/// §5.4, §5.5): per assembly with a pattern, the bot stands on facing 0's
+/// §5.4, §5.7): per assembly with a pattern, the bot stands on facing 0's
 /// stand cell (a landing cell under the limb from which a body draws that
 /// facing) until a blow takes health from it, then on a cell no body in which
 /// the arming region can select, for as long, and is not struck. The window is
@@ -1588,7 +1615,7 @@ pub fn struck_tag(safe: &str) -> String {
     format!("dw_asm_{safe}_struck")
 }
 
-/// **A turned landing region's blow** (spec-0082 §5.5): every player whose
+/// **A turned landing region's blow** (spec-0082 §5.7): every player whose
 /// body meets the region is tagged once — the region as runs of cells along
 /// `x`, each one selector volume — then each tagged player is dealt the blow
 /// once and the tag is cleared.
@@ -2301,6 +2328,31 @@ mod tests {
         assert!(f[0].message.contains("[10, 1, 8]"), "{}", f[0].message);
     }
 
+    /// A blow on a cell a part already stood on, from a strike that brings
+    /// nothing down, is no blow: refused even though the cell is stood on.
+    #[test]
+    fn a_strike_that_brings_nothing_down_is_refused() {
+        let mut r = rig();
+        r.parts.push(r.parts[0].clone());
+        r.parts[1].id = "b".into();
+        for c in r.clips.values_mut() {
+            for f in &mut c.frames {
+                f.push(cube([-0.5, 0.0, -2.5]));
+            }
+        }
+        let mut s = subject(&r, None, Some(([10, 1, 8], [10, 1, 8])));
+        if let Some((_, steps)) = &mut s.strikes {
+            steps[0].strike = "windup";
+        }
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0938"]);
+        assert!(
+            f[0].message.contains("nothing comes down onto"),
+            "{}",
+            f[0].message
+        );
+    }
+
     /// A landing box one cell outside the arming region's keep-out is refused
     /// (shape 1); the same box one cell inside is not refused for it.
     #[test]
@@ -2345,7 +2397,7 @@ mod tests {
         assert_eq!(j.records[0].strike_ticks, 11);
     }
 
-    // ---- aim (spec-0082 §5.5) ----
+    // ---- aim (spec-0082 §5.7) ----
 
     /// Facing k of n is a turn of k/n about +y and a root yaw of -k/n turns.
     #[test]

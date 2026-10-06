@@ -4479,7 +4479,7 @@ pub struct AssemblyStrikes {
     pub while_in: StealthZone,
     /// The steps, in order.
     pub pattern: Vec<StrikeStep>,
-    /// Aim (spec-0082 §5.5). Absent: every blow lands where its `on_land`
+    /// Aim (spec-0082 §5.7). Absent: every blow lands where its `on_land`
     /// boxes say. Present: at the start of every wind-up the assembly turns to
     /// the one of its declared facings nearest the bearing of the nearest
     /// player in `while_in`, and every `damage-players` box in `on_land` turns
@@ -4488,7 +4488,7 @@ pub struct AssemblyStrikes {
     pub aim: Option<StrikeAim>,
 }
 
-/// An aimed strike pattern's facings (spec-0082 §5.5): `facings` turns
+/// An aimed strike pattern's facings (spec-0082 §5.7): `facings` turns
 /// evenly spaced round the vertical axis through the mark, the first being the
 /// assembly's declared `facing`. Every `on_land` box is written for that first
 /// facing; the compiler turns it to each of the others and proves every facing

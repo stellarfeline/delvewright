@@ -175,9 +175,8 @@ derivation the tool printed, never estimated from a picture.
   exactly as a body's mark is.
 - `facing` — the four cardinals (`Facing`), default `south`. **Applied by the
   compiler to every frame** — translation rotated about the mark, rotation
-  composed with the yaw quaternion — so the emitted entities stand at yaw 0
-  and no client fact about how a display's own yaw composes with its
-  transformation is relied on. Step 2 is where that fact is measured (§7).
+  composed with the yaw quaternion — so the emitted entities stand at yaw 0.
+  An aimed strike pattern (§5.7) turns the root at run time from there.
 - `initial` — the clip playing from spawn; `none` spawns the parts at the
   first frame of no clip, i.e. the rig's declared rest pose (`parts[].rest`
   if the rig carries one, else the first frame of its first clip).
@@ -188,9 +187,15 @@ derivation the tool printed, never estimated from a picture.
   repeating from its first step, on every tick on which some player's body is
   in that box, and stops at the end of the step in flight when nobody is.
   Each step: `windup` (a clip name), `hold` (ticks, the pose held after the
-  windup's last frame), `strike` (a clip name), `on_land` (an ordinary effect
-  list, run with the party audience on the tick the strike clip's **last
-  frame is applied**). A step with no `on_land` is a feint and is legal.
+  windup's last frame), `strike` (a clip name), `ticks_per_frame` (optional,
+  1–20: the step's pace, the cadence its wind-up and strike clips play at;
+  absent, each clip's own), `on_land` (an ordinary effect list, run with the
+  party audience on the tick a client has **drawn the strike clip's last
+  frame whole** — one cadence after it is applied, because each keyframe is
+  drawn over one cadence after it is applied). A step with no `on_land` is a
+  feint and is legal. **The wind-up's length is the creator's two knobs**: the
+  wind-up clip's `1 + (frames − 1) × cadence` ticks, then `hold`. `aim`
+  (optional, §5.7) turns the thing to its target at every wind-up.
 
 ### 3.3 The verbs and the trigger kind
 
@@ -280,7 +285,10 @@ nothing here teleports.
   @e[tag=dw_asm_<id>_hit,nbt={attack:{}}] run function <ns>:trig_<trigger>`,
   then `data remove entity @s attack` — the `strike` emission, retargeted.
 - The strike pattern is a per-assembly state machine on the tick, exactly the
-  spike's: idle → windup playing → hold counting → strike playing → land. The
+  spike's: idle → windup playing → hold counting → strike playing → land, the
+  landing one cadence after the strike's last frame is applied (the tick a
+  client has drawn it whole). A step that sets its own pace plays its two
+  clips as emitted clips after the rig's own, at that cadence. The
   landing runs `on_land` through the ordinary effect emitter, so
   `damage-players{in}` is emitted as it is everywhere (`execute as
   @a[<box>,tag=!dw_cutscene] run damage @s <amount> <type>`), and a player in
@@ -301,7 +309,10 @@ is not zero on any axis). Refused at validation (`DW0935`).
 
 For a part's transform, the unit cube's eight corners under scale, rotation
 and translation are the part's box; its cell set is the cells that box
-intersects. A **frame footprint** is the union over parts; a **clip
+overlaps with positive volume, judged exactly (a separating-axis test of the
+oriented box against each cell), never by the box's axis-aligned hull — a
+part on a diagonal meets the cells along it, not the empty corners of its
+hull. A **frame footprint** is the union over parts; a **clip
 footprint** is the union over frames. Pure arithmetic over the rig's numbers,
 deterministic, and the same function `delvec rig describe` prints from.
 
@@ -339,12 +350,37 @@ that is two checks (`DW0938`, one code, two shapes, build tier):
    keep-out of `while_in`. A player who never entered the arming region is
    never struck. (The two regions are the same object class, so this is a box
    containment over two `Plan::zone_box` results.)
-2. **The blow is where the limb is.** Every caught cell of a landing box
-   (keep-out ∩ the standable population, spec-0062's own `P`) has a cell of
-   the strike clip's **last-frame footprint** (§5.2) in its column, at or
-   above its floor and no more than 3 cells above it. The thing the player
-   saw come down is the thing that hurt them; a box the limb never reaches is
-   refused naming the cells.
+2. **The blow's area is the area the limb comes down on, both ways.**
+   Settled (§11): a strike's hit area corresponds as closely as it can to
+   what its animation shows. A standable cell (spec-0062's `P`) is **landed
+   on** when a part of the strike clip's **last frame** (§5.2, judged exactly,
+   part box against box) meets the footprint of a body standing there **in
+   the floor band**: the body's own width (`Body::PLAYER`, 0.6) round the
+   cell's centre, from the floor up one block (`FLOOR_BAND`). One rule, in
+   one place (`compiler::assembly::correspondence`):
+   - **forward** — every standable cell of the landing box is landed on: a
+     blow is never dealt where no limb is seen; and something comes down
+     within the blow's catch — a strike whose last frame lands on no caught
+     cell its first frame did not already stand on brings nothing down, and a
+     limb's base standing on the landing cell is not a blow;
+   - **back** — every standable cell the last frame lands on that the strike
+     clip's **first** frame did not (what the limb was already standing on is
+     not where it came down) lies within the landing box's keep-out
+     (`keep_out_box`): the stated tolerance is that ring, one cell round the
+     box for a player, a body standing there reaching into the box. A long
+     limb's blow is a long area along where it comes down; a one-cell
+     landing under it is refused naming the cells.
+
+   **Loosening, declared.** The keep-out ring round the landing box is no
+   longer required to be under the limb; only the box's own standable cells
+   are. A body caught from the ring reaches into a box cell the limb is on.
+   With the ring required, a limb turned an eighth of a turn and the same
+   limb straight on owed landing ends within a quarter of a block of each
+   other, which no clip can be authored to. **Tightened**: the band is the
+   floor band, not a column from the floor to three cells up (a limb hanging
+   over a body's head counted as reaching it); the footprint is exact, not the
+   hull; and the landing is judged on the frame a client draws when the blow
+   lands, not one cadence before it.
 
 **Not checked, by a standing ruling** [cited — spec-0016 §3: the
 un-telegraphed first-encounter kill is core design vocabulary, and *there is
@@ -367,11 +403,54 @@ a `DW0897` site like every mark.
 ### 5.6 The binding line and the stated cost
 
 Every build prints `assembly binding: A assembl(ies) declared, P part(s), C
-clip(s), H hitbox(es) examined, S strike step(s) checked, R refused` — zeroes
+clip(s), H hitbox(es) examined, S strike step(s) checked over F facing(s), R
+refused` — zeroes
 included, so a green on a campaign with none is read as one — followed by the
 cost the host meets: the total part count and the keyframe writes per tick
 the declared cadences add up to, beside §8 row 7's measured rate. A host is
 never a cap on the capability; the engine states the number.
+
+### 5.7 Aimed strikes
+
+**Authored.** `strikes.aim: { facings: N }` (`N ≥ 1`). The facings are `N`
+turns about the vertical axis through the mark, evenly spaced, the first
+being the declared `facing`.
+
+- **Run time.** At the start of every wind-up the root turns, by `tp`, to the
+  facing nearest the bearing of the nearest player in `while_in` (the root is
+  first turned to face that player with `execute … facing entity`, its yaw
+  read as a whole number of `1/N` degrees, and rounded to a facing with the
+  scoreboard's floor division and non-negative remainder — both measured,
+  §8 row 10). A `tp` of the root turns every riding part by the same change
+  of yaw and leaves each seated with its transformation and interpolation
+  untouched (§8 rows 3, 10); `rotate` would turn the root alone. A display
+  draws its transformation turned by its own yaw: that half is a client fact,
+  confirmed on the demo level. Nothing about where a blow lands is computed
+  at run time: the choice picks among facings the compiler proved, and a
+  pick the compiler did not prove resolves to the proved facing nearest it.
+- **The facings a player can draw.** Those whose sector (half a step either
+  side, widened by `AIM_SECTOR_MARGIN_DEG` = 0.5° for the whole-number
+  reading) meets the bearings, from the mark cell's centre, of every position
+  a body selected by `while_in` can stand at (the box grown by the body's
+  half-width); all of them when the mark lies inside it.
+- **Per facing.** Every `damage-players` box at the top of `on_land` is
+  written for the declared facing and turned with the thing: facing `k`'s
+  landing region is every cell whose centre, turned back by `k/N` of a turn
+  about the mark cell's centre, lies in the box. Every rule of §5.3 and §5.4
+  is judged at every facing a player can draw — the box turned, the limb
+  turned with it — and the blow is dealt to the turned region's players once
+  each (tagged, damaged, untagged). A `damage-players` inside another
+  effect's list in an aimed step cannot be turned and is `DW0938`. Every
+  other effect in `on_land` runs as written.
+- **The bot knows the facing set.** The staging record states, per step and
+  per facing, its root yaw, caught cells, the cells the limb comes down on and
+  a cell to stand on to draw that facing and take its blow; the critical path
+  carries the witness (§10).
+- **Continuous aim is not simpler.** A facing at any angle owes a landing
+  region at any angle; the selector a blow is dealt through is a set of whole
+  cells, so a continuous aim is still a discrete set of regions, only one
+  whose members the compiler cannot enumerate and prove. A declared count is
+  the same mechanism with every member proved.
 
 ## 6. Codes
 
@@ -435,6 +514,7 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 | 7 | **Tick cost** (`tick query`, 100-tick samples after a 6 s window, this workstation, keyframes as one `data merge` per part per frame). | 1 assembly @5 ticks: **6.9 ms** avg (P95 10.8); 1 @1: 8.6 (12.8); 4 @1: 15.3 (20.2); 4 @5: 6.2 (13.4); 10 @5: **9.9** (17.4); 10 @1: 15.7 (24.2); 10 with the animation stopped: 6.8 (9.4). Against the stopped control the ten assemblies cost about **0.3 ms per assembly per tick at a 5-tick cadence and 0.9 ms at every tick**; the server's own idle on this machine is the 6.8. |
 | 8 | **Tracking distance.** One assembly left standing; the bot teleported east along a forceloaded lane and its entity list read after 3 s at each stop; `view-distance=12` (192 blocks) so a cutoff under that is the tracker's. | Seen whole (34 parts, hitbox, root) at 40, 56, 64, 72, 80, 96, 112, 128, 144 and **160** blocks; nothing at **176** and 192. The server stops tracking display and interaction entities for a client between 160 and 176 blocks (10 chunks); the client's own `view_range` cull (§9) is inside that. |
 | 9 | **Stop.** `kill @e[tag=dwa]`, the lane unloaded. | 0 tagged entities on the server; the bot's list held 0 block displays. |
+| 10 | **Aim** (`tools/spike-display-assembly/measure-aim.sh`, its readings in `aim-observations.txt`). A root `item_display` with three riding `block_display`s; a keyframe started (`start_interpolation:0`, `interpolation_duration:10`), then in the next command `execute as <root> at @s run tp @s ~ ~ ~ 90 0`; read at once and 60 ticks later. Then the root turned to face an armour stand 12 south and 12 east with `execute as <root> at @s facing entity <stand> feet run tp @s ~ ~ ~ ~ 0`; `rotate <root> -45 0`; `-7 /= 2`, `-7 %= 8`; `data get … Rotation[0] 8` at yaw −100.7. | After the turn every part reads yaw 90, `Pos` unchanged, still riding (3 passengers), `transformation` and `interpolation_duration` the keyframe's own; the same 60 ticks later. Facing the stand: yaw −0.0000076 (south) and −90 (east), every part with it. `rotate`: the root −45, every part still −90. `-7 /= 2` is −4 and `-7 %= 8` is 1 (floor division, non-negative remainder). Yaw −100.7 scaled by 8 reads −806 (the floor). |
 
 ## 9. Research record
 
@@ -487,10 +567,13 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 - **The probes** (primary plus one edit, refused by the named code): a
   hitbox of width 7 (`DW0936`); a landing box outside
   `while_in` (`DW0938`, shape 1); a landing box under a corner the
-  strike clip never reaches (shape 2); a `play-clip` naming `fly`
-  (`DW0935`); a required
-  `strike-assembly` whose hitbox stands over the hall's pit beyond reach
-  (`DW0937`).
+  strike clip never reaches (shape 2, forward); a one-cell landing under the
+  gallery limb's long blow (shape 2, back); a strike clip whose last frame
+  never comes down to the floor band (shape 2, forward); an aimed pattern
+  whose blow is nested where it cannot be turned (§5.7); a `play-clip` naming
+  `fly` (`DW0935`); a strike step paced at 21 ticks per frame (`DW0935`); a
+  required `strike-assembly` whose hitbox stands over the hall's pit beyond
+  reach (`DW0937`).
 - **The record.** `docs/reference/compiler.md`: the class's surface rows, the
   three verbs' and the trigger kind's emission rows, the four codes, the
   binding line, and the measured rows of §8 that emission depends on (a
@@ -509,7 +592,13 @@ raw readings in `observations.json`, coordinates in `site.json` written by
   on the critical path is N such steps. A strike pattern on the path is
   judged as spec-0023 judges a fight: the machine proves the loop, not the
   win — the bot must reach and strike, and the staging record states the
-  per-strike damage and the caught cells of every landing box.
+  per-strike damage and the caught cells of every landing box. Before the
+  first step that strikes an assembly with a pattern, the path carries two
+  `witness-strike` steps: the bot stands on facing 0's stand cell until a
+  blow takes health (`struck`), then on a walked cell outside the arming
+  region's keep-out for as long and takes none (`spared`); the window is one
+  cycle of every step plus the longest again plus 40 ticks. The record names
+  the assemblies witnessed.
 - **Generated PackTests**, in the family `emit_reseat_undefeated_packtests`
   belongs to: spawn → part count and the root's passenger count; a simulated `attack` record
   written onto the hitbox → the datum moves by one and, at the declared count,
@@ -534,6 +623,9 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 - **Settled, not asked**: a strike's wind-up length and a strike that kills
   an unhurt player in one blow are the creator's, with no refusal and no
   advisory — spec-0016 §3's ruling, applied in §5.4.
+- **Settled: a strike's hit area corresponds as closely as it can to what its
+  animation shows.** A long limb's blow is a long area along where it comes
+  down, not one cell; §5.4 shape 2 holds the correspondence both ways.
 - No ADR; `dsl_version` does not move.
 
 ## 12. Acceptance criteria
@@ -577,12 +669,22 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
    same constant `strand` reads.
 7. **The strike, two shapes, and what is left alone.** A landing box one
    cell outside `while_in`'s keep-out is refused (shape 1) and the same box
-   one cell inside is green; a landing box under a column the strike clip's
-   last frame never reaches is refused naming the cells (shape 2) and the same
-   box under the footprint is green; a step with a one-frame windup, `hold:
-   0` and `amount: 40` builds green with **no** warning row (the perturbation
-   that proves no telegraph or damage rule crept in). Each over
-   `compiler::assembly::judge`, plus one end-to-end build per shape.
+   one cell inside is green; shape 2 both ways: a landing cell the strike
+   clip's last frame never comes down on is refused naming the cells, and so
+   is a slab hung one block and two blocks above the floor (the band a
+   floor-to-three-above column read as reached); a one-cell landing under a
+   five-long slab is refused naming the slab's uncaught ends, the landing
+   along the slab one cell in from its ends is green, and a landing two short
+   of an end is refused for that end alone (the tolerance is the keep-out
+   ring and no more); a part that stood on a cell through the whole strike
+   owes no landing there, the same part arriving there on the last frame
+   does; a step with a one-frame windup, `hold: 0` and `amount: 40` builds
+   green with **no** warning row (the perturbation that proves no telegraph or
+   damage rule crept in), and its landing is timed one cadence after the
+   strike's last frame. Each over `compiler::assembly::judge`, plus one
+   end-to-end build per shape and direction. *Instrument:
+   `compiler::assembly::tests`, `crates/delvec/tests/assembly.rs`,
+   `remedy_reachability.rs` (the widen-the-box and move-the-box moves build).*
 8. **The footprint arithmetic.** A unit test rotates and scales one part and
    asserts its cell set; the same function serves `rig describe` and the
    strike check (one symbol, asserted by call-graph test in the family
@@ -594,8 +696,8 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
 10. **The binding line** of §5.6 is printed on every build; the gallery
     reports `A = 1`, the primary without the element reports zeroes.
 11. **Gallery and probes.** The element of §10 builds green; perturbing a
-    frame translation moves a `data merge` line; the six probes are refused
-    with their named codes; `check-gallery-coverage.py` reports 0 units in
+    frame translation moves a `data merge` line; the ten probes of §10 are
+    refused with their named codes; `check-gallery-coverage.py` reports 0 units in
     neither state.
 12. **Record, skill, demo.** The rows of §10 land in the implementing pull
     request; `check-dw-codes.py`, `check-skill-page.py`,
@@ -606,3 +708,26 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
     rewrites `observations.json` with every row of §8 present and no row
     carrying a rejection text where a reading belongs. *Met — this spec's
     pull request commits the run.*
+14. **Aim.** `strikes.aim.facings` is exported; with 4 facings over an
+    arming region round the mark the judge examines 4 facings, the record
+    lists facings 0–3 each with its yaw and stand cell, and a box turned a
+    quarter turn is the box's cells turned exactly; an arming region on one
+    side draws only the facings whose sector meets it (`[0, 1, 7]` of 8 for a
+    box south of the mark); a refusal at a turned facing names it; a nested
+    blow in an aimed step is `DW0938`; the build emits the bearing read, one
+    `asm_aim_<s>_<k>` per drawn facing (`tp` of the root to its yaw) and one
+    landing function per facing tagging each turned region's players once.
+    The demo level confirms on a client that the parts turn with the root.
+    *Instrument: `compiler::assembly::tests`, `crates/delvec/tests/assembly.rs`;
+    §8 row 10 for the server facts.*
+15. **Pace.** A strike step with `ticks_per_frame: 4` plays its wind-up and
+    strike as emitted clips after the rig's own at cadence 4
+    (`interpolation_duration:4`), the record times its wind-up and landing by
+    it, and 0 and 21 are `DW0935` naming the field. *Instrument:
+    `crates/delvec/tests/assembly.rs`.*
+16. **The witness.** A build with a strike pattern on the critical path
+    carries `witness-strike` `struck` then `spared` before the first strike
+    step; the harness parses both closed and dispatches them, failing loudly
+    without an executor that can watch; on the demo level the bot is struck on
+    the stand cell and spared outside the arming region. *Instrument:
+    `crates/delvec/tests/assembly.rs`, `harness/test/`, the demo's bot run.*

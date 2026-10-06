@@ -1,0 +1,33 @@
+{
+  "code": "DW0938",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/strikes/pattern/0/strike",
+      "value": "hover"
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/strikes/pattern/0/on_land/0/in/extent",
+      "value": [
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/strikes/while_in/extent",
+      "value": [
+        1,
+        0,
+        1
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The sentinel's blow lands on the plinth's one cell, under a hammer that comes down flat on the floor round it. This edit widens the blow and the arming region to the 3 x 3 round the plinth, which `strike`'s slab covers, and makes the step strike with `hover`, a clip whose last frame brings the same slab down only to a block over the floor. Nothing of the statue comes down within a block of the floor on the eight cells round the plinth, yet a body standing on any of them would be hurt. It declares no unit: every field involved is bound by the primary, and what the engine refuses is a blow on a cell the limb never comes down on (shape 2 of the strike rule, forward) — a limb hanging over a body has not landed on it. The refusal names the cells and where the last frame does come down."
+}

@@ -567,18 +567,34 @@ this section is what they are *for* and the traps in each.
     needs.
   - *Where a blow lands is checked; when and how hard is yours.* `strikes
     {while_in, pattern: [{windup, hold, strike, on_land}]}` winds up, holds,
-    strikes, and runs `on_land` on the tick the strike clip's last frame shows —
-    usually a `damage-players` with an `in` box, and a sound. Two things are
-    refused, both so the danger stays visible: **a blow that reaches a player who
-    never stepped into the arming region** (keep every landing box inside
-    `while_in`), and **a blow that lands where the limb does not come down**
-    (declare the landing box under the strike clip's last-frame cells that
-    rig describe prints). How long the wind-up is, how long it holds and how
-    much it hurts — down to no warning and a blow that kills — are your
-    judgement; nothing refuses them. For reference, a single expected stimulus
-    takes a person about a quarter of a second to answer (roughly five ticks of
-    clear movement), and a wind-up that barely moves at first gives no warning at
-    all however long it is.
+    strikes, and runs `on_land` the moment the strike clip's last frame has
+    finished drawing — usually a `damage-players` with an `in` box, and a sound.
+    Three things are refused, all so the danger stays visible: **a blow that
+    reaches a player who never stepped into the arming region** (keep every
+    landing box inside `while_in`); **a blow on a cell the limb does not come
+    down on** — within a block of the floor, where the player stands; a limb
+    hanging over their head has not landed on them; and **a limb that comes
+    down beyond the blow's area** — the area is what the animation shows, so a
+    long limb's blow is a long box along where it lies, not one cell, with one
+    cell of give round the box. Declare the box along the cells where the
+    strike clip's last frame lies on the floor (rig describe prints them).
+  - *The wind-up's length is two numbers, both yours*: the wind-up clip's
+    frames times its cadence (rig describe prints the ticks), then `hold`.
+    `ticks_per_frame` on a step plays its wind-up and strike at a pace you
+    choose (1–20 ticks a keyframe) instead of the clip's own. How long the
+    wind-up is, how long it holds and how much it hurts — down to no warning and
+    a blow that kills — are your judgement; nothing refuses them. For
+    reference, a single expected stimulus takes a person about a quarter of a
+    second to answer (roughly five ticks of clear movement), and a wind-up that
+    barely moves at first gives no warning at all however long it is.
+  - *It can turn to strike.* `"aim": {"facings": 8}` in `strikes` turns the
+    thing, at every wind-up, to whichever of 8 (or your number of) evenly spaced
+    facings points nearest the closest player in `while_in`, and the blow's box
+    turns with it. Write the box for the assembly's own `facing`; every facing a
+    player in `while_in` can make it take is checked the same way, so keep
+    `while_in` to the side the thing is meant to strike, and keep the
+    `damage-players` at the top of `on_land` (one inside another effect cannot
+    be turned and is refused).
 
 ## Sealed things, and pacing
 

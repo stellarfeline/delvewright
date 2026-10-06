@@ -3204,7 +3204,8 @@ fn main() {
 /// a head and a stone hammer. `idle` loops a sway, `windup` lifts the hammer
 /// overhead, `strike` brings it down flat on the floor round the plinth — a
 /// 3 × 3 slab, the footprint the hall's landing box is declared under — and
-/// `retract` sinks the whole statue below the floor.
+/// `retract` sinks the whole statue below the floor. `sweep` and `hover` are
+/// strikes only the probes play.
 ///
 /// Written through `delvewright_dsl::rig::Rig`, the type the engine parses, so
 /// a field this generator could misspell is a field the compiler would refuse
@@ -3272,6 +3273,32 @@ fn write_rig(out: &Path) {
             ticks_per_frame: 5,
             looping: false,
             frames: vec![with_hammer(-3.0, t([0.55, -2.8, -0.15], [0.3, 1.4, 0.3]))],
+        },
+    );
+    // Two strikes no step of the primary plays, for the probes that refuse a
+    // blow and its limb disagreeing (spec-0082 §5.4 shape 2): `sweep` lays the
+    // hammer out long in front of the statue, five cells of floor under it;
+    // `hover` brings the 3 x 3 slab down only to a block over the floor.
+    clips.insert(
+        "sweep".to_string(),
+        Clip {
+            ticks_per_frame: 2,
+            looping: false,
+            frames: vec![
+                with_hammer(0.0, t([0.55, 1.0, 0.2], [0.3, 0.3, 1.4])),
+                with_hammer(0.0, t([-0.5, 0.0, 0.5], [1.0, 0.3, 5.0])),
+            ],
+        },
+    );
+    clips.insert(
+        "hover".to_string(),
+        Clip {
+            ticks_per_frame: 2,
+            looping: false,
+            frames: vec![
+                with_hammer(0.0, t([0.55, 1.0, 0.2], [0.3, 0.3, 1.4])),
+                with_hammer(0.0, t([-1.5, 1.2, -1.5], [3.0, 0.3, 3.0])),
+            ],
         },
     );
     let part = |id: &str, block: &str| RigPart {

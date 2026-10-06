@@ -269,7 +269,7 @@ export interface TriggerStep {
 }
 
 /**
- * Witness an assembly's blow (spec-0082 §5.4, §5.5): stand on `pos` for up to
+ * Witness an assembly's blow (spec-0082 §5.4, §5.7): stand on `pos` for up to
  * `windowTicks` and see what the strike does to the body there. `struck`: the
  * cell is under the limb in the landing region of facing `facing` (of
  * `facingCount`), the facing a body standing there draws, so a blow must take
