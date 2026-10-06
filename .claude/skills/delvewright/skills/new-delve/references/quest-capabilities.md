@@ -237,6 +237,38 @@ this section is what they are *for* and the traps in each.
   quest graph puts *before* it (`DW0548`). A way nothing opens is fine and stays
   shut: a door that never opens is content. Every staged way's fate is listed in
   `validation/ways.json` after a build.
+- **A corridor can go on until the story ends it.** `loops[] {id,
+  region{anchor,extent}, to{anchor,offset?}, requires_flags?, forbids_flags?,
+  requires_state?, counts?, on_cross?}` declares a slab across a corridor; every
+  body that crosses it is moved by the fixed offset from the slab's anchor to
+  `to`, back to an identical earlier bay, with its facing and speed kept. The
+  slab is thin along one axis and the offset longer than it (`DW0945`). The
+  loop holds while its gate holds and stands down for good when it stops; it
+  can count its own crossings (`counts`, a `party` datum) and change the hall
+  on a given crossing (`on_cross`, each effect keyed by its own `when`). The
+  engine refuses any seam a player could see. **Mandatory, for every endless
+  corridor:**
+  1. **Jog or turn the hall inside one period.** The view from the landing
+     must close inside the repeating section: a bend, a jog, a door, a grille
+     or a pillar across the line of sight, and a roof over it. A straight
+     hall with an open end is refused (`DW0947`); every bay the eye can reach
+     must be the same blocks and the same light as the bay one period back
+     (`DW0946`), so put a lamp in every bay, not round a corner.
+  2. **Release it with party state.** The gate is a flag or a `party` datum the
+     party is forced to reach — a flag an objective sets, or the loop's own
+     `counts` reaching a number (`requires_state {op: at-most}`). A `player`
+     datum, a gate with no term, and a `teleport` in `on_cross` are refused
+     (`DW0949`); a release the forced path never performs is a stranded route
+     (`DW0311`, naming the loop and the open term), and a loop the forced
+     route never meets while it holds is the advisory `DW0950`.
+  3. **Let the party see where they are trying to go.** A loop works best when
+     the goal is in sight and out of reach: the door at the far end through a
+     grille, the light past the bars, the room glimpsed across the jog. The
+     view must still close inside one period (step 1), so frame the goal
+     through the thing that closes it.
+  Keep NPCs, waves, trigger bodies and clickable things out of the repeating
+  section (`DW0948`, `DW0542`). The bot walks the loop as a `loop` step and
+  fails if a crossing is not moved by exactly the offset.
 - **A prefab's gate is SHUT until the campaign opens it.** A gate anchor's
   region holds whatever the prefab authors there — `hello-room`'s doorway is
   iron bars, the island's cave mouth is air — and the compiler measures which. If
@@ -349,6 +381,29 @@ this section is what they are *for* and the traps in each.
   sit inside one (`DW0511`). Put the volume where a player can SEE what will
   happen before they commit to it; a killing box nobody can read is 初见杀 with
   no lesson in it.
+- **A fatal drop reads as fatal from its edge.** Put a hazard sign at the bottom
+  of every drop a `lethal_volumes[]` entry makes deadly — spikes of pointed
+  dripstone, lava, a pool that is plainly not water — and nothing down there
+  that suggests a way on: no lit floor, no ledge, no doorway or opening at the
+  bottom. A pit that looks like the next room is a pit the player jumps into.
+- **A hazard that arrives is the same volume with a `when`.** `when` is the
+  ordinary gate (`requires_flags`, `forbids_flags`, `requires_state` on a
+  `party` datum): absent, the volume kills from world load; present, it kills
+  while the gate holds. `when: {}` and a `player`-scoped term are refused
+  (`DW0953`). **Mandatory:** a body standing where the volume wakes dies in that
+  same tick, so the floor a body can stand on before the beat must already show
+  the danger, or be unreachable. Roof the volume with the floor until the beat
+  that arms it and open the roof in that same beat (`set-flag` beside a
+  `clear-region` over the lid); keep the volume at the pit's bottom, three
+  blocks under the rim. Never fire the flag later to dodge the check (`DW0891`,
+  `DW0510`). A staged volume the forced route never meets live is the advisory
+  `DW0954`: a hazard the party need never arm is a design, and the bot will not
+  exercise it.
+- **A blow lands where its animation shows it land.** Every attack you author —
+  a `damage-players` with an `in` box beside a falling block, a swinging thing
+  or a limb — hurts exactly the cells the player watches it strike, no wider
+  and no narrower: a long limb's blow is a long box along where it comes down,
+  and a blow with nothing visible arriving is not authored.
 - **A volume kills your own waves too, so seat no wave where it can walk into
   one.** A member that can get into a lethal volume by walking, stepping or
   jumping up one block (a floor lantern is a step), climbing onto a wall or curb
