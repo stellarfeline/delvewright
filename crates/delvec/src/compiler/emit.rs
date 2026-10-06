@@ -427,6 +427,23 @@ pub fn build_with_warnings(
         });
     }
 
+    // **Which biome stands where** (spec-0080 §4): the map every reader asks,
+    // its build-tier refusals (`DW0929`: two carried places whose 4-cells meet
+    // under different atmospheres; a repaint past the map's extent), and the
+    // binding line — printed on every build, a campaign with no atmosphere
+    // included, because a zero is a measurement.
+    let biome_map = {
+        let map = crate::compiler::horizon::biome_map(plan);
+        crate::compiler::horizon::check_paints(plan, &map).map_err(|e| {
+            BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            }
+        })?;
+        eprintln!("{}", atmosphere_binding(plan, &map).line());
+        map
+    };
+
     // The templates are the size their metadata says they are (DW0803). Bound
     // here, before any model is built out of them, because every later pass —
     // the forceload span, the mating check, massing, the whole assembled world
@@ -585,6 +602,31 @@ pub fn build_with_warnings(
             assembled.gate_seals.clone(),
         ))
         .with_extra_solid(&relight.extra_solid);
+
+    // What the camera reads in each carried place (spec-0080 §2.2): its fog
+    // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so
+    // a place too small for its paint shows a sky mixed with the one outside
+    // it. A box's eyes stand over its floor; an area's are the party's walk
+    // inside its bounds, read off this world.
+    if biome_map.places().next().is_some() {
+        let walk = world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan));
+        for p in biome_map.places() {
+            let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
+                continue;
+            };
+            if let Some((whole, eyes, best, worst)) =
+                crate::compiler::horizon::standing_reach(plan, &biome_map, place, &p.biome, &walk)
+            {
+                eprintln!(
+                    "atmosphere reach: `{place}` — {whole} of {eyes} standing eye(s) read `{}` \
+                     whole; the best reads {:.1}% of it, the worst {:.1}%",
+                    p.biome,
+                    best * 100.0,
+                    worst * 100.0
+                );
+            }
+        }
+    }
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     //
@@ -2224,6 +2266,41 @@ pub fn build_with_warnings(
     if let Some(dp) = &death_plan {
         put_json(&mut out, "validation/death-plan.json", dp);
     }
+    // spec-0080 §5.2: what each repaint must tell a connected client — the
+    // chunks of its painted 4-cell box, and the completion marker of the bundle
+    // that fires it — so the bot tier asserts the `chunk_biomes` packets and
+    // the absent reload. A campaign with no `set-atmosphere` emits no file.
+    if let Some(rp) = atmosphere_repaint_plan(plan) {
+        put_json(&mut out, "validation/atmosphere-repaints.json", &rp);
+    }
+    // spec-0080 §5.3: which biome each carried place stands in at the first
+    // tick, as the biome map states it, so a reader that draws a scene inside
+    // a place (`delvec view palette --build … --place …`) tints it under that
+    // place's own biome rather than a guess. Emitted only when a place carries
+    // an atmosphere.
+    {
+        let map = crate::compiler::horizon::biome_map(plan);
+        let places: Vec<serde_json::Value> = map
+            .places()
+            .filter_map(|p| match &p.source {
+                crate::compiler::horizon::PaintSource::Place { place, atmosphere } => Some(json!({
+                    "place": place,
+                    "atmosphere": atmosphere,
+                    "biome": p.biome,
+                    "precipitates": p.precipitates,
+                    "cells": [p.cells.0, p.cells.1],
+                })),
+                crate::compiler::horizon::PaintSource::Band => None,
+            })
+            .collect();
+        if !places.is_empty() {
+            put_json(
+                &mut out,
+                "validation/biome-map.json",
+                &json!({ "ground": map.ground.id, "places": places }),
+            );
+        }
+    }
     // **The design gate's ledger** (`crate::compiler::design`, spec-0061 §6):
     // how many approved reference images the record holds, how many image files
     // stand under `design/`, which skies the rows state and which skies this
@@ -3543,6 +3620,17 @@ fn emit_functions(
             min[0], min[2], max[0], max[2],
         ));
     }
+    // An area's claim (spec-0080 §3.2, `horizon::area_claim`): the columns its
+    // sky is painted over, its 4-cells grown by the blend reach. Held for the
+    // whole session like the pieces, because a `set-atmosphere` with `place`
+    // repaints the same cells mid-play. Empty for a campaign no area paint
+    // reaches → setup byte-identical.
+    let claims = crate::compiler::horizon::claimed_areas(plan);
+    for (min, max) in &claims {
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            min[0], min[2], max[0], max[2],
+        ));
+    }
     // Stage-7 edit writes may land outside the piece bboxes (a leaning canopy,
     // a fragment stamped beside a piece) — forceload each batch's write AABB
     // too, or the `world_edits` setblocks would silently fail on unloaded
@@ -3570,6 +3658,22 @@ fn emit_functions(
             chunk_span(min, max)
         })
         .collect();
+    // The claim chunks no piece covers, each with a cell inside both the chunk
+    // and the claim: `place_verify` waits for them as it waits for the edit
+    // chunks below, so the bootstrap paint in `setup_finish` never reaches a
+    // chunk still loading, and they are never released.
+    let mut claim_chunks: BTreeMap<(i32, i32), [i32; 3]> = BTreeMap::new();
+    for (min, max) in &claims {
+        for (cx, cz) in chunk_span(*min, *max) {
+            if !piece_chunks.contains(&(cx, cz)) {
+                claim_chunks.entry((cx, cz)).or_insert([
+                    (cx * 16).max(min[0]),
+                    min[1],
+                    (cz * 16).max(min[2]),
+                ]);
+            }
+        }
+    }
     // Chunk → a representative block cell inside BOTH the chunk and the edit
     // AABB (`execute if loaded` takes a block pos). Deterministic: `BTreeMap`
     // keyed on the chunk coordinate, first AABB to reach a chunk wins.
@@ -3620,11 +3724,13 @@ fn emit_functions(
     // Folding them into `#placeok` reuses the placement retry loop verbatim:
     // the tick function re-runs `place_verify` until every sentinel AND every
     // edit chunk reports in. Empty for a campaign whose edits stay inside the
-    // pieces → `place_verify` byte-identical.
-    for ((cx, cz), cell) in &edit_chunks {
-        if piece_chunks.contains(&(*cx, *cz)) {
-            continue;
-        }
+    // pieces → `place_verify` byte-identical. The claim chunks join them on the
+    // same terms.
+    for (_, cell) in claim_chunks.iter().chain(
+        edit_chunks
+            .iter()
+            .filter(|(k, _)| !piece_chunks.contains(k) && !claim_chunks.contains_key(k)),
+    ) {
         place_verify.push(format!(
             "execute if loaded {} {} {} run scoreboard players add #placeok dw.sys 1",
             cell[0], cell[1], cell[2]
@@ -3710,29 +3816,52 @@ fn emit_functions(
     // volume for the pass and restored afterwards, because a band is painted in
     // ONE command and a command the server truncates leaves a horizon painted
     // half one colour. Empty for a surround-less horizon → byte-identical.
-    if let Some(surround) = &plan.surround
-        && !surround.biome.is_empty()
-    {
-        let volume = |r: &crate::compiler::surround::BiomeRect| {
-            i64::from(r.max[0] - r.min[0] + 1)
-                * i64::from(r.max[1] - r.min[1] + 1)
-                * i64::from(r.max[2] - r.min[2] + 1)
+    //
+    // The bands are read off the biome map (spec-0080 §4.1), the one statement
+    // of which biome is where; this pass writes its paints and nothing else.
+    let biome_map = crate::compiler::horizon::biome_map(plan);
+    let bands: Vec<&crate::compiler::horizon::Paint> = biome_map
+        .paints
+        .iter()
+        .filter(|p| p.source == crate::compiler::horizon::PaintSource::Band)
+        .collect();
+    if !bands.is_empty() {
+        let volume = |p: &&crate::compiler::horizon::Paint| {
+            let (min, max) = p.fill;
+            i64::from(max[0] - min[0] + 1)
+                * i64::from(max[1] - min[1] + 1)
+                * i64::from(max[2] - min[2] + 1)
         };
-        let limit = surround
-            .biome
+        let limit = bands
             .iter()
             .map(volume)
             .max()
             .unwrap_or(0)
             .clamp(32768, i64::from(i32::MAX));
         setup.push(format!("gamerule max_block_modifications {limit}"));
-        for r in &surround.biome {
-            setup.push(format!(
-                "fillbiome {} {} {} {} {} {} {}",
-                r.min[0], r.min[1], r.min[2], r.max[0], r.max[1], r.max[2], r.biome
+        for p in &bands {
+            setup.push(crate::compiler::atmosphere::fillbiome_line(
+                p.fill.0, p.fill.1, &p.biome,
             ));
         }
         setup.push("gamerule max_block_modifications 32768".to_string());
+    }
+    // **A place carries its atmosphere from the first tick** (spec-0080 §3.2):
+    // the biome map's place paints, in its order, after the surround's bands —
+    // the map is the one statement of which biome is where, and this pass
+    // writes it and nothing else. Each paint is split under the default
+    // `max_block_modifications`, so no gamerule moves around it. Empty for a
+    // campaign no place of which carries an atmosphere → byte-identical.
+    //
+    // One function rather than inline lines, so the generated PackTest that
+    // asserts the server's own reading runs exactly this paint.
+    let atmosphere_bootstrap = atmosphere_bootstrap_lines(plan);
+    if !atmosphere_bootstrap.is_empty() {
+        setup.push(format!("function {ns}:{ATMOSPHERE_BOOTSTRAP_FN}"));
+        fns.push((
+            ATMOSPHERE_BOOTSTRAP_FN.to_string(),
+            lines(&atmosphere_bootstrap),
+        ));
     }
     // Stage-7 world edits (spec-0017): the edit script's runtime materialization,
     // applied after the socket seals and before the relight fixtures — the exact
@@ -3838,7 +3967,7 @@ fn emit_functions(
     // addressing those chunks for the whole session. Empty for a campaign whose
     // edits stay inside the pieces → `setup_finish` byte-identical.
     for ((cx, cz), cell) in &edit_chunks {
-        if piece_chunks.contains(&(*cx, *cz)) {
+        if piece_chunks.contains(&(*cx, *cz)) || claim_chunks.contains_key(&(*cx, *cz)) {
             continue;
         }
         setup.push(format!("forceload remove {} {}", cell[0], cell[2]));
@@ -6317,6 +6446,21 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 && let Some(region) = plan.zone_box(zone)
             {
                 body.push(fill_region_command(region, block.unwrap_or(AIR), None));
+            }
+        }
+        // spec-0080 §3.3: a repaint is `fillbiome` over the volume — the
+        // region through `Plan::zone_box`, or the place's paint — with the
+        // atmosphere's biome, or the ground biome for `atmosphere: null`,
+        // through the one writer the bootstrap paint uses. An unresolvable
+        // volume emits nothing: a dangling anchor or place is refused at
+        // validation, never silently mis-aimed here.
+        Verb::SetAtmosphere { atmosphere, .. } => {
+            if let Some((min, max)) = crate::compiler::horizon::repaint_volume(plan, eff) {
+                let biome = crate::compiler::horizon::biome_map(plan)
+                    .biome_of(atmosphere.as_ref().map(|a| a.as_str()));
+                body.extend(crate::compiler::atmosphere::fillbiome_lines(
+                    min, max, &biome,
+                ));
             }
         }
         // The same region write, over a box the PIECE declares (spec-0042 §2.4).
@@ -14757,6 +14901,9 @@ fn emit_packtest(
     // on a dummy player (no real combat / advancement events needed) and asserts
     // the objective scoreboard. Emits nothing for a v0.2 campaign.
     emit_verb_packtests(plan, out);
+    // spec-0080 §5.2: the server holds the biome each carried place declares,
+    // and every repaint moves it — inside the volume and not outside.
+    emit_atmosphere_packtests(plan, out);
 
     // The hand camera (spec-0069): the creator overlay stamps an eye and a
     // rotation, and takes a body out of itself and back. Every campaign emits the
@@ -22994,26 +23141,321 @@ pub const DELVE_VIEW_DISTANCE: u32 = 10;
 /// backdrop nobody can see.
 pub const DELVE_SIMULATION_DISTANCE: u32 = 10;
 
+/// The function a campaign's carried places are painted by at world setup.
+pub const ATMOSPHERE_BOOTSTRAP_FN: &str = "atmosphere_bootstrap";
+
+/// The bootstrap paint of every carried place: the biome map's place paints,
+/// in its order, through the one `fillbiome` writer.
+fn atmosphere_bootstrap_lines(plan: &Plan) -> Vec<String> {
+    crate::compiler::horizon::biome_map(plan)
+        .places()
+        .flat_map(|p| crate::compiler::atmosphere::fillbiome_lines(p.fill.0, p.fill.1, &p.biome))
+        .collect()
+}
+
+/// A block inside `cells` (a 4-aligned box) whose coordinates are all 2 mod 4,
+/// nearest its centre. Vanilla's biome lookup (`BiomeManager.getBiome`)
+/// jitters each sample by under half a 4-cell, so a block at 2 mod 4 always
+/// reads the cell it is in — the one place a reading is the cell's own.
+fn quart_sample(cells: ([i32; 3], [i32; 3])) -> [i32; 3] {
+    std::array::from_fn(|i| {
+        let centre = (cells.0[i] + cells.1[i]).div_euclid(2);
+        crate::compiler::atmosphere::quantize(centre) + 2
+    })
+}
+
+/// A loaded block just outside `cells`, at 2 mod 4, beside `inside`: the first
+/// of the six faces whose column a placed piece covers (world setup
+/// force-loads every piece's columns). `None` when no face has one.
+fn quart_outside(plan: &Plan, cells: ([i32; 3], [i32; 3]), inside: [i32; 3]) -> Option<[i32; 3]> {
+    let loaded = |c: [i32; 3]| {
+        (crate::compiler::horizon::BUILD_MIN_Y..=crate::compiler::horizon::BUILD_MAX_Y)
+            .contains(&c[1])
+            && plan.placed_pieces().any(|p| {
+                let (lo, hi) = p.bbox();
+                lo[0] <= c[0] && c[0] <= hi[0] && lo[2] <= c[2] && c[2] <= hi[2]
+            })
+    };
+    [
+        (0, true),
+        (0, false),
+        (2, true),
+        (2, false),
+        (1, true),
+        (1, false),
+    ]
+    .into_iter()
+    .map(|(axis, up)| {
+        let mut c = inside;
+        c[axis] = if up {
+            cells.1[axis] + 3
+        } else {
+            cells.0[axis] - 2
+        };
+        c
+    })
+    .find(|&c| loaded(c))
+}
+
+/// One `execute if|unless biome` reading bridged onto a score the template
+/// owns, and the assertion over it (`assert score`, the PackTest condition
+/// every generated template uses).
+fn biome_assert(holder: &str, cell: [i32; 3], biome: &str, holds: bool, out: &mut Vec<String>) {
+    let mode = if holds { "if" } else { "unless" };
+    out.push(format!("scoreboard players set {holder} dw.sys 0"));
+    out.push(format!(
+        "execute {mode} biome {} {} {} {biome} run scoreboard players set {holder} dw.sys 1",
+        cell[0], cell[1], cell[2]
+    ));
+    out.push(format!("assert score {holder} dw.sys matches 1"));
+}
+
+/// spec-0080 §5.2: PackTest asserts the server's own reading of the biome map.
+///
+/// `atmosphere_places` paints every carried place through the bootstrap
+/// function and reads, for each, a cell inside (`execute if biome`) and a cell
+/// just outside (`execute unless biome`). `atmosphere_repaint_<n>` reads, for
+/// each `set-atmosphere` with a resolvable volume, the first-tick biome inside
+/// it, runs exactly the lines the verb emits, reads the new biome inside and the
+/// unchanged one outside, and restores the first tick — every template its own
+/// scores and its own init, and none awaits, so each lands inside one tick.
+fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let map = crate::compiler::horizon::biome_map(plan);
+    let mut write = |name: &str, body: Vec<String>| {
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    };
+    let places: Vec<&crate::compiler::horizon::Paint> = map.places().collect();
+    if !places.is_empty() {
+        let mut b = packtest_header(&format!(
+            "{}: every carried place stands in its atmosphere from the first tick",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:{ATMOSPHERE_BOOTSTRAP_FN}"));
+        for (i, p) in places.iter().enumerate() {
+            let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
+                continue;
+            };
+            let inside = quart_sample(p.cells);
+            b.push(format!("# {place}: {}", p.biome));
+            biome_assert(&format!("#atm_in{i}"), inside, &p.biome, true, &mut b);
+            if let Some(outside) = quart_outside(plan, p.cells, inside) {
+                biome_assert(&format!("#atm_out{i}"), outside, &p.biome, false, &mut b);
+            }
+        }
+        write("atmosphere_places", b);
+    }
+    let ground = map.ground.id.clone();
+    for (n, (_, path, eff)) in crate::compiler::atmosphere::set_atmospheres(c)
+        .into_iter()
+        .enumerate()
+    {
+        let Some((min, max)) = crate::compiler::horizon::repaint_volume(plan, eff) else {
+            continue;
+        };
+        let Verb::SetAtmosphere { atmosphere, .. } = &eff.verb else {
+            continue;
+        };
+        let biome = map.biome_of(atmosphere.as_ref().map(|a| a.as_str()));
+        let cells = crate::compiler::atmosphere::painted_box(min, max);
+        let inside = quart_sample(cells);
+        let mut b = packtest_header(&format!(
+            "{}: set-atmosphere at quests {path} repaints {min:?}..{max:?} with {biome}",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        // The first tick, re-established: the ground under the volume, then
+        // every carried place — a sibling template may have left its own paint.
+        let restore: Vec<String> = crate::compiler::atmosphere::fillbiome_lines(min, max, &ground)
+            .into_iter()
+            .chain((!places.is_empty()).then(|| format!("function {ns}:{ATMOSPHERE_BOOTSTRAP_FN}")))
+            .collect();
+        b.extend(restore.iter().cloned());
+        let (before, _) = map.at(inside);
+        b.push("# before the beat".to_string());
+        biome_assert(&format!("#atm_r{n}_before"), inside, before, true, &mut b);
+        b.extend(crate::compiler::atmosphere::fillbiome_lines(
+            min, max, &biome,
+        ));
+        b.push("# after the beat".to_string());
+        biome_assert(&format!("#atm_r{n}_after"), inside, &biome, true, &mut b);
+        // Outside the volume the repaint reached nothing. A carried place's
+        // biome there is the bootstrap's, so it is read as itself; the ground's
+        // is whatever the server's generator laid (a PackTest world is not the
+        // delve's own), so there the reading is that the new biome did not
+        // arrive — and when the new biome IS the ground, nothing outside can
+        // tell the two apart and no reading is made.
+        if let Some(outside) = quart_outside(plan, cells, inside) {
+            let carried = map
+                .places()
+                .filter(|p| {
+                    (0..3).all(|i| p.cells.0[i] <= outside[i] && outside[i] <= p.cells.1[i])
+                })
+                .last();
+            match carried {
+                Some(p) => {
+                    biome_assert(&format!("#atm_r{n}_kept"), outside, &p.biome, true, &mut b)
+                }
+                None if biome != ground => {
+                    biome_assert(&format!("#atm_r{n}_kept"), outside, &biome, false, &mut b)
+                }
+                None => b.push(format!(
+                    "# outside {outside:?} stands in the ground biome, which this repaint also \
+                     paints: no reading outside can tell them apart"
+                )),
+            }
+        }
+        b.extend(restore);
+        write(&format!("atmosphere_repaint_{n}"), b);
+    }
+}
+
+/// The bot tier's repaint contract (spec-0080 §5.2), or `None` when the
+/// campaign repaints nothing.
+///
+/// `after` is the completion-marker token the bundle that fires the repaint
+/// broadcasts — an objective's `obj/<id>`, or a trigger's own `trigger/<id>`
+/// when it carries one ([`plan::trigger_may_be_performed`]) — and `null` for a
+/// repaint nested in a later `sequence` step, gated by `when`, or fired from a
+/// root no marker announces: the bot cannot tell when those fire, and the file
+/// says so rather than guessing.
+fn atmosphere_repaint_plan(plan: &Plan) -> Option<serde_json::Value> {
+    let c = plan.campaign;
+    let map = crate::compiler::horizon::biome_map(plan);
+    let mut rows = Vec::new();
+    let marked_triggers: BTreeSet<&str> = c
+        .quests
+        .content
+        .triggers
+        .iter()
+        .filter(|t| plan::trigger_may_be_performed(t))
+        .map(|t| t.id.as_str())
+        .collect();
+    delvewright_dsl::for_each_campaign_effect(c, &mut |path, site, e| {
+        if !matches!(e.verb, Verb::SetAtmosphere { .. }) {
+            return;
+        }
+        let Some((min, max)) = crate::compiler::horizon::repaint_volume(plan, e) else {
+            return;
+        };
+        let Verb::SetAtmosphere { atmosphere, .. } = &e.verb else {
+            return;
+        };
+        // A nested list fires at a moment its root's marker does not mark: a
+        // `sequence` step at its offset, an arrival, a rest, a respawn, a catch.
+        let top_level = ![
+            "/steps/",
+            "/on_respawn/",
+            "/on_rest/",
+            "/on_caught/",
+            "/on_arrive/",
+        ]
+        .iter()
+        .any(|seg| path.contains(seg));
+        let after = if e.when.is_some() || !top_level {
+            None
+        } else {
+            match site {
+                delvewright_dsl::EffectSite::Objective { objective, .. } => Some(objective.clone()),
+                delvewright_dsl::EffectSite::Trigger { trigger }
+                    if marked_triggers.contains(trigger.as_str()) =>
+                {
+                    Some(trigger.clone())
+                }
+                _ => None,
+            }
+        };
+        let (lo, hi) = crate::compiler::atmosphere::painted_box(min, max);
+        let mut chunks = Vec::new();
+        for cx in lo[0].div_euclid(16)..=hi[0].div_euclid(16) {
+            for cz in lo[2].div_euclid(16)..=hi[2].div_euclid(16) {
+                chunks.push(json!([cx, cz]));
+            }
+        }
+        rows.push(json!({
+            "effect": path,
+            "biome": map.biome_of(atmosphere.as_ref().map(|a| a.as_str())),
+            "after": after,
+            "chunks": chunks,
+        }));
+    });
+    (!rows.is_empty()).then(|| json!({ "repaints": rows }))
+}
+
+/// What the atmosphere surface bound to in this build (spec-0080 §5.1).
+pub fn atmosphere_binding(
+    plan: &Plan,
+    map: &crate::compiler::horizon::BiomeMap,
+) -> crate::compiler::atmosphere::Binding {
+    let c = plan.campaign;
+    let places = crate::compiler::horizon::carried_places(c);
+    let repaints = crate::compiler::atmosphere::set_atmospheres(c);
+    let volumes: BTreeSet<([i32; 3], [i32; 3])> = repaints
+        .iter()
+        .filter_map(|(_, _, e)| crate::compiler::horizon::repaint_volume(plan, e))
+        .collect();
+    let bootstrap_cells = map
+        .places()
+        .map(|p| {
+            (0..3)
+                .map(|i| i64::from((p.cells.1[i] - p.cells.0[i] + 1) / 4))
+                .product::<i64>()
+        })
+        .sum();
+    crate::compiler::atmosphere::Binding {
+        declared: c.world.content.atmospheres.len(),
+        carried: places.iter().filter(|(_, a)| a.is_some()).count(),
+        places: places.len(),
+        repaints: repaints.len(),
+        volumes: volumes.len(),
+        bootstrap_cells,
+        paints: map.paints.len(),
+        biome_files: c.world.content.atmospheres.len(),
+    }
+}
+
 /// The ground biome's datapack definition, when the delve ships its own
 /// ([`crate::compiler::horizon::ground_biome`]), and its vanilla tag
 /// memberships ([`crate::compiler::horizon::VOID_BIOME_TAGS`]).
+///
+/// Every declared atmosphere ships beside it (spec-0080 §4.3), whether a place
+/// carries it or only a beat paints it, because the biome registry closes when
+/// the world opens; each joins the void biome's tags, as `minecraft:the_void`'s
+/// own field-for-field copy.
 fn emit_ground_biome(plan: &Plan, out: &mut BuildOutput) {
-    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
-    let Some(definition) = &ground.definition else {
-        return;
-    };
+    let ground = crate::compiler::horizon::biome_map(plan).ground;
     let ns = &plan.namespace;
-    let path = crate::compiler::horizon::VOID_BIOME_PATH;
-    put_json(
-        out,
-        &format!("datapack/data/{ns}/worldgen/biome/{path}.json"),
-        definition,
-    );
+    let mut tagged: Vec<String> = Vec::new();
+    if let Some(definition) = &ground.definition {
+        let path = crate::compiler::horizon::VOID_BIOME_PATH;
+        put_json(
+            out,
+            &format!("datapack/data/{ns}/worldgen/biome/{path}.json"),
+            definition,
+        );
+        tagged.push(ground.id.clone());
+    }
+    for a in &plan.campaign.world.content.atmospheres {
+        put_json(
+            out,
+            &crate::compiler::atmosphere::biome_path(ns, a.id.as_str()),
+            &crate::compiler::atmosphere::biome_definition(a),
+        );
+        tagged.push(crate::compiler::atmosphere::biome_id(ns, a.id.as_str()));
+    }
+    if tagged.is_empty() {
+        return;
+    }
     for tag in crate::compiler::horizon::VOID_BIOME_TAGS {
         put_json(
             out,
             &format!("datapack/data/minecraft/tags/worldgen/biome/{tag}.json"),
-            &json!({ "values": [ground.id] }),
+            &json!({ "values": tagged }),
         );
     }
 }
@@ -23054,7 +23496,7 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // delve's own `<ns>:void` biome, which the datapack defines (emitted in
     // [`emit_ground_biome`]) and which exists when the world is created, because
     // every boot path installs the datapack before first boot.
-    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
+    let ground = crate::compiler::horizon::biome_map(plan).ground;
     let generator_settings = if ocean {
         format!(
             "{{\"biome\":\"{}\",\"layers\":[{{\"block\":\"minecraft:bedrock\",\"height\":1}},{{\"block\":\"minecraft:stone\",\"height\":118}},{{\"block\":\"minecraft:water\",\"height\":8}}]}}",

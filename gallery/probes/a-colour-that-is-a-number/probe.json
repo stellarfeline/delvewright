@@ -1,0 +1,13 @@
+{
+  "code": "DW0928",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/atmospheres/0/attributes/visual~1sky_color",
+      "value": 10467544
+    }
+  ],
+  "units": [],
+  "why": "The hall's sky colour written as the integer vanilla stores it in, rather than the `#rrggbb` string vanilla's data writes. The engine holds each admitted attribute to the shape the pinned data writes, so a number where a colour is read is refused at the document, naming the shape. It declares no unit: `attributes` is bound, and the shape is data."
+}
