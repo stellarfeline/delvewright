@@ -337,17 +337,17 @@ this section is what they are *for* and the traps in each.
      within a strike of a cell inside it** — the party stands inside to press
      it. The build refuses a link with no such cell, a `to` inside the volume,
      a `to` with no floor at the teleport's tick, or a `to` in another area
-     (that is a crossing — put the next beat there instead);
+     (that is a crossing — put the next beat there instead) (`DW0932`);
   4. **cutscene first, teleport after**: a crossing played as a cutscene is one
      `sequence` — the `cutscene` at tick 0, the `teleport` at a tick past the
-     cutscene's end (the refusal names the first tick that holds; a teleport
+     cutscene's end (`DW0933` names the first tick that holds; a teleport
      under the open bracket is undone when the camera returns);
   5. a `to` at least **8 blocks** (horizontally) from the volume, or the bot
      cannot see the carry happen (the harness refuses the path);
   6. with a layout graph, a **`carry` edge** between the two places, gated on
      the same flag, each direction it allows realised by a link — the build
-     refuses either without the other; the volume's anchor a station of the
-     near place and `to`'s anchor a station of the far one.
+     refuses either without the other (`DW0934`); the volume's anchor a
+     station of the near place and `to`'s anchor a station of the far one.
   The build then takes the link only where a walk fails, splices the press
   into `critical-path.json` (`stand`, `transport`) and counts it on the
   `DW0311 binding:` line (`N carried by a link`) — read that line to confirm.
