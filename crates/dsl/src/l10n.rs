@@ -630,7 +630,8 @@ pub enum TextKind {
     Bark,
     /// The caption on a fixed-width button: the player's own words.
     OptionLabel,
-    /// The hover text of a dialogue button: the consequence of choosing it.
+    /// The hover text of a dialog button (a dialogue option, or a bonfire's rest
+    /// or save): the consequence of choosing it.
     ButtonTooltip,
     /// An item's display name.
     ItemName,
@@ -698,6 +699,9 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             "give" => ItemName,
             "rest_prompt" => Prompt,
             "rest_label" | "save_label" => OptionLabel,
+            // spec-0078: a bonfire's buttons carry hover text like every other
+            // dialog button.
+            "rest_tooltip" | "save_tooltip" => ButtonTooltip,
             "sealed_hint" => Refusal,
             _ => return None,
         },
