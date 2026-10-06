@@ -811,8 +811,9 @@ export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
  * **The cells a body could reach that are nearer the volume than `feet`**:
  * within four columns and one down to four up, outside what the volume can reach
  * ({@link volumeReachesCell}), where a body can stand (`canStand`, the caller's
- * reading of the world), ordered nearest the volume's footprint first, then by
- * the smallest climb, then lexicographically (ADR-0006).
+ * reading of the world), ordered by the smallest climb first (a drop is no
+ * climb), then nearest the volume's footprint, then lexicographically
+ * (ADR-0006).
  *
  * What the walk in asks the pathfinder for when driving straight at the volume
  * is blocked — vesperhold's well is entered over a dry cut, onto a sill a
@@ -821,6 +822,13 @@ export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
  * route, not jumped to: the gallery's lidded pit is nearest the hall floor beside
  * the terrace annex, and its way in is the annex's top, three courses up, where
  * the hole the beat opened is.
+ *
+ * Climb first, because a climb is what a body may fail to make: standing on the
+ * cut's floor at y 66, vesperhold's curb top at y 69 is nearer the well than the
+ * sill at y 68, and the pathfinder reaches none of the curb-top cells — an order
+ * nearest first puts them ahead of the sill, which is the way in. Every
+ * candidate is tried in this order ({@link firstWayIn}); the order decides
+ * which is tried first, never which is tried at all.
  */
 export function wayInCandidates(
   feet: Vec3Tuple,
@@ -845,14 +853,44 @@ export function wayInCandidates(
       }
     }
   }
+  const climb = (c: Vec3Tuple): number => Math.max(c[1] - feet[1], 0);
   return out.sort(
     (a, b) =>
+      climb(a) - climb(b) ||
       toFootprint(a) - toFootprint(b) ||
-      Math.abs(a[1] - feet[1]) - Math.abs(b[1] - feet[1]) ||
       a[0] - b[0] ||
       a[1] - b[1] ||
       a[2] - b[2],
   );
+}
+
+/**
+ * **Try every way in, in order, until a walk in from one is not blocked.**
+ *
+ * `reach` walks the body to a candidate and says whether it got there; `walkIn`
+ * drives at the volume again from wherever the body stands. A candidate the
+ * body reaches but whose walk in is blocked too is passed over like one it
+ * cannot reach: a cell is a way in only if the walk in from it goes in. The
+ * first result that is not `"blocked"` is returned with the cell it came from;
+ * `"blocked"` with no cell when every candidate was tried. No candidate is
+ * dropped for its rank: a fixed number of tries lets as many unreachable cells
+ * ranked ahead hide the one that works.
+ */
+export async function firstWayIn<R extends string>(
+  candidates: readonly Vec3Tuple[],
+  reach: (cell: Vec3Tuple) => Promise<boolean>,
+  walkIn: (cell: Vec3Tuple) => Promise<R | "blocked">,
+): Promise<{ result: R | "blocked"; from?: Vec3Tuple; tried: number; reached: number }> {
+  let tried = 0;
+  let reached = 0;
+  for (const c of candidates) {
+    tried += 1;
+    if (!(await reach(c))) continue;
+    reached += 1;
+    const result = await walkIn(c);
+    if (result !== "blocked") return { result, from: c, tried, reached };
+  }
+  return { result: "blocked", tried, reached };
 }
 
 /**
