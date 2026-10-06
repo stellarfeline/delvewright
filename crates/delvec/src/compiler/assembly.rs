@@ -29,11 +29,11 @@
 //!   keep-out, lies inside the arming region's keep-out; a `damage-players`
 //!   with no `in` strikes every player in the world and is refused), and the
 //!   blow's area is the area the limb comes down on, both ways
-//!   ([`correspondence`]): every standable cell of the landing box has the
-//!   strike clip's last frame in the standing body's space above it (its feet
-//!   and head cells), and every standable cell where the last frame meets that
-//!   space and the strike clip's first frame did not is caught by the landing
-//!   box, to within the box's keep-out ring. An aimed pattern is judged per
+//!   ([`correspondence`]): the strike clip's last frame comes down on every
+//!   standable cell of the landing box — a part meets the footprint, within
+//!   [`FLOOR_BAND`] of the floor, of a body standing there — and every
+//!   standable cell it comes down on that its first frame did not is caught by
+//!   the landing box, to within the box's keep-out ring. An aimed pattern is judged per
 //!   facing a player in the arming region can draw, the box and the limb
 //!   turned together.
 //!
@@ -101,11 +101,22 @@ pub const MAX_HITBOX_WIDTH: f64 = 6.0;
 /// the whole-block bound under it.
 pub const MAX_HITBOX_HEIGHT: f64 = 22.0;
 
-/// How many cells tall the standing body's space is above a floor cell: the
-/// player's height rounded up to whole cells — its feet cell and its head cell
-/// (spec-0082 §5.4 shape 2). A limb above the head has not reached the body.
-pub fn body_cells(body: Body) -> i32 {
-    body.height.ceil() as i32
+/// How high above the floor a blow is judged to have landed, in blocks: the
+/// floor band (spec-0082 §5.4 shape 2). A limb that came down is on the floor
+/// where it lands; one hanging above a body's knees has not landed on it.
+pub const FLOOR_BAND: f64 = 1.0;
+
+/// **A standing body's footprint in the floor band** at a feet cell, relative
+/// to the mark's cell (which spans `[0, 1]`): the body's own width round the
+/// cell's centre, from its floor up [`FLOOR_BAND`]. What a landed limb meets
+/// when it comes down where a player stands.
+pub fn floor_footprint(f: [i32; 3]) -> ([f64; 3], [f64; 3]) {
+    let half = Body::PLAYER.half_width();
+    let (x, y, z) = (f64::from(f[0]), f64::from(f[1]), f64::from(f[2]));
+    (
+        [x + 0.5 - half, y, z + 0.5 - half],
+        [x + 0.5 + half, y + FLOOR_BAND, z + 0.5 + half],
+    )
 }
 
 /// The widening, in degrees, of each facing's sector when the compiler asks
@@ -506,18 +517,26 @@ pub fn turned_region(mark: [i32; 3], (lo, hi): CellBox, turn: f64) -> BTreeSet<[
 // The correspondence (spec-0082 §5.4 shape 2)
 // ---------------------------------------------------------------------------
 
-/// The standable cells whose standing body's space — the feet cell and the
-/// [`body_cells`] above it — a set of limb cells meets.
+/// **The standable cells a pose lands on**: every walked cell whose standing
+/// body's footprint in the floor band ([`floor_footprint`]) a part of `frame`,
+/// turned `turn` about the mark, meets — judged exactly, part box against
+/// footprint box. World cells.
 pub fn struck_cells(
-    limb: &BTreeSet<[i32; 3]>,
+    frame: &[Transform],
+    turn: f64,
+    mark: [i32; 3],
     population: &dyn Fn([i32; 3]) -> bool,
 ) -> BTreeSet<[i32; 3]> {
-    let tall = body_cells(Body::PLAYER);
     let mut out = BTreeSet::new();
-    for c in limb {
-        for dy in 0..tall {
-            let f = [c[0], c[1] - dy, c[2]];
-            if population(f) {
+    for t in frame {
+        let t = t.turned(turn);
+        for c in t.cells() {
+            let f = delvewright_dsl::offset_cell(mark, c);
+            if out.contains(&f) || !population(f) {
+                continue;
+            }
+            let (lo, hi) = floor_footprint(c);
+            if t.meets_box(lo, hi) {
                 out.insert(f);
             }
         }
@@ -549,16 +568,15 @@ pub fn caught_cells(
 /// its animation shows).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Correspondence {
-    /// Standable cells a body can be caught from (the region and its keep-out
-    /// ring) where the strike clip's last frame does not reach: no part meets
-    /// the standing body's space above them. A blow lands where no limb is
-    /// seen.
+    /// Standable cells of the landing region the strike clip's last frame does
+    /// not land on: no part meets the footprint, in the floor band, of a body
+    /// standing there. A blow lands where no limb is seen.
     pub unstruck: Vec<[i32; 3]>,
-    /// Standable cells the last frame comes down on — it meets the standing
-    /// body's space there and the strike clip's first frame did not — that the
+    /// Standable cells the last frame comes down on — it lands on a body
+    /// standing there and the strike clip's first frame did not — that the
     /// landing does not catch, even by its keep-out ring (the stated
-    /// tolerance: a body there reaches into the region). A limb comes down
-    /// where no blow lands.
+    /// tolerance: one cell round the region for a player, a body there reaching
+    /// into it). A limb comes down where no blow lands.
     pub uncaught: Vec<[i32; 3]>,
     /// The standable cells of the region (what `unstruck` is drawn from).
     pub landing: Vec<[i32; 3]>,
@@ -567,7 +585,7 @@ pub struct Correspondence {
     /// The standable cells the last frame comes down on (what `uncaught` is
     /// drawn from).
     pub comes_down: Vec<[i32; 3]>,
-    /// The standable cells whose body space the last frame meets.
+    /// The standable cells the last frame lands on.
     pub struck: Vec<[i32; 3]>,
 }
 
@@ -578,27 +596,26 @@ impl Correspondence {
     }
 }
 
-/// Judge a landing region against the limb's last frame (`last`) and the
-/// pose the strike began from (`first`), both world cells at the facing the
-/// region is turned to.
+/// Judge a landing region against what the limb lands on: `struck`, the
+/// cells its last frame lands on, and `before`, the cells the pose the strike
+/// began from already stood on ([`struck_cells`] at the facing the region is
+/// turned to).
 pub fn correspondence(
     region: &BTreeSet<[i32; 3]>,
-    first: &BTreeSet<[i32; 3]>,
-    last: &BTreeSet<[i32; 3]>,
+    before: &BTreeSet<[i32; 3]>,
+    struck: &BTreeSet<[i32; 3]>,
     population: &dyn Fn([i32; 3]) -> bool,
 ) -> Correspondence {
     let landing: BTreeSet<[i32; 3]> = region.iter().copied().filter(|c| population(*c)).collect();
     let caught = caught_cells(region, population);
-    let struck = struck_cells(last, population);
-    let before = struck_cells(first, population);
-    let comes_down: BTreeSet<[i32; 3]> = struck.difference(&before).copied().collect();
+    let comes_down: BTreeSet<[i32; 3]> = struck.difference(before).copied().collect();
     Correspondence {
-        unstruck: caught.difference(&struck).copied().collect(),
+        unstruck: landing.difference(struck).copied().collect(),
         uncaught: comes_down.difference(&caught).copied().collect(),
         landing: landing.into_iter().collect(),
         caught: caught.into_iter().collect(),
         comes_down: comes_down.into_iter().collect(),
-        struck: struck.into_iter().collect(),
+        struck: struck.iter().copied().collect(),
     }
 }
 
@@ -812,16 +829,17 @@ pub fn judge(
             facing_count: n,
             facings: Vec::new(),
         };
-        // The limb at each facing: where the strike began and where it lands.
+        // What the limb lands on at each facing: the pose the strike began
+        // from, and its last frame.
         let limb_at = |k: u32| -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
             let turn = base + facing_turn(k, n);
-            let pose = |f: Option<&Vec<Transform>>| {
-                f.map(|f| offset_all(&rig::frame_footprint_turned(f, turn), s.mark))
+            let lands = |f: Option<&Vec<Transform>>| {
+                f.map(|f| struck_cells(f, turn, s.mark, population))
                     .unwrap_or_default()
             };
             (
-                pose(strike_clip.and_then(|c| c.frames.first())),
-                pose(strike_clip.and_then(|c| c.frames.last())),
+                lands(strike_clip.and_then(|c| c.frames.first())),
+                lands(strike_clip.and_then(|c| c.frames.last())),
             )
         };
         let mut per_facing: Vec<FacingRecord> = facings
@@ -923,25 +941,24 @@ pub fn judge(
                     out.push(Failure::new(
                         DW_ASSEMBLY_STRIKE,
                         format!(
-                            "assembly `{}`'s strike step {} lands a blow ({}){} that catches a \
-                             body on {} standable cell(s) — its box and the keep-out ring round \
-                             it — the strike clip `{}` never reaches: on its last frame, \
-                             drawn whole when the blow lands, no part meets the standing body's \
-                             space above the cell (its feet cell and the {} above it): {}. The \
-                             thing the player saw come down must be the thing that hurt them. \
-                             Where the last frame meets a standing body: {}. Move the landing box \
-                             under the limb (`delvec rig describe` prints the footprint), or \
-                             choose a strike clip that comes down on it",
+                            "assembly `{}`'s strike step {} lands a blow ({}){} on {} standable \
+                             cell(s) the strike clip `{}` never comes down on — on its last \
+                             frame, drawn whole when the blow lands, no part meets a body \
+                             standing there within {FLOOR_BAND} block of the floor (the body's \
+                             own width round the cell's centre): {}. The thing the player saw \
+                             come down must be the thing that hurt them. Where the last frame \
+                             comes down on a standing body: {}. Move the landing box under the \
+                             limb (`delvec rig describe` prints the footprint), or choose a \
+                             strike clip that comes down on it",
                             s.id,
                             step.index,
                             l.path,
                             facing_words(k, n),
                             c.unstruck.len(),
                             step.strike,
-                            body_cells(body) - 1,
                             cells_named(&c.unstruck),
                             if c.struck.is_empty() {
-                                "nowhere — it meets no standable cell's body space".to_string()
+                                "nowhere — it comes down on no standable cell".to_string()
                             } else {
                                 cells_named(&c.struck)
                             }
@@ -954,9 +971,10 @@ pub fn judge(
                         format!(
                             "assembly `{}`'s strike step {}: the strike clip `{}` comes down on {} \
                              standable cell(s){} its blow ({}) does not land on — its last frame \
-                             meets the standing body's space there, its first frame did not, and a \
-                             body standing there is not caught by the landing box even by the \
-                             box's edge (its keep-out, one cell round it for a player): {}. The \
+                             meets a body standing there within {FLOOR_BAND} block of the floor, \
+                             its first frame did not, and the body is not caught by the landing \
+                             box even by the box's edge (its keep-out, one cell round it for a \
+                             player): {}. The \
                              blow's area must be the area the limb comes down on; a long limb's \
                              blow is a long area along where it lands. Widen the landing box to \
                              cover them (`delvec rig describe` prints the footprint), or choose a \
@@ -2122,22 +2140,28 @@ mod tests {
         assert_eq!(j.records[0].facings[0].stand, Some([10, 1, 12]));
     }
 
-    /// Defect 1: a limb that stops above the head has not reached the body.
-    /// The slab hangs two courses up — in the column a floor-to-three-above
-    /// band would have read as reached — and every caught cell is refused.
+    /// Defect 1: a limb that stops above the floor band has not landed on
+    /// anybody. The slab hangs a block up, and two — in the column a
+    /// floor-to-three-above band read as reached — and every landing cell is
+    /// refused.
     #[test]
-    fn a_limb_above_the_head_has_not_reached() {
-        let r = rig_with(slab(2.0));
-        let s = subject(&r, None, Some(([10, 1, 12], [10, 1, 14])));
-        let (_, f) = judge(&s, &floor, &near);
-        assert_eq!(codes(&f), vec!["DW0938"]);
-        assert!(f[0].message.contains("never reaches"), "{}", f[0].message);
-        assert!(
-            f[0].message
-                .contains("meets no standable cell's body space"),
-            "{}",
-            f[0].message
-        );
+    fn a_limb_above_the_floor_band_has_not_landed() {
+        for lift in [1.0, 2.0] {
+            let r = rig_with(slab(lift));
+            let s = subject(&r, None, Some(([10, 1, 12], [10, 1, 14])));
+            let (_, f) = judge(&s, &floor, &near);
+            assert_eq!(codes(&f), vec!["DW0938"], "lift {lift}");
+            assert!(
+                f[0].message.contains("never comes down on"),
+                "{}",
+                f[0].message
+            );
+            assert!(
+                f[0].message.contains("comes down on no standable cell"),
+                "{}",
+                f[0].message
+            );
+        }
     }
 
     /// Defect 2: a one-cell landing under the five-long slab is refused — the
@@ -2176,7 +2200,11 @@ mod tests {
         let bad = subject(&r, None, Some(([13, 1, 13], [13, 1, 13])));
         let (_, f) = judge(&bad, &floor, &near);
         assert_eq!(codes(&f), vec!["DW0938", "DW0938"]);
-        assert!(f[0].message.contains("never reaches"), "{}", f[0].message);
+        assert!(
+            f[0].message.contains("never comes down on"),
+            "{}",
+            f[0].message
+        );
         assert!(f[1].message.contains("comes down on"), "{}", f[1].message);
     }
 
@@ -2186,7 +2214,7 @@ mod tests {
     /// on the last frame is.
     #[test]
     fn where_the_limb_already_stood_is_not_owed_a_blow() {
-        let root = cube([-0.5, 1.0, -2.5]);
+        let root = cube([-0.5, 0.0, -2.5]);
         let two = |first_root: Transform| {
             let mut r = rig();
             r.parts.push(r.parts[0].clone());
@@ -2210,7 +2238,7 @@ mod tests {
         assert!(!j.records[0].facings[0].comes_down.contains(&[10, 1, 8]));
         // The root swung in from elsewhere: now it came down there, and the
         // landing does not catch the mark's floor.
-        let arrived = two(cube([5.5, 1.0, -0.5]));
+        let arrived = two(cube([5.5, 0.0, -0.5]));
         let s = subject(&arrived, None, Some(([10, 1, 12], [10, 1, 14])));
         let (_, f) = judge(&s, &floor, &near);
         assert_eq!(codes(&f), vec!["DW0938"]);

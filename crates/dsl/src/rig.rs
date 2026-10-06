@@ -496,13 +496,23 @@ impl Transform {
         for x in x0..=x1 {
             for y in y0..=y1 {
                 for z in z0..=z1 {
-                    if box_meets_cell(&corners, &axes, [x, y, z]) {
+                    let lo = [f64::from(x), f64::from(y), f64::from(z)];
+                    if box_meets(&corners, &axes, lo, [lo[0] + 1.0, lo[1] + 1.0, lo[2] + 1.0]) {
                         out.insert([x, y, z]);
                     }
                 }
             }
         }
         out
+    }
+
+    /// Whether this part's box overlaps the axis-aligned box `lo..hi` with
+    /// positive volume, judged exactly. Coordinates are relative to the mark's
+    /// cell, which spans `[0, 1]` on every axis; the entity stands at its
+    /// centre on its floor, as for [`Self::cells`].
+    pub fn meets_box(&self, lo: [f64; 3], hi: [f64; 3]) -> bool {
+        let corners = self.corners().map(|c| [c[0] + 0.5, c[1], c[2] + 0.5]);
+        box_meets(&corners, &separating_axes(&corners), lo, hi)
     }
 }
 
@@ -540,10 +550,10 @@ fn separating_axes(c: &[[f64; 3]; 8]) -> Vec<[f64; 3]> {
     axes
 }
 
-/// Whether the parallelepiped `c` overlaps the unit cell at `cell` with
-/// positive volume: no candidate axis separates them, an overlap thinner than
-/// [`CELL_EPS`] counting as none.
-fn box_meets_cell(c: &[[f64; 3]; 8], axes: &[[f64; 3]], cell: [i32; 3]) -> bool {
+/// Whether the parallelepiped `c` overlaps the axis-aligned box `lo..hi`
+/// with positive volume: no candidate axis separates them, an overlap thinner
+/// than [`CELL_EPS`] counting as none.
+fn box_meets(c: &[[f64; 3]; 8], axes: &[[f64; 3]], lo: [f64; 3], hi: [f64; 3]) -> bool {
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     axes.iter().all(|a| {
         let (mut p0, mut p1) = (f64::INFINITY, f64::NEG_INFINITY);
@@ -554,11 +564,8 @@ fn box_meets_cell(c: &[[f64; 3]; 8], axes: &[[f64; 3]], cell: [i32; 3]) -> bool 
         }
         let (mut q0, mut q1) = (f64::INFINITY, f64::NEG_INFINITY);
         for k in 0..8 {
-            let v = [
-                f64::from(cell[0] + (k & 1)),
-                f64::from(cell[1] + ((k >> 1) & 1)),
-                f64::from(cell[2] + ((k >> 2) & 1)),
-            ];
+            let pick = |i: usize, bit: usize| if (k >> bit) & 1 == 0 { lo[i] } else { hi[i] };
+            let v = [pick(0, 0), pick(1, 1), pick(2, 2)];
             let d = dot(v, *a);
             q0 = q0.min(d);
             q1 = q1.max(d);

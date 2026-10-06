@@ -326,7 +326,7 @@ fn shape_two_end_to_end() {
     });
     let m = refusal(&q, rig(), "DW0938");
     assert!(
-        m.contains("[4, 65, 7]") && m.contains("never reaches"),
+        m.contains("[5, 65, 8]") && m.contains("never comes down on"),
         "{m}"
     );
     assert_eq!(build_code(&quests(), rig()), None);
@@ -334,8 +334,8 @@ fn shape_two_end_to_end() {
 
 /// Defect 1 end to end: the same slab laid two courses above the floor hangs
 /// over the head of anybody standing there. A floor-to-three-above band read
-/// it as reaching them; the standing body's space (feet and head cells) does
-/// not, and the build is refused naming every caught cell.
+/// it as reaching them; it never comes down within a block of the floor, and
+/// the build is refused naming the landing cell.
 #[test]
 fn a_limb_that_never_reaches_the_body_is_refused() {
     let q = quests_with(|q| {
@@ -344,10 +344,10 @@ fn a_limb_that_never_reaches_the_body_is_refused() {
     });
     let m = refusal(&q, rig(), "DW0938");
     assert!(
-        m.contains("never reaches") && m.contains("[5, 65, 8]"),
+        m.contains("never comes down on") && m.contains("[5, 65, 8]"),
         "{m}"
     );
-    assert!(m.contains("meets no standable cell's body space"), "{m}");
+    assert!(m.contains("comes down on no standable cell"), "{m}");
 }
 
 /// The fixture rig with its strike laying a slab three wide and seven long,
@@ -480,7 +480,16 @@ fn the_path_strikes_three_times_after_the_spawn() {
         .filter(|(_, s)| s["action"] == "trigger")
         .map(|(i, _)| i)
         .collect();
-    assert_eq!(strikes, vec![talk + 1, talk + 2, talk + 3], "{cp:#}");
+    // The bot's witness of the blow stands between the spawn and the first
+    // strike: struck on the landing cell, spared outside the arming region.
+    assert_eq!(strikes, vec![talk + 3, talk + 4, talk + 5], "{cp:#}");
+    let (struck, spared) = (&steps[talk + 1], &steps[talk + 2]);
+    assert_eq!(struck["action"], "witness-strike");
+    assert_eq!(struck["expect"], "struck");
+    assert_eq!(struck["pos"], json!([5, 65, 8]));
+    assert_eq!(struck["amount"], 4);
+    assert_eq!(spared["expect"], "spared");
+    assert_eq!(struck["window_ticks"], spared["window_ticks"]);
     for i in strikes {
         assert_eq!(steps[i]["on"], "strike-assembly");
         assert_eq!(steps[i]["assembly"], "assembly/limb");
