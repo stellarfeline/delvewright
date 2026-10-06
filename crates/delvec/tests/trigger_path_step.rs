@@ -545,3 +545,28 @@ fn the_leg_into_a_trigger_step_is_judged_against_a_shut_door() {
     assert!(err.contains("DW0317"), "{err}");
     assert!(err.contains("anchor/door"), "{err}");
 }
+
+/// The bars' trigger, armed by the keeper's word, whose opening line is gated to
+/// run only while that word has NOT been given — a line the strike reaches and
+/// never runs.
+const STRIKE_THE_BARS_LINE_SHUT: &str = r#"{
+  "id": "trigger/break-the-bars", "at": "anchor/door", "on": { "on": "strike" },
+  "requires_flags": ["flag/told"],
+  "effects": [ { "type": "open-gate", "anchor": "anchor/door",
+                 "when": { "forbids_flags": ["flag/told"] } } ]
+}"#;
+
+/// **A trigger the path performs opens only what its lines fire there.** The
+/// strike is performable after the talk beat, but the open-gate inside it is
+/// gated shut under the flags the path holds at that step, so nothing opens the
+/// bars and the leg through them is `DW0317`. Its control is
+/// `a_path_through_a_struck_gate_strikes_it`: the same trigger with an
+/// ungated line opens the way.
+#[test]
+fn a_trigger_line_whose_gate_is_shut_at_its_step_opens_nothing() {
+    let p = prefabs();
+    let c = parse_hw(&quests_doc(STRIKE_THE_BARS_LINE_SHUT, ""));
+    let err = build(&c, &p).expect_err("a line the strike never runs opens nothing");
+    assert!(err.contains("DW0317"), "{err}");
+    assert!(err.contains("anchor/door"), "{err}");
+}

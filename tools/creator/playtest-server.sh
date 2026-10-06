@@ -607,11 +607,19 @@ done
 # thing the pack was supposed to put in the world is in it.
 OBJECTIVES="$(rcon "scoreboard objectives list")"
 if [ "$SUBJECT_KIND" = "campaign" ]; then
-  # campaign objectives present, at least one campaign NPC. Display slots are the
-  # campaign's: nothing here sets or clears one (tools/tests/test_playtest_server_leaves_the_display_slots.py).
+  # campaign objectives present, and at least one campaign NPC when the campaign
+  # declares any: a campaign with an empty `npcs.json` (a one-room demo level) is
+  # legitimate and has nothing to probe. Display slots are the campaign's: nothing
+  # here sets or clears one (tools/tests/test_playtest_server_leaves_the_display_slots.py).
   [[ $OBJECTIVES == *"dw."* ]] || die_or_oom "no dw.* objectives — datapack not loaded"
-  NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
-  [[ $NPC_PROBE == *"Test passed"* ]] || die_or_oom "no dw_npc entities found"
+  NPCS_DECLARED="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(len(json.load(open(sys.argv[1]))["content"]["npcs"]))' "$CAMPAIGN/npcs.json")" \
+    || die "cannot read the NPC count from $CAMPAIGN/npcs.json"
+  if [ "$NPCS_DECLARED" -gt 0 ]; then
+    NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
+    [[ $NPC_PROBE == *"Test passed"* ]] || die_or_oom "no dw_npc entities found ($NPCS_DECLARED declared in npcs.json)"
+  else
+    echo "npc probe: 0 NPC(s) declared in npcs.json, so no dw_npc entity is owed"
+  fi
 else
   # `admit.sys` is created by `admit:load`, so its absence is a pack the server
   # dropped rather than a world that is merely slow.

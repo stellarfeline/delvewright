@@ -19,8 +19,12 @@ what happened and who these people are). Functional text is never oblique, in
 any game, however oblique its story.
 
 - **F1 — Functional text says the action, the object and the place.** Start with
-  the verb; name the thing; say where. `Hold the Warden's Key to the iron-bound
-  door at the west end of the walk.` not `The keyhole is old and large.`
+  the verb; name the thing; say where by a landmark the player can see and a
+  position relative to it or to the player (past the bell, left of the arch,
+  behind you), never by a compass point: Minecraft shows no compass, so
+  `north` leaves the player guessing. `Hold the Warden's Key to the iron-bound
+  door past the broken bell.` not `The keyhole is old and large.`, and not
+  `the door at the west end of the walk`. The landmark rule is **authored**.
   **Cited:** Microsoft Writing Style Guide, *Top 10 tips* ("start each statement
   with a verb", "get to the point fast"); Game Accessibility Guidelines, *Use
   simple clear language* (basic level; about 14% of US/UK adults read below an
