@@ -246,6 +246,14 @@ this section is what they are *for* and the traps in each.
   `on_death`, a shop offer, a shortcut's far-side unlock. To spell "the party
   walks up to this and the door opens", use an environment `trigger` — that one
   counts.
+- **A beat can change a place's sky.** `set-atmosphere {atmosphere, place |
+  region}` repaints the fog, sky and air of a place to another of
+  `world.atmospheres[]` (or to the horizon's own with `"atmosphere": null`)
+  the moment it fires: the ash that falls once the bell is rung, the hall that
+  clears when the warden dies. Name the `place` and the engine paints its cells
+  with the blend margin; a `region` is painted exactly as sized. It never moves
+  the sun or the moon — that is `set-time`. How a place carries its first sky,
+  and how far the client blends it, is in *Step 2 — placement*.
 - **A firework is one effect at a mark.** `firework {at {anchor, offset?},
   flight?, explosions}` fires one rocket where the campaign says — over the gate
   when the guard is drawn up, over the court when the bell is rung — beside the

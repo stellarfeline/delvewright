@@ -331,8 +331,11 @@ cap. It reports what the table defines that it could not instantiate
 `world.atmospheres[]`; a place carries one from the first tick
 (`areas[].atmosphere`, `boxes[].atmosphere`); a beat repaints with
 `set-atmosphere`, naming a `place` (the tool hands its cells) or a `region` you
-size yourself. The sun, moon and stars keep the overworld's course whatever a
-place says. **Fog and sky are blended by the client over twelve blocks round the
+size yourself, never both (`DW0929`). An atmosphere nothing carries and nothing
+paints is refused (`DW0930`), and so is an attribute the pinned game does not
+accept on it (`DW0928`, naming the nearest ids). The sun, moon and stars keep
+the overworld's course whatever a place says: an atmosphere colours the sky,
+the fog and the air, and never moves a body in it. **Fog and sky are blended by the client over twelve blocks round the
 camera, up and down included**, so a carried place is painted that far past its
 own bounds and the sky is whole only where every cell within twelve blocks is
 painted: the first twelve blocks past the line are a gradient, and a place
@@ -340,5 +343,7 @@ narrower than the blend never shows its fog at all. Every build prints
 `atmosphere reach: <place> — W of E standing eye(s) read <biome> whole` per
 carried place (a box's eyes stand over its floor, an area's wherever the party
 can stand in it) — read it: where the sky's look matters, most eyes should
-read it whole, and when few do, widen the place. A `region` repaint is painted
-exactly as sized, so size it past the blend the same way.
+read it whole, and when few do, widen the place. Two carried places whose
+paint meets under different atmospheres are refused at the build (`DW0929`):
+leave a gap between them, or carry one atmosphere across both. A `region`
+repaint is painted exactly as sized, so size it past the blend the same way.
