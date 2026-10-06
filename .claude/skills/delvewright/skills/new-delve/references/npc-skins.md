@@ -131,11 +131,11 @@ ships. Every step is mandatory once a design calls for one:
 3. **Record the licence.** `{"spdx": "original", "source": "original"}` for
    your own drawing; anything else needs `url`, and CC BY also `attribution`
    (`DW0741`).
-4. **Look at it.** `delvec textures campaigns/<id>` writes one sheet per row to
+4. **Look at it.** `delvec --prefabs "$DELVEWRIGHT_PREFABS" textures campaigns/<id>` writes one sheet per row to
    `review/textures/` — vanilla beside yours. That sheet is the only place a
    mob's skin or the moon can be seen before the walk: no render this engine
    makes draws either. A block texture also shows in the build's own pack:
-   `delvec viewer --pack <out>/resourcepack.zip …` and Chunky through
+   `delvec --prefabs "$DELVEWRIGHT_PREFABS" viewer --pack <out>/resourcepack.zip …` and Chunky through
    `validation/chunky.sh --pack <out>/resourcepack.zip …`.
 5. **Say it in the walk.** Each row is one *what to look for* item, in the
    player's words — *the moon tonight*, *the drowned on the shore*. A server
