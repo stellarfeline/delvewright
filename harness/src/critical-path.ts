@@ -158,6 +158,14 @@ export interface ReachStep extends PresentationMarkers {
   readonly completion: ReachCompletion;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
+  /**
+   * The carry that ends the previous step (the nearest earlier step that is not
+   * a `rest`, which must carry `transport`) puts the party down inside
+   * `completion`, so the objective completes on that landing, not here. The
+   * compiler decides it; the bot walks nothing for this step and asserts the
+   * marker already arrived. Absent = false.
+   */
+  readonly completedOnLanding?: true;
 }
 
 /** Slay a wave: go to `pos`, attack the wave's mobs until the wave is cleared (v0.3). */
@@ -743,11 +751,19 @@ function parseStep(value: unknown, pointer: string): Step {
           "radius",
           "completion",
           "transport",
+          "completed_on_landing",
           "sneak",
           "cutscene_seconds",
         ],
         pointer,
       );
+      const landed = obj["completed_on_landing"];
+      if (landed !== undefined && landed !== true) {
+        fail(
+          `${pointer}/completed_on_landing`,
+          `must be \`true\` when present, got ${describe(landed)}`,
+        );
+      }
       const radius = obj["radius"];
       if (typeof radius !== "number" || !Number.isFinite(radius)) {
         fail(`${pointer}/radius`, `must be a finite number, got ${describe(radius)}`);
@@ -763,6 +779,7 @@ function parseStep(value: unknown, pointer: string): Step {
         radius,
         completion: requireCompletion(obj, pointer),
         ...transportFields(obj, pointer),
+        ...(landed === true ? { completedOnLanding: true as const } : {}),
         ...presentationFields(obj, pointer),
       };
     }
@@ -1075,6 +1092,21 @@ function parseStep(value: unknown, pointer: string): Step {
  * {@link CriticalPathParseError} on any structural fault. Does NOT check step
  * ordering invariants — see `validateStepOrder` in `sequencer.ts`.
  */
+/**
+ * The index of the step whose carry a `completed_on_landing` reach at `index`
+ * completes on: the nearest earlier step that is not a `rest` (a bonfire rest is
+ * spliced after the beat that lights it, and moves nobody), when that step
+ * carries `transport`. `undefined` otherwise.
+ */
+export function landingCarrier(steps: readonly Step[], index: number): number | undefined {
+  for (let j = index - 1; j >= 0; j--) {
+    const s = steps[j]!;
+    if (s.action === "rest") continue;
+    return "transport" in s && s.transport !== undefined ? j : undefined;
+  }
+  return undefined;
+}
+
 export function parseCriticalPath(raw: unknown): CriticalPath {
   const root = requireObject(raw, "");
   rejectUnknownKeys(
@@ -1108,6 +1140,18 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
     fail("/steps", "must contain at least one step");
   }
   const steps = stepsValue.map((entry, i) => parseStep(entry, `/steps/${i}`));
+  steps.forEach((step, i) => {
+    if (step.action === "reach" && step.completedOnLanding) {
+      const carrier = landingCarrier(steps, i);
+      if (carrier === undefined) {
+        fail(
+          `/steps/${i}/completed_on_landing`,
+          "says a landing completes this reach, but no earlier step (past any `rest`) " +
+            "carries a `transport` — there is no landing for it to complete on",
+        );
+      }
+    }
+  });
 
   const nonCombatants = parseNonCombatants(root["non_combatants"], "/non_combatants");
 

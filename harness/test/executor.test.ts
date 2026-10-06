@@ -773,6 +773,51 @@ test("requireObjective accepts a marker that arrived before the step started", a
   await within("executor.requireObjective(\"obj/exit\", \"reach anchor/exit\")", executor.requireObjective("obj/exit", "reach anchor/exit"));
 });
 
+test("a reach the landing completed passes on the marker it already has, walking nothing", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("gallery");
+  // The ferry's step: the landing puts the bot in the cabin's volume.
+  executor.beginStep(19);
+  bot.emit("messagestr", "[dw:complete gallery obj/cross-the-strait]");
+  executor.beginStep(20);
+  // The fake bot has no pathfinder: a walk here would throw.
+  await within(
+    "executor.reach(landed)",
+    executor.reach({
+      action: "reach",
+      objective: "obj/cross-the-strait",
+      anchor: "anchor/cabin",
+      pos: [2, 67, 28],
+      radius: 1,
+      completion: { kind: "cube", lo: [1, 66, 27], hi: [3, 68, 29] },
+      completedOnLanding: true,
+    }),
+  );
+});
+
+test("a reach the landing was said to complete, with no marker, fails naming the claim", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("gallery");
+  executor.beginStep(20);
+  const step = {
+    action: "reach" as const,
+    objective: "obj/cross-the-strait",
+    anchor: "anchor/cabin",
+    pos: [2, 67, 28] as [number, number, number],
+    radius: 1,
+    completion: { kind: "cube" as const, lo: [1, 66, 27] as [number, number, number], hi: [3, 68, 29] as [number, number, number] },
+    completedOnLanding: true as const,
+  };
+  // A death ends the wait promptly, and stays a death so die-retry can see it.
+  setTimeout(() => bot.emit("death"), 20);
+  await within("executor.reach(landed, death) to reject", assert.rejects(
+    () => executor.reach(step),
+    (err: unknown) => err instanceof BotDeathError,
+  ));
+});
+
 // --- timed-gate crossings (spec-0016 §4) --------------------------
 
 import type { GateAssist } from "../src/executor.ts";

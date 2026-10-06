@@ -140,6 +140,39 @@ fn a_link_is_a_leg_and_the_path_takes_it() {
     assert_eq!(gate["legs_carried"], 1);
 }
 
+/// The reach step right after the carrying trigger step.
+fn reach_after_carry(path: &Value) -> Value {
+    let steps = path["steps"].as_array().unwrap();
+    let at = steps
+        .iter()
+        .position(|s| s["action"] == "trigger" && s.get("transport").is_some())
+        .expect("a trigger step carries the party");
+    steps[at + 1].clone()
+}
+
+#[test]
+fn a_reach_the_landing_puts_the_party_inside_completes_on_the_landing() {
+    // The far beat moved onto the landing itself: the carry sets the party down
+    // inside its completion volume, so the server completes it on arrival,
+    // during the trigger step. The exported path says so, and the bot asserts
+    // the marker there instead of finding the delve finished a step early.
+    let run = build(&campaign("landed", |q| {
+        q["content"]["quests"][0]["objectives"][1]["anchor"] = json!("anchor/far-landing");
+    }));
+    run.green();
+    let reach = reach_after_carry(&run.json("critical-path.json"));
+    assert_eq!(reach["objective"], "obj/far-shore");
+    assert_eq!(reach["completed_on_landing"], json!(true), "{reach}");
+
+    // The primary's far shore stands five blocks past the landing: the party
+    // walks there, and the step carries no mark.
+    let run = build(&campaign("walked-on", |_| {}));
+    run.green();
+    let reach = reach_after_carry(&run.json("critical-path.json"));
+    assert_eq!(reach["objective"], "obj/far-shore");
+    assert!(reach.get("completed_on_landing").is_none(), "{reach}");
+}
+
 #[test]
 fn a_way_onward_that_fires_once_is_refused_with_the_link_remedy() {
     let run = build(&campaign("once", |q| {
