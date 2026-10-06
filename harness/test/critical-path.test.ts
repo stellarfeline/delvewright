@@ -191,7 +191,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, assert-complete/.test(err.message),
   );
 });
 
@@ -791,12 +791,34 @@ test("an approach trigger carries its range and a strike-npc its npc", () => {
   assert.equal(npc!.action === "trigger" && npc!.npc, "npc/giant");
 });
 
+test("a strike-assembly trigger names its assembly and watches no anchor (spec-0082)", () => {
+  const step = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/limb-struck",
+      on: "strike-assembly",
+      assembly: "assembly/pit-limb",
+      pos: [4, 64, 9],
+    }),
+  ).steps[2];
+  assert.deepEqual(step, {
+    action: "trigger",
+    trigger: "trigger/limb-struck",
+    on: "strike-assembly",
+    assembly: "assembly/pit-limb",
+    pos: [4, 64, 9],
+  });
+});
+
 test("a trigger step's fields are present exactly when its kind has them", () => {
   const base = { action: "trigger", trigger: "trigger/t", pos: [0, 64, 0] };
   for (const [bad, pointer] of [
     [{ ...base, on: "strike" }, "/steps/2/anchor"], // a click on nothing
     [{ ...base, on: "strike-npc", anchor: "anchor/a", npc: "npc/n" }, "/steps/2/anchor"],
     [{ ...base, on: "strike-npc" }, "/steps/2/npc"],
+    [{ ...base, on: "strike-assembly", anchor: "anchor/a", assembly: "assembly/x" }, "/steps/2/anchor"],
+    [{ ...base, on: "strike-assembly" }, "/steps/2/assembly"],
+    [{ ...base, on: "strike", anchor: "anchor/a", assembly: "assembly/x" }, "/steps/2/assembly"],
     [{ ...base, on: "approach", anchor: "anchor/a" }, "/steps/2/range"],
     [{ ...base, on: "use", anchor: "anchor/a", range: 3 }, "/steps/2/range"],
     [{ ...base, on: "kick", anchor: "anchor/a" }, "/steps/2/on"],
@@ -865,4 +887,62 @@ test("a hop the arrival check would accept before the press is refused, naming b
   // Eight blocks east is observable, and so is a short hop five blocks down.
   parseCriticalPath(withStep({ ...base, stand: [1, 64, 0], transport: [9, 64, 0] }));
   parseCriticalPath(withStep({ ...base, stand: [1, 64, 0], transport: [2, 59, 0] }));
+});
+
+// --- witness-strike steps ---------------------------------------------------
+
+test("a struck witness parses with its facing, yaw, amount and window", () => {
+  const raw = validRaw();
+  (raw["steps"] as unknown[]).splice(1, 0, {
+    action: "witness-strike",
+    assembly: "assembly/limb",
+    expect: "struck",
+    pos: [8211, 64, 8212],
+    step: 0,
+    facing: 1,
+    facing_count: 8,
+    yaw: -45,
+    amount: 6,
+    window_ticks: 120,
+  });
+  const step = parseCriticalPath(raw).steps[1]!;
+  assert.deepEqual(step, {
+    action: "witness-strike",
+    assembly: "assembly/limb",
+    expect: "struck",
+    pos: [8211, 64, 8212],
+    windowTicks: 120,
+    step: 0,
+    facing: 1,
+    facingCount: 8,
+    yaw: -45,
+    amount: 6,
+  });
+});
+
+test("a spared witness carries no facing, and an unknown expectation is refused", () => {
+  const raw = validRaw();
+  (raw["steps"] as unknown[]).splice(1, 0, {
+    action: "witness-strike",
+    assembly: "assembly/limb",
+    expect: "spared",
+    pos: [8211, 64, 8222],
+    window_ticks: 120,
+    facing: 0,
+  });
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/1/facing",
+  );
+  (raw["steps"] as Array<Record<string, unknown>>)[1] = {
+    action: "witness-strike",
+    assembly: "assembly/limb",
+    expect: "missed",
+    pos: [8211, 64, 8222],
+    window_ticks: 120,
+  };
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/1/expect",
+  );
 });

@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod assembly_fixture;
 pub mod ferry;
 pub mod pinned;
 

@@ -80,6 +80,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
         "water",
         NotPlayerVisible("a biome colour (`#rrggbb`), drawn, never read"),
     ),
+    // spec-0082: a clip name is an id local to the assembly's library rig.
+    ("Assembly", "initial", Reference),
     ("Boundary", "message", Inventoried),
     ("BranchDecl", "leads_to", Reference),
     ("CastBarks", "barks", Inventoried),
@@ -165,6 +167,9 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("LethalVolume", "message", Inventoried),
     ("LethalVolume", "shown_by", Reference),
     ("Forfeit", "kind", Machine),
+    ("QuestEffect", "clip", Reference),
+    ("StrikeStep", "strike", Reference),
+    ("StrikeStep", "windup", Reference),
     ("Shop", "title", Inventoried),
     ("Shop", "marker_item", Reference),
     ("ShopOffer", "label", Inventoried),

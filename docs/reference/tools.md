@@ -84,6 +84,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `edit apply <dir>` | replay the stage-7 edit script, persist a green candidate | `--batch <file>`, `-o edit-shots` |
 | `edit preview <dir>` | same replay + renders, never writes the campaign | `--batch <file>`, `-o edit-shots` |
 | `detail <dir> <place>` / `--all` | **one verb details a place inside the allocation the whole handed** (spec-0058): reads the allocation, binds it into `programs/<place stem>.json`, expands at the frame, runs every gate before any file is written, freezes the piece into `--prefabs` with its gate report beside it, writes the `details[]` row, then builds the whole in memory | `--all` (every place with a program, in site-plan order, stopping at the first refusal with the place named) |
+| `rig describe <rig>` | **check a library rig and print it** (spec-0082): the part count, every clip with its length in ticks — to its last frame applied, and to that frame drawn whole, the tick a blow from it lands — and per clip the footprint of its last frame — the cells its parts stand in (exactly, never the hull), relative to the assembly's mark, from the one footprint function the strike check (`DW0938`) judges by. A rig that breaks a rule is `DW0935`, naming the field. Two runs are byte-identical | `--facing south\|north\|west\|east` (default `south` — the assembly's `facing`), `--prefabs` (the library holding `rigs/<name>/rig.json`), `--json` |
 | `textures <campaign-dir>` | one comparison sheet per `world.textures[]` row (spec-0084 §5.2): vanilla's texture on the left, the campaign's on the right, each nearest-neighbour to 256 px wide on a chequered ground — the review medium for a mob's skin, the moon, anything no frame draws. Reads the client jar (a build never does) and refuses one whose texture bytes are not the census's | `-o review/textures`, `--textures <jar>` |
 | `calibrate <report>` | harvested shot proposals → `anchor + offset` DSL patch (spec-0019) | `--layout <creator-datapack/layout.json>` (required), `-o shot-patch.json` |
 | `place-camera <campaign-dir>` | writes one row of `design/cameras.json`: a pose placed by hand in the game, an estimate, or a deletion (spec-0069) | `--name <row>` (required), `--answers <design.json row>`, `--report <camera-report.json> --slot <n> --fov <deg>` \| `--candidates <file> --pick <camera>` \| `--delete` |
@@ -214,6 +215,24 @@ writes. Full canonical form, discovery rules and the `DW077x` codes:
 ```
 delvec fmt campaigns/campaigns/<id>          # rewrite in place
 delvec fmt --check campaigns/campaigns/<id>  # what CI asks
+```
+
+**`delvec rig describe <rig>` is where a strike's landing box comes from**
+(spec-0082 §3.1). An assembly's keyframes live in a rig file beside the prefab
+library, `<library>/rigs/<name>/rig.json`, written by a generator
+(`prefabs/rig-generator`, §9); the campaign names it `rig/<name>`. The verb
+checks it against every rig rule (`DW0935`, exit 1, each refusal naming its
+field) and prints, per clip, the frame count, the cadence, the ticks from a
+switch to the last frame applied (the number a `sequence` after the clip is
+timed by) and to that frame drawn whole (the tick a blow from it lands), and the
+cells the clip's last frame stands in relative to the mark. A strike's `on_land`
+box is declared along the cells where that frame lies on the floor — the strike
+check refuses a blow on a cell the limb does not come down on, and a limb that
+comes down beyond the box's keep-out ring, from the same geometry.
+
+```
+delvec --prefabs campaigns/prefabs rig describe rig/tentacle
+delvec --prefabs campaigns/prefabs rig describe rig/tentacle --facing north
 ```
 
 Pointing it at a path is what you do to one campaign. What this repository gates
@@ -1945,7 +1964,8 @@ cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
 | `island-terrain-generator` | `island-terrain-gen` | `island-*` terrain | `prefabs/island-tileset.md` |
 | `tidal-keep-generator` | `tidal-keep-gen` | `tk-*` (souls set) | `prefabs/tidal-keep-tileset.md` |
 | `hello-room-generator` | `hello-room-gen` | `hello-room` (the M1 piece) | — |
-| `gallery-generator` | `gallery-prefab-gen` | `gallery-hall`, the `gallery-annex-*` tileset + its pool, `gallery-shard`, `gallery-yard` (the detailed box), `gallery-quay` (the shore) and `gallery-bank` (the site) | `gallery/README.md` |
+| `gallery-generator` | `gallery-prefab-gen` | `gallery-hall`, the `gallery-annex-*` tileset + its pool, `gallery-shard`, `gallery-yard` (the detailed box), `gallery-quay` (the shore) and `gallery-bank` (the site), and `rigs/gallery-sentinel` (the hall's assembly, spec-0082) | `gallery/README.md` |
+| `rig-generator` | `rig-gen` | `rigs/tentacle/rig.json` — assembly rigs (spec-0082): parts and clips, written through `delvewright_dsl::rig::Rig` and checked by `rig::check` before a byte is written; `rig/tentacle` is the spike's 34-segment tentacle ported number for number, turned so its blow lands in front, rounded to six decimals | — |
 
 `gallery-prefab-gen` differs from its siblings in three ways, each deliberate.
 It writes into a **build directory**, not the content library — spec-0039 §6
@@ -2182,3 +2202,26 @@ separating "nothing to do" from "rejected", since `No blocks were filled` and
 `Could not set the block` are legitimate answers that sit inside the shared
 rejection regex; and a `--phase 1`/restart/`--phase 2` split so "survives a
 reload" is measured rather than assumed.
+
+`tools/spike-display-assembly/run.sh` (`EULA=TRUE
+tools/spike-display-assembly/run.sh [--out <path>]`) measures what spec-0082's
+display-entity assembly rests on: a 34-part `block_display` rig riding an
+`item_display` root, a `minecraft:interaction` hitbox, five keyframe clips, a
+hit counter and a strike pattern, all generated by `gen.py` into `spikepack/`
+with every coordinate written once to `site.json`. The rows it answers: how
+many passengers one entity holds and what a `tp`, a `rotate` and a passenger's
+own `tp` do to a mounted set; whether a melee attack and an arrow write the
+hitbox's `attack` record; the tick-by-tick timeline of a windup, hold, strike
+and landing and the damage a body in the landing box takes against one outside
+it; tick cost at 1, 4 and 10 assemblies at 5-tick and 1-tick keyframes; and
+the distance at which the server stops tracking the parts for a client. Raw
+readings in `observations.json`; the spec's §8 is read from it. Three things
+it carries that the next rig should copy: `/tp <target> ~x` is relative to the
+**command source**, not the target — an rcon `tp` of the root sent every part
+to world spawn once — so an entity is moved with `execute as … at @s run tp
+@s`; a `data merge` over hundreds of entities answers one line per entity and
+hits the 4096-byte reply ceiling, so a bulk merge runs inside a pack function;
+and `execute store result … as <many> on passengers if entity @s` stores one
+branch's `1`, never a sum — a population is counted with `scoreboard players
+add` per branch, which is how a first reading of "one passenger per vehicle"
+was found to be the instrument and not the game.

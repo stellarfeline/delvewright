@@ -94,6 +94,9 @@ pub fn validate_campaign_with(
     // payloads and wave-mob equipment slots validate against the item registry
     // (pool areas deferred to the compiler).
     v06_checks(c, items, anchors, entities, &mut d);
+    // spec-0082: assemblies, their rigs and the verbs and trigger that name
+    // them. Every loop inside is empty for a campaign that declares none.
+    assembly_checks(c, anchors, &mut d);
     v06_trap_checks(c, items, entities, anchors, &mut d);
     shortcut_checks(c, anchors, &mut d);
     ambush_checks(c, &mut d);
@@ -1040,6 +1043,10 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, a) in c.quests.content.actors.iter().enumerate() {
         chk!(a.id, "quests", format!("/content/actors/{i}/id"));
     }
+    for (i, a) in c.quests.content.assemblies.iter().enumerate() {
+        chk!(a.id, "quests", format!("/content/assemblies/{i}/id"));
+        chk!(a.rig, "quests", format!("/content/assemblies/{i}/rig"));
+    }
     for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
         for (j, node) in tree.nodes.iter().enumerate() {
             chk!(
@@ -1160,6 +1167,18 @@ fn uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
             .map(|(i, a)| (a.id.as_str(), format!("/content/actors/{i}/id"))),
         "quests",
         "actor",
+        d,
+    );
+    // Assembly ids: unique within the stage-5 assemblies namespace (spec-0082).
+    dup_check(
+        c.quests
+            .content
+            .assemblies
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.id.as_str(), format!("/content/assemblies/{i}/id"))),
+        "quests",
+        "assembly",
         d,
     );
     // Dialogue trees: at most one per NPC (a duplicate tree is a duplicate npc
@@ -3277,7 +3296,8 @@ pub fn declares_bonfire(c: &Campaign) -> bool {
             | EffectSite::ShortcutUnlock { .. }
             | EffectSite::ShopOffer { .. }
             | EffectSite::OnDeath
-            | EffectSite::OnKill { .. } => false,
+            | EffectSite::OnKill { .. }
+            | EffectSite::AssemblyLand { .. } => false,
         };
         has_bonfire |= collected && eff.bonfire().is_some();
     });
@@ -5065,11 +5085,16 @@ fn v04_checks(
                 "quests",
                 format!("/content/triggers/{i}/at"),
                 format!(
-                    "trigger `{}` fires on `strike-npc`, whose target is NPC `{}`'s body — it \
-                     watches no cell, so the `at` anchor `{at}` names nothing and would be \
-                     silently ignored. Remove `at`.",
+                    "trigger `{}` fires on `{}`, whose target is {} — it watches no cell, so \
+                     the `at` anchor `{at}` names nothing and would be silently ignored. \
+                     Remove `at`.",
                     t.id,
-                    t.on.npc_target().map(|n| n.as_str()).unwrap_or("?")
+                    t.on.kind(),
+                    match (t.on.npc_target(), t.on.assembly_target()) {
+                        (Some(n), _) => format!("NPC `{n}`'s body"),
+                        (_, Some(m)) => format!("assembly `{m}`'s hitbox"),
+                        _ => "an object".to_string(),
+                    }
                 ),
             )),
             (true, Some(at)) if !providers.resolvable(at) => d.push(Diagnostic::error(
@@ -5311,6 +5336,274 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
         }
     }
     flags
+}
+
+/// spec-0082: **assemblies, their rigs, and every reference to one.**
+///
+/// * Each assembly's `rig` resolves in the library and passes the rig's
+///   structural rules ([`crate::rig::check`]); its `initial` and every strike
+///   step's `windup`/`strike` name clips the rig declares (`DW0935`). A
+///   registry that is not the whole library answers
+///   [`crate::rig::RigLookup::Unknown`] and nothing is refused on its word.
+/// * Its mark's anchor, and its arming region's, are provided by some area
+///   (`DW0142`), and the mark is a point station.
+/// * Every `spawn-assembly` / `despawn-assembly` / `play-clip`, at every depth
+///   of every effect root, names a declared assembly (`DW0112`), and a
+///   `play-clip` names a clip its rig declares (`DW0935`).
+/// * Every `strike-assembly` trigger names a declared assembly (`DW0112`).
+///
+/// The hitbox's bounds, its reach and where a blow lands are judged at build
+/// time, where cells exist (`DW0936`–`DW0938`, `compiler::assembly`).
+fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    use crate::rig::RigLookup;
+    let quests = &c.quests.content;
+    if quests.assemblies.is_empty()
+        && !quests
+            .triggers
+            .iter()
+            .any(|t| t.on.assembly_target().is_some())
+    {
+        // Still walk the effects: a verb naming an assembly in a campaign that
+        // declares none is a dangling reference.
+        let mut any = false;
+        crate::stages::for_each_campaign_effect(c, &mut |_, _, e| {
+            any |= assembly_verb(e).is_some();
+        });
+        if !any {
+            return;
+        }
+    }
+    let providers = AnchorProviders::build(c, anchors);
+    // The rig each declared assembly resolved to, for the clip checks below.
+    let mut rigs: BTreeMap<&str, Option<&crate::rig::Rig>> = BTreeMap::new();
+    let clip_list = |r: &crate::rig::Rig| -> String {
+        let names = r.clip_names();
+        if names.is_empty() {
+            "none".to_string()
+        } else {
+            names
+                .iter()
+                .map(|n| format!("`{n}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    };
+    for (i, a) in quests.assemblies.iter().enumerate() {
+        let at = format!("/content/assemblies/{i}");
+        let resolved = match anchors.rig(&a.rig) {
+            RigLookup::Unknown => None,
+            RigLookup::Missing => {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    format!("{at}/rig"),
+                    format!(
+                        "assembly `{}` names rig `{}`, and the library holds no `{}/{}/{}` — a \
+                         rig is a file a generator writes beside the prefab library, never \
+                         campaign JSON. Run the generator that writes it, or name a rig the \
+                         library holds",
+                        a.id,
+                        a.rig,
+                        crate::rig::RIGS_DIR,
+                        crate::l10n::local_id(a.rig.as_str()),
+                        crate::rig::RIG_FILE,
+                    ),
+                ));
+                None
+            }
+            RigLookup::Malformed(e) => {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    format!("{at}/rig"),
+                    format!(
+                        "assembly `{}` names rig `{}`, whose `{}` does not parse as a rig \
+                         document: {e}. Regenerate it with the generator that wrote it",
+                        a.id,
+                        a.rig,
+                        crate::rig::RIG_FILE,
+                    ),
+                ));
+                None
+            }
+            RigLookup::Found(r) => {
+                let issues = crate::rig::check(r);
+                for issue in &issues {
+                    d.push(Diagnostic::error(
+                        codes::ASSEMBLY_RIG,
+                        "quests",
+                        format!("{at}/rig"),
+                        format!(
+                            "assembly `{}` names rig `{}`, which breaks a rig rule at `{}`: {}. \
+                             Regenerate the rig with its generator",
+                            a.id, a.rig, issue.field, issue.message
+                        ),
+                    ));
+                }
+                if issues.is_empty() { Some(r) } else { None }
+            }
+        };
+        rigs.insert(a.id.as_str(), resolved);
+        if let Some(r) = resolved {
+            let mut need = |clip: &str, path: String, role: &str| {
+                if r.clips.contains_key(clip) {
+                    return;
+                }
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    path,
+                    format!(
+                        "assembly `{}` asks for clip `{clip}` as its {role}, and rig `{}` declares \
+                         no such clip. Its clips are: {}",
+                        a.id,
+                        a.rig,
+                        clip_list(r)
+                    ),
+                ));
+            };
+            if let Some(initial) = &a.initial {
+                need(initial, format!("{at}/initial"), "`initial`");
+            }
+            let mut paced: Vec<Diagnostic> = Vec::new();
+            if let Some(s) = &a.strikes {
+                for (j, step) in s.pattern.iter().enumerate() {
+                    need(
+                        &step.windup,
+                        format!("{at}/strikes/pattern/{j}/windup"),
+                        "strike step's `windup`",
+                    );
+                    need(
+                        &step.strike,
+                        format!("{at}/strikes/pattern/{j}/strike"),
+                        "strike step's `strike`",
+                    );
+                    if let Some(t) = step.ticks_per_frame
+                        && !(crate::rig::MIN_TICKS_PER_FRAME..=crate::rig::MAX_TICKS_PER_FRAME)
+                            .contains(&t)
+                    {
+                        paced.push(Diagnostic::error(
+                            codes::ASSEMBLY_RIG,
+                            "quests",
+                            format!("{at}/strikes/pattern/{j}/ticks_per_frame"),
+                            format!(
+                                "assembly `{}`'s strike step {j} plays its clips at {t} tick(s) per \
+                                 frame. A keyframe cadence is {} to {} — the bounds every rig clip \
+                                 is held to. Choose a cadence in that range, or drop \
+                                 `ticks_per_frame` to play each clip at its own",
+                                a.id,
+                                crate::rig::MIN_TICKS_PER_FRAME,
+                                crate::rig::MAX_TICKS_PER_FRAME
+                            ),
+                        ));
+                    }
+                }
+            }
+            d.extend(paced);
+        }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            a.at.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "an assembly's mark",
+            "quests",
+            format!("{at}/at/anchor"),
+        ) {
+            d.push(f);
+        } else if !providers.resolvable(a.at.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("{at}/at/anchor"),
+                format!(
+                    "assembly `{}` stands at anchor `{}`, which no area's prefab provides — {}",
+                    a.id,
+                    a.at.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                    ),
+                ),
+            ));
+        }
+        if let Some(s) = &a.strikes
+            && !providers.resolvable(s.while_in.anchor.as_str())
+        {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("{at}/strikes/while_in/anchor"),
+                format!(
+                    "assembly `{}`'s arming region is centred on anchor `{}`, which no area's \
+                     prefab provides — {}",
+                    a.id,
+                    s.while_in.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                    ),
+                ),
+            ));
+        }
+    }
+    // Every verb that names an assembly, at every depth of every root.
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, e| {
+        let Some((assembly, clip)) = assembly_verb(e) else {
+            return;
+        };
+        let Some(resolved) = rigs.get(assembly) else {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                path.to_string(),
+                format!(
+                    "`{}` names assembly `{assembly}`, which the stage-5 `assemblies` list does \
+                     not declare — declare it, or fix the reference",
+                    e.verb.tag()
+                ),
+            ));
+            return;
+        };
+        if let (Some(clip), Some(r)) = (clip, resolved)
+            && !r.clips.contains_key(clip)
+        {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_RIG,
+                "quests",
+                format!("{path}/clip"),
+                format!(
+                    "`play-clip` asks assembly `{assembly}` for clip `{clip}`, and its rig \
+                     declares no such clip. Its clips are: {}",
+                    clip_list(r)
+                ),
+            ));
+        }
+    });
+    for (i, t) in quests.triggers.iter().enumerate() {
+        if let Some(m) = t.on.assembly_target()
+            && !rigs.contains_key(m.as_str())
+        {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                format!("/content/triggers/{i}/on/assembly"),
+                format!(
+                    "`strike-assembly` trigger `{}` targets assembly `{m}`, which the stage-5 \
+                     `assemblies` list does not declare — use a declared assembly id",
+                    t.id
+                ),
+            ));
+        }
+    }
+}
+
+/// The assembly a verb names, with the clip a `play-clip` asks for.
+fn assembly_verb(e: &QuestEffect) -> Option<(&str, Option<&str>)> {
+    match &e.verb {
+        Verb::SpawnAssembly { assembly } | Verb::DespawnAssembly { assembly } => {
+            Some((assembly.as_str(), None))
+        }
+        Verb::PlayClip { assembly, clip } => Some((assembly.as_str(), Some(clip.as_str()))),
+        _ => None,
+    }
 }
 
 /// DSL v0.6 trap validation (spec-0011). Each trap binds to a **point anchor**

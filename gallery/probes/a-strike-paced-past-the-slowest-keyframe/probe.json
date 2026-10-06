@@ -1,0 +1,13 @@
+{
+  "code": "DW0935",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/strikes/pattern/0/ticks_per_frame",
+      "value": 21
+    }
+  ],
+  "units": [],
+  "why": "The sentinel's strike step sets its own pace: its wind-up and strike play at 3 ticks a keyframe. This edit paces them at 21, past the slowest keyframe cadence any rig clip is held to (1 to 20). It declares no unit: `ticks_per_frame` is bound by the primary, and what the engine refuses is a pace outside the rig's own bounds, naming the field."
+}

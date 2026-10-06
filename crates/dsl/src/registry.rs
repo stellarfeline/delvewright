@@ -283,6 +283,16 @@ pub trait AnchorRegistry {
     fn lighting_for(&self, _prefab: &PrefabId) -> Option<Lighting> {
         None
     }
+
+    /// What the library holds for a rig id (`rig/<name>`, spec-0082 §3.1).
+    ///
+    /// The default is [`RigLookup::Unknown`](crate::rig::RigLookup::Unknown) —
+    /// the answer of a registry that is not the whole library, on whose word
+    /// nothing is refused, exactly as [`Self::has_prefab`] defaults to `None`.
+    /// The compiler's `PrefabRegistry` reads `<library>/rigs/` and answers.
+    fn rig(&self, _rig: &crate::ids::RigId) -> crate::rig::RigLookup<'_> {
+        crate::rig::RigLookup::Unknown
+    }
 }
 
 /// Vendored item registry loaded from an embedded JSON array of item ids.

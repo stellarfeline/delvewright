@@ -8,6 +8,7 @@ import type {
   KillStep,
   ReachStep,
   RestStep,
+  WitnessStrikeStep,
   SelectClassStep,
   Step,
   TalkToStep,
@@ -507,6 +508,43 @@ test("a rest step is never mistaken for the beat the campaign marker is due at",
       [1, 2],
     ],
     "the last objective is the kill at index 2, not the rest at index 3",
+  );
+});
+
+// --- witness-strike steps --------------------------------------------------------
+
+const witness: WitnessStrikeStep = {
+  action: "witness-strike",
+  assembly: "assembly/limb",
+  expect: "spared",
+  pos: [4, 64, 9],
+  windowTicks: 100,
+};
+
+test("a witness step is dispatched, and is never the beat the marker is due at", async () => {
+  const checked: Array<[number, number]> = [];
+  const executor = new (class extends RecordingExecutor {
+    witnessStrike(_step: WitnessStrikeStep): Promise<void> {
+      this.calls.push("witness-strike");
+      return Promise.resolve();
+    }
+    assertEndgameNotReached(stepIndex: number, finalObjectiveIndex: number): void {
+      checked.push([stepIndex, finalObjectiveIndex]);
+    }
+  })();
+  await runSequence(path([selectClass, talkTo, kill, witness, assertComplete]), executor);
+  assert.deepEqual(executor.calls, ["select-class", "talk-to", "kill", "witness-strike", "assert-complete"]);
+  assert.deepEqual(checked, [
+    [0, 2],
+    [1, 2],
+  ]);
+});
+
+test("a path with a witness against an executor that cannot watch fails loudly", async () => {
+  const executor = new RecordingExecutor();
+  await assert.rejects(
+    () => runSequence(path([selectClass, witness, kill, assertComplete]), executor),
+    (err: unknown) => err instanceof StepExecutionError && /unwitnessed/.test(err.message),
   );
 });
 

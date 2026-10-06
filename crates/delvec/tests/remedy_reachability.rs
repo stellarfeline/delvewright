@@ -2781,3 +2781,138 @@ fn dw0309_adding_the_named_file_admits_the_texture_row() {
     let (code, said) = validate_tex(&after);
     assert_eq!(code, 0, "{said}");
 }
+
+// ---------------------------------------------------------------------------
+// spec-0082 — the assembly's four refusals, each taken by its own move
+// ---------------------------------------------------------------------------
+
+/// The code an assembly fixture build refuses with, `None` when it builds.
+fn assembly_verdict(q: &serde_json::Value, r: delvewright_dsl::rig::Rig) -> Option<String> {
+    use common::assembly_fixture::{campaign, prefabs_with, try_build};
+    match try_build(&campaign(q), &prefabs_with(r)) {
+        Ok(_) => None,
+        Err(BuildFailure::Diagnostic { code, .. }) => Some(code.id().to_string()),
+        Err(BuildFailure::Validation(e)) => panic!("{} invalid command(s): {e:?}", e.len()),
+    }
+}
+
+/// `DW0935`'s move: name a clip the rig declares (the message lists them). The
+/// refusal is validation tier, so it is read off the diagnostics; the move then
+/// builds.
+#[test]
+fn dw0935_naming_a_clip_the_rig_declares_builds() {
+    use common::assembly_fixture::{quests_with, rig, trigger, validation_codes};
+    let red = quests_with(|q| trigger(q)["effects"][1]["clip"] = serde_json::json!("fly"));
+    let codes = validation_codes(&red, rig());
+    let refused = codes
+        .iter()
+        .find(|(c, _, _)| c == "DW0935")
+        .unwrap_or_else(|| panic!("refused: {codes:?}"));
+    assert!(
+        refused.2.contains("`retract`"),
+        "the message lists the clips: {refused:?}"
+    );
+    let green = quests_with(|q| trigger(q)["effects"][1]["clip"] = serde_json::json!("retract"));
+    assert!(validation_codes(&green, rig()).is_empty());
+    assert_eq!(assembly_verdict(&green, rig()), None);
+}
+
+/// `DW0936`'s move: declare a width over 0 and at most 6.
+#[test]
+fn dw0936_a_width_vanilla_detects_builds() {
+    use common::assembly_fixture::{assembly, quests_with, rig};
+    let at = |w: f64| {
+        quests_with(|q| assembly(q)["hitbox"] = serde_json::json!({ "width": w, "height": 2.0 }))
+    };
+    assert_eq!(assembly_verdict(&at(7.0), rig()).as_deref(), Some("DW0936"));
+    assert_eq!(assembly_verdict(&at(6.0), rig()), None);
+}
+
+/// `DW0937`'s move: lower the mark toward a floor the party stands on.
+#[test]
+fn dw0937_lowering_the_mark_builds() {
+    use common::assembly_fixture::{assembly, quests_with, rig};
+    let at = |dy: i32| {
+        quests_with(|q| {
+            assembly(q)["at"] =
+                serde_json::json!({ "anchor": "anchor/exit", "offset": [0, dy, 0] });
+            assembly(q)["hitbox"] =
+                serde_json::json!({ "width": 1.0, "height": 2.0, "offset": [0, 2, 0] });
+            // A raised mark lays its slab in the air; the strike is another row's.
+            assembly(q).as_object_mut().unwrap().remove("strikes");
+        })
+    };
+    assert_eq!(assembly_verdict(&at(3), rig()).as_deref(), Some("DW0937"));
+    assert_eq!(assembly_verdict(&at(2), rig()), None);
+}
+
+/// `DW0938`'s two moves: shrink the landing box inside `while_in` (shape 1),
+/// and choose a strike clip that reaches the box (shape 2).
+#[test]
+fn dw0938_shrinking_the_box_or_choosing_a_clip_that_reaches_it_builds() {
+    use common::assembly_fixture::{assembly, quests_with, rig};
+    let landing = |e: [u32; 3]| {
+        quests_with(|q| {
+            assembly(q)["strikes"]["while_in"]["extent"] = serde_json::json!([0, 0, 0]);
+            assembly(q)["strikes"]["pattern"][0]["on_land"][0]["in"]["extent"] =
+                serde_json::json!(e);
+        })
+    };
+    assert_eq!(
+        assembly_verdict(&landing([1, 0, 0]), rig()).as_deref(),
+        Some("DW0938")
+    );
+    assert_eq!(assembly_verdict(&landing([0, 0, 0]), rig()), None);
+    let clip = |c: &str| {
+        quests_with(|q| assembly(q)["strikes"]["pattern"][0]["strike"] = serde_json::json!(c))
+    };
+    assert_eq!(
+        assembly_verdict(&clip("windup"), rig()).as_deref(),
+        Some("DW0938")
+    );
+    assert_eq!(assembly_verdict(&clip("strike"), rig()), None);
+}
+
+/// `DW0938`'s two-way moves (spec-0082 §5.4 shape 2): a one-cell landing under
+/// a long limb is refused for the cells the limb comes down on uncaught, and
+/// widening the landing box along the limb — the move the message names —
+/// builds; a limb hanging above the body is refused for the cells it never
+/// reaches, and moving the box under a clip that comes down — the other move —
+/// builds.
+#[test]
+fn dw0938_widening_the_box_along_the_limb_builds() {
+    use common::assembly_fixture::{assembly, quests, quests_with, rig};
+    let mut long = rig();
+    let last = long
+        .clips
+        .get_mut("strike")
+        .unwrap()
+        .frames
+        .last_mut()
+        .unwrap();
+    last[0].translation = [-1.5, 0.0, -3.5];
+    last[0].scale = [3.0, 0.5, 7.0];
+    assert_eq!(
+        assembly_verdict(&quests(), long.clone()).as_deref(),
+        Some("DW0938")
+    );
+    let widened = quests_with(|q| {
+        assembly(q)["strikes"]["pattern"][0]["on_land"][0]["in"]["extent"] =
+            serde_json::json!([0, 0, 2]);
+        assembly(q)["strikes"]["while_in"]["extent"] = serde_json::json!([2, 1, 4]);
+    });
+    assert_eq!(assembly_verdict(&widened, long), None);
+    let mut high = rig();
+    let last = high
+        .clips
+        .get_mut("strike")
+        .unwrap()
+        .frames
+        .last_mut()
+        .unwrap();
+    for t in last.iter_mut() {
+        t.translation[1] += 2.0;
+    }
+    assert_eq!(assembly_verdict(&quests(), high).as_deref(), Some("DW0938"));
+    assert_eq!(assembly_verdict(&quests(), rig()), None);
+}

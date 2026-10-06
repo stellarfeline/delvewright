@@ -394,6 +394,11 @@ pub struct PrefabRegistry {
     /// Per-file load failures (`DW0346`) collected by [`Self::load_dir`] —
     /// surfaced by the CLI at validation tier, never silently dropped.
     load_diagnostics: Vec<Diagnostic>,
+    /// The library's rigs (spec-0082 §3.1), `rig/<name>` → the parsed
+    /// `rigs/<name>/rig.json`, or the parse error. A rig is refused where an
+    /// assembly names it (`DW0935`), never at load: a library may hold a rig
+    /// no campaign uses.
+    rigs: BTreeMap<String, Result<delvewright_dsl::rig::Rig, String>>,
 }
 
 impl PrefabRegistry {
@@ -521,13 +526,29 @@ impl PrefabRegistry {
                 Err(e) => fail(format!("does not parse as prefab metadata: {e}")),
             }
         }
+        let rigs = load_rigs(dir)?;
         Ok(Self {
             by_id,
             anchor_names,
             pools,
             pool_members,
             load_diagnostics,
+            rigs,
         })
+    }
+
+    /// Add one rig to the registry under `rig/<name>`, replacing any of the
+    /// same id — the rig half of [`Self::insert`], for a judgement over a rig
+    /// that is not on disk.
+    pub fn insert_rig(&mut self, id: &str, rig: Result<delvewright_dsl::rig::Rig, String>) {
+        self.rigs.insert(id.to_string(), rig);
+    }
+
+    /// **Every rig this library holds**, id and parse result, in id order.
+    pub fn rigs(
+        &self,
+    ) -> impl Iterator<Item = (&String, &Result<delvewright_dsl::rig::Rig, String>)> {
+        self.rigs.iter()
     }
 
     /// Add one piece to the registry, replacing any piece of the same id.
@@ -686,6 +707,53 @@ impl AnchorRegistry for PrefabRegistry {
             .get(prefab.as_str())
             .and_then(|m| m.lighting.clone())
     }
+
+    /// This registry IS the library, so a rig it does not hold is missing.
+    fn rig(&self, rig: &delvewright_dsl::RigId) -> delvewright_dsl::rig::RigLookup<'_> {
+        use delvewright_dsl::rig::RigLookup;
+        match self.rigs.get(rig.as_str()) {
+            None => RigLookup::Missing,
+            Some(Err(e)) => RigLookup::Malformed(e),
+            Some(Ok(r)) => RigLookup::Found(r),
+        }
+    }
+}
+
+/// Read `<dir>/rigs/<name>/rig.json` for every subdirectory of `<dir>/rigs`
+/// (spec-0082 §3.1), in name order. An absent `rigs/` is a library with no
+/// rig; a subdirectory without a readable `rig.json` is recorded as that
+/// rig's error, so an assembly naming it is refused with the reason.
+fn load_rigs(
+    dir: &Path,
+) -> std::io::Result<BTreeMap<String, Result<delvewright_dsl::rig::Rig, String>>> {
+    let mut out = BTreeMap::new();
+    let root = dir.join(delvewright_dsl::rig::RIGS_DIR);
+    if !root.is_dir() {
+        return Ok(out);
+    }
+    let mut names: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(&root)? {
+        let entry = entry?;
+        if entry.path().is_dir()
+            && let Some(n) = entry.file_name().to_str()
+        {
+            names.push(n.to_string());
+        }
+    }
+    names.sort();
+    for name in names {
+        let file = root.join(&name).join(delvewright_dsl::rig::RIG_FILE);
+        let parsed = match std::fs::read_to_string(&file) {
+            Ok(raw) => delvewright_dsl::rig::parse(&raw),
+            Err(e) => Err(format!(
+                "`{}/{name}/{}` cannot be read: {e}",
+                delvewright_dsl::rig::RIGS_DIR,
+                delvewright_dsl::rig::RIG_FILE
+            )),
+        };
+        out.insert(format!("rig/{name}"), parsed);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

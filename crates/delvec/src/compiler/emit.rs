@@ -641,6 +641,62 @@ pub fn build_with_warnings(
     let relinked = crate::compiler::nav::with_links_taken(plan, prefabs, &world)?;
     let plan: &Plan = relinked.as_ref().unwrap_or(plan);
 
+    // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
+    //
+    // The binding is kept: the critical path carries the bot's witness of each
+    // blow, and the staging record states which were witnessed.
+    let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding>;
+    //
+    // Asked over the world the other proofs read, before any route is derived:
+    // a hitbox, its reach and where a blow lands are facts about cells, and
+    // nothing below changes them. The binding and the cost the host meets are
+    // printed on every build, zeroes included, before the verdict is taken.
+    {
+        let entry = campaign_spawn(plan);
+        let open = world.without_exclusions();
+        let population = crate::compiler::lethal::walked_population(plan, &open, entry);
+        let roots = crate::compiler::lethal::stands_at_roots(plan, entry);
+        let returned = playable_region(plan).map(|r| (r.min, r.max));
+        // Where the party can walk while each performed trigger is the next
+        // beat — `DW0924`'s reading: a gate a later beat opens is shut. A
+        // trigger step proves no objective, so the configuration is the one
+        // the next objective step stands under: the strike is made on the way
+        // to it, after every beat before it.
+        let reaches = |trigger: &str, lo: [f64; 3], hi: [f64; 3]| {
+            let step = plan
+                .critical_path
+                .iter()
+                .position(
+                    |s| matches!(s, Step::Trigger { trigger_id, .. } if trigger_id == trigger),
+                )
+                .map(|t| {
+                    (t..plan.critical_path.len())
+                        .find(|&i| plan.critical_path[i].objective().is_some())
+                        .unwrap_or(t)
+                });
+            let config = step.and_then(|s| crate::compiler::nav::world_while_next(plan, &world, s));
+            let ground = config.as_ref().unwrap_or(&world);
+            ground
+                .reachable_walkable(&roots)
+                .into_iter()
+                .filter(|p| !crate::compiler::nav::returned_from(returned, *p))
+                .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))
+        };
+        let (binding, findings) = crate::compiler::assembly::check(plan, &population, &reaches);
+        assembly_binding = Some(binding.clone());
+        eprintln!("{}", binding.line());
+        eprintln!("{}", binding.cost_line());
+        if let Some((first, rest)) = findings.split_first() {
+            for extra in rest {
+                eprintln!("{} [error] build: {}", extra.code, extra.message);
+            }
+            return Err(BuildFailure::Diagnostic {
+                code: first.code,
+                message: first.message.clone(),
+            });
+        }
+    }
+
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     //
     // **Bound here, and here is the only door.** This is the one function that
@@ -1961,11 +2017,19 @@ pub fn build_with_warnings(
     emit_server(plan, &mut out);
 
     // ---- critical path ----
-    put_json(
-        &mut out,
-        "critical-path.json",
-        &emit_critical_path(plan, &moves, &actor_moves),
-    );
+    let mut cp = emit_critical_path(plan, &moves, &actor_moves);
+    if let Some(mut b) = assembly_binding {
+        if let Some(steps) = cp.get_mut("steps").and_then(Value::as_array_mut) {
+            b.witnessed = crate::compiler::assembly::with_witness_steps(
+                steps,
+                crate::compiler::assembly::witness_steps(&b),
+            );
+        }
+        if b.declared > 0 {
+            put_json(&mut out, "validation/assembly.json", &b.to_json());
+        }
+    }
+    put_json(&mut out, "critical-path.json", &cp);
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
@@ -4524,10 +4588,27 @@ fn emit_functions(
     // spec-0073: refresh every health bar whose fight has a live body, hide the
     // rest. Empty for a campaign that declares none → byte-identical.
     tick.extend(crate::compiler::healthbar::tick_lines(ns, &health_bars));
+    // spec-0082: every live assembly's clip driver and strike machine. Empty
+    // for a campaign that declares none → byte-identical.
+    tick.extend(crate::compiler::assembly::tick_lines(plan));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     fns.push(("tick".to_string(), lines(&tick)));
     fns.extend(crate::compiler::healthbar::functions(ns, &health_bars));
+    // spec-0082: the assemblies' bodies, clips, drivers and landings. A landing
+    // is an ordinary effect bundle, lowered here under its root's audience.
+    fns.extend(crate::compiler::assembly::assembly_functions(
+        plan,
+        &|e, body| {
+            emit_gated_effect(
+                plan,
+                e,
+                root_audience(delvewright_dsl::EffectRootKind::AssemblyLand),
+                body,
+            )
+        },
+        &|e, lines, body| guard_effect_lines(plan, e, lines, body),
+    ));
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
     fns.extend(emit_checkpoint_functions(plan));
@@ -6074,6 +6155,23 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
             );
         }
     });
+    // spec-0082: an assembly's mark and its arming region are anchor-bearing
+    // declarations like every other, and an unresolved one would place nothing
+    // and judge nothing.
+    for (i, a) in c.quests.content.assemblies.iter().enumerate() {
+        refs.push((
+            format!("/content/assemblies/{i}/at/anchor"),
+            "assembly",
+            a.at.anchor.as_str().to_string(),
+        ));
+        if let Some(st) = &a.strikes {
+            refs.push((
+                format!("/content/assemblies/{i}/strikes/while_in/anchor"),
+                "assembly",
+                st.while_in.anchor.as_str().to_string(),
+            ));
+        }
+    }
     for (path, verb, anchor) in refs {
         if anchor_point_any(plan, &anchor).is_some() {
             continue;
@@ -6211,6 +6309,9 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
         K::OnKill => Audience::Solo,
         // Polled on the tick with no executor.
         K::Trigger | K::TrapPayload | K::ShortcutUnlock => Audience::Scheduled,
+        // A blow lands from the per-assembly strike machine on the tick, with
+        // no executor (spec-0082 §4.3).
+        K::AssemblyLand => Audience::Scheduled,
     }
 }
 
@@ -6224,9 +6325,21 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
 /// selector would not work). An ungated effect (both lists empty) is emitted
 /// verbatim.
 fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
-    let gate = eff.gate();
     let mut inner: Vec<String> = Vec::new();
     emit_quest_effect(plan, eff, aud, &mut inner);
+    guard_effect_lines(plan, eff, inner, body);
+}
+
+/// Wrap lines lowered for `eff` in its own gate (`when`), the one guard every
+/// gated effect takes — also for lines a feature module lowered itself (an
+/// aimed assembly's turned blow, spec-0082 §5.5).
+pub(crate) fn guard_effect_lines(
+    plan: &Plan,
+    eff: &QuestEffect,
+    inner: Vec<String>,
+    body: &mut Vec<String>,
+) {
+    let gate = eff.gate();
     if gate.is_empty() {
         body.extend(inner);
         return;
@@ -6759,6 +6872,11 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         }
         Verb::SpawnNpc { npc, .. } => {
             body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
+        }
+        // --- spec-0082 assembly verbs: a call into the assembly's own
+        // functions (`compiler::assembly`). ---
+        Verb::SpawnAssembly { .. } | Verb::DespawnAssembly { .. } | Verb::PlayClip { .. } => {
+            body.extend(crate::compiler::assembly::verb_lines(plan, &eff.verb).unwrap_or_default());
         }
         // --- DSL v0.10 status effects (spec-0031) -----------------------------
         // Vanilla `effect give` / `effect clear`, through the SAME formatter the
@@ -11145,8 +11263,23 @@ fn trigger_is_click(t: &delvewright_dsl::EnvTrigger) -> bool {
     use delvewright_dsl::TriggerOn;
     matches!(
         t.on,
-        TriggerOn::Strike | TriggerOn::Use | TriggerOn::StrikeNpc { .. }
+        TriggerOn::Strike
+            | TriggerOn::Use
+            | TriggerOn::StrikeNpc { .. }
+            | TriggerOn::StrikeAssembly { .. }
     )
+}
+
+/// The tag of the `minecraft:interaction` a click trigger's record is read off:
+/// the trigger's own `dw_trig_<id>` (worn by the box it summons, or added to the
+/// NPC hitbox or press body it rides), or — for a `strike-assembly`
+/// (spec-0082) — the assembly's own hitbox, which the trigger rides without
+/// tagging it, since the assembly summons and kills that box itself.
+fn trigger_carrier_tag(t: &delvewright_dsl::EnvTrigger) -> String {
+    match t.on.assembly_target() {
+        Some(a) => crate::compiler::assembly::hit_tag(&plan::safe_local(a.as_str())),
+        None => format!("dw_trig_{}", plan::safe_local(t.id.as_str())),
+    }
 }
 
 /// The NBT record a click trigger reads off its interaction entity: a left-click
@@ -11671,7 +11804,7 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
 ///
 /// Added by the cutscene `start` alongside `gamemode spectator`, removed by the
 /// `end`/restore, so the state has exactly the cinematic's lifetime.
-const CUTSCENE_TAG: &str = "dw_cutscene";
+pub(crate) const CUTSCENE_TAG: &str = "dw_cutscene";
 
 /// Datapack predicate id (under the campaign namespace) matching a player whose
 /// sneak key is HELD this tick — the vanilla `minecraft:player` `input`
@@ -12079,6 +12212,28 @@ fn check_trigger_bodies(
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
         }
+        // A `strike-assembly` (spec-0082) lands on the assembly's own hitbox.
+        // An assembly with none is `DW0936`, and one out of reach `DW0937`;
+        // what is recorded here is the body the press resolved to.
+        if let Some(a) = t.on.assembly_target() {
+            let placed = crate::compiler::assembly::placed(plan);
+            if let Some(p) = placed.iter().find(|p| p.decl.id == *a)
+                && let Some(h) = &p.decl.hitbox
+            {
+                ledger.push(
+                    t.id.as_str(),
+                    t.on.kind(),
+                    &p.decl.at.display(),
+                    &format!(
+                        "rides assembly `{a}`'s hitbox, {} x {} standing on {:?}",
+                        h.width,
+                        h.height,
+                        p.hitbox_cell()
+                    ),
+                );
+            }
+            continue;
+        }
         let Some(at) = t.at_anchor() else {
             continue;
         };
@@ -12120,6 +12275,72 @@ fn check_trigger_bodies(
         });
     }
     Ok(ledger)
+}
+
+/// The three gate fragments a polled trigger's tick clause carries: its
+/// at-most-once guard, its forbidden flags and its required flags and state.
+/// One authority for [`env_trigger_tick`] and the assembly PackTest that runs
+/// the very clause a blow on a hitbox meets (spec-0082).
+fn trigger_poll_guards(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, String, String) {
+    let id = plan::safe_local(t.id.as_str());
+    let once_guard = if t.once {
+        format!("unless score #trig_{id} dw.sys matches 1 ")
+    } else {
+        String::new()
+    };
+    // Flags are party state (spec-0018): the gate is a single `#party` read,
+    // positive and negative alike. `unless … matches 1` is unset-safe (an
+    // uninitialized flag score counts as "not set").
+    let flag_guard = format!(
+        "{}{}",
+        party_flag_gate(&t.requires_flags),
+        // DSL v0.10 (spec-0031). A trigger's arming gate is a party predicate
+        // (`DW0503` keeps `player`-scoped data out of it).
+        state_cond(plan, &t.requires_state, false)
+    );
+    let forbid_guard: String = t
+        .forbids_flags
+        .iter()
+        .map(|f| {
+            format!(
+                "unless score {} {} matches 1 ",
+                plan::PARTY,
+                plan::flag_score(f.as_str())
+            )
+        })
+        .collect();
+    (once_guard, forbid_guard, flag_guard)
+}
+
+/// A click trigger's tick clause and the clear that consumes its record:
+/// `(poll, clear)`.
+///
+/// The two click streams are separate NBT fields on ONE
+/// `minecraft:interaction`: a left-click writes `attack`, a right-click writes
+/// `interaction`. That is what lets a `strike-npc` trigger share the hitbox
+/// with the NPC's dialogue — the dialogue advancement reads the right-click,
+/// this reads the left-click, and neither consumes the other's record. The
+/// poll fires when the interaction entity has recorded the event and (if
+/// gated) the party holds the flags; the clear removes the record. The
+/// carrier is the trigger's own tag, or — for a `strike-assembly` — the
+/// assembly's hitbox (spec-0082 §4.3).
+fn click_trigger_poll(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, String) {
+    let ns = &plan.namespace;
+    let id = plan::safe_local(t.id.as_str());
+    let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
+    let rec = trigger_record(t);
+    let flag_cond = if flag_guard.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", flag_guard.trim_start())
+    };
+    let carrier = trigger_carrier_tag(t);
+    (
+        format!(
+            "execute {once_guard}{forbid_guard}if entity @e[tag={carrier},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
+        ),
+        format!("execute as @e[tag={carrier}] run data remove entity @s {rec}"),
+    )
 }
 
 /// Environment-trigger per-tick checks for the `tick` function. Empty for a
@@ -12164,57 +12385,20 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
             continue;
         }
         let id = plan::safe_local(t.id.as_str());
-        let once_guard = if t.once {
-            format!("unless score #trig_{id} dw.sys matches 1 ")
-        } else {
-            String::new()
-        };
-        // Flags are party state (spec-0018): the gate is a single `#party` read,
-        // positive and negative alike. `unless … matches 1` is unset-safe (an
-        // uninitialized flag score counts as "not set").
-        let flag_guard = format!(
-            "{}{}",
-            party_flag_gate(&t.requires_flags),
-            // DSL v0.10 (spec-0031). A trigger's arming gate is a party predicate
-            // (`DW0503` keeps `player`-scoped data out of it).
-            state_cond(plan, &t.requires_state, false)
-        );
-        let forbid_guard: String = t
-            .forbids_flags
-            .iter()
-            .map(|f| {
-                format!(
-                    "unless score {} {} matches 1 ",
-                    plan::PARTY,
-                    plan::flag_score(f.as_str())
-                )
-            })
-            .collect();
+        let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
         match &t.on {
-            TriggerOn::Strike | TriggerOn::Use | TriggerOn::StrikeNpc { .. } => {
-                // The two click streams are separate NBT fields on ONE
-                // `minecraft:interaction`: a left-click writes `attack`, a
-                // right-click writes `interaction`. That is what lets a
-                // `strike-npc` trigger share the hitbox with the NPC's dialogue
-                // — the dialogue advancement reads the right-click, this reads
-                // the left-click, and neither consumes the other's record.
-                let rec = match t.on {
-                    TriggerOn::Use => "interaction",
-                    _ => "attack",
-                };
-                // Fire when the interaction entity has recorded the event and (if
-                // gated) the party holds the flags; then clear the record.
-                let flag_cond = if flag_guard.is_empty() {
-                    String::new()
-                } else {
-                    format!("{} ", flag_guard.trim_start())
-                };
-                out.push(format!(
-                    "execute {once_guard}{forbid_guard}if entity @e[tag=dw_trig_{id},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
-                ));
-                clears.push(format!(
-                    "execute as @e[tag=dw_trig_{id}] run data remove entity @s {rec}"
-                ));
+            TriggerOn::Strike
+            | TriggerOn::Use
+            | TriggerOn::StrikeNpc { .. }
+            | TriggerOn::StrikeAssembly { .. } => {
+                let (poll, clear) = click_trigger_poll(plan, t);
+                out.push(poll);
+                // Several triggers may ride one hitbox (an NPC's, an
+                // assembly's); it is cleared once, after every one of them has
+                // been offered it.
+                if !clears.contains(&clear) {
+                    clears.push(clear);
+                }
             }
             TriggerOn::Approach { range } => {
                 if let Some(p) = t.at_anchor().and_then(|at| anchor_point_any(plan, at)) {
@@ -12292,7 +12476,8 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
         if capture {
             let rec = trigger_record(t);
             body.push(format!(
-                "data modify storage {STRIKER_STORAGE} {STRIKER_PATH} set from entity @e[tag=dw_trig_{id},limit=1] {rec}.player"
+                "data modify storage {STRIKER_STORAGE} {STRIKER_PATH} set from entity @e[tag={},limit=1] {rec}.player",
+                trigger_carrier_tag(t)
             ));
         }
         // The trigger's own flag gate is already proven by `env_trigger_tick`
@@ -15077,6 +15262,10 @@ fn emit_packtest(
             lines(&df).into_bytes(),
         );
     }
+
+    // spec-0082: per assembly, the body it spawns, every hit counter that rides
+    // its hitbox, and its landing. Emits nothing for a campaign with none.
+    emit_assembly_packtests(plan, out);
 
     // v0.3: one focused mechanism test per gameplay verb present in the campaign,
     // plus a flag-gate test. Each drives the compiler-generated mechanic functions
@@ -18612,6 +18801,244 @@ fn emit_kill_reward_packtests(
             format!("packtest-datapack/data/{ns}/test/wave_kill_reward_{safe}.mcfunction"),
             lines(&b).into_bytes(),
         );
+    }
+}
+
+/// **The assembly's generated PackTests** (spec-0082 §10), per placed
+/// assembly `<s>`:
+///
+/// * `asm_spawn_<s>` — the real `asm_spawn_<s>` stands one root with every
+///   rig part riding it (counted off the root's passengers, one
+///   `scoreboard players add` each — a forked `store result` counts one
+///   branch, spec-0082 §8 row 2) and one hitbox when declared; the real
+///   `asm_despawn_<s>` leaves no entity of the assembly behind.
+/// * `asm_hits_<s>_<trigger>` — per `strike-assembly` trigger whose bundle
+///   counts a `party` datum with an ungated `add-state`: an `attack` record
+///   written onto the hitbox and the real `tick` move the datum by the amount;
+///   and where a `play-clip` in the bundle waits on that datum at a count, the
+///   blow that reaches the count makes that clip the one the assembly plays.
+/// * `asm_land_<s>` — per assembly with a strike pattern, the real landing
+///   function run with step 0 in flight: the landing counter moves by one, the
+///   machine returns to idle and the step index advances.
+///
+/// A PackTest dummy is permanently undamageable (see `lethal_<id>`'s own
+/// note), so what a landing does to a player's health is the bot tier's to
+/// witness; this suite proves the machine that delivers it.
+fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
+    use crate::compiler::assembly as asm;
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let write = |name: &str, b: Vec<String>, out: &mut BuildOutput| {
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    };
+    for p in asm::placed(plan) {
+        let s = p.safe.clone();
+        let id = p.decl.id.as_str();
+        let reset = [
+            format!("kill @e[tag={}]", asm::tag(&s)),
+            format!(
+                "scoreboard players set {} dw.sys 0",
+                asm::holder(&s, "live")
+            ),
+        ];
+
+        // --- asm_spawn_<s> ---
+        let mut b = packtest_header(&format!(
+            "{title}: assembly `{id}` spawns its root, {} part(s) riding it and its hitbox, and \
+             leaves nothing behind when it despawns (spec-0082)",
+            p.rig.parts.len()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.extend(reset.iter().cloned());
+        b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+        let n = format!("#asmn_{s}");
+        b.push(format!("scoreboard players set {n} dw.sys 0"));
+        b.push(format!(
+            "execute as @e[tag={},limit=1] on passengers run scoreboard players add {n} dw.sys 1",
+            asm::root_tag(&s)
+        ));
+        b.push(format!(
+            "assert score {n} dw.sys matches {}",
+            p.rig.parts.len()
+        ));
+        let h = format!("#asmh_{s}");
+        b.push(format!(
+            "execute store result score {h} dw.sys if entity @e[type=minecraft:interaction,tag={}]",
+            asm::hit_tag(&s)
+        ));
+        b.push(format!(
+            "assert score {h} dw.sys matches {}",
+            usize::from(p.decl.hitbox.is_some())
+        ));
+        b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+        let left = format!("#asme_{s}");
+        b.push(format!(
+            "execute store result score {left} dw.sys if entity @e[tag={}]",
+            asm::tag(&s)
+        ));
+        b.push(format!("assert score {left} dw.sys matches 0"));
+        write(&format!("asm_spawn_{s}"), b, out);
+
+        // --- asm_hits_<s>_<trigger> ---
+        for t in &plan.campaign.quests.content.triggers {
+            if t.on.assembly_target().map(|a| a.as_str()) != Some(id) || p.decl.hitbox.is_none() {
+                continue;
+            }
+            // The counted datum: the bundle's first ungated `add-state` on a
+            // party datum.
+            let Some((datum, amount)) = t.effects.iter().find_map(|e| match &e.verb {
+                Verb::AddState { state, amount }
+                    if e.when.is_none()
+                        && plan
+                            .campaign
+                            .quests
+                            .content
+                            .state_decl(state.as_str())
+                            .is_some_and(|d| d.scope == StateScope::Party) =>
+                {
+                    Some((state, *amount))
+                }
+                _ => None,
+            }) else {
+                continue;
+            };
+            let score = plan::state_score(datum.as_str());
+            let tsafe = plan::safe_local(t.id.as_str());
+            let initial = plan
+                .campaign
+                .quests
+                .content
+                .state_decl(datum.as_str())
+                .map(|d| d.initial)
+                .unwrap_or(0);
+            // The trigger's own gate, owned by the template (`DW0807`).
+            let mut own: Vec<String> = Vec::new();
+            for f in &t.requires_flags {
+                own.push(format!(
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
+                    plan::flag_score(f.as_str())
+                ));
+            }
+            for f in &t.forbids_flags {
+                own.push(format!(
+                    "scoreboard players set {} {} 0",
+                    plan::PARTY,
+                    plan::flag_score(f.as_str())
+                ));
+            }
+            own.push(format!("scoreboard players set #trig_{tsafe} dw.sys 0"));
+            let hit = format!(
+                "data merge entity @e[tag={},limit=1] {{attack:{{player:[I;0,0,0,1],timestamp:0L}}}}",
+                asm::hit_tag(&s)
+            );
+            let mut b = packtest_header(&format!(
+                "{title}: a blow on assembly `{id}`'s hitbox fires `{}` and moves `{}` by {amount} \
+                 (spec-0082)",
+                t.id, datum
+            ));
+            b.push(format!("function {ns}:setup"));
+            // The blow meets the very clause `tick` polls it with, and the
+            // clear after it — never the whole `tick`, whose other gates read
+            // the whole progression ledger, and a template that zeroes that
+            // ledger inline runs under the campaign template's own phases in
+            // the same batch. What the clause reads is the trigger's own gate
+            // (`DW0807`), which `own` writes.
+            let (poll, clear) = click_trigger_poll(plan, t);
+            b.extend(reset.iter().cloned());
+            b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+            b.extend(own.iter().cloned());
+            b.push(format!(
+                "scoreboard players set {} {score} {initial}",
+                plan::PARTY
+            ));
+            b.push(hit.clone());
+            b.push(poll.clone());
+            b.push(clear.clone());
+            b.push(format!(
+                "assert score {} {score} matches {}",
+                plan::PARTY,
+                i64::from(initial) + i64::from(amount)
+            ));
+            // The clip the count plays, where the bundle waits on the datum.
+            let counted = t.effects.iter().find_map(|e| match &e.verb {
+                Verb::PlayClip { assembly, clip } if assembly.as_str() == id => e
+                    .requires_state()
+                    .iter()
+                    .find(|c| c.state == *datum && c.op == delvewright_dsl::CompareOp::AtLeast)
+                    .and_then(|c| p.rig.clip_index(clip).map(|k| (c.value, k))),
+                _ => None,
+            });
+            if let Some((at, k)) = counted {
+                b.extend(own.iter().cloned());
+                b.push(format!(
+                    "scoreboard players set {} dw.sys 0",
+                    asm::holder(&s, "sm")
+                ));
+                b.push(format!(
+                    "scoreboard players set {} {score} {}",
+                    plan::PARTY,
+                    i64::from(at) - i64::from(amount)
+                ));
+                b.push(hit.clone());
+                b.push(poll.clone());
+                b.push(clear.clone());
+                b.push(format!("assert score {} {score} matches {at}", plan::PARTY));
+                b.push(format!(
+                    "assert score {} dw.sys matches {k}",
+                    asm::holder(&s, "base")
+                ));
+                b.push(format!(
+                    "assert score {} dw.sys matches {k}",
+                    asm::holder(&s, "clip")
+                ));
+            }
+            b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+            b.extend(own.iter().cloned());
+            b.push(format!(
+                "scoreboard players set {} {score} {initial}",
+                plan::PARTY
+            ));
+            write(&format!("asm_hits_{s}_{tsafe}"), b, out);
+        }
+
+        // --- asm_land_<s> ---
+        let Some(st) = p.decl.strikes.as_ref().filter(|st| !st.pattern.is_empty()) else {
+            continue;
+        };
+        let lands = asm::holder(&s, "lands");
+        let mut b = packtest_header(&format!(
+            "{title}: assembly `{id}`'s strike lands, counts the landing, and returns the machine \
+             to idle (spec-0082)"
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.extend(reset.iter().cloned());
+        b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+        b.push(format!("scoreboard players set {lands} dw.sys 0"));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 3",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            asm::holder(&s, "step")
+        ));
+        b.push(format!("function {ns}:{}", asm::land_fn(&s)));
+        b.push(format!("assert score {lands} dw.sys matches 1"));
+        b.push(format!(
+            "assert score {} dw.sys matches 0",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!(
+            "assert score {} dw.sys matches {}",
+            asm::holder(&s, "step"),
+            usize::from(st.pattern.len() > 1)
+        ));
+        b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+        write(&format!("asm_land_{s}"), b, out);
     }
 }
 
@@ -24094,7 +24521,7 @@ fn critical_path_json(
                 // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
                 // broadcast from its bundle), never on the click landing. `anchor`
                 // / `npc` / `range` are present exactly when the kind has one.
-                Step::Trigger { trigger_id, on, anchor_id, npc_id, pos, range, stand } => {
+                Step::Trigger { trigger_id, on, anchor_id, npc_id, assembly_id, pos, range, stand } => {
                     let mut v = json!({
                         "action": "trigger", "trigger": trigger_id, "on": on, "pos": pos
                     });
@@ -24110,6 +24537,9 @@ fn critical_path_json(
                         }
                         if let Some(n) = npc_id {
                             obj.insert("npc".to_string(), json!(n));
+                        }
+                        if let Some(m) = assembly_id {
+                            obj.insert("assembly".to_string(), json!(m));
                         }
                         if let Some(r) = range {
                             obj.insert("range".to_string(), json!(r));

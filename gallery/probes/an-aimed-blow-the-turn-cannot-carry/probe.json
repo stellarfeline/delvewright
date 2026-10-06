@@ -1,0 +1,34 @@
+{
+  "code": "DW0938",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/strikes/pattern/0/on_land/0",
+      "value": {
+        "steps": [
+          {
+            "at_ticks": 0,
+            "effects": [
+              {
+                "amount": 2,
+                "in": {
+                  "anchor": "anchor/plinth",
+                  "extent": [
+                    0,
+                    0,
+                    0
+                  ]
+                },
+                "type": "damage-players"
+              }
+            ]
+          }
+        ],
+        "type": "sequence"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The sentinel's strikes are aimed: at every wind-up it turns to the one of its four facings nearest the player in its arming region, and its blow's landing box turns with it. This edit moves the blow inside a `sequence`, where the box is no longer at the top of `on_land`. Only a box at the top is turned, so this blow would land where the first facing put it whichever way the statue turned. It declares no unit: `aim` and the blow are bound by the primary, and what the engine refuses is an aimed blow it cannot turn. The remedy is to keep the `damage-players` at the top of `on_land`, where a `when` on it is kept."
+}

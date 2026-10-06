@@ -11,6 +11,7 @@ import type {
   KillStep,
   ReachStep,
   RestStep,
+  WitnessStrikeStep,
   SelectClassStep,
   Step,
   TalkToStep,
@@ -35,6 +36,11 @@ export interface StepExecutor {
    * under. Optional so existing fakes keep compiling; a path carrying a `rest`
    * step against an executor without it is a hard failure, never a silent skip. */
   rest?(step: RestStep): Promise<void>;
+  /** Witness an assembly's blow: stand where the path says and see whether
+   * health is taken (spec-0082). Proves no objective. Optional so existing
+   * fakes keep compiling; a path carrying one against an executor without it is
+   * a hard failure, never a silent skip. */
+  witnessStrike?(step: WitnessStrikeStep): Promise<void>;
   /** Perform an environment trigger the path depends on (strike, use, approach
    * or strike-npc), then wait for its fired marker. Proves no objective — it
    * opens what the steps after it walk through. */
@@ -194,6 +200,14 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
       return executor.rest(step);
     case "trigger":
       return executor.fireTrigger(step);
+    case "witness-strike":
+      if (!executor.witnessStrike) {
+        throw new Error(
+          `critical path carries a witness of assembly ${step.assembly}'s blow but this ` +
+            `executor cannot stand and watch — the blow would go unwitnessed`,
+        );
+      }
+      return executor.witnessStrike(step);
     case "assert-complete":
       return executor.assertComplete(step);
   }
@@ -222,7 +236,7 @@ export async function runSequence(
   const finalObjectiveIndex = (() => {
     for (let i = path.steps.length - 2; i >= 0; i--) {
       const action = path.steps[i]!.action;
-      if (action !== "rest" && action !== "trigger") return i;
+      if (action !== "rest" && action !== "trigger" && action !== "witness-strike") return i;
     }
     return path.steps.length - 2;
   })();
