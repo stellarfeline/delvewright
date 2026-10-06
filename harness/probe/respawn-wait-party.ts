@@ -25,6 +25,12 @@
 //   3. It relogs mid-wait: it comes back waiting, and its clock did not run while
 //      it was away.
 //   4. After `seconds`: adventure, on the checkpoint cell, untagged, flask full.
+//   8. The bonfire during a wait (spec-0078's tooltips meet the wait): a player
+//      in play clicks the fire and is shown its dialog with both tooltips; the
+//      waiting player, beside the same fire, clicks it and is shown nothing,
+//      and its own `/trigger dw.rest` rests nothing; the player in play rests
+//      during the wait: the wave re-seats once, the waiter keeps waiting, and
+//      the release seats it on the fire.
 //   5. One waits and the other dies: both are released, the wave re-seats once,
 //      and the second one back neither waits nor re-seats it again.
 //   6. Alone (`alone: false`), a death does not wait.
@@ -71,6 +77,9 @@ function check(label: string, ok: boolean, reading: string): void {
   if (!ok) failures.push(label);
 }
 
+type RegistryData = { id: string; entries: { key: string; value?: unknown }[] };
+const dialogRegistry = new Map<string, RegistryData["entries"]>();
+
 function join(username: string): Promise<Bot> {
   return new Promise((resolve, reject) => {
     // `createHarnessBot` reports `player_loaded` after the join and every respawn,
@@ -84,6 +93,14 @@ function join(username: string): Promise<Bot> {
       auth: "offline",
       respawn: false,
     });
+    // The dialog registry the server syncs at configuration: a `show_dialog`
+    // names a datapack dialog by its index here, never inline.
+    (bot as unknown as { _client: { on(n: string, l: (p: RegistryData) => void): void } })._client.on(
+      "registry_data",
+      (packet) => {
+        if (packet.id === "minecraft:dialog") dialogRegistry.set(username, packet.entries);
+      },
+    );
     bot.once("spawn", () => resolve(bot));
     bot.once("error", reject);
     bot.once("kicked", (r) => reject(new Error(`${username} kicked: ${JSON.stringify(r)}`)));
@@ -211,7 +228,7 @@ const seatCell = await (async () => {
 })();
 await rcon.run(`function ${ns}:spawn_${wave}`);
 await sleep(1000);
-const seated = await markWave();
+let seated = await markWave();
 check("the wave is seated and marked", seated > 0, `${seated} body(ies) tagged pw_old`);
 check("the trigger has not fired before the probe", (await latch()) !== 1, `#trig_${trigger}=${await latch()}`);
 
@@ -287,6 +304,105 @@ await sleep(500);
   check("after the wait the flask is refilled", f > 0, `${f} flask(s)`);
   const w = await waveState();
   check("the release of a wait re-seats nothing", w.old === seated && w.fresh === 0, `old=${w.old} fresh=${w.fresh}`);
+}
+await guard("rw-b");
+
+// --- 8. the bonfire during a wait (spec-0077 meets spec-0078) ---
+//
+// The fire's hitbox is armed where the campaign's own `bonfire` effect arms it:
+// on the checkpoint cell `bonfire_save` made active, tagged `dw_bonfire_<i>`,
+// which is what the `bf_<i>` advancement matches. Every dialog either client is
+// shown is read off the raw `show_dialog` packet.
+{
+  const [sx, sy, sz] = seatCell as [number, number, number];
+  await rcon.run(
+    `execute unless entity @e[tag=dw_bonfire_${bonfireText}] run summon minecraft:interaction ${sx} ${sy} ${sz} {width:1.0f,height:2.0f,response:1b,Tags:["dw_bonfire_${bonfireText}"]}`,
+  );
+  const dialogsA: string[] = [];
+  const dialogsB: string[] = [];
+  const onDialog = (bot: Bot, into: string[]) =>
+    (bot as unknown as { _client: { on(n: string, l: (p: unknown) => void): void } })._client.on(
+      "show_dialog",
+      (packet) => into.push(JSON.stringify(packet)),
+    );
+  onDialog(a, dialogsA);
+  onDialog(b, dialogsB);
+  const fireOf = (bot: Bot) =>
+    Object.values(bot.entities).find(
+      (e) => e.name === "interaction" && Math.hypot(e.position.x - sx, e.position.y - sy, e.position.z - sz) < 0.5,
+    );
+
+  // Control: a player in play clicks the fire and is shown its dialog, both
+  // buttons carrying their tooltips.
+  await rcon.run(`tp rw-a ${sx} ${sy} ${sz + 1.5} facing ${sx} ${sy + 1} ${sz}`);
+  await sleep(1500);
+  const fireA = fireOf(a);
+  check("control: the player in play sees the fire's hitbox", fireA !== undefined, `${Object.values(a.entities).filter((e) => e.name === "interaction").length} interaction(s) known to rw-a`);
+  if (fireA) await a.activateEntity(fireA);
+  await sleep(1000);
+  {
+    // `show_dialog` carries `{dialog: <registry index>}`; the entry it names is
+    // read from the registry the server synced to rw-a at configuration.
+    const shown = dialogsA.map((j) => (JSON.parse(j) as { dialog?: { dialog?: unknown } }).dialog?.dialog);
+    const entries = dialogRegistry.get("rw-a") ?? [];
+    const named = shown.map((i) => (typeof i === "number" ? entries[i] : undefined));
+    const fire = named.find((e) => e?.key === `${ns}:bonfire_${bonfireText}`);
+    const body = fire ? JSON.stringify(fire.value) : "";
+    check(
+      "control: a click by a player in play opens the fire's dialog, tooltips on both buttons",
+      fire !== undefined && body.includes("rest_tooltip") && body.includes("save_tooltip"),
+      `${dialogsA.length} dialog(s) shown, naming ${named.map((e) => e?.key ?? "?").join(", ")} of ${entries.length} synced; rest_tooltip ${body.includes("rest_tooltip")}, save_tooltip ${body.includes("save_tooltip")}`,
+    );
+    const at = await score("rw-a", "dw.rest_at");
+    check("control: the opener ran for the player in play", at === Number(bonfireText), `dw.rest_at=${at}`);
+  }
+
+  // The waiting player watches rw-a, so it stands beside the same fire, and
+  // clicks it: nothing opens.
+  await rcon.run("scoreboard players reset rw-b dw.rest_at");
+  await kill("rw-b");
+  await respawn(b);
+  await sleep(1000);
+  const waitingAtFire = (await mode("rw-b")) === 3 && ((await clock("rw-b")) ?? 0) > 0;
+  check("a fall beside the fire waits", waitingAtFire, `playerGameType=${await mode("rw-b")} dw.rwait=${await clock("rw-b")}`);
+  const fireB = fireOf(b);
+  {
+    const pb = await pos("rw-b");
+    check("the waiting player stands within reach of the fire", fireB !== undefined && dist(pb, seatCell) < 3, `rw-b at ${fmt(pb)}, fire at ${fmt(seatCell)}; hitbox known to rw-b: ${fireB !== undefined}`);
+  }
+  if (fireB) await b.activateEntity(fireB);
+  await sleep(1000);
+  {
+    const at = await score("rw-b", "dw.rest_at");
+    check("a waiting player's click on the fire runs no opener", at === undefined, `dw.rest_at=${at}`);
+    check("a waiting player is shown no dialog", dialogsB.length === 0, `${dialogsB.length} dialog(s) shown to rw-b`);
+  }
+  b.chat("/trigger dw.rest set 2");
+  await sleep(1000);
+  {
+    const w = await waveState();
+    check("a waiting player's own /trigger of the rest rests nothing", w.old === seated && w.fresh === 0, `old=${w.old} fresh=${w.fresh} (seated ${seated})`);
+  }
+
+  // rw-a rests while rw-b waits: the party-wide rest runs, and the wait goes on.
+  a.chat("/trigger dw.rest set 2");
+  await sleep(1500);
+  {
+    const w = await waveState();
+    check("a rest during a wait re-seats the wave once", w.old === 0 && w.fresh === seated, `old=${w.old} fresh=${w.fresh} (seated ${seated})`);
+    const m = await mode("rw-b");
+    const c = await clock("rw-b");
+    check("a rest during a wait does not release the waiter", m === 3 && c !== undefined && c > 0 && (await tagged("rw-b")) === 1, `playerGameType=${m} dw.rwait=${c} tagged=${await tagged("rw-b")}`);
+    check("a rest during a wait is not a wipe", (await score("#wipe", "dw.sys")) === 0, `#wipe=${await score("#wipe", "dw.sys")}`);
+  }
+  seated = await markWave();
+  {
+    const left = Math.max(0, seconds * 20 - ((await clock("rw-b")) ?? 0));
+    await sleep((left / 20) * 1000 + 1500);
+    const m = await mode("rw-b");
+    const pb = await pos("rw-b");
+    check("after a rest during the wait, the release seats the waiter on the fire", m === 2 && (await clock("rw-b")) === undefined && dist(pb, seatCell) < 0.5, `playerGameType=${m} dw.rwait=${await clock("rw-b")} rw-b at ${fmt(pb)}, cell ${fmt(seatCell)}`);
+  }
 }
 await guard("rw-b");
 
