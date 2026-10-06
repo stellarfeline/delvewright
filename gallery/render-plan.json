@@ -578,48 +578,33 @@
       "kind": "pov"
     },
     {
-      "area": "area/hall",
-      "id": "pov/leg13/wp8",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
+      "area": "",
       "id": "pov/leg14/wp0",
       "kind": "pov"
     },
     {
-      "area": "area/hall",
+      "area": "",
       "id": "pov/leg14/wp1",
       "kind": "pov"
     },
     {
       "area": "area/hall",
-      "id": "pov/leg14/wp2",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg14/wp3",
-      "kind": "pov"
-    },
-    {
-      "area": "",
       "id": "pov/leg15/wp0",
       "kind": "pov"
     },
     {
-      "area": "",
+      "area": "area/hall",
       "id": "pov/leg15/wp1",
       "kind": "pov"
     },
     {
-      "area": "area/hall",
+      "area": "",
       "id": "pov/leg16/wp0",
       "kind": "pov"
     },
     {
       "area": "area/hall",
-      "id": "pov/leg16/wp1",
+      "id": "pov/leg17/wp0",
       "kind": "pov"
     },
     {
