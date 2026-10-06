@@ -519,14 +519,51 @@ fn a_straight_hall_under_a_fogged_atmosphere_builds() {
     assert!(binding.contains("fog end 3..3"), "{binding}");
 }
 
-/// …and **the same hall with its paint cut to the play space is refused**:
-/// the unpadded piece's paint ends within the blend of every eye, so each eye
-/// reads the atmosphere mixed with the unpainted default, and the refusal
-/// prints the kernel-weighted fog end it read — a number between the declared
-/// 3 and the default 1024, never either.
+/// …and **so does the same hall on the unpadded piece**: an area's paint
+/// grows over its claim (`horizon::area_claim`, its own 4-cells grown by the
+/// blend on every side), so the piece needs no void margin for its eyes to
+/// read the declared fog whole. The loop's fog reader is a second instrument
+/// on the claim, sharing only the kernel port with the reach line.
 #[test]
-fn dw0947_the_same_hall_with_its_paint_cut_to_the_play_space() {
-    let dir = campaign_with("straight-hall-fog-cut", |_| {}, fogged);
+fn a_straight_hall_on_the_unpadded_piece_reads_its_fog_whole() {
+    let dir = campaign_with("straight-hall-fog-unpadded", |_| {}, fogged);
+    let run = build_cut(
+        &dir,
+        &Cuts {
+            air: straight_hall_air(),
+            ..Cuts::default()
+        },
+    );
+    run.green();
+    let binding = run.binding();
+    assert!(binding.contains("fog end 3..3"), "{binding}");
+}
+
+/// …and **a sky painted beside the hall mixes its fog and is refused**: a
+/// `set-atmosphere` with a `region` is painted exactly as sized, so the
+/// ground biome painted over the west wall and the cells beside it, inside the
+/// hall's claim, lies within the blend of every eye, each eye reads the
+/// atmosphere mixed with the unpainted default, and the refusal prints the
+/// kernel-weighted fog end it read — a number between the declared 3 and the
+/// default 1024, never either.
+#[test]
+fn dw0947_a_sky_painted_beside_the_hall_mixes_its_fog() {
+    let dir = campaign_with(
+        "straight-hall-fog-mixed",
+        |q| {
+            q["content"]["triggers"] = json!([{
+                "id": "trigger/the-wall-clears",
+                "at": "anchor/porch",
+                "on": { "on": "approach", "range": 2 },
+                "effects": [{
+                    "type": "set-atmosphere",
+                    "atmosphere": null,
+                    "region": { "anchor": "anchor/west-wall", "extent": [4, 3, 18] }
+                }]
+            }]);
+        },
+        fogged,
+    );
     let run = build_cut(
         &dir,
         &Cuts {
@@ -535,6 +572,10 @@ fn dw0947_the_same_hall_with_its_paint_cut_to_the_play_space() {
         },
     );
     let line = run.refused("DW0947");
+    assert!(
+        line.contains("/content/triggers/0/effects/0"),
+        "the refusal names the repaint the view opens under: {line}"
+    );
     let fog: f64 = line
         .split("(fog end ")
         .nth(1)
