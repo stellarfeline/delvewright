@@ -313,15 +313,29 @@ this section is what they are *for* and the traps in each.
   twenty, and that is a hazard they can see coming — judge it in playtest. A
   display of many rockets is a `sequence` of `firework` effects, not one
   overloaded rocket.
+- **Who sees, hears or receives an effect is the effect's own `audience` and
+  `in`.** Any effect a player sees, hears or receives — `narrate`, `play-sound`,
+  `particle`, `give-effect`, `clear-effect`, `damage-players`, `give-item` —
+  takes `"audience": "party"` (everyone) or `"audience": "actor"` (the one player
+  whose act fired the beat: the completer, the presser, the dying player, the
+  buyer, the killer), and `"in": {anchor, extent}` (only players standing in that
+  box when it fires). Leave `audience` out and the beat keeps its root's answer:
+  a quest completion speaks to the party, a `presser` trigger to its presser. A
+  polled trigger, a trap and a shortcut have no actor, and `actor` there is
+  refused (`DW0503`); so are `audience` and `in` on an effect that changes the
+  world rather than a player (a flag, a block, a gate, a timeline, a rocket;
+  `DW0942`).
 - **A perception beat is a `sequence` of `give-effect`, `particle` and
   `play-sound`** — the screen darkens and swims, a face fills it, something
   sounds from behind. `particle {particle, at, count?, spread?, speed?}` spawns a
   vanilla particle at a mark (`{anchor, offset?}`) or at `"players"` — each
   addressed player; the full-screen face is `"particle":
   "minecraft:elder_guardian", "at": "players"`. Only particle types a bare id
-  spawns are admitted (not `dust`, `block`, `item`, …). A sound behind the
+  spawns are admitted (not `dust`, `block`, `item`, …; `DW0941`). A sound behind the
   listener is `"at": {"at": "players", "offset": [0, 0, -3]}` — the offset is in
-  the listener's own frame, `+z` the way they face. Three rules for the beat:
+  the listener's own frame, `+z` the way they face. A timeline started from a
+  beat a player drove carries that player: `"audience": "actor"` on a step
+  reaches them alone. Three rules for the beat:
   **it is never the only signal** —
   each of these effects sits behind a player setting the engine cannot read
   (Distortion Effects, Darkness Pulsing, the sound sliders), so a change a
@@ -330,12 +344,13 @@ this section is what they are *for* and the traps in each.
   world rather than a potion; and know what the engine fixed for you — every
   particle is written in force mode, every sound in the `master` category, and
   every grant ends by its duration. **A blinding near a killing volume or a
-  deadly drop is refused**: a blinded player cannot see the hazard beside them.
+  deadly drop is refused** (`DW0943`): a blinded player cannot see the hazard
+  beside them.
   Shorten `seconds`, draw `in` farther from the hazard, or use
   `minecraft:nausea`, which leaves the floor visible. A grant of night vision,
   blindness or darkness that ends while a cutscene beside it in the same
-  timeline or bundle is still rolling is refused too — give it the seconds the
-  error names. Two things to plan around: a second grant of an effect the
+  timeline or bundle is still rolling is refused too (`DW0944`) — give it the
+  seconds the error names. Two things to plan around: a second grant of an effect the
   player already has shows nothing unless it is stronger or longer, so a beat
   re-armed inside its own length re-applies nothing visible; and a timeline
   started again before it ends re-times every step for both players.
@@ -670,20 +685,21 @@ this section is what they are *for* and the traps in each.
   yours, written with the ordinary verbs.
   - *Its shape and motion come from a rig*, `"rig": "rig/<name>"`, a file a
     generator writes into the prefab library (`rigs/<name>/rig.json`). You never
-    write keyframes. Read what a rig offers before you use it: the engine's
-    rig describe verb prints its parts, each clip with its length in ticks, and
+    write keyframes. Read what a rig offers before you use it:
+    `delvec --prefabs "$DELVEWRIGHT_PREFABS" rig describe rig/<name>` prints
+    its parts, each clip with its length in ticks, and
     the cells each clip's last frame stands in relative to the mark, turned the
     way your assembly faces. `initial` is the clip it plays from
     `spawn-assembly`; `play-clip {assembly, clip}` switches it; a `sequence`
     times the beat after a clip from the tick lengths `rig describe` prints;
-    `despawn-assembly` removes it unseen. Naming a clip the rig lacks is refused
-    with the rig's clips listed.
+    `despawn-assembly` removes it unseen. A rig that is missing or broken, and
+    a clip the rig lacks, are refused with the rig's clips listed (`DW0935`).
   - *It is struck in melee only.* Its `hitbox {width, height, offset?}` is an
     invisible box a left-click registers on; **an arrow passes straight through
     it**, so a ranged class cannot hit it and a party wants someone who fights
     up close. The box must cover the parts the player sees, at most 6 wide and
-    22 tall, and when your critical path needs it struck, somewhere the party
-    can stand must be within arm's reach (3 blocks) of it.
+    22 tall (`DW0936`), and when your critical path needs it struck, somewhere
+    the party can stand must be within arm's reach (3 blocks) of it (`DW0937`).
   - *A hit count is a `state` you declare*, not a field on the thing: a
     `strike-assembly` trigger with `"once": false` that does `add-state` one per
     blow, and the effects that happen at the count gated on `requires_state`
@@ -695,7 +711,7 @@ this section is what they are *for* and the traps in each.
     {while_in, pattern: [{windup, hold, strike, on_land}]}` winds up, holds,
     strikes, and runs `on_land` the moment the strike clip's last frame has
     finished drawing — usually a `damage-players` with an `in` box, and a sound.
-    Three things are refused, all so the danger stays visible: **a blow that
+    Three things are refused (`DW0938`), all so the danger stays visible: **a blow that
     reaches a player who never stepped into the arming region** (keep every
     landing box inside `while_in`); **a blow on a cell the limb does not come
     down on** — within a block of the floor, where the player stands; a limb
