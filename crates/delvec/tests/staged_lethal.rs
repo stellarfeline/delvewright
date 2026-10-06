@@ -48,6 +48,10 @@ struct Room {
     /// Magma under the 3×3 round the lid, `x ∈ 6..=8`, `z ∈ 3..=5` — the floor
     /// a walk-level volume over the lid catches, shown before the flip.
     magma_lid: bool,
+    /// An upward pointed-dripstone tip on the pit's bottom course, `y = 1` —
+    /// the cell the volume at `anchor/pit` covers. A body that falls in stands
+    /// on the tip, whose collision box tops out 11/16 into that cell.
+    tip_floor: bool,
 }
 
 /// The lid room's non-air cells.
@@ -69,6 +73,9 @@ fn cells(room: Room) -> Vec<([i32; 3], &'static str)> {
     by.remove(&[PIT.0, 2, PIT.1]);
     if room.open_pit {
         by.remove(&[PIT.0, 3, PIT.1]);
+    }
+    if room.tip_floor {
+        by.insert([PIT.0, 1, PIT.1], "minecraft:pointed_dripstone");
     }
     if room.magma_waist {
         for x in 6..=8 {
@@ -742,6 +749,35 @@ fn a_pocket_only_while_the_volume_is_dead_names_its_state() {
     assert_eq!(code, "DW0921", "{msg}");
     assert!(msg.contains("lethal volume `lethal/the-pit` dead"), "{msg}");
     build(&Case::new(PIT_ALWAYS).room(open), "pocket-live");
+}
+
+/// **A killing volume in a dripstone tip course is reached by the body that
+/// stands on the tips.** The open pit's bottom course holds an upward
+/// pointed-dripstone tip, and the volume covers that course. Vanilla's tip
+/// collision box tops out at 11/16 of a block (the pinned jar's
+/// `getCollisionShape`, `crates/dsl/data/collision-tops-1.21.11.tsv`), so a body
+/// that falls in stands with its feet 0.6875 into the tip cell — inside the
+/// volume, and killed there. A model that stands it on the tip as on a full
+/// block puts its feet on the course above, finds the volume reached by no
+/// body, and refuses a pit vanilla kills in as a place a body cannot leave
+/// (`DW0921`).
+#[test]
+fn a_volume_in_a_dripstone_tip_course_is_reached_and_the_pit_builds() {
+    let tips = Room {
+        open_pit: true,
+        tip_floor: true,
+        ..Room::default()
+    };
+    let (out, _) = build(&Case::new(PIT_ALWAYS).room(tips), "tip-course");
+    let gate = json(&out, "validation/lethal-gate.json");
+    let rows = gate["danger_visibility"]["volumes"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "{gate}");
+    let by = rows[0]["reached_by"].as_str().unwrap_or_default();
+    assert!(
+        by.contains("fall"),
+        "a fall onto the tips reaches the volume: {}",
+        rows[0]
+    );
 }
 
 /// The world-edits replay reaches the same verdicts as `emit::build`'s own arm.

@@ -993,6 +993,33 @@ mod tests {
         }
     }
 
+    /// **A body stands on an upward dripstone tip 11/16 into its cell**, where
+    /// the pinned jar's collision box tops out
+    /// (`collision-tops-1.21.11.tsv`: `thickness=tip,vertical_direction=up`
+    /// is `0..11`). The default state is that tip. Every other thickness, and a
+    /// tip hanging down, reaches the cell top and stays a full height.
+    #[test]
+    fn a_dripstone_tip_is_a_partial_floor() {
+        for id in [
+            "minecraft:pointed_dripstone",
+            "minecraft:pointed_dripstone[thickness=tip,vertical_direction=up]",
+            "pointed_dripstone[thickness=tip,vertical_direction=up,waterlogged=true]",
+        ] {
+            assert_eq!(collision_top_16(id), 11, "{id}");
+            assert_eq!(collision_class(id), Collision::PartialFloor(11), "{id}");
+            assert!(!passes_body(id), "{id} still stops a body");
+        }
+        for id in [
+            "minecraft:pointed_dripstone[thickness=tip,vertical_direction=down]",
+            "minecraft:pointed_dripstone[thickness=base,vertical_direction=up]",
+            "minecraft:pointed_dripstone[thickness=frustum,vertical_direction=up]",
+            "minecraft:pointed_dripstone[thickness=middle,vertical_direction=up]",
+            "minecraft:pointed_dripstone[thickness=tip_merge,vertical_direction=up]",
+        ] {
+            assert_eq!(collision_top_16(id), FULL_HEIGHT_16, "{id}");
+        }
+    }
+
     /// The barriers a hand opens: every fence gate, door and trapdoor except the
     /// two iron ones.
     #[test]
