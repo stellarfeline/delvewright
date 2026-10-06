@@ -25,7 +25,10 @@ use crate::compiler::plan::{ResolvedAnchor, TrapPlan};
 use delvewright_dsl::{DwCode, ExitTier};
 
 delvewright_dsl::dw_code! {
-    /// A trap's trigger cell does not hold the block its `trigger` kind names.
+    /// A cell the compiler detects a step or an opening on does not hold the
+    /// block that invites it: a trap's trigger cell without the block its
+    /// `trigger` kind names, or a `step` trigger's cell without a block a step
+    /// fires.
     pub const DW_TRAP_TRIGGER_MISSING: DwCode = DwCode::new("DW0917", ExitTier::Build);
 }
 
@@ -92,10 +95,124 @@ pub fn check_trap_triggers(
     })
 }
 
+/// One `step` trigger as [`check_step_triggers`] judges it: its id, its anchor,
+/// and the cell that anchor resolves to.
+pub struct StepCell<'a> {
+    /// The trigger's id.
+    pub id: &'a str,
+    /// The anchor the trigger watches.
+    pub anchor: &'a str,
+    /// The anchor's cell in the assembled world.
+    pub cell: [i32; 3],
+}
+
+/// Build-tier proof, the `step` half of `DW0917`: every `step` trigger's cell
+/// holds a block a step fires ([`delvewright_dsl::fires_on_step`]). The
+/// compiler's detection is a player in the cell, which needs no block, so a
+/// cell holding air would ship a beat fired by stepping on bare floor that
+/// shows the player nothing.
+pub fn check_step_triggers(
+    blocks: &crate::compiler::blockstate::BlockMap,
+    steps: &[StepCell<'_>],
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Result<(), Failure> {
+    let at =
+        |c: &[i32; 3]| -> &str { blocks.get(c).map(|s| s.as_str()).unwrap_or("minecraft:air") };
+    let mut bad: Vec<String> = Vec::new();
+    for t in steps {
+        let found = at(&t.cell);
+        if delvewright_dsl::fires_on_step(found) {
+            continue;
+        }
+        let elsewhere: Vec<String> = anchors
+            .iter()
+            .filter_map(|((area, name), r)| match r {
+                ResolvedAnchor::Point { pos, .. } if delvewright_dsl::fires_on_step(at(pos)) => {
+                    Some(format!("`{name}` in `{area}`"))
+                }
+                _ => None,
+            })
+            .collect();
+        let remedy = if elsewhere.is_empty() {
+            "no anchor of this assembled world holds one".to_string()
+        } else {
+            format!("anchors that hold one: {}", elsewhere.join(", "))
+        };
+        bad.push(format!(
+            "  trigger `{}` (step) -> anchor `{}` at [{}, {}, {}] holds `{}`, not a pressure \
+             plate or a tripwire string; {remedy}",
+            t.id,
+            t.anchor,
+            t.cell[0],
+            t.cell[1],
+            t.cell[2],
+            base_id(found),
+        ));
+    }
+    if bad.is_empty() {
+        return Ok(());
+    }
+    Err(Failure {
+        code: DW_TRAP_TRIGGER_MISSING,
+        message: format!(
+            "{} `step` trigger(s) have no plate or tripwire at their cell.\n{}\n\
+             A `step` trigger fires on a player standing in its cell, and the block that \
+             tells the player to step there is hardware the PREFAB places; the compiler only \
+             detects the step. Detection does not need the block, so this would have shipped \
+             a beat fired by bare floor. Point the trigger's `at` at an anchor whose cell holds \
+             a pressure plate or a tripwire string, or have the piece place one at this \
+             anchor's cell (a prefab-library change). Do NOT reach for a `set-block` effect to \
+             place it at runtime.",
+            bad.len(),
+            bad.join("\n"),
+        ),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use delvewright_dsl::{Lethality, TrapReset, TrapTrigger};
+
+    fn step(cell: [i32; 3]) -> StepCell<'static> {
+        StepCell {
+            id: "trigger/doormat",
+            anchor: "anchor/march",
+            cell,
+        }
+    }
+
+    /// A `step` trigger over bare floor is refused, naming the trigger and the
+    /// cell; over a plate or a tripwire it is not.
+    #[test]
+    fn a_step_trigger_over_air_is_dw0917() {
+        let e = check_step_triggers(&BTreeMap::new(), &[step([4, 1, 7])], &BTreeMap::new())
+            .unwrap_err();
+        assert_eq!(e.code, "DW0917");
+        assert!(e.message.contains("trigger/doormat"), "{}", e.message);
+        assert!(e.message.contains("[4, 1, 7]"), "{}", e.message);
+        for block in [
+            "minecraft:stone_pressure_plate",
+            "minecraft:light_weighted_pressure_plate[power=0]",
+            "minecraft:tripwire[attached=true]",
+        ] {
+            assert!(
+                check_step_triggers(
+                    &crate::compiler::blockstate::interned(world([1, 2, 3], block)),
+                    &[step([1, 2, 3])],
+                    &BTreeMap::new()
+                )
+                .is_ok(),
+                "{block}"
+            );
+        }
+        let hook = check_step_triggers(
+            &crate::compiler::blockstate::interned(world([1, 2, 3], "minecraft:tripwire_hook")),
+            &[step([1, 2, 3])],
+            &BTreeMap::new(),
+        );
+        assert_eq!(hook.unwrap_err().code, "DW0917", "a hook is not stepped on");
+    }
 
     fn trap(trigger: TrapTrigger, cell: [i32; 3]) -> TrapPlan {
         TrapPlan {

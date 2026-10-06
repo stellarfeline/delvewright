@@ -529,7 +529,18 @@ pub fn build_with_warnings(
     // container is, so it is proven off the same assembled (or edited) world, in
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
-    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() || !plan.traps.is_empty() {
+    let has_steps = plan
+        .campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
+    if !plan.loot.is_empty()
+        || !plan.collect_fills.is_empty()
+        || !plan.traps.is_empty()
+        || has_steps
+    {
         let blocks = &assembled.blocks;
         // What the world actually HAS, computed once and handed to both proofs.
         // A refusal that tells an author to point at "an anchor whose cell
@@ -561,6 +572,29 @@ pub fn build_with_warnings(
                 code: e.code,
                 message: e.message,
             })?;
+        // DW0917's `step` half: a step trigger's plate is the same hardware.
+        let steps: Vec<crate::compiler::trap_trigger::StepCell<'_>> = plan
+            .campaign
+            .quests
+            .content
+            .triggers
+            .iter()
+            .filter(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step))
+            .filter_map(|t| {
+                let anchor = t.at_anchor()?;
+                Some(crate::compiler::trap_trigger::StepCell {
+                    id: t.id.as_str(),
+                    anchor,
+                    cell: plan.point_any(anchor)?,
+                })
+            })
+            .collect();
+        crate::compiler::trap_trigger::check_step_triggers(blocks, &steps, &plan.anchors).map_err(
+            |e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            },
+        )?;
     }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
@@ -8491,10 +8525,9 @@ fn seal_arm_fn(safe: &str) -> String {
 /// entities and [`env_trigger_setup`] summons nothing for it. The consequence is
 /// also its meaning: such a trigger is live exactly while the gate is sealed.
 fn seal_rider_tags(plan: &Plan, chrome: &delvewright_dsl::Chrome, anchor: &str) -> Vec<String> {
-    use delvewright_dsl::TriggerOn;
     plan.emitted_triggers(chrome)
         .iter()
-        .filter(|t| !matches!(t.on, TriggerOn::Approach { .. }))
+        .filter(|t| t.on.is_click())
         .filter(|t| t.at_anchor() == Some(anchor))
         .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
         .collect()
@@ -11973,14 +12006,7 @@ const STRIKER_PATH: &str = "player";
 /// Whether `t` is a click trigger (`strike` / `strike-npc` / `use`) — the forms
 /// whose interaction entity records *which player* acted.
 fn trigger_is_click(t: &delvewright_dsl::EnvTrigger) -> bool {
-    use delvewright_dsl::TriggerOn;
-    matches!(
-        t.on,
-        TriggerOn::Strike
-            | TriggerOn::Use
-            | TriggerOn::StrikeNpc { .. }
-            | TriggerOn::StrikeAssembly { .. }
-    )
+    t.on.is_click()
 }
 
 /// The tag of the `minecraft:interaction` a click trigger's record is read off:
@@ -12999,7 +13025,8 @@ fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<Strin
     use delvewright_dsl::TriggerOn;
     let mut out = Vec::new();
     for t in &plan.emitted_triggers(chrome) {
-        if matches!(t.on, TriggerOn::Approach { .. }) {
+        // An `approach` and a `step` read a body's position; nothing is summoned.
+        if !t.on.is_click() {
             continue;
         }
         // `strike-npc` never has a cell of its own; a `strike` on an NPC's stand
@@ -13066,7 +13093,9 @@ fn check_trigger_bodies(
     // and a proof that walked the authored list alone would leave the compiler's
     // own presses unexamined and the ledger's count short of what shipped.
     for t in &plan.emitted_triggers_unlocalized() {
-        if matches!(t.on, TriggerOn::Approach { .. }) {
+        // A position trigger has no body to press; a `step`'s cell is judged by
+        // `DW0917` against the assembled world instead.
+        if !t.on.is_click() {
             continue;
         }
         // A `strike-assembly` (spec-0082) lands on the assembly's own hitbox.
@@ -13238,6 +13267,12 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
         // is what lets a press answer share one hitbox with a polled trigger and
         // neither eat the other's record (round-8: adjudicate conditionally,
         // consume unconditionally).
+        // A `step` is polled whoever it addresses: a body in the cell is the
+        // event, and with `presser` the same selector names the actor.
+        if matches!(t.on, TriggerOn::Step) {
+            out.extend(step_trigger_poll(plan, t));
+            continue;
+        }
         if t.addresses_presser() {
             continue;
         }
@@ -13268,10 +13303,100 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
                     ));
                 }
             }
+            // Polled above.
+            TriggerOn::Step => {}
         }
     }
     out.extend(clears);
     out
+}
+
+/// The selector terms for a body standing in a step cell: a player whose
+/// hitbox is in the cell, and who is not only watching. One authority for a
+/// plate or tripwire trap's detection ([`trap_fire_tick`]) and a `step`
+/// trigger's ([`step_trigger_poll`]), so the two fire on the same body.
+fn step_cell_terms(c: [i32; 3]) -> String {
+    format!("{},tag=!{CUTSCENE_TAG}", step_cell_box(c))
+}
+
+/// The volume half of [`step_cell_terms`]: the one block at `c`.
+fn step_cell_box(c: [i32; 3]) -> String {
+    format!("x={},dx=0,y={},dy=0,z={},dz=0", c[0], c[1], c[2])
+}
+
+/// The tick clauses of a `step` trigger.
+///
+/// **Party.** Edge-latched on `#stp_<id>`: `step_<id>` sets it when it
+/// dispatches, and it is cleared once no player is in the cell, so a plate
+/// stood on fires once and fires again only after it is stepped off and on —
+/// the shape a plate or tripwire trap's `rearm` has.
+///
+/// **Presser.** The same selector, run `as` each player in the cell who does
+/// not carry `dw_stp_<id>`; `step_<id>` tags that player, and the tag comes off
+/// when they leave the cell. So every player who steps on is dispatched once
+/// per step, as `@s` — the act and the actor are one fact, a body in the cell,
+/// and nothing about who acted is inferred after the event.
+fn step_trigger_poll(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Vec<String> {
+    let ns = &plan.namespace;
+    let id = plan::safe_local(t.id.as_str());
+    let Some(c) = t.at_anchor().and_then(|at| anchor_point_any(plan, at)) else {
+        return Vec::new();
+    };
+    let sel = step_cell_terms(c);
+    if t.addresses_presser() {
+        return vec![
+            format!("execute as @a[{sel},tag=!{STEP_TAG}{id}] run function {ns}:step_{id}"),
+            format!(
+                "execute as @a[tag={STEP_TAG}{id}] unless entity @s[{}] run tag @s remove \
+                 {STEP_TAG}{id}",
+                step_cell_box(c)
+            ),
+        ];
+    }
+    let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
+    vec![
+        format!(
+            "execute {once_guard}{forbid_guard}unless score #stp_{id} dw.sys matches 1 if entity \
+             @a[{sel}]{flag_guard} run function {ns}:step_{id}"
+        ),
+        format!("execute unless entity @a[{sel}] run scoreboard players set #stp_{id} dw.sys 0"),
+    ]
+}
+
+/// The tag a `presser` `step` trigger puts on a player standing in its cell,
+/// suffixed with the trigger's safe id.
+const STEP_TAG: &str = "dw_stp_";
+
+/// The dispatch function of a `step` trigger: `step_<id>`, which latches the
+/// step ([`step_trigger_poll`]) and runs `trig_<id>`.
+///
+/// A party step reaches it from a tick clause that already carries the
+/// trigger's gate. A presser step reaches it once per player who steps on, so
+/// the gate — `once`, the forbidden flags, the required flags and state — is
+/// stated here, spelled by [`trigger_poll_guards`] as the tick spells it.
+fn step_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> (String, String) {
+    let ns = &plan.namespace;
+    if !t.addresses_presser() {
+        return (
+            format!("step_{id}"),
+            lines(&[
+                format!("scoreboard players set #stp_{id} dw.sys 1"),
+                format!("function {ns}:trig_{id}"),
+            ]),
+        );
+    }
+    let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
+    let conds = format!("{once_guard}{forbid_guard}{}", flag_guard.trim_start());
+    let conds = conds.trim_end();
+    let dispatch = if conds.is_empty() {
+        format!("function {ns}:trig_{id}")
+    } else {
+        format!("execute {conds} run function {ns}:trig_{id}")
+    };
+    (
+        format!("step_{id}"),
+        lines(&[format!("tag @s add {STEP_TAG}{id}"), dispatch]),
+    )
 }
 
 /// Environment-trigger effect functions (`trig_<id>`). A trigger is a **party
@@ -13304,7 +13429,9 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
     let mut out = Vec::new();
     for t in &plan.emitted_triggers(chrome) {
         let id = plan::safe_local(t.id.as_str());
-        if t.addresses_presser() {
+        if matches!(t.on, delvewright_dsl::TriggerOn::Step) {
+            out.push(step_dispatch_fn(plan, t, &id));
+        } else if t.addresses_presser() {
             out.push(press_dispatch_fn(plan, t, &id));
         }
         let mut body: Vec<String> = Vec::new();
@@ -14162,11 +14289,7 @@ fn trap_fire_tick(plan: &Plan) -> Vec<String> {
             }
             delvewright_dsl::TrapTrigger::PressurePlate
             | delvewright_dsl::TrapTrigger::Tripwire => {
-                let c = t.trigger_cell;
-                let at = format!(
-                    "x={},dx=0,y={},dy=0,z={},dz=0,tag=!{CUTSCENE_TAG}",
-                    c[0], c[1], c[2]
-                );
+                let at = step_cell_terms(t.trigger_cell);
                 out.push(format!(
                     "execute unless score #trapfire_{id} dw.sys matches 1 {guard}if entity \
                      @a[{at}] run function {ns}:trap_fire_{id}"
@@ -15695,7 +15818,8 @@ fn emit_advancements(
     // advancement needs to know nothing about seals, doors, or any future
     // pressable object class.
     for t in &plan.emitted_triggers(chrome) {
-        if !t.addresses_presser() {
+        // A presser `step` is dispatched from the tick (`step_trigger_poll`).
+        if !t.addresses_presser() || !t.on.is_click() {
             continue;
         }
         let id = plan::safe_local(t.id.as_str());
@@ -20740,14 +20864,15 @@ fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
     for t in plan.emitted_triggers_unlocalized() {
         let id = plan::safe_local(t.id.as_str());
         let presser = t.addresses_presser();
+        let step = matches!(t.on, delvewright_dsl::TriggerOn::Step);
         let (pin, sel) = pin_dummy(&format!("dw_t_trg_{id}"));
         let mut b = packtest_header(&format!(
             "{title}: environment trigger `{}` fires its own bundle{}",
             t.id,
-            if presser {
-                ", and its press answer dispatches and re-arms"
-            } else {
-                ""
+            match (presser, step) {
+                (true, false) => ", and its press answer dispatches and re-arms",
+                (true, true) => ", and its step dispatches as the player who stepped",
+                (false, _) => "",
             }
         ));
         b.push(format!("function {ns}:setup"));
@@ -20770,7 +20895,29 @@ fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
             format!("function {ns}:trig_{id}")
         });
         b.push(format!("assert score #trig_{id} dw.sys matches 1"));
-        if !presser {
+        if step {
+            // 2. The step's DISPATCH reaches the bundle and latches the step, so
+            //    standing on does not dispatch again: a party step on
+            //    `#stp_<id>`, a presser step on the player in the cell, whom it
+            //    runs as.
+            b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
+            if presser {
+                b.push(format!("execute as {sel} run function {ns}:step_{id}"));
+                b.push(format!("assert score #trig_{id} dw.sys matches 1"));
+                b.push(format!(
+                    "execute as {sel} if entity @s[tag={STEP_TAG}{id}] run scoreboard players \
+                     set #prs_{id} dw.sys 1"
+                ));
+                b.push(format!("assert score #prs_{id} dw.sys matches 1"));
+                b.push(format!("tag {sel} remove {STEP_TAG}{id}"));
+            } else {
+                b.push(format!("scoreboard players set #stp_{id} dw.sys 0"));
+                b.push(format!("function {ns}:step_{id}"));
+                b.push(format!("assert score #trig_{id} dw.sys matches 1"));
+                b.push(format!("assert score #stp_{id} dw.sys matches 1"));
+            }
+        }
+        if !presser || step {
             out.insert(
                 format!("packtest-datapack/data/{ns}/test/env_trigger_{id}.mcfunction"),
                 lines(&b).into_bytes(),
@@ -20839,7 +20986,16 @@ fn env_trigger_watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
             families: vec!["press_".to_string()],
             declared: triggers
                 .iter()
-                .filter(|t| t.addresses_presser())
+                .filter(|t| t.addresses_presser() && t.on.is_click())
+                .map(|t| plan::safe_local(t.id.as_str()))
+                .collect(),
+        },
+        crate::compiler::watch::Claim {
+            mechanic: "step-trigger",
+            families: vec!["step_".to_string()],
+            declared: triggers
+                .iter()
+                .filter(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step))
                 .map(|t| plan::safe_local(t.id.as_str()))
                 .collect(),
         },

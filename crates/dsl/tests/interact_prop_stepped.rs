@@ -105,7 +105,9 @@ fn the_stepped_set_is_read_from_the_pinned_registry() {
     assert!(set.contains(&"minecraft:tripwire"));
     assert!(!set.contains(&"minecraft:tripwire_hook"));
     assert_eq!(
-        set.iter().filter(|b| b.ends_with("_pressure_plate")).count(),
+        set.iter()
+            .filter(|b| b.ends_with("_pressure_plate"))
+            .count(),
         16
     );
 }

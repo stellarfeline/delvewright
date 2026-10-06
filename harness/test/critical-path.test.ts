@@ -791,6 +791,32 @@ test("an approach trigger carries its range and a strike-npc its npc", () => {
   assert.equal(npc!.action === "trigger" && npc!.npc, "npc/giant");
 });
 
+test("a step trigger names its plate's anchor and carries no range", () => {
+  const step = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/doormat",
+      on: "step",
+      anchor: "anchor/plate",
+      pos: [5, 65, 7],
+    }),
+  ).steps[2];
+  assert.deepEqual(step, {
+    action: "trigger",
+    trigger: "trigger/doormat",
+    on: "step",
+    anchor: "anchor/plate",
+    pos: [5, 65, 7],
+  });
+  assert.throws(
+    () =>
+      parseCriticalPath(
+        withStep({ action: "trigger", trigger: "trigger/t", on: "step", anchor: "anchor/a", pos: [0, 64, 0], range: 1 }),
+      ),
+    (e: unknown) => e instanceof CriticalPathParseError && e.pointer === "/steps/2/range",
+  );
+});
+
 test("a strike-assembly trigger names its assembly and watches no anchor (spec-0082)", () => {
   const step = parseCriticalPath(
     withStep({

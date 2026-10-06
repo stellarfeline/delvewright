@@ -1441,11 +1441,12 @@ pub mod codes {
     crate::dw_code! {
         /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
         /// A trigger declares `audience: presser` on something other than an
-        /// `on: use`.
+        /// `on: use` or an `on: step`.
         ///
         /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
         /// that runs a function as the player who clicked, and it fires on
-        /// right-clicks alone. A left-click is recorded in the interaction entity's
+        /// right-clicks alone; a step is a player standing in the cell, which a
+        /// positional selector names. A left-click is recorded in the interaction entity's
         /// `attack` NBT — a UUID no command can become — and an `approach` involves no
         /// click at all. Approximating it (polling the record and assuming the nearest
         /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
