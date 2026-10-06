@@ -97,9 +97,11 @@ use crate::compiler::view::nbt::Structure;
 use crate::compiler::view::showing::Cells;
 use crate::schem::nav;
 
-/// **`DW0893`: an eye-level frame is blind** — more than half of it is a surface
-/// across the view within arm's reach. A report, never a refusal (module note).
-pub const DW_BLIND_FRAME: &str = "DW0893";
+delvewright_dsl::dw_code! {
+    /// **`DW0893`: an eye-level frame is blind** — more than half of it is a surface
+    /// across the view within arm's reach. A report, never a refusal (module note).
+    pub const DW_BLIND_FRAME: &str = "DW0893";
+}
 
 /// A player's reach, in blocks: the vanilla default of the
 /// `minecraft:block_interaction_range` attribute (Java Edition 1.20.5 onward,

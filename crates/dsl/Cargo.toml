@@ -28,6 +28,11 @@ categories = ["game-development"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1"
+# The DW-code registry (`diagnostic::DECLARED`): every `dw_code!` declaration
+# registers itself into one distributed slice the linker gathers, so `delvec
+# codes` lists exactly what the binary declares with no second list to keep.
+# Link sections, no life-before-main. MIT OR Apache-2.0.
+linkme = "0.3"
 
 # Offline JSON Schema validation only; default features pull in a TLS/HTTP
 # resolver tree we do not need (and whose transitive licenses we would rather

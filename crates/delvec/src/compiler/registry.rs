@@ -10,27 +10,31 @@ use delvewright_dsl::{
 use delvewright_dsl::{DwCode, ExitTier};
 use serde::Deserialize;
 
-/// `DW0346`: a prefab metadata `*.json` (or `pools.json`) in the prefabs dir
-/// failed to read or parse. Silently skipping it made a bad file surface only as
-/// a baffling downstream `DW0300` "prefab not found"; the parse failure itself is
-/// the information. Reported at **validation tier (exit 1)**; loading continues
-/// for the other files (report-all, not fail-fast).
-///
-/// A key this delvec does not model is deliberately **not** one of these: it is
-/// kept and reported as [`DW_PREFAB_META_UNKNOWN_KEY`].
-pub const DW_PREFAB_META_INVALID: DwCode = DwCode::new("DW0346", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0346`: a prefab metadata `*.json` (or `pools.json`) in the prefabs dir
+    /// failed to read or parse. Silently skipping it made a bad file surface only as
+    /// a baffling downstream `DW0300` "prefab not found"; the parse failure itself is
+    /// the information. Reported at **validation tier (exit 1)**; loading continues
+    /// for the other files (report-all, not fail-fast).
+    ///
+    /// A key this delvec does not model is deliberately **not** one of these: it is
+    /// kept and reported as [`DW_PREFAB_META_UNKNOWN_KEY`].
+    pub const DW_PREFAB_META_INVALID: DwCode = DwCode::new("DW0346", ExitTier::Build);
+}
 
-/// `DW0543`: a prefab metadata file carries a key this delvec does not model.
-///
-/// A **warning**, and the severity is the decision. Refusing the document was
-/// the previous behaviour and it was wrong in exactly one direction: a consumer
-/// that is not a document's owner meets new keys as a matter of course — the
-/// content library and the engine version independently — and every forward
-/// addition became a hard failure at the layer with the least context. Ignoring
-/// the key is wrong in the other direction, because the same observation is also
-/// what a misspelled key looks like. So the piece loads, the key survives a
-/// rewrite ([`delvewright_dsl::prefab`]), and the reader says what it saw.
-pub const DW_PREFAB_META_UNKNOWN_KEY: DwCode = DwCode::new("DW0543", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0543`: a prefab metadata file carries a key this delvec does not model.
+    ///
+    /// A **warning**, and the severity is the decision. Refusing the document was
+    /// the previous behaviour and it was wrong in exactly one direction: a consumer
+    /// that is not a document's owner meets new keys as a matter of course — the
+    /// content library and the engine version independently — and every forward
+    /// addition became a hard failure at the layer with the least context. Ignoring
+    /// the key is wrong in the other direction, because the same observation is also
+    /// what a misspelled key looks like. So the piece loads, the key survives a
+    /// rewrite ([`delvewright_dsl::prefab`]), and the reader says what it saw.
+    pub const DW_PREFAB_META_UNKNOWN_KEY: DwCode = DwCode::new("DW0543", ExitTier::Build);
+}
 
 /// The complete 1.21.11 item registry (1505 ids) plus each item's
 /// `minecraft:max_stack_size`, vendored under `data/`.

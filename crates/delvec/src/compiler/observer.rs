@@ -31,10 +31,12 @@ use crate::compiler::affordance::{
 };
 use crate::compiler::emit::{BuildOutput, CUTSCENE_TAG};
 
-/// `DW0926`: a shipped positional player selector would read a player who is
-/// only watching. An **engine self-check**: the campaign cannot cause or repair
-/// it; the emitter that wrote the selector owes the guard.
-pub const DW_OBSERVER_UNGUARDED: DwCode = DwCode::new("DW0926", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0926`: a shipped positional player selector would read a player who is
+    /// only watching. An **engine self-check**: the campaign cannot cause or repair
+    /// it; the emitter that wrote the selector owes the guard.
+    pub const DW_OBSERVER_UNGUARDED: DwCode = DwCode::new("DW0926", ExitTier::Build);
+}
 
 /// A coded refusal of [`check`].
 #[derive(Debug, Clone)]

@@ -89,14 +89,18 @@ use crate::compiler::plan::{AreaPlacement, PlanError};
 use crate::compiler::registry::PrefabRegistry;
 use crate::compiler::solver::{Rotation, opening_region, socket_world};
 
-/// `DW0780`: two placed pieces whose declared exterior faces do not mate — a way
-/// out that the piece on the other side of it does not answer, or a pair that
-/// touches and declares nothing at all across the plane it shares.
-pub const DW_FACE_MISMATCH: DwCode = DwCode::new("DW0780", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0780`: two placed pieces whose declared exterior faces do not mate — a way
+    /// out that the piece on the other side of it does not answer, or a pair that
+    /// touches and declares nothing at all across the plane it shares.
+    pub const DW_FACE_MISMATCH: DwCode = DwCode::new("DW0780", ExitTier::Build);
+}
 
-/// `DW0781` (advisory): no two placed pieces touch, so the mating check had no
-/// pair to examine.
-pub const DW_FACE_UNBOUND: DwCode = DwCode::new("DW0781", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0781` (advisory): no two placed pieces touch, so the mating check had no
+    /// pair to examine.
+    pub const DW_FACE_UNBOUND: DwCode = DwCode::new("DW0781", ExitTier::Build);
+}
 
 /// Which of the piece's two declarations a [`PlacedFace`] was read from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -51,45 +51,53 @@ pub enum BuildFailure {
     },
 }
 
-/// `DW0312`: a `spawn-wave` needs more standable spawn cells near its anchor than
-/// the anchor's own assembled room provides. Wave-mob placement seats
-/// each mob on a compiler-validated standable cell confined to that room; when the
-/// wave's mob count exceeds the room's footing, the build fails here rather than
-/// letting mobs pile into blocks or spill across a socket seam. Analysis-tier
-/// (exit 2, like reachability `DW02xx`): the fix is a content-design capacity
-/// choice — shrink the wave or use a larger room — not a compiler/geometry defect.
-pub const DW_WAVE_NO_ROOM: DwCode = DwCode::new("DW0312", ExitTier::Analysis);
+delvewright_dsl::dw_code! {
+    /// `DW0312`: a `spawn-wave` needs more standable spawn cells near its anchor than
+    /// the anchor's own assembled room provides. Wave-mob placement seats
+    /// each mob on a compiler-validated standable cell confined to that room; when the
+    /// wave's mob count exceeds the room's footing, the build fails here rather than
+    /// letting mobs pile into blocks or spill across a socket seam. Analysis-tier
+    /// (exit 2, like reachability `DW02xx`): the fix is a content-design capacity
+    /// choice — shrink the wave or use a larger room — not a compiler/geometry defect.
+    pub const DW_WAVE_NO_ROOM: DwCode = DwCode::new("DW0312", ExitTier::Analysis);
+}
 
-/// `DW0310`: a `spawn-wave` references a wave whose spawn anchor resolves in no
-/// assembled area, so the emitted `function <ns>:spawn_<wave>` call would dangle
-/// and the wave never spawn (see [`check_wave_spawns`]).
-///
-/// It was the workspace's last bare `"DWxxxx"` string literal in a code position
-/// — every other code already went through a named constant — and typing the
-/// codes is what turned that from a style difference into a compile error.
-pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::new("DW0310", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0310`: a `spawn-wave` references a wave whose spawn anchor resolves in no
+    /// assembled area, so the emitted `function <ns>:spawn_<wave>` call would dangle
+    /// and the wave never spawn (see [`check_wave_spawns`]).
+    ///
+    /// It was the workspace's last bare `"DWxxxx"` string literal in a code position
+    /// — every other code already went through a named constant — and typing the
+    /// codes is what turned that from a style difference into a compile error.
+    pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::new("DW0310", ExitTier::Build);
+}
 
-/// `DW0387`: a `summon: aggro-edge` wave (spec-0016 §6) whose perception ring
-/// offers too few valid cells. The ring is the standable, walk-reachable,
-/// line-of-sight cells at a mob's own `follow_range` from the defended anchor;
-/// with fewer of them than the wave has mobs there is nowhere legal to
-/// materialize. This is an error and not a silent short spawn on purpose — the
-/// round-1 lesson was a "kill" objective whose wave never fully appeared, so the
-/// countdown could never reach zero and the delve soft-locked with every other
-/// proof green.
-pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::new("DW0387", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0387`: a `summon: aggro-edge` wave (spec-0016 §6) whose perception ring
+    /// offers too few valid cells. The ring is the standable, walk-reachable,
+    /// line-of-sight cells at a mob's own `follow_range` from the defended anchor;
+    /// with fewer of them than the wave has mobs there is nowhere legal to
+    /// materialize. This is an error and not a silent short spawn on purpose — the
+    /// round-1 lesson was a "kill" objective whose wave never fully appeared, so the
+    /// countdown could never reach zero and the delve soft-locked with every other
+    /// proof green.
+    pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::new("DW0387", ExitTier::Build);
+}
 
-/// `DW0494`: completing ONE objective would cross into two different areas —
-/// one destination on the exported path, another on a branch.
-///
-/// The crossing is emitted into the objective's own completion bundle, so the
-/// two destinations would be two teleports in one function body, and which one
-/// the party lands on would depend on command order rather than on the branch
-/// they are actually playing. There is no runtime distinction to gate on either:
-/// the exported path's crossing is unconditional by construction. The content
-/// fix is to split the objective — one crossing objective per branch, each
-/// gated by that branch's own flags.
-pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::new("DW0494", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0494`: completing ONE objective would cross into two different areas —
+    /// one destination on the exported path, another on a branch.
+    ///
+    /// The crossing is emitted into the objective's own completion bundle, so the
+    /// two destinations would be two teleports in one function body, and which one
+    /// the party lands on would depend on command order rather than on the branch
+    /// they are actually playing. There is no runtime distinction to gate on either:
+    /// the exported path's crossing is unconditional by construction. The content
+    /// fix is to split the objective — one crossing objective per branch, each
+    /// gated by that branch's own flags.
+    pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::new("DW0494", ExitTier::Build);
+}
 
 impl From<Failure> for BuildFailure {
     fn from(e: Failure) -> Self {
@@ -211,26 +219,28 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
     best
 }
 
-/// `DW0803`: a placed structure template is not the size the prefab metadata
-/// says it is.
-///
-/// Two documents claim the same fact — the `.nbt`'s own `size` tag, and the
-/// metadata's `structure.size` (or a tile's `structure_set.parts[].size`) — and
-/// **every pass but the placement itself reads the metadata's**. The forceload
-/// span, the piece AABB the mating check compares, massing's footprint and the
-/// tiling arithmetic that puts a tile at its offset are all computed from the
-/// declared size; the blocks come from the bytes. When they disagree the world
-/// is built wrong in a way no other check can see, because each half is
-/// internally consistent.
-///
-/// Tiling is what makes this reachable: a zone's manifest and its tiles are
-/// several files that a `cp`, a partial re-export or a hand edit can leave at
-/// different ages, and a stale tile then lands at the offset the manifest gives
-/// it — sliding part of a building through the rest of it. A single-template
-/// prefab has the same exposure and had the same silence.
-///
-/// Build tier: the world would be wrong, so it is not built.
-pub const DW_TEMPLATE_EXTENT: DwCode = DwCode::new("DW0803", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0803`: a placed structure template is not the size the prefab metadata
+    /// says it is.
+    ///
+    /// Two documents claim the same fact — the `.nbt`'s own `size` tag, and the
+    /// metadata's `structure.size` (or a tile's `structure_set.parts[].size`) — and
+    /// **every pass but the placement itself reads the metadata's**. The forceload
+    /// span, the piece AABB the mating check compares, massing's footprint and the
+    /// tiling arithmetic that puts a tile at its offset are all computed from the
+    /// declared size; the blocks come from the bytes. When they disagree the world
+    /// is built wrong in a way no other check can see, because each half is
+    /// internally consistent.
+    ///
+    /// Tiling is what makes this reachable: a zone's manifest and its tiles are
+    /// several files that a `cp`, a partial re-export or a hand edit can leave at
+    /// different ages, and a stale tile then lands at the offset the manifest gives
+    /// it — sliding part of a building through the rest of it. A single-template
+    /// prefab has the same exposure and had the same silence.
+    ///
+    /// Build tier: the world would be wrong, so it is not built.
+    pub const DW_TEMPLATE_EXTENT: DwCode = DwCode::new("DW0803", ExitTier::Build);
+}
 
 /// How much of the world [`check_template_extents`] actually examined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3013,20 +3023,22 @@ fn snbt_text_component(s: &str) -> String {
 // i18n v2 — authored strings become translatable components (spec-0029)
 // ---------------------------------------------------------------------------
 
-/// `DW0185`: an authored player-visible string reached the built tree **outside**
-/// a text component — its translation tag ([`delvewright_dsl::TR_SIGIL`]) is still
-/// in the emitted bytes. Either the emitter must lower it through [`tr`] /
-/// [`snbt_component`] (so a client renders the player's own language), or, if the
-/// site is genuinely not player-facing and not a component (a manifest field, a
-/// reviewer chronicle, the bot's `critical-path.json`, a generated PackTest
-/// source), it must read the string through `dsl::l10n::plain` and be listed in
-/// `docs/reference/compiler.md`'s named-exclusion table.
-///
-/// Build-tier and feature-blind: it reads the finished tree, so it guards every
-/// emitter, including ones not yet written. This is the invariant that replaces
-/// "we enumerated every emission site once" with "the compiler re-proves it on
-/// every build" (spec-0029 Risks).
-pub const DW_UNTRANSLATED_LITERAL: DwCode = DwCode::new("DW0185", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0185`: an authored player-visible string reached the built tree **outside**
+    /// a text component — its translation tag ([`delvewright_dsl::TR_SIGIL`]) is still
+    /// in the emitted bytes. Either the emitter must lower it through [`tr`] /
+    /// [`snbt_component`] (so a client renders the player's own language), or, if the
+    /// site is genuinely not player-facing and not a component (a manifest field, a
+    /// reviewer chronicle, the bot's `critical-path.json`, a generated PackTest
+    /// source), it must read the string through `dsl::l10n::plain` and be listed in
+    /// `docs/reference/compiler.md`'s named-exclusion table.
+    ///
+    /// Build-tier and feature-blind: it reads the finished tree, so it guards every
+    /// emitter, including ones not yet written. This is the invariant that replaces
+    /// "we enumerated every emission site once" with "the compiler re-proves it on
+    /// every build" (spec-0029 Risks).
+    pub const DW_UNTRANSLATED_LITERAL: DwCode = DwCode::new("DW0185", ExitTier::Build);
+}
 
 /// Lower an authored player-visible string into a JSON **text component**
 /// (spec-0029 §1): a translation-tagged string becomes
@@ -6018,9 +6030,11 @@ fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
         .unwrap_or_else(|| c.world.content.title.clone())
 }
 
-/// `DW0362`: a dialogue node declares more conditionally-visible options than the
-/// variant-dialog encoding can carry. Validation-tier content-shape limit.
-pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::new("DW0362", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0362`: a dialogue node declares more conditionally-visible options than the
+    /// variant-dialog encoding can carry. Validation-tier content-shape limit.
+    pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::new("DW0362", ExitTier::Build);
+}
 
 /// The most gated options one dialogue node may declare.
 ///
@@ -6070,9 +6084,11 @@ fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure> {
     Ok(())
 }
 
-/// `DW0361`: two distinct generated artifacts sanitize to the same name, so one
-/// would silently overwrite the other in the emitted pack.
-pub const DW_NAME_COLLISION: DwCode = DwCode::new("DW0361", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0361`: two distinct generated artifacts sanitize to the same name, so one
+    /// would silently overwrite the other in the emitted pack.
+    pub const DW_NAME_COLLISION: DwCode = DwCode::new("DW0361", ExitTier::Build);
+}
 
 /// Insert an emitted artifact, refusing to let one silently overwrite another
 /// (`DW0361`).
@@ -6124,11 +6140,13 @@ fn json_bytes(value: &Value) -> Vec<u8> {
     bytes
 }
 
-/// `DW0360`: an anchor-bearing quest/trigger effect names an anchor that resolves
-/// to no world position in the assembled build. Validation-tier content mistake
-/// (a typo'd or unassembled anchor), reported as a build diagnostic because only
-/// the assembled world knows which anchors actually exist.
-pub const DW_EFFECT_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0360", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0360`: an anchor-bearing quest/trigger effect names an anchor that resolves
+    /// to no world position in the assembled build. Validation-tier content mistake
+    /// (a typo'd or unassembled anchor), reported as a build diagnostic because only
+    /// the assembled world knows which anchors actually exist.
+    pub const DW_EFFECT_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0360", ExitTier::Build);
+}
 
 /// Whether [`build`] assembles the voxel world — and therefore whether every
 /// proof that needs it actually runs, including [`plan_payload_verbs`] and its
@@ -10681,45 +10699,47 @@ fn emit_loop_functions(plan: &Plan) -> Vec<(String, String)> {
     fns
 }
 
-/// `DW0852`: **a stealth judge asks a player for something other than where they
-/// are.**
-///
-/// A stealth beat is hiding, and hiding is a place. `emit_stealth_functions` has
-/// promised that since v0.6 — *"zone presence alone = hidden"*, in its own doc
-/// comment — because the alternative collides with the spectator cutscene camera
-/// and, more to the point, because a beat that demands a posture is a beat that
-/// demands something the fiction never asked for. A playtester met that as a
-/// stealth scene that quietly required crouching, which nothing in the story had
-/// said.
-///
-/// A promise in a doc comment is a doc line, and this project's own doctrine says
-/// a doc line is not an invocation. This is the invocation: it reads the FINAL
-/// emitted function list — not one emitter's return value, so a later pass that
-/// rewrote a judge would not slip past — and holds every per-player test to
-/// **position arguments and nothing else**.
-///
-/// ## Why an allowlist, and why it is scoped to the eval function
-///
-/// The rule is stated as *which selector arguments may appear* (`x`/`dx`/`y`/`dy`
-/// /`z`/`dz`), never as a list of forbidden ones. A denylist of `nbt`, `predicate`
-/// and friends is the wrong question asked correctly: the next demand on a player
-/// will be spelled some way nobody has thought of, and a denylist answers "not one
-/// of the six I knew about" with an honest no.
-///
-/// It examines `stealth_eval_*`, the per-player judge, and deliberately not
-/// `stealth_tick_*`, whose `@a[tag=!dw_cutscene]` is non-positional and correct:
-/// skipping a player watching a cinematic is the grace clock being frozen, not a
-/// demand made of that player. The distinction is between *who is judged* and
-/// *what the judgement asks for*, and only the second is this rule's business.
-///
-/// ## What stops it going quiet
-///
-/// The count of judges it found must equal the count of beats the plan holds. A
-/// rename that made the judge functions invisible to this scan would otherwise
-/// examine zero, find nothing, and pass — the truncated-input vacuity mode, where
-/// the number is neither zero nor wrong but is about a smaller world than the one
-/// the check claims to cover.
-pub const DW_STEALTH_JUDGE_NOT_POSITIONAL: DwCode = DwCode::new("DW0852", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0852`: **a stealth judge asks a player for something other than where they
+    /// are.**
+    ///
+    /// A stealth beat is hiding, and hiding is a place. `emit_stealth_functions` has
+    /// promised that since v0.6 — *"zone presence alone = hidden"*, in its own doc
+    /// comment — because the alternative collides with the spectator cutscene camera
+    /// and, more to the point, because a beat that demands a posture is a beat that
+    /// demands something the fiction never asked for. A playtester met that as a
+    /// stealth scene that quietly required crouching, which nothing in the story had
+    /// said.
+    ///
+    /// A promise in a doc comment is a doc line, and this project's own doctrine says
+    /// a doc line is not an invocation. This is the invocation: it reads the FINAL
+    /// emitted function list — not one emitter's return value, so a later pass that
+    /// rewrote a judge would not slip past — and holds every per-player test to
+    /// **position arguments and nothing else**.
+    ///
+    /// ## Why an allowlist, and why it is scoped to the eval function
+    ///
+    /// The rule is stated as *which selector arguments may appear* (`x`/`dx`/`y`/`dy`
+    /// /`z`/`dz`), never as a list of forbidden ones. A denylist of `nbt`, `predicate`
+    /// and friends is the wrong question asked correctly: the next demand on a player
+    /// will be spelled some way nobody has thought of, and a denylist answers "not one
+    /// of the six I knew about" with an honest no.
+    ///
+    /// It examines `stealth_eval_*`, the per-player judge, and deliberately not
+    /// `stealth_tick_*`, whose `@a[tag=!dw_cutscene]` is non-positional and correct:
+    /// skipping a player watching a cinematic is the grace clock being frozen, not a
+    /// demand made of that player. The distinction is between *who is judged* and
+    /// *what the judgement asks for*, and only the second is this rule's business.
+    ///
+    /// ## What stops it going quiet
+    ///
+    /// The count of judges it found must equal the count of beats the plan holds. A
+    /// rename that made the judge functions invisible to this scan would otherwise
+    /// examine zero, find nothing, and pass — the truncated-input vacuity mode, where
+    /// the number is neither zero nor wrong but is about a smaller world than the one
+    /// the check claims to cover.
+    pub const DW_STEALTH_JUDGE_NOT_POSITIONAL: DwCode = DwCode::new("DW0852", ExitTier::Build);
+}
 
 /// The selector arguments a stealth judge's per-player test may use: the box, and
 /// nothing else. Sorted, and an allowlist rather than a denylist — see
@@ -13405,10 +13425,12 @@ fn press_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> 
 // v0.6 traps (spec-0011)
 // ---------------------------------------------------------------------------
 
-/// `DW0363`: a trap declares a flag gate (`requires_flags` / `forbids_flags`) but
-/// its trigger hardware cannot be removed and put back exactly as authored, so the
-/// compiler refuses to pretend the gate works.
-pub const DW_TRAP_GATE_UNSUPPORTED: DwCode = DwCode::new("DW0363", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0363`: a trap declares a flag gate (`requires_flags` / `forbids_flags`) but
+    /// its trigger hardware cannot be removed and put back exactly as authored, so the
+    /// compiler refuses to pretend the gate works.
+    pub const DW_TRAP_GATE_UNSUPPORTED: DwCode = DwCode::new("DW0363", ExitTier::Build);
+}
 
 /// Trap flag-gating hardware: for every trap that declares a flag gate, the
 /// trigger block its `anchor/trap` prefab metadata declares — the thing the gate
@@ -13825,9 +13847,11 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
 // spec-0022 — trap payload verbs (`volley`, `collapse`)
 // ---------------------------------------------------------------------------
 
-/// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
-/// prefab piece provides, so the kill zone / collapse region cannot be resolved.
-pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0447", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
+    /// prefab piece provides, so the kill zone / collapse region cannot be resolved.
+    pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0447", ExitTier::Build);
+}
 
 /// A planned `volley`: the proven per-cell geometry plus its authored cadence.
 struct VolleyEmit {

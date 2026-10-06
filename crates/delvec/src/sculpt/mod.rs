@@ -45,16 +45,20 @@ use crate::schem::nav::{self as walk, Voxels as _};
 
 pub use form::Form;
 
-/// `DW0951`: the form document is refused where it is read, before anything is
-/// fitted (spec-0087 §3.2, §3.5). The phase decides the exit — the form's
-/// validation, exit 1 — so the code declares [`ExitTier::Build`], which is what
-/// it would stop were it ever raised with a build under way.
-pub const DW_ORGANIC_FORM: DwCode = DwCode::new("DW0951", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0951`: the form document is refused where it is read, before anything is
+    /// fitted (spec-0087 §3.2, §3.5). The phase decides the exit — the form's
+    /// validation, exit 1 — so the code declares [`ExitTier::Build`], which is what
+    /// it would stop were it ever raised with a build under way.
+    pub const DW_ORGANIC_FORM: DwCode = DwCode::new("DW0951", ExitTier::Build);
+}
 
-/// `DW0952`: the sculpted body is refused — an anchor that does not stand, an
-/// entry grade does not reach, or a place a body gets into and not out of
-/// (spec-0087 §3.4).
-pub const DW_ORGANIC_BODY: DwCode = DwCode::new("DW0952", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0952`: the sculpted body is refused — an anchor that does not stand, an
+    /// entry grade does not reach, or a place a body gets into and not out of
+    /// (spec-0087 §3.4).
+    pub const DW_ORGANIC_BODY: DwCode = DwCode::new("DW0952", ExitTier::Build);
+}
 
 /// What the `generator` breadcrumb of a sculpted structure says.
 pub const GENERATOR: &str = "crates/delvec/src/sculpt";

@@ -104,15 +104,17 @@ use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0542`: a `teleport`'s source volume covers an interaction affordance the
-/// engine has bound to hardware the teleport does not move (spec-0031).
-///
-/// One rule, one defect: *the compiler placed an entity and a block at the same
-/// cell, and this verb moves only one of them.* The player is left looking at a
-/// campfire, a lever or a sealed door that no longer answers a right-click —
-/// visible, reachable, inert. It is the same silence `DW0426` and `DW0422` exist
-/// to refuse, arriving from a third direction.
-pub const DW_TELEPORT_BOUND_AFFORDANCE: DwCode = DwCode::new("DW0542", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0542`: a `teleport`'s source volume covers an interaction affordance the
+    /// engine has bound to hardware the teleport does not move (spec-0031).
+    ///
+    /// One rule, one defect: *the compiler placed an entity and a block at the same
+    /// cell, and this verb moves only one of them.* The player is left looking at a
+    /// campfire, a lever or a sealed door that no longer answers a right-click —
+    /// visible, reachable, inert. It is the same silence `DW0426` and `DW0422` exist
+    /// to refuse, arriving from a third direction.
+    pub const DW_TELEPORT_BOUND_AFFORDANCE: DwCode = DwCode::new("DW0542", ExitTier::Build);
+}
 
 /// The binding ledger for the teleport proof.
 #[derive(Clone, Debug, Default)]

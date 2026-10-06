@@ -35,15 +35,19 @@ use delvewright_dsl::{
     QuestEffect, TrapReset, Verb, for_each_effect_root,
 };
 
-/// `DW0914`: `fires: every-kill` on a fight that never comes back — the two
-/// values coincide there, so the declaration binds to nothing. Validation-tier
-/// (exit 1).
-pub const DW_ON_KILL_EVERY_INERT: DwCode = DwCode::new("DW0914", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0914`: `fires: every-kill` on a fight that never comes back — the two
+    /// values coincide there, so the declaration binds to nothing. Validation-tier
+    /// (exit 1).
+    pub const DW_ON_KILL_EVERY_INERT: DwCode = DwCode::new("DW0914", ExitTier::Build);
+}
 
-/// `DW0915`: an `on_kill` with no `fires` on a fight that comes back — whether a
-/// body that comes back pays again is the creator's judgement. Validation-tier
-/// (exit 1).
-pub const DW_ON_KILL_FIRES_OWED: DwCode = DwCode::new("DW0915", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0915`: an `on_kill` with no `fires` on a fight that comes back — whether a
+    /// body that comes back pays again is the creator's judgement. Validation-tier
+    /// (exit 1).
+    pub const DW_ON_KILL_FIRES_OWED: DwCode = DwCode::new("DW0915", ExitTier::Build);
+}
 
 /// Why a fight comes back after the party has met it.
 #[derive(Clone, Debug, PartialEq, Eq)]

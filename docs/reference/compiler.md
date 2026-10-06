@@ -157,6 +157,7 @@ delvec build    <dir> --perturb <knob> [--perturb-place <place>]
 delvec fmt      <path>… [--check]          # canonical form for authored JSON (§9)
 delvec schema   --stage <1..7|name|all>    # export JSON Schema (named documents: §2)
 delvec metrics  [--gym <dir>]              # export the metrics standard as JSON (§10)
+delvec codes                               # every DW code this binary declares, one JSON line each (§5)
 delvec prefab anchors [--pool <id>]        # which anchors does a pool guarantee (library only)
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (transcreation input)
 delvec l10n-apply <dir> --lang <c> --table <f>
@@ -4605,6 +4606,28 @@ world. Invariants:
 
 Every DW code in `crates/**/*.rs`. Grouped by range. `tools/ci/check-dw-codes.py`
 verifies this catalog is bidirectionally exact against source (CI docs job).
+
+**A code is declared inside `dw_code!`, and nowhere else.** The macro
+(`delvewright_dsl::dw_code!`) expands to the constant as written —
+`pub const NAME: DwCode = DwCode::new("DWxxxx", ExitTier::…);`, or
+`pub const NAME: &str = "DWxxxx";` for a code of a verb with its own exit table
+(`prefab`, `schem`, `render`, the view arms) — and registers it in
+`delvewright_dsl::diagnostic::DECLARED`, a link-time distributed slice. There is
+no list beside the declarations. `delvec codes` prints the registry, sorted by
+code, one JSON object per line:
+
+```
+{"code":"DW0944","tier":"Build","subject":"Campaign","name":"PERCEPTION_SIGHT_UNDER_A_CAMERA","module":"delvewright_dsl::diagnostic::codes"}
+{"code":"DW0721","tier":null,"subject":null,"name":"DW_INPUT","module":"delvec::compiler::view::diag"}
+```
+
+with the count on stderr and exit 0. It is what the binary can print, which a
+scan of the binary's bytes is not: a code raised at one inlined site is written
+by immediate stores and never spelled contiguously. `check-dw-codes.py --delvec
+<binary>` holds the registry equal to the declarations its `CONST_RE` reads, by
+`(code, constant)` in both directions and by exit tier, so a constant declared
+outside the macro reds; `crates/delvec/tests/codes.rs` runs it against the
+binary cargo built.
 
 **Test-coverage gated** (CLAUDE.md Conventions). The same
 script also fails CI if any documented, landed code has no test asserting it —

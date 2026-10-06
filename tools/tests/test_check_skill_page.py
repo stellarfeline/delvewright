@@ -13,7 +13,6 @@ tree nothing perturbs.
 from __future__ import annotations
 
 import importlib.util
-import inspect
 import json
 import os
 import pathlib
@@ -800,23 +799,63 @@ def test_a_value_given_to_a_field_some_document_leaves_open_is_not_judged(mod, t
     assert not has(rep, "gives `verdict`"), rep.findings
 
 
-def test_a_code_the_release_prints_is_read_from_its_tree_not_its_bytes(mod, tree, engine):
-    """The measured false negative: `delvec--v1.8.0` raises `DW0944` and its bytes
-    never spell it — the six-byte literal is written by two immediate stores,
-    `"DW09"` and `"44"`, on both shelf targets. A code is read where the release
-    was built from (rule 17), so rule 18 takes no bytes and a page naming a code
-    the pinned engine declares is green under both rules."""
-    engine_root, _rev, _tag_exists = engine
-    code = max(mod.engine_dw_declarations(engine_root))
+def codes_release(listed, exit_code=0):
+    """A release answering `delvec codes` with one JSON line per listed code."""
+
+    def delvec(argv):
+        if argv == ["codes"]:
+            lines = [json.dumps({"code": c, "tier": "Build", "name": "X"}) for c in listed]
+            return exit_code, "\n".join(lines) + "\n"
+        return 2, ""
+
+    return delvec
+
+
+def code_rep(mod, monkeypatch, delvec, verb=True):
+    monkeypatch.setattr(mod, "engine_cli", lambda _engine: ({"codes": set()} if verb else {}, set()))
+    rep = mod.Report()
+    mod.release_code_rule(rep, delvec, pathlib.Path("engine"), "v0.0.0")
+    return rep
+
+
+def name_code(tree, code):
     path = tree / "references" / "when-red.md"
     path.write_text(
         path.read_text(encoding="utf-8") + f"\nA refusal carries `{code}`.\n",
         encoding="utf-8",
     )
-    assert code in mod.page_dw_codes()
-    assert "binary" not in inspect.signature(mod.release_binary_rule).parameters
-    assert not has(run(mod, engine), f"`{code}`"), code
-    assert not has(release_rep(mod, WALK_TWO), f"`{code}`"), code
+
+
+def test_a_code_the_release_lists_is_green_whatever_its_bytes(mod, tree, monkeypatch):
+    """The measured false negative: `delvec--v1.8.0` raises `DW0944` and its bytes
+    never spell it — the literal is written by two immediate stores, `"DW09"` and
+    `"44"`. Rule 18 asks the release's registry, so the page is green."""
+    name_code(tree, "DW0944")
+    named = mod.page_dw_codes()
+    rep = code_rep(mod, monkeypatch, codes_release(sorted(named)))
+    assert not rep.findings, rep.findings
+    bound = {what: (b, n) for what, b, n in rep.bindings}
+    assert bound["DW code(s) named that the release's `delvec codes` lists"] == (len(named), len(named))
+
+
+def test_a_code_the_release_does_not_list_reds(mod, tree, monkeypatch):
+    """The vacuous shape: a page naming a code the release does not declare."""
+    name_code(tree, "DW0944")
+    listed = sorted(set(mod.page_dw_codes()) - {"DW0944"})
+    rep = code_rep(mod, monkeypatch, codes_release(listed))
+    assert has(rep, "name `DW0944`, and `delvec codes` of the v0.0.0 release"), rep.findings
+
+
+def test_a_release_whose_tag_declares_the_verb_and_refuses_it_reds(mod, tree, monkeypatch):
+    rep = code_rep(mod, monkeypatch, codes_release([], exit_code=2))
+    assert has(rep, "declares `delvec codes`, and the release binary answered it"), rep.findings
+
+
+def test_a_release_older_than_the_verb_is_named_and_left_to_rule_17(mod, tree, monkeypatch, capsys):
+    """Not asked, and said so: the tree at the tag has no `delvec codes`."""
+    rep = code_rep(mod, monkeypatch, codes_release([]), verb=False)
+    assert not rep.findings and not rep.bindings
+    assert "rule 18 does NOT ask v0.0.0 for its DW codes" in capsys.readouterr().out
 
 
 # --------------------------------------------------------------- the gate refuses --

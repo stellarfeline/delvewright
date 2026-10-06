@@ -88,13 +88,15 @@
 
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0425`: the compiler cannot decide which side of a shortcut's gate is the
-/// sealed one.
-///
-/// Every shortcut door is given a clickable body, and every body has to stand on
-/// a side, so this binds to **every** shortcut in the campaign — there is no
-/// declaration to opt into and none to forget.
-pub const DW_SHORTCUT_SIDE_UNDECIDABLE: DwCode = DwCode::new("DW0425", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0425`: the compiler cannot decide which side of a shortcut's gate is the
+    /// sealed one.
+    ///
+    /// Every shortcut door is given a clickable body, and every body has to stand on
+    /// a side, so this binds to **every** shortcut in the campaign — there is no
+    /// declaration to opt into and none to forget.
+    pub const DW_SHORTCUT_SIDE_UNDECIDABLE: DwCode = DwCode::new("DW0425", ExitTier::Build);
+}
 
 /// The sealed side of a shortcut gate — expressed as the cells a body must stand
 /// in for the door to be pressable from that side and no other.

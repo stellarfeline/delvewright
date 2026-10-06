@@ -104,10 +104,12 @@ use crate::compiler::failure::Failure;
 use crate::compiler::nav::World;
 use crate::compiler::plan::Plan;
 
-/// `DW0920`: a body whose vanilla AI will not engage a land target under the
-/// delve's bright hour is staged as a fight the party must win, with no water in
-/// reach for the party to stand in.
-pub const DW_WILL_NOT_ENGAGE: DwCode = DwCode::new("DW0920", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0920`: a body whose vanilla AI will not engage a land target under the
+    /// delve's bright hour is staged as a fight the party must win, with no water in
+    /// reach for the party to stand in.
+    pub const DW_WILL_NOT_ENGAGE: DwCode = DwCode::new("DW0920", ExitTier::Build);
+}
 
 /// The bodies whose targeting reads the declared hour: `Drowned.okTarget` is the
 /// one target predicate in the pinned 1.21.11 jar that calls

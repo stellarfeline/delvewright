@@ -46,8 +46,10 @@
 
 use std::collections::BTreeMap;
 
-/// A body of fluid in a piece is not still, or not where it was authored.
-pub const DW_FLUID_ESCAPES: &str = "DW0800";
+crate::dw_code! {
+    /// A body of fluid in a piece is not still, or not where it was authored.
+    pub const DW_FLUID_ESCAPES: &str = "DW0800";
+}
 
 /// Minecraft's two fluids, as this module's callers spell them. The membership
 /// question is [`delvewright_dsl::blockshape::is_fluid`]; this is the list a

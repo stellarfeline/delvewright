@@ -97,7 +97,10 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        `delvec`, fetched and checksum-verified
        the way `scripts/fetch-delvec.py` fetches it, is asked for every schema it
        exports; every key a campaign-document fragment of the page names is a
-       field of one, and every value it gives a closed-set field is a member.
+       field of one, every value it gives a closed-set field is a member, and
+       every DW code the page names is listed by the release's `delvec codes`
+       — or, where the tree at the tag has no such verb, the run says rule 18
+       did not ask and rule 17 carries that release.
                                                RED: `verdict: "unwalked"` against
                                                     a walk record of two verdicts
    19  the pin check runs on every run: the run shape's `Init` entry names
@@ -153,16 +156,18 @@ A page names an engine in three vocabularies — commands, diagnostics and
 document fields — and until these two rules only the first was held to the pin,
 so a page written against a newer engine than it installs stayed green. Rule 17
 is offline because a DW code is declared in source by one shape the DW-code gate
-already reads (`check-dw-codes.py`'s `CONST_RE`, imported, not copied), and
-the tree it reads is the one the release was built from: the online half holds
-the remote tag to that commit and `fetch-delvec.py` holds the binary to the
-tag's shelf by checksum. The release's bytes are no reading of its codes. A
-code is a six-byte literal copied into a heap `String`, and where one site
-raises it the optimiser writes it with immediate stores instead of keeping the
-literal — `DW0944` in `delvec--v1.8.0` is `"DW09"` and `"44"` in two
-instructions on both shelf targets, one of nine declared codes the bytes never
-spell, while two retired codes stay spelled in help prose. Rule 18 is online
-because a field's name and a variant's spelling are serde's, and the
+already reads (`check-dw-codes.py`'s `CONST_RE`, imported, not copied). Rule 18
+asks the release the same question of its own registry, `delvec codes`, which
+every `dw_code!` declaration writes itself into and `check-dw-codes.py
+--delvec` holds equal to the declarations. Never the release's bytes: a code is
+a six-byte literal copied into a heap `String`, and where one site raises it
+the optimiser writes it with immediate stores instead of keeping the literal —
+`DW0944` in `delvec--v1.8.0` is `"DW09"` and `"44"` in two instructions on both
+shelf targets, one of nine declared codes those bytes never spell, while help
+prose spells two that no constant declares. A release whose tree at the tag has
+no `delvec codes` cannot be asked; the run prints that by name and rule 17's
+reading of the tag carries that release, and only that release. Rule 18 is
+online because a field's name and a variant's spelling are serde's, and the
 only faithful reading of serde is the binary's own `delvec schema`.
 
 A fragment — one inline span, or one whole fence — is read as a campaign
@@ -1042,13 +1047,7 @@ def check(
                 f"the engine at {ref} has no {path.relative_to(engine)}. A file "
                 f"this gate reads has moved; fix the path, do not drop the gate."
             )
-    crates_root = main_rs.parents[2]
-    sources = [main_rs.read_text(encoding="utf-8")] + [
-        f.read_text(encoding="utf-8")
-        for f in sorted(crates_root.rglob("*.rs"))
-        if f != main_rs
-    ]
-    subcommands, globals_ = parse_cli("\n".join(sources))
+    subcommands, globals_ = engine_cli(engine)
     if not subcommands:
         raise Unusable(
             f"parsed 0 subcommands from crates/ at engine {ref}; the clap "
@@ -1648,6 +1647,20 @@ def page_dw_codes() -> dict[str, list[str]]:
 
 
 @functools.cache
+def engine_cli(engine: pathlib.Path) -> tuple[dict[str, set[str]], set[str]]:
+    """`(subcommand -> long flags, global flags)` of the clap surface at the
+    materialised engine, by `lib/clap_surface.py`. Memoised per engine path,
+    like the declarations below: the engine is an instrument, never written."""
+    main_rs = engine / "crates" / "delvec" / "src" / "main.rs"
+    sources = [main_rs.read_text(encoding="utf-8")] + [
+        f.read_text(encoding="utf-8")
+        for f in sorted((engine / "crates").rglob("*.rs"))
+        if f != main_rs
+    ]
+    return parse_cli("\n".join(sources))
+
+
+@functools.cache
 def engine_dw_declarations(engine: pathlib.Path) -> frozenset[str]:
     """Every DW code declared under the materialised engine's `crates/`.
 
@@ -2128,9 +2141,8 @@ def release_schemas(delvec) -> dict[str, dict]:
 def release_binary_rule(rep: Report, delvec, ref: str) -> None:
     """Rule 18: the fields and variants the page names, asked of the release.
 
-    Not the DW codes: those are rule 17's, read at the tree the release was
-    built from, because a scan of the binary's bytes cannot see a code the
-    optimiser stored as immediates (see RULES 17 AND 18).
+    The DW codes are asked by `release_code_rule`, of the release's own
+    `delvec codes`.
     """
     schemas = release_schemas(delvec)
     fields = schema_fields(schemas)
@@ -2186,6 +2198,61 @@ def release_binary_rule(rep: Report, delvec, ref: str) -> None:
         )
         for where, keys in sorted(unread.items()):
             print(f"         {where}: {', '.join(sorted(keys))}")
+
+
+# The verb a release lists its DW codes with. A release whose tree at the tag
+# has no such subcommand cannot be asked, and that is read off the tag's clap
+# surface — a property of the tree the release was built from, which a binary
+# that lost the verb cannot supply.
+CODES_VERB = "codes"
+
+
+def release_code_rule(rep: Report, delvec, engine: pathlib.Path, ref: str) -> None:
+    """Rule 18, the codes: every DW code the page names is one the release's own
+    `delvec codes` lists — the registry every declaration writes itself into, so
+    the list is what the binary can print. Never the binary's bytes: a code
+    raised at one inlined site is written by immediate stores and never spelled.
+    """
+    named = page_dw_codes()
+    subcommands, _globals = engine_cli(engine)
+    if CODES_VERB not in subcommands:
+        print(
+            f"  --   rule 18 does NOT ask {ref} for its DW codes: the tree at the "
+            f"tag has no `delvec {CODES_VERB}`, so this release cannot list them. "
+            f"Rule 17's reading of the tag's declarations carries the judgement "
+            f"of the {len(named)} code(s) the page names, for this release only."
+        )
+        return
+    code, out = delvec([CODES_VERB])
+    listed: set[str] = set()
+    for line in out.splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and isinstance(row.get("code"), str):
+            listed.add(row["code"])
+    if code != 0 or not listed:
+        rep.find(
+            f"the tree at {ref} declares `delvec {CODES_VERB}`, and the release "
+            f"binary answered it with exit {code} and {len(listed)} code(s). The "
+            f"release cannot say which diagnostics it prints."
+        )
+        rep.bind("DW code(s) named that the release's `delvec codes` lists", 0, len(named))
+        return
+    for dw, where in sorted(named.items()):
+        if dw not in listed:
+            rep.find(
+                f"{', '.join(where)} name `{dw}`, and `delvec {CODES_VERB}` of the "
+                f"{ref} release does not list it — the release cannot print a "
+                f"diagnostic it does not declare."
+            )
+    print(f"  ok   {ref}'s `delvec {CODES_VERB}` lists {len(listed)} DW code(s)")
+    rep.bind(
+        "DW code(s) named that the release's `delvec codes` lists",
+        sum(1 for dw in named if dw in listed),
+        len(named),
+    )
 
 
 def acquire_release(into: pathlib.Path) -> pathlib.Path:
@@ -2796,6 +2863,7 @@ def main(argv: list[str] | None = None) -> int:
                     print("== the names the page gives the release, asked of the release ==")
                     binary = acquire_release(pathlib.Path(tmp) / "release-bin")
                     release_binary_rule(rep, runner(binary), ref)
+                    release_code_rule(rep, runner(binary), engine, ref)
                 else:
                     # Not a skipped rule dressed as a pass: the object rule 18
                     # asks does not exist yet, and the run says so where a reader

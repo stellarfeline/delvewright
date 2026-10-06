@@ -65,48 +65,70 @@ use crate::ids::{AnchorId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId}
 use crate::metrics::{MetricKind, Metrics, Reads};
 use crate::stages::Objective;
 
-/// `DW0814`: the layout graph is not a graph — a duplicate id, an endpoint
-/// naming no place, a self-loop, an `entry` that is not a node.
-pub const DW_GRAPH_MALFORMED: DwCode = DwCode::new("DW0814", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0814`: the layout graph is not a graph — a duplicate id, an endpoint
+    /// naming no place, a self-loop, an `entry` that is not a node.
+    pub const DW_GRAPH_MALFORMED: DwCode = DwCode::new("DW0814", ExitTier::Build);
+}
 
-/// `DW0816`: a node the closure never reaches.
-pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0816", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0816`: a node the closure never reaches.
+    pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0816", ExitTier::Build);
+}
 
-/// `DW0817`: the authored critical path does not hold.
-pub const DW_CRITICAL_PATH: DwCode = DwCode::new("DW0817", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0817`: the authored critical path does not hold.
+    pub const DW_CRITICAL_PATH: DwCode = DwCode::new("DW0817", ExitTier::Build);
+}
 
-/// `DW0818`: the graph names quest-side state that does not exist, or a
-/// place-bound beat has no place.
-pub const DW_GRAPH_MISSION: DwCode = DwCode::new("DW0818", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0818`: the graph names quest-side state that does not exist, or a
+    /// place-bound beat has no place.
+    pub const DW_GRAPH_MISSION: DwCode = DwCode::new("DW0818", ExitTier::Build);
+}
 
-/// `DW0819`: a one-way edge strands.
-pub const DW_ONE_WAY_STRANDS: DwCode = DwCode::new("DW0819", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0819`: a one-way edge strands.
+    pub const DW_ONE_WAY_STRANDS: DwCode = DwCode::new("DW0819", ExitTier::Build);
+}
 
-/// `DW0820`: a shortcut closes no loop.
-pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::new("DW0820", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0820`: a shortcut closes no loop.
+    pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::new("DW0820", ExitTier::Build);
+}
 
-/// `DW0822`: the pacing measurement — a projection, printed with no threshold.
-pub const DW_PACING: DwCode = DwCode::new("DW0822", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0822`: the pacing measurement — a projection, printed with no threshold.
+    pub const DW_PACING: DwCode = DwCode::new("DW0822", ExitTier::Build);
+}
 
-/// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
-pub const DW_STATION_RESERVED: DwCode = DwCode::new("DW0869", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
+    pub const DW_STATION_RESERVED: DwCode = DwCode::new("DW0869", ExitTier::Build);
+}
 
-/// `DW0870`: two stations claim one name (spec-0052 §7.2).
-pub const DW_STATION_DUPLICATE: DwCode = DwCode::new("DW0870", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0870`: two stations claim one name (spec-0052 §7.2).
+    pub const DW_STATION_DUPLICATE: DwCode = DwCode::new("DW0870", ExitTier::Build);
+}
 
-/// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
-///
-/// Judged at the reference site from the DECLARATION, with zero pieces bound.
-pub const DW_STATION_KIND: DwCode = DwCode::new("DW0871", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
+    ///
+    /// Judged at the reference site from the DECLARATION, with zero pieces bound.
+    pub const DW_STATION_KIND: DwCode = DwCode::new("DW0871", ExitTier::Build);
+}
 
-/// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
-///
-/// A node declares **exactly one of** `size_class` and `way_class`. Both is two
-/// answers to one question with nothing to choose between them — every
-/// downstream geometric rule would have to pick, and there is no rule to pick
-/// by. Neither is a place with no standard at all, which is what the size-class
-/// ladder was made compulsory to prevent.
-pub const DW_PLACE_CLASS: DwCode = DwCode::new("DW0875", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
+    ///
+    /// A node declares **exactly one of** `size_class` and `way_class`. Both is two
+    /// answers to one question with nothing to choose between them — every
+    /// downstream geometric rule would have to pick, and there is no rule to pick
+    /// by. Neither is a place with no standard at all, which is what the size-class
+    /// ladder was made compulsory to prevent.
+    pub const DW_PLACE_CLASS: DwCode = DwCode::new("DW0875", ExitTier::Build);
+}
 
 // ---------------------------------------------------------------------------
 // Stage 2 — the geometry brief's machine-readable facts (spec-0049 §4.2)
