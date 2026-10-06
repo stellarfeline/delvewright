@@ -215,7 +215,7 @@ jobs:
     needs: changes
     # Every consumer's group, so it runs whenever any consumer does
     # (`check-ci-reach.py` refuses a consumer this would not reach).
-    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.mecha-crosscheck == 'true' || needs.changes.outputs.zone-audit == 'true' || needs.changes.outputs.gallery == 'true' || needs.changes.outputs.tier2-validation == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.mecha-crosscheck == 'true' || needs.changes.outputs.zone-audit == 'true' || needs.changes.outputs.gallery == 'true' || needs.changes.outputs.tier2-validation == 'true' || needs.changes.outputs.gallery-bot == 'true'
     runs-on: ubuntu-latest
     outputs:
       sha256: ${{ steps.hash.outputs.sha256 }}
@@ -1518,12 +1518,11 @@ jobs:
   # and the death loop wherever it ships a death plan, each ON by the build's
   # own declaration and never by a flag here.
   #
-  # The engine is built here the way every other job builds it today. When one
-  # job builds `delvec` for the run and uploads it, this job takes that binary
-  # instead: the build step below is the only one that changes.
+  # The engine is the run's one `delvec` (`delvec-binary`), taken sha256-checked
+  # through `.github/actions/delvec-binary`.
   gallery-bot:
     name: gallery bot (critical path + die-retry + death loop)
-    needs: changes
+    needs: [changes, delvec-binary]
     if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-bot == 'true'
     runs-on: ubuntu-latest
     # The ladder's own budget is DELVEWRIGHT_RUN_TIMEOUT_MS below; this bound is
@@ -1536,10 +1535,12 @@ jobs:
       DELVEWRIGHT_RUN_TIMEOUT_MS: "2400000"
     steps:
       - uses: actions/checkout@v4
+      # The cache serves `prefabs/gallery-generator`, which `gallery-prefabs.py`
+      # compiles: a different workspace from the engine.
       - uses: Swatinem/rust-cache@v2
         with: { key: gallery-bot }
-      - name: build the engine under test
-        run: cargo build --locked -p delvec --bin delvec
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
       # The two committed acts that make the gallery's prefab directory, the
       # same ones the `gallery` job runs.
       - name: generate the gallery's pieces and skins
