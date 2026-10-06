@@ -8,7 +8,7 @@ Founding decisions live in `docs/adr/`. Read the ADR index before proposing arch
 
 ## This file is half of the constitution
 
-This file holds what anyone building Delvewright must obey to produce a correct artifact. The other half — how this deployment is run: dispatch, review, merge, staging, decisions — is **`CLAUDE.local.md`**, gitignored, loaded by the same memory loader and carrying the same force. `tools/planner/planner-state.sh` (bound to `SessionStart` and `UserPromptSubmit --if-stale 12`) refuses by name when it is absent. Without it you have half a constitution: say so and ask before improvising anything about dispatch, review, merge or staging.
+This file holds what anyone building Delvewright must obey to produce a correct artifact. The other half — how this deployment is run: dispatch, review, merge, staging, decisions — is **`CLAUDE.local.md`**, gitignored, loaded by the same memory loader and carrying the same force. `tools/planner/planner-state.sh` (bound to `SessionStart`, which fires on startup, resume and after every compaction) refuses by name when it is absent. Without it you have half a constitution: say so and ask before improvising anything about dispatch, review, merge or staging.
 
 **Neither file is edited without the owner's confirmation in conversation.** A rule is stated once and never restated; a lesson goes into a tool, a diagnostic or `docs/reference/` first. Rules state what to do, not why. **One paragraph or bullet per line; never break a line for length.**
 
