@@ -200,16 +200,25 @@ pub struct CameraSky {
 }
 
 impl CameraSky {
-    /// Parse `<time>,<weather>` in the two enums' own keywords (`dusk,rain`) —
-    /// `delvec place-camera --sky`'s spelling.
+    /// Parse `<time>,<weather>` — `delvec place-camera --sky`'s spelling: the
+    /// time a keyword or a celestial object in JSON
+    /// (`{"moon":"high","phase":"new-moon"},clear`), the weather a keyword
+    /// (`dusk,rain`). The weather is split off the LAST comma, so a celestial
+    /// object's own commas stay inside the time.
     pub fn parse(spec: &str) -> Result<CameraSky, String> {
-        let shape = "a sky is `<time>,<weather>`: a time of day, day | noon | dusk | night | \
-                     midnight | dawn, and a weather, clear | rain | thunder (`dusk,rain`)";
+        let shape = "a sky is `<time>,<weather>`: a time — day | noon | dusk | night | midnight \
+                     | dawn, or a celestial object such as {\"moon\":\"high\"} — and a weather, \
+                     clear | rain | thunder (`dusk,rain`)";
         let (time, weather) = spec
-            .split_once(',')
+            .rsplit_once(',')
             .ok_or_else(|| format!("`{spec}` is not a sky: {shape}"))?;
-        let time: WorldTime = serde_json::from_value(serde_json::Value::from(time.trim()))
-            .map_err(|_| format!("`{time}` is not a time of day: {shape}"))?;
+        let time = time.trim();
+        let parsed: Result<WorldTime, _> = if time.starts_with('{') {
+            serde_json::from_str(time).map_err(|e| e.to_string())
+        } else {
+            serde_json::from_value(serde_json::Value::from(time)).map_err(|e| e.to_string())
+        };
+        let time = parsed.map_err(|e| format!("`{time}` is not a time of day: {e}. {shape}"))?;
         let weather: WorldWeather = serde_json::from_value(serde_json::Value::from(weather.trim()))
             .map_err(|_| format!("`{weather}` is not a weather: {shape}"))?;
         Ok(CameraSky { time, weather })
@@ -563,7 +572,7 @@ impl ResolvedSky {
     /// <row> | stated> class <class> — <cell>`.
     pub fn line(&self) -> String {
         format!(
-            "sky: {} {} {} class {} — {}",
+            "sky: {} {} {} class {} — {}{}",
             self.camera,
             self.sky.label(),
             match &self.origin {
@@ -571,7 +580,14 @@ impl ResolvedSky {
                 SkyOrigin::Stated => "stated".to_string(),
             },
             self.class.name(),
-            scene::sky_phrase(self.class, self.sky.weather)
+            scene::sky_phrase(self.class, self.sky.weather),
+            // spec-0081 §5.4: the pinned renderer draws no moon, so a frame of a
+            // sky whose moon is up carries no phase — said where it is read.
+            if delvewright_dsl::celestial::moon_up(self.sky.time.daytime_ticks()) {
+                "; moon not drawn by the renderer"
+            } else {
+                ""
+            }
         )
     }
 }

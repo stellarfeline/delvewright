@@ -1,0 +1,16 @@
+{
+  "code": "DW0931",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1reach-the-counter/1/time",
+      "value": {
+        "phase": "full-moon",
+        "sun": "high"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The counter quest's first cut, `{\"sun\": \"high\"}`, given a phase: `full-moon`. Under a sun at the zenith the moon stands at the nadir, -90.00°, where nobody can see it, so a judgement about its phase reaches nothing — and, written on a cut, it would quietly move the clock to day 0 while saying nothing a player could check. Nothing else moves: the world, every other cut, the design record and its rows (the row for this hour states `{\"sun\": \"high\"}` with no phase) stand as they stood. `DW0931` refuses it at validation, naming the moon's altitude and the one remedy — remove `phase`. It declares no unit: `CelestialTime.phase` is bound by the primary."
+}

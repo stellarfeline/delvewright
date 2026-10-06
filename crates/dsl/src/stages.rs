@@ -9,13 +9,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::celestial::{CelestialTime, Clock, MoonPhase};
 use crate::firework::FireworkExplosion;
 use crate::layout::StationKind;
 
 use crate::ids::{
-    ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId,
-    EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
-    RegionId, ShopId, ShortcutId, StakeId, StateId, TimedGateId, TrapId, TriggerId, WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, AtmosphereId, BranchId, BranchPointId, ClassId,
+    DialogueId, EditBatchId, EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId,
+    PrefabId, QuestId, RegionId, ShopId, ShortcutId, StakeId, StateId, TimedGateId, TrapId,
+    TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -112,6 +114,17 @@ pub struct WorldContent {
     /// `{base, …params}`; see [`Horizon`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizon: Option<Horizon>,
+    /// **The skies a place can stand under** (spec-0080). Each one is declared
+    /// once, here, beside `time`, `weather` and `horizon` — the other
+    /// statements about the sky the party stands under — and ships as a
+    /// datapack biome (`<ns>:atmosphere/<kebab>`) built from the pinned game's
+    /// environment attributes. A place carries one from the first tick
+    /// ([`Area::atmosphere`], `boxes[].atmosphere`), and a beat repaints a
+    /// volume with another ([`Verb::SetAtmosphere`]). Absent or empty: every
+    /// cell stands in the horizon's biome. One no place carries and no beat
+    /// paints is refused (`DW0930`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atmospheres: Vec<Atmosphere>,
     /// Playable-region boundary (DSL v0.6, spec-0013). When present, the compiler
     /// derives a region from the placed geometry and a per-second clock returns any
     /// player who leaves it to the last checkpoint. Required when `horizon` is
@@ -141,6 +154,89 @@ pub struct WorldContent {
     pub min_players: Option<u8>,
 }
 
+/// One declared sky (spec-0080 §3.1): what the party sees and hears while it
+/// stands in a cell painted with this atmosphere's biome.
+///
+/// The biome is vanilla's one channel for sky colour, fog, clouds, sky-light
+/// tint, stars, ambient particles, music, ambience, grass, foliage and water
+/// tint, and precipitation. In the overworld the day cycle stacks over it: it
+/// multiplies the colours (a biome's value survives, darkened at night), takes
+/// the maximum of `star_brightness`, and replaces the sun, moon and star
+/// angles, the sunrise colour and the moon phase outright — which is why those
+/// five ids are refused (`DW0928`) and the sun cannot be moved from a place.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Atmosphere {
+    /// `atmosphere/<kebab>`, unique.
+    pub id: AtmosphereId,
+    /// Environment attributes, keyed by id (`visual/sky_color`; the
+    /// `minecraft:` prefix is optional). Which ids a campaign may set, the
+    /// shape of each value and the range the pinned codec accepts are vendored
+    /// data (`crates/delvec/data/environment-attributes-1.21.11.json`), not
+    /// DSL surface: a value outside them is `DW0928`. A float attribute may
+    /// also be written in vanilla's modifier form, `{"argument": 0.85,
+    /// "modifier": "multiply"}`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, serde_json::Value>,
+    /// Grass, foliage, dry-foliage and water tint (`#rrggbb`), each optional.
+    /// Absent, vanilla derives grass and foliage from the climate and water is
+    /// the void biome's `#3f76e4`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<AtmosphereTint>,
+    /// What falls here when the world's weather is rain or thunder. The
+    /// compiler derives the three vanilla fields that must agree from it
+    /// (`has_precipitation`, `temperature`, `downfall`), and it is the fact
+    /// `DW0496` reads at a cell: `none` under a rainy world means the undead
+    /// burn here.
+    pub precipitation: Precipitation,
+    /// Overrides the derived `temperature` / `downfall`, for vanilla's own
+    /// grass colormap at a named point. Must agree with `precipitation`
+    /// (`DW0930`): snow below 0.15, rain at or above it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub climate: Option<Climate>,
+}
+
+/// An atmosphere's tint (spec-0080 §3.1.3): the biome `effects` colours the
+/// pinned data writes, each `#rrggbb`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AtmosphereTint {
+    /// `grass_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grass: Option<String>,
+    /// `foliage_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foliage: Option<String>,
+    /// `dry_foliage_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dry_foliage: Option<String>,
+    /// `water_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water: Option<String>,
+}
+
+/// What an atmosphere's biome lets fall (spec-0080 §3.1.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Precipitation {
+    /// Nothing falls: `has_precipitation: false`.
+    None,
+    /// Rain falls: `has_precipitation: true`, temperature 0.5.
+    Rain,
+    /// Snow falls: `has_precipitation: true`, temperature 0.0.
+    Snow,
+}
+
+/// A biome's climate pair (spec-0080 §3.1.4).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Climate {
+    /// `temperature`: vanilla snows below 0.15.
+    pub temperature: f64,
+    /// `downfall`.
+    pub downfall: f64,
+}
+
 /// Who a granted item goes to (DSL v0.6, spec-0018).
 ///
 /// Progression is a fact about the party, so the default for every `give-item` and
@@ -158,17 +254,24 @@ pub enum Carrier {
     One,
 }
 
-/// A declared world time state (DSL v0.5, spec-0010). The sole difference from
-/// vanilla is that the daylight cycle is frozen (`advance_time false`), so a set
-/// state persists for the whole delve until a `set-time` effect cuts to another.
+/// A declared world time state (DSL v0.5, spec-0010; the celestial spelling
+/// spec-0081). The sole difference from vanilla is that the daylight cycle is
+/// frozen (`advance_time false`), so a set state persists for the whole delve
+/// until a `set-time` effect cuts to another.
+///
+/// **Two spellings of one clock.** A keyword — `day`, `noon`, `dusk`, `night`,
+/// `midnight`, `dawn` — states vanilla's word with vanilla's meaning: the hour,
+/// on day 0, so a keyword night shows a full moon. A celestial statement
+/// ([`CelestialTime`], `{"moon": "just-risen", "phase": "new-moon"}`) names one
+/// body, where it stands and, where the moon shows, its phase, and the engine
+/// computes the tick count, day included. Both resolve to one [`Clock`]
+/// ([`WorldTime::clock`]); two values are equal when their clocks are.
 ///
 /// Vanilla's `/time set` primitive takes **either** one of four keywords or a raw
-/// tick count, and the tick form is the general one — so the states worth naming
-/// for a delve's pacing are not limited to the four keywords. `dusk` and `dawn`
-/// are the tick form exposed first-class, per the
-/// no-hack rule: the DSL names the beat, the compiler emits `/time set <ticks>`.
-/// Every keyword-to-tick mapping lives in exactly one table ([`WorldTime::spec`]),
-/// and the four vanilla keywords still emit their keyword verbatim, so existing
+/// tick count, and the tick form is the general one. `dusk` and `dawn` are the
+/// tick form exposed first-class, per the no-hack rule; a celestial statement is
+/// the same primitive reached from a designer's sentence. A keyword on day 0
+/// still emits its keyword verbatim ([`WorldTime::token`]), so existing
 /// campaigns are byte-identical.
 ///
 /// **There is no `Default`** (spec-0061 §4). A default hour is a design decision
@@ -177,9 +280,29 @@ pub enum Carrier {
 /// sky. Removing the impl is what makes that unwritable rather than merely
 /// discouraged: `WorldContent::time` is required, and nothing can supply an hour
 /// the author did not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum WorldTime {
+    /// Morning daylight (`/time set day`, 1000 ticks).
+    Day,
+    /// Midday, brightest (`/time set noon`, 6000 ticks).
+    Noon,
+    /// Sunset onset (`/time set 12000`).
+    Dusk,
+    /// Night, sun fully down (`/time set night`, 13000 ticks).
+    Night,
+    /// Deep night, darkest (`/time set midnight`, 18000 ticks).
+    Midnight,
+    /// First light, just before sunrise (`/time set 23000`).
+    Dawn,
+    /// A sky stated in a designer's words (spec-0081).
+    Celestial(CelestialTime),
+}
+
+/// The six keyword spellings of a [`WorldTime`] — the wire and schema form of
+/// its keyword half.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum WorldTime {
+pub enum TimeKeyword {
     /// Morning daylight (`/time set day`, 1000 ticks).
     Day,
     /// Midday, brightest (`/time set noon`, 6000 ticks).
@@ -199,52 +322,201 @@ pub enum WorldTime {
     Dawn,
 }
 
+impl From<TimeKeyword> for WorldTime {
+    fn from(k: TimeKeyword) -> WorldTime {
+        match k {
+            TimeKeyword::Day => WorldTime::Day,
+            TimeKeyword::Noon => WorldTime::Noon,
+            TimeKeyword::Dusk => WorldTime::Dusk,
+            TimeKeyword::Night => WorldTime::Night,
+            TimeKeyword::Midnight => WorldTime::Midnight,
+            TimeKeyword::Dawn => WorldTime::Dawn,
+        }
+    }
+}
+
+impl Serialize for WorldTime {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            WorldTime::Celestial(c) => c.serialize(s),
+            kw => s.serialize_str(kw.keyword_str().expect("a keyword")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for WorldTime {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<WorldTime, D::Error> {
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = WorldTime;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(
+                    "a time: a keyword (day, noon, dusk, night, midnight, dawn) or an object \
+                     naming one body, where it stands and its phase \
+                     ({\"moon\": \"just-risen\", \"phase\": \"new-moon\"})",
+                )
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<WorldTime, E> {
+                use serde::de::IntoDeserializer;
+                TimeKeyword::deserialize(v.into_deserializer()).map(WorldTime::from)
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<WorldTime, A::Error> {
+                CelestialTime::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                    .map(WorldTime::Celestial)
+            }
+        }
+        de.deserialize_any(V)
+    }
+}
+
+impl JsonSchema for WorldTime {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "WorldTime".into()
+    }
+
+    fn json_schema(g: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "A time: a keyword, vanilla's hour on day 0 (a keyword night is a full \
+                            moon), or a celestial statement naming one body, where it stands and, \
+                            where the moon shows, its phase (spec-0081).",
+            "anyOf": [g.subschema_for::<TimeKeyword>(), g.subschema_for::<CelestialTime>()],
+        })
+    }
+}
+
 impl WorldTime {
-    /// The single keyword/tick table: `(the /time set argument, daytime ticks)`.
+    /// The keyword table: `(the /time set argument, daytime ticks)`, or `None`
+    /// for a celestial statement.
     ///
     /// A state vanilla names keeps its keyword — the argument the compiler has
     /// always emitted — so no shipped campaign's bytes move. A state vanilla does
     /// not name emits the equivalent tick count, which is the same primitive.
-    const fn spec(self) -> (&'static str, i64) {
+    const fn spec(self) -> Option<(&'static str, i64)> {
         match self {
-            WorldTime::Day => ("day", 1000),
-            WorldTime::Noon => ("noon", 6000),
-            WorldTime::Dusk => ("12000", 12000),
-            WorldTime::Night => ("night", 13000),
-            WorldTime::Midnight => ("midnight", 18000),
-            WorldTime::Dawn => ("23000", 23000),
+            WorldTime::Day => Some(("day", 1000)),
+            WorldTime::Noon => Some(("noon", 6000)),
+            WorldTime::Dusk => Some(("12000", 12000)),
+            WorldTime::Night => Some(("night", 13000)),
+            WorldTime::Midnight => Some(("midnight", 18000)),
+            WorldTime::Dawn => Some(("23000", 23000)),
+            WorldTime::Celestial(_) => None,
         }
     }
 
-    /// The vanilla `/time set` argument — a keyword for the four states vanilla
-    /// names, a tick count otherwise.
-    pub fn token(self) -> &'static str {
-        self.spec().0
+    /// Whether this is one of the six keywords.
+    pub fn is_keyword(self) -> bool {
+        !matches!(self, WorldTime::Celestial(_))
+    }
+
+    /// The celestial statement, if this is one.
+    pub fn celestial(self) -> Option<CelestialTime> {
+        match self {
+            WorldTime::Celestial(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The phase this value states, if any.
+    pub fn stated_phase(self) -> Option<MoonPhase> {
+        self.celestial().and_then(|c| c.phase)
     }
 
     /// The `daytime` tick value this state sets (the `time query daytime`
-    /// read-back). Vanilla constants: day=1000, noon=6000, dusk=12000 (sunset
-    /// onset), night=13000, midnight=18000, dawn=23000.
+    /// read-back). Keywords: day=1000, noon=6000, dusk=12000 (sunset onset),
+    /// night=13000, midnight=18000, dawn=23000; a celestial statement its
+    /// position's tick ([`crate::celestial::position_tick`]).
     pub fn daytime_ticks(self) -> i64 {
-        self.spec().1
-    }
-
-    /// **The word an author writes** — this state's spelling in a document.
-    ///
-    /// Not [`WorldTime::token`], which is the `/time set` argument and is a raw
-    /// tick count for the two states vanilla does not name. A diagnostic that
-    /// asks an author to declare an hour has to say `dusk`, not `12000`: the
-    /// number is what the compiler emits and is not writable in `world.json`.
-    pub fn keyword(self) -> &'static str {
-        match self {
-            WorldTime::Day => "day",
-            WorldTime::Noon => "noon",
-            WorldTime::Dusk => "dusk",
-            WorldTime::Night => "night",
-            WorldTime::Midnight => "midnight",
-            WorldTime::Dawn => "dawn",
+        match self.spec() {
+            Some((_, t)) => t,
+            None => self.celestial().expect("celestial").daytime(),
         }
     }
+
+    /// The day this value names as **the world's own time**: a keyword is day 0;
+    /// a celestial statement the day its `phase` names, or day 0 where it names
+    /// none (the moon is below the horizon, so no phase is stated).
+    pub fn world_day(self) -> i64 {
+        self.stated_phase().map(MoonPhase::index).unwrap_or(0)
+    }
+
+    /// **The clock this value sets**, at a site whose world declares `world`
+    /// (spec-0081 §3.3).
+    ///
+    /// - A celestial statement is its position's tick on the day its `phase`
+    ///   names, or the world's day where it states none — a cut changes the
+    ///   hour, and the moon keeps the phase the world declared.
+    /// - A keyword is its table row on day 0 where it states a sky — the
+    ///   world's own time, a design row, a camera ([`TimeSite::Sky`]) — and on
+    ///   the world's day where it is a `set-time` cut ([`TimeSite::Cut`]), which
+    ///   changes the hour and keeps the moon.
+    pub fn clock(self, site: TimeSite, world: WorldTime) -> Clock {
+        let daytime = self.daytime_ticks();
+        let day = match (self, site) {
+            (WorldTime::Celestial(c), _) => c
+                .phase
+                .map(MoonPhase::index)
+                .unwrap_or_else(|| world.world_day()),
+            (_, TimeSite::Cut) => world.world_day(),
+            (_, TimeSite::Sky) => 0,
+        };
+        Clock { day, daytime }
+    }
+
+    /// The world's own clock: [`WorldTime::clock`] at the world's site.
+    pub fn world_clock(self) -> Clock {
+        self.clock(TimeSite::Sky, self)
+    }
+
+    /// **The vanilla `/time set` argument for `clock`**, the one token every
+    /// `time set` the engine emits goes through: a keyword on day 0 emits its
+    /// table argument verbatim (`night`, `12000`), so no keyword campaign's bytes
+    /// move; any other clock emits the integer `day × 24000 + daytime`.
+    pub fn token(self, clock: Clock) -> String {
+        match self.spec() {
+            Some((tok, t)) if clock.day == 0 && clock.daytime == t => tok.to_string(),
+            _ => clock.absolute().to_string(),
+        }
+    }
+
+    /// The keyword spelling, if this is a keyword.
+    fn keyword_str(self) -> Option<&'static str> {
+        match self {
+            WorldTime::Day => Some("day"),
+            WorldTime::Noon => Some("noon"),
+            WorldTime::Dusk => Some("dusk"),
+            WorldTime::Night => Some("night"),
+            WorldTime::Midnight => Some("midnight"),
+            WorldTime::Dawn => Some("dawn"),
+            WorldTime::Celestial(_) => None,
+        }
+    }
+
+    /// **What an author writes** — this state's spelling in a document: the
+    /// keyword, or the canonical JSON of a celestial statement
+    /// (`{"moon":"high","phase":"new-moon"}`).
+    ///
+    /// Not [`WorldTime::token`], which is the `/time set` argument and is a raw
+    /// tick count for every state vanilla does not name. A diagnostic that asks
+    /// an author to declare an hour has to say `dusk`, not `12000`.
+    pub fn keyword(self) -> String {
+        match self {
+            WorldTime::Celestial(c) => c.spelling(),
+            kw => kw.keyword_str().expect("a keyword").to_string(),
+        }
+    }
+}
+
+/// Where a time value is written, which decides the day a keyword names
+/// ([`WorldTime::clock`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TimeSite {
+    /// A statement of a sky: the world's own time, a design row, a camera.
+    Sky,
+    /// A `set-time` effect, quest or dialogue.
+    Cut,
 }
 
 /// A declared weather state (DSL v0.5, spec-0010). Values are the vanilla
@@ -671,6 +943,13 @@ pub struct Area {
     /// effect), either, or neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mitigation: Option<AreaMitigation>,
+    /// **The sky this place stands under from the first tick** (spec-0080
+    /// §3.2): one of `world.atmospheres[]`, painted at world setup over the
+    /// area's placed bounds grown up and down as far as the client's biome
+    /// blend reads. The volume is the placement's, never typed.
+    /// Absent: the horizon's biome.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atmosphere: Option<AtmosphereId>,
 }
 
 /// Inclusive piece-count bounds for a jigsaw `prefab_pool` area.
@@ -4817,6 +5096,34 @@ pub enum Verb {
         /// the same object class [`Verb::FillRegion`] fills.
         region: StealthZone,
     },
+    /// **Repaint a volume's sky** (spec-0080 §3.3): `/fillbiome` over the
+    /// volume with the named atmosphere's biome, while the party stands in it.
+    ///
+    /// A runtime edit of the world keyed to a volume, so it is a verb of the
+    /// physical-edit family [`Verb::FillRegion`] / [`Verb::ClearRegion`] form.
+    /// Exactly one of `region` / `place` (`DW0929`): a volume inside a place is
+    /// the creator's judgement, a whole place's bounds are a derivation the
+    /// creator never types. Painting back is this verb naming the place's own
+    /// atmosphere, or `atmosphere: null` for the horizon's biome.
+    ///
+    /// A hard cut: the client blends fog over its biome-blend radius and grass
+    /// not at all, and biome cells are 4×4×4, so the painted volume is the
+    /// enclosing 4-aligned box, up to three blocks past each face.
+    SetAtmosphere {
+        /// One of `world.atmospheres[]`, or `null` for the horizon's biome.
+        #[serde(default)]
+        atmosphere: Option<AtmosphereId>,
+        /// The volume, as an anchor-centred box (`anchor ± extent`) — the same
+        /// object class [`Verb::FillRegion`] fills, resolved through the same
+        /// `Plan::zone_box`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        region: Option<StealthZone>,
+        /// A whole place: an `area/…` id, or a site-plan box's `node/…`. Its
+        /// volume is the cells the place's own `atmosphere` paints at setup:
+        /// its bounds, grown as far as the client's biome blend reads.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        place: Option<String>,
+    },
     /// **Opens a placed piece's contingent way** (DSL v0.12, spec-0042 §2.4): the
     /// broken flight a beat repairs, the bridge a beat lowers, the rubble a beat
     /// clears.
@@ -6176,6 +6483,7 @@ impl Verb {
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
             Verb::ClearRegion { .. } => "clear-region",
+            Verb::SetAtmosphere { .. } => "set-atmosphere",
             Verb::OpenWay { .. } => "open-way",
             Verb::DespawnNpc { .. } => "despawn-npc",
             Verb::MoveNpc { .. } => "move-npc",
@@ -6344,6 +6652,7 @@ impl QuestEffect {
             | Verb::ClearState { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
+            | Verb::SetAtmosphere { .. }
             // spec-0042's `open-way` is v0.12 — it reports via `v12_effect`.
             | Verb::OpenWay { .. }
             | Verb::GiveEffect { .. }
@@ -6929,6 +7238,12 @@ impl QuestEffect {
             Verb::FillRegion { region, .. } | Verb::ClearRegion { region, .. } => {
                 vec![("region/anchor".to_string(), &region.anchor, None)]
             }
+            // A repaint's box centre names a location, exactly as a region
+            // write's does.
+            Verb::SetAtmosphere {
+                region: Some(region),
+                ..
+            } => vec![("region/anchor".to_string(), &region.anchor, None)],
             // Both cutscene spellings (`DW0199` polices mixing them): the v0.6
             // multi-shot list, or the v0.4 single-shot fields flattened at the
             // effect's own level.
@@ -8057,6 +8372,11 @@ mod happening_subject_tests {
                 "fill-region",
                 serde_json::json!({"type":"fill-region","region":{"anchor":"anchor/pit","extent":[2,2,2]},"block":"minecraft:water"}),
                 Some("anchor/pit"),
+            ),
+            (
+                "set-atmosphere",
+                serde_json::json!({"type":"set-atmosphere","atmosphere":"atmosphere/wrong","region":{"anchor":"anchor/hall","extent":[4,2,4]}}),
+                Some("anchor/hall"),
             ),
             (
                 "clear-region",
