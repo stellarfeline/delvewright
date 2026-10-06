@@ -969,3 +969,51 @@ fn a_site_plan_place_only_a_link_reaches_is_reached_and_carried_to() {
     let run = build(&dir);
     assert_ne!(run.status, 0, "{}", run.stderr);
 }
+
+/// spec-0083 × the review tools: every `pov/…` shot the build's render plan
+/// names is one `delvec snapshot --shot` resolves, because both read the path
+/// with the taken link spliced in (`nav::with_links_taken`). A snapshot that
+/// re-derived the path without it numbered the legs differently and refused
+/// the build's own shots as "not in this campaign's render plan".
+#[test]
+fn every_pov_shot_the_build_names_is_one_the_snapshot_resolves() {
+    let dir = campaign("pov-shots", |_| {});
+    let run = build(&dir);
+    run.green();
+    let plan = run.json("render-plan.json");
+    let pov: Vec<String> = plan["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|s| s["id"].as_str())
+        .filter(|id| id.starts_with("pov/"))
+        .map(str::to_string)
+        .collect();
+    assert!(!pov.is_empty(), "the ferry's path names pov shots");
+    let frames = dir.with_extension("frames");
+    let _ = std::fs::remove_dir_all(&frames);
+    std::fs::create_dir_all(&frames).unwrap();
+    let mut refused = Vec::new();
+    for id in &pov {
+        let o = Command::new(env!("CARGO_BIN_EXE_delvec"))
+            .arg("--prefabs")
+            .arg(ferry_prefabs())
+            .arg("snapshot")
+            .arg(&dir)
+            .arg("--shot")
+            .arg(id)
+            .arg("-o")
+            .arg(frames.join(format!("{}.png", id.replace('/', "_"))))
+            .output()
+            .expect("delvec runs");
+        let err = String::from_utf8_lossy(&o.stderr).to_string();
+        if err.contains("is not in this campaign's render plan") {
+            refused.push(id.clone());
+        }
+    }
+    assert!(
+        refused.is_empty(),
+        "of {} pov shot(s) the build named, the snapshot refused {refused:?}",
+        pov.len()
+    );
+}
