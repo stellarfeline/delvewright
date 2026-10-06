@@ -168,6 +168,40 @@ The back's edge is a cliff edge: a fall from it onto the apron that exceeds the 
 
 None for the owner. Everything here is an engine-internal surface shaped by rules already given; the one craft question (§4.2) is answered by looking at a demo level, not by deciding now. For the planner: allocate the two codes; number the follow-ups; and read §2.2's second consequence as the brief for the implementing round — the leave proof at generation is the half of this spec most likely to be deferred and least safe to defer.
 
+## 9. Light set into the hull, and a solid's own material
+
+**Why.** A walk of the demo level found both bays lit only along the floor, by lanterns that read as set down in a cave, and the upper volume black. The craft rulings are given (cited: the owner's rulings, recorded in `docs/reference/interior-lighting.md` §7): a cave's natural light is embedded in its surface; an artificial-looking source is hidden behind a partial block in the surface; placement is staggered and irregular, never a grid, over walls and vault alike. §4.1 stands — light is placed in the design and the engine only checks it — so the form states the mode and the density, and the sculpt derives where each source goes, as it derives every other block from what the form states.
+
+**The surface (authored).** A `lights[]` entry is either `{at, block}` (placed by hand, as before) or `{block, hull}`, exactly one of `at` and `hull`:
+
+| Field | Shape | What it is |
+|---|---|---|
+| `hull.within` | `{from, to}` | the cells, body frame, inclusive, the surface is taken from |
+| `hull.on` | `[wall \| vault \| floor]` | the surfaces a source may sit in: a body block facing air below it is `vault`, else one facing air sideways is `wall`, else one facing air above it is `floor`; the air must have the body over it (the inside surface), and the ground is never a host |
+| `hull.spacing` | number ≥ 2 | the density, as the least distance in blocks between two sources (Bridson's Poisson-disk `r`) |
+| `hull.mode` | `embedded \| recessed` | `embedded`: the source takes the place of a surface block, flush, and must be a full cube; `recessed`: the source sits one block behind the surface, the `cover` stands in the surface in front of it, and a one-block slot beside the cover lets the light out |
+| `hull.cover` | a bare `<family>_stairs` or `<family>_slab` id | the partial block a `recessed` source sits behind, oriented by the sculpt (a stair's full-height half toward the room, or under a vault; a bottom slab) |
+
+**The draw (authored, on a cited mechanism).** Candidates are the fitted body blocks (full, stair or slab) in `within` on the named surfaces, and for `recessed` only those where the recess fits: the cover's and slot's blocks are body surface, the room cells in front of both are air, and every block round the source and the cell behind the slot is solid, so the nook opens to the room and nowhere else. A wall's slot opens sideways when it can (its mouth at the source's own height), else up; a vault's along the first cardinal that fits. The candidates are shuffled by the crate's seeded generator (ADR-0006) and each is accepted when no source of its entry lies within its `spacing`, nor any earlier entry's source within the smaller of the two spacings. Entries are drawn in `lights[]` order, each from its own stream.
+
+**What is checked (authored).** The light model (`compiler::light::LightModel`, the build's one flood) is run over the finished piece, block light only, and each source's room cell read: the cell it faces (`embedded`) or the cell in front of its slot (`recessed`). A source whose room cell measures 0, or a `hull` entry that placed no source, refuses the sculpt `DW0952`. Each entry prints `lights[i] hull <mode>: N source(s) — w wall, v vault, f floor — of C candidate cell(s) (…), spacing s; room light lo..hi`. Brightness stays `DW0210`'s, unchanged.
+
+**What is refused where the form is read (`DW0951`).** Both or neither of `at` and `hull`; a `spacing` below 2 or not finite; `on` empty or naming a surface twice; `within` outside the box or inverted; `embedded` with a `cover`, or with a block that is not a full cube; `recessed` with no `cover`, or naming `floor` (its slot would be a hole in a surface a body walks); a `cover` that is not a bare stair or slab id, or that emits light.
+
+**A solid's own material (authored).** The `material` a `shelf` carries is a property of every solid: any `capsule`, `ellipsoid`, `disc` or `box` may declare `material`, and a block takes the tone of the last solid with a material whose shape contains the block's centre (a shelf's tread as before). A capability belongs to the object class it acts on; the shelf's field was the first instance of it, and the demo level's vantage (a mound of mud on the valley floor) is the second, which the palette — the body's tones — cannot make.
+
+### Acceptance criteria (§9)
+
+Each is checked against the tree at `9992e628` (`feat/organic-giant`), where none holds.
+
+13. **Surface.** `delvec schema --stage sculpt-form` declares `hull` with `within`, `on`, `spacing`, `mode` and `cover`, and `material` on every solid shape; `compiler.md`'s form field table lists them (the existing two-direction test); `check-gallery-coverage.py` binds every new unit in the gallery form or names a refusal probe for it, 0 in neither state.
+14. **Staggered over walls and vault.** A test sculpts the gallery form and asserts sources on both walls and vault, every pair of one entry's surface blocks at least its `spacing` apart, sources at more than two heights, and no single stride on either horizontal axis; the same seed reproduces the sources and another seed moves them.
+15. **Embedded and recessed.** A test asserts every embedded source is the declared block with an air room cell touching it, and every recessed source touches its cover and lies three steps from its room cell; the light model measures each recessed room cell at ≥ 7 and each embedded one at ≥ 9 for a 10-emitter.
+16. **Refusals.** Each `DW0951` shape above is asserted by a test over the gallery form plus one edit, with no output written; a `hull` entry with no candidate in reach is refused `DW0952`; a unit test over a hand-built model asserts the room-dark arm refuses a sealed source and passes a lit one.
+17. **Material.** A test asserts a `box` with its own material writes its blocks in it, and that removing the material moves the bytes.
+18. **The parts re-assemble the body exactly.** A test sculpts a form crossing every seam plane, reads the parts back through `tileset::load_piece`, and asserts every cell of the region equals the fitted model with no cell written twice; perturbing one part's extraction offset reds it.
+19. **Demo level.** The demo's bays are lit by `hull` entries only — bay A soul lanterns `recessed`, bay B crying obsidian `embedded`, each over walls and vault — the build measures 0 `DW0210` cells, and the level carries a reachable vantage within the served view distance from which the whole body is in a normal field of view.
+
 ## Acceptance criteria
 
 Each is checked against the tree at `ce3f7fe7`, where none holds; the implementation lands them all in one pull request.
