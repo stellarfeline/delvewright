@@ -25,6 +25,12 @@ WHAT IT ASSERTS
 4. Every table group is read by at least one job.
 5. Every glob in the table matches at least one tracked file, and the `[all]`
    set matches the workflow, the table and the filter itself.
+6. A job that needs another job besides `changes` runs only where that job
+   runs: for every group the consumer reads, the needed job's `if` is true on a
+   pull request that reaches that group alone. Otherwise a pull request reaching
+   only the consumer's group skips the job it needs, and Actions then skips the
+   consumer too — a required check reporting `skipped` on a change it should
+   have judged.
 
 The `if` grammar understood is the subset the table needs: `github.event_name`,
 `needs.changes.outputs.<group>`, string literals, `true`/`false`, `==`, `!=`,
@@ -296,6 +302,37 @@ def check(workflow: dict[str, Any], table: ci_reach.Table, files: list[str]) -> 
         except ExprError as exc:
             findings.append(f"job `{jid}`: `if: {expr}` — {exc}")
 
+    # 6. a job that needs another runs only where the other runs
+    pairs = 0
+    for jid, job in jobs.items():
+        if jid == FILTER or not isinstance(job, dict) or not isinstance(job.get("if"), str):
+            continue
+        try:
+            read = groups_read(job["if"])
+        except ExprError:
+            continue
+        for dep in needs_of(job):
+            if dep == FILTER:
+                continue
+            producer = jobs.get(dep)
+            if not isinstance(producer, dict):
+                findings.append(f"job `{jid}` needs `{dep}`, which is not a job in the workflow")
+                continue
+            pexpr = producer.get("if")
+            if not isinstance(pexpr, str):
+                continue
+            pairs += 1
+            for g in read:
+                try:
+                    runs = evaluate(pexpr, "pull_request", {g}, groups) if g in table.groups else True
+                except ExprError:
+                    break
+                if not runs:
+                    findings.append(
+                        f"job `{jid}` needs `{dep}`, which does not run on a pull request that reaches "
+                        f"`{jid}`'s group `{g}`: `{jid}` would be skipped there, and a skip passes branch protection"
+                    )
+
     # 4. every group has a reader
     for g, readers in read_by.items():
         if not readers:
@@ -314,7 +351,7 @@ def check(workflow: dict[str, Any], table: ci_reach.Table, files: list[str]) -> 
         if not any(r.match(must) for r in all_rx):
             findings.append(f"`[all]` does not match `{must}`: a change to it would not run every job")
 
-    counts = {"jobs": judged, "groups": len(groups), "globs": globs, "files": len(files), "events": len(events)}
+    counts = {"jobs": judged, "groups": len(groups), "globs": globs, "files": len(files), "events": len(events), "needs": pairs}
     return findings, counts
 
 
@@ -338,7 +375,8 @@ def main(argv: list[str] | None = None) -> int:
     findings, counts = check(workflow, table, files)
     binding = (
         f"{counts['jobs']} job(s) judged against {counts['groups']} group(s); "
-        f"{counts['globs']} glob(s) over {counts['files']} tracked file(s); {counts['events']} event(s)"
+        f"{counts['globs']} glob(s) over {counts['files']} tracked file(s); {counts['events']} event(s); "
+        f"{counts['needs']} job-on-job need(s)"
     )
     if counts["jobs"] == 0 or counts["groups"] == 0 or counts["files"] == 0:
         print(f"check-ci-reach: FAIL — a binding of zero ({binding}); this examined nothing", file=sys.stderr)

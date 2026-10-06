@@ -1,0 +1,20 @@
+{
+  "campaign_id": "ferry-site",
+  "content": {
+    "classes": [
+      {
+        "blurb": "A coil of rope and a lantern.",
+        "id": "class/deckhand",
+        "kit": [
+          {
+            "count": 1,
+            "item": "minecraft:lantern"
+          }
+        ],
+        "name": "Deckhand"
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "classes"
+}

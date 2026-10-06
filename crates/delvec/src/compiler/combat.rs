@@ -69,23 +69,33 @@ use crate::compiler::plan::{self, Plan, Step};
 use crate::compiler::registry::{DamageTypeRegistry, ItemCombatRegistry};
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0470`: a hostile the party is *required* to kill can never be damaged.
-pub const DW_UNDAMAGEABLE: DwCode = DwCode::new("DW0470", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0470`: a hostile the party is *required* to kill can never be damaged.
+    pub const DW_UNDAMAGEABLE: DwCode = DwCode::new("DW0470", ExitTier::Build);
+}
 
-/// `DW0471`: a hostile the party is required to kill has no cell to be fought
-/// from — its body is walled in.
-pub const DW_UNREACHABLE: DwCode = DwCode::new("DW0471", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0471`: a hostile the party is required to kill has no cell to be fought
+    /// from — its body is walled in.
+    pub const DW_UNREACHABLE: DwCode = DwCode::new("DW0471", ExitTier::Build);
+}
 
-/// `DW0472`: a mandatory encounter's declared health outlasts the best kit the
-/// party can field, by the [`TTK_BUDGET_HITS`] sanity bound.
-pub const DW_TTK_OVER_BUDGET: DwCode = DwCode::new("DW0472", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0472`: a mandatory encounter's declared health outlasts the best kit the
+    /// party can field, by the [`TTK_BUDGET_HITS`] sanity bound.
+    pub const DW_TTK_OVER_BUDGET: DwCode = DwCode::new("DW0472", ExitTier::Build);
+}
 
-/// `DW0473`: an unavoidable scripted hit on the critical path kills a
-/// full-health player outright.
-pub const DW_UNAVOIDABLE_LETHAL: DwCode = DwCode::new("DW0473", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0473`: an unavoidable scripted hit on the critical path kills a
+    /// full-health player outright.
+    pub const DW_UNAVOIDABLE_LETHAL: DwCode = DwCode::new("DW0473", ExitTier::Build);
+}
 
-/// `DW0475`: (warning) the numeric time-to-kill bound could not be computed.
-pub const DW_TTK_UNPROVEN: DwCode = DwCode::new("DW0475", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0475`: (warning) the numeric time-to-kill bound could not be computed.
+    pub const DW_TTK_UNPROVEN: DwCode = DwCode::new("DW0475", ExitTier::Build);
+}
 
 /// The vanilla player's `minecraft:max_health` base value. The DSL exposes no
 /// player-attribute surface at all, so this is not a default — it is the only
@@ -1258,11 +1268,10 @@ fn collect_unconditional_damage(
         match &e.verb {
             Verb::DamagePlayers {
                 amount,
-                within,
                 damage_type,
                 ..
             } => {
-                if within.is_some() {
+                if e.within.is_some() {
                     continue;
                 }
                 let id = damage_type

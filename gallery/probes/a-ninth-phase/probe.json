@@ -1,0 +1,13 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/time/phase",
+      "value": "blood-moon"
+    }
+  ],
+  "units": [],
+  "why": "The world's phase replaced with `blood-moon`, a word the pinned game's moon timeline does not use. The eight phase names are data read from the vendored `moon.json`, not a vocabulary this engine authors, so a ninth is the document's parse refusal — `DW0100`, naming the eight — and not a shape of `DW0931`. It declares no unit: the phase names are vanilla data, never units (spec-0039)."
+}

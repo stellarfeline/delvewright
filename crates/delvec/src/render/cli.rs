@@ -40,6 +40,10 @@ pub struct RenderArgs {
     /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
     #[arg(long, global = true)]
     pub textures: Option<String>,
+    /// A delve's `resourcepack.zip`, layered above the textures (spec-0084
+    /// §5.1), so a block texture the delve replaces renders as the delve draws it.
+    #[arg(long, global = true)]
+    pub pack: Option<String>,
     /// Rendered frame dimension (square), in pixels.
     #[arg(long, global = true, default_value_t = 1024)]
     pub size: u32,
@@ -170,7 +174,7 @@ fn run_piece(
         Ok(t) => t,
         Err(d) => return fail(d, json, exit::RENDER),
     };
-    let pack = match gpu::load_pack(&textures) {
+    let pack = match gpu::load_pack(&textures, cli.pack.as_deref()) {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
     };
@@ -558,7 +562,7 @@ fn run_batch(
         Ok(t) => t,
         Err(d) => return fail(d, json, exit::RENDER),
     };
-    let pack = match gpu::load_pack(&textures) {
+    let pack = match gpu::load_pack(&textures, cli.pack.as_deref()) {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
     };
@@ -591,7 +595,7 @@ fn run_fidelity_gate(out: Option<&Path>, cli: &RenderArgs, json: bool) -> ExitCo
         Ok(t) => t,
         Err(d) => return fail(d, json, exit::RENDER),
     };
-    let pack = match gpu::load_pack(&textures) {
+    let pack = match gpu::load_pack(&textures, cli.pack.as_deref()) {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), json, exit::RENDER),
     };

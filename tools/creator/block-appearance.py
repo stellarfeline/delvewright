@@ -350,15 +350,33 @@ def decode_png(data: bytes) -> tuple[int, int, list[tuple[int, int, int, int]]]:
 
 
 class Jar:
-    def __init__(self, path: Path):
-        self.zip = zipfile.ZipFile(path)
-        self.names = set(self.zip.namelist())
+    """The pinned client jar, with a delve's resource pack optionally layered
+    above it (spec-0084 §5.1): an entry is read from the pack when the pack holds
+    it, and from the jar otherwise — the order a client applies a server-sent
+    pack in — so a block texture the delve replaces is measured as the delve
+    draws it."""
+
+    def __init__(self, path: Path, pack: Path | None = None):
+        self.layers = [zipfile.ZipFile(pack)] if pack is not None else []
+        self.layers.append(zipfile.ZipFile(path))
+        self.zip = self.layers[-1]
+        self.names = set()
+        for z in self.layers:
+            self.names |= set(z.namelist())
         self._cache: dict[str, object] = {}
+
+    def _read(self, path: str) -> bytes:
+        for z in self.layers:
+            try:
+                return z.read(path)
+            except KeyError:
+                continue
+        raise KeyError(path)
 
     def json_at(self, path: str):
         if path in self._cache:
             return self._cache[path]
-        value = json.loads(self.zip.read(path)) if path in self.names else None
+        value = json.loads(self._read(path)) if path in self.names else None
         self._cache[path] = value
         return value
 
@@ -368,7 +386,7 @@ class Jar:
         value = None
         if path in self.names:
             try:
-                value = decode_png(self.zip.read(path))
+                value = decode_png(self._read(path))
             except ValueError:
                 value = None
         self._cache[path] = value
@@ -1414,6 +1432,11 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--jar", help="1.21.11 client jar (EULA-gated, never committed)")
     ap.add_argument(
+        "--pack",
+        help="a delve's resourcepack.zip, read above the jar, so a block texture the delve "
+        "replaces (world.textures[], spec-0084) is measured as the delve draws it",
+    )
+    ap.add_argument(
         "--id",
         action="append",
         default=[],
@@ -1497,7 +1520,12 @@ def main(argv: list[str]) -> int:
 
     registry = json.loads(load_registry())
     classification = load_classification()
-    jar = Jar(resolve_jar(args.jar))
+    pack = Path(args.pack) if args.pack else None
+    if pack is not None and not pack.is_file():
+        sys.exit(f"block-appearance: --pack {pack} is not a file")
+    jar = Jar(resolve_jar(args.jar), pack)
+    if pack is not None:
+        print(f"block-appearance: {pack} layered above the jar", file=sys.stderr)
 
     if args.screen or args.program or args.sheet:
         # A screen, a program's palette, and a sheet all read the WHOLE shelf: a

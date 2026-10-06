@@ -93,6 +93,18 @@ CSS_COMMENT_OR_STRING = re.compile(
 )
 CSS_COLOUR = re.compile(r"^#(?:\d{3}|\d{4}|\d{6}|\d{8})$")
 
+# A JSON document's colour VALUE is not a citation either. Vendored game data
+# carries colours as whole JSON strings — the pinned day timeline's sky colour
+# keyframe is `"value": "#000000"` — and the vendored file must stay byte for
+# byte the jar's. The property secured here is again one a citation cannot
+# supply: the token must be the ENTIRE content of a JSON string (a quote on
+# each side, nothing else inside), so it carries no prose — `"fixed in
+# #313745"` stays a finding — and it must be a six- or eight-digit colour, the
+# two lengths no pull-request number of this repository has, so a whole-string
+# `"#510"` (a citation written as a field) stays a finding too.
+JSON_SUFFIXES = {".json"}
+JSON_COLOUR = re.compile(r"^#(?:\d{6}|\d{8})$")
+
 ISO_DATE = re.compile(r"\b20\d\d-[01]\d-[0-3]\d\b")
 
 # A date is an attribution when it sits beside a person or a decision — EITHER
@@ -267,7 +279,21 @@ def css_code_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def hits(text: str, kind: str, *, css: bool = False) -> list[tuple[int, str]]:
+def is_json_colour_value(text: str, start: int, end: int, token: str) -> bool:
+    """`token` is a six- or eight-digit colour that is the whole of a JSON string."""
+    return (
+        bool(JSON_COLOUR.match(token))
+        and start >= 1
+        and text[start - 1] == '"'
+        and (start < 2 or text[start - 2] != "\\")
+        and end < len(text)
+        and text[end] == '"'
+    )
+
+
+def hits(
+    text: str, kind: str, *, css: bool = False, json_doc: bool = False
+) -> list[tuple[int, str]]:
     """(line number, matched text) for one kind.
 
     `task #41` is one citation, not two: the `#41` inside a task id is claimed
@@ -284,6 +310,8 @@ def hits(text: str, kind: str, *, css: bool = False) -> list[tuple[int, str]]:
                 and CSS_COLOUR.match(token)
                 and any(a <= m.start() and m.end() <= b for a, b in code)
             ):
+                continue
+            if json_doc and is_json_colour_value(text, m.start(), m.end(), token):
                 continue
             if any(a <= m.start() < b for a, b in claimed):
                 continue
@@ -308,7 +336,8 @@ def scan() -> tuple[dict[str, dict[str, list[tuple[int, str]]]], int, int]:
         if path == SELF:
             continue  # this file spells the patterns out; it is not a citation
         css = path.suffix.lower() in CSS_SUFFIXES
-        found = {k: h for k in KINDS if (h := hits(text, k, css=css))}
+        json_doc = path.suffix.lower() in JSON_SUFFIXES
+        found = {k: h for k in KINDS if (h := hits(text, k, css=css, json_doc=json_doc))}
         if found:
             per_file[rel] = found
     return per_file, files, size

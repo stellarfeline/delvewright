@@ -1,0 +1,13 @@
+{
+  "code": "DW0928",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/atmospheres/0/attributes/visual~1sun_angle",
+      "value": 90.0
+    }
+  ],
+  "units": [],
+  "why": "The hall's sky tries to hold the sun at a quarter past noon. A biome can write `visual/sun_angle`, and the overworld's `minecraft:day` timeline overrides it every tick, so the party would see the ordinary sun's course — the line would ship and do nothing. The refusal names what the party would see instead and that moving the sun is world-wide in vanilla (a custom dimension or an edited timeline), never a place's. It declares no unit: the attribute map is bound by `atmosphere/frost-hall`'s twenty admitted lines; what the engine refuses is an id the day cycle overrules, read from the pinned jar's timelines."
+}

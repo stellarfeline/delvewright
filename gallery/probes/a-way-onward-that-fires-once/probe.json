@@ -1,0 +1,39 @@
+{
+  "code": "DW0311",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/triggers/6"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/on_objective_complete/obj~1cross-the-strait",
+      "value": [
+        {
+          "from": {
+            "anchor": "anchor/ferry-deck",
+            "extent": [
+              1,
+              1,
+              1
+            ]
+          },
+          "to": {
+            "anchor": "anchor/ferry-landing"
+          },
+          "type": "teleport"
+        }
+      ]
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "replace",
+      "path": "/content/edges/12/class",
+      "value": "walk"
+    }
+  ],
+  "units": [],
+  "why": "The ferry's teleport taken off its repeatable tiller and hung on the far beat's own completion bundle instead. A teleport fired by an objective's completion is a gather: it carries whoever is in the deck's box once, and a party of four boarding one at a time leaves three on the deck, so the route proof does not lean on it and the leg from the deck to the cabin has no way. The graph's `carry` edge is restated as a `walk` in the same edit, because a carry no link realises is refused at validation (DW0934) before the build reaches the walk; as a walk, the graph claims what the author of this probe claims, and the geometry answers it. It declares no unit: the teleport and the trigger are surfaces the primary binds. The refusal names the teleport, says it fires from a root the party cannot fire again, and prescribes the primary's own shape — a `use` trigger declared `once: false` hosting the same effect — with no doorway, gap or fence in it, because a walk was never the way."
+}

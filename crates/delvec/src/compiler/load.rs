@@ -6,26 +6,28 @@ use std::path::Path;
 
 use delvewright_dsl::{Diagnostic, DwCode, ExitTier, RawCampaign};
 
-/// `DW0874`: a campaign directory is present and does not hold all six stage
-/// documents.
-///
-/// **The state this names is the one the authoring skill tells an author to be
-/// in.** A campaign is written a document at a time, and until the sixth is
-/// written the directory is incomplete by construction. Every one of the four
-/// verbs that reads a campaign directory used to answer that with
-/// `internal error: cannot read campaign dir: npcs.json`, exit 10, and no code
-/// at all — the phrasing this compiler reserves for its own bugs, printed at the
-/// first thing it ever says to a new author, about the thing the page had just
-/// told them to do.
-///
-/// Being uncoded was the load-bearing half. Every other authoring mistake here
-/// is a `DW` code with a documented row, an exit of 1, and a sentence saying what
-/// to write; this one had none of the three, so nothing about it could be looked
-/// up, asserted by a test, or told apart from a crash.
-///
-/// Validation tier (exit 1), because that is what it is: the campaign is refused,
-/// the compiler is fine. Raised **before a campaign has parsed**.
-pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::new("DW0874", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0874`: a campaign directory is present and does not hold all six stage
+    /// documents.
+    ///
+    /// **The state this names is the one the authoring skill tells an author to be
+    /// in.** A campaign is written a document at a time, and until the sixth is
+    /// written the directory is incomplete by construction. Every one of the four
+    /// verbs that reads a campaign directory used to answer that with
+    /// `internal error: cannot read campaign dir: npcs.json`, exit 10, and no code
+    /// at all — the phrasing this compiler reserves for its own bugs, printed at the
+    /// first thing it ever says to a new author, about the thing the page had just
+    /// told them to do.
+    ///
+    /// Being uncoded was the load-bearing half. Every other authoring mistake here
+    /// is a `DW` code with a documented row, an exit of 1, and a sentence saying what
+    /// to write; this one had none of the three, so nothing about it could be looked
+    /// up, asserted by a test, or told apart from a crash.
+    ///
+    /// Validation tier (exit 1), because that is what it is: the campaign is refused,
+    /// the compiler is fine. Raised **before a campaign has parsed**.
+    pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::new("DW0874", ExitTier::Build);
+}
 
 /// The six stage filenames a campaign directory must contain.
 pub const STAGE_FILES: [&str; 6] = [
@@ -111,6 +113,11 @@ pub struct LoadedCampaign {
     /// i18n l10n sidecars found under `l10n/`: language code (filename stem) →
     /// raw sidecar bytes. Empty when the campaign ships no `l10n/` directory.
     pub l10n: BTreeMap<String, Vec<u8>>,
+    /// The images `world.textures[]` rows name (spec-0084), read from
+    /// `textures/`: campaign-relative path (`textures/<id>.png`,
+    /// `textures/<id>.png.mcmeta`) → raw bytes. Empty when the campaign ships no
+    /// `textures/` directory. Every one is also a manifest input.
+    pub textures: BTreeMap<String, Vec<u8>>,
     /// `walk-record.json`, verbatim, when the campaign directory ships one —
     /// see [`WALK_RECORD_FILE`] for why it travels beside the stage documents
     /// rather than among them.
@@ -346,6 +353,13 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     for (code, bytes) in &l10n {
         inputs.insert(format!("l10n/{code}.json"), bytes.clone());
     }
+    // spec-0084: a replaced texture's image reaches the resource pack verbatim,
+    // so its bytes are a build input exactly as a sidecar's are, and the
+    // manifest hashes them.
+    let textures = load_textures_dir(dir)?;
+    for (path, bytes) in &textures {
+        inputs.insert(path.clone(), bytes.clone());
+    }
     Ok(LoadedCampaign {
         raw: RawCampaign {
             world,
@@ -365,7 +379,32 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
         design_files,
         inputs,
         l10n,
+        textures,
     })
+}
+
+/// Read every `<name>.png` and `<name>.png.mcmeta` in a campaign's `textures/`
+/// directory → campaign-relative path → raw bytes. Empty when the directory
+/// does not exist. Sorted for determinism (ADR-0006).
+fn load_textures_dir(dir: &Path) -> std::io::Result<BTreeMap<String, Vec<u8>>> {
+    let root = dir.join(crate::compiler::textures::TEXTURES_DIR);
+    let mut out = BTreeMap::new();
+    if !root.is_dir() {
+        return Ok(out);
+    }
+    for entry in std::fs::read_dir(&root).map_err(|e| named("textures", e))? {
+        let path = entry.map_err(|e| named("textures", e))?.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !(name.ends_with(".png") || name.ends_with(".png.mcmeta")) || !path.is_file() {
+            continue;
+        }
+        let rel = format!("{}/{name}", crate::compiler::textures::TEXTURES_DIR);
+        let bytes = std::fs::read(&path).map_err(|e| named(&rel, e))?;
+        out.insert(rel, bytes);
+    }
+    Ok(out)
 }
 
 /// Read every `<code>.json` sidecar in an `l10n/` directory → `code` (filename

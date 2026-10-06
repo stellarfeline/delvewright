@@ -111,6 +111,12 @@ services:
       # resets, so a `docker restart` under a party ends that party's run: that is
       # what the flag means, and there is no second entry that softens it.
       DELVE_RESET_WHEN_EMPTY:
+      # spec-0084 §11 / spec-0009: the address the `pack` sidecar serves this
+      # build's resourcepack.zip at, as a client on the compose network reaches
+      # it. The entrypoint applies it only when the build's manifest records a
+      # pack, with the SHA-1 from that manifest; `owner-play.yaml` replaces it
+      # with the loopback address a client on the host reaches.
+      DELVE_RESOURCE_PACK_URL: ${DELVE_RESOURCE_PACK_URL:-http://pack:8000/resourcepack.zip}
     volumes:
       # Name the itzg `/data` world volume so `docker compose down -v` actually
       # clears it. The itzg base declares an anonymous `VOLUME /data`; anonymous
@@ -174,6 +180,8 @@ services:
       # unset — `/trigger dw.note` itself needs no op (the overlay enables it each
       # tick), so the note flow works opped or not.
       OPS: ${CREATOR_NAME:-}
+      # The delve's pack, served by the `pack` sidecar (see `server` above).
+      DELVE_RESOURCE_PACK_URL: ${DELVE_RESOURCE_PACK_URL:-http://pack:8000/resourcepack.zip}
     volumes:
       # Named world volume so `down -v` clears it (see `server` note above).
       - playtest-data:/data
@@ -183,6 +191,20 @@ services:
     # `ephemeral-port.yaml` publishes an arbitrary free loopback port for the two
     # note/rehearsal flows that drive a bot from the host.
 
+  # The delve's resource pack, SERVED (spec-0084 §11; spec-0009's verified
+  # pattern): a busybox httpd over the build output tree, so `resourcepack.zip`
+  # is at http://pack:8000/resourcepack.zip on the compose network. A pack is
+  # never installed into a player's own folder: served, it applies while the
+  # player is connected and is gone when they leave. The image is pinned by its
+  # multi-arch index digest (versions.toml [images.pack_server]). No `ports:` —
+  # `owner-play.yaml` publishes it on the loopback for a client on the host.
+  pack:
+    profiles: ["play", "validate", "playtest"]
+    image: busybox:1.37@sha256:9532d8c39891ca2ecde4d30d7710e01fb739c87a8b9299685c63704296b16028
+    command: ["httpd", "-f", "-p", "8000", "-h", "/srv"]
+    volumes:
+      - ${DELVE_OUTPUT:-./delve-output}:/srv:ro
+
   # The mineflayer harness (spec-0003). Reads the same build's critical-path.json,
   # drives the run, exits 0/1 — propagated as the compose/CI exit code.
   bot:
@@ -191,8 +213,15 @@ services:
     depends_on:
       server:
         condition: service_healthy   # itzg base ships a healthcheck
+      pack:
+        condition: service_started
     environment:
       DELVEWRIGHT_MC_HOST: server    # internal compose DNS, not localhost
+      # spec-0084 §11: the bot accepts the pack the server pushes, downloads it
+      # from the URL it was sent, and holds its SHA-1 to the push and to the
+      # build's manifest — the served pack reaching a client, measured.
+      DELVEWRIGHT_PACK_VERIFY: "1"
+      DELVEWRIGHT_MANIFEST: /delve/manifest.json
       DELVEWRIGHT_MC_PORT: "25565"
       DELVEWRIGHT_MC_VERSION: "1.21.11"
       DELVEWRIGHT_MC_AUTH: offline
@@ -248,8 +277,12 @@ services:
       DELVEWRIGHT_RETRY_ON_DEATH:
       DELVEWRIGHT_CUTSCENE_GRACE_MS:
       DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS:
+      # spec-0086: how long one crossing of a `loop` step may take before the
+      # step fails (executor.ts, default 20 s).
+      DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS:
     volumes:
       - ${DELVE_OUTPUT:-./delve-output}/critical-path.json:/delve/critical-path.json:ro
+      - ${DELVE_OUTPUT:-./delve-output}/manifest.json:/delve/manifest.json:ro
       # The compiler-proven per-leg waypoint artifact
       # (validation/critical-path-waypoints.json). The harness discovers it at
       # `<dir-of-critical-path.json>/validation/…` and navigates leg-by-leg so no

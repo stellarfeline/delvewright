@@ -116,25 +116,37 @@ pub const PIN_DATA_VERSION: i32 = 4671;
 // Documented in docs/reference/compiler.md §diagnostics.
 // ---------------------------------------------------------------------------
 
-/// A pre-pin structure template carries a block state the pin does not know:
-/// the game's DataFixerUpper is expected to migrate it on load (warning).
-pub const DW_STATE_PRE_PIN: &str = "DW0734";
-/// A block state omits a shape-carrying (multipart) property (error).
-pub const DW_SHAPE_OMITTED: &str = "DW0735";
-/// A grammar fill wrote an orientation-sensitive block state into a reoriented
-/// scope with no `orientation` guard pinning it (error).
-pub const DW_ORIENTED_FILL_UNGUARDED: &str = "DW0736";
-/// An authored block state omits a property the block has, so its geometry is
-/// whatever a 1.21.11 server derives and no other reader can know it (error).
-pub const DW_STATE_UNDER_SPECIFIED: &str = "DW0737";
-/// A block state written in a scope's own axis names carries a property the
-/// pinned vocabulary cannot map onto the world frame the scope was given
-/// (error).
-pub const DW_LOCAL_FRAME_UNRESOLVABLE: &str = "DW0738";
-/// A world-frame fill of a frame-sensitive block state stood under a
-/// reorientation that this region resolved to the identity, so `DW0736` had no
-/// frame to judge it against. **Undecided**, neither pass nor fail.
-pub const DW_ORIENTED_FILL_UNDECIDED: &str = "DW0742";
+crate::dw_code! {
+    /// A pre-pin structure template carries a block state the pin does not know:
+    /// the game's DataFixerUpper is expected to migrate it on load (warning).
+    pub const DW_STATE_PRE_PIN: &str = "DW0734";
+}
+crate::dw_code! {
+    /// A block state omits a shape-carrying (multipart) property (error).
+    pub const DW_SHAPE_OMITTED: &str = "DW0735";
+}
+crate::dw_code! {
+    /// A grammar fill wrote an orientation-sensitive block state into a reoriented
+    /// scope with no `orientation` guard pinning it (error).
+    pub const DW_ORIENTED_FILL_UNGUARDED: &str = "DW0736";
+}
+crate::dw_code! {
+    /// An authored block state omits a property the block has, so its geometry is
+    /// whatever a 1.21.11 server derives and no other reader can know it (error).
+    pub const DW_STATE_UNDER_SPECIFIED: &str = "DW0737";
+}
+crate::dw_code! {
+    /// A block state written in a scope's own axis names carries a property the
+    /// pinned vocabulary cannot map onto the world frame the scope was given
+    /// (error).
+    pub const DW_LOCAL_FRAME_UNRESOLVABLE: &str = "DW0738";
+}
+crate::dw_code! {
+    /// A world-frame fill of a frame-sensitive block state stood under a
+    /// reorientation that this region resolved to the identity, so `DW0736` had no
+    /// frame to judge it against. **Undecided**, neither pass nor fail.
+    pub const DW_ORIENTED_FILL_UNDECIDED: &str = "DW0742";
+}
 
 /// The verdict on one block state, judged against the pin **and** the
 /// `DataVersion` of the file that carries it.
@@ -1040,7 +1052,7 @@ fn is_direction_pair(value: &str) -> bool {
 /// Tolerant on purpose: this is a *validator's* front door, so a malformed
 /// state must reach the registry and be reported as an unknown block rather
 /// than be rejected by a parser with a different vocabulary.
-fn parse_state(state: &str) -> (&str, BTreeMap<String, String>) {
+pub(crate) fn parse_state(state: &str) -> (&str, BTreeMap<String, String>) {
     let Some(open) = state.find('[') else {
         return (state.trim(), BTreeMap::new());
     };

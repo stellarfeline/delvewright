@@ -40,7 +40,7 @@ inputs = [
 [[group]]
 name = "rust"
 inputs = [
-  { glob = "crates/**", why = "clippy and `cargo test --workspace`, the viewer's node tests, `check-publishable.sh`, `check-crates-io-readmes.py`, the grammar coverage table, the Linux determinism digest" },
+  { glob = "crates/**", why = "clippy and `cargo test --workspace`, the viewer's node tests, `check-publishable.sh`, `check-crates-io-readmes.py`; `delvec-binary` (which also reads this group) builds the run's `delvec` and writes the Linux determinism digest with it, which `determinism-cross-os` compares" },
   { glob = "Cargo.toml", why = "the root workspace manifest and `[workspace.package]` version" },
   { glob = "**/Cargo.toml", why = "`tools/ci/fmt-workspaces.sh --check` derives every workspace from `git ls-files`" },
   { glob = "**/*.rs", why = "`tools/ci/fmt-workspaces.sh --check` formats every workspace's sources" },
@@ -48,9 +48,11 @@ inputs = [
   { glob = "gallery/**", why = "crate tests read the gallery (`detail.rs`, `remedy_reachability.rs`, `site_plan_edit_script.rs`, `prefab_*` tests)" },
   { glob = "tools/ci/fmt-workspaces.sh", why = "the formatting sweep this job runs" },
   { glob = "tools/ci/check-json-canonical.py", why = "the JSON sweep this job runs" },
-  { glob = "tools/ci/determinism-subject.sh", why = "the Linux digest step runs it" },
+  { glob = "tools/ci/determinism-subject.sh", why = "`delvec-binary`'s Linux digest step and `determinism-cross-os` both run it" },
   { glob = "tools/ci/tree-digest.py", why = "`determinism-subject.sh` runs it to write the digest" },
   { glob = "tools/creator/refscore.py", why = "`crates/delvec/tests/view_sheet.rs` runs it" },
+  { glob = "tools/ci/check-dw-codes.py", why = "`crates/delvec/tests/codes.rs` runs it against the built binary's `delvec codes`" },
+  { glob = "tools/lib/mdtable.py", why = "`check-dw-codes.py`, which `crates/delvec/tests/codes.rs` runs, reads the catalog through it" },
   { glob = "tools/creator/i18n-translate.py", why = "`crates/delvec/tests/i18n_sidecar.rs` runs the fixture driver, which loads this tool's writer" },
   { glob = "tools/tests/fixtures/i18n-sidecar/**", why = "`crates/delvec/tests/i18n_sidecar.rs` runs `write_sidecar.py`" },
   { glob = "tools/spike-block-settling/**", why = "`crates/delvec/tests/schem_stair_shape_measured.rs` reads `observations.json`" },
@@ -120,14 +122,15 @@ inputs = [
   { glob = "validation/**", why = "`test_reclaim_ladder_images.py`, `test_render_shots_*.py`, `test_delvec_bin_sh.py`, `test_mutex_lock_dir_default.py` and `test_staging_gate.py` run or read scripts under `validation/`" },
   { glob = "docs/reference/compiler.md", why = "`test_check_dw_codes.py` and `test_staging_gate.py` read the DW catalogue; the publish-gate tests copy it as a version site" },
   { glob = "docs/playtest-findings.json", why = "`test_staging_gate.py` reads the live findings ledger" },
+  { glob = "docs/specs/spec-0082-a-fixed-thing-that-can-be-hit-and-hits-back.md", why = "`tools/lib/version_sites.py` names it in `COUNTEREXAMPLES` (its instrument line states a version that is not a pin), so the publish-gate tests (`test_crates_io_publish_same_crate.py`, `test_publish_gate_order.py`) read it as a version site" },
   { glob = "docs/reference/game-writing.md", why = "`tools/creator/i18n-translate.py` reads its target-language writing rules into every prompt, and `test_i18n_translate.py` builds those prompts" },
 ]
 
 [[group]]
 name = "mecha-crosscheck"
 inputs = [
-  { glob = "crates/**", why = "builds `delvec` and `crates/dsl/fixtures/valid/hello-world`, then mecha validates the emitted mcfunction" },
-  { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
+  { glob = "crates/**", why = "the run's `delvec` (built by `delvec-binary`, which also reads this group) builds `crates/dsl/fixtures/valid/hello-world`, then mecha validates the emitted mcfunction" },
+  { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
 ]
 
 [[group]]
@@ -164,15 +167,15 @@ inputs = [
 [[group]]
 name = "zone-audit"
 inputs = [
-  { glob = "crates/**", why = "`delvec grammar audit --library` builds and runs the engine over the rule library, which lives under `crates/`" },
-  { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
+  { glob = "crates/**", why = "`delvec grammar audit --library` and `delvec grammar coverage` run the engine `delvec-binary` builds (it also reads this group) over the rule library and its demonstration corpus, which live under `crates/`" },
+  { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
 ]
 
 [[group]]
 name = "gallery"
 inputs = [
-  { glob = "crates/**", why = "builds `delvec`, then analyze, build, coverage, render, seating, whole-map, baseline and stageable run it" },
-  { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
+  { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, then analyze, build, coverage, render, seating, whole-map, baseline and stageable run it" },
+  { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
   { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery's piece and skins" },
   { glob = "gallery/**", why = "the gallery campaign, its design, skins, render plan and committed baseline" },
   { glob = "tools/**", why = "the gallery gates (`check-gallery-*.py`, `check-seating-agrees.py`, `check-whole-map-render.py`, `gallery-baseline.py`, `gallery-build.py`, `gallery_domain.py`, `gallery_units.py`, `staging-gate.py`, `check-dw-codes.py`, `tools/lib/*`) and the carrier scripts `staging-gate.py` resolves under `tools/`" },
@@ -186,8 +189,8 @@ inputs = [
 [[group]]
 name = "tier2-validation"
 inputs = [
-  { glob = "crates/**", why = "builds `delvec` and the fixtures under `crates/` that every PackTest pass boots" },
-  { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
+  { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`; the fixtures under `crates/` are what every PackTest pass boots" },
+  { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
   { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery pass's piece" },
   { glob = "gallery/**", why = "the gallery PackTest pass builds the gallery" },
   { glob = "validation/**", why = "`server-bootstrap-cache.sh`, `Dockerfile.delve`, `compose.yaml`, `packtest-run.sh`, `packtest-matrix.py`, the world-settings entrypoint" },

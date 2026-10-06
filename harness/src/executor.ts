@@ -22,16 +22,18 @@ import type {
   CollectStep,
   InteractStep,
   KillStep,
+  LoopStep,
   Step,
   ReachStep,
   RestStep,
+  WitnessStrikeStep,
   TriggerStep,
   SelectClassStep,
   TalkToStep,
   Transport,
   Vec3Tuple,
 } from "./critical-path.ts";
-import { insideCompletion, reachGoal } from "./critical-path.ts";
+import { TRANSPORT_NEAR, insideCompletion, reachGoal } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import {
   BotDeathError,
@@ -88,9 +90,12 @@ import {
   sinkBudgetMs,
   volumeReachesCell,
   wayInCandidates,
+  firstWayIn,
   inBox,
   dropOf,
   gateVerdict,
+  volumeGateVerdict,
+  volumeIsStaged,
   lethalStepCost,
   markersAt,
   nearLip,
@@ -116,6 +121,7 @@ import {
   type ClientLoadedState,
   type LoadWindow,
 } from "./client-loaded.ts";
+import type { PackPush, ResourcePackState } from "./resource-pack.ts";
 import {
   traceLoadWindows,
   type LoadWindowRecord,
@@ -131,6 +137,7 @@ import {
   type CensusMob,
   type CensusSummary,
 } from "./markers.ts";
+import { RepaintWatch, type RepaintPlan, type RepaintVerdict } from "./repaint.ts";
 import {
   allowNonCollidingEntities,
   configureLeg,
@@ -205,6 +212,15 @@ const UNSTICK_ATTEMPTS = 3;
  * somebody could mistake for a fight.
  */
 const STAGED_BLOW = 100_000;
+
+/** One server tick, in ms. */
+const TICK_MS = 50;
+
+/** How long a strike witness drives onto its cell's centre before standing. */
+const WITNESS_CENTRE_MS = 4000;
+
+/** How near the cell's centre a strike witness stands, in blocks. */
+const WITNESS_CENTRE_TOLERANCE = 0.2;
 
 /**
  * How long to wait for the server's answer to a staged blow before reading the
@@ -1081,7 +1097,8 @@ const UNSTICK_SETTLE_MS = 300;
  * "arrived at the destination", and how long to settle once it has.
  */
 const TRANSPORT_TIMEOUT_MS = 15_000;
-const TRANSPORT_NEAR = 4;
+// `TRANSPORT_NEAR` lives in `critical-path.ts`, where the parser refuses a link
+// hop it could not observe (spec-0083 §4).
 const TRANSPORT_SETTLE_MS = 1_500;
 /**
  * gap 8: a server-forced position jump of at least this many blocks
@@ -1092,7 +1109,23 @@ const TRANSPORT_SETTLE_MS = 1_500;
  * pathfinder is reset, so a path computed in the OLD area cannot survive the jump and
  * strand the next step with a spurious "No path to the goal!".
  */
+/** spec-0086 §6: whether a forced move's delta is a loop's offset. */
+function sameDelta(delta: Vec3Tuple, offset: Vec3Tuple): boolean {
+  return delta.every((c, i) => Math.abs(c - offset[i]!) <= LOOP_DELTA_TOLERANCE);
+}
+
 const TRANSPORT_JUMP_BLOCKS = 64;
+/**
+ * spec-0086 §6: how close a forced move's delta must come to a loop's offset, on
+ * every axis, to be that loop's move. The spike measured the delta exact on 10
+ * of 10 moves (`tools/spike-seamless-loop/`), so this is a numeric tolerance,
+ * not a judgement.
+ */
+const LOOP_DELTA_TOLERANCE = 1e-3;
+/** spec-0086 §6: how long one crossing may take before the step fails. */
+const LOOP_CROSS_TIMEOUT_MS = 20_000;
+/** How far past the slab, in cells, the crossing walk aims along its axis. */
+const LOOP_GOAL_PAST = 2;
 /**
  * gap 8: after the jump lands, how long (ms) to wait for the destination
  * chunk to load and the bot to come to rest on solid ground before the next step
@@ -1493,6 +1526,17 @@ export class MineflayerExecutor implements StepExecutor {
    * wait for it) and campaign completion lands during the last objective step.
    */
   private readonly completedObjectives = new Map<string, number>();
+  /** The repaint ledger (spec-0080 §5.2), when the build repaints anything. */
+  private repaintWatch: RepaintWatch | undefined;
+  /**
+   * How many times each marker token has been broadcast this run. A repeatable
+   * trigger broadcasts its marker every time it fires, and a hit count on the
+   * path is N trigger steps (spec-0082 §10) — so the second and later steps owe
+   * a FRESH arrival, which the first-arrival map above cannot tell apart.
+   */
+  private readonly markerArrivals = new Map<string, number>();
+  /** How many times each trigger step has been performed this run. */
+  private readonly triggerPerformances = new Map<string, number>();
   /**
    * The step index at which the campaign-completion marker arrived, if it has.
    * Endgame discipline: campaign completion belongs to the LAST objective step; its
@@ -1545,6 +1589,8 @@ export class MineflayerExecutor implements StepExecutor {
   private loadTracer: LoadWindowTracer | undefined;
   /** The bot's `player_loaded` tracker; `undefined` for a bot adopted by {@link attachBot}. */
   private clientLoaded: ClientLoadedState | undefined;
+  /** The resource packs the server pushed (spec-0084 §11); `undefined` for an adopted bot. */
+  private packState: ResourcePackState | undefined;
   /** How many `spawn` events this run has seen (login, then every respawn). */
   private spawnSeq = 0;
   /** {@link spawnSeq} at the moment of the last death — the respawn wait watches
@@ -1624,6 +1670,13 @@ export class MineflayerExecutor implements StepExecutor {
    * every compile-time proof green.
    */
   private lethalBoxes: readonly Box[] = [];
+  /** The regions of the volumes live from world-load — always excluded. */
+  private unstagedBoxes: readonly Box[] = [];
+  /**
+   * The volumes live from a story stage (spec-0088): excluded per walk leg, by
+   * asking their gate's terms before the leg ({@link refreshStagedExclusion}).
+   */
+  private stagedVolumes: readonly DeathPlan["volumes"][number][] = [];
   /** Suspended for exactly one walk: the deliberate step INTO a volume. */
   private lethalExclusionSuspended = false;
   /** Every walk into a lethal volume this run made, and what it observed. */
@@ -1650,12 +1703,31 @@ export class MineflayerExecutor implements StepExecutor {
    * pathfinder so a path computed in the old area cannot survive the jump.
    */
   private lastForcedPos: { x: number; y: number; z: number } | undefined;
+  /**
+   * spec-0086 §6: where the bot stood at the last physics tick — the position a
+   * server-forced move's delta is measured from. mineflayer applies the position
+   * packet between ticks and then emits `forcedMove`, so this is the position the
+   * move started from.
+   */
+  private tickPos: { x: number; y: number; z: number } | undefined;
+  /** The loops the path exercises, by id → offset (spec-0086 §6). A forced move
+   * during a plain walk whose delta is one of these fails that walk. */
+  private loopOffsets = new Map<string, Vec3Tuple>();
+  /** While a loop step crosses: every forced move's delta, in order. */
+  private loopWatch: { deltas: Vec3Tuple[] } | undefined;
+  /** A forced move during a plain walk that equals a loop's offset: the proof
+   * and the game disagree about the loop's gate. Thrown by the walk it ended. */
+  private loopFault: Error | undefined;
   /** Grace (ms) added onto a cutscene's declared length before giving up. */
   private readonly cutsceneGraceMs: number;
   /** Hard ceiling (ms) on the post-spawn entity-settle wait. Overridable
    * (`DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS`) so a test can shorten the give-up
    * path without waiting out the production default. */
   private readonly entitySettleTimeoutMs: number;
+  /** spec-0086 §6: how long one loop crossing may take. Overridable
+   * (`DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS`) so a test can reach the give-up path
+   * without waiting out the production default. */
+  private readonly loopCrossTimeoutMs: number;
   /**
    * The compiler's proven per-leg critical-path waypoints (keyed by
    * destination anchor). When a walked step's target has a leg here, `walkTo`
@@ -1866,6 +1938,10 @@ export class MineflayerExecutor implements StepExecutor {
     const settleParsed = settleRaw === undefined ? NaN : Number.parseInt(settleRaw, 10);
     this.entitySettleTimeoutMs =
       Number.isInteger(settleParsed) && settleParsed >= 0 ? settleParsed : ENTITY_SETTLE_TIMEOUT_MS;
+    const crossRaw = env["DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS"];
+    const crossParsed = crossRaw === undefined ? NaN : Number.parseInt(crossRaw, 10);
+    this.loopCrossTimeoutMs =
+      Number.isInteger(crossParsed) && crossParsed > 0 ? crossParsed : LOOP_CROSS_TIMEOUT_MS;
   }
 
   /**
@@ -1880,7 +1956,7 @@ export class MineflayerExecutor implements StepExecutor {
 
   /** Connect and resolve once the bot has spawned into the world. */
   async connect(): Promise<void> {
-    const { bot, loaded } = createHarnessBot({
+    const { bot, loaded, pack } = createHarnessBot({
       host: this.config.host,
       port: this.config.port,
       username: this.config.username,
@@ -1903,6 +1979,7 @@ export class MineflayerExecutor implements StepExecutor {
     });
     this.bot = bot;
     this.clientLoaded = loaded;
+    this.packState = pack;
     // Installed in the turn the bot is created, before its `login` can arrive:
     // the join is the first window it has to see.
     this.loadTracer = traceLoadWindows(bot as unknown as TracedBot, {
@@ -2058,6 +2135,10 @@ export class MineflayerExecutor implements StepExecutor {
     // fought or resumed across the void (the "No path to the goal!" / "Path was
     // stopped" race documented in the nobodys-cave gap-8 field notes).
     bot.on("forcedMove", () => this.onForcedMove());
+    bot.on("physicsTick", () => {
+      const p = bot.entity?.position;
+      if (p) this.tickPos = { x: p.x, y: p.y, z: p.z };
+    });
   }
 
   /**
@@ -2072,8 +2153,112 @@ export class MineflayerExecutor implements StepExecutor {
     const now = { x: p.x, y: p.y, z: p.z };
     const prev = this.lastForcedPos;
     this.lastForcedPos = now;
+    // spec-0086 §6: the move's delta from the last physics tick.
+    const from = this.tickPos;
+    if (from) {
+      const delta: Vec3Tuple = [now.x - from.x, now.y - from.y, now.z - from.z];
+      if (this.loopWatch) {
+        this.loopWatch.deltas.push(delta);
+      } else {
+        for (const [id, offset] of this.loopOffsets) {
+          if (sameDelta(delta, offset)) {
+            this.loopFault = new Error(
+              `a forced move by [${delta.map((c) => c.toFixed(3)).join(", ")}] during a plain ` +
+                `walk is loop ${id}'s offset — the loop held where the compiler proved it ` +
+                `released, so the proof's configuration and the game disagree about its gate`,
+            );
+            this.stopPathfinding();
+            break;
+          }
+        }
+      }
+      this.tickPos = now;
+    }
     if (prev && Math.hypot(now.x - prev.x, now.z - prev.z) >= TRANSPORT_JUMP_BLOCKS) {
       this.stopPathfinding();
+    }
+  }
+
+  /** The latched {@link loopFault}, cleared as it is taken. */
+  private takeLoopFault(): Error | undefined {
+    const f = this.loopFault;
+    this.loopFault = undefined;
+    return f;
+  }
+
+  /**
+   * spec-0086 §6: the loops the path exercises, so a forced move during a plain
+   * walk that equals one of their offsets fails that walk naming the loop.
+   */
+  useLoops(steps: readonly Step[]): void {
+    this.loopOffsets = new Map(
+      steps.flatMap((s): Array<[string, Vec3Tuple]> =>
+        s.action === "loop" ? [[s.loop, s.offset]] : [],
+      ),
+    );
+  }
+
+  /**
+   * **Exercise a loop** (spec-0086 §6): walk to the step's approach cell, set a
+   * walk goal past the slab, and wait for the server's forced move. The move
+   * must be exactly the loop's offset — within {@link LOOP_DELTA_TOLERANCE} on
+   * each axis, measured from the physics tick before — and on it the pathfinder
+   * is stopped, so the stale goal does not walk the body into the slab again.
+   * Repeated until `times` moves are seen. A forced move with any other delta, or
+   * none within {@link LOOP_CROSS_TIMEOUT_MS}, fails the step naming the loop,
+   * the delta seen and the count reached. The move is identified by its delta,
+   * never by its size: {@link TRANSPORT_JUMP_BLOCKS} is not consulted.
+   */
+  async exerciseLoop(step: LoopStep): Promise<void> {
+    const bot = this.requireBot();
+    const label = `loop ${step.loop}`;
+    const axis = step.offset.findIndex((c) => c !== 0);
+    const dir = -Math.sign(step.offset[axis]!);
+    const goal: [number, number, number] = [step.cross[0], step.cross[1], step.cross[2]];
+    goal[axis] = goal[axis]! + dir * LOOP_GOAL_PAST;
+    await this.walkTo(step.pos, 1, `${label} — to its approach`);
+    for (let seen = 0; seen < step.times; seen++) {
+      if (seen > 0) {
+        await this.walkTo(step.pos, 1, `${label} — back to its approach`, false, undefined, [
+          step.pos,
+        ]);
+      }
+      this.loopWatch = { deltas: [] };
+      let deltas: Vec3Tuple[];
+      try {
+        const walk = this.nav
+          .goto(new goals.GoalNear(goal[0], goal[1], goal[2], 0))
+          .catch(() => undefined);
+        const moved = await this.waitFor(
+          () => (this.loopWatch?.deltas.length ?? 0) > 0,
+          this.loopCrossTimeoutMs,
+          REACH_POLL_MS,
+        );
+        this.stopPathfinding();
+        await walk;
+        deltas = this.loopWatch?.deltas ?? [];
+        if (!moved) {
+          throw new Error(
+            `${label}: no forced move within ${this.loopCrossTimeoutMs}ms of walking across ` +
+              `[${step.cross.join(", ")}] toward [${goal.join(", ")}]; bot at ` +
+              `${fmt(bot.entity.position)}; ${seen} of ${step.times} move(s) seen`,
+          );
+        }
+      } finally {
+        this.loopWatch = undefined;
+      }
+      const delta = deltas[0]!;
+      if (!sameDelta(delta, step.offset)) {
+        throw new Error(
+          `${label}: a forced move by [${delta.map((c) => c.toFixed(3)).join(", ")}] is not ` +
+            `the loop's offset [${step.offset.join(", ")}]; ${seen} of ${step.times} move(s) ` +
+            `seen before it`,
+        );
+      }
+      process.stderr.write(
+        `[loop] ${step.loop}: move ${seen + 1} of ${step.times} by ` +
+          `[${delta.map((c) => c.toFixed(3)).join(", ")}], bot now at ${fmt(bot.entity.position)}\n`,
+      );
     }
   }
 
@@ -2348,10 +2533,12 @@ export class MineflayerExecutor implements StepExecutor {
   private observeMarker(message: string): void {
     const marker = parseCompletionMarker(message);
     if (!marker || marker.campaignId !== this.campaignId) return;
+    this.repaintWatch?.marker(marker.token, Date.now());
     if (marker.token === CAMPAIGN_TOKEN) {
       this.campaignCompleteAtStep ??= this.currentStep;
       return;
     }
+    this.markerArrivals.set(marker.token, (this.markerArrivals.get(marker.token) ?? 0) + 1);
     if (!this.completedObjectives.has(marker.token)) {
       this.completedObjectives.set(marker.token, this.currentStep);
     }
@@ -2595,6 +2782,11 @@ export class MineflayerExecutor implements StepExecutor {
    * to say to stop a harness fault reading as a content verdict on whichever stage
    * happened to be next.
    */
+  /** Every resource pack the server pushed to this bot — see resource-pack.ts. */
+  resourcePackPushes(): readonly PackPush[] {
+    return this.packState?.pushes() ?? [];
+  }
+
   /** Every load window this bot opened, in order — see load-window.ts. */
   loadWindows(): readonly LoadWindowRecord[] {
     return this.loadTracer?.windows() ?? [];
@@ -2660,6 +2852,19 @@ export class MineflayerExecutor implements StepExecutor {
    * Adopt the build's death contract. Also hands the declared lethal volumes to
    * the navigator, which has to agree with the compiler that they are impassable.
    */
+  /**
+   * spec-0080 §5.2: watch every repaint the build performs reach the client —
+   * a `chunk_biomes` for each held chunk of its volume, and no `map_chunk`.
+   */
+  useRepaintPlan(plan: RepaintPlan): void {
+    this.repaintWatch = new RepaintWatch(plan);
+  }
+
+  /** The repaint verdicts so far; empty when the build repaints nothing. */
+  repaintVerdicts(): RepaintVerdict[] {
+    return this.repaintWatch?.verdicts() ?? [];
+  }
+
   useDeathPlan(plan: DeathPlan): void {
     this.deathPlan = plan;
     // The DECLARED regions, not the keep-out boxes, and the difference is a
@@ -2674,7 +2879,48 @@ export class MineflayerExecutor implements StepExecutor {
     // rules the NAVIGATOR should read is one question, and it is answered here
     // by the wider of the two — it excludes everything the keep-out box does,
     // plus the course at `hi.y + 1`, so nothing this branch proved is lost.
-    this.lethalBoxes = plan.volumes.map((v) => v.region);
+    //
+    // spec-0088: only the volumes live from world-load are excluded for the whole
+    // run. A volume live from a story stage is excluded per walk leg, by asking
+    // its gate before the leg — a leg walked before the flip crosses the cells
+    // the proof crossed, and a leg after goes round them.
+    this.unstagedBoxes = plan.volumes.filter((v) => !volumeIsStaged(v)).map((v) => v.region);
+    this.stagedVolumes = plan.volumes.filter(volumeIsStaged);
+    this.lethalBoxes = [...this.unstagedBoxes, ...this.stagedVolumes.map((v) => v.region)];
+  }
+
+  /**
+   * **Which staged volumes are live for the next walk leg** (spec-0088 §8): put
+   * every term of each staged volume's gate to the server through the one
+   * term-asking the stake trial uses ({@link askTerm}), and exclude the region
+   * of every volume whose gate reads open. A term the server answers neither way
+   * excludes the region — the conservative direction — and a `[lethal]` line
+   * says so.
+   */
+  private async refreshStagedExclusion(): Promise<void> {
+    if (this.stagedVolumes.length === 0) return;
+    const answers = new Map<string, boolean | undefined>();
+    const live: Box[] = [];
+    const states: string[] = [];
+    for (const v of this.stagedVolumes) {
+      for (const t of v.gate.terms) {
+        if (!answers.has(termKey(t))) answers.set(termKey(t), await this.askTerm(t));
+      }
+      const verdict = volumeGateVerdict(v, (t) => answers.get(termKey(t)));
+      if (verdict.kind === "unread") {
+        process.stderr.write(
+          `[lethal] ${v.id}: ${verdict.why}; excluded from this leg as if live\n`,
+        );
+      }
+      if (verdict.kind !== "shut") live.push(v.region);
+      states.push(`${v.id} ${verdict.kind === "shut" ? "shut" : verdict.kind === "open" ? "live" : "unread"}`);
+    }
+    this.lethalBoxes = [...this.unstagedBoxes, ...live];
+    // The binding of the per-leg exclusion, stated on every leg it ran for.
+    process.stderr.write(
+      `[lethal] before the walk to ${this.walkLabel}: ${states.join(", ")} — ` +
+        `${live.length} of ${this.stagedVolumes.length} staged volume(s) excluded\n`,
+    );
   }
 
   /** Every walk into a lethal volume this run made, and what it observed. */
@@ -2747,6 +2993,14 @@ export class MineflayerExecutor implements StepExecutor {
     // not read rather than passing.
     const client = bot._client as Bot["_client"] | undefined;
     if (typeof client?.on !== "function") return;
+    // spec-0080 §5.2: every chunk packet, for the repaint ledger. Off the raw
+    // stream for the reason the score observer is: mineflayer's world model
+    // applies a biome update without saying so.
+    client.on("packet", (data: unknown, meta: { name?: unknown }) => {
+      if (this.repaintWatch && typeof meta?.name === "string") {
+        this.repaintWatch.packet(meta.name, data, Date.now());
+      }
+    });
     client.on("scoreboard_score", (packet: unknown) => {
       if (typeof packet !== "object" || packet === null) return;
       const p = packet as { itemName?: unknown; scoreName?: unknown; value?: unknown };
@@ -3188,6 +3442,29 @@ export class MineflayerExecutor implements StepExecutor {
       );
       await this.recoverFromDeath();
     }
+    // spec-0088: a volume live from a story stage is entered only when its gate
+    // reads open. Shut, the trial records why and is not entered; unread, it
+    // establishes nothing, and that is the trial's failure.
+    if (volumeIsStaged(volume)) {
+      const answers = new Map<string, boolean | undefined>();
+      for (const t of volume.gate.terms) {
+        if (!answers.has(termKey(t))) answers.set(termKey(t), await this.askTerm(t));
+      }
+      const verdict = volumeGateVerdict(volume, (t) => answers.get(termKey(t)));
+      if (verdict.kind !== "open") {
+        const trial = openLethalTrial(volume, volume.region.lo, []);
+        if (verdict.kind === "shut") {
+          trial.notLiveAtTrial = verdict.why;
+          process.stderr.write(
+            `[death-loop] ${volume.id}: not live at trial — ${verdict.why}; not entered\n`,
+          );
+        } else {
+          trial.abandoned = `whether this staged volume is live could not be read — ${verdict.why}`;
+        }
+        this.lethalTrials.push(trial);
+        return;
+      }
+    }
     const here = this.feetCell() ?? [0, 0, 0];
     const entryCell = entryCellOf(volume.region, here, (c) => this.bodyCanOccupy(c));
     // EVERY stake this death is supposed to leave. `on_death`'s own declaration
@@ -3287,19 +3564,15 @@ export class MineflayerExecutor implements StepExecutor {
     if (navFault === undefined && this.deathSeq === deathsBefore) {
       this.lethalExclusionSuspended = true;
       try {
-        let walkIn = await this.stepInto(volume.region, entryCell, trial);
+        const walkIn = await this.stepInto(volume.region, entryCell, trial);
         if (walkIn === "blocked" && this.deathSeq === deathsBefore) {
-          // The walk to the way in is an ordinary walk: the hazard is not in it.
-          this.lethalExclusionSuspended = false;
-          let from: Vec3Tuple | undefined;
-          try {
-            from = await this.jumpInApproach(volume.region, volume.id);
-          } finally {
-            this.lethalExclusionSuspended = true;
-          }
-          if (from !== undefined && this.deathSeq === deathsBefore) {
-            walkIn = await this.stepInto(volume.region, entryCell, trial);
-          }
+          // A death on the way to a way in ends the search: it is the trial's
+          // death to judge, and no further walk in follows it.
+          await this.jumpInApproach(volume.region, volume.id, () =>
+            this.deathSeq === deathsBefore
+              ? this.stepInto(volume.region, entryCell, trial)
+              : Promise.resolve("died" as const),
+          );
         }
       } catch (err) {
         if (!(err instanceof BotDeathError)) {
@@ -3681,7 +3954,8 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * **When walking straight in is blocked, get to a place a player jumps to.**
+   * **When walking straight in is blocked, get to a place a player jumps to,
+   * and walk in from there.**
    *
    * The placement table's lip is the reachable cell nearest the volume by
    * WALKING, and a hazard can be one a player reaches only with a jump:
@@ -3691,36 +3965,70 @@ export class MineflayerExecutor implements StepExecutor {
    * back out and jumps across; the pathfinder, which jumps gaps the way a
    * player does, is asked for that: the standable cells within a few blocks
    * that are nearer the volume than the body is, outside what the volume can
-   * reach, nearest the volume first, tried in turn. `undefined` when none can
-   * be reached.
+   * reach, smallest climb first ({@link wayInCandidates}), EVERY one tried in
+   * turn until the walk in from one is not blocked ({@link firstWayIn}). The
+   * walk to a candidate is an ordinary walk, with the hazard excluded; the walk
+   * in from it (`walkIn`) runs with the exclusion suspended, as the first did.
    */
-  private async jumpInApproach(box: Box, volume: string): Promise<Vec3Tuple | undefined> {
+  private async jumpInApproach(
+    box: Box,
+    volume: string,
+    walkIn: () => Promise<"entered" | "released" | "blocked" | "died">,
+  ): Promise<"entered" | "released" | "blocked" | "died"> {
     const bot = this.requireBot();
     const feet = this.feetCell();
-    if (!feet) return undefined;
+    if (!feet) return "blocked";
     const candidates = wayInCandidates(feet, box, (c) => {
       if (!this.bodyCanOccupy(c)) return false;
       const p = bot.entity.position;
       const below = bot.blockAt(p.offset(c[0] - p.x, c[1] - 1 - p.y, c[2] - p.z));
       return below !== null && below.boundingBox === "block";
     });
-    for (const c of candidates.slice(0, 3)) {
-      process.stderr.write(
-        `[death-loop] ${volume}: the walk in is blocked at [${feet.join(", ")}]; asking the ` +
-          `pathfinder for [${c.join(", ")}], nearer the volume\n`,
-      );
-      try {
-        await this.walkTo(c, 1, `death-loop way in to ${volume}`);
-        return c;
-      } catch (err) {
-        if (err instanceof BotDeathError) throw err;
+    process.stderr.write(
+      `[death-loop] ${volume}: the walk in is blocked at [${feet.join(", ")}]; ` +
+        `${candidates.length} way-in cell(s) nearer the volume, smallest climb first: ` +
+        `${candidates.map((c) => `[${c.join(", ")}]`).join(" ")}\n`,
+    );
+    const outcome = await firstWayIn(
+      candidates,
+      async (c) => {
         process.stderr.write(
-          `[death-loop] ${volume}: [${c.join(", ")}] could not be reached: ` +
-            `${err instanceof Error ? err.message : String(err)}\n`,
+          `[death-loop] ${volume}: asking the pathfinder for [${c.join(", ")}], ` +
+            `${c[1] - feet[1]} course(s) up\n`,
         );
-      }
-    }
-    return undefined;
+        this.lethalExclusionSuspended = false;
+        try {
+          await this.walkTo(c, 1, `death-loop way in to ${volume}`);
+          return true;
+        } catch (err) {
+          if (err instanceof BotDeathError) throw err;
+          process.stderr.write(
+            `[death-loop] ${volume}: [${c.join(", ")}] could not be reached: ` +
+              `${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          return false;
+        } finally {
+          this.lethalExclusionSuspended = true;
+        }
+      },
+      async (c) => {
+        const r = await walkIn();
+        if (r === "blocked") {
+          process.stderr.write(
+            `[death-loop] ${volume}: the walk in from [${c.join(", ")}] is blocked too\n`,
+          );
+        }
+        return r;
+      },
+    );
+    process.stderr.write(
+      `[death-loop] ${volume}: way in ` +
+        (outcome.from
+          ? `[${outcome.from.join(", ")}] (${outcome.result})`
+          : `not found (${outcome.result})`) +
+        `; ${outcome.tried} of ${candidates.length} tried, ${outcome.reached} reached\n`,
+    );
+    return outcome.result;
   }
 
   /**
@@ -4106,7 +4414,9 @@ export class MineflayerExecutor implements StepExecutor {
     explicitWaypoints?: readonly Vec3Tuple[],
   ): Promise<void> {
     this.requireBot();
-    const r = Math.max(1, Math.floor(range));
+    // A range of exactly 0 is a block goal: a link's stand cell, which the bot
+    // must be IN to be carried (spec-0083 §4). Every other range keeps its floor.
+    const r = range === 0 ? 0 : Math.max(1, Math.floor(range));
     // Every walk leg starts at full health and is held there (see
     // `holdFullHealth`): whether the bot survives the walk is not what a walk
     // leg is for.
@@ -4115,7 +4425,16 @@ export class MineflayerExecutor implements StepExecutor {
     this.walkLabel = label;
     try {
       await this.holdFullHealth("its start");
-      await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+      await this.refreshStagedExclusion();
+      try {
+        await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+      } catch (err) {
+        const fault = this.takeLoopFault();
+        if (fault) throw fault;
+        throw err;
+      }
+      const fault = this.takeLoopFault();
+      if (fault) throw fault;
     } finally {
       this.walkLegs -= 1;
       this.walkLabel = outerLabel;
@@ -6504,12 +6823,90 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
+   * **Witness an assembly's blow** (spec-0082 §5.4, §5.5): walk to the step's
+   * cell, step onto its centre the way a player presses W, and stand there for
+   * the window, reading the bot's own health off the server's packets.
+   *
+   * `struck` passes on the first drop — the blow of the facing a body on that
+   * cell draws, landing on the limb's area — and fails when the window runs
+   * out with nothing taken. `spared` passes when the window runs out with
+   * nothing taken and fails on any drop: no body there can be selected by the
+   * arming region, so no blow is wound up for it.
+   *
+   * The walk there is a walk leg, held at full health like every other; the
+   * standing is not, so a drop while standing is the delve's, not the
+   * harness's. Nothing is staged: the blow is the thing under test.
+   */
+  async witnessStrike(step: WitnessStrikeStep): Promise<void> {
+    const bot = this.requireBot();
+    const label = `${step.assembly}'s blow (${step.expect})`;
+    await this.walkTo(step.pos, 1, label);
+    // Onto the cell's centre: the pathfinder's nearest goal is a block away,
+    // and the facing a body draws is read from where it stands.
+    const centre = (): number => {
+      const p = bot.entity.position;
+      return Math.hypot(p.x - (step.pos[0] + 0.5), p.z - (step.pos[2] + 0.5));
+    };
+    const driveUntil = Date.now() + WITNESS_CENTRE_MS;
+    try {
+      while (Date.now() < driveUntil && centre() > WITNESS_CENTRE_TOLERANCE) {
+        if (this.death) throw this.death;
+        const p = bot.entity.position;
+        await bot.lookAt(p.offset(step.pos[0] + 0.5 - p.x, 0, step.pos[2] + 0.5 - p.z), true);
+        bot.setControlState("forward", true);
+        await delay(GATE_DASH_TICK_MS);
+      }
+    } finally {
+      bot.clearControlStates();
+    }
+    const p0 = bot.entity.position;
+    const at = `[${p0.x.toFixed(2)}, ${p0.y.toFixed(2)}, ${p0.z.toFixed(2)}]`;
+    const start = bot.health;
+    const windowMs = step.windowTicks * TICK_MS;
+    const until = Date.now() + windowMs;
+    let taken = 0;
+    while (Date.now() < until) {
+      if (this.death) throw this.death;
+      if (bot.health < start - 1e-6) {
+        taken = start - bot.health;
+        break;
+      }
+      await delay(TICK_MS);
+    }
+    const facing =
+      step.expect === "struck"
+        ? ` facing ${step.facing} of ${step.facingCount} (root yaw ${step.yaw})`
+        : "";
+    if (step.expect === "struck" && taken === 0) {
+      throw new Error(
+        `${label}: the bot stood at ${at} on [${step.pos.join(", ")}] — a landing cell under ` +
+          `the limb of${facing} — for ${step.windowTicks} ticks and no blow took any health. ` +
+          `The thing was wound up for a body there and never hit it`,
+      );
+    }
+    if (step.expect === "spared" && taken > 0) {
+      throw new Error(
+        `${label}: the bot stood at ${at} on [${step.pos.join(", ")}], where no body can be ` +
+          `selected by the arming region, and lost ${taken.toFixed(1)} health — a blow nobody ` +
+          `was shown`,
+      );
+    }
+    process.stderr.write(
+      `[witness] ${label}: at ${at}${facing}, ` +
+        (step.expect === "struck"
+          ? `struck for ${taken.toFixed(1)} (declared ${step.amount}) within ${step.windowTicks} ticks\n`
+          : `nothing taken in ${step.windowTicks} ticks\n`),
+    );
+  }
+
+  /**
    * Perform an environment trigger the way a player does, then wait for the
    * trigger's own fired marker — the only evidence the step accepts.
    *
    * A `strike` is a real attack (`bot.attack`, the client's left-click packet) on
    * the `interaction` hitbox the compiler summoned at the anchor; a `use` is a
-   * real right-click on it; a `strike-npc` attacks the NPC's own hitbox at its
+   * real right-click on it; a `strike-assembly` attacks the assembly's own
+   * hitbox at its cell; a `strike-npc` attacks the NPC's own hitbox at its
    * beat's station; an `approach` is a walk into the trigger's range. Never a
    * server-side command: a trigger fired by one would prove the command, not
    * that a player can reach and hit the thing.
@@ -6521,12 +6918,32 @@ export class MineflayerExecutor implements StepExecutor {
   async fireTrigger(step: TriggerStep): Promise<void> {
     const bot = this.requireBot();
     const label = `trigger ${step.trigger} (${step.on})`;
+    // A repeated performance (a hit count) owes its own marker: count the
+    // arrivals before acting, and wait for one more.
+    const performed = this.triggerPerformances.get(step.trigger) ?? 0;
+    this.triggerPerformances.set(step.trigger, performed + 1);
+    const arrivalsBefore = this.markerArrivals.get(step.trigger) ?? 0;
+    // spec-0083 §4: a trigger that carries the party is performed from INSIDE
+    // its volume — the compiler names the cell. The bot walks there as a block
+    // goal, and then acts without walking again; the sequencer awaits the
+    // landing (`transport`) after the fired marker, as for every carried step.
+    if (step.stand) {
+      await this.walkTo(step.stand, 0, `${label} — to its stand cell`);
+      process.stderr.write(
+        `[trigger] ${step.trigger}: standing at [${step.stand.join(", ")}] to be carried to ` +
+          `[${(step.transport ?? []).join(", ")}]\n`,
+      );
+    }
     if (step.on === "approach") {
       // The tick fires on `distance=..range` from the anchor cell; aim a block
       // inside it so the goal's own tolerance cannot leave the bot on the rim.
-      await this.walkTo(step.pos, Math.max(1, (step.range ?? 1) - 1), label);
+      if (!step.stand) {
+        await this.walkTo(step.pos, Math.max(1, (step.range ?? 1) - 1), label);
+      }
     } else {
-      await this.walkTo(step.pos, INTERACT_RANGE, label);
+      if (!step.stand) {
+        await this.walkTo(step.pos, INTERACT_RANGE, label);
+      }
       const acquired = this.requireCrosshair(step.pos, label, INTERACT_RANGE);
       const target = acquired ? bot.entities[acquired.target.id] : undefined;
       if (!acquired || !target) {
@@ -6552,7 +6969,23 @@ export class MineflayerExecutor implements StepExecutor {
         bot.attack(target);
       }
     }
-    await this.awaitObjectiveMarker(step.trigger, label);
+    if (performed > 0) {
+      const arrived = await this.waitFor(
+        () => (this.markerArrivals.get(step.trigger) ?? 0) > arrivalsBefore,
+        OBJECTIVE_TIMEOUT_MS,
+        SCORE_POLL_MS,
+      );
+      if (!arrived) {
+        throw new Error(
+          `${label}: performance ${performed + 1} broadcast no fresh ` +
+            `\`${markerLine(this.campaignId ?? "?", step.trigger)}\` marker within ` +
+            `${OBJECTIVE_TIMEOUT_MS}ms (${arrivalsBefore} seen before it); bot at ` +
+            `${fmt(bot.entity.position)}`,
+        );
+      }
+    } else {
+      await this.awaitObjectiveMarker(step.trigger, label);
+    }
     await delay(EFFECT_SETTLE_MS);
   }
 

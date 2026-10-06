@@ -336,15 +336,9 @@
     },
     {
       "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "eq": {
-            "type": "interact"
-          }
-        }
+        "contains": "\\bif items entity @s weapon\\.mainhand ",
+        "glob": "datapack/**/*.mcfunction",
+        "kind": "out"
       },
       "binding": {
         "files": [
@@ -365,7 +359,7 @@
       "finding": "a required item was issued per class rather than to the whole party, so players without that class could not complete the objective that consumed it",
       "general_form": "an objective gated on a HELD item is completable by a solo player of every class: the item has a class-blind supply somewhere in the campaign (a give-item at any effect root, a collect, a loot container, a wave drop), or it is in every class kit",
       "id": "isl-02",
-      "note": "The capability half (a kit item's and a give-item's carrier, spec-0018, DSL v0.6) had landed; what had no check was whether the item a gate demands can be brought at all. Quantified over EVERY class for the reason DW0476 states about the flask: a solo player of any class is a supported party.",
+      "note": "The capability half (a kit item's and a give-item's carrier, spec-0018, DSL v0.6) had landed; what had no check was whether the item a gate demands can be brought at all. Quantified over EVERY class for the reason DW0476 states about the flask: a solo player of any class is a supported party. The precondition is the item-gate class itself, counted by a second instrument that shares nothing with the binding: a datapack function testing `if items entity @s weapon.mainhand` is the server's own adjudication of a held-item gate, and the emitter writes one for every `requires_item` (`crates/delvec/tests/v07_held_item.rs` asserts the spelling, `tools/tests/test_staging_gate.py` holds this probe to it). An `interact` with no `requires_item` completes on any click, so it cannot carry an item-gate defect and is not counted. A held-item test in the build with no `requires_item` in the source = UNBOUND (an item gate the check does not read); neither = the class measures zero.",
       "round": 3,
       "triage": "capability"
     },
@@ -1078,12 +1072,12 @@
     {
       "applies_when": {
         "files": [
-          "quests.json"
+          "npcs.json"
         ],
         "kind": "dsl",
         "match": {
           "prefix": {
-            "id": "quest/"
+            "id": "npc/"
           }
         }
       },
@@ -1106,7 +1100,7 @@
       "finding": "NPCs offered premise questions from the opening scene after the finale had already played",
       "general_form": "every quest declares where its live cast is and what they offer, and the declaration is proven against the replayed effect history",
       "id": "isl-35",
-      "note": "applies_when added: `cast` is a declaration ON a quest, so the binding's zero is ambiguous and the row owed a precondition. The precondition counts the quests themselves (`quest/<kebab>`, the id form DW0110 enforces). Quests declared with no cast ledger = UNBOUND, which is exactly the island before round 13 — quests existed the whole time and the declaration DW0460 reads did not. No quest at all = the class measures zero.",
+      "note": "`cast` is a declaration ON a quest, so the binding's zero is ambiguous and the row owes a precondition. The precondition counts the campaign's NPCs. A cast ledger is keyed by stage-2 NPC id (`DW0464` refuses any other key), so a campaign that declares no NPC has no body a quest could misplace or leave offering stale dialogue, and no ledger entry it could owe: the class measures zero. NPCs declared and no quest carrying a cast ledger = UNBOUND, which is the island before round 13.",
       "round": 12,
       "triage": "capability"
     },
@@ -1232,15 +1226,9 @@
     },
     {
       "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "eq": {
-            "type": "interact"
-          }
-        }
+        "contains": "\\bif items entity @s weapon\\.mainhand ",
+        "glob": "datapack/**/*.mcfunction",
+        "kind": "out"
       },
       "binding": {
         "files": [
@@ -1261,7 +1249,7 @@
       "finding": "an item requirement was satisfied by carrying the item in a pocket rather than holding it, so a beat about brandishing something worked with it stowed",
       "general_form": "requires_item means held in the main hand, and an interaction that can refuse a click explains the refusal",
       "id": "isl-41",
-      "note": "applies_when added 2026-08-21: `requires_item` is an interact-objective declaration (schema: the interact variant carries it). Interacts declared with none requiring an item = UNBOUND; no interact = the class measures zero.",
+      "note": "`requires_item` is an interact-objective declaration, and the class is the interacts declaring it. The precondition is the item-gate class itself, counted by a second instrument that shares nothing with the binding: a datapack function testing `if items entity @s weapon.mainhand` is the server's own adjudication of a held-item gate, and the emitter writes one for every `requires_item` (`crates/delvec/tests/v07_held_item.rs` asserts the spelling, `tools/tests/test_staging_gate.py` holds this probe to it). An `interact` with no `requires_item` completes on any click, so it cannot carry an item-gate defect and is not counted. A held-item test in the build with no `requires_item` in the source = UNBOUND (an item gate the check does not read); neither = the class measures zero.",
       "round": 12,
       "triage": "capability"
     },
@@ -1341,12 +1329,12 @@
     {
       "applies_when": {
         "files": [
-          "quests.json"
+          "npcs.json"
         ],
         "kind": "dsl",
         "match": {
           "prefix": {
-            "id": "quest/"
+            "id": "npc/"
           }
         }
       },
@@ -1369,7 +1357,7 @@
       "finding": "a body that should have held its position after a scripted escape wandered off it",
       "general_form": "where a body is after each beat is declared and proven against the replayed effect history",
       "id": "isl-46",
-      "note": "applies_when added: same shape as isl-35 — a cast ledger is a declaration on a quest, so the precondition counts the quests DW0461 replays the effect history of.",
+      "note": "Same shape as isl-35, over the positions DW0461 replays the effect history of. The precondition counts the campaign's NPCs. A cast ledger is keyed by stage-2 NPC id (`DW0464` refuses any other key), so a campaign that declares no NPC has no body a quest could misplace or leave offering stale dialogue, and no ledger entry it could owe: the class measures zero. NPCs declared and no quest carrying a cast ledger = UNBOUND, which is the island before round 13.",
       "round": 13,
       "triage": "capability"
     },
@@ -1469,7 +1457,7 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
+      "binding": {
         "files": [
           "world.json",
           "quests.json",
@@ -1479,9 +1467,9 @@
         "match": {
           "any_of": [
             {
-              "has": [
-                "mitigation"
-              ]
+              "eq": {
+                "mitigation": "night-vision"
+              }
             },
             {
               "eq": {
@@ -1501,26 +1489,15 @@
           ]
         }
       },
-      "binding": {
-        "files": [
-          "world.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has": [
-            "mitigation"
-          ]
-        }
-      },
       "campaign": "nobodys-cave-island",
       "carrier": {
-        "kind": "packtest",
-        "template": "v06_night_vision"
+        "kind": "invariant",
+        "test": "a_granted_sight_effect_outlasts_every_camera_it_overlaps"
       },
       "finding": "granted night vision expired and flickered part-way through the ending cutscene it was granted for",
       "general_form": "a granted sight effect outlasts any authored camera it can overlap, plus vanilla's wind-down, so it can never begin ramping down on screen",
       "id": "isl-52",
-      "note": "The precondition is a granted sight effect - an area's `mitigation` or a `give-effect` of night vision, blindness or darkness in any effect list of quests.json or dialogue.json - because the general form quantifies over the grant, and a cutscene with no sight effect granted anywhere has nothing to expire on screen. A potion in a class kit is not counted: the party drinks it on its own clock, so no authored camera is timed against it. The binding reaches only the `mitigation` grant, whose lease the compiler derives from the longest camera; a `give-effect` sight grant's author-chosen `seconds` has no check against the cameras it can overlap, so a campaign whose only sight grant is a `give-effect` is UNBOUND, correctly. No sight grant = the class measures zero.",
+      "note": "The binding counts every granted sight effect - an area's `mitigation` or a `give-effect` of night vision, blindness or darkness in any effect list of quests.json or dialogue.json - because the general form quantifies over the grant. Both halves are carried by one invariant test. The `mitigation` half is structural: the compiler derives the lease from the longest camera plus night vision's 200-tick wind-down (`dsl::perception::SIGHT`). The `give-effect` half is DW0944 (spec-0085): an author-chosen `seconds` that overlaps a cutscene in its own timeline - a `sequence`, or a bundle, which fires at one tick - and ends inside the shot or within its wind-down after it is refused. What no static check reaches is stated: a grant in one bundle against a camera in a different bundle that may happen to run while it lasts. A potion in a class kit is not counted: the party drinks it on its own clock, so no authored camera is timed against it. No sight grant = the class measures zero.",
       "round": 15,
       "triage": "capability"
     },

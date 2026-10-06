@@ -1,0 +1,21 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "finale": "quest/walk-the-carcass",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/carcass",
+        "depends_on": [],
+        "goal": "Ask the keeper what lies on the flat, go in through the wound in its flank, then climb the stair cut up its side onto its back.",
+        "id": "quest/walk-the-carcass",
+        "mandatory": true,
+        "npcs": [
+          "npc/carcass-keeper"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "quest-plan"
+}

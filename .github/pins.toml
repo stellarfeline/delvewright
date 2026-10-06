@@ -291,9 +291,14 @@ sites = [
     "docs/experiments/m2-jigsaw-seed-stability/Dockerfile",
     "tools/spike-area-effect-arrow/run.sh",
     "tools/spike-block-settling/run.sh",
+    "tools/spike-celestial-time/run.sh",
     "tools/spike-death-teleport/run.sh",
+    "tools/spike-display-assembly/measure-aim.sh",
+    "tools/spike-display-assembly/run.sh",
     "tools/spike-fluid-plane/run.sh",
     "tools/spike-jump-arc/run.sh",
+    "tools/spike-seamless-loop/run.sh",
+    "tools/spike-staged-lethal/run.sh",
     "validation/Dockerfile.delve",
     "validation/Dockerfile.toolserver",
     "versions.toml",
@@ -301,7 +306,7 @@ sites = [
 policy = "immutable"
 why = """
 itzg/minecraft-server, and the byte-for-byte GHCR mirror of it that every server
-image is built FROM (versions.toml [images.base]). One digest in ten files, and
+image is built FROM (versions.toml [images.base]). One digest in every site above, and
 validation/check-versions.sh is what keeps them equal.
 """
 
@@ -319,12 +324,37 @@ this digest is restated here and in versions.toml together.
 [[pin]]
 id = "server-jar"
 value = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
-sites = ["versions.toml"]
+sites = ["tools/maintenance/extract-environment-attributes.py", "versions.toml"]
 policy = "immutable"
 why = """
 sha256 of the pinned Minecraft 1.21.11 server jar. The bootstrap cache refuses
 any download whose bytes are not this (versions.toml [minecraft]). Moving it is
 moving the pinned Minecraft version, which is ADR-0009's long-term constant.
+"""
+
+[[pin]]
+id = "client-jar-sha256"
+value = "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd"
+sites = ["tools/maintenance/extract-environment-attributes.py"]
+policy = "immutable"
+why = """
+sha256 of the pinned Minecraft 1.21.11 client jar (piston-meta downloads.client,
+sha1 ba2df812...). The environment-attribute regenerator (spec-0080) reads the
+attribute strings out of it as the second instrument beside the server jar and
+refuses any other bytes. Moving it is moving the pinned Minecraft version
+(ADR-0009).
+"""
+
+[[pin]]
+id = "server-mappings-sha1"
+value = "5621e9253f05fd57872bbe7f8ddf5f9a7d525955"
+sites = ["tools/maintenance/extract-environment-attributes.py"]
+policy = "immutable"
+why = """
+The sha1 piston-meta publishes for Mojang's official 1.21.11 server mappings
+(downloads.server_mappings). The environment-attribute regenerator resolves the
+obfuscated `EnvironmentAttributes`, `AttributeRange` and record codecs through
+them and refuses any other file. Moves only with the pinned Minecraft version.
 """
 
 [[pin]]
@@ -542,6 +572,7 @@ why = "GitHub's artifact upload action, held at its major tag."
 id = "action-download-artifact"
 value = "actions/download-artifact@v4"
 sites = [
+    ".github/actions/delvec-binary/action.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/plugin-release.yml",
@@ -927,4 +958,53 @@ and on Linux. `tools/creator/skin/delve_skin/png.py` writes the file with stored
 deflate instead, and a test makes `Image.save` raise to keep it that way.
 
 CHOSEN AS the version the unpinned line already resolved to. POLICY `immutable`.
+"""
+
+# --- spec-0084: a delve wears its own textures --------------------------------
+
+[[pin]]
+id = "pack-server-image"
+value = "sha256:9532d8c39891ca2ecde4d30d7710e01fb739c87a8b9299685c63704296b16028"
+sites = [
+    "tools/creator/playtest-server.sh",
+    "validation/compose.yaml",
+    "versions.toml",
+]
+policy = "immutable"
+why = """
+The multi-arch OCI index digest of busybox:1.37, the sidecar that serves a
+delve's resourcepack.zip to clients (spec-0009's verified pattern; spec-0084
+section 11: a pack is served, never installed). versions.toml
+[images.pack_server] is the value; `validation/check-versions.sh` holds the
+compose `pack` service and `playtest-server.sh` to it.
+"""
+
+[[pin]]
+id = "client-jar"
+value = "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd"
+sites = [
+    "tools/spike-texture-overrides/measure.py",
+    "versions.toml",
+]
+policy = "immutable"
+why = """
+The sha256 of the pinned 1.21.11 client jar (versions.toml [render]
+textures_sha256). `tools/maintenance/derive-client-textures.py` refuses any
+other jar, the texture census a `world.textures[]` row is judged against
+states it in its header, and the spec-0084 rig refused any other jar when it
+measured. It moves only with ADR-0009's Minecraft pin.
+"""
+
+[[pin]]
+id = "organic-spike-whale-mesh"
+value = "57657cfb04e7ce01ade43af9be36e76bb665012b6cc83b8a85d1091ac77dcc71"
+sites = ["tools/spike-organic-voxel/fetch-mesh.sh"]
+policy = "immutable"
+why = """
+SHA-256 of the STL inside the CC0 Cetotherium riabinini skeleton reconstruction
+(figshare doi:10.6084/m9.figshare.29644028, file 58189099), the source mesh of
+the organic-voxel research spike. A figshare file id names fixed bytes, and the
+zip is also held to figshare's own MD5; the spike's readings are hashes of what
+this mesh voxelises to, so the mesh must not move. Spike tooling only: nothing
+fetched here ships in a delve.
 """

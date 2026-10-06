@@ -42,6 +42,9 @@ pub struct ViewOpts {
     /// Resource pack for textures (the 1.21.11 client jar). Overrides the
     /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
     pub textures: Option<String>,
+    /// A delve's `resourcepack.zip`, layered above the textures (spec-0084
+    /// §5.1): a block texture the delve replaces is drawn as the delve draws it.
+    pub pack: Option<String>,
     /// Rendered frame dimension (square), in pixels.
     pub size: u32,
 }
@@ -259,6 +262,11 @@ pub enum ViewCommand {
         /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
         #[arg(long)]
         textures: Option<String>,
+        /// A delve's `resourcepack.zip`, read above the textures — the order a
+        /// client applies a server-sent pack in — so a block texture the delve
+        /// replaces (`world.textures[]`) is drawn as the delve draws it.
+        #[arg(long)]
+        pack: Option<String>,
     },
     /// Derive the appearance table (colour, coverage and model bounds per
     /// blockstate) for some prefabs, as JSON — what a palette actually looks
@@ -273,10 +281,24 @@ pub enum ViewCommand {
         /// Biome whose tints are baked into the table.
         #[arg(long, default_value = crate::compiler::view::blockcolor::DEFAULT_BIOME)]
         biome: String,
+        /// A `delvec build` output: with `--place`, the table is derived under
+        /// the biome that place stands in at the first tick (spec-0080 §5.3),
+        /// read from the build's `validation/biome-map.json` and its datapack.
+        #[arg(long, requires = "place", conflicts_with = "biome")]
+        build: Option<PathBuf>,
+        /// The place (`area/…`, or a site-plan box's `node/…`) whose biome
+        /// tints the table. Requires `--build`.
+        #[arg(long, requires = "build")]
+        place: Option<String>,
         /// Resource pack for textures (the 1.21.11 client jar). Overrides the
         /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
         #[arg(long)]
         textures: Option<String>,
+        /// A delve's `resourcepack.zip`, read above the textures — the order a
+        /// client applies a server-sent pack in — so a block texture the delve
+        /// replaces (`world.textures[]`) is drawn as the delve draws it.
+        #[arg(long)]
+        pack: Option<String>,
     },
     /// Emit a shot index (image ↔ expect pairs) from a build's `render-plan.json`,
     /// for handing shots to a reviewing agent / vision model.
@@ -306,6 +328,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: None,
+                    pack: None,
                     size: *size,
                 },
             ),
@@ -409,6 +432,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: None,
+                    pack: None,
                     size: DEFAULT_SIZE,
                 },
             ),
@@ -417,6 +441,7 @@ impl ViewCommand {
                 out,
                 title,
                 textures,
+                pack,
             } => run_viewer(
                 inputs,
                 out,
@@ -424,6 +449,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: textures.clone(),
+                    pack: pack.clone(),
                     size: DEFAULT_SIZE,
                 },
             ),
@@ -431,14 +457,19 @@ impl ViewCommand {
                 inputs,
                 out,
                 biome,
+                build,
+                place,
                 textures,
+                pack,
             } => run_palette(
                 inputs,
                 out,
                 biome,
+                build.as_deref().zip(place.as_deref()),
                 &ViewOpts {
                     json,
                     textures: textures.clone(),
+                    pack: pack.clone(),
                     size: DEFAULT_SIZE,
                 },
             ),
@@ -448,6 +479,7 @@ impl ViewCommand {
                 &ViewOpts {
                     json,
                     textures: None,
+                    pack: None,
                     size: DEFAULT_SIZE,
                 },
             ),
@@ -1315,8 +1347,17 @@ fn load_models(paths: &[PathBuf]) -> Result<Vec<viewer::ViewerModel>, Diagnostic
 /// textures with.
 fn open_assets(vopts: &ViewOpts) -> Result<Assets, Diagnostic> {
     let path = resolve_textures(vopts.textures.as_deref())?;
-    Assets::open(Path::new(&path))
-        .map_err(|e| Diagnostic::error(DW_RENDER, format!("open asset source: {e}")))
+    let opened = match &vopts.pack {
+        // spec-0084 §5.1: the delve's pack above the pinned jar. Said on every
+        // run, so a page drawn with the delve's look is never mistaken for
+        // vanilla's, or the other way round.
+        Some(pack) => {
+            eprintln!("textures: {pack} layered above {path}");
+            Assets::open_layered(Path::new(pack), Path::new(&path))
+        }
+        None => Assets::open(Path::new(&path)),
+    };
+    opened.map_err(|e| Diagnostic::error(DW_RENDER, format!("open asset source: {e}")))
 }
 
 /// Report what the page could not draw as the game draws it, and every binding
@@ -1538,7 +1579,64 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
     ExitCode::from(exit::OK)
 }
 
-fn run_palette(inputs: &[PathBuf], out: &Path, biome: &str, vopts: &ViewOpts) -> ExitCode {
+/// The biome a build says `place` stands in at the first tick, and its
+/// definition when the build ships it (an atmosphere) — `None` for the
+/// definition means the pinned jar holds it.
+fn place_biome(
+    build: &Path,
+    place: &str,
+) -> Result<(String, Option<serde_json::Value>), Diagnostic> {
+    let read = |p: &Path| -> Result<serde_json::Value, Diagnostic> {
+        let text = std::fs::read_to_string(p)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", p.display())))?;
+        serde_json::from_str(&text)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("parse {}: {e}", p.display())))
+    };
+    let map_path = build.join("validation/biome-map.json");
+    let biome = if map_path.is_file() {
+        let map = read(&map_path)?;
+        map["places"]
+            .as_array()
+            .and_then(|ps| ps.iter().find(|p| p["place"] == place))
+            .or(None)
+            .map(|p| p["biome"].as_str().unwrap_or_default().to_string())
+            .unwrap_or_else(|| map["ground"].as_str().unwrap_or_default().to_string())
+    } else {
+        // No place in this build carries an atmosphere, so every place stands
+        // in the ground biome: the one `generator-settings` lays.
+        let props =
+            std::fs::read_to_string(build.join("server/server.properties")).map_err(|e| {
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!("read {}/server/server.properties: {e}", build.display()),
+                )
+            })?;
+        props
+            .lines()
+            .find_map(|l| l.strip_prefix("generator-settings="))
+            .and_then(|g| serde_json::from_str::<serde_json::Value>(&g.replace("\\:", ":")).ok())
+            .and_then(|g| g["biome"].as_str().map(str::to_string))
+            .unwrap_or_else(|| crate::compiler::view::blockcolor::DEFAULT_BIOME.to_string())
+    };
+    let (ns, id) = biome
+        .split_once(':')
+        .unwrap_or(("minecraft", biome.as_str()));
+    let file = build.join(format!("datapack/data/{ns}/worldgen/biome/{id}.json"));
+    let definition = if file.is_file() {
+        Some(read(&file)?)
+    } else {
+        None
+    };
+    Ok((biome, definition))
+}
+
+fn run_palette(
+    inputs: &[PathBuf],
+    out: &Path,
+    biome: &str,
+    at: Option<(&Path, &str)>,
+    vopts: &ViewOpts,
+) -> ExitCode {
     let paths = match collect_pieces(inputs) {
         Ok(p) => p,
         Err(d) => return fail(d, vopts.json, exit::INPUT),
@@ -1551,7 +1649,20 @@ fn run_palette(inputs: &[PathBuf], out: &Path, biome: &str, vopts: &ViewOpts) ->
         Ok(a) => a,
         Err(d) => return fail(d, vopts.json, exit::RENDER),
     };
-    let deriver = Deriver::with_biome(&assets, biome);
+    let deriver = match at {
+        None => Deriver::with_biome(&assets, biome),
+        Some((build, place)) => match place_biome(build, place) {
+            Ok((id, Some(def))) => {
+                eprintln!("palette: `{place}` stands in `{id}`, read from the build's datapack");
+                Deriver::with_biome_definition(&assets, &id, &def)
+            }
+            Ok((id, None)) => {
+                eprintln!("palette: `{place}` stands in `{id}`, read from the pinned jar");
+                Deriver::with_biome(&assets, &id)
+            }
+            Err(d) => return fail(d, vopts.json, exit::INPUT),
+        },
+    };
     let table = viewer::palette_for(&models, &deriver);
 
     let mut json = match serde_json::to_string_pretty(&table) {

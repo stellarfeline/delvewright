@@ -53,6 +53,7 @@
 //! | `actor.<actor>.drop.<n>.name` | an actor's declared quest-item drop `name` (v0.9, only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
+//! | `fx.…​.rest_tooltip` / `.save_tooltip` | a `bonfire` button's hover tooltip (spec-0078, only if set) |
 //! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
 //! | `lethal.<volume>.message` | a stage-5 lethal volume's death wording (v0.10) |
 //! | `state.<datum>.name` | a runtime datum's player-visible name — a currency (v0.10) |
@@ -130,6 +131,8 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
             prompt,
             rest_label,
             save_label,
+            rest_tooltip,
+            save_tooltip,
             ..
         } => {
             if let Some(p) = prompt.as_mut() {
@@ -140,6 +143,13 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
             }
             if let Some(s) = save_label.as_mut() {
                 f(&format!("{keybase}.save_label"), s);
+            }
+            // spec-0078: a button's hover tooltip is read like its label.
+            if let Some(t) = rest_tooltip.as_mut() {
+                f(&format!("{keybase}.rest_tooltip"), t);
+            }
+            if let Some(t) = save_tooltip.as_mut() {
+                f(&format!("{keybase}.save_tooltip"), t);
             }
         }
         // DSL v0.8: what a sealed gate answers when the party right-clicks it. Read
@@ -620,7 +630,8 @@ pub enum TextKind {
     Bark,
     /// The caption on a fixed-width button: the player's own words.
     OptionLabel,
-    /// The hover text of a dialogue button: the consequence of choosing it.
+    /// The hover text of a dialog button (a dialogue option, or a bonfire's rest
+    /// or save): the consequence of choosing it.
     ButtonTooltip,
     /// An item's display name.
     ItemName,
@@ -688,6 +699,9 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             "give" => ItemName,
             "rest_prompt" => Prompt,
             "rest_label" | "save_label" => OptionLabel,
+            // spec-0078: a bonfire's buttons carry hover text like every other
+            // dialog button.
+            "rest_tooltip" | "save_tooltip" => ButtonTooltip,
             "sealed_hint" => Refusal,
             _ => return None,
         },

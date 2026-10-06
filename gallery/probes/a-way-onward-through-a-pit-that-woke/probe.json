@@ -1,0 +1,13 @@
+{
+  "code": "DW0891",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/lethal_volumes/2/region/anchor",
+      "value": "anchor/stall"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the lidded pit's volume moved onto `anchor/stall`, the counter the party walks to at step 4 — a leg walked after the beat that wakes it. The route proof would refuse it (`DW0510`, naming the volume and the configuration the leg arrives in), and it never gets that far: the volume's keep-out lies on the near hall's stone floor, which the party walks before the beat, so `DW0891` is asked first and refuses it in the configuration before the switch-on. That is the order spec-0062 settled — a volume that catches walked floor usually closes a route too, and naming the cause first sends the author to move the hazard rather than to route round it. The staged shape of `DW0510` itself, on a floor that shows its danger, is held by `crates/delvec/tests/staged_lethal.rs`. It declares no unit."
+}

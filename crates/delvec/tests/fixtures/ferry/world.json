@@ -1,0 +1,22 @@
+{
+  "campaign_id": "ferry",
+  "content": {
+    "areas": [
+      {
+        "id": "area/strait",
+        "name": "The Strait",
+        "prefab": "prefab/ferry-strait"
+      }
+    ],
+    "difficulty": "normal",
+    "premise": "spec-0083 acceptance fixture: two places of one area joined by no walk, and one repeatable tiller that carries whoever stands in the near hull across. The piece is synthesised by `crates/delvec/tests/teleport_link.rs`; the campaign is the primary every probe there edits.",
+    "seed": 20261002,
+    "target_minutes": 5,
+    "theme": "A strait with a hull moored at each shore and nothing between them but water.",
+    "time": "noon",
+    "title": "The Ferry",
+    "weather": "clear"
+  },
+  "dsl_version": "0.35.1",
+  "stage": "world"
+}

@@ -6,11 +6,13 @@
       "op": "replace",
       "path": "/cameras/0/sky",
       "value": {
-        "time": "noon",
+        "time": {
+          "sun": "high"
+        },
         "weather": "clear"
       }
     }
   ],
   "units": [],
-  "why": "The record's first camera, `hall-exterior`, states the sky it is taken under — `dusk` in the `clear`, a judgement that differs from the sky of the picture it answers. The probe replaces that sky with `noon` in the `clear`, which is exactly the `time` and `weather` of `concept/noon-hall`, the row the camera answers. Nothing else moves: the lens, the frame and every other camera stand where they stood, every camera still answers a row that exists, every row is still answered, and `design.json` is untouched — so `DW0724`, `DW0890` and `DW0900` are green. What the edit writes is a derivation typed where a judgement belongs: a camera with no `sky` already renders under its row's, and a copy of the row's sky goes stale the moment the row changes. `DW0721` refuses it through the record's one reader, naming the camera, the row and the one remedy — remove the field. It declares no unit: `Camera.sky` is bound by the primary, and this is a refusal demonstration."
+  "why": "The record's first camera, `hall-exterior`, states the sky it is taken under — the sun just risen in the `clear`, a judgement that differs from the sky of the picture it answers. The probe replaces that sky with `{\"sun\": \"high\"}` in the `clear`, which is exactly the `time` and `weather` of `concept/noon-hall`, the row the camera answers. Nothing else moves: the lens, the frame and every other camera stand where they stood, every camera still answers a row that exists, every row is still answered, and `design.json` is untouched — so `DW0724`, `DW0890` and `DW0900` are green. What the edit writes is a derivation typed where a judgement belongs: a camera with no `sky` already renders under its row's, and a copy of the row's sky goes stale the moment the row changes. `DW0721` refuses it through the record's one reader, naming the camera, the row and the one remedy — remove the field. It declares no unit: `Camera.sky` is bound by the primary, and this is a refusal demonstration."
 }

@@ -1,0 +1,89 @@
+{
+  "campaign_id": "the-threshold",
+  "content": {
+    "boxes": [
+      {
+        "ceiling": "open",
+        "extent": [
+          16,
+          20
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          8200,
+          8196
+        ],
+        "node": "node/near"
+      },
+      {
+        "atmosphere": "atmosphere/wrong-place",
+        "ceiling": "open",
+        "extent": [
+          16,
+          20
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/far"
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/grade",
+        "note": "The one floor of the hall.",
+        "y": 64
+      }
+    ],
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/site-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-depth",
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/half-length",
+        "measure": {
+          "axis": "z",
+          "node": "node/far",
+          "of": "box-extent"
+        }
+      }
+    ],
+    "region": {
+      "extent": [
+        32,
+        48,
+        56
+      ],
+      "min": [
+        8192,
+        48,
+        8192
+      ]
+    },
+    "seams": [
+      {
+        "edge": "edge/the-door",
+        "face": "south",
+        "opening": "arch"
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "site-plan"
+}

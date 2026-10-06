@@ -36,6 +36,7 @@ import {
   parseDeathPlan,
   stagedBalance,
   wayInCandidates,
+  firstWayIn,
   SINK_BLOCKS_PER_TICK,
   sinkBudgetMs,
   volumeReachesCell,
@@ -44,11 +45,14 @@ import {
   seatAtRespawn,
   stakesDropped,
   tableAnchor,
+  type Box,
   type DeathPlan,
   type GateTerm,
   type LethalTrial,
   type LethalVolume,
   type StakeRule,
+  volumeGateVerdict,
+  volumeIsStaged,
 } from "../src/death-loop.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
 import { createRequire } from "node:module";
@@ -67,6 +71,7 @@ function planDoc(): Record<string, unknown> {
         message: "The stone floor gives way beneath you.",
         message_key: "lethal.the-drop.message",
         damage_type: "minecraft:fall",
+        gate: { terms: [] },
       },
     ],
     on_death: {
@@ -142,6 +147,7 @@ const VOLUME: LethalVolume = {
   message: "The stone floor gives way beneath you.",
   messageKey: "lethal.the-drop.message",
   damageType: "minecraft:fall",
+  gate: { terms: [] },
 };
 
 function stakeRule(over: Partial<StakeRule> = {}): StakeRule {
@@ -889,6 +895,8 @@ test("the binding counts what was really examined", () => {
     forfeitsExamined: 1,
     seatsMatched: 1,
     walksBack: 1,
+    stagedVolumes: 0,
+    stagedLiveAtTrial: 0,
   });
   assert.deepEqual(deathLoopBindingFailures(b), []);
 });
@@ -1354,7 +1362,183 @@ test("a blocked walk in asks for the sill a player jumps to, nearest the volume 
   // floor west of the cut at [29, 68, 80]. The volume is the shaft's bottom.
   const standable = new Set(["31,68,80", "29,68,80", "29,68,79", "30,67,80", "31,70,81"]);
   const got = wayInCandidates([30, 67, 79], UNDERTIDE, (c) => standable.has(c.join(",")));
-  assert.deepEqual(got[0], [31, 68, 80], "the sill first: nearest the volume, the smallest climb");
+  assert.deepEqual(got[0], [31, 68, 80], "the sill first: the smallest climb, nearest the volume");
   assert.ok(!got.some((c) => c[0] <= 30), "nothing no nearer the volume than the body already is");
   assert.deepEqual(wayInCandidates([30, 67, 79], UNDERTIDE, () => false), []);
+});
+
+// --- spec-0088: a volume live from a story stage -----------------------------
+
+test("a volume row without `gate` is refused: a staged volume cannot be told from one always live", () => {
+  const doc = planDoc();
+  const volumes = doc["lethal_volumes"] as Record<string, unknown>[];
+  delete volumes[0]!["gate"];
+  assert.throws(() => parseDeathPlan(doc), (e: unknown) => {
+    assert.ok(e instanceof DeathPlanParseError);
+    assert.equal(e.pointer, "/lethal_volumes/0/gate");
+    assert.match(e.message, /always kills/);
+    return true;
+  });
+});
+
+test("a volume's gate reads as the conjunction of its terms, and an empty gate is open", () => {
+  const doc = planDoc();
+  const volumes = doc["lethal_volumes"] as Record<string, unknown>[];
+  const staged = { objective: "dw.f_lid_fell", holder: "#party", min: 1, max: 1, negate: false };
+  volumes[0]!["gate"] = { terms: [staged] };
+  const plan = parseDeathPlan(doc);
+  const v = plan.volumes[0]!;
+  assert.equal(volumeIsStaged(v), true);
+  assert.equal(volumeGateVerdict(v, () => true).kind, "open");
+  const shut = volumeGateVerdict(v, () => false);
+  assert.equal(shut.kind, "shut");
+  assert.match(shut.kind === "shut" ? shut.why : "", /its gate reads `dw\.f_lid_fell`/);
+  assert.equal(volumeGateVerdict(v, () => undefined).kind, "unread");
+  volumes[0]!["gate"] = { terms: [] };
+  const always = parseDeathPlan(doc).volumes[0]!;
+  assert.equal(volumeIsStaged(always), false);
+  assert.equal(volumeGateVerdict(always, () => undefined).kind, "open");
+});
+
+test("a staged volume shut at its trial is stated, counted apart, and exercises nothing", () => {
+  const doc = planDoc();
+  const volumes = doc["lethal_volumes"] as Record<string, unknown>[];
+  volumes[0]!["gate"] = {
+    terms: [{ objective: "dw.f_cold", holder: "#party", min: 1, max: 1, negate: true }],
+  };
+  const plan = parseDeathPlan(doc);
+  const t = openLethalTrial(plan.volumes[0]!, plan.volumes[0]!.region.lo, []);
+  t.notLiveAtTrial = "its gate reads `dw.f_cold` for #party NOT in 1, which does not hold";
+  const binding = deathLoopBinding(plan, [t]);
+  assert.equal(binding.stagedVolumes, 1);
+  assert.equal(binding.stagedLiveAtTrial, 0);
+  assert.equal(binding.volumesEntered, 0);
+  const stage = deathLoopStage({
+    enabled: true,
+    disabledReason: "",
+    pathProven: true,
+    interruption: undefined,
+    skipReason: undefined,
+    binding,
+    trials: [t],
+    trialsFinished: 1,
+  });
+  assert.equal(stage.passed, false, "a run that exercised none of its volumes is never a pass");
+  assert.ok(
+    stage.findings.some((f) => /was not live at its trial/.test(f) && /dw\.f_cold/.test(f)),
+    JSON.stringify(stage.findings),
+  );
+});
+
+test("a blocked walk in reaches a rim three courses up, which the pathfinder walks to", () => {
+  // The gallery's lidded pit (spec-0088): its bottom is at the hall floor's own
+  // height inside the terrace annex, so the placement table's lip is the hall
+  // floor beside the annex at [8, 67, 3], and the way in is the annex's top at
+  // y 70, round the hole the beat opened over [8, 67, 5].
+  const pit: Box = { lo: [8, 67, 5], hi: [8, 67, 5] };
+  const rim = new Set(["7,70,5", "9,70,5", "8,70,4", "8,70,6", "8,67,3"]);
+  const got = wayInCandidates([8, 67, 3], pit, (c) => rim.has(c.join(",")));
+  assert.ok(got.length > 0, "a rim cell three courses up is a way in");
+  assert.ok(
+    got.every((c) => c[1] === 70),
+    `only the rim is nearer the volume than the lip: ${JSON.stringify(got)}`,
+  );
+});
+
+// --- the order a way in is tried in --------------------------------------------
+
+/**
+ * Walk `candidates` with {@link firstWayIn} over a world where only `reachable`
+ * cells can be walked to and only `goesIn` cells lead into the volume; returns
+ * the cells asked for, in order, and the outcome.
+ */
+async function tryWaysIn(
+  candidates: readonly Vec3Tuple[],
+  reachable: ReadonlySet<string>,
+  goesIn: ReadonlySet<string>,
+) {
+  const asked: string[] = [];
+  let at: string | undefined;
+  const outcome = await firstWayIn(
+    candidates,
+    async (c) => {
+      asked.push(c.join(","));
+      if (!reachable.has(c.join(","))) return false;
+      at = c.join(",");
+      return true;
+    },
+    async () => (at !== undefined && goesIn.has(at) ? "released" : "blocked"),
+  );
+  return { asked, outcome };
+}
+
+test("a blocked walk in onto vesperhold's well tries the sill before the curb top it cannot climb", async () => {
+  // The 1.8.0 release ladder: the walk in stopped on the cut's floor at
+  // [30, 66, 79] (feet at y 66.5). Standing there, the curb top at y 69 —
+  // [33, 69, 77], [33, 69, 83], [32, 69, 79] first — is nearer the well than the
+  // sill at [31, 68, 80], and the pathfinder reached none of the three: the body
+  // ended at y 67.5 each time. The sill is the way in the beta.2 ladder took.
+  // The cells are the 19 the live search returned on that build, read off the
+  // bot's own log, plus the floor west of the cut, which is no nearer.
+  const feet: Vec3Tuple = [30, 66, 79];
+  const curbTop = [
+    "33,69,77", "33,69,83", "32,69,79", "32,69,81", "32,69,78", "32,69,82",
+    "34,69,76", "32,69,77", "32,69,83", "33,69,76", "31,70,81",
+  ];
+  const sillCourse = [
+    "31,68,80", "31,68,78", "31,68,82", "34,68,75", "32,68,76", "31,68,77", "31,68,83",
+    "33,68,75",
+  ];
+  const standable = new Set([...curbTop, ...sillCourse, "29,68,80", "29,68,79"]);
+  const got = wayInCandidates(feet, UNDERTIDE, (c) => standable.has(c.join(",")));
+  const at = (cell: string): number => got.findIndex((c) => c.join(",") === cell);
+  assert.equal(got.length, 19, `the live search's 19 cells: ${JSON.stringify(got)}`);
+  assert.deepEqual(got[0], [31, 68, 80], "the sill first: two up, nearest the well of its course");
+  for (const c of curbTop) {
+    assert.ok(at("31,68,80") < at(c), `the sill (two up) is tried before ${c} (three up)`);
+  }
+  const { asked, outcome } = await tryWaysIn(got, new Set(["31,68,80"]), new Set(["31,68,80"]));
+  assert.deepEqual(outcome.from, [31, 68, 80]);
+  assert.equal(outcome.result, "released");
+  assert.equal(asked[0], "31,68,80", `the reachable sill is asked for first: ${asked.join(" ")}`);
+});
+
+test("every way in is tried: no rank hides the one that goes in", async () => {
+  // However the order falls, a cell the body can walk to and walk in from is
+  // found while any candidate is left — four unreachable cells ahead of it do not
+  // end the search, and a cell reached whose own walk in is blocked is passed over.
+  const candidates: Vec3Tuple[] = [
+    [1, 0, 0],
+    [2, 0, 0],
+    [3, 0, 0],
+    [4, 0, 0],
+    [5, 0, 0],
+    [6, 0, 0],
+  ];
+  const { asked, outcome } = await tryWaysIn(
+    candidates,
+    new Set(["5,0,0", "6,0,0"]),
+    new Set(["6,0,0"]),
+  );
+  assert.deepEqual(outcome.from, [6, 0, 0]);
+  assert.equal(outcome.tried, 6);
+  assert.equal(outcome.reached, 2, "the reached cell whose walk in was blocked is counted");
+  assert.equal(asked.length, 6);
+  const none = await tryWaysIn(candidates, new Set(), new Set());
+  assert.equal(none.outcome.result, "blocked");
+  assert.equal(none.outcome.from, undefined);
+  assert.equal(none.outcome.tried, 6, "blocked is said only after every candidate was asked for");
+});
+
+test("the lidded pit's rim, three courses up, is still found and walked to", async () => {
+  // The gallery's lidded pit (spec-0088): nothing lower is nearer the volume than
+  // the lip, so the rim is the whole list and the climb order changes nothing.
+  const pit: Box = { lo: [8, 67, 5], hi: [8, 67, 5] };
+  const rim = new Set(["7,70,5", "9,70,5", "8,70,4", "8,70,6", "8,67,3"]);
+  const got = wayInCandidates([8, 67, 3], pit, (c) => rim.has(c.join(",")));
+  assert.equal(got.length, 4, `the four rim cells round the hole: ${JSON.stringify(got)}`);
+  const { asked, outcome } = await tryWaysIn(got, rim, rim);
+  assert.deepEqual(outcome.from, got[0]);
+  assert.equal(outcome.result, "released");
+  assert.equal(asked.length, 1, "the first rim cell reached is the way in");
 });

@@ -1,0 +1,8 @@
+{
+  "campaign_id": "long-gallery",
+  "content": {
+    "npcs": []
+  },
+  "dsl_version": "0.35.1",
+  "stage": "npcs"
+}

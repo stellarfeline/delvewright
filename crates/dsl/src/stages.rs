@@ -9,13 +9,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::celestial::{CelestialTime, Clock, MoonPhase};
 use crate::firework::FireworkExplosion;
 use crate::layout::StationKind;
 
 use crate::ids::{
-    ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId,
-    EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
-    RegionId, ShopId, ShortcutId, StakeId, StateId, TimedGateId, TrapId, TriggerId, WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, AssemblyId, AtmosphereId, BranchId, BranchPointId,
+    ClassId, DialogueId, EditBatchId, EndingId, FlagId, LethalVolumeId, LoopId, LootId, NpcId,
+    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, RigId, ShopId, ShortcutId, StakeId, StateId,
+    TimedGateId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -112,6 +114,17 @@ pub struct WorldContent {
     /// `{base, …params}`; see [`Horizon`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizon: Option<Horizon>,
+    /// **The skies a place can stand under** (spec-0080). Each one is declared
+    /// once, here, beside `time`, `weather` and `horizon` — the other
+    /// statements about the sky the party stands under — and ships as a
+    /// datapack biome (`<ns>:atmosphere/<kebab>`) built from the pinned game's
+    /// environment attributes. A place carries one from the first tick
+    /// ([`Area::atmosphere`], `boxes[].atmosphere`), and a beat repaints a
+    /// volume with another ([`Verb::SetAtmosphere`]). Absent or empty: every
+    /// cell stands in the horizon's biome. One no place carries and no beat
+    /// paints is refused (`DW0930`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub atmospheres: Vec<Atmosphere>,
     /// Playable-region boundary (DSL v0.6, spec-0013). When present, the compiler
     /// derives a region from the placed geometry and a per-second clock returns any
     /// player who leaves it to the last checkpoint. Required when `horizon` is
@@ -139,6 +152,148 @@ pub struct WorldContent {
     /// proof. Out of `1..=4` is `DW0370`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_players: Option<u8>,
+    /// **The vanilla textures this delve replaces** (spec-0084). Each row names
+    /// one texture the pinned client ships and the campaign's own image for it,
+    /// at `textures/<id>.png` in the campaign directory; the build bakes it into
+    /// the resource pack at the vanilla path, so it is drawn wherever the client
+    /// draws that texture — every mob of that kind, the moon over every area —
+    /// for every player who accepted the pack. Absent or empty = vanilla's look.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub textures: Vec<TextureOverride>,
+    /// **Whether a player must accept this delve's resource pack to play it**
+    /// (spec-0084 §11). `true` is emitted as `require-resource-pack=true`: a
+    /// player who declines is disconnected by the server. Absent or `false` =
+    /// the pack is offered and may be declined, in which case the player reads
+    /// English and sees vanilla's textures. A host may still set the server's own
+    /// flip (itzg's `RESOURCE_PACK_ENFORCE`), which is obeyed as given.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub require_resource_pack: bool,
+    /// **A fallen player waits before rejoining** (spec-0077). After clicking
+    /// *Respawn*, a player whose party still has somebody in play watches a
+    /// teammate as a spectator for `seconds`, and counts as down for the party
+    /// wipe while they wait. Absent = no wait, and emission is byte-identical to
+    /// a campaign that never had the field. Needs a checkpoint or bonfire to come
+    /// back to; `seconds` outside `1..=120`, or no checkpoint, is `DW0925`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub respawn_wait: Option<RespawnWait>,
+}
+
+/// One vanilla texture a campaign replaces (spec-0084 §3.1). The row is a
+/// judgement and nothing more: width, height and frame count are read off the
+/// file and the pinned client's census, and the namespace is fixed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextureOverride {
+    /// A bare kebab token, unique among the campaign's textures (`DW0190`). The
+    /// image is `textures/<id>.png` in the campaign directory (`DW0309`), and a
+    /// `textures/<id>.png.mcmeta` beside it ships with it as the animation.
+    pub id: String,
+    /// The texture replaced, as a resource location in the `minecraft`
+    /// namespace without `textures/` and without `.png` — the path vanilla's own
+    /// models and atlases use (e.g. `minecraft:entity/zombie/drowned`,
+    /// `minecraft:environment/celestial/moon/full_moon`). It must name a texture
+    /// the pinned client ships (`DW0939`).
+    pub replaces: String,
+    /// Where the image came from and under what licence (ADR-0013): original
+    /// work (`spdx` and `source` both `original`), or an allowlisted third-party
+    /// image with its `url`, and its `attribution` for CC BY (`DW0741`).
+    pub license: crate::license::LicenseEvidence,
+}
+
+/// One declared sky (spec-0080 §3.1): what the party sees and hears while it
+/// stands in a cell painted with this atmosphere's biome.
+///
+/// The biome is vanilla's one channel for sky colour, fog, clouds, sky-light
+/// tint, stars, ambient particles, music, ambience, grass, foliage and water
+/// tint, and precipitation. In the overworld the day cycle stacks over it: it
+/// multiplies the colours (a biome's value survives, darkened at night), takes
+/// the maximum of `star_brightness`, and replaces the sun, moon and star
+/// angles, the sunrise colour and the moon phase outright — which is why those
+/// five ids are refused (`DW0928`) and the sun cannot be moved from a place.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Atmosphere {
+    /// `atmosphere/<kebab>`, unique.
+    pub id: AtmosphereId,
+    /// Environment attributes, keyed by id (`visual/sky_color`; the
+    /// `minecraft:` prefix is optional). Which ids a campaign may set, the
+    /// shape of each value and the range the pinned codec accepts are vendored
+    /// data (`crates/delvec/data/environment-attributes-1.21.11.json`), not
+    /// DSL surface: a value outside them is `DW0928`. A float attribute may
+    /// also be written in vanilla's modifier form, `{"argument": 0.85,
+    /// "modifier": "multiply"}`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, serde_json::Value>,
+    /// Grass, foliage, dry-foliage and water tint (`#rrggbb`), each optional.
+    /// Absent, vanilla derives grass and foliage from the climate and water is
+    /// the void biome's `#3f76e4`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<AtmosphereTint>,
+    /// What falls here when the world's weather is rain or thunder. The
+    /// compiler derives the three vanilla fields that must agree from it
+    /// (`has_precipitation`, `temperature`, `downfall`), and it is the fact
+    /// `DW0496` reads at a cell: `none` under a rainy world means the undead
+    /// burn here.
+    pub precipitation: Precipitation,
+    /// Overrides the derived `temperature` / `downfall`, for vanilla's own
+    /// grass colormap at a named point. Must agree with `precipitation`
+    /// (`DW0930`): snow below 0.15, rain at or above it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub climate: Option<Climate>,
+}
+
+/// An atmosphere's tint (spec-0080 §3.1.3): the biome `effects` colours the
+/// pinned data writes, each `#rrggbb`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AtmosphereTint {
+    /// `grass_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grass: Option<String>,
+    /// `foliage_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foliage: Option<String>,
+    /// `dry_foliage_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dry_foliage: Option<String>,
+    /// `water_color`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub water: Option<String>,
+}
+
+/// What an atmosphere's biome lets fall (spec-0080 §3.1.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Precipitation {
+    /// Nothing falls: `has_precipitation: false`.
+    None,
+    /// Rain falls: `has_precipitation: true`, temperature 0.5.
+    Rain,
+    /// Snow falls: `has_precipitation: true`, temperature 0.0.
+    Snow,
+}
+
+/// A biome's climate pair (spec-0080 §3.1.4).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Climate {
+    /// `temperature`: vanilla snows below 0.15.
+    pub temperature: f64,
+    /// `downfall`.
+    pub downfall: f64,
+}
+
+/// How long a fallen player waits before rejoining the party (spec-0077 §3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RespawnWait {
+    /// Seconds a fallen player waits after clicking *Respawn*, `1..=120`
+    /// (`DW0925`). Counted on the server only while the player is online.
+    pub seconds: u16,
+    /// Whether a player who comes back with nobody else present also waits.
+    /// Default `false`: a party of one never waits.
+    #[serde(default)]
+    pub alone: bool,
 }
 
 /// Who a granted item goes to (DSL v0.6, spec-0018).
@@ -158,17 +313,24 @@ pub enum Carrier {
     One,
 }
 
-/// A declared world time state (DSL v0.5, spec-0010). The sole difference from
-/// vanilla is that the daylight cycle is frozen (`advance_time false`), so a set
-/// state persists for the whole delve until a `set-time` effect cuts to another.
+/// A declared world time state (DSL v0.5, spec-0010; the celestial spelling
+/// spec-0081). The sole difference from vanilla is that the daylight cycle is
+/// frozen (`advance_time false`), so a set state persists for the whole delve
+/// until a `set-time` effect cuts to another.
+///
+/// **Two spellings of one clock.** A keyword — `day`, `noon`, `dusk`, `night`,
+/// `midnight`, `dawn` — states vanilla's word with vanilla's meaning: the hour,
+/// on day 0, so a keyword night shows a full moon. A celestial statement
+/// ([`CelestialTime`], `{"moon": "just-risen", "phase": "new-moon"}`) names one
+/// body, where it stands and, where the moon shows, its phase, and the engine
+/// computes the tick count, day included. Both resolve to one [`Clock`]
+/// ([`WorldTime::clock`]); two values are equal when their clocks are.
 ///
 /// Vanilla's `/time set` primitive takes **either** one of four keywords or a raw
-/// tick count, and the tick form is the general one — so the states worth naming
-/// for a delve's pacing are not limited to the four keywords. `dusk` and `dawn`
-/// are the tick form exposed first-class, per the
-/// no-hack rule: the DSL names the beat, the compiler emits `/time set <ticks>`.
-/// Every keyword-to-tick mapping lives in exactly one table ([`WorldTime::spec`]),
-/// and the four vanilla keywords still emit their keyword verbatim, so existing
+/// tick count, and the tick form is the general one. `dusk` and `dawn` are the
+/// tick form exposed first-class, per the no-hack rule; a celestial statement is
+/// the same primitive reached from a designer's sentence. A keyword on day 0
+/// still emits its keyword verbatim ([`WorldTime::token`]), so existing
 /// campaigns are byte-identical.
 ///
 /// **There is no `Default`** (spec-0061 §4). A default hour is a design decision
@@ -177,9 +339,29 @@ pub enum Carrier {
 /// sky. Removing the impl is what makes that unwritable rather than merely
 /// discouraged: `WorldContent::time` is required, and nothing can supply an hour
 /// the author did not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum WorldTime {
+    /// Morning daylight (`/time set day`, 1000 ticks).
+    Day,
+    /// Midday, brightest (`/time set noon`, 6000 ticks).
+    Noon,
+    /// Sunset onset (`/time set 12000`).
+    Dusk,
+    /// Night, sun fully down (`/time set night`, 13000 ticks).
+    Night,
+    /// Deep night, darkest (`/time set midnight`, 18000 ticks).
+    Midnight,
+    /// First light, just before sunrise (`/time set 23000`).
+    Dawn,
+    /// A sky stated in a designer's words (spec-0081).
+    Celestial(CelestialTime),
+}
+
+/// The six keyword spellings of a [`WorldTime`] — the wire and schema form of
+/// its keyword half.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-pub enum WorldTime {
+pub enum TimeKeyword {
     /// Morning daylight (`/time set day`, 1000 ticks).
     Day,
     /// Midday, brightest (`/time set noon`, 6000 ticks).
@@ -199,52 +381,201 @@ pub enum WorldTime {
     Dawn,
 }
 
+impl From<TimeKeyword> for WorldTime {
+    fn from(k: TimeKeyword) -> WorldTime {
+        match k {
+            TimeKeyword::Day => WorldTime::Day,
+            TimeKeyword::Noon => WorldTime::Noon,
+            TimeKeyword::Dusk => WorldTime::Dusk,
+            TimeKeyword::Night => WorldTime::Night,
+            TimeKeyword::Midnight => WorldTime::Midnight,
+            TimeKeyword::Dawn => WorldTime::Dawn,
+        }
+    }
+}
+
+impl Serialize for WorldTime {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            WorldTime::Celestial(c) => c.serialize(s),
+            kw => s.serialize_str(kw.keyword_str().expect("a keyword")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for WorldTime {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<WorldTime, D::Error> {
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = WorldTime;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(
+                    "a time: a keyword (day, noon, dusk, night, midnight, dawn) or an object \
+                     naming one body, where it stands and its phase \
+                     ({\"moon\": \"just-risen\", \"phase\": \"new-moon\"})",
+                )
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<WorldTime, E> {
+                use serde::de::IntoDeserializer;
+                TimeKeyword::deserialize(v.into_deserializer()).map(WorldTime::from)
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<WorldTime, A::Error> {
+                CelestialTime::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                    .map(WorldTime::Celestial)
+            }
+        }
+        de.deserialize_any(V)
+    }
+}
+
+impl JsonSchema for WorldTime {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "WorldTime".into()
+    }
+
+    fn json_schema(g: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "A time: a keyword, vanilla's hour on day 0 (a keyword night is a full \
+                            moon), or a celestial statement naming one body, where it stands and, \
+                            where the moon shows, its phase (spec-0081).",
+            "anyOf": [g.subschema_for::<TimeKeyword>(), g.subschema_for::<CelestialTime>()],
+        })
+    }
+}
+
 impl WorldTime {
-    /// The single keyword/tick table: `(the /time set argument, daytime ticks)`.
+    /// The keyword table: `(the /time set argument, daytime ticks)`, or `None`
+    /// for a celestial statement.
     ///
     /// A state vanilla names keeps its keyword — the argument the compiler has
     /// always emitted — so no shipped campaign's bytes move. A state vanilla does
     /// not name emits the equivalent tick count, which is the same primitive.
-    const fn spec(self) -> (&'static str, i64) {
+    const fn spec(self) -> Option<(&'static str, i64)> {
         match self {
-            WorldTime::Day => ("day", 1000),
-            WorldTime::Noon => ("noon", 6000),
-            WorldTime::Dusk => ("12000", 12000),
-            WorldTime::Night => ("night", 13000),
-            WorldTime::Midnight => ("midnight", 18000),
-            WorldTime::Dawn => ("23000", 23000),
+            WorldTime::Day => Some(("day", 1000)),
+            WorldTime::Noon => Some(("noon", 6000)),
+            WorldTime::Dusk => Some(("12000", 12000)),
+            WorldTime::Night => Some(("night", 13000)),
+            WorldTime::Midnight => Some(("midnight", 18000)),
+            WorldTime::Dawn => Some(("23000", 23000)),
+            WorldTime::Celestial(_) => None,
         }
     }
 
-    /// The vanilla `/time set` argument — a keyword for the four states vanilla
-    /// names, a tick count otherwise.
-    pub fn token(self) -> &'static str {
-        self.spec().0
+    /// Whether this is one of the six keywords.
+    pub fn is_keyword(self) -> bool {
+        !matches!(self, WorldTime::Celestial(_))
+    }
+
+    /// The celestial statement, if this is one.
+    pub fn celestial(self) -> Option<CelestialTime> {
+        match self {
+            WorldTime::Celestial(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The phase this value states, if any.
+    pub fn stated_phase(self) -> Option<MoonPhase> {
+        self.celestial().and_then(|c| c.phase)
     }
 
     /// The `daytime` tick value this state sets (the `time query daytime`
-    /// read-back). Vanilla constants: day=1000, noon=6000, dusk=12000 (sunset
-    /// onset), night=13000, midnight=18000, dawn=23000.
+    /// read-back). Keywords: day=1000, noon=6000, dusk=12000 (sunset onset),
+    /// night=13000, midnight=18000, dawn=23000; a celestial statement its
+    /// position's tick ([`crate::celestial::position_tick`]).
     pub fn daytime_ticks(self) -> i64 {
-        self.spec().1
-    }
-
-    /// **The word an author writes** — this state's spelling in a document.
-    ///
-    /// Not [`WorldTime::token`], which is the `/time set` argument and is a raw
-    /// tick count for the two states vanilla does not name. A diagnostic that
-    /// asks an author to declare an hour has to say `dusk`, not `12000`: the
-    /// number is what the compiler emits and is not writable in `world.json`.
-    pub fn keyword(self) -> &'static str {
-        match self {
-            WorldTime::Day => "day",
-            WorldTime::Noon => "noon",
-            WorldTime::Dusk => "dusk",
-            WorldTime::Night => "night",
-            WorldTime::Midnight => "midnight",
-            WorldTime::Dawn => "dawn",
+        match self.spec() {
+            Some((_, t)) => t,
+            None => self.celestial().expect("celestial").daytime(),
         }
     }
+
+    /// The day this value names as **the world's own time**: a keyword is day 0;
+    /// a celestial statement the day its `phase` names, or day 0 where it names
+    /// none (the moon is below the horizon, so no phase is stated).
+    pub fn world_day(self) -> i64 {
+        self.stated_phase().map(MoonPhase::index).unwrap_or(0)
+    }
+
+    /// **The clock this value sets**, at a site whose world declares `world`
+    /// (spec-0081 §3.3).
+    ///
+    /// - A celestial statement is its position's tick on the day its `phase`
+    ///   names, or the world's day where it states none — a cut changes the
+    ///   hour, and the moon keeps the phase the world declared.
+    /// - A keyword is its table row on day 0 where it states a sky — the
+    ///   world's own time, a design row, a camera ([`TimeSite::Sky`]) — and on
+    ///   the world's day where it is a `set-time` cut ([`TimeSite::Cut`]), which
+    ///   changes the hour and keeps the moon.
+    pub fn clock(self, site: TimeSite, world: WorldTime) -> Clock {
+        let daytime = self.daytime_ticks();
+        let day = match (self, site) {
+            (WorldTime::Celestial(c), _) => c
+                .phase
+                .map(MoonPhase::index)
+                .unwrap_or_else(|| world.world_day()),
+            (_, TimeSite::Cut) => world.world_day(),
+            (_, TimeSite::Sky) => 0,
+        };
+        Clock { day, daytime }
+    }
+
+    /// The world's own clock: [`WorldTime::clock`] at the world's site.
+    pub fn world_clock(self) -> Clock {
+        self.clock(TimeSite::Sky, self)
+    }
+
+    /// **The vanilla `/time set` argument for `clock`**, the one token every
+    /// `time set` the engine emits goes through: a keyword on day 0 emits its
+    /// table argument verbatim (`night`, `12000`), so no keyword campaign's bytes
+    /// move; any other clock emits the integer `day × 24000 + daytime`.
+    pub fn token(self, clock: Clock) -> String {
+        match self.spec() {
+            Some((tok, t)) if clock.day == 0 && clock.daytime == t => tok.to_string(),
+            _ => clock.absolute().to_string(),
+        }
+    }
+
+    /// The keyword spelling, if this is a keyword.
+    fn keyword_str(self) -> Option<&'static str> {
+        match self {
+            WorldTime::Day => Some("day"),
+            WorldTime::Noon => Some("noon"),
+            WorldTime::Dusk => Some("dusk"),
+            WorldTime::Night => Some("night"),
+            WorldTime::Midnight => Some("midnight"),
+            WorldTime::Dawn => Some("dawn"),
+            WorldTime::Celestial(_) => None,
+        }
+    }
+
+    /// **What an author writes** — this state's spelling in a document: the
+    /// keyword, or the canonical JSON of a celestial statement
+    /// (`{"moon":"high","phase":"new-moon"}`).
+    ///
+    /// Not [`WorldTime::token`], which is the `/time set` argument and is a raw
+    /// tick count for every state vanilla does not name. A diagnostic that asks
+    /// an author to declare an hour has to say `dusk`, not `12000`.
+    pub fn keyword(self) -> String {
+        match self {
+            WorldTime::Celestial(c) => c.spelling(),
+            kw => kw.keyword_str().expect("a keyword").to_string(),
+        }
+    }
+}
+
+/// Where a time value is written, which decides the day a keyword names
+/// ([`WorldTime::clock`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TimeSite {
+    /// A statement of a sky: the world's own time, a design row, a camera.
+    Sky,
+    /// A `set-time` effect, quest or dialogue.
+    Cut,
 }
 
 /// A declared weather state (DSL v0.5, spec-0010). Values are the vanilla
@@ -671,6 +1002,13 @@ pub struct Area {
     /// effect), either, or neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mitigation: Option<AreaMitigation>,
+    /// **The sky this place stands under from the first tick** (spec-0080
+    /// §3.2): one of `world.atmospheres[]`, painted at world setup over the
+    /// area's placed bounds grown up and down as far as the client's biome
+    /// blend reads. The volume is the placement's, never typed.
+    /// Absent: the horizon's biome.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atmosphere: Option<AtmosphereId>,
 }
 
 /// Inclusive piece-count bounds for a jigsaw `prefab_pool` area.
@@ -1723,6 +2061,10 @@ pub struct BonfireLabels<'a> {
     pub rest_label: Option<&'a str>,
     /// **Save only** button label; `None` → [`BONFIRE_SAVE_LABEL_EN`].
     pub save_label: Option<&'a str>,
+    /// **Rest and save** button hover tooltip (spec-0078); `None` → none emitted.
+    pub rest_tooltip: Option<&'a str>,
+    /// **Save only** button hover tooltip (spec-0078); `None` → none emitted.
+    pub save_tooltip: Option<&'a str>,
 }
 
 impl BonfireLabels<'_> {
@@ -2105,6 +2447,18 @@ pub struct QuestsContent {
     ///, so a campaign that declares none stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stakes: Vec<Stake>,
+    /// Assemblies (spec-0082): fixed things built of display entities that
+    /// play clips from a library rig, can be struck in melee, and strike back
+    /// at a player who stands where they reach. Appear on `spawn-assembly`,
+    /// leave on `despawn-assembly`. Empty/absent = nothing emitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assemblies: Vec<Assembly>,
+    /// Loops (spec-0086): slabs whose crossing returns a body by a whole-block
+    /// offset to an identical earlier section, held while a party gate is open.
+    /// Empty/absent for every campaign that declares none, so such a campaign
+    /// stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub loops: Vec<Loop>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The
@@ -2169,6 +2523,11 @@ impl QuestsContent {
     /// The declared stake with this id, if any (DSL v0.10, spec-0032).
     pub fn stake_decl(&self, id: &str) -> Option<&Stake> {
         self.stakes.iter().find(|s| s.id.as_str() == id)
+    }
+
+    /// The declared assembly with this id, if any (spec-0082).
+    pub fn assembly_decl(&self, id: &str) -> Option<&Assembly> {
+        self.assemblies.iter().find(|a| a.id.as_str() == id)
     }
 }
 
@@ -2804,6 +3163,8 @@ impl Ambush {
                 // ambush is one beat, and stamping the line on every generated
                 // effect would pad the chronicle and trip `DW0485`.
                 happening: if i == 0 { self.happening.clone() } else { None },
+                audience: None,
+                within: None,
                 verb: Verb::SpawnActor { actor: a.clone() },
             });
         }
@@ -3003,23 +3364,48 @@ pub enum TriggerOn {
         /// The NPC (stage-2 ref) whose body is the target.
         npc: NpcId,
     },
+    /// The player attacks (left-clicks) an **assembly's hitbox** (spec-0082).
+    ///
+    /// The exact shape of [`TriggerOn::StrikeNpc`]: no `at`, because the target
+    /// is an object with a hitbox of its own, and the trigger rides it. Melee
+    /// only — the hitbox is a `minecraft:interaction`, and an arrow passes
+    /// through one without writing its `attack` record (spec-0082 §8 row 5).
+    /// `once: false` with an `add-state` is how a hit count is built.
+    StrikeAssembly {
+        /// The assembly (stage-5 `assemblies` ref) whose hitbox is the target.
+        assembly: AssemblyId,
+    },
 }
 
 impl TriggerOn {
-    /// The kebab tag (`strike` / `use` / `approach` / `strike-npc`).
+    /// The kebab tag (`strike` / `use` / `approach` / `strike-npc` /
+    /// `strike-assembly`).
     pub fn kind(&self) -> &'static str {
         match self {
             TriggerOn::Strike => "strike",
             TriggerOn::Use => "use",
             TriggerOn::Approach { .. } => "approach",
             TriggerOn::StrikeNpc { .. } => "strike-npc",
+            TriggerOn::StrikeAssembly { .. } => "strike-assembly",
         }
     }
 
     /// Whether this event needs an `at` anchor — true for everything that
-    /// watches a place, false for `strike-npc`, which watches a character.
+    /// watches a place, false for `strike-npc` and `strike-assembly`, which
+    /// watch an object that carries its own hitbox.
     pub fn needs_anchor(&self) -> bool {
-        !matches!(self, TriggerOn::StrikeNpc { .. })
+        !matches!(
+            self,
+            TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. }
+        )
+    }
+
+    /// The assembly whose hitbox this event watches (`strike-assembly` only).
+    pub fn assembly_target(&self) -> Option<&AssemblyId> {
+        match self {
+            TriggerOn::StrikeAssembly { assembly } => Some(assembly),
+            _ => None,
+        }
     }
 
     /// The NPC whose body this event watches (`strike-npc` only).
@@ -4364,6 +4750,135 @@ impl DespawnStyle {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Stage 5 — assemblies (spec-0082)
+// ---------------------------------------------------------------------------
+
+/// A fixed thing that can be hit and hits back (spec-0082): an object built of
+/// display entities standing at a [`Mark`], moving through the clips of a
+/// library [`rig`](crate::rig), struck in melee through an optional
+/// `minecraft:interaction` hitbox, and striking a player who stands in its
+/// arming region.
+///
+/// It is not a fight class and never dies: no health, equipment, traversal,
+/// health bar or kill credit. A hit count is an ordinary `state` datum a
+/// `strike-assembly` trigger adds to, and what happens at a count is an effect
+/// behind the ordinary gate.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Assembly {
+    /// Unique assembly id (`assembly/<kebab>`).
+    pub id: AssemblyId,
+    /// The library rig (`rig/<name>`, resolved to `rigs/<name>/rig.json`
+    /// beside the prefab library) whose parts and clips this assembly is.
+    pub rig: RigId,
+    /// Where the rig's origin stands: an anchor and an optional offset. The
+    /// rig's origin is the mark cell's centre at its floor plane.
+    pub at: Mark,
+    /// Which way the rig's `+z` front faces (default `south`). Applied by the
+    /// compiler to every frame, so the emitted entities stand at yaw 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facing: Option<Facing>,
+    /// The clip playing from spawn. Absent: the parts stand in the rig's rest
+    /// pose and no clip plays until a `play-clip`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial: Option<String>,
+    /// The `minecraft:interaction` a player strikes. Absent: the assembly
+    /// cannot be struck, and a `strike-assembly` on it is refused (`DW0936`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hitbox: Option<AssemblyHitbox>,
+    /// The blows it deals. Absent: it never strikes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strikes: Option<AssemblyStrikes>,
+}
+
+impl Assembly {
+    /// The declared facing, `south` when absent.
+    pub fn facing(&self) -> Facing {
+        self.facing.unwrap_or(Facing::South)
+    }
+}
+
+/// An assembly's hitbox (spec-0082 §3.2): a `minecraft:interaction` of
+/// `width × height` whose bottom centre is the mark's cell centre plus
+/// `offset`. Melee only: an arrow passes through an interaction.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssemblyHitbox {
+    /// Width in blocks (`0 < width <= 6`, `DW0936`).
+    pub width: f64,
+    /// Height in blocks (`0 < height <= 22`, `DW0936`).
+    pub height: f64,
+    /// Integer `[x, y, z]` block offset of the box's bottom centre from the
+    /// mark (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
+/// An assembly's strike pattern (spec-0082 §3.2).
+///
+/// The pattern runs, repeating from its first step, on every tick on which
+/// some player's body is in `while_in`, and stops at the end of the step in
+/// flight when nobody is.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssemblyStrikes {
+    /// The arming region: an anchor-centred box. Every landing box lies inside
+    /// it (`DW0938`), so a player who never entered it is never struck.
+    pub while_in: StealthZone,
+    /// The steps, in order.
+    pub pattern: Vec<StrikeStep>,
+    /// Aim (spec-0082 §5.7). Absent: every blow lands where its `on_land`
+    /// boxes say. Present: at the start of every wind-up the assembly turns to
+    /// the one of its declared facings nearest the bearing of the nearest
+    /// player in `while_in`, and every `damage-players` box in `on_land` turns
+    /// with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aim: Option<StrikeAim>,
+}
+
+/// An aimed strike pattern's facings (spec-0082 §5.7): `facings` turns
+/// evenly spaced round the vertical axis through the mark, the first being the
+/// assembly's declared `facing`. Every `on_land` box is written for that first
+/// facing; the compiler turns it to each of the others and proves every facing
+/// a player in `while_in` can draw (`DW0938`, judged per facing). Which facing
+/// a blow takes is chosen at run time among the proven ones; nothing about
+/// where it lands is computed there.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StrikeAim {
+    /// How many facings, evenly spaced: 4 is a quarter turn apart, 8 an eighth,
+    /// 16 a sixteenth. At least 1 (1 is the declared facing alone).
+    pub facings: std::num::NonZeroU32,
+}
+
+/// One step of a strike pattern: wind up, hold, strike, land.
+///
+/// How long the wind-up is and how hard the blow lands are the creator's
+/// judgement, by spec-0016's standing ruling: no telegraph rule and no
+/// one-shot rule.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StrikeStep {
+    /// The clip played first.
+    pub windup: String,
+    /// Ticks the windup's last frame is held before the strike clip starts.
+    pub hold: u32,
+    /// The clip the blow is.
+    pub strike: String,
+    /// The step's pace: the keyframe cadence, in ticks per frame (1–20, the
+    /// rig's own bounds), its wind-up and strike clips play at. Absent: each
+    /// clip's own. The wind-up lasts `1 + (frames - 1) × cadence` ticks, then
+    /// `hold`; the blow lands one cadence after the strike's last frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ticks_per_frame: Option<u32>,
+    /// Effects run, with no acting player, on the tick a client has drawn the
+    /// strike clip's last frame whole (one cadence after it is applied). A step
+    /// with none is a feint.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_land: Vec<QuestEffect>,
+}
+
 /// One step of a [`Verb::Sequence`] (DSL v0.6): a group of effects fired at
 /// an exact tick offset from the sequence's start.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -4608,18 +5123,68 @@ pub struct QuestEffect {
     /// emission of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub happening: Option<Happening>,
+    /// **Who a player-facing effect addresses** (spec-0085 §3.2): `party` or
+    /// `actor`, the one player whose act fired the root. Absent = the root's own
+    /// answer — a quest completion addresses the party, a death, a respawn, a
+    /// purchase, a credited kill and a `presser` trigger address their actor, a
+    /// polled trigger, a trap and a shortcut address the party — so a campaign
+    /// that never writes the field emits exactly what it emitted before it
+    /// existed.
+    ///
+    /// A property of the envelope rather than of any verb: it reaches every
+    /// verb the emitter addresses to players ([`Verb::addresses_players`]), and
+    /// on any other verb it is refused (`DW0942`). `actor` where emission has no
+    /// acting player is `DW0503`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audience: Option<EffectAudience>,
+    /// **Narrows the audience to players inside an anchor-centred box**
+    /// (`anchor ± extent`, spec-0085 §3.2) at the moment the effect fires — the
+    /// same [`StealthZone`] a `begin-stealth` zone and a `lethal_volumes[]`
+    /// region take, resolved through the one `Plan::zone_box`. Composes with
+    /// [`Self::audience`]: `actor` + `in` is the actor, if they stand in the box.
+    ///
+    /// One field on the envelope, reaching every player-facing verb; refused on
+    /// any other (`DW0942`) — a box narrows an audience, and a world fact has
+    /// none.
+    #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
+    pub within: Option<StealthZone>,
     /// What the effect does.
     #[serde(flatten)]
     pub verb: Verb,
 }
 
+/// **Who a player-facing effect addresses** (spec-0085 §3.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum EffectAudience {
+    /// Every player — `@a`.
+    Party,
+    /// The one player whose act fired the root — the completing player, the
+    /// presser, the dying or respawning player, the buyer, the credited killer.
+    /// Emitted `@s`, so it exists only where emission has an acting player
+    /// (`DW0503`).
+    Actor,
+}
+
+impl EffectAudience {
+    /// The token the document spells.
+    pub fn token(self) -> &'static str {
+        match self {
+            EffectAudience::Party => "party",
+            EffectAudience::Actor => "actor",
+        }
+    }
+}
+
 impl From<Verb> for QuestEffect {
-    /// An unguarded effect with no story note — the shape a compiler-synthesized
-    /// beat and most tests want.
+    /// An unguarded effect with no story note and the root's own audience — the
+    /// shape a compiler-synthesized beat and most tests want.
     fn from(verb: Verb) -> Self {
         QuestEffect {
             when: None,
             happening: None,
+            audience: None,
+            within: None,
             verb,
         }
     }
@@ -4817,6 +5382,34 @@ pub enum Verb {
         /// the same object class [`Verb::FillRegion`] fills.
         region: StealthZone,
     },
+    /// **Repaint a volume's sky** (spec-0080 §3.3): `/fillbiome` over the
+    /// volume with the named atmosphere's biome, while the party stands in it.
+    ///
+    /// A runtime edit of the world keyed to a volume, so it is a verb of the
+    /// physical-edit family [`Verb::FillRegion`] / [`Verb::ClearRegion`] form.
+    /// Exactly one of `region` / `place` (`DW0929`): a volume inside a place is
+    /// the creator's judgement, a whole place's bounds are a derivation the
+    /// creator never types. Painting back is this verb naming the place's own
+    /// atmosphere, or `atmosphere: null` for the horizon's biome.
+    ///
+    /// A hard cut: the client blends fog over its biome-blend radius and grass
+    /// not at all, and biome cells are 4×4×4, so the painted volume is the
+    /// enclosing 4-aligned box, up to three blocks past each face.
+    SetAtmosphere {
+        /// One of `world.atmospheres[]`, or `null` for the horizon's biome.
+        #[serde(default)]
+        atmosphere: Option<AtmosphereId>,
+        /// The volume, as an anchor-centred box (`anchor ± extent`) — the same
+        /// object class [`Verb::FillRegion`] fills, resolved through the same
+        /// `Plan::zone_box`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        region: Option<StealthZone>,
+        /// A whole place: an `area/…` id, or a site-plan box's `node/…`. Its
+        /// volume is the cells the place's own `atmosphere` paints at setup:
+        /// its bounds, grown as far as the client's biome blend reads.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        place: Option<String>,
+    },
     /// **Opens a placed piece's contingent way** (DSL v0.12, spec-0042 §2.4): the
     /// broken flight a beat repairs, the bridge a beat lowers, the rubble a beat
     /// clears.
@@ -4961,9 +5554,9 @@ pub enum Verb {
     /// acting player: at top level it damages every player once; inside a stealth
     /// `on_caught` it damages the caught player (the "caught → death → respawn at
     /// checkpoint" beat). `amount` is in **half-hearts** (1 HP each); an amount ≥ 40
-    /// is lethal through golden apples / absorption. `within` (JSON `in`) narrows to
-    /// acting players standing inside an anchor-centred box (the same box model as a
-    /// stealth zone), keeping the per-`@s` semantics. `damage_type` is the damage
+    /// is lethal through golden apples / absorption. The envelope's `in`
+    /// ([`QuestEffect::within`]) narrows to acting players standing inside an
+    /// anchor-centred box, keeping the per-`@s` semantics. `damage_type` is the damage
     /// type — a curated set of vanilla types that all respect `keepInventory` and do
     /// **not** bypass totems (no `out_of_world`/`generic_kill`); default `generic`.
     /// (The field is `damage_type`, not `type`, because the effect enum is
@@ -4971,10 +5564,6 @@ pub enum Verb {
     DamagePlayers {
         /// Damage dealt, in half-hearts (1 = 1 HP; ≥ 40 is effectively lethal).
         amount: u32,
-        /// Optional spatial filter: only damage an acting player inside this
-        /// anchor-centred box (`anchor ± extent`). Absent = every acting player.
-        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
-        within: Option<StealthZone>,
         /// The damage type (default [`DamageKind::Generic`]).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         damage_type: Option<DamageKind>,
@@ -5033,6 +5622,16 @@ pub enum Verb {
         /// Label of the **save only** button. Absent = `Save only`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         save_label: Option<String>,
+        /// Hover tooltip of the **rest and save** button (spec-0078) — the same
+        /// optional `tooltip` every dialog button carries, beside the label it
+        /// explains. Absent = no tooltip. Not subject to `DW0331`: a tooltip
+        /// wraps in its own hover box. Inventoried as `fx.….rest_tooltip`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rest_tooltip: Option<String>,
+        /// Hover tooltip of the **save only** button (spec-0078). Absent = no
+        /// tooltip. Inventoried as `fx.….save_tooltip`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        save_tooltip: Option<String>,
     },
     /// Begins a stealth beat (DSL v0.6, spec-0014):
     /// zone presence alone = hidden — no sneak requirement, which collides with
@@ -5102,6 +5701,30 @@ pub enum Verb {
     UnleashActor {
         /// The actor (stage-5 `actors` ref) to unleash.
         actor: ActorId,
+    },
+    // --- spec-0082 assembly verbs ---
+    /// Summons an assembly (spec-0082): its root, one display per rig part
+    /// riding the root, and its hitbox when declared, at its mark, playing its
+    /// `initial` clip. Idempotent: a spawn of a present assembly is a no-op.
+    SpawnAssembly {
+        /// The assembly (stage-5 `assemblies` ref) to summon.
+        assembly: AssemblyId,
+    },
+    /// Removes an assembly's root, parts and hitbox (spec-0082). They leave
+    /// unseen: a display entity has no death, so there is no `style`.
+    DespawnAssembly {
+        /// The assembly (stage-5 `assemblies` ref) to remove.
+        assembly: AssemblyId,
+    },
+    /// Switches the clip an assembly plays (spec-0082); its first frame is
+    /// applied on the next tick. While a strike step is in flight the switch
+    /// waits for the step to end, so a story beat never cuts a strike at the
+    /// frame before it lands.
+    PlayClip {
+        /// The assembly (stage-5 `assemblies` ref).
+        assembly: AssemblyId,
+        /// A clip the assembly's rig declares.
+        clip: String,
     },
     /// A deterministic timeline (DSL v0.6): one schedule chain firing effect groups
     /// at exact tick offsets. Effects are any in the stage-5 set except a nested
@@ -5199,11 +5822,10 @@ pub enum Verb {
     /// the same hazard — pairing a grant with a `clear-effect` that removes it
     /// while it is still live — is `DW0540`.
     ///
-    /// `in` narrows to players inside an anchor-centred box, the same
-    /// [`StealthZone`] a `begin-stealth` zone, a `damage-players` filter and a
-    /// `lethal_volumes[]` region use, resolved through the one `Plan::zone_box`.
-    /// It is what makes "blind whoever is riding the car" expressible without
-    /// blinding the whole party.
+    /// The envelope's `in` ([`QuestEffect::within`]) narrows to players inside an
+    /// anchor-centred box. It is what makes "blind whoever is riding the car"
+    /// expressible without blinding the whole party. A blinding grant owes the
+    /// blind-reach proof wherever it is written (`DW0943`, spec-0085 §6).
     GiveEffect {
         /// Vanilla status-effect id (e.g. `minecraft:blindness`), validated
         /// against the pinned 1.21.11 registry (`DW0192`).
@@ -5219,11 +5841,6 @@ pub enum Verb {
         /// `false`, vanilla's own default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hide_particles: Option<bool>,
-        /// Optional spatial filter: only grant to a player inside this
-        /// anchor-centred box (`anchor ± extent`). Absent = every player the
-        /// effect's audience addresses.
-        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
-        within: Option<StealthZone>,
     },
     /// Removes a status effect (DSL v0.10, spec-0031) — vanilla's `effect clear`.
     ///
@@ -5238,10 +5855,6 @@ pub enum Verb {
         /// effect**, matching `effect clear <targets>` with no id.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         effect: Option<String>,
-        /// Optional spatial filter, identical in shape and meaning to
-        /// [`Verb::GiveEffect`]'s.
-        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
-        within: Option<StealthZone>,
     },
     /// Teleports **everything inside a declared volume** to an anchor (DSL v0.10,
     /// spec-0031).
@@ -5336,6 +5949,56 @@ pub enum Verb {
         #[schemars(length(min = 1, max = 7))]
         explosions: Vec<FireworkExplosion>,
     },
+    /// Spawns **particles** (spec-0085 §4.3) — the next one-shot point effect
+    /// after [`Verb::Firework`], at a mark or at each addressed player.
+    ///
+    /// `particle` is a vanilla particle type id validated against the pinned
+    /// registry `crates/dsl/data/particles-1.21.11.json`; an unknown id, or one
+    /// whose type **takes options** (`dust`, `block`, `item`, …), is `DW0941`.
+    ///
+    /// Emitted as one vanilla `particle` command, always in **`force`** mode,
+    /// whose viewers are the effect's audience: a particle a creator writes is
+    /// meant to be seen, and `force` is the mode the game sends 512 blocks out
+    /// and draws even at the client's Minimal particle setting. A
+    /// `minecraft:elder_guardian` at `players` is the full-screen face.
+    Particle {
+        /// The particle type id (`minecraft:` prefix optional).
+        particle: String,
+        /// Where the particles spawn: a [`Mark`], or `players` — at each
+        /// addressed player's own position.
+        at: ParticleAt,
+        /// How many (vanilla `<count>`, default 1). Zero is vanilla's spelling of
+        /// a different thing — one particle with a velocity — and is refused.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(range(min = 1))]
+        count: Option<u32>,
+        /// Standard deviations `[x, y, z]` of the spawn spread, in blocks
+        /// (vanilla `<delta>`, default `[0, 0, 0]`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spread: Option<[f64; 3]>,
+        /// Vanilla `<speed>` (default 0).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        speed: Option<f64>,
+    },
+}
+
+/// Where a [`Verb::Particle`] spawns (spec-0085 §4.3): a mark, or the literal
+/// `players`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ParticleAt {
+    /// `"players"` — at each addressed player's own position.
+    Players(PlayersKeyword),
+    /// A mark — the cell's centre at the mark's plane.
+    Mark(Mark),
+}
+
+/// The literal `players`, the one keyword [`ParticleAt`] admits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlayersKeyword {
+    /// At each addressed player.
+    Players,
 }
 
 /// Default `grace_ticks` for [`Verb::BeginStealth`] (spec-0014).
@@ -5388,8 +6051,17 @@ pub enum SoundAt {
         #[serde(default, skip_serializing_if = "is_zero3")]
         offset: [i32; 3],
     },
-    /// Play the sound at each player's own position (the default).
-    Players,
+    /// Play the sound at each player's own position (the default), or at
+    /// `offset` in **the listener's own frame** (spec-0085 §4.4): `+x` to the
+    /// listener's left, `+y` up, `+z` the way the listener faces, with the pitch
+    /// flattened so *behind* stays at ear height. `[0, 0, -3]` is three blocks
+    /// behind. Integer blocks, as a [`Mark`]'s offset is.
+    Players {
+        /// Integer `[x, y, z]` offset in the listener's local frame (default
+        /// `[0, 0, 0]`).
+        #[serde(default, skip_serializing_if = "is_zero3")]
+        offset: [i32; 3],
+    },
     /// Play the sound at a scripted actor's position (rejected — `DW0335`; no
     /// actor position resolves at emission).
     Actor {
@@ -5523,6 +6195,85 @@ pub struct LethalVolume {
     /// refuses every cell of the keep-out either way.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shown_by: Vec<String>,
+    /// **When this volume kills** (spec-0088): the one [`Guard`] every other
+    /// gated object carries, verbatim. Absent, the volume is live from
+    /// world-load to the end. Present, it is live while its gate holds —
+    /// `requires_flags` is a pit that kills from a beat on, `forbids_flags` a
+    /// shaft that kills until one, `requires_state` a chamber that kills while
+    /// a party datum stands in range.
+    ///
+    /// A volume's liveness is a fact about the place, so the gate is a fact
+    /// about the party: `when: {}` (a stage with no term) and a term on a
+    /// `player`-scoped datum are refused at the document (`DW0953`). The
+    /// navigation world holds the volume per quest configuration, and `DW0891`
+    /// judges what shows it in every configuration a body can meet it in,
+    /// including the last one before it goes live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<Guard>,
+}
+
+/// A stage-5 **loop** (spec-0086): a slab a body crosses and is returned from,
+/// by a whole-block offset, to an earlier section that looks exactly the same —
+/// its position inside the cell, its facing and its velocity all kept.
+///
+/// # It is a region with a standing property
+///
+/// A loop acts on whatever body enters a volume, every tick, the way a
+/// [`LethalVolume`] does; nothing completes and nobody is addressed. So it is
+/// declared beside the lethal volume, with the same region type
+/// ([`StealthZone`], resolved through the one `Plan::zone_box`), and not as a
+/// trigger with a relative teleport in it: the seamlessness proof is a property
+/// of the region-plus-offset pair, which a compiler would otherwise have to
+/// recognise by pattern-matching a trigger's effect list.
+///
+/// # The offset is derived, never typed
+///
+/// `to` is a [`Mark`] naming where the slab's own anchor cell lands, so the
+/// offset is `cell(to) − cell(region.anchor)` — a whole-block vector by
+/// construction, and a judgement about the world (*the fourth bay's anchor lands
+/// on the second's*) rather than a vector the compiler could compute.
+///
+/// # The gate is the release
+///
+/// The loop **holds** while its gate is open and stands down while it is shut,
+/// read against the party: flags are campaign state, and a `requires_state` term
+/// must name a `party` datum (`DW0949`). A loop with no gate term holds forever
+/// and is refused at the document (`DW0949`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Loop {
+    /// Unique loop id (`loop/<kebab>`).
+    pub id: LoopId,
+    /// The slab a body crosses: an anchor-centred box (`anchor ± extent`), one
+    /// axis of which is the crossing axis. The existing zone type, for the reason
+    /// [`LethalVolume::region`] gives.
+    pub region: StealthZone,
+    /// Where the slab's own anchor cell lands: the loop's offset is
+    /// `cell(to) − cell(region.anchor)`. Lies inside its anchor's piece
+    /// (`DW0897`).
+    pub to: Mark,
+    /// Flags that must all be set for the loop to hold.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_flags: Vec<FlagId>,
+    /// Flags any one of which stands the loop down — `forbids_flags:
+    /// [flag/the-bell-found]` is a loop that ends the moment the bell is found.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forbids_flags: Vec<FlagId>,
+    /// Numeric gate terms: every comparison must hold for the loop to hold. Each
+    /// names a `party`-scoped datum (`DW0949`). The third field of the one gate,
+    /// carried by every gate consumer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_state: Vec<StateCompare>,
+    /// A `party`-scoped datum the loop raises by one on every move, before
+    /// `on_cross` runs — the counter a crossing-counted release reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counts: Option<StateId>,
+    /// The dungeon's answer to a move: effects run on every move, after the body
+    /// is moved and the count raised, from the server command source (no acting
+    /// player). Each effect's own `when` keys a write to a count. A `teleport`
+    /// here is refused (`DW0949`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_cross: Vec<QuestEffect>,
 }
 
 // ---------------------------------------------------------------------------
@@ -6176,6 +6927,7 @@ impl Verb {
             Verb::SetBlock { .. } => "set-block",
             Verb::FillRegion { .. } => "fill-region",
             Verb::ClearRegion { .. } => "clear-region",
+            Verb::SetAtmosphere { .. } => "set-atmosphere",
             Verb::OpenWay { .. } => "open-way",
             Verb::DespawnNpc { .. } => "despawn-npc",
             Verb::MoveNpc { .. } => "move-npc",
@@ -6200,11 +6952,139 @@ impl Verb {
             Verb::ClearEffect { .. } => "clear-effect",
             Verb::Teleport { .. } => "teleport",
             Verb::Firework { .. } => "firework",
+            Verb::SpawnAssembly { .. } => "spawn-assembly",
+            Verb::DespawnAssembly { .. } => "despawn-assembly",
+            Verb::PlayClip { .. } => "play-clip",
+            Verb::Particle { .. } => "particle",
+        }
+    }
+
+    /// **Whether the emitter addresses this verb to players** (spec-0085 §3.3) —
+    /// whether its emitted commands name the effect's audience selector at all.
+    ///
+    /// A verb that answers `false` is a **party fact**: it fires once for the
+    /// world (a flag, a gate, a block, a region, a wave, an actor, an NPC, a
+    /// camera, the time, a checkpoint, a stealth beat, a timeline, a teleported
+    /// volume, a rocket), so the envelope's `audience` and `in` have nothing to
+    /// narrow and are refused on it (`DW0942`). A `player`-scoped state write
+    /// answers `false` too: its holder is the acting player by declaration, never
+    /// the audience.
+    ///
+    /// Exhaustive, so a new verb cannot be added without answering it; and
+    /// `emit`'s own test binds this answer to the emitted bytes in both
+    /// directions — every verb is emitted under two audiences, and its commands
+    /// differ exactly when this says `true`.
+    pub fn addresses_players(&self) -> bool {
+        match self {
+            Verb::GiveItem { .. }
+            | Verb::Narrate { .. }
+            | Verb::PlaySound { .. }
+            | Verb::DamagePlayers { .. }
+            | Verb::GiveEffect { .. }
+            | Verb::ClearEffect { .. }
+            | Verb::Particle { .. } => true,
+            Verb::OpenGate { .. }
+            | Verb::CloseGate { .. }
+            | Verb::CampaignComplete { .. }
+            | Verb::SetFlag { .. }
+            | Verb::SetState { .. }
+            | Verb::AddState { .. }
+            | Verb::ClearState { .. }
+            | Verb::DropStake { .. }
+            | Verb::SpawnWave { .. }
+            | Verb::SetBlock { .. }
+            | Verb::FillRegion { .. }
+            | Verb::ClearRegion { .. }
+            | Verb::OpenWay { .. }
+            | Verb::DespawnNpc { .. }
+            | Verb::MoveNpc { .. }
+            | Verb::Cutscene { .. }
+            | Verb::SetTime { .. }
+            | Verb::SetWeather { .. }
+            | Verb::SetCheckpoint { .. }
+            | Verb::Bonfire { .. }
+            | Verb::BeginStealth { .. }
+            | Verb::EndStealth
+            | Verb::SpawnActor { .. }
+            | Verb::DespawnActor { .. }
+            | Verb::MoveActor { .. }
+            | Verb::UnleashActor { .. }
+            | Verb::SpawnNpc { .. }
+            | Verb::Sequence { .. }
+            | Verb::Volley { .. }
+            | Verb::Collapse { .. }
+            | Verb::Teleport { .. }
+            | Verb::Firework { .. }
+            // spec-0080: a biome repaint is a world fact (`fillbiome`).
+            | Verb::SetAtmosphere { .. }
+            // spec-0082: an assembly is a world object.
+            | Verb::SpawnAssembly { .. }
+            | Verb::DespawnAssembly { .. }
+            | Verb::PlayClip { .. } => false,
+        }
+    }
+}
+
+/// **How a nested effect list is dispatched, relative to the bundle it sits in**
+/// (spec-0085 §3.2) — the one statement of which command source each nesting
+/// site runs under, read by `DW0357`/`DW0503` and by the emitter's timeline
+/// keying alike.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NestedDispatch {
+    /// Under the parent's own source: a `sequence` step. A timeline started
+    /// where there is an acting player carries that player across its
+    /// `schedule`s by a compiler-owned tag, and a timeline started from the
+    /// server source has nobody to carry.
+    Inherit,
+    /// As one player, whatever the parent was: a `set-checkpoint`'s
+    /// `on_respawn` (the respawning player) and a `begin-stealth`'s `on_caught`
+    /// (the spotted player).
+    Player,
+    /// From the server command source, whatever the parent was: a
+    /// `move-npc`/`move-actor` `on_arrive` (the driver's scheduled tick) and a
+    /// `bonfire`'s `on_rest` (the party-wide rest, dispatched from the tick).
+    Server,
+}
+
+impl NestedDispatch {
+    /// Whether a list dispatched this way, inside a bundle that does (or does
+    /// not) have an acting player, has one.
+    pub fn has_actor(self, parent_has_actor: bool) -> bool {
+        match self {
+            NestedDispatch::Inherit => parent_has_actor,
+            NestedDispatch::Player => true,
+            NestedDispatch::Server => false,
         }
     }
 }
 
 impl QuestEffect {
+    /// Each nested effect list with how it is dispatched ([`NestedDispatch`]) —
+    /// the same lists, in the same order, as [`Self::nested_effect_lists`].
+    pub fn nested_effect_dispatch(&self) -> Vec<(&[QuestEffect], NestedDispatch)> {
+        match &self.verb {
+            Verb::Sequence { steps } => steps
+                .iter()
+                .map(|s| (s.effects.as_slice(), NestedDispatch::Inherit))
+                .collect(),
+            Verb::SetCheckpoint { on_respawn, .. } => {
+                vec![(on_respawn.as_slice(), NestedDispatch::Player)]
+            }
+            Verb::Bonfire { on_rest, .. } => vec![(on_rest.as_slice(), NestedDispatch::Server)],
+            Verb::BeginStealth { on_caught, .. } => {
+                vec![(on_caught.as_slice(), NestedDispatch::Player)]
+            }
+            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
+                vec![(on_arrive.as_slice(), NestedDispatch::Server)]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Whether this effect addresses players at all — [`Verb::addresses_players`].
+    pub fn addresses_players(&self) -> bool {
+        self.verb.addresses_players()
+    }
     /// The gate anchor if this is `open-gate`.
     pub fn open_gate_anchor(&self) -> Option<&AnchorId> {
         match &self.verb {
@@ -6344,6 +7224,7 @@ impl QuestEffect {
             | Verb::ClearState { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
+            | Verb::SetAtmosphere { .. }
             // spec-0042's `open-way` is v0.12 — it reports via `v12_effect`.
             | Verb::OpenWay { .. }
             | Verb::GiveEffect { .. }
@@ -6351,6 +7232,12 @@ impl QuestEffect {
             | Verb::Teleport { .. }
             // spec-0068's `firework` is v0.29.
             | Verb::Firework { .. }
+            // spec-0082's assembly verbs.
+            | Verb::SpawnAssembly { .. }
+            | Verb::DespawnAssembly { .. }
+            | Verb::PlayClip { .. }
+            // spec-0085's `particle`.
+            | Verb::Particle { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -6610,11 +7497,15 @@ impl QuestEffect {
                 prompt,
                 rest_label,
                 save_label,
+                rest_tooltip,
+                save_tooltip,
                 ..
             } => Some(BonfireLabels {
                 prompt: prompt.as_deref(),
                 rest_label: rest_label.as_deref(),
                 save_label: save_label.as_deref(),
+                rest_tooltip: rest_tooltip.as_deref(),
+                save_tooltip: save_tooltip.as_deref(),
             }),
             _ => None,
         }
@@ -6625,7 +7516,7 @@ impl QuestEffect {
     /// `damage-players` and for every other effect.
     pub fn damage_within(&self) -> Option<&StealthZone> {
         match &self.verb {
-            Verb::DamagePlayers { within, .. } => within.as_ref(),
+            Verb::DamagePlayers { .. } => self.within.as_ref(),
             _ => None,
         }
     }
@@ -6822,6 +7713,19 @@ impl QuestEffect {
     /// world than the campaign has refuses CONTENT, which is the lesson `DW0343`
     /// carries three files away.
     pub fn anchor_refs(&self) -> Vec<(String, &AnchorId, Option<StationKind>)> {
+        // The envelope's `in` box (spec-0085 §3.2) is one capability of every
+        // player-facing verb, so it registers once, here, before the verb's own.
+        let mut out: Vec<(String, &AnchorId, Option<StationKind>)> = Vec::new();
+        if let Some(zone) = &self.within {
+            out.push(("in/anchor".to_string(), &zone.anchor, None));
+        }
+        out.extend(self.verb_anchor_refs());
+        out
+    }
+
+    /// The anchors the VERB names at this node — [`Self::anchor_refs`] without the
+    /// envelope.
+    fn verb_anchor_refs(&self) -> Vec<(String, &AnchorId, Option<StationKind>)> {
         // Every camera field is a point: a shot flies through cells and looks at
         // one.
         /// `(suffix, anchor, kind)` for a shot's own anchor-bearing fields, under `base`.
@@ -6868,17 +7772,6 @@ impl QuestEffect {
                     Some(StationKind::Point),
                 )]
             }
-            // The `in` filter is one capability on three verbs, so it registers
-            // once: `damage-players` (v0.6) and the v0.10 status-effect pair.
-            Verb::DamagePlayers {
-                within: Some(zone), ..
-            }
-            | Verb::GiveEffect {
-                within: Some(zone), ..
-            }
-            | Verb::ClearEffect {
-                within: Some(zone), ..
-            } => vec![("in/anchor".to_string(), &zone.anchor, None)],
             // Both of a `teleport`'s anchors are load-bearing — the source volume
             // decides WHAT moves and the destination decides WHERE — so a typo in
             // either is a dangling reference (`DW0142`), never a silently
@@ -6903,6 +7796,12 @@ impl QuestEffect {
             // A firework is launched from a point and seats nothing, so it names
             // a location in the same shape `play-sound` does.
             Verb::Firework { at, .. } => vec![("at/anchor".to_string(), &at.anchor, None)],
+            // A particle at a mark names a location the same way; at `players`
+            // it names none.
+            Verb::Particle {
+                at: ParticleAt::Mark(m),
+                ..
+            } => vec![("at/anchor".to_string(), &m.anchor, None)],
             // spec-0022 trap-payload verbs. Both anchors of a `volley` are
             // load-bearing for the coverage proof, so both register here — a
             // typo'd `kill_zone` must be a dangling-reference error, never a
@@ -6929,6 +7828,12 @@ impl QuestEffect {
             Verb::FillRegion { region, .. } | Verb::ClearRegion { region, .. } => {
                 vec![("region/anchor".to_string(), &region.anchor, None)]
             }
+            // A repaint's box centre names a location, exactly as a region
+            // write's does.
+            Verb::SetAtmosphere {
+                region: Some(region),
+                ..
+            } => vec![("region/anchor".to_string(), &region.anchor, None)],
             // Both cutscene spellings (`DW0199` polices mixing them): the v0.6
             // multi-shot list, or the v0.4 single-shot fields flattened at the
             // effect's own level.
@@ -7224,14 +8129,13 @@ impl QuestEffect {
                 seconds,
                 amplifier,
                 hide_particles,
-                within,
                 ..
             } => Some((
                 effect.as_str(),
                 *seconds,
                 amplifier.unwrap_or(0),
                 hide_particles.unwrap_or(false),
-                within.as_ref(),
+                self.within.as_ref(),
             )),
             _ => None,
         }
@@ -7241,7 +8145,7 @@ impl QuestEffect {
     /// `None` for the clear-everything form, exactly as vanilla spells it.
     pub fn clear_effect(&self) -> Option<(Option<&str>, Option<&StealthZone>)> {
         match &self.verb {
-            Verb::ClearEffect { effect, within, .. } => Some((effect.as_deref(), within.as_ref())),
+            Verb::ClearEffect { effect, .. } => Some((effect.as_deref(), self.within.as_ref())),
             _ => None,
         }
     }
@@ -7735,6 +8639,20 @@ pub enum EffectSite {
         /// The fight's id (`wave/<kebab>` or `actor/<kebab>`).
         fight: String,
     },
+    /// An assembly strike step's `on_land` bundle (spec-0082) — ambient, no
+    /// DAG position: nobody is forced to stand where a blow lands.
+    AssemblyLand {
+        /// The assembly id.
+        assembly: String,
+        /// The step's index within the pattern.
+        step: usize,
+    },
+    /// A loop's `on_cross` bundle (spec-0086) — no DAG position of its own: it
+    /// runs when a body crosses the holding slab.
+    LoopCross {
+        /// The loop id (`loop/<kebab>`).
+        r#loop: String,
+    },
 }
 
 impl EffectSite {
@@ -7762,7 +8680,9 @@ impl EffectSite {
             | EffectSite::ShortcutUnlock { .. }
             | EffectSite::ShopOffer { .. }
             | EffectSite::OnDeath
-            | EffectSite::OnKill { .. } => None,
+            | EffectSite::OnKill { .. }
+            | EffectSite::AssemblyLand { .. }
+            | EffectSite::LoopCross { .. } => None,
         }
     }
 }
@@ -7830,6 +8750,20 @@ pub fn for_each_campaign_effect<'a>(
             },
             crate::effects::EffectRootOwner::OnKill(f) => EffectSite::OnKill {
                 fight: f.id().to_string(),
+            },
+            crate::effects::EffectRootOwner::AssemblyLand(m) => EffectSite::AssemblyLand {
+                assembly: m.id.as_str().to_string(),
+                // `/content/assemblies/<m>/strikes/pattern/<s>/on_land`: segment
+                // 6 is the step index, parsed back as the shop arm does.
+                step: root
+                    .path
+                    .split('/')
+                    .nth(6)
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0),
+            },
+            crate::effects::EffectRootOwner::LoopCross(l) => EffectSite::LoopCross {
+                r#loop: l.id.as_str().to_string(),
             },
         };
         for (i, eff) in list.iter().enumerate() {
@@ -8059,6 +8993,11 @@ mod happening_subject_tests {
                 Some("anchor/pit"),
             ),
             (
+                "set-atmosphere",
+                serde_json::json!({"type":"set-atmosphere","atmosphere":"atmosphere/wrong","region":{"anchor":"anchor/hall","extent":[4,2,4]}}),
+                Some("anchor/hall"),
+            ),
+            (
                 "clear-region",
                 serde_json::json!({"type":"clear-region","region":{"anchor":"anchor/pit","extent":[2,2,2]}}),
                 Some("anchor/pit"),
@@ -8182,6 +9121,28 @@ mod happening_subject_tests {
                 "firework",
                 serde_json::json!({"type":"firework","at":{"anchor":"anchor/court"},"explosions":[{"shape":"star","colors":["#ffd700"]}]}),
                 Some("anchor/court"),
+            ),
+            // spec-0082: an assembly is not a story subject (no `happening` is
+            // demanded of its verbs), so none of the three resolves one.
+            (
+                "spawn-assembly",
+                serde_json::json!({"type":"spawn-assembly","assembly":"assembly/limb"}),
+                None,
+            ),
+            (
+                "despawn-assembly",
+                serde_json::json!({"type":"despawn-assembly","assembly":"assembly/limb"}),
+                None,
+            ),
+            (
+                "play-clip",
+                serde_json::json!({"type":"play-clip","assembly":"assembly/limb","clip":"idle"}),
+                None,
+            ),
+            (
+                "particle",
+                serde_json::json!({"type":"particle","particle":"minecraft:soul","at":{"anchor":"anchor/well"}}),
+                Some("anchor/well"),
             ),
         ];
         // The binding: the table answers for every verb the schema declares, and

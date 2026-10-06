@@ -1400,40 +1400,50 @@ pub fn seam_cells(seams: &[PlacedSeam]) -> BTreeSet<[i32; 3]> {
 // The stage-5 battery (spec-0049 §5.3) — the derivation's independent observer
 // ---------------------------------------------------------------------------
 
-/// `DW0836`: a built seam disagrees with its allocation.
-pub const DW_SEAM_BUILT: DwCode = DwCode::new("DW0836", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0836`: a built seam disagrees with its allocation.
+    pub const DW_SEAM_BUILT: DwCode = DwCode::new("DW0836", ExitTier::Build);
+}
 
-/// `DW0837`: a node's floor is unreached.
-pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0837", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0837`: a node's floor is unreached.
+    pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0837", ExitTier::Build);
+}
 
-/// `DW0877`: a contact nothing can cross (spec-0053 §6).
-///
-/// The contact's measured crossing profile — the columns of its span a body
-/// crosses over the assembled bytes, under the compiler's own step rule — holds
-/// no run of body width. The author allocated a front and the massing walled it,
-/// so the graph declares a hand-off the world does not have.
-///
-/// It is the **contact's half of `DW0836`'s first claim**, and it is a different
-/// claim rather than the same one widened. A portal is a hole and *every* cell
-/// the plan allocated must be clear; a contact is continuous ground and the
-/// massing standing on part of it is content, not a defect — a rim with a boulder
-/// on it is still a rim. So what a contact owes is not "all of it" but "somewhere
-/// along it", and asking a portal's question of a front would refuse correct
-/// content, which is exactly the failure `DW0343` already carries as a lesson.
-///
-/// **Not a widening of the step rule**: the profile is read through
-/// `nav::World::neighbors`, the same rule every route proof in this compiler is
-/// taken under. A second step rule here would make this the one proof in the
-/// compiler taken under different physics.
-///
-/// Build tier (exit 3).
-pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::new("DW0877", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0877`: a contact nothing can cross (spec-0053 §6).
+    ///
+    /// The contact's measured crossing profile — the columns of its span a body
+    /// crosses over the assembled bytes, under the compiler's own step rule — holds
+    /// no run of body width. The author allocated a front and the massing walled it,
+    /// so the graph declares a hand-off the world does not have.
+    ///
+    /// It is the **contact's half of `DW0836`'s first claim**, and it is a different
+    /// claim rather than the same one widened. A portal is a hole and *every* cell
+    /// the plan allocated must be clear; a contact is continuous ground and the
+    /// massing standing on part of it is content, not a defect — a rim with a boulder
+    /// on it is still a rim. So what a contact owes is not "all of it" but "somewhere
+    /// along it", and asking a portal's question of a front would refuse correct
+    /// content, which is exactly the failure `DW0343` already carries as a lesson.
+    ///
+    /// **Not a widening of the step rule**: the profile is read through
+    /// `nav::World::neighbors`, the same rule every route proof in this compiler is
+    /// taken under. A second step rule here would make this the one proof in the
+    /// compiler taken under different physics.
+    ///
+    /// Build tier (exit 3).
+    pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::new("DW0877", ExitTier::Build);
+}
 
-/// `DW0838`: a connection nothing allocated.
-pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::new("DW0838", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0838`: a connection nothing allocated.
+    pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::new("DW0838", ExitTier::Build);
+}
 
-/// `DW0821`: a sightline is blocked. Warning in the slice — see [`sightlines`].
-pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::new("DW0821", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0821`: a sightline is blocked. Warning in the slice — see [`sightlines`].
+    pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::new("DW0821", ExitTier::Build);
+}
 
 /// What the battery examined. Stated on every build, zero or not.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -2196,9 +2206,17 @@ fn nodes_reached(
     let bound = delvewright_dsl::bound_places(c);
     let seat = |x: &PlacedBox| seat_in(x, b, world, &bound);
     let mut seeds: Vec<[i32; 3]> = vec![seat(entry)];
+    // What the graph's monotone closure grants — the same reading
+    // `seal_unopened` takes of which barred ways ever open — decides which
+    // carries are ever live.
+    let carry_grants = {
+        let grants = delvewright_dsl::layout::Grants::of(c, graph);
+        delvewright_dsl::layout::Closure::run(graph, &grants).obtained
+    };
     let mut reached: BTreeSet<[i32; 3]> = BTreeSet::new();
     loop {
         let before = reached.len();
+        let seeded = seeds.len();
         reached.extend(world.reachable_walkable(&seeds));
         // Every declared fall whose near side is now stood in hands the far side
         // a starting cell.
@@ -2231,8 +2249,44 @@ fn nodes_reached(
                 seeds.push(landing);
             }
         }
-        if reached.len() == before {
-            break; // fixpoint: no walk and no declared fall added anything.
+        // Every declared carry (spec-0083 §7) whose near side is stood in, and
+        // whose gating the graph's own closure grants, hands the far side a
+        // starting cell — the same seeding a declared fall gets. A carry has
+        // no geometry for this battery to judge: the link that realises it is
+        // the route proof's (`DW0932`), and that the graph and the links agree
+        // is `DW0934`'s.
+        for e in &graph.edges {
+            let delvewright_dsl::layout::Edge::Carry { a, b: far, .. } = e else {
+                continue;
+            };
+            if !delvewright_dsl::layout::Closure::satisfied(e.gating(), &carry_grants) {
+                continue;
+            }
+            let mut ways = Vec::new();
+            if e.direction() != Some(delvewright_dsl::layout::Direction::BToA) {
+                ways.push((a, far));
+            }
+            if e.direction() != Some(delvewright_dsl::layout::Direction::AToB) {
+                ways.push((far, a));
+            }
+            for (from, to) in ways {
+                let (Some(from), Some(to)) = (
+                    by_node.get(from.0.as_str()).copied(),
+                    by_node.get(to.0.as_str()).copied(),
+                ) else {
+                    continue;
+                };
+                if !stands_in(from, &b.boxes, world, &reached) {
+                    continue;
+                }
+                let landing = seat(to);
+                if !reached.contains(&landing) && !seeds.contains(&landing) {
+                    seeds.push(landing);
+                }
+            }
+        }
+        if reached.len() == before && seeds.len() == seeded {
+            break; // fixpoint: no walk, no declared fall and no carry added anything.
         }
     }
 

@@ -27,13 +27,15 @@ use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 use delvewright_dsl::{
-    Diagnostic, DwCode, ExitTier, Stage, parse_campaign, stage_schema, validate_campaign_with,
+    Diagnostic, DwCode, Stage, parse_campaign, stage_schema, validate_campaign_with,
 };
 
 /// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
 /// declares a `skin.texture_id` for which the campaign ships no
-/// `skins/<texture_id>.png`. Build-tier (exit 3).
-const DW_SKIN_PNG_MISSING: DwCode = DwCode::new("DW0309", ExitTier::Build);
+/// `skins/<texture_id>.png`. Build-tier (exit 3). One rule with a
+/// `world.textures[]` row's missing file (spec-0084 §6.4), so it is declared
+/// once, beside that half.
+const DW_SKIN_PNG_MISSING: DwCode = delvec::compiler::textures::DW_IMAGE_MISSING;
 
 /// Internal-error exit code (spec-0002: ≥10).
 pub(crate) const EXIT_INTERNAL: u8 = 10;
@@ -179,6 +181,12 @@ enum Command {
         #[arg(long, value_name = "DIR")]
         gym: Option<PathBuf>,
     },
+    /// Every DW code this binary declares, one JSON object per line on stdout —
+    /// `code`, `tier` (`Analysis`, `Build`, or null for a code of a verb with
+    /// its own exit table), `subject`, the constant's `name` and `module` —
+    /// sorted by code. The list is the registry every `dw_code!` declaration
+    /// writes itself into, so it is what this binary can print.
+    Codes,
     /// Draft-render one frame of the assembled world + a scene manifest
     /// (spec-0015: the visual authoring loop). Stops after placement +
     /// assembly — it never emits a datapack.
@@ -287,6 +295,23 @@ enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// One comparison sheet per `world.textures[]` row (spec-0084 §5.2):
+    /// vanilla's texture on the left and the campaign's on the right, scaled to
+    /// the same width on a chequered ground that shows alpha. The review medium
+    /// for a texture no frame this engine renders can show — a mob's skin, the
+    /// moon. Reads the pinned client jar, which a build never does, so it is a
+    /// verb of its own rather than a build output.
+    Textures {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// Output directory; one `<id>.png` per row.
+        #[arg(short, long, default_value = "review/textures")]
+        out: PathBuf,
+        /// The 1.21.11 client jar. Overrides the `$DELVEWRIGHT_CLIENT_JAR` /
+        /// `~/.chunky` fallbacks.
+        #[arg(long)]
+        textures: Option<String>,
+    },
     /// Convert a harvested `rehearsal-report.json` (spec-0019) into per-shot
     /// `anchor + offset` DSL patches. Reads only the report and the creator
     /// overlay's `layout.json` — no campaign, no build, no world assembly.
@@ -314,6 +339,10 @@ enum Command {
     /// A prefab piece under admission: audit, socket, anchor, lighting, catalog
     /// card, gallery world, curation.
     Prefab(delvec::admit::cli::PrefabArgs),
+    /// Sculpt a prefab from a form document: a body stated as implicit solids
+    /// over its own ground (spec-0087). `delvec schema --stage sculpt-form`
+    /// prints the form's shape.
+    Sculpt(delvec::sculpt::cli::SculptArgs),
     /// An outside schematic: convert a Sponge `.schem` into a structure `.nbt`.
     Schem(delvec::schem::cli::SchemArgs),
     /// A playtest log: pair `[DelveNote]` stamps with the creator's notes into
@@ -322,6 +351,49 @@ enum Command {
     /// GPU renders through Nucleation/wgpu: one piece's shot set, a whole
     /// library, or the missing-texture fidelity gate.
     Render(delvec::render::cli::RenderArgs),
+    /// An assembly's rig (spec-0082): the parts and clips a generator wrote
+    /// beside the prefab library, at `<prefabs>/rigs/<name>/rig.json`.
+    Rig {
+        #[command(subcommand)]
+        action: RigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum RigAction {
+    /// Check a rig and print it: the part count, every clip with its length in
+    /// ticks, and per clip the footprint of its last frame — the cells its
+    /// parts stand in relative to the assembly's mark, which is the number a
+    /// strike's landing box is declared from (`DW0938`). A rig that breaks a
+    /// rule is refused with `DW0935`, naming the field. Two runs over one rig
+    /// are byte-identical.
+    Describe {
+        /// The rig id, `rig/<name>`, resolved in the `--prefabs` library.
+        rig: String,
+        /// The facing the footprint is printed at — the assembly's `facing`.
+        #[arg(long, value_enum, default_value = "south")]
+        facing: FacingArg,
+    },
+}
+
+/// The four cardinals an assembly can face, for `delvec rig describe`.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum FacingArg {
+    South,
+    North,
+    West,
+    East,
+}
+
+impl FacingArg {
+    fn facing(self) -> delvewright_dsl::Facing {
+        match self {
+            FacingArg::South => delvewright_dsl::Facing::South,
+            FacingArg::North => delvewright_dsl::Facing::North,
+            FacingArg::West => delvewright_dsl::Facing::West,
+            FacingArg::East => delvewright_dsl::Facing::East,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -412,6 +484,7 @@ fn main() -> ExitCode {
             cli.json,
         ),
         Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
+        Command::Codes => run_codes(),
         Command::Snapshot {
             campaign_dir,
             camera,
@@ -477,6 +550,11 @@ fn main() -> ExitCode {
             layout,
             out,
         } => run_calibrate(report, layout, out, cli.json),
+        Command::Textures {
+            campaign_dir,
+            out,
+            textures,
+        } => run_textures(campaign_dir, out, textures.as_deref(), cli.json),
         Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
             build_dir,
             campaign,
@@ -497,10 +575,121 @@ fn main() -> ExitCode {
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
+        Command::Sculpt(args) => delvec::sculpt::cli::run(args.clone()),
         Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
         Command::Render(args) => delvec::render::cli::run(args.clone(), cli.json),
+        Command::Rig {
+            action: RigAction::Describe { rig, facing },
+        } => run_rig_describe(rig, facing.facing(), &cli.prefabs, cli.json),
     }
+}
+
+/// `delvec rig describe` (spec-0082 §3.1): check one library rig and print
+/// what it is, from the one footprint function the strike check judges by.
+///
+/// Exit codes: `0` printed · `1` the rig is missing, malformed or breaks a rig
+/// rule (`DW0935`), or the id is not `rig/<kebab>` · `10` the library cannot
+/// be read.
+fn run_rig_describe(
+    rig: &str,
+    facing: delvewright_dsl::Facing,
+    prefabs_dir: &Path,
+    json: bool,
+) -> ExitCode {
+    use delvewright_dsl::rig::{self, RigLookup};
+    let id = delvewright_dsl::RigId(rig.to_string());
+    let refuse = |message: String| {
+        let d = Diagnostic::error(
+            delvewright_dsl::codes::ASSEMBLY_RIG,
+            "rig",
+            rig.to_string(),
+            message,
+        );
+        print_diags(std::slice::from_ref(&d), json);
+        ExitCode::from(1)
+    };
+    if !id.is_valid_syntax() {
+        return refuse(format!(
+            "`{rig}` is not a rig id — a rig is named {}",
+            id.syntax_form()
+        ));
+    }
+    let prefabs = match PrefabRegistry::load_dir(prefabs_dir) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "internal error: cannot read prefabs dir {}: {e}",
+                prefabs_dir.display()
+            );
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    let found = match delvewright_dsl::AnchorRegistry::rig(&prefabs, &id) {
+        RigLookup::Found(r) => r,
+        RigLookup::Missing | RigLookup::Unknown => {
+            return refuse(format!(
+                "the library at {} holds no `{}/{}/{}`",
+                prefabs_dir.display(),
+                rig::RIGS_DIR,
+                delvewright_dsl::local_id(rig),
+                rig::RIG_FILE
+            ));
+        }
+        RigLookup::Malformed(e) => {
+            return refuse(format!(
+                "`{}` does not parse as a rig document: {e}",
+                rig::RIG_FILE
+            ));
+        }
+    };
+    let issues = rig::check(found);
+    if !issues.is_empty() {
+        let diags: Vec<Diagnostic> = issues
+            .iter()
+            .map(|i| {
+                Diagnostic::error(
+                    delvewright_dsl::codes::ASSEMBLY_RIG,
+                    "rig",
+                    format!("{rig}{}", i.field),
+                    format!(
+                        "rig `{rig}` breaks a rig rule at `{}`: {}",
+                        i.field, i.message
+                    ),
+                )
+            })
+            .collect();
+        print_diags(&diags, json);
+        return ExitCode::from(1);
+    }
+    if json {
+        let clips: Vec<serde_json::Value> = found
+            .clips
+            .iter()
+            .map(|(name, c)| {
+                serde_json::json!({
+                    "clip": name,
+                    "frames": c.frames.len(),
+                    "ticks_per_frame": c.ticks_per_frame,
+                    "length_ticks": c.length_ticks(),
+                    "loop": c.looping,
+                    "last_frame_footprint": rig::last_frame_footprint(c, facing),
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::json!({
+                "rig": rig,
+                "facing": facing.token(),
+                "parts": found.parts.len(),
+                "clips": clips,
+            })
+        );
+    } else {
+        print!("{}", rig::describe(rig, found, facing));
+    }
+    ExitCode::SUCCESS
 }
 
 /// `delvec calibrate` (spec-0019 §4): the write-back half of the rehearsal loop.
@@ -732,6 +921,91 @@ pub(crate) fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCa
     }
 }
 
+/// `delvec textures` (spec-0084 §5.2): one comparison sheet per declared texture.
+fn run_textures(campaign_dir: &Path, out: &Path, textures: Option<&str>, json: bool) -> ExitCode {
+    use delvec::compiler::textures;
+    let loaded = match load_or_refuse(campaign_dir, json) {
+        Ok(l) => l,
+        Err(code) => return ExitCode::from(code),
+    };
+    let campaign = match parse_campaign(&loaded.raw) {
+        Ok(c) => c,
+        Err(diags) => {
+            print_diags(&diags, json);
+            return ExitCode::from(1);
+        }
+    };
+    let (rows, findings) =
+        textures::resolve(&campaign, |p| loaded.textures.get(p).map(Vec::as_slice));
+    if !findings.is_empty() {
+        let diags: Vec<Diagnostic> = findings.iter().map(|f| f.diagnostic()).collect();
+        print_diags(&diags, json);
+        return ExitCode::from(1);
+    }
+    let jar = match delvec::compiler::view::cli::resolve_textures(textures) {
+        Ok(j) => j,
+        Err(d) => {
+            d.print(json);
+            return ExitCode::from(5);
+        }
+    };
+    let assets = match delvec::compiler::view::assets::Assets::open(Path::new(&jar)) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("textures: cannot open {jar}: {e}");
+            return ExitCode::from(5);
+        }
+    };
+    if let Err(e) = std::fs::create_dir_all(out) {
+        eprintln!("textures: mkdir {}: {e}", out.display());
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+    for r in &rows {
+        let vanilla_path = format!("assets/minecraft/textures/{}.png", r.path);
+        let Some(vanilla) = assets.read(&vanilla_path) else {
+            eprintln!(
+                "textures: {jar} holds no `{vanilla_path}` — it is not the pinned client jar \
+                 the census was derived from"
+            );
+            return ExitCode::from(5);
+        };
+        // The left half is vanilla's only if these are the bytes the census
+        // measured — the same digest an override equal to vanilla is refused by.
+        let got = {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(&vanilla)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        };
+        if got != r.vanilla.sha256 {
+            eprintln!(
+                "textures: `{vanilla_path}` in {jar} has sha256 {got}, and the census records \
+                 {} — the jar is not the pinned {} client",
+                r.vanilla.sha256,
+                textures::census().minecraft
+            );
+            return ExitCode::from(5);
+        }
+        let Some(sheet) = textures::sheet(&vanilla, &r.png, r.vanilla.frame(), r.k) else {
+            eprintln!("textures: `{}` did not decode for its sheet", r.id);
+            return ExitCode::from(EXIT_INTERNAL);
+        };
+        let dest = out.join(format!("{}.png", r.id));
+        if let Err(e) = std::fs::write(&dest, &sheet) {
+            eprintln!("textures: write {}: {e}", dest.display());
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+        println!("{} — `{}` replaces `{}`", dest.display(), r.id, r.replaces);
+    }
+    eprintln!(
+        "textures binding: {} sheet(s) written of {} row(s) declared, from {jar}",
+        rows.len(),
+        campaign.world.content.textures.len()
+    );
+    ExitCode::SUCCESS
+}
+
 /// Validate and return the parsed campaign + shared context (prefabs, loaded dir,
 /// l10n sidecars) + diagnostics; prints diagnostics. Returns `Err(exit)` on
 /// internal error.
@@ -830,6 +1104,22 @@ fn validate_loaded(
             if let Err(d) = delvewright_dsl::declared_mc_codes(&campaign) {
                 diags.push(d);
             }
+            // spec-0084: every `world.textures[]` row against the pinned client's
+            // census (DW0939) and its own file (DW0309, DW0940). The same
+            // resolution the build bakes the pack from, so a row validate admits
+            // is a row the pack carries, byte for byte.
+            let (texture_rows, texture_diags) =
+                delvec::compiler::textures::resolve(&campaign, |p| {
+                    loaded.textures.get(p).map(Vec::as_slice)
+                });
+            diags.extend(texture_diags.iter().map(|f| f.diagnostic()));
+            examined.push(format!(
+                "textures: {} row(s) resolved of {} declared, against a census of {} vanilla \
+                 texture(s)",
+                texture_rows.len(),
+                campaign.world.content.textures.len(),
+                delvec::compiler::textures::census().textures.len()
+            ));
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
             // (DW0326), the unsupported `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source
@@ -837,6 +1127,12 @@ fn validate_loaded(
             // (exit 1) — no-op for a campaign that uses neither surface.
             diags.extend(delvec::compiler::atmos::check_sounds(&campaign));
             diags.extend(delvec::compiler::atmos::check_art(&campaign, &sidecars));
+            // spec-0080: a campaign's atmospheres and its repaints, refused at
+            // the document they are written in — an attribute the pinned game
+            // does not accept here (DW0928), a repaint naming neither or both of
+            // its volumes (DW0929), an atmosphere declared against itself or
+            // against nothing (DW0930). No-op for a campaign that declares none.
+            diags.extend(delvec::compiler::atmosphere::check(&campaign));
             // On-screen narrate text that overruns the title/subtitle/art width
             // budget (DW0330). Advisory tier — see `textfit` for why this warns
             // rather than rejects. Runs over the English source and every
@@ -858,6 +1154,15 @@ fn validate_loaded(
             diags.extend(delvec::compiler::gates::check_close_gates(
                 &campaign, &prefabs,
             ));
+            // spec-0083 §3.5: a `teleport` that fires while its root's cutscene
+            // is still playing is undone by `cs_end` (DW0933); and §7: the
+            // layout graph's `carry` edges and the campaign's links agree
+            // (DW0934). Both are read off the documents alone, so they are
+            // refused at validation, where the fault is entered.
+            diags.extend(delvec::compiler::link::check_teleport_under_cutscene(
+                &campaign,
+            ));
+            diags.extend(delvec::compiler::link::check_carry_realised(&campaign));
             // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
             // wording. No-op for a campaign that authors none.
             diags.extend(delvec::compiler::gates::check_seal_hints(&campaign));
@@ -1029,6 +1334,9 @@ fn validate_loaded(
                 examined.push(dbind.line());
                 diags.extend(dd);
             }
+            // spec-0081 §5.5: every time value the campaign states, as the clock
+            // it resolves to — printed on every run, zeroes included.
+            examined.extend(delvec::compiler::clock::binding_lines(&campaign));
             print_diags(&diags, json);
             report_binding_notes(&campaign, &examined);
             Ok(Validated {
@@ -2060,6 +2368,12 @@ fn camera_from_shot(
     use delvec::compiler::render_plan;
     use delvec::compiler::snapshot::{Camera, DEFAULT_FOV};
 
+    // The path the build reads: the links the route proof takes spliced in
+    // (spec-0083), so a `pov/…` id names the leg the build's own render plan
+    // named.
+    let relinked = delvec::compiler::nav::with_links_taken(plan, prefabs, world)
+        .map_err(|f| format!("{}: {}", f.code, f.message))?;
+    let plan = relinked.as_ref().unwrap_or(plan);
     let pov = if id.starts_with("pov/") {
         let routes = delvec::compiler::nav::critical_path_routes(plan, world);
         render_plan::pov_shots(plan, &routes)
@@ -2168,8 +2482,16 @@ fn run_blocking_chart(
     );
     let blocks = assembled.blocks;
     let targets = delvec::compiler::snapshot::collect_targets(&plan);
+    // The build's path: the links the route proof takes spliced in (spec-0083).
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            eprintln!("{} [error] build: {}", f.code, f.message);
+            return ExitCode::from(f.code.exit_tier().exit_status());
+        }
+    };
     let corridor: std::collections::BTreeSet<[i32; 3]> =
-        delvec::compiler::nav::critical_path_routes(&plan, &world)
+        delvec::compiler::nav::critical_path_routes(relinked.as_ref().unwrap_or(&plan), &world)
             .into_iter()
             .flat_map(|leg| leg.cells)
             .collect();
@@ -3220,8 +3542,9 @@ fn schema_stage_help() -> String {
          for the hand-written walk record (a campaign artifact, not a stage document); \
          `prefab-metadata` for a prefab library asset's sibling `<prefab-id>.json` (a \
          library asset, not a stage document); `cameras` for the showcase camera record \
-         `design/cameras.json` (a campaign artifact, not a stage document); or `all` for \
-         every stage document at once.",
+         `design/cameras.json` (a campaign artifact, not a stage document); `sculpt-form` for \
+         a `delvec sculpt` form (a library asset, not a stage document); or `all` for every \
+         stage document at once.",
         names.join(", ")
     )
 }
@@ -3295,6 +3618,18 @@ fn run_schema(stage: &str) -> ExitCode {
             );
             return ExitCode::SUCCESS;
         }
+        // A sculpt form is not a stage document either — it is a library ASSET
+        // `delvec sculpt` reads (spec-0087), exported for the reason prefab
+        // metadata is and absent from `all` for the same reason. The export
+        // names where forms live, which is how the gallery's coverage gate finds
+        // the documents it binds the form's units against.
+        "sculpt-form" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&delvec::sculpt::form::schema()).unwrap()
+            );
+            return ExitCode::SUCCESS;
+        }
         "all" => Stage::ALL.to_vec(),
         other => {
             let names: Vec<String> = Stage::ALL
@@ -3306,7 +3641,8 @@ fn run_schema(stage: &str) -> ExitCode {
                  stages), any stage by name — {names} — `walk-record` for the hand-written \
                  walk record, `prefab-metadata` for a prefab library asset's sibling \
                  `<prefab-id>.json`, `cameras` for the showcase camera record \
-                 `design/cameras.json`, or `all` for every stage document at once.",
+                 `design/cameras.json`, `sculpt-form` for a `delvec sculpt` form, or `all` for \
+                 every stage document at once.",
                 names = names.join(", "),
             );
             return ExitCode::from(EXIT_INTERNAL);
@@ -3352,6 +3688,20 @@ fn run_schema(stage: &str) -> ExitCode {
 /// table is engine data, so a table that contradicts itself is a defect in
 /// `dsl::metrics` and the person who has to act on it is whoever is holding the
 /// compiler.
+/// `delvec codes`: the DW-code registry, one JSON object per line, sorted by
+/// code; the count on stderr.
+fn run_codes() -> ExitCode {
+    let all = delvewright_dsl::diagnostic::declared();
+    let mut out = String::new();
+    for entry in &all {
+        out.push_str(&serde_json::to_string(entry).expect("a registry entry serializes"));
+        out.push('\n');
+    }
+    print!("{out}");
+    eprintln!("codes: {} DW code(s) declared by this binary", all.len());
+    ExitCode::SUCCESS
+}
+
 fn run_metrics(json: bool, gym_dir: Option<&std::path::Path>) -> ExitCode {
     use delvewright_dsl::metrics::{Metrics, export};
 

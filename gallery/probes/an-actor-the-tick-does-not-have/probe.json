@@ -1,0 +1,13 @@
+{
+  "code": "DW0503",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/1/effects/0/audience",
+      "value": "actor"
+    }
+  ],
+  "units": [],
+  "why": "`trigger/strike-the-hearth` is a `party` trigger: the tick polls it with the server command source, so its bundle runs with no acting player. Its `play-sound` declaring `audience: actor` would emit `@s` into a function where `@s` is nobody, and the sound would reach no one with every static check green. That is DW0503's rule — no `@s` where emission has none — in its fourth shape, an actor-addressed effect beside a `player`-scoped datum. It declares no unit: `audience: actor` is bound on the case-opening timeline, which starts at an objective's completion and carries its completer. The remedy is to make the trigger a `presser`, move the beat onto a site a player drives, or drop `audience` to address the party."
+}

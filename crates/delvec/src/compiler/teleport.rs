@@ -104,15 +104,17 @@ use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0542`: a `teleport`'s source volume covers an interaction affordance the
-/// engine has bound to hardware the teleport does not move (spec-0031).
-///
-/// One rule, one defect: *the compiler placed an entity and a block at the same
-/// cell, and this verb moves only one of them.* The player is left looking at a
-/// campfire, a lever or a sealed door that no longer answers a right-click —
-/// visible, reachable, inert. It is the same silence `DW0426` and `DW0422` exist
-/// to refuse, arriving from a third direction.
-pub const DW_TELEPORT_BOUND_AFFORDANCE: DwCode = DwCode::new("DW0542", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0542`: a `teleport`'s source volume covers an interaction affordance the
+    /// engine has bound to hardware the teleport does not move (spec-0031).
+    ///
+    /// One rule, one defect: *the compiler placed an entity and a block at the same
+    /// cell, and this verb moves only one of them.* The player is left looking at a
+    /// campfire, a lever or a sealed door that no longer answers a right-click —
+    /// visible, reachable, inert. It is the same silence `DW0426` and `DW0422` exist
+    /// to refuse, arriving from a third direction.
+    pub const DW_TELEPORT_BOUND_AFFORDANCE: DwCode = DwCode::new("DW0542", ExitTier::Build);
+}
 
 /// The binding ledger for the teleport proof.
 #[derive(Clone, Debug, Default)]
@@ -135,6 +137,16 @@ pub struct TeleportGate {
     /// compile-time-only green over a runtime mechanism is the vacuity this
     /// number exists to make visible. Filled by the emitter.
     pub packtests: usize,
+    /// Of the resolved teleports, the **links** (spec-0083 §3.1): hosted in a
+    /// repeatable trigger, carrying a body within one area — the carries the
+    /// route proof may take. Counted from the triggers.
+    pub links: usize,
+    /// Of the resolved teleports, the **gathers** — every other one. `links +
+    /// gathers = resolved`.
+    pub gathers: usize,
+    /// Critical-path legs a link carries on this build. Filled by the emitter
+    /// from `DW0311`'s binding.
+    pub legs_carried: usize,
 }
 
 impl TeleportGate {
@@ -146,7 +158,13 @@ impl TeleportGate {
     /// The ledger as the `validation/teleport-gate.json` artifact.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "teleports": { "declared": self.declared, "resolved": self.resolved },
+            "teleports": {
+                "declared": self.declared,
+                "resolved": self.resolved,
+                "links": self.links,
+                "gathers": self.gathers,
+            },
+            "legs_carried": self.legs_carried,
             "cells": self.cells,
             "affordances_examined": self.affordances,
             "packtest_templates": self.packtests,
@@ -219,8 +237,11 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
         cells: vols.iter().map(Volume::cells).sum(),
         affordances: 0,
         packtests: 0,
+        links: plan.links.len(),
+        gathers: plan.gathers.len(),
+        legs_carried: 0,
     };
-    if vols.is_empty() {
+    if vols.is_empty() && plan.loops.is_empty() {
         return Ok(gate);
     }
     // `(what it is, which one, where)` — the affordance authority, plus the seal
@@ -246,6 +267,44 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, Failure> {
         }
     }
     gate.affordances = posts.len();
+    // spec-0086 §4.2: a loop's slab moves whatever body is in it, so an
+    // affordance inside it is the same silence by a second verb — the body is
+    // moved off the thing it reached for.
+    // A checkpoint seat is a place a body is put down; inside a slab it is put
+    // down and moved in one tick.
+    let seats: Vec<(&'static str, String, [i32; 3])> = plan
+        .checkpoints
+        .iter()
+        .map(|cp| {
+            (
+                if cp.rest {
+                    "bonfire seat"
+                } else {
+                    "checkpoint seat"
+                },
+                format!("on anchor `{}`", cp.anchor),
+                cp.pos,
+            )
+        })
+        .collect();
+    for l in &plan.loops {
+        for (kind, label, pos) in posts.iter().chain(&seats) {
+            if !crate::compiler::r#loop::inside(l.slab, *pos) {
+                continue;
+            }
+            return Err(Failure {
+                code: DW_TELEPORT_BOUND_AFFORDANCE,
+                message: format!(
+                    "the slab of loop `{}` ({:?}..{:?}) moves every body inside it by \
+                     [{}, {}, {}], and it covers the {kind} {label} at {pos:?}. A body that steps \
+                     up to it is moved off the thing it reached for before it can press it. Move \
+                     the affordance out of the slab, or move the slab (its anchor and `extent`) \
+                     off the affordance.",
+                    l.id, l.slab.0, l.slab.1, l.offset[0], l.offset[1], l.offset[2]
+                ),
+            });
+        }
+    }
     for v in &vols {
         for (kind, label, pos) in &posts {
             if !v.contains(*pos) {

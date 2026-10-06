@@ -59,6 +59,7 @@ pub fn validate_campaign_with(
     // and over the whole closed consumer set — an ungated site contributes no
     // terms and cannot contradict.
     gate_contradiction_checks(c, &mut d);
+    lethal_stage_checks(c, &mut d);
     // spec-0031: the status-effect verbs. Every walk inside is empty for a
     // campaign that declares neither verb. The status-effect registry is the
     // fixed vanilla list wave-mob effects are validated against, so no injected
@@ -94,6 +95,9 @@ pub fn validate_campaign_with(
     // payloads and wave-mob equipment slots validate against the item registry
     // (pool areas deferred to the compiler).
     v06_checks(c, items, anchors, entities, &mut d);
+    // spec-0082: assemblies, their rigs and the verbs and trigger that name
+    // them. Every loop inside is empty for a campaign that declares none.
+    assembly_checks(c, anchors, &mut d);
     v06_trap_checks(c, items, entities, anchors, &mut d);
     shortcut_checks(c, anchors, &mut d);
     ambush_checks(c, &mut d);
@@ -103,6 +107,9 @@ pub fn validate_campaign_with(
     lane_checks(c, anchors, &mut d);
     difficulty_checks(c, &mut d);
     firework_checks(c, &mut d);
+    // spec-0085: the perception bundle — a particle's id, the envelope's audience
+    // on a party fact, and a sight grant that ends under a camera.
+    perception_checks(c, &mut d);
     // spec-0073: a fight's health bar. The walk is over every wave and actor;
     // a campaign that declares no bar and bills no fight `boss` gets nothing.
     crate::healthbar::health_bar_checks(c, &mut d);
@@ -159,6 +166,7 @@ pub fn validate_campaign_with(
     // completability half (`DW0510` the forced route, `DW0511` the respawn seat)
     // is compiler-tier, because it needs the solved layout.
     lethal_volume_checks(c, anchors, &mut d);
+    loop_checks(c, anchors, &mut d);
     // spec-0032: a shop stands on a prefab anchor, and an anchor
     // no bound prefab provides is the same defect a lethal volume's is.
     shop_anchor_checks(c, anchors, &mut d);
@@ -178,6 +186,9 @@ pub fn validate_campaign_with(
     // and `DW0496` do and needs the campaign's `design/` directory beside it.
     // No-op for a campaign that ships no `design.json`.
     crate::design::check(c, &mut d);
+    // spec-0081: the shape of every celestial time the documents state
+    // (`DW0931`). Empty for a campaign of keywords.
+    crate::celestial::check(c, &mut d);
 
     d
 }
@@ -521,6 +532,181 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
                      default that could be right for a cliff, a lava pit and an acid pool at \
                      once.",
                     v.id
+                ),
+            ));
+        }
+    }
+}
+
+/// Stage-5 loop structural checks (spec-0086): id syntax and uniqueness, the two
+/// anchors resolvable, and the release a fact about the party (`DW0949`).
+///
+/// Everything geometric — the slab's shape, the move clearing it, the closed and
+/// identical view — is about the solved layout and lives in the compiler
+/// (`compiler::loop`).
+fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    let loops = &c.quests.content.loops;
+    if loops.is_empty() {
+        return;
+    }
+    let providers = AnchorProviders::build(c, anchors);
+    let scope_of: BTreeMap<&str, crate::stages::StateScope> = c
+        .quests
+        .content
+        .state
+        .iter()
+        .map(|s| (s.id.as_str(), s.scope))
+        .collect();
+    let mut seen_id: BTreeSet<&str> = BTreeSet::new();
+    for (i, l) in loops.iter().enumerate() {
+        let at = |tail: &str| format!("/content/loops/{i}{tail}");
+        if !l.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                at("/id"),
+                format!(
+                    "malformed loop id `{}` — loop ids must be lowercase kebab-case with the \
+                     `loop/` prefix (e.g. `loop/long-gallery`)",
+                    l.id
+                ),
+            ));
+        }
+        if !seen_id.insert(l.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                at("/id"),
+                format!("duplicate loop id `{}`", l.id),
+            ));
+        }
+        for (field, anchor, what) in [
+            (
+                "/region/anchor",
+                l.region.anchor.as_str(),
+                "a loop's slab centre",
+            ),
+            ("/to/anchor", l.to.anchor.as_str(), "a loop's landing"),
+        ] {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                anchor,
+                crate::layout::StationKind::Point,
+                what,
+                "quests",
+                at(field),
+            ) {
+                d.push(f);
+            }
+            if !providers.resolvable(anchor) {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    at(field),
+                    format!(
+                        "loop `{}` names anchor `{anchor}` ({what}), which no prefab bound in \
+                         this campaign provides — {}",
+                        l.id,
+                        providers.anchor_remedy(
+                            "use an anchor the prefab exposes (anchor names come from prefab \
+                             metadata; do NOT invent one)"
+                        ),
+                    ),
+                ));
+            }
+        }
+        // `DW0949`: the gate is the release, and a loop with none holds forever.
+        if l.gate().is_empty() {
+            d.push(Diagnostic::error(
+                codes::LOOP_GATE,
+                "quests",
+                at(""),
+                format!(
+                    "loop `{}` declares no gate term — no `requires_flags`, no `forbids_flags`, \
+                     no `requires_state` — so it holds forever and a party that walks into it \
+                     can never leave: that is a soft-lock spelled out, not a mechanism. Give it \
+                     a release the party reaches: `forbids_flags: [flag/<found>]` ends it when \
+                     a flag is set, and `requires_state: [{{\"state\": <counts>, \"op\": \
+                     \"at-most\", \"value\": n}}]` on its own `counts` datum ends it after a \
+                     number of crossings",
+                    l.id
+                ),
+            ));
+        }
+        // …and the release is a fact about the party.
+        for (k, cmp) in l.requires_state.iter().enumerate() {
+            if scope_of.get(cmp.state.as_str()) == Some(&crate::stages::StateScope::Player) {
+                d.push(Diagnostic::error(
+                    codes::LOOP_GATE,
+                    "quests",
+                    at(&format!("/requires_state/{k}")),
+                    format!(
+                        "loop `{}` reads `{}` in its gate term `requires_state/{k}`, and that \
+                         datum is `player`-scoped: a release one player holds and another does \
+                         not splits the party into a looped half and a free half. The release \
+                         is a fact about the party — declare the datum `party`-scoped, or \
+                         release on a flag",
+                        l.id,
+                        cmp.state.as_str()
+                    ),
+                ));
+            }
+        }
+        if let Some(counts) = &l.counts {
+            match scope_of.get(counts.as_str()) {
+                None => d.push(Diagnostic::error(
+                    codes::STATE_UNDECLARED,
+                    "quests",
+                    at("/counts"),
+                    format!(
+                        "loop `{}` counts its crossings into `{}`, which the campaign never \
+                         declares. Add it to the stage-5 `state` list as a `party` datum, or \
+                         fix the id",
+                        l.id,
+                        counts.as_str()
+                    ),
+                )),
+                Some(crate::stages::StateScope::Player) => d.push(Diagnostic::error(
+                    codes::LOOP_GATE,
+                    "quests",
+                    at("/counts"),
+                    format!(
+                        "loop `{}` counts its crossings into `{}`, which is `player`-scoped: \
+                         the count a release reads is a fact about the party, and a count each \
+                         player keeps for themselves is a release one of them holds and \
+                         another does not. Declare the datum `party`-scoped",
+                        l.id,
+                        counts.as_str()
+                    ),
+                )),
+                Some(crate::stages::StateScope::Party) => {}
+            }
+        }
+        // A `teleport` inside `on_cross`, at any nesting depth.
+        fn teleports(effs: &[QuestEffect], path: &str, out: &mut Vec<String>) {
+            for (j, e) in effs.iter().enumerate() {
+                let here = format!("{path}/{j}");
+                if matches!(e.verb, crate::stages::Verb::Teleport { .. }) {
+                    out.push(here.clone());
+                }
+                for (pseg, _k, list) in e.nested_effect_lists_labeled() {
+                    teleports(list, &format!("{here}/{pseg}"), out);
+                }
+            }
+        }
+        let mut found = Vec::new();
+        teleports(&l.on_cross, &at("/on_cross"), &mut found);
+        for path in found {
+            d.push(Diagnostic::error(
+                codes::LOOP_GATE,
+                "quests",
+                path.clone(),
+                format!(
+                    "loop `{}` runs a `teleport` in its `on_cross` (term `{path}`): the body was \
+                     just moved by the loop, and a second move in the same tick is two carries \
+                     with one position. A place that looks different is a `teleport` of its \
+                     own, fired from a trigger the party reaches — take it out of the loop",
+                    l.id
                 ),
             ));
         }
@@ -1012,6 +1198,9 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
             chk!(pool, "world", format!("/content/areas/{i}/prefab_pool"));
         }
     }
+    for (i, a) in c.world.content.atmospheres.iter().enumerate() {
+        chk!(a.id, "world", format!("/content/atmospheres/{i}/id"));
+    }
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
         chk!(npc.id, "npcs", format!("/content/npcs/{i}/id"));
     }
@@ -1033,6 +1222,10 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
     for (i, a) in c.quests.content.actors.iter().enumerate() {
         chk!(a.id, "quests", format!("/content/actors/{i}/id"));
+    }
+    for (i, a) in c.quests.content.assemblies.iter().enumerate() {
+        chk!(a.id, "quests", format!("/content/assemblies/{i}/id"));
+        chk!(a.rig, "quests", format!("/content/assemblies/{i}/rig"));
     }
     for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
         for (j, node) in tree.nodes.iter().enumerate() {
@@ -1156,6 +1349,18 @@ fn uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
         "actor",
         d,
     );
+    // Assembly ids: unique within the stage-5 assemblies namespace (spec-0082).
+    dup_check(
+        c.quests
+            .content
+            .assemblies
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.id.as_str(), format!("/content/assemblies/{i}/id"))),
+        "quests",
+        "assembly",
+        d,
+    );
     // Dialogue trees: at most one per NPC (a duplicate tree is a duplicate npc
     // binding within the stage-6 dialogue namespace).
     dup_check(
@@ -1253,6 +1458,88 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     }
+
+    // spec-0080: an atmosphere is named by a place for its first tick and by a
+    // `set-atmosphere` for a repaint, and a repaint's `place` names an area or
+    // a site-plan box. Each is the plain unresolved-reference shape.
+    let atmosphere_ids: BTreeSet<&str> = c
+        .world
+        .content
+        .atmospheres
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+    let atmosphere_remedy = |id: &str| {
+        format!(
+            "unknown atmosphere `{id}` — declare it in `world.atmospheres[]` or correct the \
+             reference"
+        )
+    };
+    for (i, a) in c.world.content.areas.iter().enumerate() {
+        if let Some(id) = &a.atmosphere {
+            dangling(
+                d,
+                atmosphere_ids.contains(id.as_str()),
+                "world",
+                format!("/content/areas/{i}/atmosphere"),
+                atmosphere_remedy(id.as_str()),
+            );
+        }
+    }
+    let mut place_ids: BTreeSet<&str> = c
+        .world
+        .content
+        .areas
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+    if let Some(sp) = &c.site_plan {
+        for (i, b) in sp.content.boxes.iter().enumerate() {
+            place_ids.insert(b.node.as_str());
+            if let Some(id) = &b.atmosphere {
+                dangling(
+                    d,
+                    atmosphere_ids.contains(id.as_str()),
+                    "site-plan",
+                    format!("/content/boxes/{i}/atmosphere"),
+                    atmosphere_remedy(id.as_str()),
+                );
+            }
+        }
+    }
+    crate::stages::for_each_campaign_effect(c, &mut |path, site, e| {
+        let crate::stages::Verb::SetAtmosphere {
+            atmosphere, place, ..
+        } = &e.verb
+        else {
+            return;
+        };
+        let stage = match site {
+            crate::stages::EffectSite::DialogueRespawn { .. } => "dialogue",
+            _ => "quests",
+        };
+        if let Some(id) = atmosphere {
+            dangling(
+                d,
+                atmosphere_ids.contains(id.as_str()),
+                stage,
+                format!("{path}/atmosphere"),
+                atmosphere_remedy(id.as_str()),
+            );
+        }
+        if let Some(place) = place {
+            dangling(
+                d,
+                place_ids.contains(place.as_str()),
+                stage,
+                format!("{path}/place"),
+                format!(
+                    "`set-atmosphere` repaints unknown place `{place}` — name an `area/…` from \
+                     `world.areas[]` or a site-plan box's `node/…`"
+                ),
+            );
+        }
+    });
 
     for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
         dangling(
@@ -2674,6 +2961,38 @@ fn gate_contradiction_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     });
 }
 
+/// The id of the lethal volume a `/content/lethal_volumes/<i>/…` pointer names,
+/// for a diagnostic's wording; the pointer itself when it names none.
+fn volume_id_at(c: &Campaign, path: &str) -> String {
+    path.strip_prefix("/content/lethal_volumes/")
+        .and_then(|rest| rest.split('/').next())
+        .and_then(|i| i.parse::<usize>().ok())
+        .and_then(|i| c.quests.content.lethal_volumes.get(i))
+        .map_or_else(|| path.to_string(), |v| v.id.as_str().to_string())
+}
+
+/// `DW0953`'s empty-gate shape (spec-0088 §3.2): a `when` with no term is not a
+/// stage. The player-scoped shape is raised beside `DW0503` in
+/// [`state_checks`], where every gate's `requires_state` is already read.
+fn lethal_stage_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, v) in c.quests.content.lethal_volumes.iter().enumerate() {
+        if v.when.is_some() && v.gate().is_empty() {
+            d.push(Diagnostic::error(
+                codes::LETHAL_STAGE_GATE,
+                "quests",
+                format!("/content/lethal_volumes/{i}/when"),
+                format!(
+                    "lethal volume `{}` declares `when: {{}}` — a stage with no term. An \
+                     always-live volume is spelled by leaving `when` out; to stage it, name a \
+                     flag (`requires_flags` / `forbids_flags`) or a `party`-scoped datum \
+                     (`requires_state`)",
+                    v.id.as_str()
+                ),
+            ));
+        }
+    }
+}
+
 fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let decls = &c.quests.content.state;
     // --- the declarations themselves ------------------------------------------
@@ -2790,8 +3109,35 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     // `evaluates_per_player` answers `None` here and the scope
                     // check for effects happens in the root walk below, which
                     // knows both the root's audience and the seams inside it.
+                    // A loop's gate is refused for a `player` datum by `DW0949`,
+                    // which names the release rather than the audience; one
+                    // fault, one code.
                     if decl.scope == crate::stages::StateScope::Player
+                        && site.consumer == crate::gate::GateConsumer::LethalVolume
+                    {
+                        // The same fault as `DW0503` on any other party-read
+                        // gate, with the volume's own code and remedy
+                        // (spec-0088 §3.2): one check site, the code chosen by
+                        // the consumer.
+                        d.push(Diagnostic::error(
+                            codes::LETHAL_STAGE_GATE,
+                            stage,
+                            path,
+                            format!(
+                                "lethal volume `{}` is staged on `{}`, which is `player`-scoped — a \
+                                 volume's liveness is a fact about the place, so a term one player \
+                                 satisfies and another does not would be a pit that kills one body \
+                                 and spares the one beside it, and the sweep's entity half has no \
+                                 player to read a per-player score from. Name a flag or a \
+                                 `party`-scoped datum in `when`, or leave `when` out to make the \
+                                 volume live from world-load",
+                                volume_id_at(c, &site.path),
+                                cmp.state.as_str()
+                            ),
+                        ));
+                    } else if decl.scope == crate::stages::StateScope::Player
                         && site.consumer.evaluates_per_player() == Some(false)
+                        && site.consumer != crate::gate::GateConsumer::Loop
                     {
                         d.push(Diagnostic::error(
                             codes::STATE_SCOPE_UNREACHABLE,
@@ -2836,6 +3182,14 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         }
     });
+    // A loop's `counts` is a write: every move raises it by one (spec-0086 §3.4).
+    for l in &c.quests.content.loops {
+        if let Some(counts) = &l.counts
+            && declared.contains_key(counts.as_str())
+        {
+            written.insert(counts.as_str().to_string());
+        }
+    }
     // A `player`-scoped datum read or written where there is no acting player
     // has no subject, exactly as a `carrier: "one"` give does (`DW0357`).
     //
@@ -2971,34 +3325,101 @@ fn check_player_state_not_scheduled(
                 ),
             ));
         }
-        match &e.verb {
-            // Dispatched per player; they reset the latch.
-            Verb::SetCheckpoint { on_respawn, .. } => {
-                check_player_state_not_scheduled(on_respawn, declared, stage, path, false, d);
-            }
-            Verb::BeginStealth { on_caught, .. } => {
-                check_player_state_not_scheduled(on_caught, declared, stage, path, false, d);
-            }
-            // The scheduler-only seams (see `emit::Audience::Scheduled`).
-            Verb::Sequence { steps } => {
-                for st in steps {
-                    check_player_state_not_scheduled(&st.effects, declared, stage, path, true, d);
-                }
-            }
-            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
-                check_player_state_not_scheduled(on_arrive, declared, stage, path, true, d);
-            }
-            Verb::Bonfire { on_rest, .. } => {
-                check_player_state_not_scheduled(on_rest, declared, stage, path, scheduled, d);
-            }
-            _ => {}
+        // spec-0085 §3.3: the fourth shape — an actor-addressed effect where
+        // emission has no acting player. One rule, *no `@s` where emission has
+        // none*, and one remedy.
+        if scheduled && e.audience == Some(crate::stages::EffectAudience::Actor) {
+            d.push(Diagnostic::error(
+                codes::STATE_SCOPE_UNREACHABLE,
+                stage,
+                path.to_string(),
+                format!(
+                    "a `{}` effect declares `audience: actor` in a bundle that runs with no \
+                     acting player (a polled trigger's effects, a trap's payload and a shortcut's \
+                     `on_unlock` run from the server command source; so do a `move-npc`/\
+                     `move-actor` `on_arrive`, a `bonfire`'s `on_rest`, and every step of a \
+                     timeline started there). There is no actor to address. Move the beat onto a \
+                     site a player drives (an objective's completion, a `presser` trigger, a \
+                     respawn), or drop `audience` to address the party",
+                    e.verb.tag()
+                ),
+            ));
+        }
+        // The seams are the DSL's one statement of them
+        // (`QuestEffect::nested_effect_dispatch`): a `sequence` step keeps the
+        // actor its timeline was started with (spec-0085 §3.2).
+        for (list, how) in e.nested_effect_dispatch() {
+            check_player_state_not_scheduled(
+                list,
+                declared,
+                stage,
+                path,
+                !how.has_actor(!scheduled),
+                d,
+            );
+        }
+    }
+}
+
+/// spec-0084: the half of a `world.textures[]` row that needs neither the
+/// pinned client's census nor the campaign's files — the id (`DW0190`, the rule
+/// a skin's `texture_id` already has), one row per replaced texture (`DW0939`),
+/// and the licence (`DW0741`). The census half (`DW0939`, `DW0940`) and the file
+/// (`DW0309`) are judged where the files are read, `delvec::compiler::textures`.
+fn texture_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+    let mut replaced: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, t) in c.world.content.textures.iter().enumerate() {
+        if !is_kebab(&t.id) {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "world",
+                format!("/content/textures/{i}/id"),
+                format!(
+                    "texture `id` `{}` is malformed — it must be a bare kebab token (e.g. \
+                     `red-moon`), matching the `textures/<id>.png` filename",
+                    t.id
+                ),
+            ));
+        } else if !ids.insert(t.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "world",
+                format!("/content/textures/{i}/id"),
+                format!(
+                    "duplicate texture `id` `{}` — each row names its own image; rename one \
+                     (and its `textures/<id>.png`)",
+                    t.id
+                ),
+            ));
+        }
+        if let Some(first) = replaced.insert(t.replaces.as_str(), i) {
+            d.push(Diagnostic::error(
+                codes::TEXTURE_PATH,
+                "world",
+                format!("/content/textures/{i}/replaces"),
+                format!(
+                    "texture `{}` replaces `{}`, which `world.textures[{first}]` already \
+                     replaces — a texture is drawn one way, so remove one of the two rows",
+                    t.id, t.replaces
+                ),
+            ));
+        }
+        for reason in crate::license::image_license_refusals(&t.license) {
+            d.push(Diagnostic::error(
+                codes::LICENSE_REFUSED,
+                "world",
+                format!("/content/textures/{i}/license"),
+                format!("texture `{}` (replaces `{}`): {reason}", t.id, t.replaces),
+            ));
         }
     }
 }
 
 /// Stage-1 `horizon`/`boundary` validation (spec-0013), the party size
-/// (spec-0018) and the declared difficulty.
+/// (spec-0018), the declared difficulty and the declared textures (spec-0084).
 fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    texture_checks(c, d);
     // spec-0018: a delve is played by ONE party of 1–4, so a declared
     // mandatory size outside that range can never be honoured.
     if let Some(n) = c.world.content.min_players
@@ -3013,6 +3434,34 @@ fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                  so set it to a value in 1..=4 (absent = 1, a party of one)"
             ),
         ));
+    }
+    // spec-0077 §7: a respawn wait is `1..=120` seconds, and it hangs off the
+    // checkpoint respawn edge, so it needs a checkpoint or bonfire to exist.
+    if let Some(w) = c.world.content.respawn_wait {
+        if !(1..=120).contains(&w.seconds) {
+            d.push(Diagnostic::error(
+                codes::RESPAWN_WAIT_INVALID,
+                "world",
+                "/content/respawn_wait/seconds".to_string(),
+                format!(
+                    "`respawn_wait.seconds` = {} is out of range — a fallen player waits 1 to 120 \
+                     seconds, so set it to a value in 1..=120, or drop `respawn_wait` for no wait",
+                    w.seconds
+                ),
+            ));
+        }
+        if !declares_checkpoint(c) {
+            d.push(Diagnostic::error(
+                codes::RESPAWN_WAIT_INVALID,
+                "world",
+                "/content/respawn_wait".to_string(),
+                "`respawn_wait` is declared but this campaign declares no `set-checkpoint` or \
+                 `bonfire` — the wait begins on the checkpoint respawn edge, so with nothing to \
+                 come back to it never runs. Add the checkpoint or bonfire a fallen player \
+                 returns to, or drop `respawn_wait`."
+                    .to_string(),
+            ));
+        }
     }
     // Declared combat difficulty. `peaceful` is the
     // one keyword the compiler refuses: on peaceful the server discards every
@@ -3121,8 +3570,32 @@ fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// asks it, and so does the compiler's `fight_comes_back` where no plan exists
 /// yet (`DW0914`/`DW0915`).
 pub fn declares_bonfire(c: &Campaign) -> bool {
+    collected_effect_any(c, |eff| eff.bonfire().is_some())
+}
+
+/// Does the campaign declare any checkpoint a fallen player respawns at — a
+/// `set-checkpoint` or a `bonfire` — at a root the compiler collects checkpoints
+/// from: the roots [`declares_bonfire`] reads, plus a dialogue option's
+/// `set-checkpoint`. The reading `DW0925` needs.
+pub fn declares_checkpoint(c: &Campaign) -> bool {
+    collected_effect_any(c, |eff| {
+        eff.bonfire().is_some() || eff.set_checkpoint().is_some()
+    }) || c.dialogue.content.dialogues.iter().any(|tree| {
+        tree.nodes.iter().any(|node| {
+            node.options
+                .iter()
+                .any(|opt| opt.effects.iter().any(|e| e.set_checkpoint().is_some()))
+        })
+    })
+}
+
+/// Does any quest-effect at a root the compiler collects checkpoints and rest
+/// points from (a quest's bundles and an environment trigger's effects, at any
+/// nesting depth) satisfy `pred`? The match over the site is exhaustive, so a
+/// new root answers here.
+fn collected_effect_any(c: &Campaign, pred: impl Fn(&QuestEffect) -> bool) -> bool {
     use crate::stages::EffectSite;
-    let mut has_bonfire = false;
+    let mut found = false;
     crate::stages::for_each_campaign_effect(c, &mut |_, site, eff| {
         let collected = match site {
             EffectSite::Objective { .. }
@@ -3133,11 +3606,13 @@ pub fn declares_bonfire(c: &Campaign) -> bool {
             | EffectSite::ShortcutUnlock { .. }
             | EffectSite::ShopOffer { .. }
             | EffectSite::OnDeath
-            | EffectSite::OnKill { .. } => false,
+            | EffectSite::OnKill { .. }
+            | EffectSite::AssemblyLand { .. }
+            | EffectSite::LoopCross { .. } => false,
         };
-        has_bonfire |= collected && eff.bonfire().is_some();
+        found |= collected && pred(eff);
     });
-    has_bonfire
+    found
 }
 
 fn for_each_effect_deep(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEffect)) {
@@ -3260,56 +3735,47 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
 }
 
 /// Reject a `carrier: "one"` `give-item` inside a **scheduler-only** bundle
-/// (`DW0371`, spec-0018).
+/// (`DW0357`, spec-0018).
 ///
 /// `carrier: "one"` means "hand this one quest prop to the player whose action
-/// earned it". A `sequence` step and a `move-npc`/`move-actor` `on_arrive` are
-/// re-invoked by the vanilla scheduler with the **server** command source: there
-/// is no acting player there, so the effect has no defensible recipient. The
-/// party-wide default (absent `carrier`) is always fine — it addresses `@a`.
+/// earned it". A bundle the vanilla scheduler re-invokes with the **server**
+/// command source has no acting player, so the effect has no defensible
+/// recipient. The party-wide default (absent `carrier`) is always fine — it
+/// addresses `@a`.
 ///
-/// `scheduled` latches on the way down and the walk deliberately **stops** at a
-/// `set-checkpoint`'s `on_respawn` and a `begin-stealth`'s `on_caught`: those
-/// bundles are dispatched per player (the respawning / spotted one), so they do
-/// have an `@s` even when the effect that installed them was scheduled.
+/// Which nested bundle has an acting player is the DSL's one statement of it,
+/// [`QuestEffect::nested_effect_dispatch`]: a `move-npc`/`move-actor`
+/// `on_arrive` and a `bonfire`'s `on_rest` never do; a `set-checkpoint`'s
+/// `on_respawn` and a `begin-stealth`'s `on_caught` always do; a `sequence`
+/// step has one exactly where the timeline was started with one, because the
+/// timeline carries its actor across its `schedule`s (spec-0085 §3.2). The
+/// root's own top level is not refused here — a polled root lowers a
+/// `carrier: "one"` give to the party, which is what an absent carrier says.
 fn check_carrier_one_not_scheduled(
     effs: &[QuestEffect],
     path: &str,
-    scheduled: bool,
+    has_actor: bool,
+    top: bool,
     d: &mut Vec<Diagnostic>,
 ) {
     for e in effs {
-        if scheduled && e.gives_to_one() {
+        if !has_actor && !top && e.gives_to_one() {
             d.push(Diagnostic::error(
                 codes::PARTY_CARRIER_SCHEDULED,
                 "quests",
                 path.to_string(),
                 "a `give-item` with `carrier: \"one\"` sits in a bundle only the scheduler ever \
-                 runs (a `sequence` step, or a `move-npc`/`move-actor` `on_arrive`). Those run \
-                 with the server command source — there is no acting player to hand the prop to, \
-                 so the give would silently reach nobody. Drop `carrier` to arm the whole party, \
-                 or move the hand-off onto the beat a player completes"
+                 runs with no acting player (a `move-npc`/`move-actor` `on_arrive`, a `bonfire`'s \
+                 `on_rest`, or a `sequence` step of a timeline started where nobody acted — a \
+                 trigger's effects, a trap's payload, a shortcut's `on_unlock`). Those run with \
+                 the server command source — there is no acting player to hand the prop to, so \
+                 the give would silently reach nobody. Drop `carrier` to arm the whole party, or \
+                 move the hand-off onto the beat a player completes"
                     .to_string(),
             ));
         }
-        match &e.verb {
-            // These bundles ARE dispatched per player; they reset the latch.
-            Verb::SetCheckpoint { on_respawn, .. } => {
-                check_carrier_one_not_scheduled(on_respawn, path, false, d);
-            }
-            Verb::BeginStealth { on_caught, .. } => {
-                check_carrier_one_not_scheduled(on_caught, path, false, d);
-            }
-            // These are the scheduler-only seams (see `emit::Audience::Scheduled`).
-            Verb::Sequence { steps } => {
-                for st in steps {
-                    check_carrier_one_not_scheduled(&st.effects, path, true, d);
-                }
-            }
-            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
-                check_carrier_one_not_scheduled(on_arrive, path, true, d);
-            }
-            _ => {}
+        for (list, how) in e.nested_effect_dispatch() {
+            check_carrier_one_not_scheduled(list, path, how.has_actor(has_actor), false, d);
         }
     }
 }
@@ -3469,8 +3935,20 @@ fn v06_checks(
         };
         walk_effects_deep(effs, &mut visit);
         check_no_nested_sequence(effs, path, d);
-        check_carrier_one_not_scheduled(effs, path, false, d);
     }
+    // `DW0357`, per root SITE: whether its bundle has an acting player is the
+    // site's own answer (a `presser` trigger does, every other trigger does not).
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        if site.stage == "quests" {
+            check_carrier_one_not_scheduled(
+                effs,
+                &site.path,
+                site.runs_with_acting_player(),
+                true,
+                d,
+            );
+        }
+    });
 
     // Wave-mob `equipment` item ids: every present slot must name a
     // pinned-1.21.11 item — the same registry and DW family as `give-item`
@@ -3813,6 +4291,190 @@ fn firework_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     });
     for (path, stage, message) in found {
         d.push(Diagnostic::error(codes::SCHEMA, stage, path, message));
+    }
+}
+
+/// **The perception surface, at every effect root** (spec-0085).
+///
+/// Four rules over one descent (the single root enumeration and the single
+/// nesting authority, so a beat inside a `sequence` step of a dialogue
+/// `on_respawn` is asked exactly what a top-level one is):
+///
+/// * `DW0941` — a `particle` id the pinned registry does not hold, or one whose
+///   type takes options;
+/// * `DW0100` — a `particle` `count` of zero, which the exported schema refuses
+///   (`minimum: 1`) and serde does not;
+/// * `DW0942` — the envelope's `audience` or `in` on a verb the emitter fires
+///   once for the world ([`Verb::addresses_players`]);
+/// * `DW0944` — in one timeline, a sight grant whose window overlaps a cutscene
+///   step's and ends inside it or within its own wind-down after it.
+fn perception_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    fn descend(stage: &'static str, path: String, eff: &QuestEffect, d: &mut Vec<Diagnostic>) {
+        perception_one(stage, &path, eff, d);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            if !matches!(eff.verb, Verb::Sequence { .. }) {
+                // A nested bundle is a timeline of one step, at tick 0.
+                sight_under_camera(stage, &[(0, format!("{path}/{pseg}"), list)], d);
+            }
+            for (j, inner) in list.iter().enumerate() {
+                descend(stage, format!("{path}/{pseg}/{j}"), inner, d);
+            }
+        }
+    }
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        // A root's bundle fires all at once: a timeline of one step, at tick 0.
+        sight_under_camera(site.stage, &[(0, site.path.clone(), effs)], d);
+        for (i, eff) in effs.iter().enumerate() {
+            descend(site.stage, format!("{}/{i}", site.path), eff, d);
+        }
+    });
+}
+
+/// One effect's perception rules, at the pointer it was found at.
+fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Vec<Diagnostic>) {
+    use crate::perception;
+    if let Verb::Particle {
+        particle, count, ..
+    } = &eff.verb
+    {
+        match perception::particle_takes_options(particle) {
+            None => d.push(Diagnostic::error(
+                codes::PERCEPTION_UNKNOWN_PARTICLE,
+                stage,
+                format!("{path}/particle"),
+                format!(
+                    "`particle` `{particle}` is not a particle type the pinned 1.21.11 game \
+                     registers ({} types, `crates/dsl/data/particles-1.21.11.json`). Use a \
+                     registered id — the full-screen face is `minecraft:elder_guardian`",
+                    perception::particle_registry().len()
+                ),
+            )),
+            Some(true) => d.push(Diagnostic::error(
+                codes::PERCEPTION_UNKNOWN_PARTICLE,
+                stage,
+                format!("{path}/particle"),
+                format!(
+                    "`particle` `{particle}` is a type that takes options (a colour, a block, an \
+                     item, a destination), and the `particle` verb carries none, so the game would \
+                     refuse the command. A particle with options is excluded until the engine \
+                     states what each one takes; choose a type a bare id spawns"
+                ),
+            )),
+            Some(false) => {}
+        }
+        if *count == Some(0) {
+            d.push(Diagnostic::error(
+                codes::SCHEMA,
+                stage,
+                format!("{path}/count"),
+                "`particle` `count` is 0. Zero is vanilla's spelling of a different thing — one \
+                 particle given a velocity — and the schema's minimum is 1. Write the number of \
+                 particles, at least 1"
+                    .to_string(),
+            ));
+        }
+    }
+    if !eff.addresses_players() {
+        for (field, present) in [
+            ("audience", eff.audience.is_some()),
+            ("in", eff.within.is_some()),
+        ] {
+            if present {
+                d.push(Diagnostic::error(
+                    codes::PERCEPTION_AUDIENCE_ON_A_PARTY_FACT,
+                    stage,
+                    format!("{path}/{field}"),
+                    format!(
+                        "`{}` declares `{field}`, and a `{}` fires once for the world — it \
+                         addresses no player, so there is no audience to narrow. `audience` and \
+                         `in` belong on the effects a player sees, hears or receives (`narrate`, \
+                         `play-sound`, `particle`, `give-effect`, `clear-effect`, \
+                         `damage-players`, `give-item`); a `sequence`'s steps each state their \
+                         own. Remove `{field}` here, or move it onto those effects",
+                        eff.verb.tag(),
+                        eff.verb.tag()
+                    ),
+                ));
+            }
+        }
+    }
+    if let Verb::Sequence { steps } = &eff.verb {
+        let groups: Vec<(u32, String, &[QuestEffect])> = steps
+            .iter()
+            .enumerate()
+            .map(|(si, st)| {
+                (
+                    st.at_ticks,
+                    format!("{path}/steps/{si}/effects"),
+                    st.effects.as_slice(),
+                )
+            })
+            .collect();
+        sight_under_camera(stage, &groups, d);
+    }
+}
+
+/// `DW0944`: in one timeline, a sight grant that ends under a camera
+/// (spec-0085 §5.3). A bundle — a root's list or a nested one — fires all at
+/// once, so it is judged as a timeline of one step at tick 0; a `sequence` is
+/// judged step by step.
+///
+/// A grant's window is `[at_ticks, at_ticks + 20 × seconds)`; a cutscene step's
+/// is `[at_ticks, at_ticks + 20 × Σ shot seconds)`. A grant that overlaps a
+/// shot's window and ends at or after its start and before its end plus the
+/// effect's wind-down ([`crate::perception::sight_wind_down_ticks`]) starts
+/// ramping down on screen. Nothing outside one timeline is examined: a grant
+/// with no cutscene in its timeline is not this rule's business.
+fn sight_under_camera(
+    stage: &'static str,
+    groups: &[(u32, String, &[QuestEffect])],
+    d: &mut Vec<Diagnostic>,
+) {
+    let mut shots: Vec<(String, u32, u32)> = Vec::new();
+    for (at, list_path, effects) in groups {
+        for (ei, e) in effects.iter().enumerate() {
+            if let Some(list) = e.cutscene_shots().filter(|l| !l.is_empty()) {
+                let len: u32 = list.iter().map(|s| s.resolved_seconds() * 20).sum();
+                shots.push((format!("{list_path}/{ei}"), *at, at + len));
+            }
+        }
+    }
+    if shots.is_empty() {
+        return;
+    }
+    for (at, list_path, effects) in groups {
+        for (ei, e) in effects.iter().enumerate() {
+            let Some((effect, seconds, _, _, _)) = e.give_effect() else {
+                continue;
+            };
+            let Some(wind) = crate::perception::sight_wind_down_ticks(effect) else {
+                continue;
+            };
+            let begin = *at;
+            let end = begin + seconds * 20;
+            for (shot, c0, c1) in &shots {
+                let (c0, c1) = (*c0, *c1);
+                let overlaps = begin < c1 && end > c0;
+                if overlaps && end < c1 + wind {
+                    d.push(Diagnostic::error(
+                        codes::PERCEPTION_SIGHT_UNDER_A_CAMERA,
+                        stage,
+                        format!("{list_path}/{ei}"),
+                        format!(
+                            "`give-effect` `{effect}` runs from tick {begin} to tick {end} of \
+                             this timeline, and the cutscene at `{shot}` holds the camera from \
+                             tick {c0} to tick {c1}. The grant ends at tick {end}, inside the \
+                             shot or within {wind} tick(s) of its end — the effect's wind-down \
+                             — so it starts ramping down on screen. A granted sight effect \
+                             outlasts any authored camera it overlaps, plus its wind-down: write \
+                             a `seconds` of at least {need}, or start it after the shot (a later \
+                             `at_ticks`)",
+                            need = (c1 + wind - begin).div_ceil(20),
+                        ),
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -4921,11 +5583,16 @@ fn v04_checks(
                 "quests",
                 format!("/content/triggers/{i}/at"),
                 format!(
-                    "trigger `{}` fires on `strike-npc`, whose target is NPC `{}`'s body — it \
-                     watches no cell, so the `at` anchor `{at}` names nothing and would be \
-                     silently ignored. Remove `at`.",
+                    "trigger `{}` fires on `{}`, whose target is {} — it watches no cell, so \
+                     the `at` anchor `{at}` names nothing and would be silently ignored. \
+                     Remove `at`.",
                     t.id,
-                    t.on.npc_target().map(|n| n.as_str()).unwrap_or("?")
+                    t.on.kind(),
+                    match (t.on.npc_target(), t.on.assembly_target()) {
+                        (Some(n), _) => format!("NPC `{n}`'s body"),
+                        (_, Some(m)) => format!("assembly `{m}`'s hitbox"),
+                        _ => "an object".to_string(),
+                    }
                 ),
             )),
             (true, Some(at)) if !providers.resolvable(at) => d.push(Diagnostic::error(
@@ -5167,6 +5834,274 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
         }
     }
     flags
+}
+
+/// spec-0082: **assemblies, their rigs, and every reference to one.**
+///
+/// * Each assembly's `rig` resolves in the library and passes the rig's
+///   structural rules ([`crate::rig::check`]); its `initial` and every strike
+///   step's `windup`/`strike` name clips the rig declares (`DW0935`). A
+///   registry that is not the whole library answers
+///   [`crate::rig::RigLookup::Unknown`] and nothing is refused on its word.
+/// * Its mark's anchor, and its arming region's, are provided by some area
+///   (`DW0142`), and the mark is a point station.
+/// * Every `spawn-assembly` / `despawn-assembly` / `play-clip`, at every depth
+///   of every effect root, names a declared assembly (`DW0112`), and a
+///   `play-clip` names a clip its rig declares (`DW0935`).
+/// * Every `strike-assembly` trigger names a declared assembly (`DW0112`).
+///
+/// The hitbox's bounds, its reach and where a blow lands are judged at build
+/// time, where cells exist (`DW0936`–`DW0938`, `compiler::assembly`).
+fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    use crate::rig::RigLookup;
+    let quests = &c.quests.content;
+    if quests.assemblies.is_empty()
+        && !quests
+            .triggers
+            .iter()
+            .any(|t| t.on.assembly_target().is_some())
+    {
+        // Still walk the effects: a verb naming an assembly in a campaign that
+        // declares none is a dangling reference.
+        let mut any = false;
+        crate::stages::for_each_campaign_effect(c, &mut |_, _, e| {
+            any |= assembly_verb(e).is_some();
+        });
+        if !any {
+            return;
+        }
+    }
+    let providers = AnchorProviders::build(c, anchors);
+    // The rig each declared assembly resolved to, for the clip checks below.
+    let mut rigs: BTreeMap<&str, Option<&crate::rig::Rig>> = BTreeMap::new();
+    let clip_list = |r: &crate::rig::Rig| -> String {
+        let names = r.clip_names();
+        if names.is_empty() {
+            "none".to_string()
+        } else {
+            names
+                .iter()
+                .map(|n| format!("`{n}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    };
+    for (i, a) in quests.assemblies.iter().enumerate() {
+        let at = format!("/content/assemblies/{i}");
+        let resolved = match anchors.rig(&a.rig) {
+            RigLookup::Unknown => None,
+            RigLookup::Missing => {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    format!("{at}/rig"),
+                    format!(
+                        "assembly `{}` names rig `{}`, and the library holds no `{}/{}/{}` — a \
+                         rig is a file a generator writes beside the prefab library, never \
+                         campaign JSON. Run the generator that writes it, or name a rig the \
+                         library holds",
+                        a.id,
+                        a.rig,
+                        crate::rig::RIGS_DIR,
+                        crate::l10n::local_id(a.rig.as_str()),
+                        crate::rig::RIG_FILE,
+                    ),
+                ));
+                None
+            }
+            RigLookup::Malformed(e) => {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    format!("{at}/rig"),
+                    format!(
+                        "assembly `{}` names rig `{}`, whose `{}` does not parse as a rig \
+                         document: {e}. Regenerate it with the generator that wrote it",
+                        a.id,
+                        a.rig,
+                        crate::rig::RIG_FILE,
+                    ),
+                ));
+                None
+            }
+            RigLookup::Found(r) => {
+                let issues = crate::rig::check(r);
+                for issue in &issues {
+                    d.push(Diagnostic::error(
+                        codes::ASSEMBLY_RIG,
+                        "quests",
+                        format!("{at}/rig"),
+                        format!(
+                            "assembly `{}` names rig `{}`, which breaks a rig rule at `{}`: {}. \
+                             Regenerate the rig with its generator",
+                            a.id, a.rig, issue.field, issue.message
+                        ),
+                    ));
+                }
+                if issues.is_empty() { Some(r) } else { None }
+            }
+        };
+        rigs.insert(a.id.as_str(), resolved);
+        if let Some(r) = resolved {
+            let mut need = |clip: &str, path: String, role: &str| {
+                if r.clips.contains_key(clip) {
+                    return;
+                }
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    path,
+                    format!(
+                        "assembly `{}` asks for clip `{clip}` as its {role}, and rig `{}` declares \
+                         no such clip. Its clips are: {}",
+                        a.id,
+                        a.rig,
+                        clip_list(r)
+                    ),
+                ));
+            };
+            if let Some(initial) = &a.initial {
+                need(initial, format!("{at}/initial"), "`initial`");
+            }
+            let mut paced: Vec<Diagnostic> = Vec::new();
+            if let Some(s) = &a.strikes {
+                for (j, step) in s.pattern.iter().enumerate() {
+                    need(
+                        &step.windup,
+                        format!("{at}/strikes/pattern/{j}/windup"),
+                        "strike step's `windup`",
+                    );
+                    need(
+                        &step.strike,
+                        format!("{at}/strikes/pattern/{j}/strike"),
+                        "strike step's `strike`",
+                    );
+                    if let Some(t) = step.ticks_per_frame
+                        && !(crate::rig::MIN_TICKS_PER_FRAME..=crate::rig::MAX_TICKS_PER_FRAME)
+                            .contains(&t)
+                    {
+                        paced.push(Diagnostic::error(
+                            codes::ASSEMBLY_RIG,
+                            "quests",
+                            format!("{at}/strikes/pattern/{j}/ticks_per_frame"),
+                            format!(
+                                "assembly `{}`'s strike step {j} plays its clips at {t} tick(s) per \
+                                 frame. A keyframe cadence is {} to {} — the bounds every rig clip \
+                                 is held to. Choose a cadence in that range, or drop \
+                                 `ticks_per_frame` to play each clip at its own",
+                                a.id,
+                                crate::rig::MIN_TICKS_PER_FRAME,
+                                crate::rig::MAX_TICKS_PER_FRAME
+                            ),
+                        ));
+                    }
+                }
+            }
+            d.extend(paced);
+        }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            a.at.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "an assembly's mark",
+            "quests",
+            format!("{at}/at/anchor"),
+        ) {
+            d.push(f);
+        } else if !providers.resolvable(a.at.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("{at}/at/anchor"),
+                format!(
+                    "assembly `{}` stands at anchor `{}`, which no area's prefab provides — {}",
+                    a.id,
+                    a.at.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                    ),
+                ),
+            ));
+        }
+        if let Some(s) = &a.strikes
+            && !providers.resolvable(s.while_in.anchor.as_str())
+        {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("{at}/strikes/while_in/anchor"),
+                format!(
+                    "assembly `{}`'s arming region is centred on anchor `{}`, which no area's \
+                     prefab provides — {}",
+                    a.id,
+                    s.while_in.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                    ),
+                ),
+            ));
+        }
+    }
+    // Every verb that names an assembly, at every depth of every root.
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, e| {
+        let Some((assembly, clip)) = assembly_verb(e) else {
+            return;
+        };
+        let Some(resolved) = rigs.get(assembly) else {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                path.to_string(),
+                format!(
+                    "`{}` names assembly `{assembly}`, which the stage-5 `assemblies` list does \
+                     not declare — declare it, or fix the reference",
+                    e.verb.tag()
+                ),
+            ));
+            return;
+        };
+        if let (Some(clip), Some(r)) = (clip, resolved)
+            && !r.clips.contains_key(clip)
+        {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_RIG,
+                "quests",
+                format!("{path}/clip"),
+                format!(
+                    "`play-clip` asks assembly `{assembly}` for clip `{clip}`, and its rig \
+                     declares no such clip. Its clips are: {}",
+                    clip_list(r)
+                ),
+            ));
+        }
+    });
+    for (i, t) in quests.triggers.iter().enumerate() {
+        if let Some(m) = t.on.assembly_target()
+            && !rigs.contains_key(m.as_str())
+        {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                format!("/content/triggers/{i}/on/assembly"),
+                format!(
+                    "`strike-assembly` trigger `{}` targets assembly `{m}`, which the stage-5 \
+                     `assemblies` list does not declare — use a declared assembly id",
+                    t.id
+                ),
+            ));
+        }
+    }
+}
+
+/// The assembly a verb names, with the clip a `play-clip` asks for.
+fn assembly_verb(e: &QuestEffect) -> Option<(&str, Option<&str>)> {
+    match &e.verb {
+        Verb::SpawnAssembly { assembly } | Verb::DespawnAssembly { assembly } => {
+            Some((assembly.as_str(), None))
+        }
+        Verb::PlayClip { assembly, clip } => Some((assembly.as_str(), Some(clip.as_str()))),
+        _ => None,
+    }
 }
 
 /// DSL v0.6 trap validation (spec-0011). Each trap binds to a **point anchor**

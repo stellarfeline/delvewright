@@ -1,0 +1,20 @@
+{
+  "campaign_id": "the-threshold",
+  "content": {
+    "classes": [
+      {
+        "blurb": "Nothing to carry but a lantern.",
+        "id": "class/walker",
+        "kit": [
+          {
+            "count": 1,
+            "item": "minecraft:lantern"
+          }
+        ],
+        "name": "Walker"
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "classes"
+}

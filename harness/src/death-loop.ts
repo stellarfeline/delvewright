@@ -36,7 +36,7 @@ const DEATH_PLAN_SUBPATH = ["validation", "death-plan.json"] as const;
  * one is REFUSED rather than half-read: a bot that silently ignores a field it
  * does not know reports a green over assertions it never made.
  */
-export const SUPPORTED_DEATH_PLAN_FORMAT = 3;
+export const SUPPORTED_DEATH_PLAN_FORMAT = 4;
 
 /** An inclusive world-space box. */
 export interface Box {
@@ -67,6 +67,14 @@ export interface LethalVolume {
   readonly message: string;
   readonly messageKey: string | undefined;
   readonly damageType: string;
+  /**
+   * **When this volume kills** (spec-0088): its gate as the compiler reduced it
+   * — the same `GateTerm` rows a `drop-stake`'s gates carry, and the terms the
+   * emitted tick guard is written from. Empty for a volume live from world-load.
+   * A staged volume is impassable to the navigator only while its gate reads
+   * open, and the death loop enters it only when it does.
+   */
+  readonly gate: StakeGate;
 }
 
 /** The declared currency a stake wagers, and the ledger spec-0032 keeps it in. */
@@ -445,6 +453,54 @@ function parseBinding(v: unknown, pointer: string): DeathPlanBinding {
   return binding;
 }
 
+/**
+ * A volume row's `gate` (format 4, spec-0088). Required on EVERY row: a staged
+ * volume is told from one live from world-load only by its terms, so a row
+ * without the key is a volume the bot could not tell was staged — and would
+ * either avoid a pit the proof crossed before the beat, or enter one that was
+ * not yet live.
+ */
+function parseVolumeGate(g: unknown, pointer: string): StakeGate {
+  if (!isRecord(g)) {
+    throw new DeathPlanParseError(
+      pointer,
+      "every lethal volume row carries `gate` (`{\"terms\": []}` for a volume live from " +
+        "world-load); without it a staged volume reads as one that always kills",
+    );
+  }
+  const termsRaw = g["terms"];
+  if (!Array.isArray(termsRaw)) {
+    throw new DeathPlanParseError(`${pointer}/terms`, "expected an array");
+  }
+  return { terms: termsRaw.map((t, k) => parseGateTerm(t, `${pointer}/terms/${k}`)) };
+}
+
+/** Whether a volume is live from a story stage rather than from world-load. */
+export function volumeIsStaged(v: LethalVolume): boolean {
+  return v.gate.terms.length > 0;
+}
+
+/**
+ * **Is this volume live, under the state that was read?** (spec-0088 §8)
+ *
+ * The conjunction of its gate's terms — {@link gateVerdict}'s own reading, over
+ * the one alternative a volume has. A volume live from world-load is open. A term
+ * the server answered neither way leaves the question `unread`, which the
+ * navigator treats as live (the conservative direction) and the death loop as a
+ * trial that established nothing.
+ */
+export function volumeGateVerdict(
+  v: LethalVolume,
+  held: (t: GateTerm) => boolean | undefined,
+): GateVerdict {
+  if (!volumeIsStaged(v)) return { kind: "open" };
+  const verdict = gateVerdict({ stake: v.id, gates: [v.gate] }, held);
+  if (verdict.kind === "shut") {
+    return { kind: "shut", why: verdict.why.replace("the campaign gates it on", "its gate reads") };
+  }
+  return verdict;
+}
+
 /** Parse a death plan document (pure — the file read is the caller's). */
 export function parseDeathPlan(raw: unknown): DeathPlan {
   if (!isRecord(raw)) throw new DeathPlanParseError("", "expected an object");
@@ -475,6 +531,7 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
       message: requireString(v["message"], `${p}/message`),
       messageKey: optionalString(v["message_key"], `${p}/message_key`),
       damageType: requireString(v["damage_type"], `${p}/damage_type`),
+      gate: parseVolumeGate(v["gate"], `${p}/gate`),
     };
   });
 
@@ -751,16 +808,27 @@ export function overFootprint(pos: Vec3Tuple, box: Box): boolean {
 }
 
 /**
- * **The cells a body could jump to that are nearer the volume than `feet`**:
- * within four columns and one down to two up, outside what the volume can reach
+ * **The cells a body could reach that are nearer the volume than `feet`**:
+ * within four columns and one down to four up, outside what the volume can reach
  * ({@link volumeReachesCell}), where a body can stand (`canStand`, the caller's
- * reading of the world), ordered nearest the volume's footprint first, then by
- * the smallest climb, then lexicographically (ADR-0006).
+ * reading of the world), ordered by the smallest climb first (a drop is no
+ * climb), then nearest the volume's footprint, then lexicographically
+ * (ADR-0006).
  *
  * What the walk in asks the pathfinder for when driving straight at the volume
  * is blocked — vesperhold's well is entered over a dry cut, onto a sill a
  * block and a half above the cut's floor, which is where the placement table's
- * lip lies.
+ * lip lies. Four up, because the cell is walked to by the pathfinder's own
+ * route, not jumped to: the gallery's lidded pit is nearest the hall floor beside
+ * the terrace annex, and its way in is the annex's top, three courses up, where
+ * the hole the beat opened is.
+ *
+ * Climb first, because a climb is what a body may fail to make: standing on the
+ * cut's floor at y 66, vesperhold's curb top at y 69 is nearer the well than the
+ * sill at y 68, and the pathfinder reaches none of the curb-top cells — an order
+ * nearest first puts them ahead of the sill, which is the way in. Every
+ * candidate is tried in this order ({@link firstWayIn}); the order decides
+ * which is tried first, never which is tried at all.
  */
 export function wayInCandidates(
   feet: Vec3Tuple,
@@ -776,7 +844,7 @@ export function wayInCandidates(
   const out: Vec3Tuple[] = [];
   for (let dx = -4; dx <= 4; dx++) {
     for (let dz = -4; dz <= 4; dz++) {
-      for (let dy = -1; dy <= 2; dy++) {
+      for (let dy = -1; dy <= 4; dy++) {
         const c: Vec3Tuple = [feet[0] + dx, feet[1] + dy, feet[2] + dz];
         if (toFootprint(c) >= here) continue;
         if (volumeReachesCell(c, box)) continue;
@@ -785,14 +853,44 @@ export function wayInCandidates(
       }
     }
   }
+  const climb = (c: Vec3Tuple): number => Math.max(c[1] - feet[1], 0);
   return out.sort(
     (a, b) =>
+      climb(a) - climb(b) ||
       toFootprint(a) - toFootprint(b) ||
-      Math.abs(a[1] - feet[1]) - Math.abs(b[1] - feet[1]) ||
       a[0] - b[0] ||
       a[1] - b[1] ||
       a[2] - b[2],
   );
+}
+
+/**
+ * **Try every way in, in order, until a walk in from one is not blocked.**
+ *
+ * `reach` walks the body to a candidate and says whether it got there; `walkIn`
+ * drives at the volume again from wherever the body stands. A candidate the
+ * body reaches but whose walk in is blocked too is passed over like one it
+ * cannot reach: a cell is a way in only if the walk in from it goes in. The
+ * first result that is not `"blocked"` is returned with the cell it came from;
+ * `"blocked"` with no cell when every candidate was tried. No candidate is
+ * dropped for its rank: a fixed number of tries lets as many unreachable cells
+ * ranked ahead hide the one that works.
+ */
+export async function firstWayIn<R extends string>(
+  candidates: readonly Vec3Tuple[],
+  reach: (cell: Vec3Tuple) => Promise<boolean>,
+  walkIn: (cell: Vec3Tuple) => Promise<R | "blocked">,
+): Promise<{ result: R | "blocked"; from?: Vec3Tuple; tried: number; reached: number }> {
+  let tried = 0;
+  let reached = 0;
+  for (const c of candidates) {
+    tried += 1;
+    if (!(await reach(c))) continue;
+    reached += 1;
+    const result = await walkIn(c);
+    if (result !== "blocked") return { result, from: c, tried, reached };
+  }
+  return { result: "blocked", tried, reached };
 }
 
 /**
@@ -1196,6 +1294,12 @@ export interface LethalTrial {
    * simply could not be made is.
    */
   walkBackFailure: string | undefined;
+  /**
+   * **Why a staged volume was not entered** (spec-0088 §8): its gate read shut
+   * when the trial opened, with the term that shut it. Not a failure and never a
+   * pass — the volume was not exercised, and the binding says so.
+   */
+  notLiveAtTrial: string | undefined;
 }
 
 /** A fresh trial record for a walk into `volume`. */
@@ -1224,6 +1328,7 @@ export function openLethalTrial(
     abandoned: undefined,
     approachFailure: undefined,
     walkBackFailure: undefined,
+    notLiveAtTrial: undefined,
   };
 }
 
@@ -1305,6 +1410,9 @@ function distToCell(pos: Vec3Tuple, cell: Vec3Tuple): number {
  */
 export function lethalTrialFailures(t: LethalTrial, markerTolerance = 0.75): string[] {
   const out: string[] = [];
+  // A staged volume whose gate read shut was not entered: nothing was observed,
+  // so nothing is asserted. The binding counts it apart, and the stage states it.
+  if (t.notLiveAtTrial !== undefined) return out;
   const where = `[${t.entryCell.join(", ")}]`;
   // Before anything about the death: a gate nobody could read leaves the whole
   // question of what this death promised unestablished, and an unestablished
@@ -1540,6 +1648,10 @@ export interface DeathLoopBinding {
   readonly seatsMatched: number;
   /** Walk-back legs completed. */
   readonly walksBack: number;
+  /** Declared volumes live from a story stage (spec-0088). */
+  readonly stagedVolumes: number;
+  /** Of those, the ones whose gate read open when their trial opened. */
+  readonly stagedLiveAtTrial: number;
 }
 
 /**
@@ -1556,9 +1668,10 @@ export function deathLoopBinding(
   plan: DeathPlan,
   trials: readonly LethalTrial[],
 ): DeathLoopBinding {
+  const staged = new Set(plan.volumes.filter(volumeIsStaged).map((v) => v.id));
   return {
     declaredVolumes: plan.volumes.length,
-    volumesEntered: trials.length,
+    volumesEntered: trials.filter((t) => t.notLiveAtTrial === undefined).length,
     deathsObserved: trials.filter((t) => t.died).length,
     datumsPromised: datumsPromised(plan),
     stakesExamined: trials.filter((t) => t.markerPos !== undefined).length,
@@ -1569,6 +1682,9 @@ export function deathLoopBinding(
       .filter((w) => w.forfeits && wagerExamined(w)).length,
     seatsMatched: trials.filter((t) => t.respawnSeat !== undefined).length,
     walksBack: trials.filter((t) => t.walkedBack).length,
+    stagedVolumes: staged.size,
+    stagedLiveAtTrial: trials.filter((t) => staged.has(t.volume) && t.notLiveAtTrial === undefined)
+      .length,
   };
 }
 
@@ -1689,14 +1805,26 @@ export function deathLoopStage(i: DeathLoopStageInput): StageResult {
         ]),
     ...finished.flatMap((t) => lethalTrialFailures(t)),
   ];
+  // A staged volume shut at its trial was not exercised. Stated per volume —
+  // a `forbids_flags` volume is the common case, its flag set by the time the
+  // path completes — and never counted as a pass.
+  const notLive = i.trials
+    .filter((t) => t.notLiveAtTrial !== undefined)
+    .map(
+      (t) =>
+        `${t.volume} is live from a story stage and was not live at its trial — ` +
+        `${t.notLiveAtTrial}; it was not entered, so this run exercised none of it`,
+    );
   return {
     stage: "death-loop",
     ran: true,
     passed: failures.length === 0,
-    findings:
-      i.skipReason === undefined
+    findings: [
+      ...(i.skipReason === undefined
         ? []
-        : [`the stage stopped before entering any volume — ${i.skipReason}`],
+        : [`the stage stopped before entering any volume — ${i.skipReason}`]),
+      ...notLive,
+    ],
     failures,
   };
 }

@@ -10,27 +10,31 @@ use delvewright_dsl::{
 use delvewright_dsl::{DwCode, ExitTier};
 use serde::Deserialize;
 
-/// `DW0346`: a prefab metadata `*.json` (or `pools.json`) in the prefabs dir
-/// failed to read or parse. Silently skipping it made a bad file surface only as
-/// a baffling downstream `DW0300` "prefab not found"; the parse failure itself is
-/// the information. Reported at **validation tier (exit 1)**; loading continues
-/// for the other files (report-all, not fail-fast).
-///
-/// A key this delvec does not model is deliberately **not** one of these: it is
-/// kept and reported as [`DW_PREFAB_META_UNKNOWN_KEY`].
-pub const DW_PREFAB_META_INVALID: DwCode = DwCode::new("DW0346", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0346`: a prefab metadata `*.json` (or `pools.json`) in the prefabs dir
+    /// failed to read or parse. Silently skipping it made a bad file surface only as
+    /// a baffling downstream `DW0300` "prefab not found"; the parse failure itself is
+    /// the information. Reported at **validation tier (exit 1)**; loading continues
+    /// for the other files (report-all, not fail-fast).
+    ///
+    /// A key this delvec does not model is deliberately **not** one of these: it is
+    /// kept and reported as [`DW_PREFAB_META_UNKNOWN_KEY`].
+    pub const DW_PREFAB_META_INVALID: DwCode = DwCode::new("DW0346", ExitTier::Build);
+}
 
-/// `DW0543`: a prefab metadata file carries a key this delvec does not model.
-///
-/// A **warning**, and the severity is the decision. Refusing the document was
-/// the previous behaviour and it was wrong in exactly one direction: a consumer
-/// that is not a document's owner meets new keys as a matter of course — the
-/// content library and the engine version independently — and every forward
-/// addition became a hard failure at the layer with the least context. Ignoring
-/// the key is wrong in the other direction, because the same observation is also
-/// what a misspelled key looks like. So the piece loads, the key survives a
-/// rewrite ([`delvewright_dsl::prefab`]), and the reader says what it saw.
-pub const DW_PREFAB_META_UNKNOWN_KEY: DwCode = DwCode::new("DW0543", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0543`: a prefab metadata file carries a key this delvec does not model.
+    ///
+    /// A **warning**, and the severity is the decision. Refusing the document was
+    /// the previous behaviour and it was wrong in exactly one direction: a consumer
+    /// that is not a document's owner meets new keys as a matter of course — the
+    /// content library and the engine version independently — and every forward
+    /// addition became a hard failure at the layer with the least context. Ignoring
+    /// the key is wrong in the other direction, because the same observation is also
+    /// what a misspelled key looks like. So the piece loads, the key survives a
+    /// rewrite ([`delvewright_dsl::prefab`]), and the reader says what it saw.
+    pub const DW_PREFAB_META_UNKNOWN_KEY: DwCode = DwCode::new("DW0543", ExitTier::Build);
+}
 
 /// The complete 1.21.11 item registry (1505 ids) plus each item's
 /// `minecraft:max_stack_size`, vendored under `data/`.
@@ -394,6 +398,11 @@ pub struct PrefabRegistry {
     /// Per-file load failures (`DW0346`) collected by [`Self::load_dir`] —
     /// surfaced by the CLI at validation tier, never silently dropped.
     load_diagnostics: Vec<Diagnostic>,
+    /// The library's rigs (spec-0082 §3.1), `rig/<name>` → the parsed
+    /// `rigs/<name>/rig.json`, or the parse error. A rig is refused where an
+    /// assembly names it (`DW0935`), never at load: a library may hold a rig
+    /// no campaign uses.
+    rigs: BTreeMap<String, Result<delvewright_dsl::rig::Rig, String>>,
 }
 
 impl PrefabRegistry {
@@ -521,13 +530,29 @@ impl PrefabRegistry {
                 Err(e) => fail(format!("does not parse as prefab metadata: {e}")),
             }
         }
+        let rigs = load_rigs(dir)?;
         Ok(Self {
             by_id,
             anchor_names,
             pools,
             pool_members,
             load_diagnostics,
+            rigs,
         })
+    }
+
+    /// Add one rig to the registry under `rig/<name>`, replacing any of the
+    /// same id — the rig half of [`Self::insert`], for a judgement over a rig
+    /// that is not on disk.
+    pub fn insert_rig(&mut self, id: &str, rig: Result<delvewright_dsl::rig::Rig, String>) {
+        self.rigs.insert(id.to_string(), rig);
+    }
+
+    /// **Every rig this library holds**, id and parse result, in id order.
+    pub fn rigs(
+        &self,
+    ) -> impl Iterator<Item = (&String, &Result<delvewright_dsl::rig::Rig, String>)> {
+        self.rigs.iter()
     }
 
     /// Add one piece to the registry, replacing any piece of the same id.
@@ -686,6 +711,53 @@ impl AnchorRegistry for PrefabRegistry {
             .get(prefab.as_str())
             .and_then(|m| m.lighting.clone())
     }
+
+    /// This registry IS the library, so a rig it does not hold is missing.
+    fn rig(&self, rig: &delvewright_dsl::RigId) -> delvewright_dsl::rig::RigLookup<'_> {
+        use delvewright_dsl::rig::RigLookup;
+        match self.rigs.get(rig.as_str()) {
+            None => RigLookup::Missing,
+            Some(Err(e)) => RigLookup::Malformed(e),
+            Some(Ok(r)) => RigLookup::Found(r),
+        }
+    }
+}
+
+/// Read `<dir>/rigs/<name>/rig.json` for every subdirectory of `<dir>/rigs`
+/// (spec-0082 §3.1), in name order. An absent `rigs/` is a library with no
+/// rig; a subdirectory without a readable `rig.json` is recorded as that
+/// rig's error, so an assembly naming it is refused with the reason.
+fn load_rigs(
+    dir: &Path,
+) -> std::io::Result<BTreeMap<String, Result<delvewright_dsl::rig::Rig, String>>> {
+    let mut out = BTreeMap::new();
+    let root = dir.join(delvewright_dsl::rig::RIGS_DIR);
+    if !root.is_dir() {
+        return Ok(out);
+    }
+    let mut names: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(&root)? {
+        let entry = entry?;
+        if entry.path().is_dir()
+            && let Some(n) = entry.file_name().to_str()
+        {
+            names.push(n.to_string());
+        }
+    }
+    names.sort();
+    for name in names {
+        let file = root.join(&name).join(delvewright_dsl::rig::RIG_FILE);
+        let parsed = match std::fs::read_to_string(&file) {
+            Ok(raw) => delvewright_dsl::rig::parse(&raw),
+            Err(e) => Err(format!(
+                "`{}/{name}/{}` cannot be read: {e}",
+                delvewright_dsl::rig::RIGS_DIR,
+                delvewright_dsl::rig::RIG_FILE
+            )),
+        };
+        out.insert(format!("rig/{name}"), parsed);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

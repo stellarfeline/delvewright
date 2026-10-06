@@ -1,0 +1,17 @@
+{
+  "code": "DW0938",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/strikes/pattern/0/on_land/0/in/extent",
+      "value": [
+        1,
+        0,
+        1
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The sentinel arms only while a body touches `anchor/plinth`'s own cell, and its blow lands on that same cell. This edit widens the landing box to the 3 x 3 round the plinth while the arming region stays one cell, so the box catches a body from a ring of cells a body can stand in without ever arming the statue: a player who never walked up to it is struck by a blow that was never wound up for them. It declares no unit: the landing box and the arming region are both bound by the primary, and what the engine refuses is a landing that reaches past the arming region's keep-out (shape 1 of the strike rule). The remedy is to shrink the landing box inside `while_in` or widen `while_in` over it."
+}

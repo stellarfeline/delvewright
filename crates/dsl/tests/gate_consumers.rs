@@ -58,8 +58,9 @@ use serde_json::Value;
 /// (`fill-region` / `clear-region`) -> 33 (`give-effect` / `clear-effect` /
 /// `teleport`) -> 35 (spec-0032's `drop-stake`, and the seventh gate consumer,
 /// `ShopOffer`) -> 36 (spec-0042's `open-way`) -> **11** (one `Guard` under an
-/// effect's `when`, in place of twenty-six per-verb declarations).
-const GATE_SITES: usize = 11;
+/// effect's `when`, in place of twenty-six per-verb declarations) -> 12
+/// (spec-0086's `Loop`, the eighth gate consumer: the gate is the release).
+const GATE_SITES: usize = 12;
 
 /// The gate's fields, as they are spelled in the schema. Every site must declare
 /// all of them.
@@ -129,6 +130,44 @@ fn collect(
     }
 }
 
+/// Every `$defs` object, across every stage schema, that carries the shared
+/// **`Guard`** as a property — the consumers whose gate is the one object rather
+/// than three fields of their own (an effect's `when`, a lethal volume's `when`).
+fn guard_holders() -> BTreeSet<String> {
+    fn refs_guard(v: &Value) -> bool {
+        match v {
+            Value::Object(m) => {
+                m.get("$ref").and_then(Value::as_str) == Some("#/$defs/Guard")
+                    || m.values().any(refs_guard)
+            }
+            Value::Array(a) => a.iter().any(refs_guard),
+            _ => false,
+        }
+    }
+    fn props_hold(def: &Value) -> bool {
+        def.get("properties")
+            .and_then(Value::as_object)
+            .is_some_and(|p| p.values().any(refs_guard))
+            || ["oneOf", "anyOf", "allOf"].iter().any(|k| {
+                def.get(*k)
+                    .and_then(Value::as_array)
+                    .is_some_and(|l| l.iter().any(props_hold))
+            })
+    }
+    let mut out = BTreeSet::new();
+    for stage in Stage::ALL {
+        let schema = delvewright_dsl::stage_schema(stage);
+        if let Some(defs) = schema.get("$defs").and_then(Value::as_object) {
+            for (name, def) in defs {
+                if props_hold(def) {
+                    out.insert(name.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// **The gate is one object.** Every schema object that declares any part of the
 /// gate declares all of it.
 #[test]
@@ -195,9 +234,23 @@ fn every_gate_consumer_carries_the_numeric_comparison() {
 #[test]
 fn the_consumer_set_covers_every_declaring_type() {
     // The distinct declaring TYPES in the schema (an enum counts once, however
-    // many variants it has): Objective, QuestEffect, EnvTrigger, Trap,
-    // DialogueOption, CastPlacement.
-    let types: BTreeSet<String> = gate_sites().into_iter().map(|((ty, _), _)| ty).collect();
+    // many variants it has): the objects that declare the gate's fields
+    // themselves (Objective, EnvTrigger, Trap, DialogueOption, CastPlacement,
+    // ShopOffer), and every object that carries the shared `Guard` in place of
+    // them (QuestEffect, LethalVolume) — `Guard` itself is the gate, not a
+    // consumer of it.
+    let holders = guard_holders();
+    assert!(
+        holders.contains("LethalVolume"),
+        "binding: the schema walk must find `LethalVolume` carrying `Guard` under `when` \
+         (spec-0088); found {holders:?}"
+    );
+    let types: BTreeSet<String> = gate_sites()
+        .into_iter()
+        .map(|((ty, _), _)| ty)
+        .filter(|ty| ty != "Guard")
+        .chain(holders)
+        .collect();
     println!(
         "gate consumer binding: {} declaring types, {} consumer classes",
         types.len(),

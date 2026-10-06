@@ -466,6 +466,22 @@ def test_a_furniture_exclusion_that_withholds_nothing_is_a_zero_binding(tmp_path
     ]
 
 
+def test_a_teleport_ledger_with_no_link_or_no_gather_is_a_zero_binding(tmp_path):
+    """spec-0083 §8: the gallery binds one link and one gather, so either column
+    of `teleport-gate.json`'s partition reading zero is a proof that stopped
+    reaching what the gallery writes — named, so the reader knows which."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    ledger = out / "validation" / "teleport-gate.json"
+    ledger.write_text(json.dumps({"teleports": {"declared": 2, "links": 1, "gathers": 1}}))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({"teleports": {"declared": 1, "links": 0, "gathers": 1}}))
+    assert mod.read_build_ledgers(out)[1] == ["teleport-gate.json: `teleports.links` is 0"]
+    ledger.write_text(json.dumps({"teleports": {"declared": 1, "links": 1, "gathers": 0}}))
+    assert mod.read_build_ledgers(out)[1] == ["teleport-gate.json: `teleports.gathers` is 0"]
+
+
 def test_the_patch_declaration_is_refused_every_way_of_being_unreadable():
     """Shape, driven directly. Whether an edit APPLIES is `gallery_domain`'s half.
 
@@ -559,3 +575,28 @@ def test_the_binding_line_states_the_patch_figures():
     src = (REPO / "tools" / "ci" / "check-gallery-coverage.py").read_text()
     for phrase in ("probe patches:", "probe(s) examined", "JSON path(s) touched"):
         assert phrase in src, f"the binding line no longer states `{phrase}`"
+
+
+def test_a_loop_ledger_that_binds_nothing_is_a_zero_binding(tmp_path):
+    """spec-0086 §8 on the gallery: a loop ledger reading no loop, a row with no
+    eye or no visible cell, or no exercise step, is named as a zero binding — as
+    is a path that exercises a loop with no ledger beside it."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    row = {"id": "loop/long-gallery", "eyes": 15, "visible": 144, "slab_cells": 9,
+           "configurations": 10, "exercise": [{"step": 9, "times": 2}]}
+    ledger = out / "validation" / "loop-gate.json"
+    ledger.write_text(json.dumps({"loops": 1, "rows": [row]}))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({"loops": 1, "rows": [{**row, "visible": 0, "exercise": []}]}))
+    assert mod.read_build_ledgers(out)[1] == [
+        "loop-gate.json: `loop/long-gallery.visible` is 0",
+        "loop-gate.json: `loop/long-gallery` has no exercise step",
+    ]
+    ledger.write_text(json.dumps({"loops": 0, "rows": []}))
+    assert mod.read_build_ledgers(out)[1] == ["loop-gate.json: `loops` is 0"]
+    ledger.unlink()
+    (out / "critical-path.json").write_text(json.dumps({"steps": [{"action": "loop"}]}))
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("loop-gate.json: absent"), zeroes

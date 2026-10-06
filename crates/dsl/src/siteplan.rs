@@ -74,20 +74,30 @@ use crate::metrics::{
 };
 use crate::stages::AreaLighting;
 
-/// `DW0824`: the graph and the plan do not agree exactly.
-pub const DW_PLAN_AGREEMENT: DwCode = DwCode::new("DW0824", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0824`: the graph and the plan do not agree exactly.
+    pub const DW_PLAN_AGREEMENT: DwCode = DwCode::new("DW0824", ExitTier::Build);
+}
 
-/// `DW0825`: a box leaves the kit grid.
-pub const DW_BOX_OFF_GRID: DwCode = DwCode::new("DW0825", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0825`: a box leaves the kit grid.
+    pub const DW_BOX_OFF_GRID: DwCode = DwCode::new("DW0825", ExitTier::Build);
+}
 
-/// `DW0826`: a box leaves the region.
-pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::new("DW0826", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0826`: a box leaves the region.
+    pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::new("DW0826", ExitTier::Build);
+}
 
-/// `DW0827`: two boxes overlap.
-pub const DW_BOXES_OVERLAP: DwCode = DwCode::new("DW0827", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0827`: two boxes overlap.
+    pub const DW_BOXES_OVERLAP: DwCode = DwCode::new("DW0827", ExitTier::Build);
+}
 
-/// `DW0828`: a seam is not on a shared face.
-pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::new("DW0828", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0828`: a seam is not on a shared face.
+    pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::new("DW0828", ExitTier::Build);
+}
 
 /// **How many cells stand between two connected boxes: the wall they share.**
 ///
@@ -105,62 +115,82 @@ pub const DW_SEAM_NOT_SHARED: DwCode = DwCode::new("DW0828", ExitTier::Build);
 /// cannot drift apart.
 pub const SHARED_FACE_GAP_CELLS: i64 = 1;
 
-/// `DW0829`: a seam's opening is not a standard, or does not fit.
-pub const DW_SEAM_OPENING: DwCode = DwCode::new("DW0829", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0829`: a seam's opening is not a standard, or does not fit.
+    pub const DW_SEAM_OPENING: DwCode = DwCode::new("DW0829", ExitTier::Build);
+}
 
-/// `DW0830`: a stair seam cannot be built at standard pitch.
-pub const DW_STAIR_PITCH: DwCode = DwCode::new("DW0830", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0830`: a stair seam cannot be built at standard pitch.
+    pub const DW_STAIR_PITCH: DwCode = DwCode::new("DW0830", ExitTier::Build);
+}
 
-/// `DW0831`: a drop seam falls outside the drop policy.
-pub const DW_DROP_POLICY: DwCode = DwCode::new("DW0831", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0831`: a drop seam falls outside the drop policy.
+    pub const DW_DROP_POLICY: DwCode = DwCode::new("DW0831", ExitTier::Build);
+}
 
-/// `DW0876`: a seam does not declare a connection this engine builds
-/// (spec-0053 §6).
-///
-/// **One code, four shapes of one claim** — the claim being that this seam
-/// states a crossing the derivation can build and the observer can measure:
-///
-/// 1. it declares neither an `opening` nor a `contact`, or both;
-/// 2. its contact's span leaves the shared face `DW0828` established;
-/// 3. its contact's span is not **wider than the broadest standard opening**;
-/// 4. it is a contact on a `stair`, `barred` or `vision` connection.
-///
-/// They are one code rather than four because the author's next action is the
-/// same in every case — say which kind of hand-off this is and give it a shape
-/// the engine has — and because a seam exhibiting one of them has no crossing
-/// for any rule below to judge. It is the shape `DW0830` already carries for a
-/// stair ("three shapes of one claim") and `DW0829` for an opening ("two halves
-/// of one claim that the opening is usable").
-///
-/// Shape 3 is the floor that keeps the whole surface honest, and it is
-/// **structural rather than seeded**: it is derived from the standard opening
-/// set, so anything at or under it COULD have been a portal, and a doorway
-/// declared a contact to dodge the standard set is refused by its own width.
-/// That is the property `CLAUDE.md` demands of an escape hatch — the defect this
-/// exists to catch is incapable of supplying the hatch's proof obligation.
-pub const DW_CONTACT: DwCode = DwCode::new("DW0876", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0876`: a seam does not declare a connection this engine builds
+    /// (spec-0053 §6).
+    ///
+    /// **One code, four shapes of one claim** — the claim being that this seam
+    /// states a crossing the derivation can build and the observer can measure:
+    ///
+    /// 1. it declares neither an `opening` nor a `contact`, or both;
+    /// 2. its contact's span leaves the shared face `DW0828` established;
+    /// 3. its contact's span is not **wider than the broadest standard opening**;
+    /// 4. it is a contact on a `stair`, `barred` or `vision` connection.
+    ///
+    /// They are one code rather than four because the author's next action is the
+    /// same in every case — say which kind of hand-off this is and give it a shape
+    /// the engine has — and because a seam exhibiting one of them has no crossing
+    /// for any rule below to judge. It is the shape `DW0830` already carries for a
+    /// stair ("three shapes of one claim") and `DW0829` for an opening ("two halves
+    /// of one claim that the opening is usable").
+    ///
+    /// Shape 3 is the floor that keeps the whole surface honest, and it is
+    /// **structural rather than seeded**: it is derived from the standard opening
+    /// set, so anything at or under it COULD have been a portal, and a doorway
+    /// declared a contact to dodge the standard set is refused by its own width.
+    /// That is the property `CLAUDE.md` demands of an escape hatch — the defect this
+    /// exists to catch is incapable of supplying the hatch's proof obligation.
+    pub const DW_CONTACT: DwCode = DwCode::new("DW0876", ExitTier::Build);
+}
 
-/// `DW0832`: a box violates its node's size class.
-pub const DW_SIZE_CLASS: DwCode = DwCode::new("DW0832", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0832`: a box violates its node's size class.
+    pub const DW_SIZE_CLASS: DwCode = DwCode::new("DW0832", ExitTier::Build);
+}
 
-/// `DW0833`: a brief identity does not hold.
-pub const DW_IDENTITY_FALSE: DwCode = DwCode::new("DW0833", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0833`: a brief identity does not hold.
+    pub const DW_IDENTITY_FALSE: DwCode = DwCode::new("DW0833", ExitTier::Build);
+}
 
-/// `DW0834`: the identity gate binds nothing. Warning — see [`identities`].
-pub const DW_IDENTITY_EMPTY: DwCode = DwCode::new("DW0834", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0834`: the identity gate binds nothing. Warning — see [`identities`].
+    pub const DW_IDENTITY_EMPTY: DwCode = DwCode::new("DW0834", ExitTier::Build);
+}
 
-/// `DW0835`: a whole-owned volume enters a box.
-pub const DW_VOLUME_IN_BOX: DwCode = DwCode::new("DW0835", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0835`: a whole-owned volume enters a box.
+    pub const DW_VOLUME_IN_BOX: DwCode = DwCode::new("DW0835", ExitTier::Build);
+}
 
-/// `DW0839`: two placement authorities in one campaign — a `site-plan.json` and
-/// a non-empty `areas[]` both present.
-pub const DW_TWO_AUTHORITIES: DwCode = DwCode::new("DW0839", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0839`: two placement authorities in one campaign — a `site-plan.json` and
+    /// a non-empty `areas[]` both present.
+    pub const DW_TWO_AUTHORITIES: DwCode = DwCode::new("DW0839", ExitTier::Build);
+}
 
-/// `DW0883`: a box is not placed exactly once (spec-0059 §5). Two shapes of one
-/// claim: a connected component of the seam graph in which no box is pinned, so
-/// nothing places it; and a pinned box the packing also reaches, at a different
-/// corner, so two things place it.
-pub const DW_UNPLACED: DwCode = DwCode::new("DW0883", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0883`: a box is not placed exactly once (spec-0059 §5). Two shapes of one
+    /// claim: a connected component of the seam graph in which no box is pinned, so
+    /// nothing places it; and a pinned box the packing also reaches, at a different
+    /// corner, so two things place it.
+    pub const DW_UNPLACED: DwCode = DwCode::new("DW0883", ExitTier::Build);
+}
 
 // ---------------------------------------------------------------------------
 // The vocabulary the derivation synthesizes (spec-0049 §5.2)
@@ -575,6 +605,13 @@ pub struct PlanBox {
     pub floor: Floor,
     /// What closes it overhead.
     pub ceiling: Ceiling,
+    /// **The sky this place stands under from the first tick** (spec-0080
+    /// §3.2): one of `world.atmospheres[]`, painted at world setup over the
+    /// box's play space grown as far as the client's biome blend reads — the
+    /// same capability `areas[].atmosphere` is, on the
+    /// other class of place with a world box. Absent: the horizon's biome.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atmosphere: Option<crate::ids::AtmosphereId>,
 }
 
 /// Which side of a box a seam sits on.
@@ -1404,7 +1441,7 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
         let Some(edge) = edges.get(s.edge.0.as_str()) else {
             continue;
         };
-        if matches!(edge, Edge::Vision { .. }) {
+        if !edge.has_seam() {
             continue;
         }
         let (Some(a), Some(b)) = (
@@ -2186,7 +2223,7 @@ fn pack(
             links.push(None);
             continue; // `DW0824` refused the reference.
         };
-        if matches!(edge, Edge::Vision { .. }) {
+        if !edge.has_seam() {
             links.push(None);
             continue; // `DW0824` said this carries a sightline.
         }
@@ -2671,6 +2708,15 @@ fn agreement(
                 ),
                 d,
             ),
+            Some(Edge::Carry { .. }) => fault(
+                format!("/content/seams/{i}/edge"),
+                format!(
+                    "`{e}` is a `carry` connection: a body crosses it by being put down on the \
+                     far side by a link, so no opening is cut for it. Remove this seam.",
+                    e = s.edge,
+                ),
+                d,
+            ),
             Some(_) => {
                 seamed.entry(s.edge.0.as_str()).or_default().push(i);
             }
@@ -2684,6 +2730,15 @@ fn agreement(
                 format!(
                     "this sightline embeds `{e}`, which the layout graph declares no connection \
                      for.",
+                    e = s.edge,
+                ),
+                d,
+            ),
+            Some(Edge::Carry { .. }) => fault(
+                format!("/content/sightlines/{i}/edge"),
+                format!(
+                    "`{e}` is a `carry` connection: a body crosses it by being put down on the \
+                     far side by a link, so nothing is embedded for it. Remove this sightline.",
                     e = s.edge,
                 ),
                 d,
@@ -2705,6 +2760,11 @@ fn agreement(
         }
     }
     for (i, e) in graph.edges.iter().enumerate() {
+        // A carry is owed neither: a body crosses it by being put down on the
+        // far side, and the geometry has nothing to allocate for that.
+        if matches!(e, Edge::Carry { .. }) {
+            continue;
+        }
         let (what, held, other) = if e.is_traversal() {
             ("seam", &seamed, "seams")
         } else {
@@ -3531,7 +3591,7 @@ fn seams(
         let Some(edge) = edges.get(s.edge.0.as_str()) else {
             continue; // `DW0824` refused the reference.
         };
-        if matches!(edge, Edge::Vision { .. }) {
+        if !edge.has_seam() {
             continue; // `DW0824` said this carries a sightline.
         }
         let (Some(a), Some(b)) = (
@@ -3603,7 +3663,7 @@ fn seams(
                     sill(&ctx, opening, d);
                 }
             }
-            Edge::Vision { .. } => {}
+            Edge::Carry { .. } | Edge::Vision { .. } => {}
         }
         if matches!(edge, Edge::Stair { .. }) && s.stair_in.is_none() {
             d.push(Diagnostic::error(

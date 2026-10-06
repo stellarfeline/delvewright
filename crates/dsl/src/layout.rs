@@ -65,48 +65,70 @@ use crate::ids::{AnchorId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId}
 use crate::metrics::{MetricKind, Metrics, Reads};
 use crate::stages::Objective;
 
-/// `DW0814`: the layout graph is not a graph — a duplicate id, an endpoint
-/// naming no place, a self-loop, an `entry` that is not a node.
-pub const DW_GRAPH_MALFORMED: DwCode = DwCode::new("DW0814", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0814`: the layout graph is not a graph — a duplicate id, an endpoint
+    /// naming no place, a self-loop, an `entry` that is not a node.
+    pub const DW_GRAPH_MALFORMED: DwCode = DwCode::new("DW0814", ExitTier::Build);
+}
 
-/// `DW0816`: a node the closure never reaches.
-pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0816", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0816`: a node the closure never reaches.
+    pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0816", ExitTier::Build);
+}
 
-/// `DW0817`: the authored critical path does not hold.
-pub const DW_CRITICAL_PATH: DwCode = DwCode::new("DW0817", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0817`: the authored critical path does not hold.
+    pub const DW_CRITICAL_PATH: DwCode = DwCode::new("DW0817", ExitTier::Build);
+}
 
-/// `DW0818`: the graph names quest-side state that does not exist, or a
-/// place-bound beat has no place.
-pub const DW_GRAPH_MISSION: DwCode = DwCode::new("DW0818", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0818`: the graph names quest-side state that does not exist, or a
+    /// place-bound beat has no place.
+    pub const DW_GRAPH_MISSION: DwCode = DwCode::new("DW0818", ExitTier::Build);
+}
 
-/// `DW0819`: a one-way edge strands.
-pub const DW_ONE_WAY_STRANDS: DwCode = DwCode::new("DW0819", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0819`: a one-way edge strands.
+    pub const DW_ONE_WAY_STRANDS: DwCode = DwCode::new("DW0819", ExitTier::Build);
+}
 
-/// `DW0820`: a shortcut closes no loop.
-pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::new("DW0820", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0820`: a shortcut closes no loop.
+    pub const DW_SHORTCUT_NO_LOOP: DwCode = DwCode::new("DW0820", ExitTier::Build);
+}
 
-/// `DW0822`: the pacing measurement — a projection, printed with no threshold.
-pub const DW_PACING: DwCode = DwCode::new("DW0822", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0822`: the pacing measurement — a projection, printed with no threshold.
+    pub const DW_PACING: DwCode = DwCode::new("DW0822", ExitTier::Build);
+}
 
-/// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
-pub const DW_STATION_RESERVED: DwCode = DwCode::new("DW0869", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0869`: a station takes a name in the engine's own namespace (spec-0052 §7.1).
+    pub const DW_STATION_RESERVED: DwCode = DwCode::new("DW0869", ExitTier::Build);
+}
 
-/// `DW0870`: two stations claim one name (spec-0052 §7.2).
-pub const DW_STATION_DUPLICATE: DwCode = DwCode::new("DW0870", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0870`: two stations claim one name (spec-0052 §7.2).
+    pub const DW_STATION_DUPLICATE: DwCode = DwCode::new("DW0870", ExitTier::Build);
+}
 
-/// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
-///
-/// Judged at the reference site from the DECLARATION, with zero pieces bound.
-pub const DW_STATION_KIND: DwCode = DwCode::new("DW0871", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0871`: a reference demands a shape the station is not (spec-0052 §7.3).
+    ///
+    /// Judged at the reference site from the DECLARATION, with zero pieces bound.
+    pub const DW_STATION_KIND: DwCode = DwCode::new("DW0871", ExitTier::Build);
+}
 
-/// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
-///
-/// A node declares **exactly one of** `size_class` and `way_class`. Both is two
-/// answers to one question with nothing to choose between them — every
-/// downstream geometric rule would have to pick, and there is no rule to pick
-/// by. Neither is a place with no standard at all, which is what the size-class
-/// ladder was made compulsory to prevent.
-pub const DW_PLACE_CLASS: DwCode = DwCode::new("DW0875", ExitTier::Build);
+crate::dw_code! {
+    /// `DW0875`: a place is classified twice, or not at all (spec-0053 §6).
+    ///
+    /// A node declares **exactly one of** `size_class` and `way_class`. Both is two
+    /// answers to one question with nothing to choose between them — every
+    /// downstream geometric rule would have to pick, and there is no rule to pick
+    /// by. Neither is a place with no standard at all, which is what the size-class
+    /// ladder was made compulsory to prevent.
+    pub const DW_PLACE_CLASS: DwCode = DwCode::new("DW0875", ExitTier::Build);
+}
 
 // ---------------------------------------------------------------------------
 // Stage 2 — the geometry brief's machine-readable facts (spec-0049 §4.2)
@@ -472,6 +494,27 @@ pub enum Edge {
         /// barred.
         gating: EdgeGating,
     },
+    /// A connection a body is **carried** over (spec-0083 §7): no seam, no sill,
+    /// no door check and no body of its own. The derivation writes nothing for
+    /// it; at stage 5 every direction it allows is owed a link — a repeatable
+    /// trigger whose `teleport` leaves the `a` place's station for the `b`
+    /// place's mark — and every link is owed the edge (`DW0934`).
+    Carry {
+        /// Edge id (`edge/<kebab>`), unique within the graph.
+        id: EdgeId,
+        /// One end.
+        a: NodeId,
+        /// The other end.
+        b: NodeId,
+        /// Declared directionality; absent means a body is carried both ways,
+        /// and each direction is then owed a link.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        one_way: Option<Direction>,
+        /// What carries it. **Required to say something** (`DW0818`), as a
+        /// barred way's is: a carry live from world load is a hole in the
+        /// graph's own claim.
+        gating: EdgeGating,
+    },
     /// A line of sight between two places, in either direction. Carries no body,
     /// so it is not a traversal edge and the reachability closure never walks
     /// it; stage 4 gives it a sightline rather than a seam (spec-0049 §4.4).
@@ -498,6 +541,7 @@ impl Edge {
             | Edge::Stair { id, .. }
             | Edge::Drop { id, .. }
             | Edge::Barred { id, .. }
+            | Edge::Carry { id, .. }
             | Edge::Vision { id, .. } => id,
         }
     }
@@ -510,6 +554,7 @@ impl Edge {
             | Edge::Stair { a, .. }
             | Edge::Drop { a, .. }
             | Edge::Barred { a, .. }
+            | Edge::Carry { a, .. }
             | Edge::Vision { a, .. } => a,
         }
     }
@@ -522,6 +567,7 @@ impl Edge {
             | Edge::Stair { b, .. }
             | Edge::Drop { b, .. }
             | Edge::Barred { b, .. }
+            | Edge::Carry { b, .. }
             | Edge::Vision { b, .. } => b,
         }
     }
@@ -534,6 +580,7 @@ impl Edge {
             Edge::Stair { .. } => "stair",
             Edge::Drop { .. } => "drop",
             Edge::Barred { .. } => "barred",
+            Edge::Carry { .. } => "carry",
             Edge::Vision { .. } => "vision",
         }
     }
@@ -544,6 +591,14 @@ impl Edge {
         !matches!(self, Edge::Vision { .. })
     }
 
+    /// True if the geometry owes this edge a **seam** — an opening on a shared
+    /// face. A `vision` edge is owed a sightline instead, and a `carry` edge is
+    /// owed nothing: a body crosses it by being put down on the far side.
+    #[must_use]
+    pub fn has_seam(&self) -> bool {
+        !matches!(self, Edge::Vision { .. } | Edge::Carry { .. })
+    }
+
     /// Which way a body may pass, or `None` for both ways (and for a `vision`
     /// edge, which carries none).
     #[must_use]
@@ -551,7 +606,8 @@ impl Edge {
         match self {
             Edge::Walk { one_way, .. }
             | Edge::Stair { one_way, .. }
-            | Edge::Barred { one_way, .. } => *one_way,
+            | Edge::Barred { one_way, .. }
+            | Edge::Carry { one_way, .. } => *one_way,
             Edge::Drop { falls, .. } => Some(*falls),
             Edge::Vision { .. } => None,
         }
@@ -565,7 +621,7 @@ impl Edge {
             | Edge::Stair { shortcut, .. }
             | Edge::Drop { shortcut, .. }
             | Edge::Barred { shortcut, .. } => *shortcut,
-            Edge::Vision { .. } => false,
+            Edge::Carry { .. } | Edge::Vision { .. } => false,
         }
     }
 
@@ -576,7 +632,7 @@ impl Edge {
             Edge::Walk { gating, .. } | Edge::Stair { gating, .. } | Edge::Drop { gating, .. } => {
                 gating.as_ref()
             }
-            Edge::Barred { gating, .. } => Some(gating),
+            Edge::Barred { gating, .. } | Edge::Carry { gating, .. } => Some(gating),
             Edge::Vision { .. } => None,
         }
     }
@@ -822,6 +878,9 @@ pub struct LayoutBinding {
     pub one_way_edges: usize,
     /// Connections that demand something before a body may pass.
     pub gated_edges: usize,
+    /// Connections a body is carried over rather than walks (spec-0083 §7) —
+    /// what `DW0934` matches against the campaign's links.
+    pub carry_edges: usize,
     /// **Named places inside places** — stations declared across the whole graph
     /// (spec-0052 §4).
     ///
@@ -904,6 +963,9 @@ impl LayoutBinding {
             if e.gating().is_some_and(|g| !g.is_empty()) {
                 b.gated_edges += 1;
             }
+            if matches!(e, Edge::Carry { .. }) {
+                b.carry_edges += 1;
+            }
         }
         b
     }
@@ -913,7 +975,7 @@ impl LayoutBinding {
     pub fn line(&self) -> String {
         format!(
             "layout-graph binding: {n} node(s), {e} edge(s) ({t} traversal, {ow} one-way, \
-             {s} shortcut, {g} gated), {st} station(s) of which {gs} gate(s), {b} beat(s) \
+             {s} shortcut, {g} gated, {c} carry), {st} station(s) of which {gs} gate(s), {b} beat(s) \
              of which {sb} on the mandatory spine, {p} critical-path step(s), \
              {m} metrics reference(s); geometry-brief binding: {f} fact(s).",
             n = self.nodes,
@@ -922,6 +984,7 @@ impl LayoutBinding {
             ow = self.one_way_edges,
             s = self.shortcut_edges,
             g = self.gated_edges,
+            c = self.carry_edges,
             st = self.stations,
             gs = self.gate_stations,
             b = self.beats,
@@ -1413,6 +1476,20 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                 format!(
                     "connection `{e_id}` waits on quest `{q}`, which the quest documents do not \
                      declare.{unwritten}",
+                    e_id = e.id(),
+                ),
+            ));
+        }
+        if matches!(e, Edge::Carry { .. }) && g.is_empty() {
+            d.push(Diagnostic::error(
+                DW_GRAPH_MISSION,
+                "layout-graph",
+                format!("/content/edges/{i}/gating"),
+                format!(
+                    "carry connection `{e_id}` says nothing about what makes it carry. A carry \
+                     with an empty `gating` is live from world load, which leaves a hole in the \
+                     graph's own claim; name the flag or the quest whose completion arms the \
+                     link that realises it.",
                     e_id = e.id(),
                 ),
             ));

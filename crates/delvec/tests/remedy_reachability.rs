@@ -2185,3 +2185,1232 @@ fn dw0721_removing_a_restated_sky_builds() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// spec-0080: the atmosphere refusals, each move taken
+// ---------------------------------------------------------------------------
+
+/// hello-world with `edit` applied to its world and quests documents.
+fn atmosphere_campaign(
+    tag: &str,
+    edit: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+) -> PathBuf {
+    let camp = campaign(&format!("atm-{tag}"), None);
+    let read = |f: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(camp.join(f)).unwrap()).unwrap()
+    };
+    let (mut world, mut quests) = (read("world.json"), read("quests.json"));
+    quests["dsl_version"] = serde_json::json!(DSL_VERSION);
+    edit(&mut world, &mut quests);
+    for (f, v) in [("world.json", &world), ("quests.json", &quests)] {
+        std::fs::write(camp.join(f), serde_json::to_string_pretty(v).unwrap()).unwrap();
+    }
+    camp
+}
+
+/// `delvec validate`, as an exit code and everything it said.
+fn validate_atm(camp: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+fn declare(world: &mut serde_json::Value, atmospheres: serde_json::Value, carried: bool) {
+    world["content"]["atmospheres"] = atmospheres;
+    if carried {
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/wrong-place");
+    }
+}
+
+fn talk_bundle(quests: &mut serde_json::Value) -> &mut Vec<serde_json::Value> {
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+        .as_array_mut()
+        .unwrap()
+}
+
+/// `DW0928` names the move: remove the line the overworld day cycle overrules.
+#[test]
+fn dw0928_removing_the_overridden_line_validates() {
+    let wrong = |tag: &str, attrs: serde_json::Value| {
+        atmosphere_campaign(tag, |w, _| {
+            declare(
+                w,
+                serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none", "attributes": attrs }]),
+                true,
+            )
+        })
+    };
+    let (code, log) = validate_atm(&wrong(
+        "sun",
+        serde_json::json!({ "visual/sun_angle": 90.0, "visual/sky_color": "#3b4a1e" }),
+    ));
+    assert_ne!(code, 0, "{log}");
+    assert!(log.contains("DW0928"), "{log}");
+    let (code, log) = validate_atm(&wrong(
+        "sun-removed",
+        serde_json::json!({ "visual/sky_color": "#3b4a1e" }),
+    ));
+    assert_eq!(code, 0, "{log}");
+    assert!(!log.contains("DW0928"), "{log}");
+}
+
+/// `DW0929` names the move: keep exactly one of `region` / `place`; and, at the
+/// build, shrink the region so the whole volume stands inside the map.
+#[test]
+fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_verdict() {
+    let atm = serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none" }]);
+    let both = atmosphere_campaign("both", |w, q| {
+        declare(w, atm.clone(), false);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
+            "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] }, "place": "area/keep"
+        }));
+    });
+    let (code, log) = validate_atm(&both);
+    assert!(code != 0 && log.contains("DW0929"), "{log}");
+    let one = atmosphere_campaign("one", |w, q| {
+        declare(w, atm.clone(), false);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place", "place": "area/keep"
+        }));
+    });
+    let (code, log) = validate_atm(&one);
+    assert_eq!(code, 0, "{log}");
+    let wide = |tag: &str, extent: [u32; 3]| {
+        atmosphere_campaign(tag, |w, q| {
+            declare(w, atm.clone(), false);
+            talk_bundle(q).push(serde_json::json!({
+                "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
+                "region": { "anchor": "anchor/exit", "extent": extent }
+            }));
+        })
+    };
+    let (code, log) = build(
+        "atm-wide",
+        &wide("wide", [64, 1, 1]),
+        &common::prefabs_dir(),
+    );
+    assert!(code != 0 && log.contains("DW0929"), "{log}");
+    let (code, log) = build(
+        "atm-narrow",
+        &wide("narrow", [1, 1, 1]),
+        &common::prefabs_dir(),
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// `DW0930` names its moves: carry the atmosphere on its place; drop the
+/// `climate` that contradicts the precipitation; give a duplicate its own id.
+#[test]
+fn dw0930_carrying_it_dropping_the_climate_and_renaming_the_duplicate_all_validate() {
+    let one = serde_json::json!({ "id": "atmosphere/wrong-place", "precipitation": "snow" });
+    let (code, log) = validate_atm(&atmosphere_campaign("unbound", |w, _| {
+        declare(w, serde_json::json!([one.clone()]), false)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    let (code, log) = validate_atm(&atmosphere_campaign("carried", |w, _| {
+        declare(w, serde_json::json!([one.clone()]), true)
+    }));
+    assert_eq!(code, 0, "{log}");
+    let mut hot = one.clone();
+    hot["climate"] = serde_json::json!({ "temperature": 0.8, "downfall": 0.4 });
+    let (code, log) = validate_atm(&atmosphere_campaign("hot", |w, _| {
+        declare(w, serde_json::json!([hot]), true)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    let mut twin = one.clone();
+    let (code, log) = validate_atm(&atmosphere_campaign("twin", |w, _| {
+        declare(w, serde_json::json!([one.clone(), twin.clone()]), true)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    twin["id"] = serde_json::json!("atmosphere/other-place");
+    let (code, log) = validate_atm(&atmosphere_campaign("renamed", |w, q| {
+        declare(w, serde_json::json!([one.clone(), twin.clone()]), true);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/other-place", "place": "area/keep"
+        }));
+    }));
+    assert_eq!(code, 0, "{log}");
+}
+
+/// A hello-world campaign whose world states `time` and whose first objective
+/// cuts to each of `cuts`.
+fn celestial_campaign(tag: &str, time: serde_json::Value, cuts: &[serde_json::Value]) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    common::patch_file(&camp.join("world.json"), |v| {
+        v["content"]["time"] = time;
+    });
+    if !cuts.is_empty() {
+        common::patch_file(&camp.join("quests.json"), |v| {
+            let q = &mut v["content"]["quests"][0];
+            let id = q["objectives"][0]["id"].as_str().unwrap().to_string();
+            let bundle = q["on_objective_complete"][&id]
+                .as_array_mut()
+                .expect("hello-world fires an effect on its first objective");
+            for t in cuts {
+                bundle.push(serde_json::json!({ "type": "set-time", "time": t }));
+            }
+        });
+    }
+    camp
+}
+
+/// `delvec validate`, as an exit code and everything it said.
+fn validate_at(camp: &Path, prefabs: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// `DW0931`, every move its four shapes name (spec-0081 §6): **NAME ONE
+/// BODY**, **REMOVE `phase`** where the moon is below, **STATE `phase`** where
+/// the world's moon is up, and **REMOVE `phase`** where a cut restates the
+/// world's. Each red meets the refusal and the move's edit validates green.
+#[test]
+fn dw0931_every_named_move_validates() {
+    let dir = common::prefabs_dir();
+    // (tag, red world time, red cuts, the move the message names, green world
+    // time, green cuts)
+    type Case = (
+        &'static str,
+        serde_json::Value,
+        Vec<serde_json::Value>,
+        &'static str,
+        serde_json::Value,
+        Vec<serde_json::Value>,
+    );
+    let cases: [Case; 4] = [
+        (
+            "two-bodies",
+            serde_json::json!({"sun": "high", "moon": "below"}),
+            vec![],
+            "NAME ONE BODY",
+            serde_json::json!({"sun": "high"}),
+            vec![],
+        ),
+        (
+            "phase-under-noon",
+            serde_json::json!({"sun": "high", "phase": "new-moon"}),
+            vec![],
+            "REMOVE `phase` from this time",
+            serde_json::json!({"sun": "high"}),
+            vec![],
+        ),
+        (
+            "unnamed-moon",
+            serde_json::json!({"sun": "just-set"}),
+            vec![],
+            "STATE `phase`",
+            serde_json::json!({"sun": "just-set", "phase": "first-quarter"}),
+            vec![],
+        ),
+        (
+            "restated-phase",
+            serde_json::json!({"moon": "high", "phase": "new-moon"}),
+            vec![serde_json::json!({"moon": "rising", "phase": "new-moon"})],
+            "REMOVE `phase` from this time",
+            serde_json::json!({"moon": "high", "phase": "new-moon"}),
+            vec![serde_json::json!({"moon": "rising"})],
+        ),
+    ];
+    for (tag, red_time, red_cuts, says, green_time, green_cuts) in cases {
+        let red = celestial_campaign(&format!("dw0931-{tag}-red"), red_time, &red_cuts);
+        let (code, before) = validate_at(&red, &dir);
+        assert_eq!(code, 1, "{tag} is refused:\n{before}");
+        assert!(before.contains("DW0931"), "{tag}:\n{before}");
+        assert!(
+            before.contains(says),
+            "{tag}: the message names the move:\n{before}"
+        );
+        let green = celestial_campaign(&format!("dw0931-{tag}-green"), green_time, &green_cuts);
+        let (code, after) = validate_at(&green, &dir);
+        assert_eq!(code, 0, "{tag}: the move validates:\n{after}");
+        assert!(!after.contains("DW0931"), "{tag}:\n{after}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0083: the link's three refusals, each move taken
+// ---------------------------------------------------------------------------
+
+/// The ferry primary (`tests/fixtures/ferry`) with `quests.json` edited by
+/// `quests`, at a claimed scratch directory.
+fn ferry(tag: &str, quests: impl FnOnce(&mut serde_json::Value)) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("ferry"), &camp);
+    common::patch_file(&camp.join("quests.json"), quests);
+    camp
+}
+
+fn tiller(q: &mut serde_json::Value) -> &mut serde_json::Value {
+    &mut q["content"]["triggers"][0]
+}
+
+/// The refusal's code, read off the run's own `[error]` line; `None` for a green
+/// build.
+fn refused_with(status: i32, text: &str) -> Option<String> {
+    if status == 0 {
+        return None;
+    }
+    text.lines()
+        .find(|l| l.contains("[error]"))
+        .and_then(|l| l.split_whitespace().next())
+        .map(str::to_string)
+}
+
+#[test]
+fn dw0932_widening_the_volume_to_reach_the_body_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-no-stand", |q| {
+        tiller(q)["effects"][0]["from"]["extent"] = serde_json::json!([0, 1, 1]);
+    });
+    let (s, t) = build("link-no-stand", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(
+        t.contains("widen the volume"),
+        "the message names the move:\n{t}"
+    );
+    // The move: widen the volume so a cell inside it reaches the body.
+    common::patch_file(&camp.join("quests.json"), |q| {
+        tiller(q)["effects"][0]["from"]["extent"] = serde_json::json!([1, 1, 1]);
+    });
+    let (s, t) = build("link-no-stand-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_moving_to_off_the_volume_onto_footing_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-to-inside", |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/boat"});
+    });
+    let (s, t) = build("link-to-inside", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("move `to` off the volume"), "{t}");
+    common::patch_file(&camp.join("quests.json"), |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/far-landing"});
+    });
+    let (s, t) = build("link-to-inside-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_laying_the_floor_at_an_earlier_tick_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let onto_air = |q: &mut serde_json::Value, deck: bool| {
+        let mut steps = vec![];
+        if deck {
+            steps.push(serde_json::json!({"at_ticks": 0, "effects": [{
+                "type": "fill-region", "block": "minecraft:stone",
+                "region": {"anchor": "anchor/far-deck", "extent": [0, 0, 0]}}]}));
+        }
+        steps.push(serde_json::json!({"at_ticks": 2, "effects": [{
+            "type": "teleport",
+            "from": {"anchor": "anchor/boat", "extent": [1, 1, 1]},
+            "to": {"anchor": "anchor/far-air"}}]}));
+        tiller(q)["effects"] = serde_json::json!([{"type": "sequence", "steps": steps}]);
+    };
+    let camp = ferry("link-to-air", |q| onto_air(q, false));
+    let (s, t) = build("link-to-air", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("lay the floor at an earlier tick"), "{t}");
+    common::patch_file(&camp.join("quests.json"), |q| onto_air(q, true));
+    let (s, t) = build("link-to-air-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_using_a_crossing_for_another_area_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-two-areas", |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/keeper-stand"});
+    });
+    common::patch_file(&camp.join("world.json"), |w| {
+        w["content"]["areas"].as_array_mut().unwrap().push(
+            serde_json::json!({"id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room"}),
+        );
+    });
+    let (s, t) = build("link-two-areas", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("use a crossing for another area"), "{t}");
+    // The move the message names: put the next objective in that area and let
+    // the compiler carry the party there — the tiller goes, and the beat after
+    // boarding stands in the keep.
+    common::patch_file(&camp.join("quests.json"), |q| {
+        q["content"]["triggers"] = serde_json::json!([]);
+        let quests = q["content"]["quests"].as_array_mut().unwrap();
+        quests[0]["objectives"].as_array_mut().unwrap().truncate(1);
+        quests[0]["on_complete"] = serde_json::json!([]);
+        quests.push(serde_json::json!({
+            "id": "quest/keep",
+            "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The keep, across the water."},
+            "trigger": {"type": "quest-complete", "quest": "quest/cross"},
+            "objectives": [{"id": "obj/keep", "type": "reach-anchor", "anchor": "anchor/exit", "radius": 1,
+                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "They reach the keep's door."}}],
+            "on_complete": [{"type": "campaign-complete",
+                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The journey ends."}}]
+        }));
+    });
+    common::patch_file(&camp.join("quest-plan.json"), |p| {
+        p["content"]["finale"] = serde_json::json!("quest/keep");
+        p["content"]["quests"].as_array_mut().unwrap().push(serde_json::json!({
+            "act": 1, "area": "area/keep", "depends_on": ["quest/cross"],
+            "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
+        }));
+    });
+    let (s, t) = build("link-two-areas-moved", &camp, &prefabs);
+    assert_ne!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+}
+
+#[test]
+fn dw0933_putting_the_teleport_at_the_named_tick_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let at = |q: &mut serde_json::Value, tick: u32| {
+        tiller(q)["effects"] = serde_json::json!([{"type": "sequence", "steps": [
+            {"at_ticks": 0, "effects": [{"type": "cutscene", "seconds": 1, "path": [
+                {"anchor": "anchor/boat", "offset": [0, 2, 1]},
+                {"anchor": "anchor/boat", "offset": [2, 2, 1]}]}]},
+            {"at_ticks": tick, "effects": [{"type": "teleport",
+                "from": {"anchor": "anchor/boat", "extent": [1, 1, 1]},
+                "to": {"anchor": "anchor/far-landing"}}]}
+        ]}]);
+    };
+    let camp = ferry("link-cutscene", |q| at(q, 5));
+    let (s, t) = build("link-cutscene", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0933"), "{t}");
+    // The move, at the tick the message itself names.
+    let named: u32 = t
+        .split("`sequence` step at tick ")
+        .nth(1)
+        .and_then(|r| r.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("the message names a tick:\n{t}"));
+    common::patch_file(&camp.join("quests.json"), |q| at(q, named));
+    let (s, t) = build("link-cutscene-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+/// The ferry's layout graph with `edges`.
+fn ferry_graph(camp: &Path, edges: serde_json::Value) {
+    let graph = serde_json::json!({
+        "campaign_id": "ferry", "dsl_version": DSL_VERSION, "stage": "layout-graph",
+        "content": {
+            "nodes": [
+                {"id": "node/west-shore", "intent": "jetty", "size_class": "room",
+                 "stations": [{"anchor": "anchor/boat", "kind": "point"}]},
+                {"id": "node/east-shore", "intent": "landing", "size_class": "room",
+                 "stations": [{"anchor": "anchor/far-landing", "kind": "point"}]}
+            ],
+            "edges": edges,
+            "entry": "node/west-shore", "goal": "node/east-shore",
+            "critical_path": ["node/west-shore", "node/east-shore"],
+            "beats": [
+                {"quest": "quest/cross", "objective": "obj/board", "node": "node/west-shore"},
+                {"quest": "quest/cross", "objective": "obj/far-shore", "node": "node/east-shore"}
+            ]
+        }
+    });
+    std::fs::write(
+        camp.join("layout-graph.json"),
+        serde_json::to_string_pretty(&graph).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn dw0934_drawing_the_edge_or_making_it_one_way_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    // A link no edge joins: draw the edge.
+    let camp = ferry("link-no-edge", |_| {});
+    ferry_graph(&camp, serde_json::json!([]));
+    let (s, t) = build("link-no-edge", &camp, &prefabs);
+    assert!(t.contains("DW0934"), "{t}");
+    assert_ne!(s, 0);
+    assert!(t.contains("draw the edge"), "{t}");
+    let edge = serde_json::json!({"class": "carry", "id": "edge/strait", "a": "node/west-shore",
+        "b": "node/east-shore", "one_way": "a-to-b", "gating": {"flags": ["flag/boarded"]}});
+    ferry_graph(&camp, serde_json::json!([edge.clone()]));
+    let (s, t) = build("link-no-edge-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+    // An edge direction no link realises: make the edge one-way.
+    let camp = ferry("link-no-link", |_| {});
+    let mut both = edge.clone();
+    both.as_object_mut().unwrap().remove("one_way");
+    ferry_graph(&camp, serde_json::json!([both]));
+    let (s, t) = build("link-no-link", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0934"), "{t}");
+    assert!(t.contains("make the edge one-way"), "{t}");
+    ferry_graph(&camp, serde_json::json!([edge]));
+    let (s, t) = build("link-no-link-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0084 — a delve wears its own textures: each refusal's named move
+// ---------------------------------------------------------------------------
+
+/// hello-world plus one `world.textures[]` row and the files beside it.
+fn texture_campaign(tag: &str, row: serde_json::Value, files: &[(&str, Vec<u8>)]) -> PathBuf {
+    let camp = campaign(&format!("tex-{tag}"), None);
+    let path = camp.join("world.json");
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    world["content"]["textures"] = serde_json::json!([row]);
+    std::fs::write(&path, serde_json::to_string_pretty(&world).unwrap()).unwrap();
+    std::fs::create_dir_all(camp.join("textures")).unwrap();
+    for (name, bytes) in files {
+        std::fs::write(camp.join("textures").join(name), bytes).unwrap();
+    }
+    camp
+}
+
+fn flat_png(w: u32, h: u32) -> Vec<u8> {
+    let px: Vec<u8> = (0..w * h).flat_map(|_| [180u8, 40, 40, 255]).collect();
+    delvec::compiler::png::encode_rgba(w, h, &px)
+}
+
+fn validate_tex(camp: &Path) -> (i32, String) {
+    let prefabs = common::prefabs_dir();
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **`DW0939` names the census path; naming it validates.** The refusal of the
+/// pre-pin moon strip prints the nearest paths the census holds; the row that
+/// takes one of them is admitted.
+#[test]
+fn dw0939_naming_a_census_path_admits_the_row() {
+    let row = |replaces: &str| {
+        serde_json::json!({ "id": "moon", "replaces": replaces,
+            "license": { "spdx": "original", "source": "original" } })
+    };
+    let before = texture_campaign(
+        "dw0939-a",
+        row("minecraft:environment/moon_phases"),
+        &[("moon.png", flat_png(32, 32))],
+    );
+    let (code, said) = validate_tex(&before);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("DW0939"), "{said}");
+    let named = "minecraft:environment/celestial/moon/full_moon";
+    assert!(
+        said.contains(named),
+        "the refusal names the path the move takes:\n{said}"
+    );
+    let after = texture_campaign("dw0939-b", row(named), &[("moon.png", flat_png(32, 32))]);
+    let (code, said) = validate_tex(&after);
+    assert_eq!(code, 0, "{said}");
+}
+
+/// **`DW0940` names the size; resizing to it validates.**
+#[test]
+fn dw0940_resizing_to_the_named_size_admits_the_image() {
+    let row = serde_json::json!({ "id": "moon",
+        "replaces": "minecraft:environment/celestial/moon/full_moon",
+        "license": { "spdx": "original", "source": "original" } });
+    let before = texture_campaign("dw0940-a", row.clone(), &[("moon.png", flat_png(48, 48))]);
+    let (code, said) = validate_tex(&before);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("DW0940") && said.contains("multiple k of 32"),
+        "{said}"
+    );
+    let after = texture_campaign("dw0940-b", row, &[("moon.png", flat_png(64, 64))]);
+    let (code, said) = validate_tex(&after);
+    assert_eq!(code, 0, "{said}");
+}
+
+/// **`DW0741` names the missing field; recording it validates.** A CC BY image
+/// with no credit line is refused naming `license.attribution`; with it, the
+/// row is admitted.
+#[test]
+fn dw0741_recording_the_credit_admits_a_cc_by_image() {
+    let row = |attribution: Option<&str>| {
+        let mut lic = serde_json::json!({ "spdx": "CC-BY-4.0", "source": "a site",
+            "url": "https://example.org/licence" });
+        if let Some(a) = attribution {
+            lic["attribution"] = serde_json::json!(a);
+        }
+        serde_json::json!({ "id": "moon",
+            "replaces": "minecraft:environment/celestial/moon/full_moon", "license": lic })
+    };
+    let before = texture_campaign("dw0741-a", row(None), &[("moon.png", flat_png(32, 32))]);
+    let (code, said) = validate_tex(&before);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("DW0741") && said.contains("license.attribution"),
+        "{said}"
+    );
+    let after = texture_campaign(
+        "dw0741-b",
+        row(Some("An Artist — A Title")),
+        &[("moon.png", flat_png(32, 32))],
+    );
+    let (code, said) = validate_tex(&after);
+    assert_eq!(code, 0, "{said}");
+}
+
+/// **`DW0309` names the path; adding the file there validates.**
+#[test]
+fn dw0309_adding_the_named_file_admits_the_texture_row() {
+    let row = serde_json::json!({ "id": "moon",
+        "replaces": "minecraft:environment/celestial/moon/full_moon",
+        "license": { "spdx": "original", "source": "original" } });
+    let before = texture_campaign("dw0309-a", row.clone(), &[]);
+    let (code, said) = validate_tex(&before);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains("DW0309") && said.contains("textures/moon.png"),
+        "{said}"
+    );
+    let after = texture_campaign("dw0309-b", row, &[("moon.png", flat_png(32, 32))]);
+    let (code, said) = validate_tex(&after);
+    assert_eq!(code, 0, "{said}");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0082 — the assembly's four refusals, each taken by its own move
+// ---------------------------------------------------------------------------
+
+/// The code an assembly fixture build refuses with, `None` when it builds.
+fn assembly_verdict(q: &serde_json::Value, r: delvewright_dsl::rig::Rig) -> Option<String> {
+    use common::assembly_fixture::{campaign, prefabs_with, try_build};
+    match try_build(&campaign(q), &prefabs_with(r)) {
+        Ok(_) => None,
+        Err(BuildFailure::Diagnostic { code, .. }) => Some(code.id().to_string()),
+        Err(BuildFailure::Validation(e)) => panic!("{} invalid command(s): {e:?}", e.len()),
+    }
+}
+
+/// `DW0935`'s move: name a clip the rig declares (the message lists them). The
+/// refusal is validation tier, so it is read off the diagnostics; the move then
+/// builds.
+#[test]
+fn dw0935_naming_a_clip_the_rig_declares_builds() {
+    use common::assembly_fixture::{quests_with, rig, trigger, validation_codes};
+    let red = quests_with(|q| trigger(q)["effects"][1]["clip"] = serde_json::json!("fly"));
+    let codes = validation_codes(&red, rig());
+    let refused = codes
+        .iter()
+        .find(|(c, _, _)| c == "DW0935")
+        .unwrap_or_else(|| panic!("refused: {codes:?}"));
+    assert!(
+        refused.2.contains("`retract`"),
+        "the message lists the clips: {refused:?}"
+    );
+    let green = quests_with(|q| trigger(q)["effects"][1]["clip"] = serde_json::json!("retract"));
+    assert!(validation_codes(&green, rig()).is_empty());
+    assert_eq!(assembly_verdict(&green, rig()), None);
+}
+
+/// `DW0936`'s move: declare a width over 0 and at most 6.
+#[test]
+fn dw0936_a_width_vanilla_detects_builds() {
+    use common::assembly_fixture::{assembly, quests_with, rig};
+    let at = |w: f64| {
+        quests_with(|q| assembly(q)["hitbox"] = serde_json::json!({ "width": w, "height": 2.0 }))
+    };
+    assert_eq!(assembly_verdict(&at(7.0), rig()).as_deref(), Some("DW0936"));
+    assert_eq!(assembly_verdict(&at(6.0), rig()), None);
+}
+
+/// `DW0937`'s move: lower the mark toward a floor the party stands on.
+#[test]
+fn dw0937_lowering_the_mark_builds() {
+    use common::assembly_fixture::{assembly, quests_with, rig};
+    let at = |dy: i32| {
+        quests_with(|q| {
+            assembly(q)["at"] =
+                serde_json::json!({ "anchor": "anchor/exit", "offset": [0, dy, 0] });
+            assembly(q)["hitbox"] =
+                serde_json::json!({ "width": 1.0, "height": 2.0, "offset": [0, 2, 0] });
+            // A raised mark lays its slab in the air; the strike is another row's.
+            assembly(q).as_object_mut().unwrap().remove("strikes");
+        })
+    };
+    assert_eq!(assembly_verdict(&at(3), rig()).as_deref(), Some("DW0937"));
+    assert_eq!(assembly_verdict(&at(2), rig()), None);
+}
+
+/// `DW0938`'s two moves: shrink the landing box inside `while_in` (shape 1),
+/// and choose a strike clip that reaches the box (shape 2).
+#[test]
+fn dw0938_shrinking_the_box_or_choosing_a_clip_that_reaches_it_builds() {
+    use common::assembly_fixture::{assembly, quests_with, rig};
+    let landing = |e: [u32; 3]| {
+        quests_with(|q| {
+            assembly(q)["strikes"]["while_in"]["extent"] = serde_json::json!([0, 0, 0]);
+            assembly(q)["strikes"]["pattern"][0]["on_land"][0]["in"]["extent"] =
+                serde_json::json!(e);
+        })
+    };
+    assert_eq!(
+        assembly_verdict(&landing([1, 0, 0]), rig()).as_deref(),
+        Some("DW0938")
+    );
+    assert_eq!(assembly_verdict(&landing([0, 0, 0]), rig()), None);
+    let clip = |c: &str| {
+        quests_with(|q| assembly(q)["strikes"]["pattern"][0]["strike"] = serde_json::json!(c))
+    };
+    assert_eq!(
+        assembly_verdict(&clip("windup"), rig()).as_deref(),
+        Some("DW0938")
+    );
+    assert_eq!(assembly_verdict(&clip("strike"), rig()), None);
+}
+
+/// `DW0938`'s two-way moves (spec-0082 §5.4 shape 2): a one-cell landing under
+/// a long limb is refused for the cells the limb comes down on uncaught, and
+/// widening the landing box along the limb — the move the message names —
+/// builds; a limb hanging above the body is refused for the cells it never
+/// reaches, and moving the box under a clip that comes down — the other move —
+/// builds.
+#[test]
+fn dw0938_widening_the_box_along_the_limb_builds() {
+    use common::assembly_fixture::{assembly, quests, quests_with, rig};
+    let mut long = rig();
+    let last = long
+        .clips
+        .get_mut("strike")
+        .unwrap()
+        .frames
+        .last_mut()
+        .unwrap();
+    last[0].translation = [-1.5, 0.0, -3.5];
+    last[0].scale = [3.0, 0.5, 7.0];
+    assert_eq!(
+        assembly_verdict(&quests(), long.clone()).as_deref(),
+        Some("DW0938")
+    );
+    let widened = quests_with(|q| {
+        assembly(q)["strikes"]["pattern"][0]["on_land"][0]["in"]["extent"] =
+            serde_json::json!([0, 0, 2]);
+        assembly(q)["strikes"]["while_in"]["extent"] = serde_json::json!([2, 1, 4]);
+    });
+    assert_eq!(assembly_verdict(&widened, long), None);
+    let mut high = rig();
+    let last = high
+        .clips
+        .get_mut("strike")
+        .unwrap()
+        .frames
+        .last_mut()
+        .unwrap();
+    for t in last.iter_mut() {
+        t.translation[1] += 2.0;
+    }
+    assert_eq!(assembly_verdict(&quests(), high).as_deref(), Some("DW0938"));
+    assert_eq!(assembly_verdict(&quests(), rig()), None);
+}
+
+// ---------------------------------------------------------------------------
+// spec-0086: the loop's refusals, each answered by the move it names
+// ---------------------------------------------------------------------------
+
+/// The long-gallery fixture (`tests/fixtures/long-gallery`) with `quests.json`
+/// edited by `edit`.
+fn gallery(tag: &str, edit: impl FnOnce(&mut serde_json::Value)) -> PathBuf {
+    let camp = tmp(&format!("loop-{tag}"));
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("long-gallery"), &camp);
+    common::patch_file(&camp.join("quests.json"), edit);
+    camp
+}
+
+fn gallery_prefabs(tag: &str, cuts: &common::corridor::Cuts) -> PathBuf {
+    common::corridor::gallery_prefabs(&format!("remedy-{tag}"), cuts)
+}
+
+fn loop0(q: &mut serde_json::Value) -> &mut serde_json::Value {
+    &mut q["content"]["loops"][0]
+}
+
+/// `DW0945`: *move the landing* — the zero offset's remedy — and *reshape the
+/// slab* — a slab drawn over the wall's remedy. Each move reaches a green.
+#[test]
+fn dw0945_moving_the_landing_and_reshaping_the_slab_each_build() {
+    let prefabs = gallery_prefabs("dw0945", &common::corridor::Cuts::default());
+    let zero = gallery("dw0945-zero", |q| {
+        loop0(q)["to"] = serde_json::json!({ "anchor": "anchor/slab" });
+    });
+    let (code, said) = build("dw0945-zero", &zero, &prefabs);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0945") && said.contains("move the landing"),
+        "{said}"
+    );
+    let moved = gallery("dw0945-moved", |q| {
+        loop0(q)["to"] = serde_json::json!({ "anchor": "anchor/landing" });
+    });
+    let (code, said) = build("dw0945-moved", &moved, &prefabs);
+    assert_eq!(code, 0, "the landing moved one bay back builds:\n{said}");
+
+    let wide = gallery("dw0945-wide", |q| {
+        loop0(q)["region"]["extent"] = serde_json::json!([2, 1, 0]);
+    });
+    let (code, said) = build("dw0945-wide", &wide, &prefabs);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0945") && said.contains("Reshape the slab"),
+        "{said}"
+    );
+    let reshaped = gallery("dw0945-reshaped", |q| {
+        loop0(q)["region"]["extent"] = serde_json::json!([1, 1, 0]);
+    });
+    let (code, said) = build("dw0945-reshaped", &reshaped, &prefabs);
+    assert_eq!(
+        code, 0,
+        "the slab drawn over the passage alone builds:\n{said}"
+    );
+}
+
+/// `DW0946`: *make the sections the same* — a lantern missing from the landing
+/// bay is answered by hanging it back.
+#[test]
+fn dw0946_making_the_sections_the_same_builds() {
+    let lamp = [
+        2,
+        common::corridor::SIZE[1] - 2,
+        common::corridor::bay(2) + 1,
+    ];
+    let camp = gallery("dw0946", |_| {});
+    let missing = gallery_prefabs(
+        "dw0946-missing",
+        &common::corridor::Cuts {
+            air: vec![lamp],
+            ..Default::default()
+        },
+    );
+    let (code, said) = build("dw0946-missing", &camp, &missing);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0946") && said.contains("Make the two sections the same"),
+        "{said}"
+    );
+    let same = gallery_prefabs("dw0946-same", &common::corridor::Cuts::default());
+    let (code, said) = build("dw0946-same", &camp, &same);
+    assert_eq!(
+        code, 0,
+        "with the lantern hung back the sections tile:\n{said}"
+    );
+}
+
+/// `DW0947`: *close the view inside the span* — the window the eye escaped by,
+/// walled again.
+#[test]
+fn dw0947_closing_the_view_builds() {
+    let z = common::corridor::bay(2) + 1;
+    let camp = gallery("dw0947", |_| {});
+    let open = gallery_prefabs(
+        "dw0947-open",
+        &common::corridor::Cuts {
+            air: vec![[0, common::corridor::FLOOR_Y + 1, z]],
+            ..Default::default()
+        },
+    );
+    let (code, said) = build("dw0947-open", &camp, &open);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0947") && said.contains("Close the view inside the span"),
+        "{said}"
+    );
+    let closed = gallery_prefabs("dw0947-closed", &common::corridor::Cuts::default());
+    let (code, said) = build("dw0947-closed", &camp, &closed);
+    assert_eq!(code, 0, "the window walled, the view closes:\n{said}");
+}
+
+/// `DW0948`: *move the body out of the span* — a figure stood in the porch
+/// instead of the hall.
+#[test]
+fn dw0948_moving_the_body_out_of_the_span_builds() {
+    let prefabs = gallery_prefabs("dw0948", &common::corridor::Cuts::default());
+    let figure = |tag: &str, at: &str| -> PathBuf {
+        let camp = gallery(tag, |q| {
+            q["content"]["quests"][0]["cast"] = serde_json::json!({
+                "npc/curator": { "at": at, "dialogue": "dlg/hello", "doing": "waiting" }
+            });
+        });
+        common::patch_file(&camp.join("npcs.json"), |n| {
+            n["content"]["npcs"] = serde_json::json!([{
+                "anchor": at, "area": "area/gallery", "base_entity": "minecraft:villager",
+                "id": "npc/curator", "name": "The Curator", "role": "flavor",
+                "persona": {
+                    "archetype": "patient keeper", "backstory": "She keeps the gallery.",
+                    "demeanor": "Calm.", "motivation": "Order.", "secret": "None.",
+                    "speech_style": "Short."
+                }
+            }]);
+        });
+        common::patch_file(&camp.join("dialogue.json"), |t| {
+            t["content"]["dialogues"] = serde_json::json!([{
+                "npc": "npc/curator", "root": "dlg/hello",
+                "nodes": [ { "id": "dlg/hello", "text": "Mind the lamps.", "options": [] } ]
+            }]);
+        });
+        camp
+    };
+    let inside = figure("dw0948-inside", "anchor/in-the-hall");
+    let (code, said) = build("dw0948-inside", &inside, &prefabs);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0948") && said.contains("Move the body out of the span"),
+        "{said}"
+    );
+    let outside = figure("dw0948-outside", "anchor/porch");
+    let (code, said) = build("dw0948-outside", &outside, &prefabs);
+    assert_eq!(code, 0, "the figure in the porch builds:\n{said}");
+}
+
+/// `DW0949`: *a party datum, a flag, or a release the party reaches* — the
+/// count declared `party` instead of `player`.
+#[test]
+fn dw0949_a_party_datum_validates() {
+    let prefabs = gallery_prefabs("dw0949", &common::corridor::Cuts::default());
+    let player = gallery("dw0949-player", |q| {
+        q["content"]["state"][0]["scope"] = serde_json::json!("player");
+    });
+    let (code, said) = build("dw0949-player", &player, &prefabs);
+    assert_ne!(code, 0);
+    assert!(
+        said.contains("DW0949") && said.contains("declare the datum `party`-scoped"),
+        "{said}"
+    );
+    let party = gallery("dw0949-party", |q| {
+        q["content"]["state"][0]["scope"] = serde_json::json!("party");
+    });
+    let (code, said) = build("dw0949-party", &party, &prefabs);
+    assert_eq!(code, 0, "the party datum builds:\n{said}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0951 / DW0952 — `delvec sculpt` (spec-0087)
+// ---------------------------------------------------------------------------
+
+/// One sculpt refusal and the move its message names: the refused form exits
+/// with `code` and `refusal`'s text, and the moved form sculpts (exit 0).
+fn sculpt_move(
+    tag: &str,
+    refused: &serde_json::Value,
+    code: i32,
+    refusal: &str,
+    moved: &serde_json::Value,
+) {
+    let before = common::sculpt::sculpt(refused, &format!("remedy-{tag}-before"), &[]);
+    assert_eq!(before.code, code, "{}", before.said);
+    assert!(before.said.contains(refusal), "{}", before.said);
+    let after = common::sculpt::sculpt(moved, &format!("remedy-{tag}-after"), &[]);
+    assert_eq!(after.code, 0, "{tag}: the move sculpts: {}", after.said);
+    assert!(!after.said.contains(refusal), "{}", after.said);
+}
+
+fn op(o: &str, path: &str, value: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({"op": o, "path": path, "value": value})
+}
+
+/// `DW0951`, no ground: declaring `ground` sculpts.
+#[test]
+fn dw0951_declaring_the_ground_sculpts() {
+    use common::sculpt::{apply, gallery_form, probe_patch};
+    let refused = apply(gallery_form(), &probe_patch("a-body-with-no-ground"));
+    let ground = gallery_form()["ground"].clone();
+    let moved = apply(refused.clone(), &[op("add", "/ground", ground)]);
+    sculpt_move("ground", &refused, 1, "DW0951 [error]", &moved);
+}
+
+/// `DW0951`, a glowing tone: a tone of a block that emits nothing sculpts.
+#[test]
+fn dw0951_a_tone_that_emits_nothing_sculpts() {
+    use common::sculpt::{apply, gallery_form, probe_patch};
+    let refused = apply(gallery_form(), &probe_patch("a-body-paved-with-light"));
+    let moved = apply(
+        refused.clone(),
+        &[op(
+            "replace",
+            "/palette/0/full/0/0",
+            serde_json::json!("minecraft:bone_block"),
+        )],
+    );
+    sculpt_move("glow", &refused, 1, "emits light", &moved);
+}
+
+/// `DW0951`, no entry: giving an anchor `role: entry` sculpts.
+#[test]
+fn dw0951_declaring_an_entry_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let refused = apply(
+        gallery_form(),
+        &[serde_json::json!({"op": "remove", "path": "/anchors/anchor~1entry/role"})],
+    );
+    let moved = apply(
+        refused.clone(),
+        &[op(
+            "add",
+            "/anchors/anchor~1entry/role",
+            serde_json::json!("entry"),
+        )],
+    );
+    sculpt_move("entry", &refused, 1, "`role: entry`", &moved);
+}
+
+/// `DW0951`, a family with one shape missing: a family with both sculpts.
+#[test]
+fn dw0951_a_family_with_both_shapes_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let refused = apply(
+        gallery_form(),
+        &[op(
+            "replace",
+            "/palette/0/family",
+            serde_json::json!("calcite"),
+        )],
+    );
+    let moved = apply(
+        refused.clone(),
+        &[op(
+            "replace",
+            "/palette/0/family",
+            serde_json::json!("diorite"),
+        )],
+    );
+    sculpt_move("family", &refused, 1, "has no stair", &moved);
+}
+
+/// `DW0951`, a steep shelf: lengthening its path to one block per block sculpts.
+#[test]
+fn dw0951_a_shelf_lengthened_to_one_block_per_block_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let path = "/solids/6/path/1";
+    let original = gallery_form()["solids"][6]["path"][1].clone();
+    let refused = apply(
+        gallery_form(),
+        &[op("replace", path, serde_json::json!([24.5, 16.0, 32.0]))],
+    );
+    let moved = apply(refused.clone(), &[op("replace", path, original)]);
+    sculpt_move(
+        "steep",
+        &refused,
+        1,
+        "steeper than one block per block",
+        &moved,
+    );
+}
+
+/// `DW0952`, a pocket: a `shelf` out of the pit sculpts with no pocket.
+#[test]
+fn dw0952_a_shelf_out_of_the_pocket_sculpts() {
+    use common::sculpt::{apply, gallery_form, probe_patch};
+    let refused = apply(gallery_form(), &probe_patch("a-body-with-a-pocket"));
+    let shelf = serde_json::json!({"shape": "shelf", "path": [[15.0, 12.0, 27.0], [15.0, 17.0, 37.0]],
+                                   "width": 2.0, "clearance": 3.0, "depth": 2.0});
+    let moved = apply(refused.clone(), &[op("add", "/solids/-", shelf)]);
+    sculpt_move("pocket", &refused, 3, "DW0952 [error]", &moved);
+    let after = common::sculpt::sculpt(&moved, "remedy-pocket-again", &[]);
+    assert_eq!(after.pocket_places(), Some(0), "{}", after.said);
+}
+
+/// `DW0952`, a buried entry: moving the anchor onto the ground sculpts.
+#[test]
+fn dw0952_moving_a_buried_anchor_onto_the_ground_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let path = "/anchors/anchor~1entry/pos";
+    let original = gallery_form()["anchors"]["anchor/entry"]["pos"].clone();
+    let refused = apply(
+        gallery_form(),
+        &[op("replace", path, serde_json::json!([15, 9, 30]))],
+    );
+    let moved = apply(refused.clone(), &[op("replace", path, original)]);
+    sculpt_move(
+        "buried",
+        &refused,
+        3,
+        "is not a cell a body can stand in",
+        &moved,
+    );
+}
+
+/// The gallery form's `hull` entry of `mode`, by index.
+fn gallery_hull(mode: &str) -> usize {
+    common::sculpt::gallery_form()["lights"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|l| l["hull"]["mode"] == mode)
+        .expect("the gallery form carries the hull mode")
+}
+
+/// `DW0951`, a lantern embedded: recessing it behind a cover, as the refusal
+/// says, sculpts. The gallery's own recessed entry is the room's recess, so the
+/// moved lantern takes its place rather than crowding it.
+#[test]
+fn dw0951_a_small_source_recessed_behind_a_cover_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let i = gallery_hull("embedded");
+    let lantern = serde_json::json!("minecraft:soul_lantern[hanging=false,waterlogged=false]");
+    let refused = apply(
+        gallery_form(),
+        &[op("replace", &format!("/lights/{i}/block"), lantern)],
+    );
+    let moved = apply(
+        refused.clone(),
+        &[
+            op(
+                "replace",
+                &format!("/lights/{i}/hull/mode"),
+                serde_json::json!("recessed"),
+            ),
+            op(
+                "replace",
+                &format!("/lights/{i}/hull/on"),
+                serde_json::json!(["wall", "vault"]),
+            ),
+            op(
+                "add",
+                &format!("/lights/{i}/hull/cover"),
+                serde_json::json!("minecraft:andesite_stairs"),
+            ),
+            serde_json::json!({"op": "remove", "path": format!("/lights/{}", gallery_hull("recessed"))}),
+        ],
+    );
+    sculpt_move("embed-lantern", &refused, 1, "is not a full cube", &moved);
+}
+
+/// `DW0951`, a recess into a floor: recessing into wall and vault only sculpts.
+#[test]
+fn dw0951_a_recess_kept_to_wall_and_vault_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let i = gallery_hull("recessed");
+    let path = format!("/lights/{i}/hull/on");
+    let refused = apply(
+        gallery_form(),
+        &[op("replace", &path, serde_json::json!(["wall", "floor"]))],
+    );
+    let moved = apply(
+        refused.clone(),
+        &[op("replace", &path, serde_json::json!(["wall", "vault"]))],
+    );
+    sculpt_move(
+        "recess-floor",
+        &refused,
+        1,
+        "recesses into a `floor`",
+        &moved,
+    );
+}
+
+/// `DW0952`, a hull entry that placed nothing: widening `within` over the
+/// room, as the refusal says, sculpts.
+#[test]
+fn dw0952_a_hull_widened_over_the_room_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let i = gallery_hull("embedded");
+    let path = format!("/lights/{i}/hull/within");
+    let original = gallery_form()["lights"][i]["hull"]["within"].clone();
+    let refused = apply(
+        gallery_form(),
+        &[op(
+            "replace",
+            &path,
+            serde_json::json!({"from": [0, 5, 0], "to": [3, 8, 3]}),
+        )],
+    );
+    let moved = apply(refused.clone(), &[op("replace", &path, original)]);
+    sculpt_move("hull-nothing", &refused, 3, "placed no source", &moved);
+}
+
+// ---------------------------------------------------------------------------
+// DW0953 — the two moves a gate that cannot stage a volume names (spec-0088)
+// ---------------------------------------------------------------------------
+
+/// Validate `camp` through the binary: `(exit status, log)`.
+fn validate_camp(camp: &Path, prefabs: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **LEAVE `when` OUT.** The move `DW0953`'s empty-gate shape names: a volume
+/// live from world-load is spelled by declaring no stage at all.
+#[test]
+fn dw0953_leaving_an_empty_when_out_validates() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("stage-empty");
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert("when".into(), serde_json::json!({}));
+    });
+    let (code, before) = validate_camp(&camp, &dir);
+    assert_eq!(code, 1, "refused at validation:\n{before}");
+    assert!(
+        before.contains("DW0953") && before.contains("leaving `when` out"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).remove("when");
+    });
+    let (code, after) = validate_camp(&camp, &dir);
+    assert_eq!(code, 0, "leaving `when` out validates:\n{after}");
+    assert!(!after.contains("DW0953"), "{after}");
+}
+
+/// **NAME A `party` DATUM.** The move `DW0953`'s player-scoped shape names: the
+/// same comparison on a datum the party holds is a fact about the place.
+#[test]
+fn dw0953_naming_a_party_datum_validates() {
+    let dir = common::prefabs_dir();
+    let camp = lethal_campaign("stage-player");
+    let declare = |scope: &str| {
+        let scope = scope.to_string();
+        move |v: &mut serde_json::Value| {
+            v["content"]["state"] = serde_json::json!([{
+                "id": "state/heat", "initial": 0, "scope": scope,
+                "note": "how hot the road has run"
+            }]);
+            // Written once, so the comparison is not decided at authoring (DW0501).
+            let bundle = v["content"]["quests"][0]["on_complete"]
+                .as_array_mut()
+                .unwrap();
+            if !bundle.iter().any(|e| e["type"] == "set-state") {
+                bundle.insert(
+                    0,
+                    serde_json::json!({ "type": "set-state", "state": "state/heat", "value": 1 }),
+                );
+            }
+            volume(v).insert(
+                "when".into(),
+                serde_json::json!({
+                    "requires_state": [{ "state": "state/heat", "op": "at-least", "value": 0 }]
+                }),
+            );
+        }
+    };
+    edit_doc(&camp, "quests.json", declare("player"));
+    let (code, before) = validate_camp(&camp, &dir);
+    assert_eq!(code, 1, "refused at validation:\n{before}");
+    assert!(
+        before.contains("DW0953") && before.contains("`party`-scoped datum"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", declare("party"));
+    let (code, after) = validate_camp(&camp, &dir);
+    assert!(
+        !after.contains("DW0953"),
+        "naming a party datum clears DW0953:\n{after}"
+    );
+    assert_eq!(code, 0, "and validates:\n{after}");
+}

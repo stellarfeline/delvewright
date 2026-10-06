@@ -571,10 +571,55 @@
             "verb": "select"
           },
           {
+            "name": "region/ferry-cabin",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                4,
+                3,
+                29
+              ],
+              "min": [
+                1,
+                3,
+                25
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/ferry-deck",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/ferry-deck",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                1,
+                1,
+                1
+              ],
+              "min": [
+                -1,
+                -1,
+                -1
+              ]
+            },
+            "verb": "select"
+          },
+          {
             "avoid": [
               "region/hearth-bay",
               "region/keep-clear",
-              "region/volley-lane"
+              "region/volley-lane",
+              "region/ferry-cabin",
+              "region/ferry-deck"
             ],
             "density": 0.02,
             "items": [
@@ -793,6 +838,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.0",
+  "dsl_version": "0.35.1",
   "stage": "world-edits"
 }

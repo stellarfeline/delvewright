@@ -5,14 +5,22 @@
 
 use serde::Serialize;
 
-/// Strip audit hook (community contract): a forbidden block/entity was removed.
-pub const DW_STRIP: &str = "DW0700";
-/// An oversize schematic was tiled into structure parts.
-pub const DW_SPLIT: &str = "DW0701";
-/// The source `DataVersion` differs from the pinned MC 1.21.11 target.
-pub const DW_DATAVERSION: &str = "DW0702";
-/// The input could not be read or parsed as a Sponge schematic.
-pub const DW_INPUT: &str = "DW0710";
+delvewright_dsl::dw_code! {
+    /// Strip audit hook (community contract): a forbidden block/entity was removed.
+    pub const DW_STRIP: &str = "DW0700";
+}
+delvewright_dsl::dw_code! {
+    /// An oversize schematic was tiled into structure parts.
+    pub const DW_SPLIT: &str = "DW0701";
+}
+delvewright_dsl::dw_code! {
+    /// The source `DataVersion` differs from the pinned MC 1.21.11 target.
+    pub const DW_DATAVERSION: &str = "DW0702";
+}
+delvewright_dsl::dw_code! {
+    /// The input could not be read or parsed as a Sponge schematic.
+    pub const DW_INPUT: &str = "DW0710";
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]

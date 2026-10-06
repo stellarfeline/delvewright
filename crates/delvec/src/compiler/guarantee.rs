@@ -58,30 +58,32 @@ use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier};
 
 use crate::compiler::registry::PrefabRegistry;
 
-/// `DW0889` — **an anchor this campaign names is outside what its area's layout
-/// guarantees.**
-///
-/// **Advisory (warning, exit 0), and the tier is the finding rather than a
-/// concession.** The guaranteed set is a *sufficient* condition, not a necessary
-/// one: an anchor carried only by `connector` members is seated whenever the
-/// filler draw happens to pick that connector, and a campaign that builds green
-/// today may be resting on exactly that. Refusing here would refuse campaigns a
-/// creator legitimately wants and whose builds succeed — the over-refusal the
-/// brief this round answers names — and the engine already owns the sharp end:
-/// `DW0302`, `DW0142`, `DW0360`, `DW0431` and `DW0447` all still refuse a
-/// reference the assembled world does not answer. What was missing was never a
-/// refusal. It was the answer arriving before the build.
-///
-/// **Its quantifier**: every anchor name this campaign's documents carry that
-/// some member of a bound pool declares and no member the layout is required to
-/// seat declares. It says nothing about a name no member declares — that is
-/// `DW0302`'s, at the use site, and restating it here would be two codes for one
-/// fact — and nothing about a name two placed pieces answer to, which is
-/// `DW0498`/`DW0305`'s and cannot be known without the settled draw.
-///
-/// `ExitTier::Build` states what happens if this rule ever refuses with a build
-/// under way; as a warning it never does.
-pub const DW_UNGUARANTEED_ANCHOR: DwCode = DwCode::new("DW0889", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0889` — **an anchor this campaign names is outside what its area's layout
+    /// guarantees.**
+    ///
+    /// **Advisory (warning, exit 0), and the tier is the finding rather than a
+    /// concession.** The guaranteed set is a *sufficient* condition, not a necessary
+    /// one: an anchor carried only by `connector` members is seated whenever the
+    /// filler draw happens to pick that connector, and a campaign that builds green
+    /// today may be resting on exactly that. Refusing here would refuse campaigns a
+    /// creator legitimately wants and whose builds succeed — the over-refusal the
+    /// brief this round answers names — and the engine already owns the sharp end:
+    /// `DW0302`, `DW0142`, `DW0360`, `DW0431` and `DW0447` all still refuse a
+    /// reference the assembled world does not answer. What was missing was never a
+    /// refusal. It was the answer arriving before the build.
+    ///
+    /// **Its quantifier**: every anchor name this campaign's documents carry that
+    /// some member of a bound pool declares and no member the layout is required to
+    /// seat declares. It says nothing about a name no member declares — that is
+    /// `DW0302`'s, at the use site, and restating it here would be two codes for one
+    /// fact — and nothing about a name two placed pieces answer to, which is
+    /// `DW0498`/`DW0305`'s and cannot be known without the settled draw.
+    ///
+    /// `ExitTier::Build` states what happens if this rule ever refuses with a build
+    /// under way; as a warning it never does.
+    pub const DW_UNGUARANTEED_ANCHOR: DwCode = DwCode::new("DW0889", ExitTier::Build);
+}
 
 // ---------------------------------------------------------------------------
 // What a POOL guarantees, from the library alone

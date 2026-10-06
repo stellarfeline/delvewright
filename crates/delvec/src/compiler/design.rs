@@ -52,36 +52,41 @@ use delvewright_dsl::{
 
 use crate::compiler::view::camera::Answers;
 
-use crate::compiler::light::reachable_time_weather;
+use crate::compiler::light::reachable_clocks;
+use delvewright_dsl::{Clock, TimeSite};
 
-/// `DW0890`: **the approved design and the built world do not agree about the
-/// sky**, in one of three ways — a sky nobody approved a picture of, a row
-/// naming an image that is not there, or an approved image nobody recorded.
-///
-/// One code, because the three are one fact seen from three sides: the record
-/// and the world are not the same delve. Splitting them would give a creator
-/// three numbers to look up for one repair, and the repair is always the same
-/// pair of moves — change the world, or change the record.
-///
-/// Validation tier (exit 1). Its `ExitTier::Build` declaration is the ordinary
-/// one every validation diagnostic carries and says what it means: if this rule
-/// refuses with a build under way, it stops the build.
-pub const DW_DESIGN_SKY: DwCode = DwCode::new("DW0890", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0890`: **the approved design and the built world do not agree about the
+    /// sky**, in one of three ways — a sky nobody approved a picture of, a row
+    /// naming an image that is not there, or an approved image nobody recorded.
+    ///
+    /// One code, because the three are one fact seen from three sides: the record
+    /// and the world are not the same delve. Splitting them would give a creator
+    /// three numbers to look up for one repair, and the repair is always the same
+    /// pair of moves — change the world, or change the record.
+    ///
+    /// Validation tier (exit 1). Its `ExitTier::Build` declaration is the ordinary
+    /// one every validation diagnostic carries and says what it means: if this rule
+    /// refuses with a build under way, it stops the build.
+    pub const DW_DESIGN_SKY: DwCode = DwCode::new("DW0890", ExitTier::Build);
+}
 
-/// `DW0900`: **an approved picture has no showcase camera** — a row of
-/// `design.json` that no camera of `design/cameras.json` answers (spec-0070).
-///
-/// One code for one fact, separate from [`DW_DESIGN_SKY`] because its repair is
-/// unrelated: a creator writes a camera against the last built tree, where
-/// `DW0890`'s repair changes the hour or the record and `DW0721`'s fixes the
-/// record's own rules. A creator looks a code up to find its repair.
-///
-/// Build tier (exit 3), and `delvec cameras` raises the same code at its own
-/// exit 2 when it emits scenes — one code in two tiers, as `DW0721` already is.
-/// It refuses at the build rather than at validation because every view command
-/// validates first, so a validation-tier refusal would refuse `cameras
-/// --preview`, the instrument that completes the record (spec-0070 §3).
-pub const DW_DESIGN_ANSWERED: DwCode = DwCode::new("DW0900", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0900`: **an approved picture has no showcase camera** — a row of
+    /// `design.json` that no camera of `design/cameras.json` answers (spec-0070).
+    ///
+    /// One code for one fact, separate from [`DW_DESIGN_SKY`] because its repair is
+    /// unrelated: a creator writes a camera against the last built tree, where
+    /// `DW0890`'s repair changes the hour or the record and `DW0721`'s fixes the
+    /// record's own rules. A creator looks a code up to find its repair.
+    ///
+    /// Build tier (exit 3), and `delvec cameras` raises the same code at its own
+    /// exit 2 when it emits scenes — one code in two tiers, as `DW0721` already is.
+    /// It refuses at the build rather than at validation because every view command
+    /// validates first, so a validation-tier refusal would refuse `cameras
+    /// --preview`, the instrument that completes the record (spec-0070 §3).
+    pub const DW_DESIGN_ANSWERED: DwCode = DwCode::new("DW0900", ExitTier::Build);
+}
 
 /// One approved image found under `design/`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -264,12 +269,12 @@ impl CameraRecord {
 }
 
 /// Render a set of tokens as `{a, b}` — `{}` when it is empty.
-fn set_line<T: Copy>(items: &[T], token: impl Fn(T) -> &'static str) -> String {
+fn set_line<T: Copy, S: std::fmt::Display>(items: &[T], token: impl Fn(T) -> S) -> String {
     format!(
         "{{{}}}",
         items
             .iter()
-            .map(|&t| token(t))
+            .map(|&t| token(t).to_string())
             .collect::<Vec<_>>()
             .join(", ")
     )
@@ -357,13 +362,13 @@ pub fn record(binding: &DesignBinding, findings: &Findings) -> serde_json::Value
             .skies_stated
             .iter()
             .map(|(t, w, n)| serde_json::json!({
-                "time": t.keyword(),
+                "time": t,
                 "weather": w.keyword(),
                 "count": n,
             }))
             .collect::<Vec<_>>(),
         "world": {
-            "times": binding.world_times.iter().map(|t| t.keyword()).collect::<Vec<_>>(),
+            "times": binding.world_times,
             "weathers": binding.world_weathers.iter().map(|w| w.keyword()).collect::<Vec<_>>(),
         },
         "unrecorded_files": findings.unrecorded_files,
@@ -395,7 +400,9 @@ pub struct Findings {
 /// documents with no directory behind them passes [`DesignFiles::default`],
 /// which is the honest reading — there are no approved image files.
 pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBinding, Findings) {
-    let (world_times, world_weathers) = reachable_time_weather(c);
+    let (world_clocks, world_weathers) = reachable_clocks(c);
+    let world_time = c.world.content.time;
+    let world_times: Vec<WorldTime> = world_clocks.iter().map(|&(_, t)| t).collect();
     let rows: &[Reference] = c
         .design
         .as_ref()
@@ -415,18 +422,52 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
     // Counted through an ordered map so the artifact and the binding line are
     // byte-stable (ADR-0006): the key is the pair's declaration order in the
     // two enums, never the order the rows happen to be written in.
-    let mut sky_counts: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
+    // Keyed by the row's CLOCK (spec-0081 §3.3), so two spellings of one hour
+    // are one sky, kept under the first spelling written.
+    let mut sky_counts: std::collections::BTreeMap<(Clock, usize), (WorldTime, usize)> =
+        Default::default();
     for r in rows {
-        *sky_counts
-            .entry((time_index(r.time), weather_index(r.weather)))
-            .or_insert(0) += 1;
+        sky_counts
+            .entry((
+                r.time.clock(TimeSite::Sky, world_time),
+                weather_index(r.weather),
+            ))
+            .or_insert((r.time, 0))
+            .1 += 1;
     }
     binding.skies_stated = sky_counts
         .into_iter()
-        .map(|((t, w), n)| (TIMES[t], WEATHERS[w], n))
+        .map(|((_, w), (t, n))| (t, WEATHERS[w], n))
         .collect();
 
     let mut d = Vec::new();
+    // spec-0081 §6: a camera's celestial sky is held to the same shape rules
+    // as every other time the campaign states (`DW0931`), here because the
+    // camera record is read beside the campaign only by this gate.
+    if let Some(bytes) = &files.cameras
+        && let Ok(sheet) = crate::compiler::view::camera::parse_sheet(bytes)
+    {
+        for (i, cam) in sheet.cameras.iter().enumerate() {
+            let Some(ct) = cam.sky.and_then(|s| s.time.celestial()) else {
+                continue;
+            };
+            for m in delvewright_dsl::celestial::shape_findings(
+                ct,
+                delvewright_dsl::celestial::CelestialSite::Camera,
+                c.world.content.time,
+            ) {
+                d.push(Diagnostic::error(
+                    delvewright_dsl::diagnostic::codes::CELESTIAL_TIME,
+                    "design",
+                    format!(
+                        "{}/cameras/{i}/sky/time",
+                        crate::compiler::view::camera::CAMERAS_FILE
+                    ),
+                    format!("camera `{}`: {m}", cam.name),
+                ));
+            }
+        }
+    }
     let mut findings = Findings {
         unanswered_rows: binding.cameras.unanswered(rows),
         ..Findings::default()
@@ -519,10 +560,22 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
     // compare, and the campaign's state is the measured zero the binding line
     // reports and staging refuses — not a disagreement.
     if !rows.is_empty() {
-        let stated_times: Vec<WorldTime> = ordered_times(rows.iter().map(|r| r.time));
+        let mut stated: std::collections::BTreeMap<Clock, WorldTime> = Default::default();
+        for r in rows {
+            stated
+                .entry(r.time.clock(TimeSite::Sky, world_time))
+                .or_insert(r.time);
+        }
+        let stated_clocks: Vec<(Clock, WorldTime)> = stated.into_iter().collect();
         let stated_weathers: Vec<WorldWeather> = ordered_weathers(rows.iter().map(|r| r.weather));
-        let time_gap = difference(&world_times, &stated_times);
-        let time_extra = difference(&stated_times, &world_times);
+        let by_clock = |a: &[(Clock, WorldTime)], b: &[(Clock, WorldTime)]| {
+            a.iter()
+                .copied()
+                .filter(|(k, _)| !b.iter().any(|(j, _)| j == k))
+                .collect::<Vec<_>>()
+        };
+        let time_gap = by_clock(&world_clocks, &stated_clocks);
+        let time_extra = by_clock(&stated_clocks, &world_clocks);
         let weather_gap = difference(&world_weathers, &stated_weathers);
         let weather_extra = difference(&stated_weathers, &world_weathers);
         if !time_gap.is_empty()
@@ -534,13 +587,13 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
             if !time_gap.is_empty() {
                 says.push(format!(
                     "this world reaches the time(s) {} that no approved picture shows",
-                    set_line(&time_gap, WorldTime::keyword)
+                    clock_line(&time_gap)
                 ));
             }
             if !time_extra.is_empty() {
                 says.push(format!(
                     "the record states the time(s) {} that this world never reaches",
-                    set_line(&time_extra, WorldTime::keyword)
+                    clock_line(&time_extra)
                 ));
             }
             if !weather_gap.is_empty() {
@@ -573,9 +626,9 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
                      DELETE that effect. Never move the hour to satisfy a mob — that is \
                      `DW0496`'s rule, and it points the other way.",
                     says = says.join("; "),
-                    wt = set_line(&world_times, WorldTime::keyword),
+                    wt = clock_line(&world_clocks),
                     ww = set_line(&world_weathers, WorldWeather::keyword),
-                    st = set_line(&stated_times, WorldTime::keyword),
+                    st = clock_line(&stated_clocks),
                     sw = set_line(&stated_weathers, WorldWeather::keyword),
                     n = rows.len(),
                 ),
@@ -759,38 +812,27 @@ fn quoted(items: &[&str]) -> String {
         .join(", ")
 }
 
-/// The two vocabularies, in declaration order — the one table this module
-/// orders and de-duplicates through.
-///
-/// Exhaustive both ways, like [`reachable_time_weather`]'s own: a new
-/// [`WorldTime`] fails to compile until it is given an index here, so a sky
-/// the world can reach can never be silently missing from the comparison.
-const TIMES: [WorldTime; 6] = [
-    WorldTime::Day,
-    WorldTime::Noon,
-    WorldTime::Dusk,
-    WorldTime::Night,
-    WorldTime::Midnight,
-    WorldTime::Dawn,
-];
+/// A set of reachable or stated hours as a message prints it: each as the
+/// author's spelling followed by its clock — `{noon (day 0, 6000),
+/// {"moon":"high","phase":"new-moon"} (day 4, 18000)}` (spec-0081 §5.3).
+fn clock_line(items: &[(Clock, WorldTime)]) -> String {
+    format!(
+        "{{{}}}",
+        items
+            .iter()
+            .map(|(k, t)| format!("{} {}", t.keyword(), k.label()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
 
-/// The weather vocabulary, in declaration order — see [`TIMES`].
+/// The weather vocabulary, in declaration order — the one table this module
+/// orders and de-duplicates weathers through.
 const WEATHERS: [WorldWeather; 3] = [
     WorldWeather::Clear,
     WorldWeather::Rain,
     WorldWeather::Thunder,
 ];
-
-fn time_index(t: WorldTime) -> usize {
-    match t {
-        WorldTime::Day => 0,
-        WorldTime::Noon => 1,
-        WorldTime::Dusk => 2,
-        WorldTime::Night => 3,
-        WorldTime::Midnight => 4,
-        WorldTime::Dawn => 5,
-    }
-}
 
 fn weather_index(w: WorldWeather) -> usize {
     match w {
@@ -798,11 +840,6 @@ fn weather_index(w: WorldWeather) -> usize {
         WorldWeather::Rain => 1,
         WorldWeather::Thunder => 2,
     }
-}
-
-fn ordered_times(it: impl Iterator<Item = WorldTime>) -> Vec<WorldTime> {
-    let set: BTreeSet<usize> = it.map(time_index).collect();
-    set.into_iter().map(|i| TIMES[i]).collect()
 }
 
 fn ordered_weathers(it: impl Iterator<Item = WorldWeather>) -> Vec<WorldWeather> {

@@ -482,3 +482,52 @@ def test_the_qualifier_is_not_applied_to_an_unambiguous_name(gate):
     )
     assert gate.ambiguous_code_names({"LONE"}) == set()
     assert set(gate.codes_that_prescribe_a_move()) == {"DW0855"}
+
+
+# ------------------------------------------- the binary's registry (`--delvec`) --
+
+
+def _registry(gate, crate: str, body: str):
+    _rs(gate, crate, "codes.rs", body)
+    tiers, _unreadable = gate.declared_tiers()
+    return gate.declared_constants(), tiers
+
+
+DECLS = (
+    'delvewright_dsl::dw_code! {\n'
+    '    pub const A: DwCode = DwCode::new("DW0901", ExitTier::Build);\n'
+    '}\n'
+    'delvewright_dsl::dw_code! {\n'
+    '    pub const B: &str = "DW0902";\n'
+    '}\n'
+)
+ROWS = [
+    {"code": "DW0901", "tier": "Build", "subject": "Campaign", "name": "A", "module": "m"},
+    {"code": "DW0902", "tier": None, "subject": None, "name": "B", "module": "m"},
+]
+
+
+def test_a_registry_equal_to_the_declarations_is_green(gate):
+    constants, tiers = _registry(gate, "delvec", DECLS)
+    assert gate.registry_errors(ROWS, constants, tiers) == []
+
+
+def test_a_declaration_the_registry_dropped_reds(gate):
+    """A code written outside `dw_code!` is declared and never registered."""
+    constants, tiers = _registry(gate, "delvec", DECLS)
+    errors = gate.registry_errors(ROWS[1:], constants, tiers)
+    assert any("ABSENT from `delvec codes`" in e and "DW0901 (A)" in e for e in errors), errors
+
+
+def test_a_registered_code_no_declaration_spells_reds(gate):
+    constants, tiers = _registry(gate, "delvec", DECLS)
+    extra = ROWS + [{"code": "DW0903", "tier": "Build", "subject": "Campaign", "name": "C", "module": "m"}]
+    errors = gate.registry_errors(extra, constants, tiers)
+    assert any("DW0903 (C)" in e for e in errors), errors
+
+
+def test_a_tier_the_registry_disagrees_on_reds(gate):
+    constants, tiers = _registry(gate, "delvec", DECLS)
+    rows = [dict(ROWS[0], tier="Analysis"), ROWS[1]]
+    errors = gate.registry_errors(rows, constants, tiers)
+    assert any("DW0901 (A) is tier Analysis" in e for e in errors), errors

@@ -13,10 +13,10 @@
 //! ## Why chrome is compiler-owned rather than authored
 //!
 //! The obvious fix — inventory them like any other string — charges every campaign
-//! for text it did not write: a translator answering the same thirteen keys,
+//! for text it did not write: a translator answering the same fourteen keys,
 //! identically, once per delve, forever. And it would be answering them for
 //! **product chrome**: `New objective: `, `Delve Complete`, `Choose your class`
-//! are not lines any campaign author wants to write. That eight of them never grew
+//! are not lines any campaign author wants to write. That nine of them never grew
 //! an authored override was a correct judgment, not an oversight, which is exactly
 //! why the answer is not to add one — it would move the engine's maintenance cost
 //! onto content.
@@ -172,15 +172,19 @@ chrome! {
     BONFIRE_REST = 11, "delvewright.ui.bonfire.rest", 0, crate::stages::BONFIRE_REST_LABEL_EN;
     /// The bonfire's **save only** button when no `save_label` is authored.
     BONFIRE_SAVE = 12, "delvewright.ui.bonfire.save", 0, crate::stages::BONFIRE_SAVE_LABEL_EN;
+    /// The countdown a waiting player sees on the action bar
+    /// (`world.respawn_wait`, spec-0077). `%s` is the seconds left.
+    RESPAWN_WAIT = 13, "delvewright.ui.respawn.wait", 1, "Back in %s";
 }
 
 /// One language's rendition of [`ALL`], in slot order.
-type Table = [&'static str; 13];
+type Table = [&'static str; 14];
 
 // --- the tables ------------------------------------------------------------
 // Slot order is ALL's: objective.new, objective.complete, campaign.complete,
 // campaign.signature, campaign.banner, lobby.waiting, class.title, class.body,
-// boundary.message, gate.sealed, bonfire.title, bonfire.rest, bonfire.save.
+// boundary.message, gate.sealed, bonfire.title, bonfire.rest, bonfire.save,
+// respawn.wait.
 
 const ZH_HANS: Table = [
     "新目标：%s",
@@ -196,6 +200,7 @@ const ZH_HANS: Table = [
     "篝火",
     "休息并存档",
     "仅存档",
+    "%s 秒后归队",
 ];
 
 const ZH_HANT: Table = [
@@ -212,6 +217,7 @@ const ZH_HANT: Table = [
     "篝火",
     "休息並存檔",
     "僅存檔",
+    "%s 秒後歸隊",
 ];
 
 const JA: Table = [
@@ -228,6 +234,7 @@ const JA: Table = [
     "焚き火",
     "休息してセーブ",
     "セーブのみ",
+    "復帰まで %s",
 ];
 
 const KO: Table = [
@@ -244,6 +251,7 @@ const KO: Table = [
     "모닥불",
     "휴식하고 저장",
     "저장만",
+    "%s초 후 복귀",
 ];
 
 const DE: Table = [
@@ -260,6 +268,7 @@ const DE: Table = [
     "Lagerfeuer",
     "Rasten und speichern",
     "Nur speichern",
+    "Zurück in %s",
 ];
 
 const FR: Table = [
@@ -276,6 +285,7 @@ const FR: Table = [
     "Feu de camp",
     "Se reposer et sauvegarder",
     "Sauvegarder seulement",
+    "Retour dans %s",
 ];
 
 const ES: Table = [
@@ -292,6 +302,7 @@ const ES: Table = [
     "Hoguera",
     "Descansar y guardar",
     "Solo guardar",
+    "Vuelves en %s",
 ];
 
 const PT_BR: Table = [
@@ -308,6 +319,7 @@ const PT_BR: Table = [
     "Fogueira",
     "Descansar e salvar",
     "Apenas salvar",
+    "De volta em %s",
 ];
 
 const PT_PT: Table = [
@@ -324,6 +336,7 @@ const PT_PT: Table = [
     "Fogueira",
     "Descansar e guardar",
     "Apenas guardar",
+    "De volta em %s",
 ];
 
 const RU: Table = [
@@ -340,6 +353,7 @@ const RU: Table = [
     "Костёр",
     "Отдохнуть и сохранить",
     "Только сохранить",
+    "Возвращение через %s",
 ];
 
 const IT: Table = [
@@ -356,6 +370,7 @@ const IT: Table = [
     "Falò",
     "Riposa e salva",
     "Salva soltanto",
+    "Di ritorno tra %s",
 ];
 
 const NL: Table = [
@@ -372,6 +387,7 @@ const NL: Table = [
     "Kampvuur",
     "Rusten en opslaan",
     "Alleen opslaan",
+    "Terug over %s",
 ];
 
 const PL: Table = [
@@ -388,6 +404,7 @@ const PL: Table = [
     "Ognisko",
     "Odpocznij i zapisz",
     "Tylko zapisz",
+    "Powrót za %s",
 ];
 
 const TR: Table = [
@@ -404,6 +421,7 @@ const TR: Table = [
     "Kamp ateşi",
     "Dinlen ve kaydet",
     "Sadece kaydet",
+    "Dönüşe kalan: %s",
 ];
 
 const UK: Table = [
@@ -420,6 +438,7 @@ const UK: Table = [
     "Багаття",
     "Відпочити та зберегти",
     "Лише зберегти",
+    "Повернення через %s",
 ];
 
 const CS: Table = [
@@ -436,6 +455,7 @@ const CS: Table = [
     "Táborák",
     "Odpočinout a uložit",
     "Jen uložit",
+    "Návrat za %s",
 ];
 
 const SK: Table = [
@@ -452,6 +472,7 @@ const SK: Table = [
     "Táborák",
     "Oddýchnuť si a uložiť",
     "Len uložiť",
+    "Návrat o %s",
 ];
 
 const SV: Table = [
@@ -468,6 +489,7 @@ const SV: Table = [
     "Lägereld",
     "Vila och spara",
     "Spara endast",
+    "Tillbaka om %s",
 ];
 
 const DA: Table = [
@@ -484,6 +506,7 @@ const DA: Table = [
     "Bål",
     "Hvil og gem",
     "Gem kun",
+    "Tilbage om %s",
 ];
 
 const NB: Table = [
@@ -500,6 +523,7 @@ const NB: Table = [
     "Bål",
     "Hvil og lagre",
     "Bare lagre",
+    "Tilbake om %s",
 ];
 
 const FI: Table = [
@@ -516,6 +540,7 @@ const FI: Table = [
     "Nuotio",
     "Lepää ja tallenna",
     "Vain tallennus",
+    "Paluu %s kuluttua",
 ];
 
 const HU: Table = [
@@ -532,6 +557,7 @@ const HU: Table = [
     "Tábortűz",
     "Pihenés és mentés",
     "Csak mentés",
+    "Visszatérés: %s",
 ];
 
 const RO: Table = [
@@ -548,6 +574,7 @@ const RO: Table = [
     "Foc de tabără",
     "Odihnește-te și salvează",
     "Doar salvează",
+    "Revii în %s",
 ];
 
 const EL: Table = [
@@ -564,6 +591,7 @@ const EL: Table = [
     "Φωτιά",
     "Ξεκουράσου και αποθήκευσε",
     "Μόνο αποθήκευση",
+    "Επιστροφή σε %s",
 ];
 
 const BG: Table = [
@@ -580,6 +608,7 @@ const BG: Table = [
     "Огън",
     "Почини си и запази",
     "Само запази",
+    "Връщане след %s",
 ];
 
 const TH: Table = [
@@ -596,6 +625,7 @@ const TH: Table = [
     "กองไฟ",
     "พักและบันทึก",
     "บันทึกเท่านั้น",
+    "กลับมาใน %s",
 ];
 
 const VI: Table = [
@@ -612,6 +642,7 @@ const VI: Table = [
     "Lửa trại",
     "Nghỉ ngơi và lưu",
     "Chỉ lưu",
+    "Quay lại sau %s",
 ];
 
 const ID: Table = [
@@ -628,6 +659,7 @@ const ID: Table = [
     "Api unggun",
     "Istirahat dan simpan",
     "Simpan saja",
+    "Kembali dalam %s",
 ];
 
 const MS: Table = [
@@ -644,6 +676,7 @@ const MS: Table = [
     "Unggun api",
     "Berehat dan simpan",
     "Simpan sahaja",
+    "Kembali dalam %s",
 ];
 
 const AR: Table = [
@@ -660,6 +693,7 @@ const AR: Table = [
     "نار المخيم",
     "استرح واحفظ",
     "احفظ فقط",
+    "العودة خلال %s",
 ];
 
 const HE: Table = [
@@ -676,6 +710,7 @@ const HE: Table = [
     "מדורה",
     "לנוח ולשמור",
     "לשמור בלבד",
+    "חזרה בעוד %s",
 ];
 
 const HI: Table = [
@@ -692,6 +727,7 @@ const HI: Table = [
     "अलाव",
     "विश्राम करें और सहेजें",
     "केवल सहेजें",
+    "%s में वापसी",
 ];
 
 const CA: Table = [
@@ -708,6 +744,7 @@ const CA: Table = [
     "Foguera",
     "Descansa i desa",
     "Només desa",
+    "Tornes en %s",
 ];
 
 const FIL: Table = [
@@ -724,6 +761,7 @@ const FIL: Table = [
     "Siga",
     "Magpahinga at mag-save",
     "Mag-save lamang",
+    "Babalik sa loob ng %s",
 ];
 
 /// Which Minecraft language file gets which table. Keyed on the client's own file
@@ -966,7 +1004,7 @@ mod tests {
             );
             assert!(seen.insert(c.key), "duplicate chrome key `{}`", c.key);
         }
-        assert_eq!(ALL.len(), 13, "the chrome inventory changed size");
+        assert_eq!(ALL.len(), 14, "the chrome inventory changed size");
     }
 
     /// **The binding that makes `%s` safe.** Every language table renders every
@@ -1011,7 +1049,7 @@ mod tests {
     /// Chinese story is the exact defect this module exists to close.
     #[test]
     fn zh_cn_is_complete() {
-        assert_eq!(coverage("zh_cn"), (13, 13));
+        assert_eq!(coverage("zh_cn"), (14, 14));
         assert_eq!(lang_entries("zh_cn")[CLASS_TITLE.key], "选择你的职业");
     }
 
@@ -1019,9 +1057,9 @@ mod tests {
     /// masquerading as a translation.
     #[test]
     fn untabled_language_ships_no_chrome() {
-        assert_eq!(coverage("tlh_aa"), (0, 13));
+        assert_eq!(coverage("tlh_aa"), (0, 14));
         assert!(lang_entries("en_us").is_empty());
-        assert_eq!(english_entries().len(), 13);
+        assert_eq!(english_entries().len(), 14);
     }
 
     /// The multi-language build puts English on the component (the pack carries the

@@ -1,0 +1,17 @@
+{
+  "code": "DW0937",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/0/hitbox/offset",
+      "value": [
+        0,
+        5,
+        0
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The hall's critical path performs `trigger/strike-the-sentinel` three times, because the counter waits on the flag the third blow sets. This edit lifts the sentinel's hitbox five courses off the plinth, into the hall's roof space: its lowest face is now more than three blocks from every eye the party has on the near hall's floor, which is beyond a player's interaction range from every cell the party can walk to. The party walks up to the statue and no swing can land, so the beat can never happen while every other check stays green — the class this refusal exists for. It declares no unit: the hitbox's offset and the trigger are bound by the primary. The remedy the refusal names is to lower the hitbox (or the mark) toward a floor the party stands on."
+}

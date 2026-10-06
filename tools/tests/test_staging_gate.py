@@ -23,6 +23,7 @@ import sys
 import pytest
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "creator" / "staging-gate.py"
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="module")
@@ -997,25 +998,76 @@ def live_rows(gate, ids):
     return rows
 
 
-def test_the_live_item_gate_precondition_binds_on_an_interact_objective(gate, tmp_path):
+def held_build(tmp_path, where, lines):
+    """A build tree whose datapack holds one function with these lines."""
+    b = tmp_path / where / "out"
+    fn = b / "datapack" / "data" / "c" / "function"
+    fn.mkdir(parents=True)
+    (b / "validation").mkdir()
+    (fn / "tick.mcfunction").write_text("\n".join(lines) + "\n")
+    return b
+
+
+def test_the_live_item_gate_precondition_counts_item_gates_not_interacts(gate, tmp_path):
     """`DW0849`'s catalogue row states its own binding: *interact objectives
-    declaring requires_item*. So the carriers are interact objectives, and
-    `requires_item` exists on exactly one enum variant. Driven both ways."""
+    declaring requires_item* — and the class `isl-02` and `isl-41` are about is
+    exactly those, because an `interact` with no `requires_item` completes on
+    any click: it has no item for a class to be unable to bring and no hand to
+    read. So the precondition is the item-gate class itself, counted in the
+    BUILD by the server's own adjudication of one (`if items entity @s
+    weapon.mainhand`), an instrument that shares nothing with the source-side
+    binding. Driven in all three directions."""
+    rows = live_rows(gate, {"isl-02", "isl-41"})
+    aw = rows["isl-02"]["applies_when"]
+    assert rows["isl-41"]["applies_when"] == aw, "one class, one precondition"
+
+    gated = 'execute as @a[scores={dw.i_o=1..}] if items entity @s weapon.mainhand minecraft:trial_key run function c:o'
+    ungated = "execute as @a[scores={dw.i_o=1..}] run function c:o"
+    # A held item put in a hand is not a gate on one: the preamble's
+    # `item replace` names the slot and must not count.
+    preamble = "item replace entity @a[tag=dw_t,limit=1] weapon.mainhand with minecraft:trial_key"
+
+    (tmp_path / "gate").mkdir()
+    (tmp_path / "plain").mkdir()
+    item_gate = make_campaign(
+        tmp_path / "gate",
+        objectives=[{"type": "interact", "requires_item": "minecraft:trial_key"}],
+    )
+    plain = make_campaign(tmp_path / "plain", objectives=[{"type": "interact"}])
+    with_test = held_build(tmp_path, "b1", [gated])
+    without_test = held_build(tmp_path, "b2", [ungated, preamble])
+
+    assert gate.probe(aw, gate.Subject(plain, with_test))[0] == 1
+    assert gate.probe(aw, gate.Subject(plain, without_test))[0] == 0
+
+    for r in rows.values():
+        # The campaign declares the gate: bound, whatever the build says.
+        assert adjudicate_on(gate, item_gate, with_test, r)["verdict"] == "BOUND"
+        # One interact, no item gate, no held-item test emitted: the class
+        # measures zero — the shape of a one-capability demo level.
+        v = adjudicate_on(gate, plain, without_test, r)
+        assert (v["verdict"], v["binding"], v["precondition"]) == ("INAPPLICABLE", 0, 0), v
+        # The build adjudicates a held item the source binding does not count:
+        # an item gate the check does not read. Refused.
+        assert adjudicate_on(gate, plain, with_test, r)["verdict"] == "UNBOUND"
+
+
+def test_the_item_gate_precondition_reads_the_spelling_the_emitter_is_held_to(gate):
+    """The precondition is a build-side probe, so it is only as good as its
+    agreement with the emitter. `crates/delvec/tests/v07_held_item.rs` is what
+    holds the emitter to the spelling of the held-item completion gate; the
+    probe has to match that exact sentence, or a change to the emitter would
+    silently turn every precondition zero and every demo-shaped zero into a
+    pass. Read from the Rust test, never restated here."""
+    import re
+
     row = live_rows(gate, {"isl-02"})["isl-02"]
-    aw = row["applies_when"]
-
-    (tmp_path / "a").mkdir()
-    (tmp_path / "b").mkdir()
-    carrying = make_campaign(tmp_path / "a", objectives=[{"type": "interact"}])
-    without = make_campaign(tmp_path / "b", objectives=[{"type": "talk-to"}])
-    build = make_build(tmp_path)
-    n_yes = gate.probe(aw, gate.Subject(carrying, build))[0]
-    n_no = gate.probe(aw, gate.Subject(without, build))[0]
-    assert (n_yes, n_no) == (1, 0)
-
-    # And the row's verdict follows: a campaign that HAS the carrier and has
-    # not declared the field is refused, which is the whole point.
-    assert adjudicate_on(gate, carrying, build, row)["verdict"] == "UNBOUND"
+    rust = (REPO_ROOT / "crates" / "delvec" / "tests" / "v07_held_item.rs").read_text()
+    asserted = re.findall(r'gate\.contains\(&format!\("([^"]*weapon\.mainhand[^"]*)"', rust)
+    assert len(asserted) == 1, asserted
+    item = re.search(r'const ITEM: &str = "([^"]+)"', rust).group(1)
+    line = "execute as @a[scores={dw.i_o=1..}] " + asserted[0].replace("{ITEM}", item) + " run function c:o"
+    assert re.search(row["applies_when"]["contains"], line), (row["applies_when"], line)
 
 
 def test_the_live_flag_gate_precondition_counts_what_the_emission_binds(gate, tmp_path):
@@ -1232,11 +1284,14 @@ def test_the_live_sight_precondition_counts_grants_not_cameras(gate, tmp_path):
     bare forms `give-effect` normalises. A wave mob's `effects[]` entry names an
     effect on a MOB and carries no `type`, so it is not counted.
 
-    Driven toward the vacuous shape: add one night-vision `give-effect` to the
-    camera-only campaign and the row reds — its `seconds` is the author's, and
-    no check measures it against the camera."""
+    The row's binding IS the class (spec-0085 gave the `give-effect` half its
+    check, `DW0944`, carried with the derived mitigation lease by one invariant
+    test), so a grant binds and a camera alone is INAPPLICABLE. Driven toward
+    the vacuous shape — the binding narrowed back to `mitigation` alone — the
+    author-timed grants go UNBOUND again, which is the state before the check
+    existed."""
     row = live_rows(gate, {"isl-52"})["isl-52"]
-    aw = row["applies_when"]
+    aw = row["binding"]
     nv = {"type": "give-effect", "effect": "minecraft:night_vision", "seconds": 5}
     build = make_build(tmp_path / "out")
     camps = {
@@ -1275,14 +1330,23 @@ def test_the_live_sight_precondition_counts_grants_not_cameras(gate, tmp_path):
     }, counts
 
     only = adjudicate_on(gate, camps["camera-only"], build, row)
-    assert (only["verdict"], only["precondition"]) == ("INAPPLICABLE", 0), only
-    # The planted defect-carrying shape: an author-timed sight grant beside a
-    # camera, with no mitigation for the check to bind to.
-    for name in ("give-nv", "bare-blindness-in-dialogue"):
+    assert only["verdict"] == "INAPPLICABLE", only
+    for name in ("give-nv", "bare-blindness-in-dialogue", "mitigated"):
         r = adjudicate_on(gate, camps[name], build, row)
+        assert (r["verdict"], r["binding"]) == ("BOUND", 1), (name, r)
+
+    # The vacuous shape: the binding narrowed to `mitigation`, with the grants
+    # kept as the precondition — what the row was before `DW0944`.
+    narrowed = dict(row)
+    narrowed["binding"] = {
+        "files": ["world.json"],
+        "kind": "dsl",
+        "match": {"has": ["mitigation"]},
+    }
+    narrowed["applies_when"] = aw
+    for name in ("give-nv", "bare-blindness-in-dialogue"):
+        r = adjudicate_on(gate, camps[name], build, narrowed)
         assert r["verdict"] == "UNBOUND", (name, r)
-    mitigated = adjudicate_on(gate, camps["mitigated"], build, row)
-    assert (mitigated["verdict"], mitigated["binding"]) == ("BOUND", 1), mitigated
 
 
 def test_describe_names_an_absent_field_in_words(gate):
@@ -1368,20 +1432,30 @@ def test_the_live_label_precondition_binds_on_a_dialogue_node(gate, tmp_path):
         assert adjudicate_on(gate, silent, build, r)["verdict"] == "INAPPLICABLE"
 
 
-def test_the_live_cast_precondition_binds_on_a_declared_quest(gate, tmp_path):
-    """`DW0460`/`DW0461` read the `cast` ledger, a declaration ON a quest. The
-    precondition counts the quests — and its UNBOUND direction is the island
-    before round 13 verbatim: three quests, no cast ledger, nothing counting
-    them."""
+def test_the_live_cast_precondition_counts_the_npcs_a_ledger_is_keyed_by(gate, tmp_path):
+    """`DW0460`/`DW0461` read the `cast` ledger, a declaration ON a quest whose
+    keys are stage-2 NPC ids (`DW0464` refuses any other). A campaign with no
+    NPC has no body to misplace and no entry to owe, so the precondition counts
+    the NPCs. The UNBOUND direction is the island before round 13 verbatim:
+    NPCs declared, quests declared, no cast ledger counting them."""
     rows = live_rows(gate, {"isl-35", "isl-46"})
     aw = rows["isl-35"]["applies_when"]
     assert rows["isl-46"]["applies_when"] == aw, "one class, one precondition"
 
     build = make_build(tmp_path)
 
-    def quests(where, quest_nodes):
+    def campaign(where, npc_ids, quest_nodes):
         d = tmp_path / where
         d.mkdir(parents=True, exist_ok=True)
+        (d / "npcs.json").write_text(
+            json.dumps(
+                {
+                    "dsl_version": FIXTURE_DSL_VERSION,
+                    "stage": "npcs",
+                    "content": {"npcs": [{"id": n} for n in npc_ids]},
+                }
+            )
+        )
         (d / "quests.json").write_text(
             json.dumps(
                 {"dsl_version": FIXTURE_DSL_VERSION, "stage": 5, "content": {"quests": quest_nodes}}
@@ -1389,19 +1463,21 @@ def test_the_live_cast_precondition_binds_on_a_declared_quest(gate, tmp_path):
         )
         return d
 
-    with_cast = quests("cast", [{"id": "quest/a", "cast": {"npc/a": {"at": "anchor/a"}}}])
-    no_cast = quests("nocast", [{"id": "quest/a", "objectives": []}])
-    no_quest = quests("noquest", [])
+    with_cast = campaign("cast", ["npc/a"], [{"id": "quest/a", "cast": {"npc/a": {"at": "anchor/a"}}}])
+    no_cast = campaign("nocast", ["npc/a"], [{"id": "quest/a", "objectives": []}])
+    nobody = campaign("nobody", [], [{"id": "quest/a", "objectives": []}])
     counts = {
         w: gate.probe(aw, gate.Subject(d, build))[0]
-        for w, d in (("cast", with_cast), ("nocast", no_cast), ("noquest", no_quest))
+        for w, d in (("cast", with_cast), ("nocast", no_cast), ("nobody", nobody))
     }
-    assert counts == {"cast": 1, "nocast": 1, "noquest": 0}, counts
+    assert counts == {"cast": 1, "nocast": 1, "nobody": 0}, counts
 
     for r in rows.values():
         assert adjudicate_on(gate, with_cast, build, r)["verdict"] == "BOUND"
         assert adjudicate_on(gate, no_cast, build, r)["verdict"] == "UNBOUND"
-        assert adjudicate_on(gate, no_quest, build, r)["verdict"] == "INAPPLICABLE"
+        # A quest and no NPC: nothing a cast ledger could be about.
+        v = adjudicate_on(gate, nobody, build, r)
+        assert (v["verdict"], v["binding"], v["precondition"]) == ("INAPPLICABLE", 0, 0), v
 
 
 def test_the_live_prompt_precondition_binds_on_a_completable_objective(gate, tmp_path):

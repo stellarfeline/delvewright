@@ -1,0 +1,49 @@
+name: The run's delvec
+description: >
+  Take the `delvec` the `delvec-binary` job built for this run, refuse it unless
+  its sha256 is the one that job reported, and install it at
+  `target/debug/delvec` — the path every consumer step and tool already names
+  through `--delvec`. A job that runs `delvec` uses this instead of compiling
+  its own: one run, one build, one instrument (`tools/ci/check-delvec-built-once.py`).
+
+  The repository must already be checked out: the install lands inside it, and
+  is made AFTER the checkout so the binary's mtime is later than every source's
+  (`tools/lib/delvec_bin.py` refuses an instrument older than the tree).
+
+inputs:
+  sha256:
+    description: >
+      `needs.delvec-binary.outputs.sha256` — the digest the build job computed
+      before uploading. Read through the job output, not from the artifact, so
+      the expected value does not travel with the bytes it checks.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: download the run's delvec
+      uses: actions/download-artifact@v4
+      with:
+        name: delvec-binary
+        path: ${{ runner.temp }}/delvec-binary
+    # An artifact carries no file mode, and an extraction may carry the build
+    # job's timestamps; `install` writes a fresh file with both set here.
+    - name: the run's delvec is the one that was built
+      shell: bash
+      env:
+        WANT: ${{ inputs.sha256 }}
+      run: |
+        set -euo pipefail
+        src="$RUNNER_TEMP/delvec-binary/delvec"
+        if [ -z "$WANT" ]; then
+          echo "delvec-binary: no sha256 was handed over — the build job reported none, so there is nothing to check the bytes against" >&2
+          exit 1
+        fi
+        got="$(sha256sum "$src" | cut -d' ' -f1)"
+        if [ "$got" != "$WANT" ]; then
+          echo "delvec-binary: the downloaded delvec hashes $got; the build job reported $WANT" >&2
+          exit 1
+        fi
+        mkdir -p target/debug
+        install -m 0755 "$src" target/debug/delvec
+        echo "delvec-binary: target/debug/delvec sha256 $got — $(target/debug/delvec --version)"

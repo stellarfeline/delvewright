@@ -42,6 +42,15 @@
           {
             "text": "The bolt slides back.",
             "type": "narrate"
+          },
+          {
+            "anchor": "anchor/door",
+            "happening": {
+              "subject": "anchor/door",
+              "text": "The Keeper draws the bolt, and the door to the road stands open.",
+              "verb": "opens"
+            },
+            "type": "open-gate"
           }
         ],
         "on_objective_complete": {
@@ -168,6 +177,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.0",
+  "dsl_version": "0.35.1",
   "stage": "quests"
 }

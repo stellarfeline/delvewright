@@ -1,0 +1,35 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "areas": [
+      {
+        "id": "area/carcass",
+        "name": "The Carcass",
+        "prefab": "prefab/gallery-carcass"
+      }
+    ],
+    "boundary": {
+      "margin": 16,
+      "message": "The valley ends here."
+    },
+    "difficulty": "normal",
+    "horizon": {
+      "base": "valley",
+      "ratio": 2.5,
+      "rim_height": 48
+    },
+    "min_players": 1,
+    "outro": "The carcass has been walked, inside and on its back.",
+    "premise": "One sculpted body lying on its own ground in a valley: a way in at grade, a room inside it, and a stair cut up its flank onto its back.",
+    "seed": 20261002,
+    "target_minutes": 5,
+    "theme": "A weathered carcass of bone and coral, beached on a mud flat in a valley floor.",
+    "time": {
+      "sun": "high"
+    },
+    "title": "The Gallery",
+    "weather": "clear"
+  },
+  "dsl_version": "0.35.1",
+  "stage": "world"
+}

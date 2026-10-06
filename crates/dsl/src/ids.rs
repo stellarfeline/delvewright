@@ -128,6 +128,17 @@ prefixed_id!(
     /// is tagged `dw_actor_<kebab>`.
     ActorId, "actor");
 prefixed_id!(
+    /// Assembly id: `assembly/<kebab>` (stage-5 `assemblies` section, spec-0082).
+    /// A fixed thing built of display entities that plays clips, can be struck
+    /// and strikes back. Its root, parts and hitbox are tagged `dw_asm_<kebab>`.
+    AssemblyId, "assembly");
+prefixed_id!(
+    /// Rig id: `rig/<kebab>` (spec-0082 §3.1). Resolved against the library's
+    /// `rigs/<kebab>/rig.json`, the way `prefab/<kebab>` resolves against a
+    /// piece's metadata: a rig is a library artefact a generator writes, never
+    /// campaign JSON.
+    RigId, "rig");
+prefixed_id!(
     /// Trap id: `trap/<kebab>` (stage-5 `traps` section, DSL v0.6, spec-0011).
     /// Unique within the stage-5 traps namespace.
     TrapId, "trap");
@@ -172,6 +183,12 @@ prefixed_id!(
     /// completability finding blames.
     LethalVolumeId, "lethal");
 prefixed_id!(
+    /// Loop id: `loop/<kebab>` (stage-5 `loops` section, spec-0086). Unique within
+    /// the stage-5 loop namespace; it names the loop's emitted functions, its
+    /// PackTest pair, its `on_cross` l10n keys and the loop a seamlessness or route
+    /// finding blames.
+    LoopId, "loop");
+prefixed_id!(
     /// Shop id: `shop/<kebab>` (stage-5 `shops` section, DSL v0.10, spec-0032).
     /// Unique within the stage-5 shop namespace; it names the shop's interaction
     /// affordance, its dialog, its `/trigger` routing value and its l10n keys.
@@ -214,6 +231,12 @@ prefixed_id!(
     /// owns — the mountain a cave system is inside, the ground under a village,
     /// the sky a silhouette needs kept empty. Unique within the site plan.
     VolumeId, "volume");
+prefixed_id!(
+    /// Atmosphere id: `atmosphere/<kebab>` (stage-1 `atmospheres[]`, spec-0080).
+    /// Unique within the campaign; it names the datapack biome the atmosphere
+    /// ships as (`<ns>:atmosphere/<kebab>`), which a place carries and a
+    /// `set-atmosphere` paints.
+    AtmosphereId, "atmosphere");
 prefixed_id!(
     /// Site-plan view id: `view/<kebab>` (spec-0049 §4.1). A named exterior
     /// vantage the walk judges the silhouette from. Unique within the site plan.

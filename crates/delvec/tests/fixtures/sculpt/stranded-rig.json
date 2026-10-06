@@ -1,0 +1,356 @@
+{
+  "anchors": {
+    "anchor/back": {
+      "facing": "south",
+      "pos": [
+        24,
+        48,
+        112
+      ]
+    },
+    "anchor/entry": {
+      "facing": "east",
+      "pos": [
+        1,
+        4,
+        64
+      ],
+      "role": "entry"
+    },
+    "anchor/inside": {
+      "facing": "south",
+      "pos": [
+        24,
+        4,
+        72
+      ]
+    }
+  },
+  "box": [
+    49,
+    62,
+    146
+  ],
+  "form_version": "1.0.0",
+  "ground": {
+    "block": "minecraft:packed_mud",
+    "top": 3
+  },
+  "id": "prefab/stranded-rig",
+  "noise": {
+    "amplitude": 0.45,
+    "cell": 2.0
+  },
+  "palette": [
+    {
+      "family": "diorite",
+      "full": [
+        [
+          "minecraft:bone_block",
+          3
+        ],
+        [
+          "minecraft:dead_horn_coral_block",
+          3
+        ],
+        [
+          "minecraft:calcite",
+          2
+        ],
+        [
+          "minecraft:diorite",
+          2
+        ]
+      ]
+    },
+    {
+      "family": "andesite",
+      "full": [
+        [
+          "minecraft:dead_horn_coral_block",
+          3
+        ],
+        [
+          "minecraft:dead_bubble_coral_block",
+          3
+        ],
+        [
+          "minecraft:andesite",
+          2
+        ],
+        [
+          "minecraft:diorite",
+          2
+        ]
+      ]
+    },
+    {
+      "family": "andesite",
+      "full": [
+        [
+          "minecraft:andesite",
+          4
+        ],
+        [
+          "minecraft:dead_brain_coral_block",
+          3
+        ],
+        [
+          "minecraft:tuff",
+          3
+        ]
+      ]
+    },
+    {
+      "family": "mossy_cobblestone",
+      "full": [
+        [
+          "minecraft:tuff",
+          5
+        ],
+        [
+          "minecraft:mossy_cobblestone",
+          3
+        ],
+        [
+          "minecraft:andesite",
+          2
+        ]
+      ]
+    }
+  ],
+  "sink": 4,
+  "solids": [
+    {
+      "from": [
+        24.5,
+        30.0,
+        30.0
+      ],
+      "noisy": true,
+      "op": "add",
+      "radius_from": 20.0,
+      "radius_to": 16.0,
+      "shape": "capsule",
+      "stretch_y": 1.4,
+      "to": [
+        24.5,
+        26.0,
+        110.0
+      ]
+    },
+    {
+      "centre": [
+        24.5,
+        18.0,
+        20.0
+      ],
+      "noisy": true,
+      "op": "add",
+      "radii": [
+        16.0,
+        15.0,
+        17.0
+      ],
+      "shape": "ellipsoid"
+    },
+    {
+      "from": [
+        24.5,
+        20.0,
+        110.0
+      ],
+      "noisy": true,
+      "op": "add",
+      "radius_from": 14.0,
+      "radius_to": 5.0,
+      "shape": "capsule",
+      "to": [
+        24.5,
+        8.0,
+        132.0
+      ]
+    },
+    {
+      "centre": [
+        24.5,
+        6.0,
+        136.0
+      ],
+      "noisy": true,
+      "op": "add",
+      "radii": [
+        20.0,
+        3.0,
+        8.0
+      ],
+      "shape": "ellipsoid"
+    },
+    {
+      "centre": [
+        24.5,
+        17.0,
+        72.0
+      ],
+      "op": "cut",
+      "radii": [
+        14.0,
+        17.0,
+        36.0
+      ],
+      "shape": "ellipsoid"
+    },
+    {
+      "from": [
+        -1.0,
+        4.0,
+        61.5
+      ],
+      "op": "cut",
+      "shape": "box",
+      "to": [
+        20.0,
+        8.0,
+        66.5
+      ]
+    },
+    {
+      "clearance": 3.2,
+      "depth": 3.0,
+      "path": [
+        [
+          29.923,
+          4.0,
+          24.0
+        ],
+        [
+          32.802,
+          6.0,
+          28.0
+        ],
+        [
+          34.801,
+          8.0,
+          32.0
+        ],
+        [
+          36.287,
+          10.0,
+          36.0
+        ],
+        [
+          37.467,
+          12.0,
+          40.0
+        ],
+        [
+          38.408,
+          14.0,
+          44.0
+        ],
+        [
+          39.151,
+          16.0,
+          48.0
+        ],
+        [
+          39.722,
+          18.0,
+          52.0
+        ],
+        [
+          40.137,
+          20.0,
+          56.0
+        ],
+        [
+          40.408,
+          22.0,
+          60.0
+        ],
+        [
+          40.54,
+          24.0,
+          64.0
+        ],
+        [
+          40.538,
+          26.0,
+          68.0
+        ],
+        [
+          40.4,
+          28.0,
+          72.0
+        ],
+        [
+          40.124,
+          30.0,
+          76.0
+        ],
+        [
+          39.702,
+          32.0,
+          80.0
+        ],
+        [
+          39.125,
+          34.0,
+          84.0
+        ],
+        [
+          38.374,
+          36.0,
+          88.0
+        ],
+        [
+          37.425,
+          38.0,
+          92.0
+        ],
+        [
+          36.235,
+          40.0,
+          96.0
+        ],
+        [
+          34.734,
+          42.0,
+          100.0
+        ],
+        [
+          32.788,
+          44.0,
+          104.0
+        ],
+        [
+          30.061,
+          46.0,
+          108.0
+        ],
+        [
+          25.51,
+          48.0,
+          112.0
+        ]
+      ],
+      "shape": "shelf",
+      "width": 3.0
+    },
+    {
+      "from": [
+        22.9,
+        26.0,
+        78.4
+      ],
+      "op": "cut",
+      "shape": "box",
+      "to": [
+        26.1,
+        63.0,
+        81.6
+      ]
+    }
+  ],
+  "sub": 4
+}

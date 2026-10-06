@@ -33,6 +33,7 @@ import type { DeathLoopBinding, LethalTrial } from "./death-loop.ts";
 import type { ClassifiedDeath } from "./teardown.ts";
 import { loadWindowSummary, type LoadWindowRecord } from "./load-window.ts";
 import type { NamePreference } from "./executor.ts";
+import type { ResourcePackVerdict } from "./resource-pack.ts";
 
 /**
  * One planned encounter, and what the run established about it.
@@ -151,6 +152,8 @@ export class RunReport {
   };
 
   private loadWindows: LoadWindowRecord[] = [];
+  /** spec-0084 §11: what the server pushed and whether it is the build's pack. */
+  private resourcePack: ResourcePackVerdict | undefined;
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -277,6 +280,11 @@ export class RunReport {
     this.namePreference = binding;
   }
 
+  /** The resource pack the client was sent, judged against the build's manifest. */
+  recordResourcePack(verdict: ResourcePackVerdict): void {
+    this.resourcePack = verdict;
+  }
+
   /** Every stretch the server held the bot unhurtable, with what each absorbed. */
   recordLoadWindows(windows: readonly LoadWindowRecord[]): void {
     this.loadWindows = [...windows];
@@ -365,6 +373,23 @@ export class RunReport {
       // Every stretch after a join or a respawn in which the server would not let
       // the bot be hurt, what closed it, and every damage event it absorbed.
       load_windows: loadWindowSummary(this.loadWindows),
+      // spec-0084 §11: every pack the server pushed — its URL, the SHA-1 it was
+      // sent with and the SHA-1 of the bytes downloaded from it — beside the
+      // build's own `resource_pack_sha1`. `null` when the run did not judge it.
+      resource_pack:
+        this.resourcePack === undefined
+          ? null
+          : {
+              manifest_sha1: this.resourcePack.manifestSha1 ?? null,
+              pushes: this.resourcePack.pushes.map((p) => ({
+                url: p.url,
+                pushed_sha1: p.hash,
+                downloaded_sha1: p.downloadedSha1 ?? null,
+                result: p.result ?? null,
+                error: p.error ?? null,
+              })),
+              failures: [...this.resourcePack.failures],
+            },
       // The bonfires the bot actually RESTED at. A bonfire only
       // arms an affordance; the respawn point moves when the party rests, so this
       // list is what makes every `at_checkpoint` below mean anything.
@@ -474,6 +499,11 @@ export class RunReport {
                 forfeits_examined: this.deathLoopBinding.forfeitsExamined,
                 seats_matched: this.deathLoopBinding.seatsMatched,
                 walks_back: this.deathLoopBinding.walksBack,
+                // spec-0088: volumes live from a story stage, and how many read
+                // live when their trial opened — a staged volume shut at trial
+                // was not exercised.
+                staged_volumes: this.deathLoopBinding.stagedVolumes,
+                staged_live_at_trial: this.deathLoopBinding.stagedLiveAtTrial,
                 unbound: this.deathLoopBinding.deathsObserved === 0,
               },
         trials: this.lethalTrials.map((t) => ({
@@ -518,6 +548,7 @@ export class RunReport {
           abandoned: t.abandoned ?? null,
           approach_failure: t.approachFailure ?? null,
           walk_back_failure: t.walkBackFailure ?? null,
+          not_live_at_trial: t.notLiveAtTrial ?? null,
         })),
       },
       // What the die-retry stage EXAMINED, beside what it found. `unbound: true`

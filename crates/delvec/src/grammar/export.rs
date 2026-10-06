@@ -649,49 +649,18 @@ pub fn export_zone(
     refuse_unguarded_oriented_fills(&expansion)?;
     refuse_broken_contract(&expansion)?;
 
-    let mut tiles = Vec::with_capacity(plan.parts.len());
-    let mut parts = Vec::with_capacity(plan.parts.len());
-    for part in &plan.parts {
-        let part_box = Box3::new(
-            [
-                region.origin[0] + part.offset[0],
-                region.origin[1] + part.offset[1],
-                region.origin[2] + part.offset[2],
-            ],
-            [
-                part.size[0] as u32,
-                part.size[1] as u32,
-                part.size[2] as u32,
-            ],
-        );
-        let nbt = part_nbt(&expansion.model, &palette, part_box)?;
-        let file = part_filename(id, part.grid_index);
-        parts.push(TilePart {
-            id: file
-                .strip_suffix(".nbt")
-                .expect("part_filename ends in .nbt")
-                .to_string(),
-            file: file.clone(),
-            grid_index: part.grid_index,
-            offset: part.offset,
-            size: part.size,
-        });
-        tiles.push(TileFile { file, nbt });
-    }
+    let frozen = package(&expansion.model, &palette, id, GENERATOR)?;
+    let tiles: Vec<TileFile> = frozen
+        .files
+        .into_iter()
+        .map(|(file, nbt)| TileFile { file, nbt })
+        .collect();
 
     let hash = program_hash(program);
     let metadata = TileSetMetadata {
         prefab_id: format!("prefab/{id}"),
         structure: None,
-        structure_set: Some(TileSet {
-            base: id.to_string(),
-            size,
-            part_max,
-            grid: plan.grid,
-            data_version: DATA_VERSION,
-            generator: GENERATOR.to_string(),
-            parts,
-        }),
+        structure_set: frozen.structure_set,
         anchors: anchor_metadata(&expansion),
         // Same claim, same key, same reason as the single-template export: an
         // empty list says "no sockets", an absent key says nothing at all.
@@ -761,6 +730,115 @@ pub fn export_zone(
         tiles,
         expansion,
     }))
+}
+
+/// A model frozen into its packaging: the structure file(s) and the
+/// `structure` or `structure_set` block of the metadata that names them.
+/// Provenance, anchors and measurements are the producer's to write.
+#[derive(Debug, Clone)]
+pub struct Frozen {
+    /// The single-template block, when the model fit one template.
+    pub structure: Option<StructureMetadata>,
+    /// The tile-set block, when it did not.
+    pub structure_set: Option<TileSet>,
+    /// Every structure file, `(filename, gzip bytes)`, in grid order.
+    pub files: Vec<(String, Vec<u8>)>,
+}
+
+/// **Freeze a finished model** — the packaging half of [`export_zone`], for a
+/// producer of models that is not a grammar expansion (`delvec sculpt`,
+/// spec-0087 §3.3 step 8).
+///
+/// The same writer, palette, unknown-state refusal and tiling as an expansion's
+/// export, so a sculpted piece and a grammar piece are byte-shaped identically
+/// and pass through one structure-template byte boundary
+/// ([`crate::schem::convert::build_region`]).
+pub fn freeze_model(model: &VoxelModel, id: &str, generator: &str) -> Result<Frozen, ExportError> {
+    if !is_valid_id(id) {
+        return Err(ExportError::BadId { id: id.to_string() });
+    }
+    let region = model.region();
+    if region.is_empty() {
+        return Err(ExportError::EmptyRegion { size: region.size });
+    }
+    let palette = zone_palette(model);
+    refuse_unknown_states(model, &palette)?;
+    package(model, &palette, id, generator)
+}
+
+/// The writer behind [`freeze_model`] and both grammar exports, over a model
+/// whose spelling has already been checked against its palette.
+fn package(
+    model: &VoxelModel,
+    palette: &ZonePalette,
+    id: &str,
+    generator: &str,
+) -> Result<Frozen, ExportError> {
+    let region = model.region();
+    let size = [
+        region.size[0] as i32,
+        region.size[1] as i32,
+        region.size[2] as i32,
+    ];
+    let part_max = MAX_STRUCTURE_AXIS as i32;
+    let plan = plan_split(size, part_max);
+    if plan.is_single() {
+        let nbt = part_nbt(model, palette, region)?;
+        let file = format!("{id}.nbt");
+        return Ok(Frozen {
+            structure: Some(StructureMetadata {
+                file: file.clone(),
+                id: id.to_string(),
+                size,
+                data_version: DATA_VERSION,
+                generator: Some(generator.to_string()),
+            }),
+            structure_set: None,
+            files: vec![(file, nbt)],
+        });
+    }
+    let mut files = Vec::with_capacity(plan.parts.len());
+    let mut parts = Vec::with_capacity(plan.parts.len());
+    for part in &plan.parts {
+        let part_box = Box3::new(
+            [
+                region.origin[0] + part.offset[0],
+                region.origin[1] + part.offset[1],
+                region.origin[2] + part.offset[2],
+            ],
+            [
+                part.size[0] as u32,
+                part.size[1] as u32,
+                part.size[2] as u32,
+            ],
+        );
+        let nbt = part_nbt(model, palette, part_box)?;
+        let file = part_filename(id, part.grid_index);
+        parts.push(TilePart {
+            id: file
+                .strip_suffix(".nbt")
+                .expect("part_filename ends in .nbt")
+                .to_string(),
+            file: file.clone(),
+            grid_index: part.grid_index,
+            offset: part.offset,
+            size: part.size,
+        });
+        files.push((file, nbt));
+    }
+    Ok(Frozen {
+        structure: None,
+        structure_set: Some(TileSet {
+            base: id.to_string(),
+            size,
+            part_max,
+            grid: plan.grid,
+            data_version: DATA_VERSION,
+            generator: generator.to_string(),
+            parts,
+        }),
+        files,
+    })
 }
 
 /// **The exported piece's own walk plane** (spec-0060 §4): the lowest local y

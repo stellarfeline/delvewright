@@ -1,0 +1,74 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/carcass-keeper": {
+            "at": "anchor/flat",
+            "dialogue": "dlg/carcass-greeting",
+            "doing": "standing on the mud beside the body"
+          }
+        },
+        "happening": {
+          "text": "the party takes on quest/walk-the-carcass",
+          "verb": "learns"
+        },
+        "id": "quest/walk-the-carcass",
+        "objectives": [
+          {
+            "happening": {
+              "text": "the party completes obj/ask-the-keeper",
+              "verb": "learns"
+            },
+            "id": "obj/ask-the-keeper",
+            "npc": "npc/carcass-keeper",
+            "type": "talk-to"
+          },
+          {
+            "after": [
+              "obj/ask-the-keeper"
+            ],
+            "anchor": "anchor/inside",
+            "happening": {
+              "subject": "anchor/inside",
+              "text": "They stand inside the body, under its ribs.",
+              "verb": "arrives"
+            },
+            "id": "obj/inside",
+            "radius": 2,
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/inside"
+            ],
+            "anchor": "anchor/back",
+            "happening": {
+              "subject": "anchor/back",
+              "text": "They come out on the carcass's back.",
+              "verb": "arrives"
+            },
+            "id": "obj/back",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "quests"
+}

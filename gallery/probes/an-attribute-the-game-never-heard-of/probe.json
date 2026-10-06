@@ -1,0 +1,13 @@
+{
+  "code": "DW0928",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/atmospheres/0/attributes/visual~1sky_colour",
+      "value": "#9fb8d8"
+    }
+  ],
+  "units": [],
+  "why": "One letter of British spelling. The pinned game registers `visual/sky_color` and nothing called `visual/sky_colour`, and a biome carrying an unknown attribute fails its codec — which stops the world from opening. The refusal names the nearest registered id. It declares no unit: the vocabulary is vendored data (`crates/delvec/data/environment-attributes-1.21.11.json`), never DSL surface."
+}

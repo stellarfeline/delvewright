@@ -174,9 +174,22 @@ campaign, where the plan is the placement authority and declaring both is
 ## The hour the delve is played at
 
 **`time` and `weather` are the delve's hour, and the engine will not choose it
-for you.** `time` takes `day`, `noon`, `dusk`, `night`, `midnight` or `dawn`
-(`sunrise` is accepted as a synonym of `dawn`); `weather` takes `clear`, `rain`
-or `thunder`. Neither has a default: "this delve is played at noon" is a design
+for you.** `time` is a keyword or a body, a position and a phase. A keyword —
+`day`, `noon`, `dusk`, `night`, `midnight` or `dawn` (`sunrise` is accepted as a
+synonym of `dawn`) — is vanilla's hour on day 0, so **a keyword night is a full
+moon**. A designer's sentence about the sky is written as the body it is about,
+where it stands, and the moon's phase: *a new moon just above the horizon* is
+`{"moon": "just-risen", "phase": "new-moon"}`, *the sun just set* is
+`{"sun": "just-set", "phase": …}`. The positions are `rising`, `just-risen`,
+`high`, `setting`, `just-set` and `below`; the phases are the pinned game's eight
+names, kebab-cased (`full-moon`, `waning-gibbous`, `third-quarter`,
+`waning-crescent`, `new-moon`, `waxing-crescent`, `first-quarter`,
+`waxing-gibbous`). On `world.time`, `phase` is required wherever the moon is up
+and refused wherever it is down (`delvec validate` names which, and why); a `set-time`, a design
+row or a camera that leaves it out takes the world's. The engine computes the
+tick count, day included, and every build prints a `clock:` line per stated time
+saying where the sun and moon stand and which phase shows — read it. `weather`
+takes `clear`, `rain` or `thunder`. Neither has a default: "this delve is played at noon" is a design
 decision, not a mechanism, so a `world.json` that omits either is `DW0100` like
 any other missing required field. `DW0874`'s stub recipe is "its envelope, and a
 `content` carrying only the fields its schema requires", so a stubbed
@@ -259,6 +272,13 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   with the quest plan at step 3, not with the world at step 1: a brief that says
   "for two players" is a brief that has asked for a mechanism, and the design
   gains one or the number comes down.
+- **`respawn_wait`.** Absent = no wait. `{ "seconds": n, "alone": false }`
+  makes a fallen player in a party watch a teammate as a spectator for `n`
+  seconds (1–120) after *Respawn* before rejoining, and count as down while
+  they wait — see *Reference: authoring pitfalls* for what a party feels. The
+  build refuses it without a `set-checkpoint` or `bonfire` to come back to, so
+  decide it with the quest plan's checkpoints in front of you. `alone: true`
+  makes a party of one wait too.
 - **`horizon`.** Absent = `void`, and that is the right answer unless the
   ground around the map is part of the design. `void` keeps the area datum where
   every piece was authored for it and puts nothing outside them.

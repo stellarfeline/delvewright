@@ -35,306 +35,360 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use delvewright_dsl::{Lethality, Mark, QuestEffect, TrapReset};
 
 use crate::compiler::plan::{
-    BodyScope, BodyStation, Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan,
-    body_station,
+    BodyScope, BodyStation, Plan, RegionEvent, RegionEvents, RegionWrite, ResolvedAnchor,
+    StagedGate, Step, TrapPlan, body_station,
 };
 use delvewright_dsl::Diagnostic;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
-/// NPC's position over the assembled geometry.
-pub const DW_MOVE_UNROUTABLE: DwCode = DwCode::new("DW0307", ExitTier::Build);
-/// `DW0308`: a `cutscene` camera dolly path that passes through a solid block.
-pub const DW_CUTSCENE_CLIP: DwCode = DwCode::new("DW0308", ExitTier::Build);
-/// `DW0347`: a `cutscene` shot whose aim sweeps faster than the angular budget
-/// ([`crate::compiler::camera::MAX_AIM_DEG_PER_TICK`], 6 °/tick = 120 °/s) — a pan that
-/// fast at 20 Hz is nausea-tier and provably bad *before* it ships. Typical
-/// cause: a `look_at` subject too close to a fast dolly. See the camera dossier
-/// (`docs/notes/camera-dossier.md` §1) for the budget's derivation.
-pub const DW_CAMERA_SPIN: DwCode = DwCode::new("DW0347", ExitTier::Build);
-/// `DW0311`: a consecutive pair of player-visited critical-path anchors that no
-/// walkable path connects over the assembled geometry (with no inter-area
-/// transport between them) — the player would be stranded. Turns the whole
-/// "assembled seams aren't walkable" bug class — a prefab regen that wedges a
-/// doorway shut or opens a void gap, which otherwise only a runtime bot catches
-/// — into a compile error.
-pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::new("DW0311", ExitTier::Build);
-/// `DW0510`: the party's only route to a critical-path objective runs through a
-/// declared **lethal volume** (DSL v0.10, spec-0031).
-///
-/// A volume that kills whatever enters it is, for a route, a volume no route may
-/// enter — so its cells are impassable in the navigation world, exactly as a
-/// `close-gate`'s sealed region is solid, and a forced leg that has no other way
-/// through fails. It is a code of its own rather than a [`DW_CRITICAL_UNROUTABLE`]
-/// variant because the *fix* is different in kind: the geometry is fine and the
-/// prefab is fine, and the author needs to be told which volume they must move,
-/// shrink or route around — not sent to look for a wedged doorway that does not
-/// exist. Derived from a counterfactual: the leg is re-routed over the identical
-/// world with lethality removed, and the volumes covering that route are named.
-pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::new("DW0510", ExitTier::Build);
-/// `DW0317`: a gate the placed world authors **shut at world-load** blocks a
-/// forced critical-path leg, and nothing the party is guaranteed to do opens it
-/// before that leg.
-///
-/// The defect it closes is a modelling default, not a missing lint. The occupancy
-/// model cleared every gate region unconditionally — "assume the gate the player
-/// needs is opened" — so a gate's state in the static model was a function of what
-/// *sealed* it and never of what *opened* it. That default can only ever fail to
-/// notice an obstruction, never invent one, and the mistake an author actually
-/// makes is forgetting to open a door. A campaign whose one `open-gate` is
-/// missing then compiles clean and the runtime bot says *"No path to the goal!"*
-/// — a symptom, naming nothing. `tests/gate_world_load_seal.rs` holds that
-/// red→green pair on the in-repo `hello-world` fixture.
-///
-/// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for exactly
-/// the reason `DW0510` is one: the geometry is right, the prefab is right, and the
-/// repair is a missing `open-gate` on a **named** anchor. Derived the same way, by
-/// counterfactual — the leg is re-routed over the identical world with the
-/// world-load gate seals lifted, and the gates covering that route are named.
-///
-/// No surface is being asked for: "the delve must be completable" is ADR-0005,
-/// day one.
-pub const DW_GATE_NEVER_OPENED: DwCode = DwCode::new("DW0317", ExitTier::Build);
-/// `DW0544`: a forced critical-path leg depends on standing where a runtime region
-/// write leaves **fluid** — water or lava.
-///
-/// A `fill-region` / `close-gate` / shortcut seal whose block is a fluid does not
-/// build floor: it replaces whatever was in the box with something a body sinks
-/// through ([`crate::compiler::plan::RegionWrite::Flood`]). Sibling of
-/// [`DW_LETHAL_ON_CRITICAL_PATH`] and derived the same way — the leg is re-routed
-/// over the identical world with every runtime fluid fill treated as solid, and if
-/// *that* world routes, the fluid is what closed the leg and the boxes are named.
-///
-/// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for the
-/// reason `DW0510` is: the prefab is innocent. The author is looking at a box they
-/// filled on purpose and needs to be told that filling it with water is what took
-/// the footing away — not sent hunting for a wedged doorway that is not there.
-pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::new("DW0544", ExitTier::Build);
-/// `DW0546`: a forced critical-path leg stands on footing laid by a beat the party
-/// is **not forced to play** — a plank dropped by a sprung trap, a stair repaired by
-/// a bought offer, a bridge lowered from a shortcut's far side.
-///
-/// The general form of an asymmetry that runs through every runtime write: a solid
-/// block answers two questions at once, and only one of them is conservative when
-/// the firing is uncertain. *Is the party blocked?* — assume it happened; assuming a
-/// wall can only make the proof harder. *Can the party stand there?* — assume it did
-/// not; assuming floor is what makes the proof easier, and easier is the direction
-/// that ships. The model therefore carries an unforced fill as impassable AND not
-/// floor ([`World::with_unforced`]), which is the pointwise-worst of the two futures
-/// and sound in both.
-///
-/// Derived by counterfactual, exactly like [`DW_LETHAL_ON_CRITICAL_PATH`],
-/// [`DW_GATE_NEVER_OPENED`] and [`DW_FLUID_FILL_ON_CRITICAL_PATH`]: the leg is
-/// re-routed over the identical world with every unforced fill credited as ordinary
-/// floor ([`RegionState::as_if_forced`]) — which is precisely the model this compiler
-/// ran before forcedness reached the geometry — and if *that* world routes, the
-/// unforced footing is what closed the leg and the boxes are named with the beats
-/// that lay them.
-///
-/// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for the reason
-/// its three siblings are: the prefab is innocent and the geometry reads open. The
-/// author is looking at a `fill-region` they wrote on purpose and must be told that
-/// its *root* is the defect — the box is right, the block is right, the beat is
-/// skippable — because "no collision-free path" would send them to hunt a wedged
-/// doorway that is not there.
-///
-/// Like [`DW_GATE_NEVER_OPENED`], the rule asks for no surface: it detects that
-/// what a campaign already says is unsound.
-pub const DW_UNFORCED_FOOTING: DwCode = DwCode::new("DW0546", ExitTier::Build);
-/// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
-/// checkpoint cell, a remaining required critical-path anchor is no longer
-/// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
-/// at the checkpoint.
-pub const DW_CHECKPOINT_STRANDED: DwCode = DwCode::new("DW0315", ExitTier::Build);
-/// `DW0316`: a `set-checkpoint` anchor with no standable footing on the final
-/// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
-/// respawn into the void or a wall.
-pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::new("DW0316", ExitTier::Build);
-/// `DW0378`: a `timed-gate` (spec-0016 §4) that is a coin flip rather than a
-/// timing read — the set of entry phases from which a walking player clears the
-/// span before the gate shuts covers **less than 20% of the cycle**.
-/// All-phase passability is explicitly NOT the requirement: a gate
-/// that punishes bad timing is the point. A gate that punishes *every* timing is
-/// not a skill check, it is a slot machine, and no amount of learning the level
-/// makes it fair.
-pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::new("DW0378", ExitTier::Build);
-/// `DW0918`: a `volley` (spec-0022) whose cadence is a coin flip rather than a
-/// timing read — a player standing anywhere in the kill zone when a salvo lands
-/// cannot leave the zone before the next salvo in at least **20% of the
-/// interval**. The volley's counterplay is LEAVING the zone (spec-0022: "a
-/// decision, not a lucky strafe"); an interval too short for the walk out makes
-/// that decision unavailable. The same body model and floor as
-/// [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`), through the one [`timing_read`].
-pub const DW_VOLLEY_COIN_FLIP: DwCode = DwCode::new("DW0918", ExitTier::Build);
-/// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
-/// observe before committing to it — no standable cell exists that is clear of
-/// the hazard's lethal span, reachable without entering it, and has line of
-/// sight to it.
-///
-/// The souls dossier's strongest and most universal finding (§5.3, §2.2 axis 5):
-/// what the real games guarantee about a periodic hazard is not a duty-cycle
-/// ratio but that you can **stand somewhere safe and watch a full cycle before
-/// committing**. You can stand outside Sen's Fortress and watch a blade swing;
-/// you cannot see inside the Capra room. [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`)
-/// measures the ratio — the dossier's own verdict is that if only one of the two
-/// proofs can be afforded it should be this one, not the 20%.
-pub const DW_HAZARD_UNOBSERVABLE: DwCode = DwCode::new("DW0388", ExitTier::Build);
-/// `DW0393`: a `timed-gate`'s `disarm` affordance is not usable
-/// **before** the gate is committed to — its cell has no standable footing, or is
-/// walkable from the campaign entry only through the gate span itself.
-///
-/// The disarm is the third rung of the souls hazard ladder (dossier §5.2):
-/// readable, avoidable, and finally *disable-able*. A jam lever the party can
-/// only pull after surviving the crossing disables nothing — it is a reward for
-/// having already beaten the hazard, dressed as counterplay. This is the same
-/// clause `DW0373` puts on a shortcut's unlock and `DW0342` puts on a trap's
-/// disarm, stated once for the gate: the affordance must be reachable while the
-/// hazard is still ahead of you.
-pub const DW_TIMED_GATE_DISARM_UNREACHABLE: DwCode = DwCode::new("DW0393", ExitTier::Build);
-/// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
-/// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
-/// or the campaign entry) is walkable from the trigger cell any more. The player
-/// is sealed in a pocket with the ambush and can only trade blows blind.
-///
-/// This is deliberately NOT a telegraph requirement. The un-telegraphed ambush is
-/// core souls vocabulary: dying uninformed once is how
-/// the level teaches, and determinism guarantees the second attempt meets the same
-/// ambushers in the same cells. What the engine owes the informed player is a
-/// *play* — a retreat, luring ground, a positioning line — and that is what this
-/// proves exists.
-pub const DW_AMBUSH_NO_COUNTERPLAY: DwCode = DwCode::new("DW0376", ExitTier::Build);
-/// `DW0373`: a `shortcut` (spec-0016 §2) whose far-side `unlock` affordance is
-/// not reachable while the gate is still sealed — the LONG route does not exist,
-/// so the mechanism that opens the shortcut can never be pulled and the gate is
-/// dead scenery. The whole pattern is "earn the far side the hard way, then open
-/// the door forever"; without a hard way there is nothing to earn.
-pub const DW_SHORTCUT_NO_LONG_ROUTE: DwCode = DwCode::new("DW0373", ExitTier::Build);
-/// `DW0374`: a `shortcut` (spec-0016 §2) that **leaks** — opening its gate does not
-/// shorten the walk from the campaign entry to its own `unlock` affordance, so the
-/// unlock is not on the far side of anything. The pattern is "earn the far side
-/// the hard way, then open the door forever"; if the door is irrelevant to
-/// reaching the mechanism that opens it, the loop-back moment — which IS the
-/// design — never happens. The classic form is an `unlock` placed on the NEAR
-/// side of its own gate.
-pub const DW_SHORTCUT_NO_GAIN: DwCode = DwCode::new("DW0374", ExitTier::Build);
-/// `DW0379`: **retry cost** (spec-0016 §7, warning tier) — the proven walk from a
-/// rest point to a beat it can respawn the party into is longer than
-/// [`RETRY_BUDGET_TICKS`]. Dying must be an investment, not a commute: past the
-/// budget the loop stops teaching and starts taxing. A **warning**, deliberately:
-/// a long walk can be the authored point (a pilgrimage, a set-piece approach),
-/// and the compiler will not overrule that — it names the distance and leaves the
-/// judgement to the owner's QA hour.
-pub const DW_RETRY_COST: DwCode = DwCode::new("DW0379", ExitTier::Build);
-/// `DW0380`: **optional-elite bypass** (spec-0016 §7, warning tier) — an enemy the
-/// critical path never requires the party to kill has no route around it: every
-/// proven forward leg passes inside its aggro radius, so "optional" is a lie and
-/// the fight is mandatory in everything but the objective list.
-///
-/// The Tree Sentinel pattern — a powerful optional enemy near the start, fight it
-/// or walk around it — is explicitly legitimate, and
-/// this is the one obligation it carries: the walk-around has to exist.
-pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: DwCode = DwCode::new("DW0380", ExitTier::Build);
-/// `DW0386`: a TD `lane` (spec-0016 §6) whose polyline does not survive contact
-/// with the assembled world — a waypoint anchor that resolves nowhere, a
-/// waypoint with no standable footing, a leg the squad cannot walk, or a leg
-/// **10 blocks or shorter**. The spacing rule is not taste: vanilla re-rolls a
-/// patrol target to a random point once the patroller is within 10 blocks of it,
-/// so a tighter lane is a lane the engine quietly stops following — the squad
-/// wanders, and it reads as working-but-drunk rather than as a bug.
-pub const DW_LANE_GEOMETRY: DwCode = DwCode::new("DW0386", ExitTier::Build);
-/// `DW0478`: **the respawn-point safe zone** (spec-0016 §1) — a cell the party
-/// comes back to life on sits inside some hostile force's aggro range.
-///
-/// A respawn point is where the party returns after a death and where a
-/// `respawns_on_rest` wave is put back on its feet. If it stands inside a
-/// hostile's perception radius, dying drops the party into contact on the tick
-/// they arrive: the retry loop stops teaching and becomes a soft-lock — a despair
-/// machine you cannot rest your way out of. Error tier, not advisory: unlike the
-/// §7 pacing lints there is no reading of this geometry that is the authored
-/// point.
-///
-/// **The object class is the respawn point, not the verb that places it.** A
-/// `bonfire` and a `set-checkpoint` are siblings of one sum type — the DSL says
-/// so in as many words ("the sibling of [`Verb::SetCheckpoint`]"), they
-/// resolve to one [`crate::compiler::plan::CheckpointPlan`] distinguished only by `rest`,
-/// and vanilla returns a dead player to either by the identical `spawnpoint`
-/// mechanism. Binding this proof to `rest == true` therefore made it a hook on
-/// one variant and not its sibling: `nobodys-cave-island` shipped three
-/// `set-checkpoint`s and five unleashed hostiles for twenty-two owner rounds
-/// while this check examined ZERO objects and reported green (CLAUDE.md, *a
-/// capability belongs to the object class it acts on*; the staging gate's
-/// `UNBOUND` verdict, row `bell-08`).
-///
-/// The widening onto `set-checkpoint` asks for nothing to be written: the
-/// verdict is a function of geometry the campaign already declares, and a
-/// campaign that trips it was always soft-locked. The widening is a defect fixed
-/// in the proof, not a requirement added to the document — the six live
-/// violations it found on the shipped island are what it exists for.
-pub const DW_RESPAWN_IN_AGGRO: DwCode = DwCode::new("DW0478", ExitTier::Build);
-/// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
-/// from the player's position at the beat that activates the stealth check.
-pub const DW_STEALTH_ZONE: DwCode = DwCode::new("DW0327", ExitTier::Build);
-/// `DW0355`: a **punishing** `begin-stealth` whose grace window cannot be beaten —
-/// from a position a player legally occupies the instant the beat arms (the
-/// activating objective's anchor, or any checkpoint that can respawn them into the
-/// running session), no zone is reachable within `grace_ticks` at sprint speed over
-/// the assembled geometry. DW0327 proves cover *exists and is reachable*; this
-/// proves it is reachable **in time**. Without it a beat that arms under the
-/// player's feet at the most exposed cell in the room kills every player — machine
-/// or human — a fixed couple of seconds later, and if the checkpoint it respawns
-/// them at is also outside cover, the retry loop never terminates. A structurally
-/// unavoidable death is not 初见杀 (spec-0016), it is a broken beat.
-pub const DW_STEALTH_ONSET: DwCode = DwCode::new("DW0355", ExitTier::Build);
-/// `DW0342`: a **lethal** trap (spec-0011) whose trigger cell lies on the forced
-/// critical path with no discharge — not avoidable (the trigger cell is a required
-/// path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it →
-/// soft-loop), and not disarmable (no disarm affordance reachable before it). The
-/// player is provably killed or soft-looped. Analysis-tier (exit 2) like `DW0312`:
-/// a content-design mistake, not a geometry defect. (Renumbered from the spec's
-/// stale `DW0314`.)
-pub const DW_TRAP_LETHAL_UNAVOIDABLE: DwCode = DwCode::new("DW0342", ExitTier::Analysis);
+delvewright_dsl::dw_code! {
+    /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
+    /// NPC's position over the assembled geometry.
+    pub const DW_MOVE_UNROUTABLE: DwCode = DwCode::new("DW0307", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0308`: a `cutscene` camera dolly path that passes through a solid block.
+    pub const DW_CUTSCENE_CLIP: DwCode = DwCode::new("DW0308", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0347`: a `cutscene` shot whose aim sweeps faster than the angular budget
+    /// ([`crate::compiler::camera::MAX_AIM_DEG_PER_TICK`], 6 °/tick = 120 °/s) — a pan that
+    /// fast at 20 Hz is nausea-tier and provably bad *before* it ships. Typical
+    /// cause: a `look_at` subject too close to a fast dolly. See the camera dossier
+    /// (`docs/notes/camera-dossier.md` §1) for the budget's derivation.
+    pub const DW_CAMERA_SPIN: DwCode = DwCode::new("DW0347", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0311`: a consecutive pair of player-visited critical-path anchors that no
+    /// walkable path connects over the assembled geometry (with no inter-area
+    /// transport between them) — the player would be stranded. Turns the whole
+    /// "assembled seams aren't walkable" bug class — a prefab regen that wedges a
+    /// doorway shut or opens a void gap, which otherwise only a runtime bot catches
+    /// — into a compile error.
+    pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::new("DW0311", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0510`: the party's only route to a critical-path objective runs through a
+    /// declared **lethal volume** (DSL v0.10, spec-0031).
+    ///
+    /// A volume that kills whatever enters it is, for a route, a volume no route may
+    /// enter — so its cells are impassable in the navigation world, exactly as a
+    /// `close-gate`'s sealed region is solid, and a forced leg that has no other way
+    /// through fails. It is a code of its own rather than a [`DW_CRITICAL_UNROUTABLE`]
+    /// variant because the *fix* is different in kind: the geometry is fine and the
+    /// prefab is fine, and the author needs to be told which volume they must move,
+    /// shrink or route around — not sent to look for a wedged doorway that does not
+    /// exist. Derived from a counterfactual: the leg is re-routed over the identical
+    /// world with lethality removed, and the volumes covering that route are named.
+    pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::new("DW0510", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0317`: a gate the placed world authors **shut at world-load** blocks a
+    /// forced critical-path leg, and nothing the party is guaranteed to do opens it
+    /// before that leg.
+    ///
+    /// The defect it closes is a modelling default, not a missing lint. The occupancy
+    /// model cleared every gate region unconditionally — "assume the gate the player
+    /// needs is opened" — so a gate's state in the static model was a function of what
+    /// *sealed* it and never of what *opened* it. That default can only ever fail to
+    /// notice an obstruction, never invent one, and the mistake an author actually
+    /// makes is forgetting to open a door. A campaign whose one `open-gate` is
+    /// missing then compiles clean and the runtime bot says *"No path to the goal!"*
+    /// — a symptom, naming nothing. `tests/gate_world_load_seal.rs` holds that
+    /// red→green pair on the in-repo `hello-world` fixture.
+    ///
+    /// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for exactly
+    /// the reason `DW0510` is one: the geometry is right, the prefab is right, and the
+    /// repair is a missing `open-gate` on a **named** anchor. Derived the same way, by
+    /// counterfactual — the leg is re-routed over the identical world with the
+    /// world-load gate seals lifted, and the gates covering that route are named.
+    ///
+    /// No surface is being asked for: "the delve must be completable" is ADR-0005,
+    /// day one.
+    pub const DW_GATE_NEVER_OPENED: DwCode = DwCode::new("DW0317", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0544`: a forced critical-path leg depends on standing where a runtime region
+    /// write leaves **fluid** — water or lava.
+    ///
+    /// A `fill-region` / `close-gate` / shortcut seal whose block is a fluid does not
+    /// build floor: it replaces whatever was in the box with something a body sinks
+    /// through ([`crate::compiler::plan::RegionWrite::Flood`]). Sibling of
+    /// [`DW_LETHAL_ON_CRITICAL_PATH`] and derived the same way — the leg is re-routed
+    /// over the identical world with every runtime fluid fill treated as solid, and if
+    /// *that* world routes, the fluid is what closed the leg and the boxes are named.
+    ///
+    /// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for the
+    /// reason `DW0510` is: the prefab is innocent. The author is looking at a box they
+    /// filled on purpose and needs to be told that filling it with water is what took
+    /// the footing away — not sent hunting for a wedged doorway that is not there.
+    pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::new("DW0544", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0546`: a forced critical-path leg stands on footing laid by a beat the party
+    /// is **not forced to play** — a plank dropped by a sprung trap, a stair repaired by
+    /// a bought offer, a bridge lowered from a shortcut's far side.
+    ///
+    /// The general form of an asymmetry that runs through every runtime write: a solid
+    /// block answers two questions at once, and only one of them is conservative when
+    /// the firing is uncertain. *Is the party blocked?* — assume it happened; assuming a
+    /// wall can only make the proof harder. *Can the party stand there?* — assume it did
+    /// not; assuming floor is what makes the proof easier, and easier is the direction
+    /// that ships. The model therefore carries an unforced fill as impassable AND not
+    /// floor ([`World::with_unforced`]), which is the pointwise-worst of the two futures
+    /// and sound in both.
+    ///
+    /// Derived by counterfactual, exactly like [`DW_LETHAL_ON_CRITICAL_PATH`],
+    /// [`DW_GATE_NEVER_OPENED`] and [`DW_FLUID_FILL_ON_CRITICAL_PATH`]: the leg is
+    /// re-routed over the identical world with every unforced fill credited as ordinary
+    /// floor ([`RegionState::as_if_forced`]) — which is precisely the model this compiler
+    /// ran before forcedness reached the geometry — and if *that* world routes, the
+    /// unforced footing is what closed the leg and the boxes are named with the beats
+    /// that lay them.
+    ///
+    /// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for the reason
+    /// its three siblings are: the prefab is innocent and the geometry reads open. The
+    /// author is looking at a `fill-region` they wrote on purpose and must be told that
+    /// its *root* is the defect — the box is right, the block is right, the beat is
+    /// skippable — because "no collision-free path" would send them to hunt a wedged
+    /// doorway that is not there.
+    ///
+    /// Like [`DW_GATE_NEVER_OPENED`], the rule asks for no surface: it detects that
+    /// what a campaign already says is unsound.
+    pub const DW_UNFORCED_FOOTING: DwCode = DwCode::new("DW0546", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
+    /// checkpoint cell, a remaining required critical-path anchor is no longer
+    /// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
+    /// at the checkpoint.
+    pub const DW_CHECKPOINT_STRANDED: DwCode = DwCode::new("DW0315", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0316`: a `set-checkpoint` anchor with no standable footing on the final
+    /// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
+    /// respawn into the void or a wall.
+    pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::new("DW0316", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0378`: a `timed-gate` (spec-0016 §4) that is a coin flip rather than a
+    /// timing read — the set of entry phases from which a walking player clears the
+    /// span before the gate shuts covers **less than 20% of the cycle**.
+    /// All-phase passability is explicitly NOT the requirement: a gate
+    /// that punishes bad timing is the point. A gate that punishes *every* timing is
+    /// not a skill check, it is a slot machine, and no amount of learning the level
+    /// makes it fair.
+    pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::new("DW0378", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0918`: a `volley` (spec-0022) whose cadence is a coin flip rather than a
+    /// timing read — a player standing anywhere in the kill zone when a salvo lands
+    /// cannot leave the zone before the next salvo in at least **20% of the
+    /// interval**. The volley's counterplay is LEAVING the zone (spec-0022: "a
+    /// decision, not a lucky strafe"); an interval too short for the walk out makes
+    /// that decision unavailable. The same body model and floor as
+    /// [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`), through the one [`timing_read`].
+    pub const DW_VOLLEY_COIN_FLIP: DwCode = DwCode::new("DW0918", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
+    /// observe before committing to it — no standable cell exists that is clear of
+    /// the hazard's lethal span, reachable without entering it, and has line of
+    /// sight to it.
+    ///
+    /// The souls dossier's strongest and most universal finding (§5.3, §2.2 axis 5):
+    /// what the real games guarantee about a periodic hazard is not a duty-cycle
+    /// ratio but that you can **stand somewhere safe and watch a full cycle before
+    /// committing**. You can stand outside Sen's Fortress and watch a blade swing;
+    /// you cannot see inside the Capra room. [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`)
+    /// measures the ratio — the dossier's own verdict is that if only one of the two
+    /// proofs can be afforded it should be this one, not the 20%.
+    pub const DW_HAZARD_UNOBSERVABLE: DwCode = DwCode::new("DW0388", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0393`: a `timed-gate`'s `disarm` affordance is not usable
+    /// **before** the gate is committed to — its cell has no standable footing, or is
+    /// walkable from the campaign entry only through the gate span itself.
+    ///
+    /// The disarm is the third rung of the souls hazard ladder (dossier §5.2):
+    /// readable, avoidable, and finally *disable-able*. A jam lever the party can
+    /// only pull after surviving the crossing disables nothing — it is a reward for
+    /// having already beaten the hazard, dressed as counterplay. This is the same
+    /// clause `DW0373` puts on a shortcut's unlock and `DW0342` puts on a trap's
+    /// disarm, stated once for the gate: the affordance must be reachable while the
+    /// hazard is still ahead of you.
+    pub const DW_TIMED_GATE_DISARM_UNREACHABLE: DwCode = DwCode::new("DW0393", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
+    /// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
+    /// or the campaign entry) is walkable from the trigger cell any more. The player
+    /// is sealed in a pocket with the ambush and can only trade blows blind.
+    ///
+    /// This is deliberately NOT a telegraph requirement. The un-telegraphed ambush is
+    /// core souls vocabulary: dying uninformed once is how
+    /// the level teaches, and determinism guarantees the second attempt meets the same
+    /// ambushers in the same cells. What the engine owes the informed player is a
+    /// *play* — a retreat, luring ground, a positioning line — and that is what this
+    /// proves exists.
+    pub const DW_AMBUSH_NO_COUNTERPLAY: DwCode = DwCode::new("DW0376", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0373`: a `shortcut` (spec-0016 §2) whose far-side `unlock` affordance is
+    /// not reachable while the gate is still sealed — the LONG route does not exist,
+    /// so the mechanism that opens the shortcut can never be pulled and the gate is
+    /// dead scenery. The whole pattern is "earn the far side the hard way, then open
+    /// the door forever"; without a hard way there is nothing to earn.
+    pub const DW_SHORTCUT_NO_LONG_ROUTE: DwCode = DwCode::new("DW0373", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0374`: a `shortcut` (spec-0016 §2) that **leaks** — opening its gate does not
+    /// shorten the walk from the campaign entry to its own `unlock` affordance, so the
+    /// unlock is not on the far side of anything. The pattern is "earn the far side
+    /// the hard way, then open the door forever"; if the door is irrelevant to
+    /// reaching the mechanism that opens it, the loop-back moment — which IS the
+    /// design — never happens. The classic form is an `unlock` placed on the NEAR
+    /// side of its own gate.
+    pub const DW_SHORTCUT_NO_GAIN: DwCode = DwCode::new("DW0374", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0379`: **retry cost** (spec-0016 §7, warning tier) — the proven walk from a
+    /// rest point to a beat it can respawn the party into is longer than
+    /// [`RETRY_BUDGET_TICKS`]. Dying must be an investment, not a commute: past the
+    /// budget the loop stops teaching and starts taxing. A **warning**, deliberately:
+    /// a long walk can be the authored point (a pilgrimage, a set-piece approach),
+    /// and the compiler will not overrule that — it names the distance and leaves the
+    /// judgement to the owner's QA hour.
+    pub const DW_RETRY_COST: DwCode = DwCode::new("DW0379", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0380`: **optional-elite bypass** (spec-0016 §7, warning tier) — an enemy the
+    /// critical path never requires the party to kill has no route around it: every
+    /// proven forward leg passes inside its aggro radius, so "optional" is a lie and
+    /// the fight is mandatory in everything but the objective list.
+    ///
+    /// The Tree Sentinel pattern — a powerful optional enemy near the start, fight it
+    /// or walk around it — is explicitly legitimate, and
+    /// this is the one obligation it carries: the walk-around has to exist.
+    pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: DwCode = DwCode::new("DW0380", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0386`: a TD `lane` (spec-0016 §6) whose polyline does not survive contact
+    /// with the assembled world — a waypoint anchor that resolves nowhere, a
+    /// waypoint with no standable footing, a leg the squad cannot walk, or a leg
+    /// **10 blocks or shorter**. The spacing rule is not taste: vanilla re-rolls a
+    /// patrol target to a random point once the patroller is within 10 blocks of it,
+    /// so a tighter lane is a lane the engine quietly stops following — the squad
+    /// wanders, and it reads as working-but-drunk rather than as a bug.
+    pub const DW_LANE_GEOMETRY: DwCode = DwCode::new("DW0386", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0478`: **the respawn-point safe zone** (spec-0016 §1) — a cell the party
+    /// comes back to life on sits inside some hostile force's aggro range.
+    ///
+    /// A respawn point is where the party returns after a death and where a
+    /// `respawns_on_rest` wave is put back on its feet. If it stands inside a
+    /// hostile's perception radius, dying drops the party into contact on the tick
+    /// they arrive: the retry loop stops teaching and becomes a soft-lock — a despair
+    /// machine you cannot rest your way out of. Error tier, not advisory: unlike the
+    /// §7 pacing lints there is no reading of this geometry that is the authored
+    /// point.
+    ///
+    /// **The object class is the respawn point, not the verb that places it.** A
+    /// `bonfire` and a `set-checkpoint` are siblings of one sum type — the DSL says
+    /// so in as many words ("the sibling of [`Verb::SetCheckpoint`]"), they
+    /// resolve to one [`crate::compiler::plan::CheckpointPlan`] distinguished only by `rest`,
+    /// and vanilla returns a dead player to either by the identical `spawnpoint`
+    /// mechanism. Binding this proof to `rest == true` therefore made it a hook on
+    /// one variant and not its sibling: `nobodys-cave-island` shipped three
+    /// `set-checkpoint`s and five unleashed hostiles for twenty-two owner rounds
+    /// while this check examined ZERO objects and reported green (CLAUDE.md, *a
+    /// capability belongs to the object class it acts on*; the staging gate's
+    /// `UNBOUND` verdict, row `bell-08`).
+    ///
+    /// The widening onto `set-checkpoint` asks for nothing to be written: the
+    /// verdict is a function of geometry the campaign already declares, and a
+    /// campaign that trips it was always soft-locked. The widening is a defect fixed
+    /// in the proof, not a requirement added to the document — the six live
+    /// violations it found on the shipped island are what it exists for.
+    pub const DW_RESPAWN_IN_AGGRO: DwCode = DwCode::new("DW0478", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
+    /// from the player's position at the beat that activates the stealth check.
+    pub const DW_STEALTH_ZONE: DwCode = DwCode::new("DW0327", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0355`: a **punishing** `begin-stealth` whose grace window cannot be beaten —
+    /// from a position a player legally occupies the instant the beat arms (the
+    /// activating objective's anchor, or any checkpoint that can respawn them into the
+    /// running session), no zone is reachable within `grace_ticks` at sprint speed over
+    /// the assembled geometry. DW0327 proves cover *exists and is reachable*; this
+    /// proves it is reachable **in time**. Without it a beat that arms under the
+    /// player's feet at the most exposed cell in the room kills every player — machine
+    /// or human — a fixed couple of seconds later, and if the checkpoint it respawns
+    /// them at is also outside cover, the retry loop never terminates. A structurally
+    /// unavoidable death is not 初见杀 (spec-0016), it is a broken beat.
+    pub const DW_STEALTH_ONSET: DwCode = DwCode::new("DW0355", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0342`: a **lethal** trap (spec-0011) whose trigger cell lies on the forced
+    /// critical path with no discharge — not avoidable (the trigger cell is a required
+    /// path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it →
+    /// soft-loop), and not disarmable (no disarm affordance reachable before it). The
+    /// player is provably killed or soft-looped. Analysis-tier (exit 2) like `DW0312`:
+    /// a content-design mistake, not a geometry defect. (Renumbered from the spec's
+    /// stale `DW0314`.)
+    pub const DW_TRAP_LETHAL_UNAVOIDABLE: DwCode = DwCode::new("DW0342", ExitTier::Analysis);
+}
 
 /// A resolved stealth zone `(anchor name, centre cell, half-extents)`.
 type ZoneCell = (String, [i32; 3], [u32; 3]);
 /// A stealth beat probe for [`verify_stealth`]: `(zones, firing step)`.
 type StealthProbe = (Vec<ZoneCell>, usize);
 
-/// `DW0325`: a `move-actor` destination unreachable by the actor's footprint over
-/// the assembled geometry, or an actor spawn/destination anchor that does not
-/// resolve to a placeable cell (spec-0014). Names the actor, the leg, and the
-/// first blocked cell.
-pub const DW_ACTOR_UNROUTABLE: DwCode = DwCode::new("DW0325", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0325`: a `move-actor` destination unreachable by the actor's footprint over
+    /// the assembled geometry, or an actor spawn/destination anchor that does not
+    /// resolve to a placeable cell (spec-0014). Names the actor, the leg, and the
+    /// first blocked cell.
+    pub const DW_ACTOR_UNROUTABLE: DwCode = DwCode::new("DW0325", ExitTier::Build);
+}
 
-/// `DW0410`: a staged walk (`move-actor` / `move-npc`) whose path is blocked by a
-/// gate that an **earlier effect in its own timeline** sealed with `close-gate`
-/// (round-8 island playtest; see [`crate::compiler::timeline`]).
-///
-/// Distinct from `DW0325`/`DW0307` by construction: those fire when the leg is
-/// unwalkable on the open world at all, this one when the leg *is* walkable on
-/// the open world and only the timeline's own `close-gate` makes it impossible.
-/// The planner routes over the timeline-adjusted world first, so a legal
-/// alternative route around the seal is simply taken and no diagnostic is raised
-/// — this fires only when the sealed world admits no route.
-pub const DW_GATE_TIMELINE: DwCode = DwCode::new("DW0410", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0410`: a staged walk (`move-actor` / `move-npc`) whose path is blocked by a
+    /// gate that an **earlier effect in its own timeline** sealed with `close-gate`
+    /// (round-8 island playtest; see [`crate::compiler::timeline`]).
+    ///
+    /// Distinct from `DW0325`/`DW0307` by construction: those fire when the leg is
+    /// unwalkable on the open world at all, this one when the leg *is* walkable on
+    /// the open world and only the timeline's own `close-gate` makes it impossible.
+    /// The planner routes over the timeline-adjusted world first, so a legal
+    /// alternative route around the seal is simply taken and no diagnostic is raised
+    /// — this fires only when the sealed world admits no route.
+    pub const DW_GATE_TIMELINE: DwCode = DwCode::new("DW0410", ExitTier::Build);
+}
 
-/// `DW0488`: one content-keyed walk driver is shared by occurrences that do not
-/// stand in the same place when they fire, so the shared driver's first waypoint
-/// is the wrong cell for at least one of them and that occurrence opens with a
-/// teleport.
-///
-/// `move-npc` / `move-actor` drivers are deduped by `(body, to)` — two
-/// beats that walk the same character to the same mark share one emitted
-/// function, and that function's waypoint polyline starts where the FIRST
-/// occurrence's branch leaves the body. That was a documented limitation for as
-/// long as the dedup existed; it is a diagnostic now because the failure it
-/// produces is invisible in the DSL and unmistakable on a server (the body
-/// vanishes from where it stood and re-appears at the other occurrence's
-/// origin).
-///
-/// Distinct from [`DW_MOVE_UNROUTABLE`]/[`DW_ACTOR_UNROUTABLE`], which fire when
-/// a leg has no route at all: here every leg is perfectly routable and the defect
-/// is that they cannot share one route.
-pub const DW_MOVE_ORIGIN_SHARED: DwCode = DwCode::new("DW0488", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0488`: one content-keyed walk driver is shared by occurrences that do not
+    /// stand in the same place when they fire, so the shared driver's first waypoint
+    /// is the wrong cell for at least one of them and that occurrence opens with a
+    /// teleport.
+    ///
+    /// `move-npc` / `move-actor` drivers are deduped by `(body, to)` — two
+    /// beats that walk the same character to the same mark share one emitted
+    /// function, and that function's waypoint polyline starts where the FIRST
+    /// occurrence's branch leaves the body. That was a documented limitation for as
+    /// long as the dedup existed; it is a diagnostic now because the failure it
+    /// produces is invisible in the DSL and unmistakable on a server (the body
+    /// vanishes from where it stood and re-appears at the other occurrence's
+    /// origin).
+    ///
+    /// Distinct from [`DW_MOVE_UNROUTABLE`]/[`DW_ACTOR_UNROUTABLE`], which fire when
+    /// a leg has no route at all: here every leg is perfectly routable and the defect
+    /// is that they cannot share one route.
+    pub const DW_MOVE_ORIGIN_SHARED: DwCode = DwCode::new("DW0488", ExitTier::Build);
+}
 
 /// The branch condition a staging effect fires under: the per-effect
 /// `requires_flags` / `forbids_flags` gate (DSL v0.6).
@@ -871,6 +925,139 @@ pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
 /// the box being inclusive world-space corners.
 type LethalRegion = (String, ([i32; 3], [i32; 3]));
 
+/// One lethal volume **live from a story stage** (spec-0088), as the region
+/// model holds it: the id, the box, and the resolved gate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StagedVolume {
+    /// The authored id.
+    pub id: String,
+    /// Inclusive world-space corners.
+    pub region: ([i32; 3], [i32; 3]),
+    /// The gate the volume is live while.
+    pub gate: StagedGate,
+}
+
+/// A staged volume's two readings at one quest configuration (spec-0088 §4.1).
+///
+/// `may` is the route proofs' reading — live unless the campaign can prove it is
+/// not, so every proof that walks past it survives it; `is` is the ladder's —
+/// live only where the forced route guarantees it. `is` implies `may`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Liveness {
+    /// The volume may be live here.
+    pub may: bool,
+    /// The volume is live here on the forced route.
+    pub is: bool,
+}
+
+impl Liveness {
+    /// The state in words, for a diagnostic.
+    pub fn words(&self) -> &'static str {
+        match (self.may, self.is) {
+            (_, true) => "is live",
+            (true, false) => "may be live",
+            (false, false) => "is dead",
+        }
+    }
+}
+
+/// **The two readings of one gate at one arrival** (spec-0088 §4.1), over a
+/// path's flag writes and datum replay ([`RegionEvents`]) and the region model's
+/// own ancestry predicate.
+///
+/// - `may`: every required flag has a setter this configuration credits — a
+///   forced firing the arrival's ancestry contains, or ANY unforced one (credited
+///   at step 0, as an unforced fill is); no forbidden flag has a forced setter the
+///   ancestry contains (an unforced setter would make the volume passable, and an
+///   unguaranteed firing may never open); every numeric term may hold — the
+///   replay's value satisfies it, the replay cannot date it, or some unforced root
+///   writes the datum at all.
+/// - `is`: every required flag set by a forced firing the ancestry contains; no
+///   forbidden flag with any setter credited here; every numeric term decided
+///   true by the replay.
+///
+/// Flags are never cleared, so both readings are monotone in the flags along a
+/// path.
+pub(crate) fn liveness_of(
+    gate: &StagedGate,
+    events: &RegionEvents,
+    arrival: usize,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Liveness {
+    let forced_here = |f: &str| {
+        events
+            .flags
+            .iter()
+            .any(|e| e.flag == f && e.forced && ancestor(e.fire_step, arrival))
+    };
+    let any_here = |f: &str| {
+        events
+            .flags
+            .iter()
+            .any(|e| e.flag == f && (!e.forced || ancestor(e.fire_step, arrival)))
+    };
+    let values = events.data.at(arrival);
+    // `v` satisfies the term iff pinning the term's set to `v` leaves it
+    // non-empty — the gate's own arithmetic ([`DatumSet`]), never a second
+    // reading of what a comparison means.
+    //
+    // [`DatumSet`]: delvewright_dsl::gate::DatumSet
+    let satisfies = |c: &delvewright_dsl::StateCompare, v: i64| {
+        i32::try_from(v).is_ok_and(|v| {
+            let mut set = delvewright_dsl::gate::DatumSet::all();
+            set.require(c.op, c.value);
+            set.require(delvewright_dsl::CompareOp::Equals, v);
+            set.pick().is_some()
+        })
+    };
+    let may = gate.requires_flags.iter().all(|f| any_here(f))
+        && !gate.forbids_flags.iter().any(|f| forced_here(f))
+        && gate.requires_state.iter().all(|c| {
+            events.data.unforced_writers.contains(c.state.as_str())
+                || match values.get(c.state.as_str()) {
+                    Some(Some(v)) => satisfies(c, *v),
+                    _ => true,
+                }
+        });
+    let is = gate.requires_flags.iter().all(|f| forced_here(f))
+        && !gate.forbids_flags.iter().any(|f| any_here(f))
+        && gate
+            .requires_state
+            .iter()
+            .all(|c| matches!(values.get(c.state.as_str()), Some(Some(v)) if satisfies(c, *v)));
+    Liveness { may, is: is && may }
+}
+
+/// A loop gate's terms in the words a route failure names (spec-0086 §5.1):
+/// `forbids_flags: flag/x`, `requires_state: state/n at-most 1`,
+/// `requires_flags: flag/y`, each in backticks, comma-separated.
+fn loop_gate_words(g: &StagedGate) -> String {
+    let mut out: Vec<String> = Vec::new();
+    out.extend(
+        g.forbids_flags
+            .iter()
+            .map(|f| format!("`forbids_flags: {f}`")),
+    );
+    out.extend(g.requires_state.iter().map(|c| {
+        format!(
+            "`requires_state: {} {} {}`",
+            c.state.as_str(),
+            c.op.token(),
+            c.value
+        )
+    }));
+    out.extend(
+        g.requires_flags
+            .iter()
+            .map(|f| format!("`requires_flags: {f}`")),
+    );
+    if out.is_empty() {
+        "{}".to_string()
+    } else {
+        out.join(", ")
+    }
+}
+
 /// One placed furniture region as the navigation model carries it — the plan's
 /// own type, `(anchor name, inclusive world box)` (spec-0065). Same shape as
 /// [`LethalRegion`] for the same reason: a proof that refuses over it has to be
@@ -919,6 +1106,20 @@ pub struct World {
     /// difference between `DW0510` and a `DW0311` that sends the author to fix a
     /// prefab that was never wrong.
     lethal_regions: Vec<LethalRegion>,
+    /// The declared volumes **live from a story stage** (spec-0088), in
+    /// declaration order — absent from `lethal` and `lethal_regions`, because
+    /// whether one is there is a fact about a point in the quest DAG and not
+    /// about the world. [`World::region_state_at`] turns each into cells for the
+    /// configurations it may be live in ([`World::staged_liveness`]), so a staged
+    /// volume reaches a proof's world through that one door and no other. Empty
+    /// for every campaign that stages none, which keeps every world and every
+    /// region state byte-identical.
+    staged_lethal: Vec<StagedVolume>,
+    /// Every loop's slab with its gate (spec-0086 §5.1): the slab is held —
+    /// impassable and never floor — in every configuration its gate may be open
+    /// in, read through [`liveness_of`] as a staged volume's is (spec-0088
+    /// §4.1). Empty for every campaign that declares no loop.
+    loop_slabs: Vec<StagedVolume>,
     /// Cells inside a declared **furniture** region (spec-0065): the blocks of a
     /// laid table, an altar, a counter, as the piece that built them declared.
     ///
@@ -966,12 +1167,6 @@ pub struct World {
     /// other gate and never modelled as shut, because the clock clears them twice
     /// a cycle from world-load. See [`World::with_world_load_seals`].
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
-    /// **Where the party can be carried instead of walking** — every declared
-    /// `teleport`'s source volume ([`Plan::transit_teleports`]). A walked leg whose
-    /// start lies in one of these is not judged against a world-load gate seal: the
-    /// party may never stand there long enough to need the door. Empty for every
-    /// campaign that declares no `teleport`.
-    transit_teleports: Vec<([i32; 3], [i32; 3])>,
     /// Cells a **runtime fluid fill** has flooded on this view
     /// ([`crate::compiler::plan::RegionWrite::Flood`], [`World::with_flooded`]) — a subset of
     /// `flooded`, kept apart from the prefab-authored water only so the
@@ -1090,11 +1285,17 @@ pub struct Premises {
     /// (spec-0060 §10.7).
     base: &'static str,
     built: Vec<BuiltPiece>,
+    /// The volumes live from world-load to the end — every volume that declares
+    /// no `when`. A staged volume is not a premise of the world: it is
+    /// `staged_lethal`, held per quest configuration.
     lethal_regions: Vec<LethalRegion>,
+    /// The volumes live from a story stage (spec-0088).
+    staged_lethal: Vec<StagedVolume>,
+    /// Every loop's slab and gate (spec-0086).
+    loop_slabs: Vec<StagedVolume>,
     furniture_regions: Vec<FurnitureRegion>,
     world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
-    transit_teleports: Vec<([i32; 3], [i32; 3])>,
     objective_cells: Vec<(String, [i32; 3])>,
 }
 
@@ -1120,12 +1321,32 @@ impl Premises {
             lethal_regions: plan
                 .lethal_volumes
                 .iter()
+                .filter(|v| v.staged.is_none())
                 .map(|v| (v.id.clone(), v.region))
+                .collect(),
+            staged_lethal: plan
+                .lethal_volumes
+                .iter()
+                .filter_map(|v| {
+                    Some(StagedVolume {
+                        id: v.id.clone(),
+                        region: v.region,
+                        gate: v.staged.clone()?,
+                    })
+                })
+                .collect(),
+            loop_slabs: plan
+                .loops
+                .iter()
+                .map(|l| StagedVolume {
+                    id: l.id.clone(),
+                    region: l.slab,
+                    gate: l.staged_gate(plan.campaign),
+                })
                 .collect(),
             furniture_regions: plan.furniture.clone(),
             world_load_seals: seals,
             clocked_gates: plan.timed_gates.iter().map(|g| g.gate_region).collect(),
-            transit_teleports: plan.transit_teleports.clone(),
             // Where the party is required to stand, by name. A proof that finds
             // the walk region wet can then say WHICH objective is in the water
             // rather than only which cell is — the difference between a
@@ -1161,10 +1382,11 @@ impl Premises {
             base: "void",
             built: Vec::new(),
             lethal_regions: Vec::new(),
+            staged_lethal: Vec::new(),
+            loop_slabs: Vec::new(),
             furniture_regions: Vec::new(),
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
-            transit_teleports: Vec::new(),
             objective_cells: Vec::new(),
         }
     }
@@ -1214,15 +1436,6 @@ impl World {
     /// with no sealed gate on exactly its old routing.
     fn has_world_load_seals(&self) -> bool {
         self.modelled_seals().next().is_some()
-    }
-
-    /// Whether `cell` sits inside a declared `teleport` source volume — i.e. the
-    /// party may be carried off it rather than walk away from it
-    /// ([`Plan::transit_teleports`]).
-    fn is_teleport_source(&self, cell: [i32; 3]) -> bool {
-        self.transit_teleports.iter().any(|(lo, hi)| {
-            (0..3).all(|i| lo[i].min(hi[i]) <= cell[i] && cell[i] <= lo[i].max(hi[i]))
-        })
     }
 
     /// Every gate anchor whose world-load seal a route's `cells` pass through, in
@@ -1303,12 +1516,13 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1521,6 +1735,8 @@ impl World {
                 .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
                 .collect(),
             lethal_regions: premises.lethal_regions,
+            staged_lethal: premises.staged_lethal,
+            loop_slabs: premises.loop_slabs,
             furniture: premises
                 .furniture_regions
                 .iter()
@@ -1530,7 +1746,6 @@ impl World {
             pinned: CellSet::new(),
             world_load_seals: premises.world_load_seals,
             clocked_gates: premises.clocked_gates,
-            transit_teleports: premises.transit_teleports,
             flood_written: CellSet::new(),
             flood_regions: Vec::new(),
             ambient: premises.ambient,
@@ -1646,12 +1861,13 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned,
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1689,12 +1905,13 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1740,12 +1957,13 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1794,12 +2012,13 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -1837,10 +2056,33 @@ impl World {
         // forced one, being a wall that additionally may not be stood on, and a
         // flood beats them all, because a flooded cell is everything a walled cell
         // is (impassable) and one thing more (not floor).
+        // A holding slab walls like an unforced fill and is never floor
+        // (spec-0086 §5.1), so it joins that set here and nowhere else.
+        let walled: BTreeSet<[i32; 3]> = if st.held.is_empty() {
+            st.unforced.clone()
+        } else {
+            st.unforced.union(&st.held).copied().collect()
+        };
         self.with_cleared(&st.cleared)
             .with_sealed(&st.solid)
-            .with_unforced(&st.unforced)
+            .with_unforced(&walled)
             .with_flooded(&st.flooded, &st.flood_regions)
+            .with_staged_lethal(&st.lethal, &st.lethal_regions)
+    }
+
+    /// This world with the staged lethal volumes a configuration may hold live
+    /// (spec-0088) — the rule [`World::from_occupancy`] applies to a premise
+    /// volume: the cells join `lethal` (impassable, never floor) and the boxes
+    /// join `lethal_regions` (the walker's keep-out, and the name a refusal
+    /// gives). A configuration that may hold none returns the world unchanged.
+    fn with_staged_lethal(mut self, cells: &BTreeSet<[i32; 3]>, regions: &[LethalRegion]) -> World {
+        if regions.is_empty() {
+            return self;
+        }
+        self.lethal.extend(cells.iter().copied());
+        self.lethal.compact();
+        self.lethal_regions.extend(regions.iter().cloned());
+        self
     }
 
     /// Whether any cell of this world was flooded by a **runtime** fluid fill.
@@ -1872,12 +2114,13 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: CellSet::new(),
             flood_regions: Vec::new(),
             ambient: self.ambient.clone(),
@@ -1944,12 +2187,13 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            staged_lethal: self.staged_lethal.clone(),
+            loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
             furniture_regions: self.furniture_regions.clone(),
             pinned: self.pinned.clone(),
             world_load_seals: self.world_load_seals.clone(),
             clocked_gates: self.clocked_gates.clone(),
-            transit_teleports: self.transit_teleports.clone(),
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
@@ -2599,6 +2843,62 @@ impl World {
     /// one is seen as unleavable.
     pub fn body_moves(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
         self.moves_of(c, &Footprint::player(), true)
+    }
+
+    /// **Where a body standing in `c` can step off into a fall it does not
+    /// survive** (spec-0085 §6.2): the first neighbouring column, in the fixed
+    /// cardinal order, whose feet and head cells beside `c` are clear, whose cell
+    /// under them is no floor, and under which nothing arrests the fall within
+    /// [`unarmoured_survivable_fall_blocks`] — or the first thing that does is
+    /// lava. Water at any depth in range arrests it; so does any solid, tall
+    /// barrier or use-gate block, a floor or not, because the question is whether
+    /// the body survives the drop, never whether it can stand where it lands.
+    /// A neighbouring cell that is lava, or whose floor is lava, is a step into
+    /// it, and is answered the same way.
+    ///
+    /// Returns the neighbouring cell and whether what kills is lava (`true`) or
+    /// the fall itself (`false`).
+    ///
+    /// `None` when every side of `c` is wall, floor, or a survivable drop. Asked
+    /// of a world with its exclusions lifted, so a declared killing volume is not
+    /// what this finds — the keep-out answers for those.
+    pub fn fatal_step_off(&self, c: [i32; 3]) -> Option<([i32; 3], bool)> {
+        const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let deepest = unarmoured_survivable_fall_blocks() as i32;
+        for (dx, dz) in HORIZ {
+            let side = [c[0] + dx, c[1], c[2] + dz];
+            let head = [side[0], side[1] + 1, side[2]];
+            let under = [side[0], side[1] - 1, side[2]];
+            // A pool of lava let into the floor, or standing at the feet: one
+            // step and the body is in it.
+            if self.lava.contains(&side)
+                || (!self.is_occupied(side)
+                    && !self.is_occupied(head)
+                    && self.lava.contains(&under))
+            {
+                return Some((side, true));
+            }
+            if self.is_occupied(side) || self.is_occupied(head) || self.use_gates.contains(&side) {
+                continue;
+            }
+            let arrests = |y: i32| {
+                let cell = [side[0], y, side[2]];
+                self.is_occupied(cell) || self.use_gates.contains(&cell)
+            };
+            if arrests(c[1] - 1) {
+                continue; // level ground beside: a walk, not a drop
+            }
+            // The body's feet are at `c[1]`; a landing at cell y puts them at y + 1.
+            let landing = ((c[1] - 1 - deepest)..=(c[1] - 2))
+                .rev()
+                .find(|&y| arrests(y));
+            match landing {
+                Some(y) if self.lava.contains(&[side[0], y, side[2]]) => return Some((side, true)),
+                Some(_) => continue,
+                None => return Some((side, false)),
+            }
+        }
+        None
     }
 
     /// **Everywhere a mob in `c` can put itself in one movement** — the
@@ -4465,6 +4765,9 @@ pub fn needs_world(plan: &Plan) -> bool {
     // the assembled occupancy model too, as does the trap proof (DW0342, spec-0011).
         || !plan.checkpoints.is_empty()
         || !plan.stealth_beats.is_empty()
+    // A loop's slab, span and tiling are judged over the assembled world
+    // (spec-0086 §4).
+        || !plan.loops.is_empty()
         || !plan.traps.is_empty()
 }
 
@@ -4489,6 +4792,14 @@ struct VisitedPos {
     /// The originating `critical_path` step index (v0.6): lets the checkpoint /
     /// stealth proofs select the positions at or after a firing step.
     src_step: usize,
+    /// The party arrives here by a **link** (spec-0083) — `transport_before` is
+    /// then also set, and the carry is counted as a link's rather than a
+    /// crossing's.
+    by_link: bool,
+    /// The party arrives here by a **loop**'s exercise move (spec-0086 §5.2) —
+    /// `transport_before` is then also set, and the carry is counted as a
+    /// loop's.
+    by_loop: bool,
 }
 
 /// **What the furniture exclusion bound on one build** (spec-0065 §4.3).
@@ -4623,10 +4934,47 @@ fn positions_of(
             transport_before: false,
             talk_to: false,
             src_step: 0,
+            by_link: false,
+            by_loop: false,
         });
     }
     let mut transport_pending = false;
     for (i, step) in steps.iter().enumerate() {
+        // A carried step: a link's trigger step (spec-0083 §3.2) or a loop's
+        // exercise step (spec-0086 §5.2). The leg into it ends where the party
+        // stands to be carried, and the party goes on from where it is put down.
+        // The carry between the two is marked like a crossing, so every reader of
+        // this enumeration skips it as a ride; one branch for both carries, so a
+        // link and a loop look the same to every proof that reads positions
+        // (spec-0086 §5.4).
+        let carry = match step {
+            Step::Loop { pos, transport, .. } => Some((*pos, Some(*transport), false, true)),
+            _ => step
+                .stand()
+                .map(|stand| (stand, transports.get(i).copied().flatten(), true, false)),
+        };
+        if let Some((stand, to, by_link, by_loop)) = carry {
+            out.push(VisitedPos {
+                pos: stand,
+                transport_before: transport_pending,
+                talk_to: false,
+                src_step: i,
+                by_link: false,
+                by_loop: false,
+            });
+            transport_pending = false;
+            if let Some(to) = to {
+                out.push(VisitedPos {
+                    pos: to,
+                    transport_before: true,
+                    talk_to: false,
+                    src_step: i,
+                    by_link,
+                    by_loop,
+                });
+            }
+            continue;
+        }
         // A `trigger` step stands somewhere like an objective does: the party walks
         // to what it strikes, so the leg to it is a leg the proof owes.
         if let Some(pos) = step.pos() {
@@ -4635,6 +4983,8 @@ fn positions_of(
                 transport_before: transport_pending,
                 talk_to: matches!(step, Step::TalkTo { .. }),
                 src_step: i,
+                by_link: false,
+                by_loop: false,
             });
             transport_pending = false;
         }
@@ -4668,12 +5018,98 @@ fn has_walkable_critical_leg(plan: &Plan) -> bool {
 /// a solid affordance — an altar, a wave marker, an NPC stand — the player walks up
 /// to, not into), exactly as `move-npc` planning does.
 pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), Failure> {
-    route_visited(
+    check_critical_path_bound(plan, world).1
+}
+
+/// [`check_critical_path`] with its binding (spec-0083 §5), returned beside the
+/// verdict so the build can print it whichever way the proof went.
+pub fn check_critical_path_bound(
+    plan: &Plan,
+    world: &World,
+) -> (RouteBinding, Result<(), Failure>) {
+    let (b, r) = route_with_links(
         world,
         &critical_positions(plan),
         &plan.region_events,
         &|g, s| plan.gate_fired_before(g, s),
+        &Carries::of_plan(plan),
+    );
+    (b, r.map(|_| ()))
+}
+
+/// **Which links the default path takes** (spec-0083 §3.4): the walk proof run
+/// over the plan's path, handing back each leg a walk could not cross and the
+/// links that carry it, keyed by the plan's own step indices — what
+/// [`Plan::relinked`] splices into the path. Empty for every campaign whose legs
+/// all walk.
+pub fn take_links(plan: &Plan, world: &World) -> Result<crate::compiler::plan::LinkTakes, Failure> {
+    route_with_links(
+        world,
+        &critical_positions(plan),
+        &plan.region_events,
+        &|g, s| plan.gate_fired_before(g, s),
+        &Carries::of_plan(plan),
     )
+    .1
+}
+
+/// **The plan every reader of the path reads** (spec-0083 §3.4): `plan` with
+/// the links the route proof takes over `world` spliced in, or `None` when it
+/// takes none and `plan` is already that path. The build, the snapshot camera
+/// and the blocking chart all go through here, so a `pov/…` shot, a corridor
+/// and the proof are taken over one path. A leg nothing carries is not refused
+/// here: the walk proof refuses it in its own place.
+pub fn with_links_taken<'a>(
+    plan: &Plan<'a>,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
+    world: &World,
+) -> Result<Option<Plan<'a>>, Failure> {
+    if plan.links.is_empty() {
+        return Ok(None);
+    }
+    let takes = take_links(plan, world).unwrap_or_default();
+    if takes.is_empty() {
+        return Ok(None);
+    }
+    let relinked = plan.relinked(prefabs, takes).map_err(|e| e.failure)?;
+    // The relinked path is the proof's own decision: a second pass over it
+    // must take nothing more, or the path and the proof disagree.
+    if !take_links(&relinked, world)?.is_empty() {
+        return Err(Failure {
+            code: crate::compiler::plan::DW_BUILD,
+            message: "internal invariant violation: the route proof asked for a link on a \
+                      path that already carries every link it took (spec-0083 §3.4). This \
+                      is a compiler bug; stop and escalate"
+                .to_string(),
+        });
+    }
+    Ok(Some(relinked))
+}
+
+/// [`take_links`] over one branch's path (spec-0083 §6): the same proof over
+/// the branch's own steps, live links and gate model, keyed by the branch's
+/// own step indices — what [`Plan::branch_critical_path_linked`] splices.
+pub fn take_branch_links(
+    plan: &Plan,
+    world: &World,
+    start: Option<[i32; 3]>,
+    cp: &crate::compiler::plan::CriticalPath,
+    region_events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Result<crate::compiler::plan::LinkTakes, Failure> {
+    route_with_links(
+        world,
+        &positions_of(start, &cp.steps, &cp.transport_by_step),
+        region_events,
+        ancestor,
+        &Carries {
+            links: &plan.links,
+            gathers: &plan.gathers,
+            live: &cp.live_links_by_step,
+            steps: &cp.steps,
+        },
+    )
+    .1
 }
 
 /// **Every cell the party's own forced walk crosses**, attributed to the
@@ -4701,7 +5137,6 @@ pub(crate) fn critical_route_cells(plan: &Plan, world: &World) -> Vec<(usize, Ve
             let st = world.walked_leg_region_state(
                 &plan.region_events,
                 &ancestor,
-                pair[0].pos,
                 pair[0].src_step,
                 pair[1].src_step,
             );
@@ -4771,7 +5206,28 @@ struct RegionState {
     /// carried for the same reason `flood_regions` is, so a route failure can NAME
     /// the beat instead of reporting geometry that reads perfectly open.
     unforced_regions: Vec<UnforcedBox>,
+    /// Cells a **holding loop's slab** covers on this leg (spec-0086 §5.1) —
+    /// impassable and never floor, the unforced shape, kept apart so a route
+    /// failure names the loop and the gate term that still holds it.
+    held: BTreeSet<[i32; 3]>,
+    /// The slabs behind `held`, each with its loop and gate in words.
+    held_regions: Vec<UnforcedBox>,
+    /// Cells of every **staged** lethal volume that may be live at this point
+    /// (spec-0088, [`World::staged_liveness`]) — impassable, widened by the
+    /// walker's body, never floor, exactly as a volume live from world-load.
+    lethal: BTreeSet<[i32; 3]>,
+    /// The volumes behind `lethal`, as `(id, box)`, in declaration order, so a
+    /// refusal can name the volume.
+    lethal_regions: Vec<LethalRegion>,
+    /// Per region, the causally-latest **forced** write and the block it lays
+    /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
+    /// over the assembled bytes to give this configuration's block map.
+    laid: Vec<LaidWrite>,
 }
+
+/// One region a forced write lays, with the block its command writes (`None` =
+/// air) — what [`RegionState::blocks_over`] lays over the assembled bytes.
+type LaidWrite = (([i32; 3], [i32; 3]), Option<String>);
 
 /// One box an unforced fill writes, with the beat that lays it in words — the blame
 /// unit [`DW_UNFORCED_FOOTING`] reports.
@@ -4781,7 +5237,7 @@ type UnforcedBox = (([i32; 3], [i32; 3]), String);
 /// it leaves, whether the party is forced to cause it, and the beat to blame if they
 /// are not. Forcedness travels WITH the winner, so latest-write-wins needs no special
 /// case for a forced write landing on top of an unforced one.
-type LatestWrite = (usize, RegionWrite, bool, String);
+type LatestWrite = (usize, RegionWrite, bool, String, Option<String>);
 
 impl RegionState {
     /// Nothing has been written by this point — the caller routes the base world
@@ -4791,6 +5247,48 @@ impl RegionState {
             && self.cleared.is_empty()
             && self.flooded.is_empty()
             && self.unforced.is_empty()
+            && self.held.is_empty()
+            && self.lethal.is_empty()
+    }
+
+    /// This state with every holding loop released — the counterfactual a
+    /// route failure is tested against to say a loop, and not the geometry,
+    /// closed the leg (spec-0086 §5.1).
+    fn released(&self) -> RegionState {
+        let mut st = self.clone();
+        st.held.clear();
+        st.held_regions.clear();
+        st
+    }
+
+    /// **This configuration's bytes** (spec-0088 §5): the assembled block map
+    /// with every forced write this configuration credits laid as the block its
+    /// emitted command writes — a fill's block, air for a clear or an unseal.
+    /// An unforced write is not laid: a block a beat nobody has to play lays is
+    /// no signal the party is shown. A write whose block the model does not know
+    /// (a world-load seal: the bytes already hold it) leaves the bytes as they
+    /// are.
+    ///
+    /// The one derivation of a configuration's block map, for whoever asks:
+    /// `DW0891` reads it to decide whether a caught cell is shown here.
+    pub(crate) fn blocks_over(
+        &self,
+        base: &crate::compiler::blockstate::BlockMap,
+    ) -> crate::compiler::blockstate::BlockMap {
+        let mut out = base.clone();
+        for ((lo, hi), block) in &self.laid {
+            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
+                match block {
+                    Some(b) => {
+                        out.insert(c, crate::compiler::blockstate::BlockState::new(b));
+                    }
+                    None => {
+                        out.remove(&c);
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// This state as it would be **if every unforced fill were credited** — the
@@ -4805,6 +5303,24 @@ impl RegionState {
         st.unforced.clear();
         st
     }
+}
+
+/// The holding slabs a route's `cells` pass through (spec-0086 §5.1), each named
+/// with its loop and the gate term that holds it.
+fn held_blame_over(regions: &[UnforcedBox], cells: &[[i32; 3]]) -> Vec<String> {
+    let mut out: Vec<String> = regions
+        .iter()
+        .filter(|((lo, hi), _)| {
+            cells
+                .iter()
+                .any(|c| (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i])))
+        })
+        .map(|(_, why)| why.clone())
+        .collect();
+    if out.is_empty() {
+        out.push("a loop's slab while the loop holds".to_string());
+    }
+    out
 }
 
 /// The unforced boxes a route's `cells` stand in or on, each named with the beat that
@@ -4861,7 +5377,7 @@ fn unforced_blame_over(regions: &[UnforcedBox], cells: &[[i32; 3]]) -> Vec<Strin
 impl World {
     fn region_state_at(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
     ) -> RegionState {
@@ -4874,7 +5390,7 @@ impl World {
     /// were measured.
     fn region_state_without_world_load(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
     ) -> RegionState {
@@ -4883,7 +5399,7 @@ impl World {
 
     fn region_state_inner(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
         world_load: bool,
@@ -4910,6 +5426,7 @@ impl World {
                     ev.write,
                     ev.is_forced(),
                     ev.blame().to_string(),
+                    ev.block().map(str::to_string),
                 );
                 let e = latest.entry(ev.region).or_insert_with(|| key.clone());
                 if ev.fire_step >= e.0 {
@@ -4918,7 +5435,20 @@ impl World {
             }
         }
         let mut st = RegionState::default();
-        for (region, (_, write, forced, blame)) in latest {
+        for (region, (_, write, forced, blame, block)) in latest {
+            // The bytes this configuration holds: a forced write lays its block
+            // (or air); a fill whose block the model does not know — a world-load
+            // seal — leaves the bytes as the prefab built them.
+            if forced {
+                match write {
+                    RegionWrite::Clear | RegionWrite::Unseal => st.laid.push((region, None)),
+                    RegionWrite::Fill | RegionWrite::Flood => {
+                        if block.is_some() {
+                            st.laid.push((region, block));
+                        }
+                    }
+                }
+            }
             // An `Unseal` contributes to no set: it removes the gate's own block, and
             // the base world holds the gate cells empty. It matters above, in
             // latest-write-wins, where it is what cancels a fill — including the
@@ -4944,7 +5474,120 @@ impl World {
             };
             into.extend(crate::compiler::assembled::region_cells(region.0, region.1));
         }
+        // spec-0086 §5.1: every loop slab whose gate may be open here holds,
+        // read through the same liveness a staged volume's gate is.
+        for (v, live) in
+            self.loop_slabs
+                .iter()
+                .zip(self.loop_liveness(region_events, arrival, ancestor))
+        {
+            if live.may {
+                st.held.extend(crate::compiler::assembled::region_cells(
+                    v.region.0, v.region.1,
+                ));
+                st.held_regions.push((
+                    v.region,
+                    format!(
+                        "the slab of loop `{}` ([{}, {}, {}]..[{}, {}, {}]), which holds at \
+                         critical-path step {arrival}: read there, its gate {} may be open",
+                        v.id,
+                        v.region.0[0],
+                        v.region.0[1],
+                        v.region.0[2],
+                        v.region.1[0],
+                        v.region.1[1],
+                        v.region.1[2],
+                        loop_gate_words(&v.gate)
+                    ),
+                ));
+            }
+        }
+        // spec-0088: every staged lethal volume that may be live here.
+        for (v, live) in
+            self.staged_lethal
+                .iter()
+                .zip(self.staged_liveness(region_events, arrival, ancestor))
+        {
+            if live.may {
+                st.lethal.extend(crate::compiler::assembled::region_cells(
+                    v.region.0, v.region.1,
+                ));
+                st.lethal_regions.push((v.id.clone(), v.region));
+            }
+        }
         st
+    }
+
+    /// **Whether each loop's slab may hold, and does, at this arrival**
+    /// (spec-0086 §5.1) — one [`Liveness`] per [`World::loop_slabs`] entry, in
+    /// declaration order, through [`liveness_of`]: the one reading of a gate
+    /// into a region state, shared with the staged lethal volumes.
+    pub(crate) fn loop_liveness(
+        &self,
+        events: &RegionEvents,
+        arrival: usize,
+        ancestor: &dyn Fn(usize, usize) -> bool,
+    ) -> Vec<Liveness> {
+        self.loop_slabs
+            .iter()
+            .map(|v| liveness_of(&v.gate, events, arrival, ancestor))
+            .collect()
+    }
+
+    /// **Which staged lethal volumes may be, and are, live at this arrival**
+    /// (spec-0088 §4.1) — one [`Liveness`] per [`World::staged_lethal`] entry,
+    /// in declaration order. The one place a volume's gate is turned into a
+    /// lethal set; [`World::region_state_at`]'s derivation calls it and nothing
+    /// else decides it.
+    pub(crate) fn staged_liveness(
+        &self,
+        events: &RegionEvents,
+        arrival: usize,
+        ancestor: &dyn Fn(usize, usize) -> bool,
+    ) -> Vec<Liveness> {
+        self.staged_lethal
+            .iter()
+            .map(|v| liveness_of(&v.gate, events, arrival, ancestor))
+            .collect()
+    }
+
+    /// The staged lethal volumes this world holds, in declaration order.
+    pub(crate) fn staged_volumes(&self) -> &[StagedVolume] {
+        &self.staged_lethal
+    }
+
+    /// For a refusal that names `ids`: the staged ones among them, each with its
+    /// gate and its state at the configuration arriving at critical step
+    /// `arrival` (spec-0088 §4.2) — empty when none is staged, so a message
+    /// about a volume live from world-load reads as it always has.
+    pub(crate) fn staged_words(
+        &self,
+        ids: &[&str],
+        events: &RegionEvents,
+        arrival: usize,
+        ancestor: &dyn Fn(usize, usize) -> bool,
+    ) -> String {
+        let live = self.staged_liveness(events, arrival, ancestor);
+        let named: Vec<String> = self
+            .staged_lethal
+            .iter()
+            .zip(live)
+            .filter(|(v, _)| ids.contains(&v.id.as_str()))
+            .map(|(v, l)| {
+                format!(
+                    "`{}` is live from a story stage ({}) and {} in the configuration arriving at \
+                     critical step {arrival}",
+                    v.id,
+                    v.gate.words(),
+                    l.words()
+                )
+            })
+            .collect();
+        if named.is_empty() {
+            String::new()
+        } else {
+            format!(" In this configuration: {}.", named.join("; "))
+        }
     }
 
     /// The runtime-region state for the walked leg `from_step → to_step` — the
@@ -4970,7 +5613,7 @@ impl World {
     /// seals (step `0`) and every write the start's own branch made do.
     fn leg_region_state(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         ancestor: &dyn Fn(usize, usize) -> bool,
         from_step: usize,
         to_step: usize,
@@ -4983,7 +5626,7 @@ impl World {
     /// [`World::region_state_without_world_load`].
     fn leg_region_state_without_world_load(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         ancestor: &dyn Fn(usize, usize) -> bool,
         from_step: usize,
         to_step: usize,
@@ -4992,31 +5635,20 @@ impl World {
         self.region_state_without_world_load(region_events, to_step, &fired)
     }
 
-    /// [`World::leg_region_state`] for a leg the player is asked to WALK, with the
-    /// one exemption the world-load seal carries: a leg whose start sits inside a
-    /// declared `teleport` source volume is judged with the seals lifted.
-    ///
-    /// The party may be carried off that cell before they ever face the door, and
-    /// nothing in the critical path says whether they were — `transport_before`
-    /// marks only the compiler's own inter-area rides. Lifting the seal restores
-    /// exactly the pre-measurement verdict for such a leg, so DW0311's binding is
-    /// unchanged and no campaign that compiled green over a teleport goes red.
-    /// The single site that decides it, shared by the proof (`route_visited`) and
-    /// the exported routes (`route_walked_legs`), so the route the harness walks is
-    /// the route the proof passed.
+    /// [`World::leg_region_state`] for a leg the player is asked to WALK — the
+    /// single site that decides it, shared by the proof (`route_visited`) and the
+    /// exported routes (`route_walked_legs`), so the route the harness walks is the
+    /// route the proof passed. A leg that starts inside a teleport's volume is
+    /// judged like every other leg: where the teleport is a link, the leg is the
+    /// link (spec-0083 §3.4); where it is a gather, the party walks.
     fn walked_leg_region_state(
         &self,
-        region_events: &[RegionEvent],
+        region_events: &RegionEvents,
         ancestor: &dyn Fn(usize, usize) -> bool,
-        from_pos: [i32; 3],
         from_step: usize,
         to_step: usize,
     ) -> RegionState {
-        if self.is_teleport_source(from_pos) {
-            self.leg_region_state_without_world_load(region_events, ancestor, from_step, to_step)
-        } else {
-            self.leg_region_state(region_events, ancestor, from_step, to_step)
-        }
+        self.leg_region_state(region_events, ancestor, from_step, to_step)
     }
 }
 
@@ -5045,7 +5677,7 @@ fn leg_fired(
 /// parallel branch).
 fn gate_blame(
     gates: &[&crate::compiler::assembled::GateSeal],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
     arrival: usize,
 ) -> String {
@@ -5180,7 +5812,7 @@ pub fn reachable_under_every_quest_state(
 fn route_walked_legs(
     world: &World,
     positions: &[VisitedPos],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<(LegRoute, BTreeSet<[i32; 3]>)> {
     let mut out = Vec::new();
@@ -5191,7 +5823,6 @@ fn route_walked_legs(
         let st = world.walked_leg_region_state(
             region_events,
             ancestor,
-            pair[0].pos,
             pair[0].src_step,
             pair[1].src_step,
         );
@@ -5300,22 +5931,606 @@ fn boxes_of(regions: &[([i32; 3], [i32; 3])]) -> String {
         .join(", ")
 }
 
+/// **What the route proof may be carried by** (spec-0083): the plan's links and
+/// gathers, the links live at each step of the path being judged, and that
+/// path's steps — so a performed trigger can be recognised as a link.
+pub(crate) struct Carries<'p> {
+    links: &'p [crate::compiler::link::LinkPlan],
+    gathers: &'p [crate::compiler::link::GatherPlan],
+    live: &'p [Vec<usize>],
+    steps: &'p [Step],
+}
+
+impl<'p> Carries<'p> {
+    /// Nothing to be carried by: the walk proof alone.
+    #[cfg(test)]
+    fn none() -> Carries<'static> {
+        Carries {
+            links: &[],
+            gathers: &[],
+            live: &[],
+            steps: &[],
+        }
+    }
+
+    /// The default path's carry record.
+    fn of_plan(plan: &'p Plan) -> Self {
+        Carries {
+            links: &plan.links,
+            gathers: &plan.gathers,
+            live: &plan.critical_path_live_links,
+            steps: &plan.critical_path,
+        }
+    }
+
+    /// The links live at path step `k`.
+    fn live_at(&self, k: usize) -> &[usize] {
+        self.live.get(k).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
+/// **What the walk proof judged** (`DW0311`, spec-0083 §5): every leg of the
+/// path partitioned by how the party crosses it, and the links and gathers the
+/// campaign declares. Printed on every build, whichever way the proof goes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RouteBinding {
+    /// Consecutive pairs of visited positions — visited positions minus one.
+    pub legs: usize,
+    /// Of those, legs the party walks.
+    pub walked: usize,
+    /// Of those, legs the compiler's own crossing carries.
+    pub crossings: usize,
+    /// Of those, legs a link carries.
+    pub carried: usize,
+    /// Of those, legs a loop's exercise move carries (spec-0086 §5.2).
+    pub looped: usize,
+    /// Links the campaign declares.
+    pub links: usize,
+    /// Of those, links live at the end of some leg.
+    pub live: usize,
+    /// Of those, links the path takes.
+    pub taken: usize,
+    /// Gathers the campaign declares.
+    pub gathers: usize,
+}
+
+impl RouteBinding {
+    /// The one line a build prints about this proof.
+    pub fn line(&self) -> String {
+        format!(
+            "DW0311 binding: {} leg(s); {} walked, {} carried by a crossing, {} carried by a link, \
+             {} carried by a loop; {} link(s) declared, {} live on some leg, {} taken; {} gather(s) \
+             declared",
+            self.legs,
+            self.walked,
+            self.crossings,
+            self.carried,
+            self.looped,
+            self.links,
+            self.live,
+            self.taken,
+            self.gathers
+        )
+    }
+}
+
+/// The cells of `l`'s volume a body can stand in and perform its trigger from
+/// (spec-0083 §3.2), in cell order: standable on `w`, and — for a click — an
+/// eye within a strike of the body's box ([`crate::compiler::strand::strikes`], the
+/// rule `DW0924` reads), or — for `approach` — within the trigger's range of
+/// its anchor.
+fn stand_cells(w: &World, l: &crate::compiler::link::LinkPlan) -> Vec<[i32; 3]> {
+    let (lo, hi) = l.from;
+    let mut out = Vec::new();
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                let c = [x, y, z];
+                if !w.is_standable(c) {
+                    continue;
+                }
+                let reaches = match l.range {
+                    Some(r) => l.body.iter().any(|b| {
+                        let dx = f64::from(c[0]) + 0.5 - f64::from(b[0]);
+                        let dy = w.feet_y(c) - f64::from(b[1]);
+                        let dz = f64::from(c[2]) + 0.5 - f64::from(b[2]);
+                        (dx * dx + dy * dy + dz * dz).sqrt() <= f64::from(r)
+                    }),
+                    None => l
+                        .body
+                        .iter()
+                        .any(|b| crate::compiler::strand::strikes(w, c, *b, 1.0, 1.0)),
+                };
+                if reaches {
+                    out.push(c);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Whether `l`'s `to` is a cell a body stands on in the world as the link's own
+/// root leaves it at the teleport's tick (spec-0083 §3.6): `st` (the leg's
+/// region state), with the root's writes at an earlier tick applied — forced,
+/// since they fire with it — and its fills at the teleport's tick or later not
+/// yet laid.
+fn to_standable(w: &World, st: &RegionState, l: &crate::compiler::link::LinkPlan) -> bool {
+    let mut st = st.clone();
+    for wr in &l.writes {
+        let cells: Vec<[i32; 3]> =
+            crate::compiler::assembled::region_cells(wr.region.0, wr.region.1).collect();
+        if wr.tick >= l.tick {
+            if wr.fill {
+                for c in &cells {
+                    st.solid.remove(c);
+                    st.unforced.remove(c);
+                }
+            }
+            continue;
+        }
+        for c in cells {
+            st.solid.remove(&c);
+            st.cleared.remove(&c);
+            st.flooded.remove(&c);
+            st.unforced.remove(&c);
+            match (wr.fill, wr.fluid) {
+                (true, true) => {
+                    st.flooded.insert(c);
+                }
+                (true, false) => {
+                    st.solid.insert(c);
+                }
+                (false, _) => {
+                    st.cleared.insert(c);
+                }
+            }
+        }
+    }
+    let owned;
+    let at: &World = if st.is_empty() {
+        w
+    } else {
+        owned = w.with_region_state(&st);
+        &owned
+    };
+    at.is_standable(l.to)
+}
+
+/// Why one link did not carry a leg, for `DW0311`'s message.
+enum LinkMiss {
+    /// Its volume holds a stand cell, and the leg's start cannot walk to any.
+    Unreachable,
+    /// The party lands at `to` and cannot walk on to the leg's end.
+    NoOnward,
+}
+
+/// The nearest stand cell of `cands` to `from` by proven route length, ties
+/// broken by cell order (ADR-0006) — `None` when none is reachable.
+fn nearest_stand(w: &World, from: &VisitedPos, cands: &[[i32; 3]]) -> Option<[i32; 3]> {
+    let start = w.snap_endpoint(from.pos, false)?;
+    cands
+        .iter()
+        .filter_map(|c| w.find_path(start, *c).map(|p| (p.len(), *c)))
+        .min()
+        .map(|(_, c)| c)
+}
+
+/// Retry the leg `from → end` through the links live at `end` (spec-0083 §3.4):
+/// walk to a stand cell, be carried, and walk on — the last segment itself
+/// retried through the links not yet used on this leg. The first decomposition
+/// that routes is the leg's route, pushed onto `used` in the order taken.
+#[allow(clippy::too_many_arguments)]
+fn decompose(
+    world: &World,
+    from: &VisitedPos,
+    end: &VisitedPos,
+    origin_step: usize,
+    region_events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+    used: &mut Vec<(usize, [i32; 3])>,
+    misses: &mut BTreeMap<usize, LinkMiss>,
+    faults: &mut Vec<(usize, String)>,
+) -> bool {
+    let st = world.walked_leg_region_state(region_events, ancestor, origin_step, end.src_step);
+    let owned;
+    let leg: &World = if st.is_empty() {
+        world
+    } else {
+        owned = world.with_region_state(&st);
+        &owned
+    };
+    for &li in carries.live_at(end.src_step) {
+        if used.iter().any(|(u, _)| *u == li) {
+            continue;
+        }
+        let Some(l) = carries.links.get(li) else {
+            continue;
+        };
+        let cands = stand_cells(leg, l);
+        if cands.is_empty() {
+            faults.push((
+                li,
+                format!(
+                    "no standable cell inside its volume {} performs the trigger — the body it \
+                     presses stands outside its own volume, so whoever presses it is not carried. \
+                     Fault: no stand cell. Remedy: move the body or widen the volume so a cell \
+                     inside it reaches the body",
+                    l.box_words()
+                ),
+            ));
+            continue;
+        }
+        if !to_standable(world, &st, l) {
+            faults.push((
+                li,
+                format!(
+                    "its `to` {:?} is not a cell a body stands on at the teleport's tick {} — a \
+                     route position is a cell a body stands on, and a link onto air is a drop. \
+                     Fault: `to` not standable. Remedy: move `to` off the volume and onto footing, \
+                     or lay the floor at an earlier tick of the same root",
+                    l.to, l.tick
+                ),
+            ));
+            continue;
+        }
+        let Some(stand) = nearest_stand(leg, from, &cands) else {
+            misses.entry(li).or_insert(LinkMiss::Unreachable);
+            continue;
+        };
+        let stand_vp = VisitedPos {
+            pos: stand,
+            transport_before: false,
+            talk_to: false,
+            src_step: end.src_step,
+            by_link: false,
+            by_loop: false,
+        };
+        if judge_leg(world, &[*from, stand_vp], region_events, ancestor).is_err() {
+            misses.entry(li).or_insert(LinkMiss::Unreachable);
+            continue;
+        }
+        let to_vp = VisitedPos {
+            pos: l.to,
+            transport_before: false,
+            talk_to: false,
+            src_step: origin_step,
+            by_link: true,
+            by_loop: false,
+        };
+        used.push((li, stand));
+        if judge_leg(world, &[to_vp, *end], region_events, ancestor).is_ok() {
+            return true;
+        }
+        if decompose(
+            world,
+            &to_vp,
+            end,
+            origin_step,
+            region_events,
+            ancestor,
+            carries,
+            used,
+            misses,
+            faults,
+        ) {
+            return true;
+        }
+        used.pop();
+        misses.insert(li, LinkMiss::NoOnward);
+    }
+    false
+}
+
+/// The link a performed `trigger` step stands for, and the cell the party
+/// stands on to perform it from `from` — `None` when the step's trigger is no
+/// link, or no stand cell of its volume is reachable from `from` (the press
+/// then happens outside the box and carries nobody).
+fn performed_link(
+    world: &World,
+    from: &VisitedPos,
+    step: usize,
+    region_events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+) -> Result<Option<(usize, [i32; 3])>, Failure> {
+    let Some(Step::Trigger {
+        trigger_id,
+        stand: None,
+        ..
+    }) = carries.steps.get(step)
+    else {
+        return Ok(None);
+    };
+    let st = world.walked_leg_region_state(region_events, ancestor, from.src_step, step);
+    let owned;
+    let leg: &World = if st.is_empty() {
+        world
+    } else {
+        owned = world.with_region_state(&st);
+        &owned
+    };
+    for (li, l) in carries.links.iter().enumerate() {
+        if &l.trigger_id != trigger_id {
+            continue;
+        }
+        let cands = stand_cells(leg, l);
+        let Some(stand) = nearest_stand(leg, from, &cands) else {
+            continue;
+        };
+        if !to_standable(world, &st, l) {
+            return Err(Failure {
+                code: crate::compiler::plan::DW_TELEPORT_LINK,
+                message: format!(
+                    "link `{}` (the `teleport` at `{}`) is performed by the path from {stand:?}, \
+                     inside its volume {}, and puts the party on {:?}, which is not a cell a body \
+                     stands on at the teleport's tick {} — a route position is a cell a body \
+                     stands on, and a link onto air is a drop. Fault: `to` not standable. \
+                     Remedy: move `to` off the volume and onto footing, or lay the floor at an \
+                     earlier tick of the same root.",
+                    l.trigger_id,
+                    l.path,
+                    l.box_words(),
+                    l.to,
+                    l.tick
+                ),
+            });
+        }
+        return Ok(Some((li, stand)));
+    }
+    Ok(None)
+}
+
+/// The message for a leg no walk and no link carries (spec-0083 §3.1, §3.4):
+/// under `DW0311` a gather over the leg's start is named with the remedy that
+/// makes it a link; under any code of the leg family, every link considered on
+/// the leg is named with why it did not carry.
+fn widen_unroutable(
+    e: Failure,
+    from: &VisitedPos,
+    end: &VisitedPos,
+    carries: &Carries<'_>,
+    misses: &BTreeMap<usize, LinkMiss>,
+) -> Failure {
+    let considered: Vec<String> = carries
+        .links
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let why = if !carries.live_at(end.src_step).contains(&i) {
+                "shut at this step — its trigger's gate or the teleport's `when` does not hold \
+                 under what the path holds here"
+            } else {
+                match misses.get(&i) {
+                    Some(LinkMiss::Unreachable) => {
+                        "its volume holds a stand cell and the leg's start cannot walk to one"
+                    }
+                    Some(LinkMiss::NoOnward) => "the party lands at its `to` and cannot walk on",
+                    None => "not tried",
+                }
+            };
+            format!("`{}` (`{}`): {why}", l.trigger_id, l.path)
+        })
+        .collect();
+    if e.code == DW_CRITICAL_UNROUTABLE
+        && let Some(g) = carries.gathers.iter().find(|g| g.contains(from.pos))
+    {
+        return Failure {
+            code: DW_CRITICAL_UNROUTABLE,
+            message: format!(
+                "critical path: the party cannot walk from {:?} to {:?}, and the way the campaign \
+                 means is the `teleport` at `{}` — its volume holds the leg's start, and it \
+                 carries whoever is inside to {:?}. It fires from {}, a root the party cannot \
+                 fire again: the first body through it travels and the rest of the party is left \
+                 behind, so the proof does not lean on it. Host the same `teleport` in a \
+                 `triggers[]` entry of kind `use`, `strike` or `approach` declared \
+                 `\"once\": false`, whose volume holds a cell a body presses it from — a link a \
+                 straggler can take again.{}",
+                from.pos,
+                end.pos,
+                g.path,
+                g.to,
+                g.root,
+                if considered.is_empty() {
+                    String::new()
+                } else {
+                    format!(" Links considered on this leg: {}.", considered.join("; "))
+                }
+            ),
+        };
+    }
+    if considered.is_empty() {
+        return e;
+    }
+    Failure {
+        code: e.code,
+        message: format!(
+            "{} Links considered on this leg, none of which carries it: {}.",
+            e.message,
+            considered.join("; ")
+        ),
+    }
+}
+
+/// **The walk proof, with links** (spec-0083 §3.4): every leg of `positions`
+/// is walked; a leg whose walk fails is retried through the links live at its
+/// end; a performed `trigger` step whose trigger is a link the party stands in
+/// carries it. Returns the binding (always), and the links taken beside the
+/// verdict — keyed by the step indices of the path judged — so the build can
+/// splice them into the one path every consumer reads.
+fn route_with_links(
+    world: &World,
+    positions: &[VisitedPos],
+    region_events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+) -> (
+    RouteBinding,
+    Result<crate::compiler::plan::LinkTakes, Failure>,
+) {
+    // The leg count is the population, stated before any leg is judged — the
+    // visited positions minus one, plus the legs a taken link adds — so a
+    // refusal prints the same denominator a pass does.
+    let mut b = RouteBinding {
+        legs: positions.len().saturating_sub(1),
+        links: carries.links.len(),
+        gathers: carries.gathers.len(),
+        ..RouteBinding::default()
+    };
+    let mut takes = crate::compiler::plan::LinkTakes::default();
+    let mut live: BTreeSet<usize> = BTreeSet::new();
+    let mut taken: BTreeSet<String> = BTreeSet::new();
+    let Some(first) = positions.first() else {
+        return (b, Ok(takes));
+    };
+    let mut cur = *first;
+    let mut result = Ok(());
+    for next in &positions[1..] {
+        live.extend(carries.live_at(next.src_step).iter().copied());
+        if next.transport_before {
+            if next.by_link {
+                b.carried += 1;
+                if let Some(Step::Trigger { trigger_id, .. }) = carries.steps.get(next.src_step) {
+                    taken.insert(format!("{trigger_id}{:?}", next.pos));
+                }
+            } else if next.by_loop {
+                b.looped += 1;
+            } else {
+                b.crossings += 1;
+            }
+            cur = *next;
+            continue;
+        }
+        // A trigger the path performs that is a link the party can stand in:
+        // the leg into it ends at the stand cell, and the party goes on from
+        // `to` (spec-0083 §3.4, last sentence).
+        match performed_link(world, &cur, next.src_step, region_events, ancestor, carries) {
+            Err(e) => {
+                result = Err(e);
+                break;
+            }
+            Ok(Some((li, stand))) => {
+                let l = &carries.links[li];
+                let stand_vp = VisitedPos {
+                    pos: stand,
+                    ..*next
+                };
+                if let Err(e) = judge_leg(world, &[cur, stand_vp], region_events, ancestor) {
+                    result = Err(e);
+                    break;
+                }
+                // `cur → trigger` became `cur → stand`, `stand → to`.
+                b.legs += 1;
+                b.walked += 1;
+                b.carried += 1;
+                taken.insert(format!("{}{:?}", l.trigger_id, l.to));
+                takes.performed.insert(next.src_step, (li, stand));
+                // The next leg starts here; whether a leg is a ride is read off
+                // its END, so this start marks nothing.
+                cur = VisitedPos {
+                    pos: l.to,
+                    transport_before: false,
+                    talk_to: false,
+                    src_step: next.src_step,
+                    by_link: true,
+                    by_loop: false,
+                };
+                continue;
+            }
+            Ok(None) => {}
+        }
+        let walked = judge_leg(world, &[cur, *next], region_events, ancestor);
+        let Err(e) = walked else {
+            b.walked += 1;
+            cur = *next;
+            continue;
+        };
+        let mut used = Vec::new();
+        let mut misses = BTreeMap::new();
+        let mut faults = Vec::new();
+        if decompose(
+            world,
+            &cur,
+            next,
+            cur.src_step,
+            region_events,
+            ancestor,
+            carries,
+            &mut used,
+            &mut misses,
+            &mut faults,
+        ) {
+            b.legs += 2 * used.len();
+            b.walked += 1 + used.len();
+            b.carried += used.len();
+            for (li, _) in &used {
+                let l = &carries.links[*li];
+                taken.insert(format!("{}{:?}", l.trigger_id, l.to));
+            }
+            takes.spliced.insert(next.src_step, used);
+            cur = *next;
+            continue;
+        }
+        if let Some((li, why)) = faults.first() {
+            let l = &carries.links[*li];
+            result = Err(Failure {
+                code: crate::compiler::plan::DW_TELEPORT_LINK,
+                message: format!(
+                    "critical path: the party cannot walk from {:?} to {:?}, and the only carry \
+                     on that leg is link `{}` (the `teleport` at `{}`, volume {}, `to` {:?}), \
+                     whose geometry does not hold: {why}.",
+                    cur.pos,
+                    next.pos,
+                    l.trigger_id,
+                    l.path,
+                    l.box_words(),
+                    l.to
+                ),
+            });
+            break;
+        }
+        result = Err(widen_unroutable(e, &cur, next, carries, &misses));
+        break;
+    }
+    b.live = live.len().min(b.links);
+    b.taken = taken.len();
+    (b, result.map(|()| takes))
+}
+
+/// Route every walked leg between consecutive visited positions with no link to
+/// lean on — [`route_with_links`] over an empty carry record. The pure core the
+/// unit tests drive over synthetic worlds.
+#[cfg(test)]
 fn route_visited(
     world: &World,
     positions: &[VisitedPos],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
-    for pair in positions.windows(2) {
+    route_with_links(world, positions, region_events, ancestor, &Carries::none())
+        .1
+        .map(|_| ())
+}
+
+/// Judge ONE walked leg, `pair[0] → pair[1]`, over its causally-sealed world —
+/// every refusal `DW0311` and its family give for a leg that does not route. A
+/// `transport_before` leg is a ride and is not judged.
+fn judge_leg(
+    world: &World,
+    pair: &[VisitedPos],
+    region_events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Result<(), Failure> {
+    {
         let from = pair[0].pos;
         let to = pair[1].pos;
         if pair[1].transport_before {
-            continue; // an inter-area teleport hop: the player is moved, not walking
+            return Ok(()); // a carry: the player is moved, not walking
         }
         let st = world.walked_leg_region_state(
             region_events,
             ancestor,
-            pair[0].pos,
             pair[0].src_step,
             pair[1].src_step,
         );
@@ -5334,6 +6549,17 @@ fn route_visited(
         // pays nothing. Its blame ledger is taken by value for the same reason.
         let unforced_regions = st.unforced_regions.clone();
         let has_unforced = !st.unforced.is_empty();
+        // The loop counterfactual (spec-0086 §5.1): this leg with every holding
+        // slab released. Built only for a leg that has one, so every campaign
+        // without a loop routes over the identical single world.
+        let held_regions = st.held_regions.clone();
+        let released_owned;
+        let released: Option<&World> = if st.held.is_empty() {
+            None
+        } else {
+            released_owned = world.with_region_state(&st.released());
+            Some(&released_owned)
+        };
         let credited_owned;
         let credited: Option<&World> = if st.unforced.is_empty() {
             None
@@ -5360,23 +6586,22 @@ fn route_visited(
         // campaign whose world actually authors a gate shut — everyone else routes
         // over the identical single world and pays nothing.
         let ungated_owned;
-        let ungated: Option<&World> =
-            if !world.has_world_load_seals() || world.is_teleport_source(from) {
-                None
+        let ungated: Option<&World> = if !world.has_world_load_seals() {
+            None
+        } else {
+            let st2 = world.leg_region_state_without_world_load(
+                region_events,
+                ancestor,
+                pair[0].src_step,
+                pair[1].src_step,
+            );
+            ungated_owned = if st2.is_empty() {
+                world.with_region_state(&RegionState::default())
             } else {
-                let st2 = world.leg_region_state_without_world_load(
-                    region_events,
-                    ancestor,
-                    pair[0].src_step,
-                    pair[1].src_step,
-                );
-                ungated_owned = if st2.is_empty() {
-                    world.with_region_state(&RegionState::default())
-                } else {
-                    world.with_region_state(&st2)
-                };
-                Some(&ungated_owned)
+                world.with_region_state(&st2)
             };
+            Some(&ungated_owned)
+        };
         let lethal_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
             let open = open?;
             let cell = open.snap_endpoint(at, talk_to)?;
@@ -5397,14 +6622,15 @@ fn route_visited(
                 });
             }
             let names = names_of(&volumes);
+            let staged = world.staged_words(&volumes, region_events, pair[1].src_step, ancestor);
             Some(Failure {
                 code: DW_LETHAL_ON_CRITICAL_PATH,
                 message: format!(
                     "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
                      anchor {at:?} lies INSIDE lethal volume(s) {names} — a player who reaches \
-                     this objective is killed by standing where the objective is. Move the \
-                     volume off the anchor, shrink its `extent`, or move the objective; do NOT \
-                     delete the volume to silence the proof."
+                     this objective is killed by standing where the objective is.{staged} Move \
+                     the volume off the anchor, shrink its `extent`, or move the objective; do \
+                     NOT delete the volume to silence the proof."
                 ),
             })
         };
@@ -5536,6 +6762,31 @@ fn route_visited(
             }
         };
         if leg_world.find_path(start, goal).is_none() {
+            // A holding loop first (spec-0086 §5.1): when the leg routes with the
+            // slab released and not with it held, the corridor is endless for
+            // this party here, and the remedy is a release, never a walk.
+            if let Some(free) = released
+                && let (Some(s2), Some(g2)) = (
+                    free.snap_endpoint(from, false),
+                    free.snap_endpoint(to, pair[1].talk_to),
+                )
+                && let Some(cells) = free.find_path(s2, g2)
+            {
+                let held = held_blame_over(&held_regions, &cells).join("; ");
+                return Err(Failure {
+                    code: DW_CRITICAL_UNROUTABLE,
+                    message: format!(
+                        "critical path: the only route from {from:?} (floor {start:?}) to \
+                         {to:?} (floor {goal:?}) crosses {held}. A body that enters a holding \
+                         slab is returned to the approach on every crossing, so the party never \
+                         reaches the far side while the loop holds, and nothing the forced path \
+                         performs before this leg releases it. Release the loop before this leg \
+                         — set the flag its gate forbids, or raise the count it reads — from an \
+                         objective the party is forced to complete first, or route the forced \
+                         path so it does not cross the slab while the loop holds."
+                    ),
+                });
+            }
             // Lethality first: it is the strictly more specific answer, and the
             // generic one below would send the author to fix open geometry.
             if let Some(open) = open
@@ -5556,15 +6807,18 @@ fn route_visited(
                     ));
                 }
                 let names = names_of(&volumes);
+                let staged =
+                    world.staged_words(&volumes, region_events, pair[1].src_step, ancestor);
                 return Err(Failure {
                     code: DW_LETHAL_ON_CRITICAL_PATH,
                     message: format!(
                         "critical path: the only route from {from:?} (floor {start:?}) to \
                          {to:?} (floor {goal:?}) runs THROUGH lethal volume(s) {names} — the \
                          party cannot reach this objective without dying on the way. The \
-                         geometry is walkable; the volume is what closes it. Move or shrink the \
-                         volume, or give the party a route around it; do NOT delete the volume \
-                         to silence the proof."
+                         geometry is walkable; the volume is what closes it.{staged} Move or \
+                         shrink the volume, give the party a route around it, or — for a volume \
+                         live from a story stage — move the beat that arms it after this leg; \
+                         do NOT delete the volume to silence the proof."
                     ),
                 });
             }
@@ -5747,7 +7001,7 @@ fn verify_checkpoints(
     world: &World,
     checkpoints: &[(String, [i32; 3], usize)],
     positions: &[VisitedPos],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
     for (anchor, pos, fire_step) in checkpoints {
@@ -5802,23 +7056,25 @@ fn verify_checkpoints(
     Ok(())
 }
 
-/// `DW0921`: **a place a body can get into and not out of.** From a cell of the
-/// proven route, a body walking, falling and jumping ([`World::body_moves`]) can
-/// reach a cell from which no walk, fall or jump leads back to the route — a
-/// garden bed ringed by a hedge it jumped onto and dropped off, a pit it fell
-/// into. The player is soft-locked there: nothing but leaving the game gets
-/// them out.
-///
-/// It is judged once per quest configuration the critical path passes through
-/// ([`World::region_state_at`] over each leg's arrival), with that
-/// configuration's gates as they stand and that configuration's own route cells
-/// as the place a body must get back to. That is the whole of the author's
-/// control over it, and it needs no declaration of its own: a room the story
-/// shuts the party into holds the objective the story is waiting on, so the
-/// party standing in it stands among that configuration's route cells, and a
-/// room shut until a later beat opens it is only a trap when the beat is out of
-/// reach from inside — which is what this refuses.
-pub const DW_BODY_CANNOT_LEAVE: DwCode = DwCode::new("DW0921", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0921`: **a place a body can get into and not out of.** From a cell of the
+    /// proven route, a body walking, falling and jumping ([`World::body_moves`]) can
+    /// reach a cell from which no walk, fall or jump leads back to the route — a
+    /// garden bed ringed by a hedge it jumped onto and dropped off, a pit it fell
+    /// into. The player is soft-locked there: nothing but leaving the game gets
+    /// them out.
+    ///
+    /// It is judged once per quest configuration the critical path passes through
+    /// ([`World::region_state_at`] over each leg's arrival), with that
+    /// configuration's gates as they stand and that configuration's own route cells
+    /// as the place a body must get back to. That is the whole of the author's
+    /// control over it, and it needs no declaration of its own: a room the story
+    /// shuts the party into holds the objective the story is waiting on, so the
+    /// party standing in it stands among that configuration's route cells, and a
+    /// room shut until a later beat opens it is only a trap when the beat is out of
+    /// reach from inside — which is what this refuses.
+    pub const DW_BODY_CANNOT_LEAVE: DwCode = DwCode::new("DW0921", ExitTier::Build);
+}
 
 /// How many pockets a `DW0921` report names before summarising the rest.
 const POCKET_LIST_LIMIT: usize = 6;
@@ -5838,6 +7094,10 @@ pub struct LeaveBinding {
     pub afloat: usize,
     /// Of those, cells a body cannot leave.
     pub trapped: usize,
+    /// Reached cells that are stand cells of a link live in their
+    /// configuration — the third way out of a pocket (spec-0083 §3.9), counted
+    /// over configurations.
+    pub link_exits: usize,
 }
 
 impl LeaveBinding {
@@ -5845,8 +7105,14 @@ impl LeaveBinding {
     pub fn line(&self) -> String {
         format!(
             "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
-             by walking, falling, jumping or swimming ({} of them afloat), {} it cannot leave",
-            self.configurations, self.route_cells, self.reached, self.afloat, self.trapped
+             by walking, falling, jumping or swimming ({} of them afloat), {} it cannot leave; {} \
+             link stand cell(s) served as a way out",
+            self.configurations,
+            self.route_cells,
+            self.reached,
+            self.afloat,
+            self.trapped,
+            self.link_exits
         )
     }
 
@@ -5912,6 +7178,86 @@ pub fn world_while_next(plan: &Plan, world: &World, step: usize) -> Option<World
     (!st.is_empty()).then(|| world.with_region_state(&st))
 }
 
+/// One quest configuration the critical path passes (spec-0088 §5): the first
+/// critical step that arrives under it, its region state, and every staged
+/// lethal volume's [`Liveness`] there.
+pub struct Configuration {
+    /// The first critical-path step whose arrival is judged under it.
+    pub step: usize,
+    state: RegionState,
+    /// One entry per [`World::staged_volumes`], in declaration order.
+    pub live: Vec<Liveness>,
+}
+
+impl Configuration {
+    /// This configuration's world: `base` with every runtime write it credits,
+    /// staged volumes included, or `None` when it writes nothing.
+    pub fn world(&self, base: &World) -> Option<World> {
+        (!self.state.is_empty()).then(|| base.with_region_state(&self.state))
+    }
+
+    /// This configuration's bytes ([`RegionState::blocks_over`]).
+    pub fn blocks(
+        &self,
+        base: &crate::compiler::blockstate::BlockMap,
+    ) -> crate::compiler::blockstate::BlockMap {
+        self.state.blocks_over(base)
+    }
+}
+
+/// **The quest configurations the critical path passes**, in path order — one per
+/// distinct region state, keyed by the first arrival under it — with `per_step`
+/// mapping every critical step to its configuration's index (spec-0088 §5). The
+/// enumeration `DW0891` judges a staged volume over, built from the same
+/// [`World::region_state_at`] every route proof asks.
+pub fn path_configurations(plan: &Plan, world: &World) -> (Vec<Configuration>, Vec<usize>) {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut configs: Vec<Configuration> = Vec::new();
+    let per_step = configurations_along(
+        world,
+        &plan.region_events,
+        &ancestor,
+        plan.critical_path.len(),
+        &mut configs,
+    )
+    .into_iter()
+    .map(|(ci, _)| ci)
+    .collect();
+    (configs, per_step)
+}
+
+/// The configurations one path passes — `steps` arrivals over `events` in that
+/// path's own step space, under its own ancestry — appended to `configs` where
+/// they are new (a configuration is its region state, whichever path reaches
+/// it). Returns, per step, the configuration's index and every staged volume's
+/// [`Liveness`] at that step.
+pub fn configurations_along(
+    world: &World,
+    events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    steps: usize,
+    configs: &mut Vec<Configuration>,
+) -> Vec<(usize, Vec<Liveness>)> {
+    let mut out = Vec::new();
+    for step in 0..steps {
+        let st = world.region_state_at(events, step, ancestor);
+        let live = world.staged_liveness(events, step, ancestor);
+        let idx = match configs.iter().position(|c| c.state == st) {
+            Some(i) => i,
+            None => {
+                configs.push(Configuration {
+                    step,
+                    live: live.clone(),
+                    state: st,
+                });
+                configs.len() - 1
+            }
+        };
+        out.push((idx, live));
+    }
+    out
+}
+
 /// [`DW_BODY_CANNOT_LEAVE`] over a campaign's critical path. Returns the binding
 /// beside the verdict so the caller can print it whichever way the verdict went.
 ///
@@ -5927,43 +7273,94 @@ pub fn check_bodies_can_leave(
     let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
     // One configuration per distinct region state, carrying the route cells of
     // every leg that arrives under it and the first step that does.
-    let mut configs: Vec<(RegionState, usize, BTreeSet<[i32; 3]>)> = Vec::new();
+    // Each configuration also carries the links live at any step that arrives
+    // under it: a link's stand cell is a way out of a pocket there (spec-0083
+    // §3.9), because a body standing in it performs the trigger and is put down
+    // on a route cell — and the link is repeatable by construction.
+    let mut configs: Vec<LeaveConfigSeed> = Vec::new();
     for (step, cells) in critical_route_cells(plan, world) {
         let st = world.region_state_at(&plan.region_events, step, &ancestor);
-        match configs.iter_mut().find(|(s, _, _)| *s == st) {
-            Some((_, first, seeds)) => {
+        let live: BTreeSet<usize> = plan
+            .critical_path_live_links
+            .get(step)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect();
+        match configs.iter_mut().find(|(s, _, _, _)| *s == st) {
+            Some((_, first, seeds, links)) => {
                 *first = (*first).min(step);
                 seeds.extend(cells);
+                links.extend(live);
             }
-            None => configs.push((st, step, cells.into_iter().collect())),
+            None => configs.push((st, step, cells.into_iter().collect(), live)),
         }
     }
     let owned: Vec<Option<World>> = configs
         .iter()
-        .map(|(st, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
+        .map(|(st, _, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
         .collect();
-    let worlds: Vec<(&World, String, Vec<[i32; 3]>)> = configs
+    let worlds: Vec<LeaveConfig<'_>> = configs
         .into_iter()
         .zip(&owned)
-        .map(|((_, first, seeds), w)| {
+        .map(|((st, first, seeds, live), w)| {
             let w = w.as_ref().unwrap_or(world);
-            let when = plan
+            let exits: BTreeSet<[i32; 3]> = live
+                .iter()
+                .filter_map(|li| plan.links.get(*li))
+                .flat_map(|l| stand_cells(w, l))
+                .collect();
+            let mut when = plan
                 .critical_path
                 .get(first)
                 .and_then(|s| s.objective())
                 .map(|o| format!("while `{o}` is next"))
                 .unwrap_or_else(|| format!("from critical step {first}"));
-            (w, when, seeds.into_iter().collect())
+            // spec-0086 §5.3: the configuration names every loop's slab as it
+            // has it — a holding slab is a wall a body is returned from.
+            for l in &plan.loops {
+                let held = st.held_regions.iter().any(|(r, _)| *r == l.slab);
+                when.push_str(&format!(
+                    ", with the slab of loop `{}` {}",
+                    l.id,
+                    if held { "holding" } else { "clear" }
+                ));
+            }
+            // spec-0088: a pocket that exists only while a staged volume is dead
+            // (or only while it is live) is named with the volume's state.
+            let staged: Vec<String> = world
+                .staged_volumes()
+                .iter()
+                .zip(world.staged_liveness(&plan.region_events, first, &ancestor))
+                .map(|(v, l)| {
+                    let state = if l.may { "may be live" } else { "dead" };
+                    format!("lethal volume `{}` {state}", v.id)
+                })
+                .collect();
+            let when = if staged.is_empty() {
+                when
+            } else {
+                format!("{when}, {}", staged.join(", "))
+            };
+            (w, when, seeds.into_iter().collect(), exits)
         })
         .collect();
     verify_bodies_can_leave(&worlds, returned, &plan.shortcuts)
 }
 
+/// One configuration as it is gathered: its region state, the first step that
+/// arrives under it, its route cells, and the links live at those steps.
+type LeaveConfigSeed = (RegionState, usize, BTreeSet<[i32; 3]>, BTreeSet<usize>);
+
+/// One quest configuration `DW0921` judges: its world, the configuration in
+/// words, its route cells, and the stand cells of the links live in it.
+type LeaveConfig<'w> = (&'w World, String, Vec<[i32; 3]>, BTreeSet<[i32; 3]>);
+
 /// The pure core of [`check_bodies_can_leave`]: one `(world, when, route cells)`
 /// per quest configuration, where `when` names the configuration in words. Split
 /// out so it is unit-testable over a synthetic [`World`] without a [`Plan`].
 fn verify_bodies_can_leave(
-    worlds: &[(&World, String, Vec<[i32; 3]>)],
+    worlds: &[LeaveConfig<'_>],
     returned: Option<([i32; 3], [i32; 3])>,
     shortcuts: &[crate::compiler::plan::ShortcutPlan],
 ) -> (LeaveBinding, Result<(), Failure>) {
@@ -5973,40 +7370,53 @@ fn verify_bodies_can_leave(
     };
     // Each configuration is judged over its own world alone, so they are
     // judged in parallel and folded below in configuration order.
-    let judged = crate::par::map(worlds, |(w, when, seeds)| {
+    let judged = crate::par::map(worlds, |(w, when, seeds, exits)| {
         let seeds: Vec<[i32; 3]> = seeds
             .iter()
             .copied()
             .filter(|c| w.is_standable(*c))
             .collect();
-        let (reached, trapped, preds) = w.cells_a_body_cannot_leave(&seeds, returned);
-        let afloat = reached.iter().filter(|c| w.is_water_surface(**c)).count();
+        let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        // The ways out: the route itself and every reached stand cell of a live
+        // link (spec-0083 §3.9), through the one leave relation (spec-0087).
+        let ways_out: BTreeSet<[i32; 3]> = seed_set.union(exits).copied().collect();
+        let judge = |ways: &BTreeSet<[i32; 3]>| w.trapped_places(&seeds, ways, returned);
+        let judged = judge(&ways_out);
+        // A stand cell SERVES as a way out where, without the links, a body
+        // standing in it could not get back — counted against the same closure
+        // judged with no link at all, and only when this configuration has one.
+        let link_exits = if exits.is_empty() {
+            0
+        } else {
+            let without = judge(&seed_set);
+            without
+                .pockets
+                .iter()
+                .flatten()
+                .filter(|c| exits.contains(*c))
+                .count()
+        };
+        let afloat = judged
+            .reached
+            .iter()
+            .filter(|c| w.is_water_surface(**c))
+            .count();
         // A shortcut is opened from its far side by whoever stands at its lever,
         // and the completability model holds it shut. A pocket whose own reach
         // takes a body to a lever, and through the door that lever opens back to
         // the route, is not a pocket.
-        let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
-        let kept: Vec<Vec<[i32; 3]>> = pockets_of(&trapped)
-            .into_iter()
+        let kept: Vec<Vec<[i32; 3]>> = judged
+            .pockets
+            .iter()
             .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, shortcuts))
+            .cloned()
             .collect();
         let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
+        let reached = &judged.reached;
         let described: Vec<String> = kept
             .iter()
             .map(|pocket| {
-                let entry = pocket.iter().find_map(|c| {
-                    preds
-                        .get(c)
-                        .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
-                        .map(|p| (*p, *c))
-                });
-                let how = match entry {
-                    Some((from, to)) => format!(
-                        "a body gets in from {from:?} to {to:?} by {}",
-                        movement_words(w, from, to)
-                    ),
-                    None => "a body gets in".to_string(),
-                };
+                let how = w.way_in_words(pocket, &trapped, &judged.preds);
                 format!(
                     "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim \
                      leads from any of them back to the route",
@@ -6015,12 +7425,20 @@ fn verify_bodies_can_leave(
                 )
             })
             .collect();
-        (seeds.len(), reached.len(), afloat, trapped.len(), described)
+        (
+            seeds.len(),
+            reached.len(),
+            afloat,
+            trapped.len(),
+            described,
+            link_exits,
+        )
     });
     let mut pockets: Vec<String> = Vec::new();
     let mut pocket_count = 0usize;
-    for (route_cells, reached, afloat, trapped, described) in judged {
+    for (route_cells, reached, afloat, trapped, described, link_exits) in judged {
         binding.route_cells += route_cells;
+        binding.link_exits += link_exits;
         binding.reached += reached;
         binding.afloat += afloat;
         binding.trapped += trapped;
@@ -6095,6 +7513,65 @@ fn pockets_of(trapped: &BTreeSet<[i32; 3]>) -> Vec<Vec<[i32; 3]>> {
     out
 }
 
+/// **What a body can get into and not out of** over one world — the closure a
+/// body reaches from `roots` by [`World::body_moves`], and within it the places
+/// from which no movement sequence reaches a way out. The one leave relation:
+/// `DW0921` judges a campaign's route with it ([`check_bodies_can_leave`]) and
+/// `delvec sculpt` judges a sculpted piece with it (spec-0087 §3.4), so the two
+/// cannot disagree about what a pocket is.
+#[derive(Debug, Clone, Default)]
+pub struct TrappedPlaces {
+    /// Every cell a body can stand or float in from the roots, roots included.
+    pub reached: BTreeSet<[i32; 3]>,
+    /// The cells of `reached` it cannot leave, split into touching places
+    /// (26-neighbourhood), each sorted, in the order of their least cell.
+    pub pockets: Vec<Vec<[i32; 3]>>,
+    /// Every reached cell's predecessors, so a report can say how a body got in.
+    pub preds: BTreeMap<[i32; 3], Vec<[i32; 3]>>,
+}
+
+impl World {
+    /// [`TrappedPlaces`] from `roots`, where reaching any cell of `ways_out` —
+    /// or a cell the boundary clock carries a body back from (`returned`, the
+    /// inclusive corners of the playable box) — counts as having left.
+    pub fn trapped_places(
+        &self,
+        roots: &[[i32; 3]],
+        ways_out: &BTreeSet<[i32; 3]>,
+        returned: Option<([i32; 3], [i32; 3])>,
+    ) -> TrappedPlaces {
+        let (reached, trapped, preds) = self.cells_a_body_cannot_leave(roots, ways_out, returned);
+        TrappedPlaces {
+            reached,
+            pockets: pockets_of(&trapped),
+            preds,
+        }
+    }
+
+    /// How a body first gets into `pocket` from outside `trapped`, in words for
+    /// a report: `a body gets in from [..] to [..] by a fall of 3 block(s)`.
+    pub fn way_in_words(
+        &self,
+        pocket: &[[i32; 3]],
+        trapped: &BTreeSet<[i32; 3]>,
+        preds: &BTreeMap<[i32; 3], Vec<[i32; 3]>>,
+    ) -> String {
+        let entry = pocket.iter().find_map(|c| {
+            preds
+                .get(c)
+                .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
+                .map(|p| (*p, *c))
+        });
+        match entry {
+            Some((from, to)) => format!(
+                "a body gets in from {from:?} to {to:?} by {}",
+                movement_words(self, from, to)
+            ),
+            None => "a body gets in".to_string(),
+        }
+    }
+}
+
 impl World {
     /// Whether a body in `pocket` gets back to `seeds` once it opens every shortcut
     /// whose lever its own reach stands it at — opened in rounds, since a door
@@ -6161,7 +7638,8 @@ impl World {
     #[allow(clippy::type_complexity)]
     fn cells_a_body_cannot_leave(
         &self,
-        seeds: &[[i32; 3]],
+        roots: &[[i32; 3]],
+        ways_out: &BTreeSet<[i32; 3]>,
         returned: Option<([i32; 3], [i32; 3])>,
     ) -> (
         BTreeSet<[i32; 3]>,
@@ -6169,7 +7647,7 @@ impl World {
         BTreeMap<[i32; 3], Vec<[i32; 3]>>,
     ) {
         let mut preds: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
-        let mut seen: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+        let mut seen: BTreeSet<[i32; 3]> = roots.iter().copied().collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
             for n in self.body_moves(cur) {
@@ -6179,12 +7657,13 @@ impl World {
                 }
             }
         }
-        // The ways out: the route itself, and every reached cell the boundary
-        // clock carries a body back from.
-        let mut back: BTreeSet<[i32; 3]> = seeds
+        // The ways out: the cells that count as having left (the route itself,
+        // for `DW0921`) that the closure reaches, and every reached cell the
+        // boundary clock carries a body back from.
+        let mut back: BTreeSet<[i32; 3]> = seen
             .iter()
             .copied()
-            .chain(seen.iter().copied().filter(|c| returned_from(returned, *c)))
+            .filter(|c| ways_out.contains(c) || returned_from(returned, *c))
             .collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
@@ -8856,19 +10335,27 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
 /// ([`Plan::branch_gate_model`]) — never the default path's indices, which
 /// belong to a different sequence.
 pub fn check_branch_path(
+    plan: &Plan,
     world: &World,
     start: Option<[i32; 3]>,
-    steps: &[Step],
-    transports: &[Option<[i32; 3]>],
-    region_events: &[RegionEvent],
+    cp: &crate::compiler::plan::CriticalPath,
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
-    route_visited(
+    route_with_links(
         world,
-        &positions_of(start, steps, transports),
+        &positions_of(start, &cp.steps, &cp.transport_by_step),
         region_events,
         ancestor,
+        &Carries {
+            links: &plan.links,
+            gathers: &plan.gathers,
+            live: &cp.live_links_by_step,
+            steps: &cp.steps,
+        },
     )
+    .1
+    .map(|_| ())
 }
 
 /// The proven A* cell routes of one branch's walked legs — the branch
@@ -8882,7 +10369,7 @@ pub fn branch_path_routes(
     start: Option<[i32; 3]>,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
-    region_events: &[RegionEvent],
+    region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<LegRoute> {
     route_walked_legs(
@@ -8896,27 +10383,29 @@ pub fn branch_path_routes(
     .collect()
 }
 
-/// `DW0314`: an exported critical-path waypoint is not standable in the FINAL
-/// assembled world (settled + water-flooded + relight fixtures) **as that leg's own
-/// runtime region writes leave it**. A build-time self-check over the very cells the
-/// harness will replay: it makes it structurally impossible to ship a waypoint the
-/// game floods or walls (the water-flow / post-nav-mutation divergence class).
-///
-/// The qualifier is load-bearing, because a leg is not walked over the bare
-/// assembled world. A campaign may lay floor at runtime — a repaired stair, a
-/// lowered bridge, a placed plank — and the leg that crosses it is routed over the
-/// world those writes produce ([`LegRoute::proven_world`]). Judging the bare world
-/// here instead refused every such route: the plank is not in the assembled model,
-/// so its cells read "no floor" and a correct campaign could not ship.
-///
-/// Every cell a leg exports comes from `find_path` over the world this check now
-/// rebuilds, so it can only fire if a later pass mutates a cell nav relied on or an
-/// endpoint resolves off the walkable set — in which case it is a compiler/assembly
-/// defect to escalate, never a cell to nudge. That is the case it is kept for: an
-/// edit batch that buries a room the content needs walkable is still caught,
-/// because a terrain edit is not a runtime region write and no leg state restores
-/// it.
-pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::new("DW0314", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0314`: an exported critical-path waypoint is not standable in the FINAL
+    /// assembled world (settled + water-flooded + relight fixtures) **as that leg's own
+    /// runtime region writes leave it**. A build-time self-check over the very cells the
+    /// harness will replay: it makes it structurally impossible to ship a waypoint the
+    /// game floods or walls (the water-flow / post-nav-mutation divergence class).
+    ///
+    /// The qualifier is load-bearing, because a leg is not walked over the bare
+    /// assembled world. A campaign may lay floor at runtime — a repaired stair, a
+    /// lowered bridge, a placed plank — and the leg that crosses it is routed over the
+    /// world those writes produce ([`LegRoute::proven_world`]). Judging the bare world
+    /// here instead refused every such route: the plank is not in the assembled model,
+    /// so its cells read "no floor" and a correct campaign could not ship.
+    ///
+    /// Every cell a leg exports comes from `find_path` over the world this check now
+    /// rebuilds, so it can only fire if a later pass mutates a cell nav relied on or an
+    /// endpoint resolves off the walkable set — in which case it is a compiler/assembly
+    /// defect to escalate, never a cell to nudge. That is the case it is kept for: an
+    /// edit batch that buries a room the content needs walkable is still caught,
+    /// because a terrain edit is not a runtime region write and no leg state restores
+    /// it.
+    pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::new("DW0314", ExitTier::Build);
+}
 
 /// Assert every exported waypoint cell is standable in `world` — the final model the
 /// routes were computed over (settled + flooded + fixtures). Returns
@@ -8956,28 +10445,30 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
     Ok(())
 }
 
-/// `DW0724`: a visual-tier camera's eye cell is occupied (a solid block or water)
-/// in the FINAL assembled world — the frame would render the inside of a block
-/// instead of the scene, and a picture of the inside of a block is
-/// indistinguishable from a picture of a featureless room.
-///
-/// The property belongs to **a camera**, not to one kind of camera. Every shot
-/// `crate::compiler::render_plan` derives — spawn, per-piece interior, seam, NPC, interact
-/// anchor, gate, and the first-person `pov` shots — puts an eye at a point in the
-/// assembled world, and every one of them can land inside geometry. Binding this
-/// to the `pov` kind alone was an accident of which kind needed it first: a seam
-/// camera stands four blocks along the seal's axis one cell under the ceiling, on
-/// the tile's centre column, which is exactly where a hanging lantern is, and the
-/// resulting flat frame was invisible to every build.
-///
-/// Whether a violation is a defect of the *derivation* or of the *geometry*
-/// depends on the kind, and the message says which. A `pov` eye sits at 1.62
-/// above a DW0314-proven-standable waypoint, so it is clear by construction and a
-/// violation means the derivation changed (or a later pass mutated the cell) —
-/// fix the derivation, never the waypoint. Every other kind takes a fixed offset
-/// from authored geometry, so a violation is that geometry standing where the
-/// review camera has to be, and the repair is the piece.
-pub const DW_CAMERA_EYE_OCCLUDED: DwCode = DwCode::new("DW0724", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0724`: a visual-tier camera's eye cell is occupied (a solid block or water)
+    /// in the FINAL assembled world — the frame would render the inside of a block
+    /// instead of the scene, and a picture of the inside of a block is
+    /// indistinguishable from a picture of a featureless room.
+    ///
+    /// The property belongs to **a camera**, not to one kind of camera. Every shot
+    /// `crate::compiler::render_plan` derives — spawn, per-piece interior, seam, NPC, interact
+    /// anchor, gate, and the first-person `pov` shots — puts an eye at a point in the
+    /// assembled world, and every one of them can land inside geometry. Binding this
+    /// to the `pov` kind alone was an accident of which kind needed it first: a seam
+    /// camera stands four blocks along the seal's axis one cell under the ceiling, on
+    /// the tile's centre column, which is exactly where a hanging lantern is, and the
+    /// resulting flat frame was invisible to every build.
+    ///
+    /// Whether a violation is a defect of the *derivation* or of the *geometry*
+    /// depends on the kind, and the message says which. A `pov` eye sits at 1.62
+    /// above a DW0314-proven-standable waypoint, so it is clear by construction and a
+    /// violation means the derivation changed (or a later pass mutated the cell) —
+    /// fix the derivation, never the waypoint. Every other kind takes a fixed offset
+    /// from authored geometry, so a violation is that geometry standing where the
+    /// review camera has to be, and the repair is the piece.
+    pub const DW_CAMERA_EYE_OCCLUDED: DwCode = DwCode::new("DW0724", ExitTier::Build);
+}
 
 /// One derived camera's eye, as [`verify_camera_eyes`] needs it.
 ///
@@ -9033,23 +10524,25 @@ pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), Fa
     Ok(())
 }
 
-/// `DW0322`: **boundary safety** (spec-0017 invariant 4) — after a world edit,
-/// the reachable walk region fails the "one step off the proven ground is
-/// survivable and recoverable" guarantee the greenfield generator's bounding
-/// berm used to provide *physically*. What that means is a property of the
-/// world-generator [`Ambient`], so the code names one rule stated per horizon:
-///
-/// * `horizon: void` — a reachable walkable cell borders a **void drop**: a
-///   horizontally adjacent column the player can step (or open a gate) into
-///   with no support of any kind below, so the step leaves the world.
-/// * `horizon: ocean` — a reachable walkable cell borders **water the player
-///   cannot get out of**: the pinned superflat puts bedrock under every column,
-///   so nothing can fall out of an ocean world and the void premise is vacuous;
-///   the real hazard the ocean horizon introduced (`plan::OCEAN_BASE_Y`) is
-///   *stranding* — a player who ends up in the sea with no shoreline to climb
-///   back onto is out of the delve just as permanently as one who fell out of a
-///   void world. See [`verify_boundary_safety`] for the exact model.
-pub const DW_EDIT_BORDERS_VOID: DwCode = DwCode::new("DW0322", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0322`: **boundary safety** (spec-0017 invariant 4) — after a world edit,
+    /// the reachable walk region fails the "one step off the proven ground is
+    /// survivable and recoverable" guarantee the greenfield generator's bounding
+    /// berm used to provide *physically*. What that means is a property of the
+    /// world-generator [`Ambient`], so the code names one rule stated per horizon:
+    ///
+    /// * `horizon: void` — a reachable walkable cell borders a **void drop**: a
+    ///   horizontally adjacent column the player can step (or open a gate) into
+    ///   with no support of any kind below, so the step leaves the world.
+    /// * `horizon: ocean` — a reachable walkable cell borders **water the player
+    ///   cannot get out of**: the pinned superflat puts bedrock under every column,
+    ///   so nothing can fall out of an ocean world and the void premise is vacuous;
+    ///   the real hazard the ocean horizon introduced (`plan::OCEAN_BASE_Y`) is
+    ///   *stranding* — a player who ends up in the sea with no shoreline to climb
+    ///   back onto is out of the delve just as permanently as one who fell out of a
+    ///   void world. See [`verify_boundary_safety`] for the exact model.
+    pub const DW_EDIT_BORDERS_VOID: DwCode = DwCode::new("DW0322", ExitTier::Build);
+}
 
 /// How many individual violations a `DW0322` report names before summarising the
 /// remainder as a count. A boundary failure is systemic by nature — one stripped
@@ -9460,41 +10953,43 @@ fn ocean_window(world: &World) -> Option<([i32; 2], [i32; 2])> {
 // Fluid that leaves the built world (DW0318)
 // ---------------------------------------------------------------------------
 
-/// `DW0318`: **a body of fluid runs out of the built world**, stated against the
-/// world-generator [`Ambient`] the way [`DW_EDIT_BORDERS_VOID`] already is.
-///
-/// The piece-level containment rule (`DW0800`, `delvec grammar` /
-/// `delvec prefab`) proves that every fluid source in a piece has something in
-/// each of the five cells it would run into — *within that piece's own bytes*.
-/// A run direction that leaves the piece's outer face it counts and explicitly
-/// does not judge, because what is beyond a face is not in those bytes:
-/// **whatever the piece is placed against decides where that water goes.** This
-/// is the check that decides it, and it is the reason that sentence is now true.
-///
-/// At placement the neighbour is known, and it is one of exactly three things:
-///
-/// * **another placed piece** — the water runs into cells that piece authored,
-///   and that piece's own `DW0800` governs them. Not a finding here.
-/// * **the ocean horizon's ambient** — the pinned superflat puts water from
-///   `floor_top+1` to sea level and stone below it in every column the content
-///   did not build, so a shore's water meets the sea it depicts. Not a finding:
-///   the same premise that makes the void branch of `DW0322` vacuous under
-///   `horizon: ocean` makes this one vacuous too.
-/// * **the void horizon's nothing** — and then the water falls out of the
-///   world. Vanilla runs it down, forever, on the server's own clock before any
-///   player arrives: an infinite waterfall off the edge of the map, in a delve
-///   nobody rendered it into. That is the finding.
-///
-/// It is the exact fluid analogue of [`crate::compiler::assembled::DW_GRAVITY_DESPAWN`]
-/// (`DW0313`), which fails the build when a placed *gravity* block falls out of
-/// a void world. The solid case was covered from the beginning; this is the
-/// fluid case, and the asymmetry is all that made it a hole rather than a
-/// policy.
-///
-/// Both branches **aggregate**, like `DW0322`: one report per run naming up to
-/// [`BOUNDARY_LIST_LIMIT`] cells plus the totals, so a one-cell dribble and a
-/// whole coastline pouring into nothing are distinguishable without re-probing.
-pub const DW_FLUID_LEAVES_WORLD: DwCode = DwCode::new("DW0318", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0318`: **a body of fluid runs out of the built world**, stated against the
+    /// world-generator [`Ambient`] the way [`DW_EDIT_BORDERS_VOID`] already is.
+    ///
+    /// The piece-level containment rule (`DW0800`, `delvec grammar` /
+    /// `delvec prefab`) proves that every fluid source in a piece has something in
+    /// each of the five cells it would run into — *within that piece's own bytes*.
+    /// A run direction that leaves the piece's outer face it counts and explicitly
+    /// does not judge, because what is beyond a face is not in those bytes:
+    /// **whatever the piece is placed against decides where that water goes.** This
+    /// is the check that decides it, and it is the reason that sentence is now true.
+    ///
+    /// At placement the neighbour is known, and it is one of exactly three things:
+    ///
+    /// * **another placed piece** — the water runs into cells that piece authored,
+    ///   and that piece's own `DW0800` governs them. Not a finding here.
+    /// * **the ocean horizon's ambient** — the pinned superflat puts water from
+    ///   `floor_top+1` to sea level and stone below it in every column the content
+    ///   did not build, so a shore's water meets the sea it depicts. Not a finding:
+    ///   the same premise that makes the void branch of `DW0322` vacuous under
+    ///   `horizon: ocean` makes this one vacuous too.
+    /// * **the void horizon's nothing** — and then the water falls out of the
+    ///   world. Vanilla runs it down, forever, on the server's own clock before any
+    ///   player arrives: an infinite waterfall off the edge of the map, in a delve
+    ///   nobody rendered it into. That is the finding.
+    ///
+    /// It is the exact fluid analogue of [`crate::compiler::assembled::DW_GRAVITY_DESPAWN`]
+    /// (`DW0313`), which fails the build when a placed *gravity* block falls out of
+    /// a void world. The solid case was covered from the beginning; this is the
+    /// fluid case, and the asymmetry is all that made it a hole rather than a
+    /// policy.
+    ///
+    /// Both branches **aggregate**, like `DW0322`: one report per run naming up to
+    /// [`BOUNDARY_LIST_LIMIT`] cells plus the totals, so a one-cell dribble and a
+    /// whole coastline pouring into nothing are distinguishable without re-probing.
+    pub const DW_FLUID_LEAVES_WORLD: DwCode = DwCode::new("DW0318", ExitTier::Build);
+}
 
 /// **What the fluid-escape proof looked at**, so the verdict is readable as a
 /// measurement rather than as a silence (CLAUDE.md: every validation artifact
@@ -9649,82 +11144,84 @@ impl FluidEscape {
 // The ambient sea inside the built volume (DW0851)
 // ---------------------------------------------------------------------------
 
-/// `DW0851`: **the sea is in the walk region** — a cell a body was proved to
-/// stand on holds water once the world loads.
-///
-/// The world model holds water in two disjoint places and only one of them
-/// reaches walkability. [`crate::compiler::assembled::Occupancy::flooded`] is seeded from
-/// the *assembled block map* — prefab-authored sources and waterlogged blocks —
-/// and every downstream proof reads it. The **ambient sea** is not in that block
-/// map at all: under [`Ambient::Ocean`] the world generator puts water in every
-/// column the content did not build, and [`World::ambient_water`] is the only
-/// thing that knows it. So the sea never reached `flooded`, never reached
-/// `is_occupied`, and never reached [`World::is_standable`]: **a cell inside a
-/// placed piece that the sea will fill was proved standable, and nothing could
-/// see it.**
-///
-/// ## The model
-///
-/// The question is asked of **the walk**, and of nothing else: the denominator is
-/// the reachable standable set the build already computed, which is where the
-/// party goes. For each of those cells the proof reads what the delivered world
-/// puts there. The sea gets into a placed piece two ways, and both are seeds of
-/// one flow:
-///
-/// 1. **An open face** — a non-blocking cell *inside* the built volume, in the
-///    sea's own band (`floor_top < y ≤ level`), 6-adjacent to an ambient sea
-///    cell. That is where the sea is already touching the content.
-/// 2. **A waterloggable block the placement hands to the sea.** `/place template`
-///    carries the fluid already in a cell onto the block it writes there, so a
-///    stair, a fence, a pane, a chest or a set of iron bars placed below the sea
-///    plane comes out `waterlogged=true` whatever the prefab said — and a
-///    waterlogged cell is a genuine water source that spreads into its
-///    neighbours. This is not a corner: it is what actually happened. The
-///    tidewatch field case's staircase came out waterlogged four cells below the
-///    surface, ran down its own treads, and put both of the delve's objectives
-///    under water at `[260,61,4]` and `[260,61,8]` — through a hull whose open
-///    contact face was, correctly, zero cells wide. The gallery's own
-///    `ocean-horizon` point did the same thing with 10 blocks and 367 cells.
-/// 3. **Flow** — [`crate::compiler::assembled::flood`], the same function the block map's
-///    water runs through: infinite-water source formation, then 7-level decay
-///    with infinite downward fall. Deliberately **not** a second physics, so a
-///    room cannot be judged wet by one model and dry by the other.
-/// 4. **Confinement** — every non-built cell 6-adjacent to the built volume is
-///    added to the barrier set, so the flow stays inside the content instead of
-///    wandering across an ocean that is already water. What leaves the built
-///    volume is `DW0318`'s question, not this one.
-/// 5. **Verdict** — a walk cell whose **own** cell the flow reaches. That is
-///    where the body's feet go, and the delve says a body stands there.
-///
-/// ## Why the foot cell, and what wading is
-///
-/// The line was drawn at the head cell once, on the argument that a body whose
-/// feet are wet and whose head is dry is wading and vanilla lets it walk. That is
-/// true about vanilla and wrong about a delve: the field case is a two-scene
-/// campaign whose every objective stands in shin-deep sea, and a head-cell
-/// verdict passed it. So the foot cell decides. A walk cell that is dry underfoot
-/// and merely *touches* water — at head height or beside it — is the shoreline,
-/// and it is **counted and named** rather than judged, because a shoreline 26
-/// cells wide and one 2000 cells wide are different maps.
-///
-/// ## Direction of error
-///
-/// Same contract as the block map's flood, for the same reason: the model may
-/// call a cell wet that vanilla leaves dry, never the reverse. The seeds are
-/// entered as *sources* where vanilla would start them one level down, so a wide
-/// contact face fills further than the game would. Over-marking turns a proof red
-/// — caught, escalated, and answerable by walling the face or lifting the floor;
-/// under-marking is a wet cell shipping as proven dry.
-///
-/// ## What this is not
-///
-/// Not the shoreline outside the content. A shore piece that authors its own
-/// water up to the waterline (`DW0344`, spec-0048) has that water in the block
-/// map already: those cells are `flooded`, therefore not standable, therefore
-/// never in the walk region, and this proof has nothing to say about them. Wading
-/// into the sea off a beach is a body leaving the walk region, which is
-/// `DW0322`'s question.
-pub const DW_SEA_ENTERS_WALK: DwCode = DwCode::new("DW0851", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0851`: **the sea is in the walk region** — a cell a body was proved to
+    /// stand on holds water once the world loads.
+    ///
+    /// The world model holds water in two disjoint places and only one of them
+    /// reaches walkability. [`crate::compiler::assembled::Occupancy::flooded`] is seeded from
+    /// the *assembled block map* — prefab-authored sources and waterlogged blocks —
+    /// and every downstream proof reads it. The **ambient sea** is not in that block
+    /// map at all: under [`Ambient::Ocean`] the world generator puts water in every
+    /// column the content did not build, and [`World::ambient_water`] is the only
+    /// thing that knows it. So the sea never reached `flooded`, never reached
+    /// `is_occupied`, and never reached [`World::is_standable`]: **a cell inside a
+    /// placed piece that the sea will fill was proved standable, and nothing could
+    /// see it.**
+    ///
+    /// ## The model
+    ///
+    /// The question is asked of **the walk**, and of nothing else: the denominator is
+    /// the reachable standable set the build already computed, which is where the
+    /// party goes. For each of those cells the proof reads what the delivered world
+    /// puts there. The sea gets into a placed piece two ways, and both are seeds of
+    /// one flow:
+    ///
+    /// 1. **An open face** — a non-blocking cell *inside* the built volume, in the
+    ///    sea's own band (`floor_top < y ≤ level`), 6-adjacent to an ambient sea
+    ///    cell. That is where the sea is already touching the content.
+    /// 2. **A waterloggable block the placement hands to the sea.** `/place template`
+    ///    carries the fluid already in a cell onto the block it writes there, so a
+    ///    stair, a fence, a pane, a chest or a set of iron bars placed below the sea
+    ///    plane comes out `waterlogged=true` whatever the prefab said — and a
+    ///    waterlogged cell is a genuine water source that spreads into its
+    ///    neighbours. This is not a corner: it is what actually happened. The
+    ///    tidewatch field case's staircase came out waterlogged four cells below the
+    ///    surface, ran down its own treads, and put both of the delve's objectives
+    ///    under water at `[260,61,4]` and `[260,61,8]` — through a hull whose open
+    ///    contact face was, correctly, zero cells wide. The gallery's own
+    ///    `ocean-horizon` point did the same thing with 10 blocks and 367 cells.
+    /// 3. **Flow** — [`crate::compiler::assembled::flood`], the same function the block map's
+    ///    water runs through: infinite-water source formation, then 7-level decay
+    ///    with infinite downward fall. Deliberately **not** a second physics, so a
+    ///    room cannot be judged wet by one model and dry by the other.
+    /// 4. **Confinement** — every non-built cell 6-adjacent to the built volume is
+    ///    added to the barrier set, so the flow stays inside the content instead of
+    ///    wandering across an ocean that is already water. What leaves the built
+    ///    volume is `DW0318`'s question, not this one.
+    /// 5. **Verdict** — a walk cell whose **own** cell the flow reaches. That is
+    ///    where the body's feet go, and the delve says a body stands there.
+    ///
+    /// ## Why the foot cell, and what wading is
+    ///
+    /// The line was drawn at the head cell once, on the argument that a body whose
+    /// feet are wet and whose head is dry is wading and vanilla lets it walk. That is
+    /// true about vanilla and wrong about a delve: the field case is a two-scene
+    /// campaign whose every objective stands in shin-deep sea, and a head-cell
+    /// verdict passed it. So the foot cell decides. A walk cell that is dry underfoot
+    /// and merely *touches* water — at head height or beside it — is the shoreline,
+    /// and it is **counted and named** rather than judged, because a shoreline 26
+    /// cells wide and one 2000 cells wide are different maps.
+    ///
+    /// ## Direction of error
+    ///
+    /// Same contract as the block map's flood, for the same reason: the model may
+    /// call a cell wet that vanilla leaves dry, never the reverse. The seeds are
+    /// entered as *sources* where vanilla would start them one level down, so a wide
+    /// contact face fills further than the game would. Over-marking turns a proof red
+    /// — caught, escalated, and answerable by walling the face or lifting the floor;
+    /// under-marking is a wet cell shipping as proven dry.
+    ///
+    /// ## What this is not
+    ///
+    /// Not the shoreline outside the content. A shore piece that authors its own
+    /// water up to the waterline (`DW0344`, spec-0048) has that water in the block
+    /// map already: those cells are `flooded`, therefore not standable, therefore
+    /// never in the walk region, and this proof has nothing to say about them. Wading
+    /// into the sea off a beach is a body leaving the walk region, which is
+    /// `DW0322`'s question.
+    pub const DW_SEA_ENTERS_WALK: DwCode = DwCode::new("DW0851", ExitTier::Build);
+}
 
 /// **What the sea-seepage proof looked at**, so its verdict reads as a
 /// measurement rather than a silence (CLAUDE.md: every validation artifact states
@@ -10096,22 +11593,30 @@ impl SeaSeepage {
 // spec-0022 — command-driven trap payloads: volley coverage + collapse burial
 // ---------------------------------------------------------------------------
 
-/// `DW0442`: a `volley`'s gallery slot has no clear line of fire to a standable
-/// cell of its declared kill zone. The compile-time form of the owner's
-/// saturation ruling — a volley must BLANKET its zone, so a cell
-/// the slot cannot reach is a hole a player could stand in and be safe by
-/// accident. Escaping a volley must be a decision (leave the zone), never a
-/// lucky step.
-pub const DW_VOLLEY_ZONE_UNCOVERED: DwCode = DwCode::new("DW0442", ExitTier::Build);
-/// `DW0444`: a trap-payload region is unusable — a `volley` kill zone with no
-/// standable cell, or a `collapse` region with nothing to drop / nothing to
-/// land on.
-pub const DW_TRAP_REGION_EMPTY: DwCode = DwCode::new("DW0444", ExitTier::Build);
-/// `DW0445`: the critical path is not completable once a `collapse` has fired.
-pub const DW_COLLAPSE_BURIES_PATH: DwCode = DwCode::new("DW0445", ExitTier::Build);
-/// `DW0446`: a `volley`'s `from_anchor` cell is not clear, so the projectile
-/// would be summoned inside solid geometry and never leave it.
-pub const DW_VOLLEY_SLOT_OCCLUDED: DwCode = DwCode::new("DW0446", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0442`: a `volley`'s gallery slot has no clear line of fire to a standable
+    /// cell of its declared kill zone. The compile-time form of the owner's
+    /// saturation ruling — a volley must BLANKET its zone, so a cell
+    /// the slot cannot reach is a hole a player could stand in and be safe by
+    /// accident. Escaping a volley must be a decision (leave the zone), never a
+    /// lucky step.
+    pub const DW_VOLLEY_ZONE_UNCOVERED: DwCode = DwCode::new("DW0442", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0444`: a trap-payload region is unusable — a `volley` kill zone with no
+    /// standable cell, or a `collapse` region with nothing to drop / nothing to
+    /// land on.
+    pub const DW_TRAP_REGION_EMPTY: DwCode = DwCode::new("DW0444", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0445`: the critical path is not completable once a `collapse` has fired.
+    pub const DW_COLLAPSE_BURIES_PATH: DwCode = DwCode::new("DW0445", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0446`: a `volley`'s `from_anchor` cell is not clear, so the projectile
+    /// would be summoned inside solid geometry and never leave it.
+    pub const DW_VOLLEY_SLOT_OCCLUDED: DwCode = DwCode::new("DW0446", ExitTier::Build);
+}
 
 /// Height above a kill-zone cell's floor a volley aims at: centre mass of a
 /// standing player (a 1.8-tall hitbox with feet on the floor). Aiming at the
@@ -10446,6 +11951,10 @@ mod tests {
             // `main.rs`: `delvec snapshot`, where a camera is stood up against
             // blocks.
             ("main.rs", 1),
+            // `mod.rs` (`sculpt`): the pocket proof over a sculpted piece ALONE,
+            // before any campaign exists to state a premise (spec-0087 §3.4) — no
+            // horizon, no volume, no gate; the piece's own blocks are the question.
+            ("mod.rs", 1),
             // `nav.rs`: the synthetic constructors' own door
             // (`from_solid_and_flooded`), which every unit-test world goes
             // through.
@@ -10556,10 +12065,11 @@ mod tests {
                 base: "void",
                 built: Vec::new(),
                 lethal_regions: vec![("lethal/the-pit".to_string(), region)],
+                staged_lethal: Vec::new(),
+                loop_slabs: Vec::new(),
                 furniture_regions: Vec::new(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
-                transit_teleports: Vec::new(),
                 objective_cells: Vec::new(),
             },
         )
@@ -10596,12 +12106,13 @@ mod tests {
                 base: "void",
                 built: Vec::new(),
                 lethal_regions: Vec::new(),
+                staged_lethal: Vec::new(),
+                loop_slabs: Vec::new(),
                 furniture_regions: region
                     .map(|r| vec![("anchor/table".to_string(), r)])
                     .unwrap_or_default(),
                 world_load_seals: Vec::new(),
                 clocked_gates: BTreeSet::new(),
-                transit_teleports: Vec::new(),
                 objective_cells: Vec::new(),
             },
         )
@@ -10735,6 +12246,59 @@ mod tests {
     /// column, and a built volume covering exactly the plate. Vanilla runs that
     /// source off the plate and down: the shape of every shoreline piece placed
     /// against nothing.
+    /// spec-0083 × spec-0088: **a link's `to` is judged in the region state of
+    /// its leg** (`DW0932`'s "`to` not standable"), and that state carries every
+    /// staged lethal volume that may be live there: a landing on floor a volume
+    /// may hold live is not a cell a body stands on. The same floor with the
+    /// volume dead is.
+    #[test]
+    fn a_link_onto_floor_a_staged_volume_may_hold_live_is_not_standable() {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..12 {
+            blocks.insert([x, 63, 0], "minecraft:stone".to_string());
+        }
+        let occ = crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new());
+        let w = World::from_occupancy(occ, Premises::geometry_only());
+        let to = [10, 64, 0];
+        let link = crate::compiler::link::LinkPlan {
+            trigger_id: "trigger/t".to_string(),
+            on: "use",
+            anchor_id: Some("anchor/a".to_string()),
+            npc_id: None,
+            assembly_id: None,
+            range: None,
+            body: vec![[1, 64, 0]],
+            path: "/content/triggers/0/effects/0".to_string(),
+            from_anchor: "anchor/deck".to_string(),
+            from: ([0, 64, 0], [2, 65, 0]),
+            from_area: "area/a".to_string(),
+            to_anchor: "anchor/landing".to_string(),
+            to_area: "area/a".to_string(),
+            to,
+            tick: 0,
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
+            when_requires: Vec::new(),
+            when_forbids: Vec::new(),
+            writes: Vec::new(),
+        };
+        let dead = RegionState::default();
+        assert!(
+            to_standable(&w, &dead, &link),
+            "the landing floor stands, the volume dead"
+        );
+        let mut live = RegionState::default();
+        let pit = ([10, 64, 0], [10, 64, 0]);
+        live.lethal
+            .extend(crate::compiler::assembled::region_cells(pit.0, pit.1));
+        live.lethal_regions.push(("lethal/pit".to_string(), pit));
+        assert!(
+            !to_standable(&w, &live, &link),
+            "a landing a staged volume may hold live is not standable"
+        );
+    }
+
     fn plate_with_a_source_at_the_edge() -> World {
         let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
         for x in 0..3 {
@@ -11988,6 +13552,8 @@ mod tests {
             transport_before: false,
             talk_to: false,
             src_step,
+            by_link: false,
+            by_loop: false,
         }
     }
 
@@ -12125,12 +13691,52 @@ mod tests {
         );
     }
 
+    /// spec-0086 §5.2: an exercise step is walked to, the carry to its landing
+    /// is marked like a crossing, and the next leg begins at the landing — the
+    /// one enumeration every consumer reads.
+    #[test]
+    fn an_exercise_step_marks_the_leg_out_of_it_from_the_landing() {
+        let steps = vec![
+            Step::Loop {
+                loop_id: "loop/g".into(),
+                pos: [2, 67, 16],
+                cross: [2, 67, 22],
+                offset: [0, 0, -6],
+                times: 2,
+                transport: [2, 67, 16],
+            },
+            Step::Reach {
+                objective_id: "obj/end".into(),
+                anchor_id: "anchor/end".into(),
+                pos: [2, 67, 41],
+                radius: 1,
+                completion: crate::compiler::reach::reach_completion([2, 67, 41], 1),
+            },
+        ];
+        let transports = vec![Some([2, 67, 16]), None];
+        let got: Vec<([i32; 3], bool, usize)> = positions_of(Some([2, 67, 2]), &steps, &transports)
+            .iter()
+            .map(|p| (p.pos, p.transport_before, p.src_step))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ([2, 67, 2], false, 0),
+                ([2, 67, 16], false, 0),
+                ([2, 67, 16], true, 0),
+                ([2, 67, 41], false, 1),
+            ]
+        );
+    }
+
     fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
         VisitedPos {
             pos,
             transport_before,
             talk_to: false,
             src_step: 0,
+            by_link: false,
+            by_loop: false,
         }
     }
 
@@ -12769,10 +14375,24 @@ mod tests {
         let b = [4, 65, 1];
         assert!(world.standable(a) && world.standable(b));
         // Walked leg → unroutable → DW0311.
-        let err = route_visited(&world, &[vp(a, false), vp(b, false)], &[], &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[vp(a, false), vp(b, false)],
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // Same leg ridden by an inter-area transport → skipped, ok.
-        assert!(route_visited(&world, &[vp(a, false), vp(b, true)], &[], &linear).is_ok());
+        assert!(
+            route_visited(
+                &world,
+                &[vp(a, false), vp(b, true)],
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -12858,7 +14478,7 @@ mod tests {
             route_visited(
                 &world,
                 &[vp([0, 65, 1], false), vp([5, 65, 1], false)],
-                &[],
+                &RegionEvents::default(),
                 &linear
             )
             .is_ok()
@@ -13129,7 +14749,7 @@ mod tests {
         let err = route_visited(
             &world,
             &[vp(outside, false), vp(inside, false)],
-            &[],
+            &RegionEvents::default(),
             &linear,
         )
         .expect_err("a humanly impassable gateless fence ring must fail the proof");
@@ -13167,7 +14787,7 @@ mod tests {
             route_visited(
                 &world,
                 &[vp(outside, false), vp(inside, false)],
-                &[],
+                &RegionEvents::default(),
                 &linear
             )
             .is_ok()
@@ -13264,6 +14884,8 @@ mod tests {
             transport_before: false,
             talk_to: false,
             src_step,
+            by_link: false,
+            by_loop: false,
         }
     }
 
@@ -13280,13 +14902,18 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&world, &[a, b], &[], &linear).is_ok(),
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_ok(),
             "the open corridor must route with no gate events"
         );
         // A close-gate seals the pass-through before the leg to `b` (fire_step 0 < 2).
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
-        let err =
-            route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
         assert!(
             err.message.contains("close-gate"),
@@ -13296,7 +14923,13 @@ mod tests {
         // Reopening the gate before the leg (open-gate at a later fire_step) restores it.
         let open = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Unseal, 1);
         assert!(
-            route_visited(&world, &[a, b], &[close, open], &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone(), open.clone()]),
+                &linear
+            )
+            .is_ok(),
             "a gate reopened by open-gate before the leg must route again"
         );
     }
@@ -13315,11 +14948,23 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         let fill = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&fill), &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![fill.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
         let clear = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Clear, 1);
         assert!(
-            route_visited(&world, &[a, b], &[fill, clear], &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![fill.clone(), clear.clone()]),
+                &linear
+            )
+            .is_ok(),
             "a region cleared before the leg must route again"
         );
     }
@@ -13355,7 +15000,7 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&world, &[a, b], &[], &linear).is_err(),
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_err(),
             "the chasm must not route before anything lays floor in it"
         );
         // FORCED, and it has to be: this test asserts the leg routes and exports,
@@ -13364,15 +15009,25 @@ mod tests {
         // `the_export_self_check_reads_a_legs_world_with_the_unforced_reading`.
         let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&plank), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![plank.clone()]),
+                &linear
+            )
+            .is_ok(),
             "the proof must credit floor the campaign lays from a beat the party cannot skip, \
              before the leg is walked"
         );
-        let legs: Vec<LegRoute> =
-            route_walked_legs(&world, &[a, b], std::slice::from_ref(&plank), &linear)
-                .into_iter()
-                .map(|(leg, _)| leg)
-                .collect();
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![plank.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
         assert_eq!(legs.len(), 1, "the walked leg must be exported");
         assert!(
             legs[0].cells.contains(&[2, 65, 0]),
@@ -13405,11 +15060,15 @@ mod tests {
         // FORCED for the same reason: the leg has to route at all before a later
         // pass can be shown to break it.
         let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
-        let legs: Vec<LegRoute> =
-            route_walked_legs(&world, &[a, b], std::slice::from_ref(&plank), &linear)
-                .into_iter()
-                .map(|(leg, _)| leg)
-                .collect();
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![plank.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
         // A later pass drops a block into a cell the proven route walks through.
         let mutated = world.with_sealed(&[[2, 65, 0]].into_iter().collect());
         let err = verify_exported_routes(&mutated, &legs)
@@ -13471,11 +15130,15 @@ mod tests {
 
         // --- forced: the leg routes, and the export self-check accepts it -------
         let forced = RegionEvent::forced(box_, RegionWrite::Fill, 0);
-        let legs: Vec<LegRoute> =
-            route_walked_legs(&world, &[a, b], std::slice::from_ref(&forced), &linear)
-                .into_iter()
-                .map(|(leg, _)| leg)
-                .collect();
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![forced.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
         assert_eq!(legs.len(), 1, "the forced plank must carry a walked leg");
         assert!(
             legs[0].cells.contains(&[2, 65, 0]),
@@ -13495,12 +15158,12 @@ mod tests {
             route_walked_legs(
                 &world,
                 &[a, b],
-                &[RegionEvent::unforced(
+                &RegionEvents::from(vec![RegionEvent::unforced(
                     box_,
                     RegionWrite::Fill,
                     0,
                     "a trap nobody must spring"
-                )],
+                )]),
                 &linear,
             )
             .is_empty(),
@@ -13541,10 +15204,11 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let legs: Vec<LegRoute> = route_walked_legs(&world, &[a, b], &[], &linear)
-            .into_iter()
-            .map(|(leg, _)| leg)
-            .collect();
+        let legs: Vec<LegRoute> =
+            route_walked_legs(&world, &[a, b], &RegionEvents::default(), &linear)
+                .into_iter()
+                .map(|(leg, _)| leg)
+                .collect();
         assert_eq!(legs.len(), 1);
         assert!(
             legs[0].proven_world(&world).is_none(),
@@ -13573,12 +15237,23 @@ mod tests {
         let floor_box = ([2, 64, 0], [2, 64, 0]);
         let solid_fill = RegionEvent::forced(floor_box, RegionWrite::Fill, 0);
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&solid_fill), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![solid_fill.clone()]),
+                &linear
+            )
+            .is_ok(),
             "filling a floor cell with a block leaves it floor"
         );
         let fluid_fill = RegionEvent::forced(floor_box, RegionWrite::Flood, 0);
-        let err =
-            route_visited(&world, &[a, b], std::slice::from_ref(&fluid_fill), &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![fluid_fill.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
         assert!(
             err.message.contains("[2, 64, 0]..[2, 64, 0]"),
@@ -13605,8 +15280,13 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         let flood = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Flood, 0);
-        let err =
-            route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         assert!(
             err.message.contains("FLUID"),
@@ -13635,7 +15315,13 @@ mod tests {
             vec![over_floor.clone(), wider_solid.clone()],
             vec![wider_solid, over_floor],
         ] {
-            let err = route_visited(&world, &[a, b], &events, &linear).unwrap_err();
+            let err = route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(events.to_vec()),
+                &linear,
+            )
+            .unwrap_err();
             assert_eq!(
                 err.code, DW_FLUID_FILL_ON_CRITICAL_PATH,
                 "a solid fill over the same cells must not dry the fluid out"
@@ -13662,7 +15348,13 @@ mod tests {
         // A different box (so it is a different region, with its own latest write)
         // covering the flooded floor cell and the air above it.
         let clear = RegionEvent::forced(([2, 64, 0], [2, 65, 0]), RegionWrite::Clear, 1);
-        let err = route_visited(&world, &[a, b], &[flood, clear], &linear).unwrap_err();
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone(), clear.clone()]),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH);
     }
 
@@ -13690,12 +15382,18 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&world, &[a, b], &[], &linear).is_err(),
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_err(),
             "the walled corridor must not route before the clear"
         );
         let clear = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Clear, 0);
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&clear), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![clear.clone()]),
+                &linear
+            )
+            .is_ok(),
             "the cleared wall must be passable from the DAG point the clear fires at"
         );
     }
@@ -13715,13 +15413,19 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&buried, &[a, b], &[], &linear).is_err(),
+            route_visited(&buried, &[a, b], &RegionEvents::default(), &linear).is_err(),
             "the debris blocks the corridor"
         );
         for write in [RegionWrite::Unseal, RegionWrite::Clear] {
             let ev = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), write, 0);
             assert!(
-                route_visited(&buried, &[a, b], std::slice::from_ref(&ev), &linear).is_err(),
+                route_visited(
+                    &buried,
+                    &[a, b],
+                    &RegionEvents::from(vec![ev.clone()]),
+                    &linear
+                )
+                .is_err(),
                 "{write:?} must not delete another proof's forced-solid cells"
             );
         }
@@ -13742,13 +15446,24 @@ mod tests {
         // (step 10) are three sibling branches — nothing at either end inherits it.
         let parallel = |g: usize, s: usize| !((g == 8 || g == 9) && (s == 9 || s == 10)) && g < s;
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&close), &parallel).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone()]),
+                &parallel
+            )
+            .is_ok(),
             "a close on a parallel branch must not seal a non-causal leg"
         );
         // Causal: step 8 (close) and step 9 are ancestors of step 10 (a forced
         // re-crossing with no reopen) → sealed → DW0311 (proof preserved).
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear)
-            .expect_err("a forced causal re-crossing of a sealed gate must fail");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        )
+        .expect_err("a forced causal re-crossing of a sealed gate must fail");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
     }
 
@@ -13765,23 +15480,33 @@ mod tests {
         // The close is the start's ancestor; neither it nor the start is the
         // arrival's.
         let unconnected = |g: usize, s: usize| !((g == 8 || g == 9) && s == 10) && g < s;
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close), &unconnected)
-            .expect_err("the start's own close shuts the leg");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &unconnected,
+        )
+        .expect_err("the start's own close shuts the leg");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // The start's own firing counts too: the close fires AT step 9.
         let at_start = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 9);
         let err = route_visited(
             &world,
             &[a, b],
-            std::slice::from_ref(&at_start),
+            &RegionEvents::from(vec![at_start.clone()]),
             &unconnected,
         )
         .expect_err("the close the start step fires shuts the leg");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // And the exported route agrees with the proof: no leg is routed.
         assert!(
-            route_walked_legs(&world, &[a, b], std::slice::from_ref(&close), &unconnected)
-                .is_empty(),
+            route_walked_legs(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone()]),
+                &unconnected
+            )
+            .is_empty(),
             "the harness is never handed a route the proof refused"
         );
     }
@@ -13796,14 +15521,16 @@ mod tests {
         let cps = vec![("cp/rest".to_string(), [0, 65, 0], 0usize)];
         let positions = vec![at_step([4, 65, 0], 1)];
         // Open gate → reachable.
-        assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
+        assert!(
+            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear).is_ok()
+        );
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = verify_checkpoints(
             &world,
             &cps,
             &positions,
-            std::slice::from_ref(&close),
+            &RegionEvents::from(vec![close.clone()]),
             &linear,
         )
         .unwrap_err();
@@ -13817,7 +15544,8 @@ mod tests {
         let world = split_world(65);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        let err = verify_checkpoints(&world, &cps, &positions, &[], &linear).unwrap_err();
+        let err = verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear)
+            .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
     }
 
@@ -13827,7 +15555,9 @@ mod tests {
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
+        assert!(
+            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear).is_ok()
+        );
     }
 
     #[test]
@@ -13835,7 +15565,8 @@ mod tests {
         // The checkpoint cell has no standable floor within snap radius.
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
-        let err = verify_checkpoints(&world, &cps, &[], &[], &linear).unwrap_err();
+        let err =
+            verify_checkpoints(&world, &cps, &[], &RegionEvents::default(), &linear).unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
     }
 
@@ -14007,7 +15738,6 @@ mod tests {
             beat(vec![
                 Verb::DamagePlayers {
                     amount: 40,
-                    within: None,
                     damage_type: None,
                 }
                 .into(),
@@ -14992,12 +16722,17 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         let close = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Fill, 0);
-        let open_legs = route_walked_legs(&world, &[a, b], &[], &linear);
+        let open_legs = route_walked_legs(&world, &[a, b], &RegionEvents::default(), &linear);
         assert!(
             open_legs[0].0.cells.contains(&[2, 65, 0]),
             "with the gate open the export takes the short lane"
         );
-        let sealed_legs = route_walked_legs(&world, &[a, b], std::slice::from_ref(&close), &linear);
+        let sealed_legs = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        );
         assert_eq!(sealed_legs.len(), 1, "the leg is still routable via z=2");
         assert!(
             !sealed_legs[0].0.cells.contains(&[2, 65, 0]),
@@ -15029,7 +16764,7 @@ mod tests {
         let traps = [lethal_trap(tc, TrapReset::Rearm, None)];
         let spawn = [[0, 65, 0]];
 
-        let open_legs = route_walked_legs(&world, &[a, b], &[], &linear);
+        let open_legs = route_walked_legs(&world, &[a, b], &RegionEvents::default(), &linear);
         let open_required: BTreeSet<[i32; 3]> = open_legs
             .iter()
             .flat_map(|(l, _)| l.cells.clone())
@@ -15039,7 +16774,12 @@ mod tests {
             "with the gate open the plate is genuinely avoidable"
         );
 
-        let sealed_legs = route_walked_legs(&world, &[a, b], std::slice::from_ref(&close), &linear);
+        let sealed_legs = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        );
         let sealed_required: BTreeSet<[i32; 3]> = sealed_legs
             .iter()
             .flat_map(|(l, _)| l.cells.clone())
@@ -15299,13 +17039,24 @@ mod tests {
 
         let forced = RegionEvent::forced(gap, RegionWrite::Fill, 0);
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&forced), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![forced.clone()]),
+                &linear
+            )
+            .is_ok(),
             "a plank the party cannot avoid laying is floor they certainly have"
         );
 
         let unforced = RegionEvent::unforced(gap, RegionWrite::Fill, 0, "the payload of trap `t`");
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&unforced), &linear)
-            .expect_err("a plank laid by a skippable beat may not carry the forced path");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![unforced.clone()]),
+            &linear,
+        )
+        .expect_err("a plank laid by a skippable beat may not carry the forced path");
         assert_eq!(err.code, DW_UNFORCED_FOOTING); // DW0546
         assert!(
             err.message.contains("[2, 64, 0]..[2, 64, 0]"),
@@ -15337,8 +17088,13 @@ mod tests {
             0,
             "the payload of trap `t`",
         );
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&wall), &linear)
-            .expect_err("an unforced fill across the corridor is still a wall");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![wall.clone()]),
+            &linear,
+        )
+        .expect_err("an unforced fill across the corridor is still a wall");
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
         assert!(
             err.message.contains("close-gate") && err.message.contains("NOT forced"),
@@ -15364,7 +17120,13 @@ mod tests {
             "the payload of trap `t`",
         );
         assert!(
-            route_visited(&world, &[a, b], std::slice::from_ref(&repave), &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![repave.clone()]),
+                &linear
+            )
+            .is_ok(),
             "a fill over a cell that was already floor takes nothing away"
         );
     }
@@ -15383,7 +17145,13 @@ mod tests {
             RegionEvent::forced(gap, RegionWrite::Fill, 2),
         ];
         assert!(
-            route_visited(&world, &[a, b], &events, &linear).is_ok(),
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(events.to_vec()),
+                &linear
+            )
+            .is_ok(),
             "a beat the party must complete re-lays the plank for certain"
         );
     }
@@ -15402,8 +17170,13 @@ mod tests {
             0,
             "the payload of trap `t`",
         );
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear)
-            .expect_err("a fluid fill takes the floor away whoever fires it");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone()]),
+            &linear,
+        )
+        .expect_err("a fluid fill takes the floor away whoever fires it");
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
     }
 }
@@ -15444,7 +17217,12 @@ mod leave_tests {
 
     fn judge(w: &World, seeds: &[[i32; 3]]) -> (LeaveBinding, Result<(), Failure>) {
         verify_bodies_can_leave(
-            &[(w, "from critical step 0".to_string(), seeds.to_vec())],
+            &[(
+                w,
+                "from critical step 0".to_string(),
+                seeds.to_vec(),
+                BTreeSet::new(),
+            )],
             None,
             &[],
         )
@@ -15581,13 +17359,65 @@ mod leave_tests {
         assert!(!w.is_water_surface([3, 0, 3]));
     }
 
+    /// `fatal_step_off` (spec-0085 §6.2): a lava pool let into the floor beside a
+    /// standing cell is a step into lava; level floor is not a step at all.
+    #[test]
+    fn a_step_into_a_lava_pool_is_fatal_and_level_floor_is_not() {
+        let mut solid = yard(6, 6);
+        solid.remove(&[3, 0, 3]);
+        solid.insert([3, -1, 3]);
+        let occ = crate::compiler::assembled::Occupancy {
+            solid,
+            tall: BTreeSet::new(),
+            use_gates: BTreeSet::new(),
+            flooded: [[3, 0, 3]].into_iter().collect(),
+            partial: BTreeMap::new(),
+            waterloggable: BTreeSet::new(),
+            lava: [[3, 0, 3]].into_iter().collect(),
+        };
+        let w = World::from_occupancy(occ, Premises::geometry_only());
+        assert_eq!(w.fatal_step_off([2, 1, 3]), Some(([3, 1, 3], true)));
+        assert_eq!(w.fatal_step_off([1, 1, 1]), None, "level floor all round");
+    }
+
+    /// `fatal_step_off`: a drop deeper than an unarmoured body survives is
+    /// fatal; one inside it is a landing.
+    #[test]
+    fn a_drop_past_the_survivable_fall_is_fatal_and_one_inside_it_is_not() {
+        let deepest = unarmoured_survivable_fall_blocks() as i32;
+        let ledge_over = |depth: i32| {
+            // A one-cell ledge walled on three sides, open to the east.
+            let mut solid = BTreeSet::new();
+            solid.insert([0, 0, 0]);
+            for wall in [[-1, 0], [0, -1], [0, 1]] {
+                for y in 1..=2 {
+                    solid.insert([wall[0], y, wall[1]]);
+                }
+            }
+            solid.insert([1, -depth, 0]);
+            World::from_solid_cells(solid)
+        };
+        // Feet at y=1; a landing whose top is at y=1-depth puts the feet at
+        // 1-depth+1, a fall of `depth` blocks.
+        assert_eq!(ledge_over(deepest).fatal_step_off([0, 1, 0]), None);
+        assert_eq!(
+            ledge_over(deepest + 1).fatal_step_off([0, 1, 0]),
+            Some(([1, 1, 0], false))
+        );
+    }
+
     #[test]
     fn a_cell_the_boundary_carries_a_body_out_of_is_a_way_out() {
         let w = hedged_bed(false);
         // A region whose box ends at x=5: the bed's floor at x=5..7 has cells
         // outside it, and the clock carries a body there back.
         let (_, verdict) = verify_bodies_can_leave(
-            &[(&w, "from critical step 0".to_string(), vec![[1, 1, 1]])],
+            &[(
+                &w,
+                "from critical step 0".to_string(),
+                vec![[1, 1, 1]],
+                BTreeSet::new(),
+            )],
             Some(([0, -8, 0], [5, 64, 13])),
             &[],
         );
@@ -15767,5 +17597,206 @@ mod mob_reach_tests {
         assert!(!w.mob_moves([1, 1, 0], &zombie()).contains(&[2, 1, 0]));
         let opened = w.with_openings_open(&tall);
         assert!(opened.mob_moves([1, 1, 0], &zombie()).contains(&[2, 1, 0]));
+    }
+}
+
+/// spec-0088 §4.1: **the two readings of one gate**, over synthetic flag
+/// writes and a synthetic replay, with the region model's own ancestry rule
+/// (a strict predecessor on a linear path, or step 0).
+#[cfg(test)]
+mod staged_liveness_tests {
+    use super::*;
+    use crate::compiler::plan::{DataReplay, FlagEvent};
+
+    fn linear(g: usize, s: usize) -> bool {
+        g == 0 || g < s
+    }
+
+    fn gate(req: &[&str], forb: &[&str], state: &[(&str, i32)]) -> StagedGate {
+        StagedGate {
+            requires_flags: req.iter().map(|s| s.to_string()).collect(),
+            forbids_flags: forb.iter().map(|s| s.to_string()).collect(),
+            requires_state: state
+                .iter()
+                .map(|(s, v)| delvewright_dsl::StateCompare {
+                    state: delvewright_dsl::StateId(s.to_string()),
+                    op: delvewright_dsl::CompareOp::AtLeast,
+                    value: *v,
+                })
+                .collect(),
+            terms: Vec::new(),
+        }
+    }
+
+    fn events(flags: &[(&str, usize, bool)]) -> RegionEvents {
+        let mut ev = RegionEvents::default();
+        ev.flags = flags
+            .iter()
+            .map(|(f, s, forced)| FlagEvent {
+                flag: f.to_string(),
+                fire_step: *s,
+                forced: *forced,
+            })
+            .collect();
+        ev
+    }
+
+    fn at(g: &StagedGate, ev: &RegionEvents, steps: usize) -> Vec<(bool, bool)> {
+        (0..steps)
+            .map(|s| {
+                let l = liveness_of(g, ev, s, &linear);
+                (l.may, l.is)
+            })
+            .collect()
+    }
+
+    /// A required flag only a trap payload sets: may be live from step 0, live
+    /// on the forced route nowhere.
+    #[test]
+    fn a_required_flag_only_a_trap_sets_may_live_from_zero_and_is_never_live() {
+        let g = gate(&["flag/sprung"], &[], &[]);
+        let ev = events(&[("flag/sprung", 0, false)]);
+        assert_eq!(at(&g, &ev, 4), vec![(true, false); 4]);
+    }
+
+    /// The same flag set by a forced objective at step k: both readings from
+    /// the first arrival whose ancestry contains k.
+    #[test]
+    fn a_required_flag_a_forced_beat_sets_is_live_from_the_next_arrival() {
+        let g = gate(&["flag/lid"], &[], &[]);
+        let ev = events(&[("flag/lid", 2, true)]);
+        assert_eq!(
+            at(&g, &ev, 5),
+            vec![
+                (false, false),
+                (false, false),
+                (false, false),
+                (true, true),
+                (true, true)
+            ]
+        );
+    }
+
+    /// A forbidden flag a trap payload sets: may be live unchanged (an
+    /// unguaranteed firing may never open), live on the forced route nowhere.
+    #[test]
+    fn a_forbidden_flag_a_trap_sets_leaves_may_live_and_kills_is_live() {
+        let g = gate(&[], &["flag/cold"], &[]);
+        let ev = events(&[("flag/cold", 0, false)]);
+        assert_eq!(at(&g, &ev, 3), vec![(true, false); 3]);
+        // Set only by a forced beat at step 1: live on the forced route until
+        // it, dead after it.
+        let ev = events(&[("flag/cold", 1, true)]);
+        assert_eq!(
+            at(&g, &ev, 4),
+            vec![(true, true), (true, true), (false, false), (false, false)]
+        );
+    }
+
+    /// A numeric term the replay decides true at step k: both readings from k;
+    /// one an unforced root writes may hold everywhere.
+    #[test]
+    fn a_numeric_term_the_replay_decides_true_at_k_is_live_from_k() {
+        let g = gate(&[], &[], &[("state/water", 3)]);
+        let mut ev = RegionEvents::default();
+        let vals = |v: i64| {
+            [("state/water".to_string(), Some(v))]
+                .into_iter()
+                .collect::<BTreeMap<String, Option<i64>>>()
+        };
+        ev.data = DataReplay {
+            before: [(1, vals(0)), (2, vals(1)), (3, vals(3))]
+                .into_iter()
+                .collect(),
+            end: vals(3),
+            unforced_writers: BTreeSet::new(),
+        };
+        assert_eq!(
+            at(&g, &ev, 5),
+            vec![
+                (false, false),
+                (false, false),
+                (false, false),
+                (true, true),
+                (true, true)
+            ]
+        );
+        ev.data.unforced_writers.insert("state/water".to_string());
+        assert!(at(&g, &ev, 3).iter().all(|(may, _)| *may));
+        // An undatable value may hold, and is never decided.
+        ev.data.unforced_writers.clear();
+        ev.data
+            .before
+            .insert(1, [("state/water".to_string(), None)].into_iter().collect());
+        assert_eq!(at(&g, &ev, 2)[1], (true, false));
+    }
+
+    /// The function under test is the one `region_state_at`'s derivation
+    /// calls, and the only reader of a gate into a lethal set: its callers, by
+    /// enumeration of this crate's source.
+    #[test]
+    fn region_state_at_derives_the_lethal_set_through_liveness_of() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut callers: Vec<String> = Vec::new();
+        let mut stack = vec![root.clone()];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    let text = std::fs::read_to_string(&p).unwrap();
+                    let mut current = String::new();
+                    for line in text.lines() {
+                        let t = line.trim_start();
+                        if let Some(rest) = t
+                            .strip_prefix("fn ")
+                            .or_else(|| t.strip_prefix("pub fn "))
+                            .or_else(|| t.strip_prefix("pub(crate) fn "))
+                        {
+                            current = rest.split(['(', '<']).next().unwrap_or("").to_string();
+                        }
+                        if t.contains("liveness_of(") && !t.contains("fn liveness_of") {
+                            callers.push(format!(
+                                "{}::{current}",
+                                p.strip_prefix(&root).unwrap().display()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        callers.sort();
+        callers.dedup();
+        // This module calls it too; production callers are the two named.
+        let production: Vec<&String> = callers
+            .iter()
+            .filter(|c| {
+                !c.ends_with("::at")
+                    && !c.ends_with("::region_state_at_derives_the_lethal_set_through_liveness_of")
+            })
+            .collect();
+        assert_eq!(
+            production,
+            vec![
+                "compiler/lethal.rs::never_held_term",
+                "compiler/nav.rs::loop_liveness",
+                "compiler/nav.rs::staged_liveness"
+            ],
+            "liveness_of is read by staged_liveness (the lethal set), by loop_liveness \
+             (the held loop slabs, spec-0086) and by DW0954's per-term wording, and by \
+             nothing else: {callers:?}"
+        );
+        let nav = std::fs::read_to_string(root.join("compiler/nav.rs")).unwrap();
+        let body = &nav[nav.find("fn region_state_inner(").unwrap()..];
+        let body = &body[..body.find("\n    }\n").unwrap()];
+        assert!(
+            body.contains(".staged_liveness(region_events, arrival, ancestor)"),
+            "region_state_at's derivation calls staged_liveness"
+        );
+        assert!(
+            body.contains(".loop_liveness(region_events, arrival, ancestor)"),
+            "region_state_at's derivation calls loop_liveness"
+        );
     }
 }

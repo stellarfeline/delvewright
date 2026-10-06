@@ -1,0 +1,24 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "npcs": [
+      {
+        "anchor": "anchor/flat",
+        "area": "area/carcass",
+        "base_entity": "minecraft:villager",
+        "id": "npc/carcass-keeper",
+        "name": "The Keeper of the Flat",
+        "persona": {
+          "archetype": "keeper of a beached thing",
+          "backstory": "She came down to the flat when the tide left the body here, and has kept the mud around it ever since.",
+          "demeanor": "Patient. Points rather than explains.",
+          "motivation": "See the body walked, inside and out, before anyone asks her what it was.",
+          "speech_style": "Short sentences. One thing at a time."
+        },
+        "role": "quest-giver"
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "npcs"
+}

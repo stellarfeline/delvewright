@@ -1,0 +1,19 @@
+{
+  "campaign_id": "organic-whale",
+  "content": {
+    "finale": "quest/look",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/whale",
+        "depends_on": [],
+        "goal": "Look at the skeleton.",
+        "id": "quest/look",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "quest-plan"
+}

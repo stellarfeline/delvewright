@@ -557,124 +557,10 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     let mut gates = Vec::new();
     let mut findings = Vec::new();
 
-    // --- Gate: every block state exists in the pinned version. -------------
-    let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
-    let mut bad = Vec::new();
-    for state in model.palette() {
-        if let Err(e) = registry.validate(&state.name, &state.properties) {
-            bad.push(e.to_string());
-        }
-    }
-    gates.push(Gate {
-        id: "blocks-exist",
-        state: verdict(bad.is_empty()),
-        undecided: 0,
-        empty_ok: None,
-        bound: model.palette().len(),
-        detail: if bad.is_empty() {
-            format!(
-                "{} block state(s), all present in Minecraft {}",
-                model.palette().len(),
-                crate::schem::blocks::MC_VERSION
-            )
-        } else {
-            bad.join("; ")
-        },
-    });
-
-    // --- Gate: every placed state writes its shape-carrying properties. -----
-    //
-    // A `multipart` property the state omits removes assembled geometry — a
-    // wall with none written places as an isolated post — and no downstream
-    // reader can tell the omission from a choice (`DW0735`). Judged over the
-    // states CELLS actually use: an entry an earlier fill created and a later
-    // fill fully overwrote ships in no cell and is not this gate's business.
-    let mut used: std::collections::BTreeSet<&crate::grammar::block::BlockState> =
-        Default::default();
-    for pos in model.region().positions() {
-        if let Some(state) = model.get(pos) {
-            used.insert(state);
-        }
-    }
-    let omissions: Vec<String> = used
-        .iter()
-        .filter_map(|state| {
-            let omitted = registry.omitted_shape_carrying(&state.name, &state.properties);
-            if omitted.is_empty() {
-                None
-            } else {
-                Some(format!("{state} omits {}", omitted.join(", ")))
-            }
-        })
-        .collect();
-    gates.push(Gate {
-        id: "shape-complete",
-        state: verdict(omissions.is_empty()),
-        undecided: 0,
-        empty_ok: None,
-        bound: used.len(),
-        detail: if omissions.is_empty() {
-            format!(
-                "{} placed block state(s), every shape-carrying (multipart) property written",
-                used.len()
-            )
-        } else {
-            format!(
-                "{}: {} — these properties assemble the block's model, so the omitted \
-                 default drops geometry (a wall reads as an isolated post). Write the \
-                 connection state the design means",
-                crate::schem::blocks::DW_SHAPE_OMITTED,
-                omissions.join("; ")
-            )
-        },
-    });
-
-    // --- Gate: every placed state writes EVERY property it has. -------------
-    //
-    // The whole class `shape-complete` is the hard half of (`DW0737`). Vanilla
-    // fills an omitted property from the block's default state, so a partial
-    // state is legal and the SERVER resolves it correctly; nothing upstream of
-    // the server can. The review image, the navigation walk, the diff a
-    // reviewer reads and the machine gates themselves each have to guess, and
-    // the guesses disagree — which is the whole reason this project renders a
-    // build before believing it. An `oak_stairs[facing=east]` with no `half`
-    // and no `shape` is not "the author meant the default"; it is a stair whose
-    // geometry no document states.
-    //
-    // Same binding as `shape-complete` — the states cells actually use — so a
-    // palette entry a later fill fully overwrote is not held against the piece.
-    let under: Vec<String> = used
-        .iter()
-        .filter_map(|state| {
-            let omitted = registry.omitted_properties(&state.name, &state.properties);
-            if omitted.is_empty() {
-                None
-            } else {
-                Some(format!("{state} omits {}", omitted.join(", ")))
-            }
-        })
-        .collect();
-    gates.push(Gate {
-        id: "states-complete",
-        state: verdict(under.is_empty()),
-        undecided: 0,
-        empty_ok: None,
-        bound: used.len(),
-        detail: if under.is_empty() {
-            format!(
-                "{} placed block state(s), every property of every block written",
-                used.len()
-            )
-        } else {
-            format!(
-                "{}: {} — a state that omits a property means whatever a 1.21.11 server \
-                 decides, and no reader upstream of the server can know which. Write the \
-                 property the design means, including when it is the block's default",
-                crate::schem::blocks::DW_STATE_UNDER_SPECIFIED,
-                under.join("; ")
-            )
-        },
-    });
+    gates.push(gate_blocks_exist(model));
+    let used = placed_states(model);
+    gates.push(gate_shape_complete(&used));
+    gates.push(gate_states_complete(&used));
 
     // --- Gate: oriented block states were guarded where the scope turns. ----
     //
@@ -777,51 +663,12 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     // — so the honest report for them carries the count as a MEASUREMENT and
     // makes no claim at all, rather than a green line that reads like one.
     let shapes = settle::stair_shapes(model);
-    if shapes.bound > 0 {
-        gates.push(Gate {
-            id: "stair-shape",
-            state: verdict(shapes.mismatches.is_empty()),
-            undecided: 0,
-            empty_ok: None,
-            bound: shapes.bound,
-            detail: if shapes.mismatches.is_empty() {
-                format!(
-                    "{} stair(s), every written `shape` the one vanilla derives from that stair's \
-                     own neighbours",
-                    shapes.bound
-                )
-            } else {
-                settle::shape_detail(&shapes)
-            },
-        });
-    }
+    gates.extend(gate_stair_shape_over(&shapes));
     let fluid = settle::fluid_bodies(model);
-    if fluid.bound > 0 {
-        gates.push(Gate {
-            id: "fluid-contained",
-            state: verdict(fluid.leaks.is_empty()),
-            undecided: 0,
-            empty_ok: None,
-            bound: fluid.bound,
-            detail: if fluid.leaks.is_empty() {
-                settle::fluid_summary(&fluid)
-            } else {
-                settle::fluid_detail(&fluid)
-            },
-        });
-    }
-
-    // --- Gate: the expansion built something. ------------------------------
+    gates.extend(gate_fluid_contained_over(&fluid));
     let filled = model.filled_cells();
     let region_cells = model.region().positions().count();
-    gates.push(Gate {
-        id: "non-empty",
-        state: verdict(filled > 0),
-        undecided: 0,
-        empty_ok: None,
-        bound: region_cells,
-        detail: format!("{filled} filled cell(s) of {region_cells} in the region"),
-    });
+    gates.push(gate_non_empty(model));
 
     // --- Gate (opt-in): a body can walk the piece end to end. --------------
     let standable = nav::standable_cells(model);
@@ -1095,6 +942,209 @@ struct Way {
     /// severed pair, never a pass: a declared doorway with no footing is a way
     /// out nobody can use.
     cells: BTreeSet<[i32; 3]>,
+}
+
+// ---------------------------------------------------------------------------
+// The always-on gates over a model — one function each, so every producer of a
+// model asks them through the same code (the grammar's `judge`, and
+// `delvec sculpt`, spec-0087 §3.4).
+// ---------------------------------------------------------------------------
+
+/// `blocks-exist`: every block state in the model's palette exists in the
+/// pinned version.
+pub(crate) fn gate_blocks_exist(model: &VoxelModel) -> Gate {
+    gate_blocks_exist_over(model.palette())
+}
+
+/// [`gate_blocks_exist`] over a list of states that is not (yet) a model — the
+/// form a producer checks its declared palette in before anything is placed,
+/// so a misspelt block is refused where it is written and by the same gate.
+pub(crate) fn gate_blocks_exist_over(states: &[crate::grammar::block::BlockState]) -> Gate {
+    let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
+    let mut bad = Vec::new();
+    for state in states {
+        if let Err(e) = registry.validate(&state.name, &state.properties) {
+            bad.push(e.to_string());
+        }
+    }
+    Gate {
+        id: "blocks-exist",
+        state: verdict(bad.is_empty()),
+        undecided: 0,
+        empty_ok: None,
+        bound: states.len(),
+        detail: if bad.is_empty() {
+            format!(
+                "{} block state(s), all present in Minecraft {}",
+                states.len(),
+                crate::schem::blocks::MC_VERSION
+            )
+        } else {
+            bad.join("; ")
+        },
+    }
+}
+
+/// The states cells actually use: an entry an earlier write created and a later
+/// write fully overwrote ships in no cell and is no gate's business.
+pub(crate) fn placed_states(model: &VoxelModel) -> BTreeSet<&crate::grammar::block::BlockState> {
+    let mut used: BTreeSet<&crate::grammar::block::BlockState> = BTreeSet::new();
+    for pos in model.region().positions() {
+        if let Some(state) = model.get(pos) {
+            used.insert(state);
+        }
+    }
+    used
+}
+
+/// `shape-complete`: every placed state writes its shape-carrying properties.
+///
+/// A `multipart` property the state omits removes assembled geometry — a wall
+/// with none written places as an isolated post — and no downstream reader can
+/// tell the omission from a choice (`DW0735`).
+pub(crate) fn gate_shape_complete(used: &BTreeSet<&crate::grammar::block::BlockState>) -> Gate {
+    let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
+    let omissions: Vec<String> = used
+        .iter()
+        .filter_map(|state| {
+            let omitted = registry.omitted_shape_carrying(&state.name, &state.properties);
+            if omitted.is_empty() {
+                None
+            } else {
+                Some(format!("{state} omits {}", omitted.join(", ")))
+            }
+        })
+        .collect();
+    Gate {
+        id: "shape-complete",
+        state: verdict(omissions.is_empty()),
+        undecided: 0,
+        empty_ok: None,
+        bound: used.len(),
+        detail: if omissions.is_empty() {
+            format!(
+                "{} placed block state(s), every shape-carrying (multipart) property written",
+                used.len()
+            )
+        } else {
+            format!(
+                "{}: {} — these properties assemble the block's model, so the omitted \
+                 default drops geometry (a wall reads as an isolated post). Write the \
+                 connection state the design means",
+                crate::schem::blocks::DW_SHAPE_OMITTED,
+                omissions.join("; ")
+            )
+        },
+    }
+}
+
+/// `states-complete`: every placed state writes EVERY property it has.
+///
+/// The whole class `shape-complete` is the hard half of (`DW0737`). Vanilla
+/// fills an omitted property from the block's default state, so a partial state
+/// is legal and the SERVER resolves it correctly; nothing upstream of the server
+/// can. The review image, the navigation walk, the diff a reviewer reads and the
+/// machine gates themselves each have to guess, and the guesses disagree. An
+/// `oak_stairs[facing=east]` with no `half` and no `shape` is not "the author
+/// meant the default"; it is a stair whose geometry no document states.
+pub(crate) fn gate_states_complete(used: &BTreeSet<&crate::grammar::block::BlockState>) -> Gate {
+    let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
+    let under: Vec<String> = used
+        .iter()
+        .filter_map(|state| {
+            let omitted = registry.omitted_properties(&state.name, &state.properties);
+            if omitted.is_empty() {
+                None
+            } else {
+                Some(format!("{state} omits {}", omitted.join(", ")))
+            }
+        })
+        .collect();
+    Gate {
+        id: "states-complete",
+        state: verdict(under.is_empty()),
+        undecided: 0,
+        empty_ok: None,
+        bound: used.len(),
+        detail: if under.is_empty() {
+            format!(
+                "{} placed block state(s), every property of every block written",
+                used.len()
+            )
+        } else {
+            format!(
+                "{}: {} — a state that omits a property means whatever a 1.21.11 server \
+                 decides, and no reader upstream of the server can know which. Write the \
+                 property the design means, including when it is the block's default",
+                crate::schem::blocks::DW_STATE_UNDER_SPECIFIED,
+                under.join("; ")
+            )
+        },
+    }
+}
+
+/// `stair-shape`: every written stair `shape` is the one vanilla derives from
+/// that stair's own neighbours. `None` — no gate at all — over a piece holding
+/// no stair: a gate over zero objects is not a pass, and the count is reported
+/// as a measurement instead.
+pub(crate) fn gate_stair_shape(model: &VoxelModel) -> Option<Gate> {
+    gate_stair_shape_over(&settle::stair_shapes(model))
+}
+
+/// [`gate_stair_shape`] over a settling reading already taken.
+fn gate_stair_shape_over(shapes: &settle::ShapeAudit) -> Option<Gate> {
+    (shapes.bound > 0).then(|| Gate {
+        id: "stair-shape",
+        state: verdict(shapes.mismatches.is_empty()),
+        undecided: 0,
+        empty_ok: None,
+        bound: shapes.bound,
+        detail: if shapes.mismatches.is_empty() {
+            format!(
+                "{} stair(s), every written `shape` the one vanilla derives from that stair's \
+                 own neighbours",
+                shapes.bound
+            )
+        } else {
+            settle::shape_detail(shapes)
+        },
+    })
+}
+
+/// `fluid-contained`: every body of running fluid is held. `None` over a piece
+/// holding no fluid, for the reason [`gate_stair_shape`] gives.
+pub(crate) fn gate_fluid_contained(model: &VoxelModel) -> Option<Gate> {
+    gate_fluid_contained_over(&settle::fluid_bodies(model))
+}
+
+/// [`gate_fluid_contained`] over a settling reading already taken.
+fn gate_fluid_contained_over(fluid: &settle::FluidAudit) -> Option<Gate> {
+    (fluid.bound > 0).then(|| Gate {
+        id: "fluid-contained",
+        state: verdict(fluid.leaks.is_empty()),
+        undecided: 0,
+        empty_ok: None,
+        bound: fluid.bound,
+        detail: if fluid.leaks.is_empty() {
+            settle::fluid_summary(fluid)
+        } else {
+            settle::fluid_detail(fluid)
+        },
+    })
+}
+
+/// `non-empty`: the model holds something.
+pub(crate) fn gate_non_empty(model: &VoxelModel) -> Gate {
+    let filled = model.filled_cells();
+    let region_cells = model.region().positions().count();
+    Gate {
+        id: "non-empty",
+        state: verdict(filled > 0),
+        undecided: 0,
+        empty_ok: None,
+        bound: region_cells,
+        detail: format!("{filled} filled cell(s) of {region_cells} in the region"),
+    }
 }
 
 /// **The traversability verdict, over whatever the piece's ways in and out turn

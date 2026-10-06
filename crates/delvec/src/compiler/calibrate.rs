@@ -30,15 +30,21 @@ use delvewright_dsl::{DwCode, ExitTier};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-/// A harvested proposal names no declared anchor within [`SNAP_RADIUS`], so it
-/// cannot be expressed in the DSL at all.
-pub const DW_SHOT_UNSNAPPABLE: DwCode = DwCode::new("DW0390", ExitTier::Build);
-/// The rehearsal report and the layout manifest describe different campaigns —
-/// calibrating one build's proposals against another build's anchors.
-pub const DW_SHOT_CAMPAIGN_MISMATCH: DwCode = DwCode::new("DW0391", ExitTier::Build);
-/// The rehearsal report is unreadable, is not a rehearsal report, or carries a
-/// schema version this `delvec` does not understand.
-pub const DW_SHOT_REPORT_INVALID: DwCode = DwCode::new("DW0392", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// A harvested proposal names no declared anchor within [`SNAP_RADIUS`], so it
+    /// cannot be expressed in the DSL at all.
+    pub const DW_SHOT_UNSNAPPABLE: DwCode = DwCode::new("DW0390", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// The rehearsal report and the layout manifest describe different campaigns —
+    /// calibrating one build's proposals against another build's anchors.
+    pub const DW_SHOT_CAMPAIGN_MISMATCH: DwCode = DwCode::new("DW0391", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// The rehearsal report is unreadable, is not a rehearsal report, or carries a
+    /// schema version this `delvec` does not understand.
+    pub const DW_SHOT_REPORT_INVALID: DwCode = DwCode::new("DW0392", ExitTier::Build);
+}
 
 /// How far a proposal may sit from an anchor and still be expressed as an
 /// offset from it (blocks, spec-0019 §5). Beyond this the offset stops being a

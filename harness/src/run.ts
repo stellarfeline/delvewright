@@ -6,6 +6,7 @@
 // step, or timeout). No campaign knowledge lives here (spec-0003): everything
 // comes from critical-path.json.
 
+import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -44,6 +45,7 @@ import {
 import { installCrashReporter } from "./crash.ts";
 import { CLIENT_WAIT_TIMEOUT_MS, SERVER_LOAD_TIMEOUT_TICKS } from "./client-loaded.ts";
 import { unreportedWindows } from "./load-window.ts";
+import { judgeResourcePack } from "./resource-pack.ts";
 import {
   assertEntryChoicesOnPath,
   branchTierFromEnv,
@@ -262,6 +264,9 @@ async function main(): Promise<number> {
   // Scope the completion oracle to this campaign: only markers naming it count
   // (AUDIT-P0). Comes from the contract, never inferred.
   executor.useCampaign(criticalPath.campaignId);
+  // spec-0086 §6: the loops this path exercises, so a plain walk that meets one
+  // still holding fails naming it.
+  executor.useLoops(criticalPath.steps);
   if (restSteps.length > 0) {
     executor.useRestSteps(restSteps);
     process.stderr.write(
@@ -305,6 +310,17 @@ async function main(): Promise<number> {
       // that binds to nothing is REPORTED, never quietly walked.
       process.stderr.write(`death plan: UNBOUND — ${b.reason ?? "no reason given"}\n`);
     }
+  }
+  // spec-0080 §5.2: what each repaint must tell the client. Absent → the build
+  // repaints nothing, said out loud.
+  const repaintPlan = await loadRepaintPlanForCriticalPath(pathArg);
+  if (repaintPlan) {
+    executor.useRepaintPlan(repaintPlan);
+    process.stderr.write(
+      `repaint plan: ${repaintPlan.repaints.length} set-atmosphere effect(s) to watch reach the client\n`,
+    );
+  } else {
+    process.stderr.write(`repaint plan: none in this build (no set-atmosphere)\n`);
   }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
@@ -371,6 +387,30 @@ async function main(): Promise<number> {
         (async () => {
           crashStage = "connect";
           await executor.connect();
+          // spec-0084 §11: the pack the server pushed is the pack the build
+          // made, downloaded from where it was pushed — the served pack reaching a
+          // client, measured on every run that names its manifest.
+          if (process.env["DELVEWRIGHT_PACK_VERIFY"] === "1") {
+            const manifestPath = process.env["DELVEWRIGHT_MANIFEST"] ?? "/delve/manifest.json";
+            const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+            const sha1 = manifest["resource_pack_sha1"];
+            const verdict = judgeResourcePack(
+              typeof sha1 === "string" ? sha1 : undefined,
+              executor.resourcePackPushes(),
+            );
+            report.recordResourcePack(verdict);
+            process.stderr.write(
+              `[resource-pack] ${verdict.pushes.length} push(es) against the build's ` +
+                `${verdict.manifestSha1 ?? "no pack"}` +
+                verdict.pushes
+                  .map((p) => ` [${p.url} pushed ${p.hash} downloaded ${p.downloadedSha1 ?? "nothing"}]`)
+                  .join("") +
+                "\n",
+            );
+            if (verdict.failures.length > 0) {
+              throw new Error(`resource pack: ${verdict.failures.join("; ")}`);
+            }
+          }
           // From here the executor is the authority on which stage a crash is in.
           crashStage = "critical-path";
           await runSequence(criticalPath, executor, {
@@ -495,14 +535,22 @@ async function main(): Promise<number> {
     for (const verdict of musters.values()) {
       for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
     }
+    // spec-0080 §5.2: every repaint the path performed reached the client.
+    const repaintVerdicts = executor.repaintVerdicts();
+    if (repaintPlan) {
+      process.stderr.write(`${repaintBindingLine(repaintPlan, repaintVerdicts)}\n`);
+    }
+    const repaintFailures = repaintVerdicts.flatMap((v) => (v.failure ? [v.failure] : []));
     report.stage({
       stage: "critical-path",
       ran: true,
-      passed: pathFailure === undefined && musterFailures.length === 0,
+      passed:
+        pathFailure === undefined && musterFailures.length === 0 && repaintFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
         ...musterFailures,
+        ...repaintFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that

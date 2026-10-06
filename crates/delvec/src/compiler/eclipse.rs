@@ -108,77 +108,83 @@ use crate::compiler::nav::entity_dims;
 use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
-/// (warning) an interaction affordance, so the player's crosshair reaches the
-/// body instead of the affordance.
-pub const DW_BODY_ECLIPSE: DwCode = DwCode::new("DW0359", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
+    /// (warning) an interaction affordance, so the player's crosshair reaches the
+    /// body instead of the affordance.
+    pub const DW_BODY_ECLIPSE: DwCode = DwCode::new("DW0359", ExitTier::Build);
+}
 
-/// `DW0422`: a **pressable body's hitbox** shares a cell with another
-/// compiler-owned interaction affordance (DSL v0.8; widened to the whole
-/// pressable class in v0.11).
-///
-/// A compiler-owned press body is one `minecraft:interaction` per clickable cell
-/// of the thing being pressed. Any other affordance whose own 1.0 × 2.0 box
-/// occupies one of those cells is in an exact ray-pick contest with it, and the
-/// client resolves such a contest by iteration order — so one of the two silently
-/// stops receiving clicks, which is precisely the defect (`DESIGN.md`, island
-/// round 13) that made a second hitbox on the boulder unshippable. Triggers
-/// anchored **on the body itself** are not a collision: they ride its hitboxes and
-/// summon nothing (`emit::env_trigger_setup`), the same merge
-/// `strike`-on-an-NPC's-anchor has used since round 6.
-///
-/// **Two things about the binding.** It walks [`pressable_bodies`] — seals *and*
-/// sealed shortcut doors — because a ray-pick contest is a property of having
-/// hitboxes, not of the verb that first had them; keyed to `close-gate` it
-/// examined zero objects on any campaign whose only pressable thing was a door.
-/// And the contest is tested against the **cell**, not the emitted `1.02f` box:
-/// the protrusion exists to beat the block the body stands in, and
-/// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
-/// into a neighbouring cell's affordances.
-pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::new("DW0422", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0422`: a **pressable body's hitbox** shares a cell with another
+    /// compiler-owned interaction affordance (DSL v0.8; widened to the whole
+    /// pressable class in v0.11).
+    ///
+    /// A compiler-owned press body is one `minecraft:interaction` per clickable cell
+    /// of the thing being pressed. Any other affordance whose own 1.0 × 2.0 box
+    /// occupies one of those cells is in an exact ray-pick contest with it, and the
+    /// client resolves such a contest by iteration order — so one of the two silently
+    /// stops receiving clicks, which is precisely the defect (`DESIGN.md`, island
+    /// round 13) that made a second hitbox on the boulder unshippable. Triggers
+    /// anchored **on the body itself** are not a collision: they ride its hitboxes and
+    /// summon nothing (`emit::env_trigger_setup`), the same merge
+    /// `strike`-on-an-NPC's-anchor has used since round 6.
+    ///
+    /// **Two things about the binding.** It walks [`pressable_bodies`] — seals *and*
+    /// sealed shortcut doors — because a ray-pick contest is a property of having
+    /// hitboxes, not of the verb that first had them; keyed to `close-gate` it
+    /// examined zero objects on any campaign whose only pressable thing was a door.
+    /// And the contest is tested against the **cell**, not the emitted `1.02f` box:
+    /// the protrusion exists to beat the block the body stands in, and
+    /// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
+    /// into a neighbouring cell's affordances.
+    pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::new("DW0422", ExitTier::Build);
+}
 
-/// `DW0878`: **two interaction affordances stand on one cell** — two
-/// `minecraft:interaction` boxes the party clicks, coincident, so the pick ray is
-/// an exact tie.
-///
-/// The pair `DW0359`, `DW0422` and `DW0489` between them do not reach. Each of
-/// the three names one side of its pair:
-///
-/// * `DW0359` needs one side to be a standing **body** (an NPC or actor at an
-///   anchor) — here neither side is a body;
-/// * `DW0422` needs one side to be a compiler-owned **pressable body** (a
-///   `close-gate` seal's shell, a sealed shortcut door) — here neither side is;
-/// * `DW0489` needs both sides to be **NPCs in the cast ledger**, and its whole
-///   model is that ledger: scenes, flag co-presence, and a tier read off the
-///   dialogue root a right-click opens. An affordance has no ledger entry and no
-///   dialogue root, so the rule cannot be stated over it.
-///
-/// So the pairing that was left unexamined is affordance-against-affordance, and
-/// it shipped: the gallery declares the `interact` objective `obj/press-the-case`
-/// and the `use` trigger `trigger/read-the-label` both on `anchor/pedestal`, two
-/// `1.0 × 2.0` boxes at the same cell. The build was green and the bot's
-/// crosshair could acquire neither.
-///
-/// **The predicate is exact coincidence, and deliberately nothing wider.** Every
-/// affordance box is `1.0 × 2.0` at a cell centre, so two of them are identical
-/// exactly when their cells are, and identical boxes are entered by any ray at
-/// the same distance — an exact tie the client resolves by entity iteration
-/// order, which is not decidable from the campaign at all. Boxes that merely
-/// overlap (two affordances one block apart vertically share a one-block band)
-/// are at different ray distances from every stance, and a player aims past them
-/// by moving the crosshair up or down; refusing those would be a false certainty,
-/// and this is the same line [`DW_SEAL_HITBOX_COLLISION`] draws when it tests the
-/// cell rather than the emitted box.
-///
-/// **The pair must be able to share a MOMENT, not only a cell** — see
-/// [`can_share_a_moment`], which is where the rule's quantifier actually lives.
-/// A box armed by a quest beat and killed on completion is not in a contest with
-/// one down another arm of the story.
-///
-/// **Boundary.** Affordance-against-affordance only. A body over an affordance is
-/// `DW0359`'s rule and an affordance in a pressable body's cells is `DW0422`'s;
-/// neither is re-litigated here (one code, one rule).
-pub const DW_AFFORDANCE_CONTEST: DwCode = DwCode::new("DW0878", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0878`: **two interaction affordances stand on one cell** — two
+    /// `minecraft:interaction` boxes the party clicks, coincident, so the pick ray is
+    /// an exact tie.
+    ///
+    /// The pair `DW0359`, `DW0422` and `DW0489` between them do not reach. Each of
+    /// the three names one side of its pair:
+    ///
+    /// * `DW0359` needs one side to be a standing **body** (an NPC or actor at an
+    ///   anchor) — here neither side is a body;
+    /// * `DW0422` needs one side to be a compiler-owned **pressable body** (a
+    ///   `close-gate` seal's shell, a sealed shortcut door) — here neither side is;
+    /// * `DW0489` needs both sides to be **NPCs in the cast ledger**, and its whole
+    ///   model is that ledger: scenes, flag co-presence, and a tier read off the
+    ///   dialogue root a right-click opens. An affordance has no ledger entry and no
+    ///   dialogue root, so the rule cannot be stated over it.
+    ///
+    /// So the pairing that was left unexamined is affordance-against-affordance, and
+    /// it shipped: the gallery declares the `interact` objective `obj/press-the-case`
+    /// and the `use` trigger `trigger/read-the-label` both on `anchor/pedestal`, two
+    /// `1.0 × 2.0` boxes at the same cell. The build was green and the bot's
+    /// crosshair could acquire neither.
+    ///
+    /// **The predicate is exact coincidence, and deliberately nothing wider.** Every
+    /// affordance box is `1.0 × 2.0` at a cell centre, so two of them are identical
+    /// exactly when their cells are, and identical boxes are entered by any ray at
+    /// the same distance — an exact tie the client resolves by entity iteration
+    /// order, which is not decidable from the campaign at all. Boxes that merely
+    /// overlap (two affordances one block apart vertically share a one-block band)
+    /// are at different ray distances from every stance, and a player aims past them
+    /// by moving the crosshair up or down; refusing those would be a false certainty,
+    /// and this is the same line [`DW_SEAL_HITBOX_COLLISION`] draws when it tests the
+    /// cell rather than the emitted box.
+    ///
+    /// **The pair must be able to share a MOMENT, not only a cell** — see
+    /// [`can_share_a_moment`], which is where the rule's quantifier actually lives.
+    /// A box armed by a quest beat and killed on completion is not in a contest with
+    /// one down another arm of the story.
+    ///
+    /// **Boundary.** Affordance-against-affordance only. A body over an affordance is
+    /// `DW0359`'s rule and an affordance in a pressable body's cells is `DW0422`'s;
+    /// neither is re-litigated here (one code, one rule).
+    pub const DW_AFFORDANCE_CONTEST: DwCode = DwCode::new("DW0878", ExitTier::Build);
+}
 
 /// Every affordance the compiler summons is `minecraft:interaction` with
 /// `width:1.0f` — exactly one cell across, centred on the cell.
@@ -210,8 +216,15 @@ struct Body {
     path: String,
 }
 
+/// The size every compiler-summoned press affordance has: `1.0 × 2.0`.
+pub(crate) const AFFORDANCE_SIZE: (f64, f64) = (AFFORDANCE_WIDTH, AFFORDANCE_HEIGHT);
+
 /// An interaction affordance: one `minecraft:interaction` entity at a cell.
 pub(crate) struct Affordance {
+    /// The box's `(width, height)`: [`AFFORDANCE_SIZE`] for every press body
+    /// the compiler summons, the declared size for an assembly's hitbox
+    /// (spec-0082).
+    pub(crate) size: (f64, f64),
     /// What declares it (`interact objective`, `trigger`, …), for the message.
     pub(crate) kind: &'static str,
     /// The declaring id (`obj/harden`).
@@ -294,8 +307,22 @@ fn body_box(pos: [i32; 3], width: f64, height: f64) -> [Span; 3] {
 
 /// The affordance's box — a 1.0 × 2.0 × 1.0 interaction entity at a cell centre,
 /// i.e. exactly that cell's column, two blocks tall.
+#[cfg(test)]
 fn affordance_box(pos: [i32; 3]) -> [Span; 3] {
     body_box(pos, AFFORDANCE_WIDTH, AFFORDANCE_HEIGHT)
+}
+
+impl Affordance {
+    /// This affordance's box: its size, centred on its cell, rising from the
+    /// cell's floor.
+    fn boxed(&self) -> [Span; 3] {
+        body_box(self.pos, self.size.0, self.size.1)
+    }
+
+    /// Whether this is a standard press body rather than a sized hitbox.
+    fn is_standard(&self) -> bool {
+        self.size == AFFORDANCE_SIZE
+    }
 }
 
 /// The verdict for one (body, affordance) pair.
@@ -446,6 +473,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             };
             let gate = o.gate();
             out.push(Affordance {
+                size: AFFORDANCE_SIZE,
                 kind: "interact objective",
                 id: id.as_str().to_string(),
                 anchor: anchor.as_str().to_string(),
@@ -489,6 +517,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             continue;
         };
         out.push(Affordance {
+            size: AFFORDANCE_SIZE,
             kind: "trigger",
             id: t.id.as_str().to_string(),
             anchor: at.to_string(),
@@ -500,6 +529,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     }
     for bf in plan.bonfires() {
         out.push(Affordance {
+            size: AFFORDANCE_SIZE,
             kind: "bonfire",
             id: format!("bonfire #{}", bf.index),
             anchor: bf.anchor.clone(),
@@ -509,6 +539,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     }
     for sc in &plan.shortcuts {
         out.push(Affordance {
+            size: AFFORDANCE_SIZE,
             kind: "shortcut unlock",
             id: sc.id.clone(),
             anchor: sc.unlock_anchor.clone(),
@@ -519,6 +550,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     for tr in &plan.traps {
         if let Some(d) = &tr.disarm {
             out.push(Affordance {
+                size: AFFORDANCE_SIZE,
                 kind: "trap disarm",
                 id: tr.id.clone(),
                 anchor: d.via_anchor.clone(),
@@ -530,6 +562,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     for g in &plan.timed_gates {
         if let Some(d) = &g.disarm {
             out.push(Affordance {
+                size: AFFORDANCE_SIZE,
                 kind: "timed-gate disarm",
                 id: g.id.clone(),
                 anchor: d.via_anchor.clone(),
@@ -547,10 +580,30 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             continue;
         };
         out.push(Affordance {
+            size: AFFORDANCE_SIZE,
             kind: "shop",
             id: format!("{} (#{i})", sh.id),
             anchor: sh.anchor.as_str().to_string(),
             pos,
+            arming: Arming::Persistent,
+        });
+    }
+    // spec-0082 assemblies: a declared hitbox is a compiler-summoned
+    // `minecraft:interaction` a player strikes, at the size the assembly
+    // declares — so a body posted on it is `DW0359` and another press body
+    // inside it is `DW0878`, exactly as for every press body.
+    for p in crate::compiler::assembly::placed(plan) {
+        let Some(h) = &p.decl.hitbox else {
+            continue;
+        };
+        out.push(Affordance {
+            size: (h.width, h.height),
+            kind: "assembly hitbox",
+            id: p.decl.id.as_str().to_string(),
+            anchor: p.decl.at.display(),
+            pos: p.hitbox_cell(),
+            // Between a `spawn-assembly` and a `despawn-assembly`; held to the
+            // persistent reading, the conservative direction for a contest.
             arming: Arming::Persistent,
         });
     }
@@ -596,7 +649,7 @@ pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, Failure> {
         let (w, h) = entity_dims(&b.entity);
         let bbox = body_box(b.pos, w, h);
         for a in &affordances {
-            match verdict(bbox, affordance_box(a.pos)) {
+            match verdict(bbox, a.boxed()) {
                 Verdict::Clear => {}
                 Verdict::Eclipsed => return Err(eclipse_error(b, a, w, h)),
                 Verdict::Crowded(gap) => warnings.push(crowding_warning(b, a, w, h, gap)),
@@ -668,6 +721,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
             .into_iter()
             .filter(|b| b.kind == "npc")
             .map(|b| Affordance {
+                size: AFFORDANCE_SIZE,
                 kind: "npc dialogue hitbox",
                 id: b.id,
                 anchor: b.anchor,
@@ -679,7 +733,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
         for cell in body.cells {
             let sbox = seal_box(cell);
             for a in &affordances {
-                let abox = affordance_box(a.pos);
+                let abox = a.boxed();
                 if (0..3).all(|i| sbox[i].overlaps(abox[i])) {
                     return Err(seal_collision_error(body.kind, &body.anchor, cell, a));
                 }
@@ -704,7 +758,18 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
     let affordances = affordances(plan);
     for (i, a) in affordances.iter().enumerate() {
         for b in affordances.iter().skip(i + 1) {
-            if a.pos == b.pos && can_share_a_moment(&a.arming, &b.arming) {
+            // Two standard press bodies contest when their cells coincide (the
+            // exact tie, see `DW_AFFORDANCE_CONTEST`). A sized hitbox — an
+            // assembly's (spec-0082) — contests whatever box it overlaps: the
+            // ray meets the larger box first from every stance outside it, so
+            // an affordance inside it is never reached.
+            let contest = if a.is_standard() && b.is_standard() {
+                a.pos == b.pos
+            } else {
+                let (x, y) = (a.boxed(), b.boxed());
+                (0..3).all(|i| x[i].overlaps(y[i]))
+            };
+            if contest && can_share_a_moment(&a.arming, &b.arming) {
                 return Err(affordance_contest_error(a, b));
             }
         }

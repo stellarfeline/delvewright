@@ -1,0 +1,13 @@
+{
+  "code": "DW0891",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/lethal_volumes/2/region/anchor",
+      "value": "anchor/lid-rim"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the lidded pit's volume, live from the beat that clears the lid, taken off the pit's bottom and set on `anchor/lid-rim` — the terrace floor standing on the lid, its gate unchanged. Before the curator is heard the lid is ordinary floor the party can walk onto, and the volume is dead; the moment the beat sets `flag/lid-fell` it is live, and a body standing there is killed in the same server tick (measured: three of three trials at zero ticks), with no tick in which to step off. So the floor it stood on must already read as danger in the configuration before the beat — and it is plain stone. This is `DW0891`'s fourth shape: it names the volume, the step it goes live at, the configuration before it and the cells by floor, and prescribes roofing the volume off until the beat, lowering it under the floor, or laying a block vanilla hurts with that shows before the flip. It never prescribes marking the floor unwalkable or firing the flag later. It declares no unit: `when` on a lethal volume is written by the gallery proper."
+}

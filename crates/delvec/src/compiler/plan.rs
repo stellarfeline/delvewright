@@ -475,6 +475,11 @@ pub struct CheckpointPlan {
     pub rest_label: String,
     /// The **save only** button label.
     pub save_label: String,
+    /// The **rest and save** button's hover tooltip, as authored (spec-0078);
+    /// `None` emits no tooltip.
+    pub rest_tooltip: Option<String>,
+    /// The **save only** button's hover tooltip, as authored (spec-0078).
+    pub save_tooltip: Option<String>,
 }
 
 /// A resolved stage-5 `shortcut` (spec-0016 §2), collected in deterministic
@@ -542,6 +547,50 @@ pub struct LethalVolumePlan {
     /// The blocks the volume declares as showing it (spec-0062 §3), as
     /// declared. Read by `DW0891` against the assembled bytes, per caught cell.
     pub shown_by: Vec<String>,
+    /// The story stage this volume is live from (spec-0088), or `None` for a
+    /// volume live from world-load to the end.
+    pub staged: Option<StagedGate>,
+}
+
+/// A lethal volume's gate (spec-0088), resolved: the three axes as declared,
+/// and [`Plan::gate_terms`]'s reduction of them — the one reading the emitted
+/// tick guard, the PackTest templates and `death-plan.json` all take.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StagedGate {
+    /// Flags that must all be set for the volume to kill.
+    pub requires_flags: Vec<String>,
+    /// Flags whose being set withholds the volume.
+    pub forbids_flags: Vec<String>,
+    /// Numeric comparisons (every one on a `party` datum: `DW0953`).
+    pub requires_state: Vec<delvewright_dsl::StateCompare>,
+    /// [`Plan::gate_terms`] over the three, in its order.
+    pub terms: Vec<GateTerm>,
+}
+
+impl StagedGate {
+    /// The gate's terms in words, for a diagnostic: `requires flag/x`,
+    /// `forbids flag/y`, `state/z at-least 3`.
+    pub fn words(&self) -> String {
+        let mut out: Vec<String> = Vec::new();
+        out.extend(
+            self.requires_flags
+                .iter()
+                .map(|f| format!("requires `{f}`")),
+        );
+        out.extend(self.forbids_flags.iter().map(|f| format!("forbids `{f}`")));
+        out.extend(self.requires_state.iter().map(|c| {
+            format!(
+                "`{}` {} {}",
+                c.state.as_str(),
+                serde_json::to_value(c.op)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_default(),
+                c.value
+            )
+        }));
+        out.join(", ")
+    }
 }
 
 impl LethalVolumePlan {
@@ -864,7 +913,7 @@ impl RegionWrite {
 /// One resolved region write: the inclusive world box, and what the write leaves
 /// in it. A verb resolves to a LIST of these, because a way is a region of as
 /// many boxes as its contract gave it and each is written by its own `fill`.
-type ResolvedWrite = (([i32; 3], [i32; 3]), RegionWrite);
+type ResolvedWrite = (([i32; 3], [i32; 3]), RegionWrite, Option<String>);
 
 #[derive(Clone, Debug)]
 pub struct RegionEvent {
@@ -886,6 +935,13 @@ pub struct RegionEvent {
     /// The beat this firing hangs off, in words, for a diagnostic to name. Empty for
     /// a forced write, which never needs blaming.
     blame: String,
+    /// **The block this write lays**, as its emitted command writes it
+    /// (spec-0088 §5): the fill's block for a [`RegionWrite::Fill`] or
+    /// [`RegionWrite::Flood`], `None` for a clear or an unseal (air) and for a
+    /// world-load seal (the bytes already hold what the prefab put there).
+    /// Read only by [`crate::compiler::nav`]'s per-configuration block map, which
+    /// `DW0891` asks whether a cell is shown in that configuration.
+    block: Option<String>,
 }
 
 impl RegionEvent {
@@ -898,6 +954,7 @@ impl RegionEvent {
             fire_step,
             forced: true,
             blame: String::new(),
+            block: None,
         }
     }
 
@@ -915,7 +972,20 @@ impl RegionEvent {
             fire_step,
             forced: false,
             blame: blame.into(),
+            block: None,
         }
+    }
+
+    /// This write, stating the block its command lays (see [`Self::block`]).
+    #[must_use]
+    pub fn laying(mut self, block: &str) -> Self {
+        self.block = Some(block.to_string());
+        self
+    }
+
+    /// The block this write lays, when it lays one.
+    pub fn block(&self) -> Option<&str> {
+        self.block.as_deref()
     }
 
     /// Whether this write overwrites the region with a block
@@ -932,6 +1002,92 @@ impl RegionEvent {
     /// The beat this firing hangs off, in words; empty when it is forced.
     pub fn blame(&self) -> &str {
         &self.blame
+    }
+}
+
+/// One `set-flag` the campaign can perform (spec-0088 §4.2): the flag, the
+/// critical-path step it fires at, and whether the party is forced to cause it —
+/// read by [`firing_of`] for an effect, off the path's own `talk-to` choice for
+/// a dialogue option, and unforced at step 0 for a disarm.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FlagEvent {
+    /// The flag set.
+    pub flag: String,
+    /// The `critical_path` step at which it fires.
+    pub fire_step: usize,
+    /// Whether the party is guaranteed to cause it.
+    pub forced: bool,
+}
+
+/// The replay's datum values along one path (spec-0088 §4.1): what each
+/// declared datum holds as the party walks up to each objective step, and at the
+/// end — `None` where no ordered walk can name it — plus every datum some
+/// unforced root writes. What a staged volume's numeric terms are read against.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DataReplay {
+    /// Critical-path step of an objective → every datum's value before it.
+    pub before: BTreeMap<usize, BTreeMap<String, Option<i64>>>,
+    /// Every datum's value once the path has played.
+    pub end: BTreeMap<String, Option<i64>>,
+    /// Datums an unforced firing writes.
+    pub unforced_writers: BTreeSet<String>,
+}
+
+impl DataReplay {
+    /// The values the party holds walking the leg that arrives at `arrival`:
+    /// the first objective step at or after it, else the end of the path.
+    pub fn at(&self, arrival: usize) -> &BTreeMap<String, Option<i64>> {
+        self.before
+            .range(arrival..)
+            .next()
+            .map_or(&self.end, |(_, v)| v)
+    }
+}
+
+/// **Everything the region model reads off one path**: the runtime region
+/// writes, and — for a lethal volume live from a story stage (spec-0088) — every
+/// flag write and the replay's datum values, in the same step space.
+///
+/// One value, so the exported path and each branch path ([`Plan::branch_gate_model`])
+/// hand the region model their own flags with their own writes, and no caller
+/// can route a leg with one path's writes and another's flags. Derefs to the
+/// writes, which is what every reader that predates staged volumes reads.
+#[derive(Clone, Debug, Default)]
+pub struct RegionEvents {
+    writes: Vec<RegionEvent>,
+    /// Every `set-flag` the campaign can perform, with its step and forcedness.
+    pub flags: Vec<FlagEvent>,
+    /// The replay's datum values along the path.
+    pub data: DataReplay,
+}
+
+impl From<Vec<RegionEvent>> for RegionEvents {
+    fn from(writes: Vec<RegionEvent>) -> Self {
+        RegionEvents {
+            writes,
+            ..RegionEvents::default()
+        }
+    }
+}
+
+impl std::ops::Deref for RegionEvents {
+    type Target = Vec<RegionEvent>;
+    fn deref(&self) -> &Vec<RegionEvent> {
+        &self.writes
+    }
+}
+
+impl<'a> IntoIterator for &'a RegionEvents {
+    type Item = &'a RegionEvent;
+    type IntoIter = std::slice::Iter<'a, RegionEvent>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.writes.iter()
+    }
+}
+
+impl std::ops::DerefMut for RegionEvents {
+    fn deref_mut(&mut self) -> &mut Vec<RegionEvent> {
+        &mut self.writes
     }
 }
 
@@ -989,6 +1145,13 @@ pub struct Plan<'a> {
     /// for every campaign that declares none — which is what keeps the navigation
     /// world, the emitted tick and the build outputs byte-identical.
     pub lethal_volumes: Vec<LethalVolumePlan>,
+    /// Resolved loops (spec-0086), declaration-ordered. Empty for every campaign
+    /// that declares none, which keeps the region model, the emitted tick and
+    /// every output byte-identical.
+    pub loops: Vec<crate::compiler::r#loop::LoopPlan>,
+    /// Every exercise step on the default critical path (spec-0086 §5.2), in
+    /// path order.
+    pub loop_exercises: Vec<crate::compiler::r#loop::ExerciseRecord>,
     /// **Every placed furniture region** (spec-0065): `(anchor name, inclusive
     /// world box)` for each anchor with `role: furniture` on each placed piece, in
     /// area order, then placed-piece order, then anchor-name order — never hash
@@ -1031,6 +1194,11 @@ pub struct Plan<'a> {
     pub(crate) path_firing: PathFiring,
     /// Resolved traps (DSL v0.6, spec-0011), content-ordered.
     pub traps: Vec<TrapPlan>,
+    /// The library rigs the campaign's assemblies name (spec-0082), by
+    /// `rig/<name>`, copied out of the prefab registry so every consumer of the
+    /// plan reads the rig the build validated. A rig the library does not hold
+    /// is absent here — validation has already refused it (`DW0935`).
+    pub rigs: BTreeMap<String, delvewright_dsl::rig::Rig>,
     /// Resolved shortcut doors (spec-0016 §2), content-ordered.
     pub shortcuts: Vec<ShortcutPlan>,
     /// Resolved container fills (spec-0021), declaration-ordered.
@@ -1054,7 +1222,7 @@ pub struct Plan<'a> {
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::compiler::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
-    pub region_events: Vec<RegionEvent>,
+    pub region_events: RegionEvents,
     /// **Every contingent way the placed world stages** (spec-0042 §2.4), in
     /// area → placement → declaration order, with its world cells, its block and
     /// its direction read from the carrying piece's metadata. Empty for every
@@ -1073,21 +1241,26 @@ pub struct Plan<'a> {
     /// a finding, and an absent file is the honest statement that there was
     /// nothing to enumerate.
     pub way_gate: Option<crate::compiler::ways::WayGate>,
-    /// **Where the party can be CARRIED rather than walk**: every declared
-    /// `teleport`'s resolved source volume (DSL v0.10, spec-0031), content-ordered.
-    /// Empty for every campaign that declares no `teleport`, which is what keeps
-    /// those campaigns' routing byte-identical.
-    ///
-    /// The completability model reads it for one purpose: a walked leg whose
-    /// *start* lies inside one of these boxes is a leg the party may never walk, so
-    /// a world-load gate seal is not applied to it and
-    /// [`crate::compiler::nav::DW_GATE_NEVER_OPENED`] declines to judge it. It deliberately
-    /// carries **no firing step**: the suppression must hold for a branch path too,
-    /// whose step indices are its own, and here the conservative direction is *not
-    /// to fire* — refusing a campaign over a door the party is teleported past is
-    /// the false positive this model must not have. The class left unproven as a
-    /// result is named in `docs/reference/compiler.md`.
-    pub transit_teleports: Vec<([i32; 3], [i32; 3])>,
+    /// **Every link** (spec-0083 §3.1): a `teleport` hosted in a `triggers[]`
+    /// entry declared `once: false`, in [`crate::compiler::link::collect`] order.
+    /// Empty for every campaign that declares none.
+    pub links: Vec<crate::compiler::link::LinkPlan>,
+    /// **Every gather** — every other `teleport`. Read by the put-at population
+    /// and by `DW0311`'s message; never leaned on by a route.
+    pub gathers: Vec<crate::compiler::link::GatherPlan>,
+    /// Per critical-path step, the links live there (indices into
+    /// [`Plan::links`]): the trigger's flag gate and every `when` on the way to
+    /// the teleport hold under the flags the path holds walking up to the step,
+    /// and every numeric term compares true against the writes the path has
+    /// performed by then (spec-0083 §3.3). Aligned 1:1 with `critical_path`.
+    pub critical_path_live_links: Vec<Vec<usize>>,
+    /// The links this plan's path takes ([`LinkTakes`]) — empty for a plan built
+    /// without a world, and for every campaign whose walks route unaided.
+    pub link_takes: LinkTakes,
+    /// The blockout perturbation this plan was built under, kept so a plan
+    /// rebuilt with the route proof's link decisions ([`Plan::relinked`]) is
+    /// the same plan with those steps added and nothing else changed.
+    pub perturb: Perturb,
     /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
     /// (spec-0017), keyed by batch id — the editor's per-batch snapshot
     /// framing for massing batches. Empty for a campaign without massing.
@@ -1542,17 +1715,44 @@ pub enum Step {
         /// The `trigger/<id>` performed.
         trigger_id: String,
         /// The event, as its kebab tag (`strike` / `use` / `approach` /
-        /// `strike-npc`) — what the harness does.
+        /// `strike-npc` / `strike-assembly`) — what the harness does.
         on: &'static str,
-        /// The watched anchor (absent for `strike-npc`).
+        /// The watched anchor (absent for `strike-npc` and `strike-assembly`).
         anchor_id: Option<String>,
         /// The watched NPC (`strike-npc` only).
         npc_id: Option<String>,
-        /// The cell the target stands on: the anchor, or the NPC's body at
-        /// this beat.
+        /// The struck assembly (`strike-assembly` only, spec-0082).
+        assembly_id: Option<String>,
+        /// The cell the target stands on: the anchor, the NPC's body at this
+        /// beat, or an assembly's mark.
         pos: [i32; 3],
         /// An `approach` trigger's radius; `None` for a click.
         range: Option<u32>,
+        /// **Where the party stands to perform a link** (spec-0083 §3.2): a cell
+        /// inside the link's `from` volume the act reaches the body from. `Some`
+        /// exactly when performing this trigger carries the party — the step's
+        /// `transport` marker is then the link's `to`. `None` for every trigger
+        /// the path performs for its openings or its flags alone.
+        stand: Option<[i32; 3]>,
+    },
+    /// **Exercise a loop** (spec-0086 §5.2): walk to `pos` on the approach, cross
+    /// the slab at `cross`, be moved by exactly `offset`, and repeat `times`
+    /// times. Spliced in front of the first step whose leg crosses a holding
+    /// slab; the party goes on from `transport`, the landing, where every
+    /// crossing puts it down.
+    Loop {
+        /// The `loop/<id>` exercised.
+        loop_id: String,
+        /// A standable cell on the approach, inside the span, on the route.
+        pos: [i32; 3],
+        /// The slab cell the route passes through.
+        cross: [i32; 3],
+        /// The loop's offset `d`.
+        offset: [i32; 3],
+        /// How many crossings the step makes.
+        times: u32,
+        /// `cross + offset`: where every crossing lands the body.
+        transport: [i32; 3],
     },
     /// Assert a scoreboard objective value.
     AssertComplete {
@@ -1575,7 +1775,10 @@ impl Step {
             | Step::Kill { objective_id, .. }
             | Step::Collect { objective_id, .. }
             | Step::Interact { objective_id, .. } => Some(objective_id.as_str()),
-            Step::SelectClass { .. } | Step::AssertComplete { .. } | Step::Trigger { .. } => None,
+            Step::SelectClass { .. }
+            | Step::AssertComplete { .. }
+            | Step::Trigger { .. }
+            | Step::Loop { .. } => None,
         }
     }
 
@@ -1593,7 +1796,8 @@ impl Step {
             | Step::Kill { pos, .. }
             | Step::Collect { pos, .. }
             | Step::Interact { pos, .. }
-            | Step::Trigger { pos, .. } => Some(*pos),
+            | Step::Trigger { pos, .. }
+            | Step::Loop { pos, .. } => Some(*pos),
             Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
         }
     }
@@ -1602,6 +1806,15 @@ impl Step {
     pub fn trigger(&self) -> Option<&str> {
         match self {
             Step::Trigger { trigger_id, .. } => Some(trigger_id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The cell the party stands on to perform a **link** (spec-0083 §3.2) —
+    /// `Some` exactly when performing this step carries the party.
+    pub fn stand(&self) -> Option<[i32; 3]> {
+        match self {
+            Step::Trigger { stand, .. } => *stand,
             _ => None,
         }
     }
@@ -1927,68 +2140,80 @@ impl PlanError {
     }
 }
 
-/// `DW0300`: generic build/resolution failure (missing prefab metadata, unknown
-/// anchor, dependency cycle in the critical path).
-pub const DW_BUILD: DwCode = DwCode::new("DW0300", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0300`: generic build/resolution failure (missing prefab metadata, unknown
+    /// anchor, dependency cycle in the critical path).
+    pub const DW_BUILD: DwCode = DwCode::new("DW0300", ExitTier::Build);
+}
 
-/// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
-/// a layout, sealed gates are modelled as cut edges in the piece-connectivity
-/// graph; an objective whose anchor is only reachable through a gate that no
-/// earlier objective (in the quest/objective DAG order) has opened is a deadlock —
-/// the delve is unwinnable even though every anchor resolves. The canonical case:
-/// a key chest sealed behind the very gate its key opens.
-pub const DW_GATE_DEADLOCK: DwCode = DwCode::new("DW0306", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
+    /// a layout, sealed gates are modelled as cut edges in the piece-connectivity
+    /// graph; an objective whose anchor is only reachable through a gate that no
+    /// earlier objective (in the quest/objective DAG order) has opened is a deadlock —
+    /// the delve is unwinnable even though every anchor resolves. The canonical case:
+    /// a key chest sealed behind the very gate its key opens.
+    pub const DW_GATE_DEADLOCK: DwCode = DwCode::new("DW0306", ExitTier::Build);
+}
 
-/// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
-/// land at sea level — the piece floats above the sea or is drowned by it.
-///
-/// It is also the code this invariant's **zero binding** refuses under: a gate
-/// that examined nothing has proved nothing, and the gate that examined nothing
-/// is this one, so it answers under its own name rather than under a second
-/// code. See [`WaterlineBinding::seal`].
-pub const DW_OCEAN_WATERLINE: DwCode = DwCode::new("DW0344", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
+    /// land at sea level — the piece floats above the sea or is drowned by it.
+    ///
+    /// It is also the code this invariant's **zero binding** refuses under: a gate
+    /// that examined nothing has proved nothing, and the gate that examined nothing
+    /// is this one, so it answers under its own name rather than under a second
+    /// code. See [`WaterlineBinding::seal`].
+    pub const DW_OCEAN_WATERLINE: DwCode = DwCode::new("DW0344", ExitTier::Build);
+}
 
-/// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
-/// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
-/// a first-joining player, and cannot teleport a player who picks a class. The
-/// world then falls back to the vanilla spawn search, which a dedicated server
-/// resolves to the surface but the integrated (singleplayer) server resolves to
-/// the build floor — inside solid stone. Silent before; a hard build error now.
-pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::new("DW0345", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
+    /// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
+    /// a first-joining player, and cannot teleport a player who picks a class. The
+    /// world then falls back to the vanilla spawn search, which a dedicated server
+    /// resolves to the surface but the integrated (singleplayer) server resolves to
+    /// the build floor — inside solid stone. Silent before; a hard build error now.
+    pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::new("DW0345", ExitTier::Build);
+}
 
-/// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
-///
-/// An area has **one** place the party arrives at. Two claims to it is a
-/// question the compiler cannot answer and must not answer quietly: picking
-/// first-wins (by piece order, or by the `BTreeMap` order of two anchor names
-/// nobody chose for their sort) is how a spawn that moved becomes a mystery
-/// nothing in the build output mentions.
-///
-/// Only reachable through a declared role, which is the only way an area has an
-/// entry point at all. The remedy is to take the role off one of the two, which
-/// every producer can do where it wrote it: `delvec prefab anchor --no-role` on a
-/// hand-built or ingested piece, and dropping `role` from the `mark` on a
-/// grammar program.
-pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::new("DW0804", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
+    ///
+    /// An area has **one** place the party arrives at. Two claims to it is a
+    /// question the compiler cannot answer and must not answer quietly: picking
+    /// first-wins (by piece order, or by the `BTreeMap` order of two anchor names
+    /// nobody chose for their sort) is how a spawn that moved becomes a mystery
+    /// nothing in the build output mentions.
+    ///
+    /// Only reachable through a declared role, which is the only way an area has an
+    /// entry point at all. The remedy is to take the role off one of the two, which
+    /// every producer can do where it wrote it: `delvec prefab anchor --no-role` on a
+    /// hand-built or ingested piece, and dropping `role` from the `mark` on a
+    /// grammar program.
+    pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::new("DW0804", ExitTier::Build);
+}
 
-/// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
-/// party's forced route changes area, and the destination declares no entry
-/// point — so there is no cell to put the party down on and the crossing cannot
-/// be made.
-///
-/// Areas stand [`AREA_SPACING`] blocks apart across the void, so a leg that
-/// changes area is never a walk. Before this code the crossing was simply not
-/// emitted and nothing was said: the leg then fell through to the walkability
-/// proof, which reported `DW0311` — *the player cannot walk from … to …, a
-/// wedged doorway seam, a void gap, a fence ring* — a true sentence about a
-/// route nobody was ever going to walk, and an author who does what it says
-/// goes and widens a doorway.
-///
-/// [`DW_NO_ENTRY_ANCHOR`] is the same rule over the whole world (*no area at
-/// all declares one*); this is the same rule over the one area a body must be
-/// put down in. The quantifiers differ and so do the remedies, which is why
-/// they are two codes.
-pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::new("DW0872", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
+    /// party's forced route changes area, and the destination declares no entry
+    /// point — so there is no cell to put the party down on and the crossing cannot
+    /// be made.
+    ///
+    /// Areas stand [`AREA_SPACING`] blocks apart across the void, so a leg that
+    /// changes area is never a walk. Before this code the crossing was simply not
+    /// emitted and nothing was said: the leg then fell through to the walkability
+    /// proof, which reported `DW0311` — *the player cannot walk from … to …, a
+    /// wedged doorway seam, a void gap, a fence ring* — a true sentence about a
+    /// route nobody was ever going to walk, and an author who does what it says
+    /// goes and widens a doorway.
+    ///
+    /// [`DW_NO_ENTRY_ANCHOR`] is the same rule over the whole world (*no area at
+    /// all declares one*); this is the same rule over the one area a body must be
+    /// put down in. The quantifiers differ and so do the remedies, which is why
+    /// they are two codes.
+    pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::new("DW0872", ExitTier::Build);
+}
 
 /// **Where the party begins the delve**: the area it starts in, and the cell it
 /// stands on — the first area in declaration order that resolves an entry point
@@ -2013,21 +2238,23 @@ pub fn resolve_campaign_start(
         })
 }
 
-/// `DW0873`: **the party's first leg is a crossing, and nothing can carry it.**
-/// The campaign spawn and the first critical objective stand in different
-/// areas.
-///
-/// A crossing rides on the completion of the objective the party leaves from
-/// (see [`Plan::transport`]), and at the spawn the party has completed nothing.
-/// So the first leg can be neither ridden nor walked, and the delve cannot be
-/// started.
-///
-/// This is the member the old leg enumeration missed. It paired *consecutive
-/// objectives*, so the spawn — a leg's origin that is not an objective — was in
-/// no pair: such a campaign built clean, passed every game test, and stranded
-/// the party at the spawn with the harness reporting `No path to the goal!` and
-/// no diagnostic code at all.
-pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::new("DW0873", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0873`: **the party's first leg is a crossing, and nothing can carry it.**
+    /// The campaign spawn and the first critical objective stand in different
+    /// areas.
+    ///
+    /// A crossing rides on the completion of the objective the party leaves from
+    /// (see [`Plan::transport`]), and at the spawn the party has completed nothing.
+    /// So the first leg can be neither ridden nor walked, and the delve cannot be
+    /// started.
+    ///
+    /// This is the member the old leg enumeration missed. It paired *consecutive
+    /// objectives*, so the spawn — a leg's origin that is not an objective — was in
+    /// no pair: such a campaign built clean, passed every game test, and stranded
+    /// the party at the spawn with the harness reporting `No path to the goal!` and
+    /// no diagnostic code at all.
+    pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::new("DW0873", ExitTier::Build);
+}
 
 /// The plan's resolved anchors, **and what the pieces said they were for**.
 ///
@@ -2643,6 +2870,54 @@ mod waterline_binding_tests {
     }
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW0932` (spec-0083 §3.2, §3.6): a **link** whose geometry does not hold —
+    /// four faults under one code, because they are one claim, *a body in this
+    /// volume is carried onto a route cell*: no standable cell inside the volume
+    /// performs the trigger; `to` inside `from`; `to` not standable at the
+    /// teleport's tick; `from` and `to` in different areas.
+    pub const DW_TELEPORT_LINK: DwCode = DwCode::new("DW0932", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW0933` (spec-0083 §3.5): a `teleport` fires at or before the tick its
+    /// root's `cutscene` ends, and `cs_end` undoes it. Validation tier.
+    pub const DW_TELEPORT_UNDER_CUTSCENE: DwCode = DwCode::new("DW0933", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW0934` (spec-0083 §7): the layout graph and the quests disagree about
+    /// carries. Validation tier.
+    pub const DW_TELEPORT_CARRY_UNREALISED: DwCode = DwCode::new("DW0934", ExitTier::Build);
+}
+
+/// **Which links a path takes, and where** (spec-0083 §3.4) — the route
+/// proof's decision, handed back to the path builder so the steps it splices
+/// are in the ONE path every consumer reads.
+///
+/// Keyed by step indices of the path as built WITHOUT any link; the builder is
+/// deterministic, so the same campaign rebuilds the same unlinked path and the
+/// keys mean the same steps. Empty for every campaign the walk proof routes
+/// without a link — which is what keeps those builds byte-identical.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LinkTakes {
+    /// Leg end (unlinked step index) → the links taken on that leg, in the order
+    /// taken, each `(index into Plan::links, stand cell)`. Each becomes a
+    /// `trigger` step spliced directly in front of the leg's end.
+    pub spliced: BTreeMap<usize, Vec<(usize, [i32; 3])>>,
+    /// A `trigger` step the path already performs (unlinked step index) whose
+    /// trigger is a link the party stands in: `(link index, stand cell)`. A
+    /// performed trigger that carries, carries.
+    pub performed: BTreeMap<usize, (usize, [i32; 3])>,
+}
+
+impl LinkTakes {
+    /// Whether the path takes no link at all.
+    pub fn is_empty(&self) -> bool {
+        self.spliced.is_empty() && self.performed.is_empty()
+    }
+}
+
 /// Inter-area transport map: objective id → absolute teleport target (see
 /// [`Plan::transport`]).
 pub type TransportMap = BTreeMap<String, [i32; 3]>;
@@ -2663,6 +2938,34 @@ impl<'a> Plan<'a> {
         campaign: &'a Campaign,
         prefabs: &PrefabRegistry,
         perturb: Perturb,
+    ) -> Result<Self, PlanError> {
+        Self::build_linked(campaign, prefabs, perturb, LinkTakes::default(), true)
+    }
+
+    /// **This plan with the route proof's link decisions in its path**
+    /// (spec-0083 §3.4): the same campaign, prefabs and perturbation, rebuilt
+    /// with each taken link spliced in front of the leg it carries and each
+    /// performed link marked. Every field derived from the path — the step
+    /// indices, the region-write firings, the ancestor relation, the
+    /// checkpoints, the transport markers — is derived again from the one path,
+    /// so no consumer can read a step index that means something else.
+    ///
+    /// Called by the build once the world exists, because whether a walk fails
+    /// is a question about blocks; `takes` is what [`crate::compiler::nav::take_links`]
+    /// decided over them.
+    pub fn relinked(&self, prefabs: &PrefabRegistry, takes: LinkTakes) -> Result<Self, PlanError> {
+        Ok(
+            Self::build_linked(self.campaign, prefabs, self.perturb.clone(), takes, false)?
+                .with_design_files(self.design_files.clone()),
+        )
+    }
+
+    fn build_linked(
+        campaign: &'a Campaign,
+        prefabs: &PrefabRegistry,
+        perturb: Perturb,
+        link_takes: LinkTakes,
+        announce: bool,
     ) -> Result<Self, PlanError> {
         let namespace = campaign.world.campaign_id.as_str().to_string();
         let seed = campaign.world.content.seed;
@@ -2933,47 +3236,50 @@ impl<'a> Plan<'a> {
         // A campaign with no site plan gets `None` and nothing below runs, so its
         // output does not move by a byte.
         let mut blockout_reads = delvewright_dsl::metrics::Reads::new();
-        let blockout =
-            match crate::compiler::blockout::derive_with(campaign, &mut blockout_reads, perturb) {
-                None => None,
-                Some((mut placement, derived)) => {
-                    // The derivation is a producer of anchors exactly as a prefab
-                    // is, so it says what each one is FOR (spec-0046): the entry
-                    // node's anchor arrives carrying `AnchorRole::Entry`, and the
-                    // spelling `siteplan::ENTRY_ANCHOR` gives it stops being what
-                    // resolves it.
-                    for (name, resolved, role) in derived.anchors() {
-                        anchors.place(&placement.area_id, name, resolved, role)?;
-                    }
-                    // ---- the detail plan's pieces (spec-0050 §1) ----
-                    //
-                    // **The second tooth, and it is in the same door as the first.**
-                    // A `details[]` row carries no coordinate, no extent and no
-                    // offset; where its piece goes is `Frame::of` over the plan's
-                    // own resolved box, computed here. There is no flag and no
-                    // second entry point, so a part that wanted a different box
-                    // would have to have built a `Plan` some other way, and there is
-                    // none.
-                    //
-                    // The anchors go in AFTER the derived ones on purpose: the
-                    // derivation names `anchor/node-…` at the massing's own footing,
-                    // and where a piece stands there the piece's anchor is the
-                    // truth. Overwriting is what keeps the campaign's stage-3
-                    // vocabulary working without a quest edit.
-                    let detailing = crate::compiler::detail::place(campaign, prefabs);
-                    placement.pieces.extend(detailing.pieces);
-                    for (name, pos, facing) in detailing.anchors {
-                        anchors.place(
-                            &placement.area_id,
-                            &name,
-                            ResolvedAnchor::Point { pos, facing },
-                            None,
-                        )?;
-                    }
-                    areas.push(placement);
-                    Some(derived)
+        let blockout = match crate::compiler::blockout::derive_with(
+            campaign,
+            &mut blockout_reads,
+            perturb.clone(),
+        ) {
+            None => None,
+            Some((mut placement, derived)) => {
+                // The derivation is a producer of anchors exactly as a prefab
+                // is, so it says what each one is FOR (spec-0046): the entry
+                // node's anchor arrives carrying `AnchorRole::Entry`, and the
+                // spelling `siteplan::ENTRY_ANCHOR` gives it stops being what
+                // resolves it.
+                for (name, resolved, role) in derived.anchors() {
+                    anchors.place(&placement.area_id, name, resolved, role)?;
                 }
-            };
+                // ---- the detail plan's pieces (spec-0050 §1) ----
+                //
+                // **The second tooth, and it is in the same door as the first.**
+                // A `details[]` row carries no coordinate, no extent and no
+                // offset; where its piece goes is `Frame::of` over the plan's
+                // own resolved box, computed here. There is no flag and no
+                // second entry point, so a part that wanted a different box
+                // would have to have built a `Plan` some other way, and there is
+                // none.
+                //
+                // The anchors go in AFTER the derived ones on purpose: the
+                // derivation names `anchor/node-…` at the massing's own footing,
+                // and where a piece stands there the piece's anchor is the
+                // truth. Overwriting is what keeps the campaign's stage-3
+                // vocabulary working without a quest edit.
+                let detailing = crate::compiler::detail::place(campaign, prefabs);
+                placement.pieces.extend(detailing.pieces);
+                for (name, pos, facing) in detailing.anchors {
+                    anchors.place(
+                        &placement.area_id,
+                        &name,
+                        ResolvedAnchor::Point { pos, facing },
+                        None,
+                    )?;
+                }
+                areas.push(placement);
+                Some(derived)
+            }
+        };
 
         // ---- gate-aware reachability (M2 fix 7, DW0306) ----
         // With the layout solved, verify no objective's anchor is sealed behind a
@@ -3021,7 +3327,11 @@ impl<'a> Plan<'a> {
         // when it was zero is what let a build read `0 with a spatial contract`
         // as an unremarkable advisory line rather than as a check that examined
         // nothing.
-        eprintln!("{}", binding.line(placed));
+        // A relinked plan is the same placement measured a second time; its
+        // binding line was printed by the first build and is not printed twice.
+        if announce {
+            eprintln!("{}", binding.line(placed));
+        }
         if let Some(finding) = binding.finding(placed, campaign.site_plan.is_some()) {
             warnings.push(finding);
         }
@@ -3058,6 +3368,19 @@ impl<'a> Plan<'a> {
             })
             .collect::<Vec<_>>();
 
+        // ---- links and gathers (spec-0083) ----
+        //
+        // Before the path, because the path records which links are live at
+        // each of its steps and splices the ones the route proof took. The
+        // static half of `DW0932` is judged here, where every link is known
+        // and no block is needed.
+        let (links, gathers) = crate::compiler::link::collect(campaign, &anchors);
+        for l in &links {
+            if let Some(message) = crate::compiler::link::static_fault(l) {
+                return Err(PlanError::new(DW_TELEPORT_LINK, message).with_warnings(warnings));
+            }
+        }
+
         // ---- critical path + inter-area transport ----
         let flow = crate::compiler::flow::Flow::new(campaign);
         let start = resolve_campaign_start(&areas, &anchors);
@@ -3068,6 +3391,10 @@ impl<'a> Plan<'a> {
             &flow,
             &flow.playthrough(),
             start.as_ref(),
+            PathLinks {
+                links: &links,
+                takes: &link_takes,
+            },
         )?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
@@ -3076,6 +3403,7 @@ impl<'a> Plan<'a> {
         let path_firing = cp.firing;
         let objective_steps = path_firing.obj_step.clone();
         let trigger_steps = path_firing.trigger_step.clone();
+        let loop_spliced = cp.loops;
 
         // ---- v0.6 traps (spec-0011) ----
         let traps = collect_traps(campaign, &anchors, &dispenser_cells);
@@ -3163,16 +3491,59 @@ impl<'a> Plan<'a> {
         region_events.extend(shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
+        // spec-0086 §5.1–§5.2: every loop's slab as a gated seal, and the writes
+        // each exercise step's crossings perform, credited as forced at it.
+        region_events.extend(loop_spliced.events.iter().cloned());
         let strict_ancestor_steps = compute_strict_ancestor_steps(
             campaign,
             &objective_steps,
             &trigger_steps,
             cp.steps.len(),
         );
-        // v0.10 (spec-0031): where the party can be CARRIED rather than walk.
-        let transit_teleports = collect_transit_teleports(campaign, &anchors);
-
-        let region_events = region_events;
+        // ---- loops (spec-0086) ----
+        let loops = crate::compiler::r#loop::resolve(campaign, &anchors);
+        // `DW0950`: a loop the forced route never meets while it holds.
+        for (li, l) in loops.iter().enumerate() {
+            if loop_spliced.exercises.iter().any(|e| e.r#loop == l.id) {
+                continue;
+            }
+            let shut = loop_spliced
+                .holds
+                .get(li)
+                .and_then(|h| h.iter().position(|v| *v == Some(false)));
+            let index = campaign
+                .quests
+                .content
+                .loops
+                .iter()
+                .position(|d| d.id.as_str() == l.id)
+                .unwrap_or(0);
+            warnings.push(Diagnostic::warning(
+                crate::compiler::r#loop::DW_LOOP_UNMET,
+                "quests",
+                format!("/content/loops/{index}"),
+                match shut {
+                    Some(k) => format!(
+                        "loop `{}` is never met by the forced route while it holds — its gate is \
+                         first read shut at critical-path step {k}, and no leg before that crosses \
+                         its slab. Nobody is made to walk it; that is a design when the corridor \
+                         is endless only until a thing is found elsewhere, and a mechanism nobody \
+                         experiences when it is not",
+                        l.id
+                    ),
+                    None => format!(
+                        "loop `{}` is never met by the forced route: no leg of the critical path \
+                         crosses its slab, and its gate is never read shut on it. Nobody is made \
+                         to walk it",
+                        l.id
+                    ),
+                },
+            ));
+        }
+        let region_events = with_loop_exercises(
+            region_events_of(campaign, region_events, &path_firing, &npcs),
+            &loop_spliced,
+        );
 
         // ---- what became of every staged way (spec-0042 §2.5, DW0548) ----
         //
@@ -3228,6 +3599,16 @@ impl<'a> Plan<'a> {
         // `void` or `ocean` build does not move by a byte.
         let surround = build_surround(campaign, seed, &areas)?;
 
+        // ---- the assemblies' rigs (spec-0082) ----
+        let mut rigs: BTreeMap<String, delvewright_dsl::rig::Rig> = BTreeMap::new();
+        for a in &campaign.quests.content.assemblies {
+            if let delvewright_dsl::rig::RigLookup::Found(r) =
+                delvewright_dsl::AnchorRegistry::rig(prefabs, &a.rig)
+            {
+                rigs.insert(a.rig.as_str().to_string(), r.clone());
+            }
+        }
+
         Ok(Self {
             campaign,
             namespace,
@@ -3240,8 +3621,15 @@ impl<'a> Plan<'a> {
             critical_path: cp.steps,
             transport: cp.transport,
             critical_path_transport: cp.transport_by_step,
+            loops,
+            loop_exercises: loop_spliced.exercises,
             critical_path_sneak: cp.sneak_by_step,
             critical_path_cutscene: cp.cutscene_by_step,
+            critical_path_live_links: cp.live_links_by_step,
+            links,
+            gathers,
+            link_takes,
+            perturb,
             checkpoints,
             lethal_volumes,
             furniture,
@@ -3249,6 +3637,7 @@ impl<'a> Plan<'a> {
             objective_steps,
             path_firing,
             traps,
+            rigs,
             shortcuts,
             loot,
             collect_fills,
@@ -3259,7 +3648,6 @@ impl<'a> Plan<'a> {
             region_events,
             ways,
             way_gate,
-            transit_teleports,
             strict_ancestor_steps,
             massing_bounds,
             blockout,
@@ -3327,6 +3715,18 @@ impl<'a> Plan<'a> {
         flow: &crate::compiler::flow::Flow<'_>,
         path: &crate::compiler::flow::Playthrough,
     ) -> Result<CriticalPath, PlanError> {
+        self.branch_critical_path_linked(flow, path, &LinkTakes::default())
+    }
+
+    /// [`Plan::branch_critical_path`] with the route proof's link decisions for
+    /// THIS branch's path spliced in (spec-0083 §6) — the branch counterpart of
+    /// [`Plan::relinked`], keyed by the branch's own unlinked step indices.
+    pub fn branch_critical_path_linked(
+        &self,
+        flow: &crate::compiler::flow::Flow<'_>,
+        path: &crate::compiler::flow::Playthrough,
+        takes: &LinkTakes,
+    ) -> Result<CriticalPath, PlanError> {
         build_critical_path(
             self.campaign,
             &self.anchors,
@@ -3334,6 +3734,10 @@ impl<'a> Plan<'a> {
             flow,
             path,
             self.campaign_start().as_ref(),
+            PathLinks {
+                links: &self.links,
+                takes,
+            },
         )
     }
 
@@ -3356,19 +3760,28 @@ impl<'a> Plan<'a> {
     pub fn branch_gate_model(
         &self,
         cp: &CriticalPath,
-    ) -> (Vec<RegionEvent>, BTreeMap<usize, BTreeSet<usize>>) {
+    ) -> (RegionEvents, BTreeMap<usize, BTreeSet<usize>>) {
         let mut region_events =
             collect_region_events(self.campaign, &self.anchors, &cp.firing, &self.ways);
         region_events.extend(self.shortcuts.iter().map(|sc| {
             RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
+        // The branch's own seals and exercise writes (spec-0086 §5.3), in the
+        // branch path's own step space.
+        region_events.extend(cp.loops.events.iter().cloned());
         let ancestors = compute_strict_ancestor_steps(
             self.campaign,
             &cp.firing.obj_step,
             &cp.firing.trigger_step,
             cp.steps.len(),
         );
-        (region_events, ancestors)
+        (
+            with_loop_exercises(
+                region_events_of(self.campaign, region_events, &cp.firing, &self.npcs),
+                &cp.loops,
+            ),
+            ancestors,
+        )
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
@@ -3594,65 +4007,12 @@ impl<'a> Plan<'a> {
     /// caller that splices it in unconditionally emits exactly what it emitted
     /// before DSL v0.10.
     pub fn gate_terms(&self, gate: delvewright_dsl::gate::Gate<'_>) -> Vec<GateTerm> {
-        let mut out: Vec<GateTerm> = Vec::new();
-        for f in gate.requires_flags {
-            out.push(GateTerm {
-                objective: flag_score(f.as_str()),
-                party: true,
-                min: Some(1),
-                max: Some(1),
-                negate: false,
-            });
-        }
-        for f in gate.forbids_flags {
-            out.push(GateTerm {
-                objective: flag_score(f.as_str()),
-                party: true,
-                min: Some(1),
-                max: Some(1),
-                negate: true,
-            });
-        }
-        out.extend(self.state_terms(gate.requires_state));
-        out
+        gate_terms_of(self.campaign, gate)
     }
 
-    /// The numeric half of a gate, as [`GateTerm`]s.
-    ///
-    /// `equals` and `not-equals` are the same one-value range under opposite
-    /// keywords; `at-least` and `at-most` are the half-open ranges. Who holds the
-    /// value is the datum's declared scope and nothing else — a `party` datum
-    /// lives on [`PARTY`], a `player` one on the acting player. An undeclared
-    /// datum (already `DW0500`) answers `party`, so a campaign that failed
-    /// validation still yields something well-formed rather than panicking
-    /// mid-build.
+    /// The numeric half of a gate, as [`GateTerm`]s ([`state_terms_of`]).
     pub fn state_terms(&self, cmps: &[delvewright_dsl::StateCompare]) -> Vec<GateTerm> {
-        use delvewright_dsl::{CompareOp, StateScope};
-        cmps.iter()
-            .map(|c| {
-                let party = !matches!(
-                    self.campaign
-                        .quests
-                        .content
-                        .state_decl(c.state.as_str())
-                        .map(|s| s.scope),
-                    Some(StateScope::Player)
-                );
-                let (min, max, negate) = match c.op {
-                    CompareOp::Equals => (Some(c.value), Some(c.value), false),
-                    CompareOp::NotEquals => (Some(c.value), Some(c.value), true),
-                    CompareOp::AtLeast => (Some(c.value), None, false),
-                    CompareOp::AtMost => (None, Some(c.value), false),
-                };
-                GateTerm {
-                    objective: state_score(c.state.as_str()),
-                    party,
-                    min,
-                    max,
-                    negate,
-                }
-            })
-            .collect()
+        state_terms_of(self.campaign, cmps)
     }
 
     /// The campaign's `on_death` bundle (DSL v0.10, spec-0031) — effect root R7,
@@ -4324,15 +4684,29 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
     }
 }
 
+/// What the path builder needs to know about links (spec-0083): every link
+/// the campaign declares, and which of them the route proof took on this path.
+#[derive(Clone, Copy)]
+pub(crate) struct PathLinks<'l> {
+    links: &'l [crate::compiler::link::LinkPlan],
+    takes: &'l LinkTakes,
+}
+
 /// The computed critical path and its per-step metadata.
 pub struct CriticalPath {
     pub steps: Vec<Step>,
+    /// Per step, the links live there (spec-0083 §3.3), indices into
+    /// [`Plan::links`]. Aligned 1:1 with `steps`.
+    pub live_links_by_step: Vec<Vec<usize>>,
     pub(crate) transport: TransportMap,
     pub transport_by_step: Vec<Option<[i32; 3]>>,
     pub sneak_by_step: Vec<bool>,
     pub cutscene_by_step: Vec<Option<u32>>,
     /// What this path fires, and where ([`firing_of`]'s input).
     pub(crate) firing: PathFiring,
+    /// The loop half of this path (spec-0086): the slab seals and exercise
+    /// writes in this path's step space, and the exercise records.
+    pub(crate) loops: crate::compiler::r#loop::Spliced,
 }
 
 /// **What one path fires, and at which of its steps** — everything
@@ -4346,6 +4720,11 @@ pub(crate) struct PathFiring {
     /// Trigger id → the `trigger` step that performs it on this path. The
     /// region-write model fires a trigger's openings at this step and at no
     /// other; a trigger absent here opens nothing any proof may lean on.
+    ///
+    /// **Every path act, keyed by its own id**: a loop's exercise step
+    /// (spec-0086 §5.2) is keyed here by its `loop/<id>` beside the triggers,
+    /// because it is the same kind of step to the ancestry — a party act no DAG
+    /// orders, which precedes every step after it on this path.
     pub trigger_step: BTreeMap<String, usize>,
     /// The quests this path completes. A quest's `on_complete` fires on this
     /// path exactly when its quest is here; one absent here is never forced on
@@ -4360,6 +4739,19 @@ pub(crate) struct PathFiring {
     /// The members of `fired` whose gate held only on an undatable numeric term.
     /// Played by the replay; never forced.
     pub undecided: BTreeSet<String>,
+    /// Each `talk-to` objective this path performs → `(npc, flat option index)`
+    /// of the option it takes (spec-0088: a dialogue `set-flag` is forced only
+    /// on the option the path takes).
+    pub talk_taken: BTreeMap<String, (String, usize)>,
+    /// Objective id → every declared datum's value as the guaranteed replay
+    /// walks up to it ([`crate::compiler::flow::Walk::data`]).
+    pub data_before: BTreeMap<String, BTreeMap<String, Option<i64>>>,
+    /// Every declared datum's value once the path has played.
+    pub data_end: BTreeMap<String, Option<i64>>,
+    /// The branch flags (`branch_points[].forks_on`) this path's world never
+    /// holds — the alternatives it does not take. No firing on this path sets
+    /// one, so the staged-volume readings credit none of their setters.
+    pub branch_excluded: BTreeSet<String>,
 }
 
 impl PathFiring {
@@ -4394,8 +4786,14 @@ fn build_critical_path(
     flow: &crate::compiler::flow::Flow<'_>,
     path: &crate::compiler::flow::Playthrough,
     start: Option<&(String, [i32; 3])>,
+    carry: PathLinks<'_>,
 ) -> Result<CriticalPath, PlanError> {
+    let PathLinks { links, takes } = carry;
     let mut steps = Vec::new();
+    // `(path step index, first critical step it produced)`, in path order — how
+    // a critical step is mapped back to the flags and data the party holds
+    // walking up to it.
+    let mut si_start: Vec<(usize, usize)> = Vec::new();
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
     let mut obj_areas: Vec<(String, String, usize)> = Vec::new();
@@ -4406,12 +4804,31 @@ fn build_critical_path(
     // place comparison possible at all.
     let history = crate::compiler::continuity::replay(campaign);
 
+    // spec-0086 §5.2: the loop half of this path — the flow walk's state step
+    // by step, the exercise steps it splices and the slab seals it reads off
+    // the gate. Inert (and never consulted) for a campaign with no loop.
+    let mut walk = flow.walk();
+    let data_of = |w: &crate::compiler::flow::Walk<'_, '_>| -> BTreeMap<String, Option<i64>> {
+        w.data()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect()
+    };
+    let mut loops = crate::compiler::r#loop::LoopSplice::new(
+        campaign,
+        anchors,
+        start.cloned(),
+        walk.flags().clone(),
+        data_of(&walk),
+    );
+
     // select-class: first declared class.
     if let Some(first) = campaign.classes.content.classes.first() {
         steps.push(Step::SelectClass {
             class_id: first.id.as_str().to_string(),
             command: "/trigger dw.class set 1".to_string(),
         });
+        loops.record();
     }
 
     // The branch-coherent playthrough: one world's completing quests in
@@ -4452,12 +4869,40 @@ fn build_critical_path(
     // The environment triggers this path performs, keyed by the path step each
     // is performed in front of. See [`path_triggers`].
     let due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
-    let (fired, undecided) = path_fired_lines(campaign, flow, path, &due);
+    let replay = path_fired_lines(campaign, flow, path, &due);
+    let held_at_end: BTreeSet<String> = flow
+        .journal(path)
+        .last()
+        .map(|s| s.flags_after.clone())
+        .unwrap_or_default();
+    let branch_excluded: BTreeSet<String> = campaign
+        .quest_plan
+        .content
+        .branch_points
+        .iter()
+        .flat_map(|b| b.forks_on.iter().map(|f| f.as_str().to_string()))
+        .filter(|f| !held_at_end.contains(f))
+        .collect();
+    let talk_taken: BTreeMap<String, (String, usize)> = path
+        .steps
+        .iter()
+        .filter_map(|st| {
+            let n = st.talk_option?;
+            let npc = objective_quest(campaign, &st.objective).and_then(|(_, o)| match o {
+                delvewright_dsl::Objective::TalkTo { npc, .. } => Some(npc.as_str().to_string()),
+                _ => None,
+            })?;
+            Some((st.objective.clone(), (npc, n)))
+        })
+        .collect();
     let mut trigger_step: BTreeMap<String, usize> = BTreeMap::new();
 
     for (si, st) in path.steps.iter().enumerate() {
+        si_start.push((si, steps.len()));
         let qid = st.quest.as_str();
         let Some(quest) = stage5.get(qid) else {
+            walk.take(st);
+            loops.advance(walk.flags().clone(), data_of(&walk));
             continue;
         };
         let area = campaign
@@ -4468,19 +4913,35 @@ fn build_critical_path(
             .find(|q| q.id.as_str() == qid)
             .map(|q| q.area.as_str())
             .unwrap_or("");
+        let entry = match anchors.entry_anchor(area) {
+            Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
+            _ => None,
+        };
         for step in due.get(&si).into_iter().flatten() {
+            if let Some(pos) = step.pos()
+                && !loops.is_empty()
+            {
+                loops.before(&mut steps, &mut trigger_step, pos, area, entry, anchors);
+            }
             if let Step::Trigger { trigger_id, .. } = step {
                 trigger_step.insert(trigger_id.clone(), steps.len());
             }
             steps.push(step.clone());
+            loops.record();
+            if let Some(pos) = step.pos() {
+                loops.stand(area, pos);
+            }
         }
         let Some(obj) = quest
             .objectives
             .iter()
             .find(|o| o.id().as_str() == st.objective)
         else {
+            walk.take(st);
+            loops.advance(walk.flags().clone(), data_of(&walk));
             continue;
         };
+        let before = steps.len();
         {
             match obj {
                 Objective::TalkTo { id, npc, .. } => {
@@ -4819,12 +5280,56 @@ fn build_critical_path(
                 }
             }
         }
+        // The objective step is pushed; a leg into it that crosses a holding
+        // slab is exercised in front of it (spec-0086 §5.2), so it is lifted
+        // off, the exercise spliced, and put back.
+        walk.take(st);
+        if steps.len() == before + 1 {
+            let step = steps.pop().expect("the objective step was just pushed");
+            let step_area = obj_areas
+                .last()
+                .filter(|(_, _, idx)| *idx == before)
+                .map(|(_, a, _)| a.clone())
+                .unwrap_or_else(|| area.to_string());
+            if let Some(pos) = step.pos()
+                && !loops.is_empty()
+            {
+                let entry = match anchors.entry_anchor(&step_area) {
+                    Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
+                    _ => None,
+                };
+                loops.before(
+                    &mut steps,
+                    &mut trigger_step,
+                    pos,
+                    &step_area,
+                    entry,
+                    anchors,
+                );
+            }
+            let pos = step.pos();
+            steps.push(step);
+            if let Some(last) = obj_areas.last_mut()
+                && last.2 == before
+            {
+                last.2 = steps.len() - 1;
+            }
+            loops.advance(walk.flags().clone(), data_of(&walk));
+            loops.record();
+            if let Some(pos) = pos {
+                loops.stand(&step_area, pos);
+            }
+        } else {
+            loops.advance(walk.flags().clone(), data_of(&walk));
+        }
     }
 
     steps.push(Step::AssertComplete {
         objective: "dw.campaign".to_string(),
         value: 1,
     });
+    loops.record();
+    let mut spliced = loops.finish();
 
     // ---- the legs the party must cross ----
     //
@@ -4955,13 +5460,136 @@ fn build_critical_path(
         }
     }
 
-    let obj_step: BTreeMap<String, usize> = obj_areas
+    let mut obj_step: BTreeMap<String, usize> = obj_areas
         .iter()
         .map(|(id, _, idx)| (id.clone(), *idx))
         .collect();
 
+    // An exercise step's transport is its landing (spec-0086 §5.2), marked on
+    // the same per-step channel a crossing is, so every reader of visited
+    // positions reads the leg after it as starting there.
+    for (i, s) in steps.iter().enumerate() {
+        if let Step::Loop { transport, .. } = s {
+            transport_by_step[i] = Some(*transport);
+        }
+    }
+
+    // ---- the links live at each step (spec-0083 §3.3) ----
+    //
+    // A link is live where the trigger's flag gate and every `when` on the way
+    // to its teleport hold under the flags the party holds walking up to the
+    // step, and every numeric term compares true against the writes the path
+    // has performed by then — the same replay `DW0879` reads (`Flow::walk`).
+    // Computed only when the campaign declares a link, so nothing else moves.
+    let mut live_links_by_step: Vec<Vec<usize>> = vec![Vec::new(); steps.len()];
+    if !links.is_empty() {
+        let mut data_at: Vec<BTreeMap<String, Option<i64>>> = Vec::new();
+        let mut walk = flow.walk();
+        for st in &path.steps {
+            data_at.push(
+                walk.data()
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+            );
+            walk.take(st);
+        }
+        for (k, live) in live_links_by_step.iter_mut().enumerate() {
+            let Some(si) = si_start
+                .iter()
+                .rev()
+                .find(|(_, first)| *first <= k)
+                .map(|(si, _)| *si)
+            else {
+                continue;
+            };
+            let (Some(held), Some(data)) = (flags_at.get(si), data_at.get(si)) else {
+                continue;
+            };
+            *live = links
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.flags_open(held) && l.state_open(data))
+                .map(|(i, _)| i)
+                .collect();
+        }
+    }
+
+    // ---- the links the route proof took (spec-0083 §3.4) ----
+    //
+    // A performed trigger that carries is marked where it stands; a taken link
+    // is a `trigger` step spliced directly in front of the leg it carries, in
+    // the order taken. Every per-step vector and every step-index map is
+    // re-indexed in the same pass, so the path is one path again.
+    for (&k, &(li, stand)) in &takes.performed {
+        if let (Some(Step::Trigger { stand: at, .. }), Some(l)) = (steps.get_mut(k), links.get(li))
+        {
+            *at = Some(stand);
+            transport_by_step[k] = Some(l.to);
+        }
+    }
+    if !takes.spliced.is_empty() {
+        let n = steps.len();
+        let mut new_steps = Vec::with_capacity(n);
+        let mut new_transport = Vec::with_capacity(n);
+        let mut new_sneak = Vec::with_capacity(n);
+        let mut new_cutscene = Vec::with_capacity(n);
+        let mut new_live = Vec::with_capacity(n);
+        let mut moved: Vec<usize> = Vec::with_capacity(n);
+        let mut spliced_at: Vec<(String, usize)> = Vec::new();
+        for (k, step) in steps.into_iter().enumerate() {
+            for &(li, stand) in takes.spliced.get(&k).into_iter().flatten() {
+                let Some(l) = links.get(li) else { continue };
+                spliced_at.push((l.trigger_id.clone(), new_steps.len()));
+                new_steps.push(Step::Trigger {
+                    trigger_id: l.trigger_id.clone(),
+                    on: l.on,
+                    anchor_id: l.anchor_id.clone(),
+                    npc_id: l.npc_id.clone(),
+                    assembly_id: l.assembly_id.clone(),
+                    pos: l.body.first().copied().unwrap_or(stand),
+                    range: l.range,
+                    stand: Some(stand),
+                });
+                new_transport.push(Some(l.to));
+                new_sneak.push(false);
+                new_cutscene.push(None);
+                new_live.push(live_links_by_step[k].clone());
+            }
+            moved.push(new_steps.len());
+            new_steps.push(step);
+            new_transport.push(transport_by_step[k]);
+            new_sneak.push(sneak_by_step[k]);
+            new_cutscene.push(cutscene_by_step[k]);
+            new_live.push(std::mem::take(&mut live_links_by_step[k]));
+        }
+        for idx in obj_step.values_mut() {
+            *idx = moved[*idx];
+        }
+        // Every trigger step moves with its step; a spliced link records the
+        // first step that performs its trigger, which is what the region model
+        // roots that trigger's openings at.
+        for idx in trigger_step.values_mut() {
+            *idx = moved[*idx];
+        }
+        for (id, at) in spliced_at {
+            let e = trigger_step.entry(id).or_insert(at);
+            *e = (*e).min(at);
+        }
+        // spec-0086 × spec-0083: the loop half of this path was built in the
+        // step space before any link was spliced; its seals and exercise
+        // records move with their steps.
+        spliced.reindex(&moved, new_steps.len());
+        steps = new_steps;
+        transport_by_step = new_transport;
+        sneak_by_step = new_sneak;
+        cutscene_by_step = new_cutscene;
+        live_links_by_step = new_live;
+    }
+
     Ok(CriticalPath {
         steps,
+        live_links_by_step,
         transport,
         transport_by_step,
         sneak_by_step,
@@ -4970,9 +5598,14 @@ fn build_critical_path(
             obj_step,
             trigger_step,
             quests: path.quests.iter().cloned().collect(),
-            fired,
-            undecided,
+            fired: replay.fired,
+            undecided: replay.undecided,
+            talk_taken,
+            data_before: replay.data_before,
+            data_end: replay.data_end,
+            branch_excluded,
         },
+        loops: spliced,
     })
 }
 
@@ -4992,7 +5625,8 @@ fn path_fired_lines(
     flow: &crate::compiler::flow::Flow<'_>,
     path: &crate::compiler::flow::Playthrough,
     due: &BTreeMap<usize, Vec<Step>>,
-) -> (BTreeSet<String>, BTreeSet<String>) {
+) -> PathReplay {
+    let mut data_before: BTreeMap<String, BTreeMap<String, Option<i64>>> = BTreeMap::new();
     let mut fired: BTreeSet<String> = BTreeSet::new();
     let mut undecided: BTreeSet<String> = BTreeSet::new();
     // A trigger's effect list and its root pointer, from the one root walk.
@@ -5015,11 +5649,33 @@ fn path_fired_lines(
             }
             walk.perform(trigger_id);
         }
+        data_before.insert(step.objective.clone(), data_now(&walk));
         let taken = walk.take(step);
         fired.extend(taken.fired);
         undecided.extend(taken.undecided);
     }
-    (fired, undecided)
+    PathReplay {
+        fired,
+        undecided,
+        data_before,
+        data_end: data_now(&walk),
+    }
+}
+
+/// What [`path_fired_lines`] reads off one walk of the guaranteed replay.
+struct PathReplay {
+    fired: BTreeSet<String>,
+    undecided: BTreeSet<String>,
+    data_before: BTreeMap<String, BTreeMap<String, Option<i64>>>,
+    data_end: BTreeMap<String, Option<i64>>,
+}
+
+/// Every declared datum's value the walk holds now, by id.
+fn data_now(walk: &crate::compiler::flow::Walk<'_, '_>) -> BTreeMap<String, Option<i64>> {
+    walk.data()
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
 }
 
 /// **The environment triggers a path performs, and where** — keyed by the index
@@ -5094,14 +5750,91 @@ fn path_triggers(
         if reader.is_none() && !opens.contains(t.id.as_str()) {
             continue;
         }
+        // The flags this trigger's own bundle sets. The journal credits a
+        // trigger-paid flag as held from the step it is owed at, so a trigger
+        // that stands itself down with the flag it pays — a hit count that
+        // forbids its own completion flag (spec-0082 §3.3) — would read as
+        // forbidden before it was ever performed. Its own flags are not yet
+        // held when the path decides to perform it.
+        let mut own: BTreeSet<&str> = BTreeSet::new();
+        for e in &t.effects {
+            e.visit_deep(&mut |x| {
+                if let delvewright_dsl::Verb::SetFlag { flag, .. } = &x.verb {
+                    own.insert(flag.as_str());
+                }
+            });
+        }
         let enabled = |si: usize| {
             let held = &flags_at[si];
             t.requires_flags.iter().all(|f| held.contains(f.as_str()))
-                && !t.forbids_flags.iter().any(|f| held.contains(f.as_str()))
+                && !t
+                    .forbids_flags
+                    .iter()
+                    .any(|f| held.contains(f.as_str()) && !own.contains(f.as_str()))
         };
         // Where the target stands when the party is at step `si`: the area the
-        // emitter summoned its body in, or the NPC's body at this beat.
+        // emitter summoned its body in, the NPC's body at this beat, or the
+        // struck assembly's mark (spec-0082).
+        // An assembly stands only from the path step whose completion bundle
+        // spawns it: struck before then, there is nothing there to strike.
+        let spawned_at: Option<usize> = t.on.assembly_target().and_then(|a| {
+            path.steps.iter().position(|st| {
+                let Some(q) = campaign
+                    .quests
+                    .content
+                    .quests
+                    .iter()
+                    .find(|q| q.id.as_str() == st.quest)
+                else {
+                    return false;
+                };
+                let mut spawns = false;
+                let mut look = |effs: &[QuestEffect]| {
+                    for e in effs {
+                        e.visit_deep(&mut |x| {
+                            spawns |= matches!(&x.verb,
+                                delvewright_dsl::Verb::SpawnAssembly { assembly } if assembly == a);
+                        });
+                    }
+                };
+                if let Some((_, effs)) = q
+                    .on_objective_complete
+                    .iter()
+                    .find(|(k, _)| k.as_str() == st.objective.as_str())
+                {
+                    look(effs);
+                }
+                let last =
+                    q.objectives.last().map(|o| o.id().as_str()) == Some(st.objective.as_str());
+                if last {
+                    look(&q.on_complete);
+                }
+                spawns
+            })
+        });
         let target = |si: usize| -> Option<(String, [i32; 3])> {
+            if let Some(a) = t.on.assembly_target() {
+                if !spawned_at.is_some_and(|s| s < si) {
+                    return None;
+                }
+                let decl = campaign.quests.content.assembly_decl(a.as_str())?;
+                let (area, cell) = anchors
+                    .iter()
+                    .find(|((_, n), _)| n == decl.at.anchor.as_str())
+                    .map(|((a, _), r)| {
+                        (
+                            a.clone(),
+                            match r {
+                                ResolvedAnchor::Point { pos, .. } => *pos,
+                                ResolvedAnchor::Gate { from, .. } => *from,
+                            },
+                        )
+                    })?;
+                // The mark: where the thing stands, the cell a party walks up to.
+                // Whether its hitbox is within a strike of anywhere the party
+                // can stand is `DW0937`'s question, asked of the box itself.
+                return Some((area, decl.at.cell(cell)));
+            }
             match t.on.npc_target() {
                 Some(npc) => npc_beat_cell(
                     campaign,
@@ -5135,26 +5868,97 @@ fn path_triggers(
             .or_else(|| reader.filter(|&r| enabled(r)));
         let Some(si) = at else { continue };
         let Some((_, pos)) = target(si) else { continue };
-        out.entry(si).or_default().push(Step::Trigger {
-            trigger_id: t.id.as_str().to_string(),
-            on: t.on.kind(),
-            anchor_id: t.at_anchor().map(str::to_string),
-            npc_id: t.on.npc_target().map(|n| n.as_str().to_string()),
-            pos,
-            range: match t.on {
-                delvewright_dsl::TriggerOn::Approach { range } => Some(range),
-                _ => None,
-            },
-        });
+        // A count is N performances (spec-0082 §10): a repeatable trigger whose
+        // way-opening or flag-paying effect waits on a datum the trigger itself
+        // counts up is performed as often as the count needs.
+        for _ in 0..fires_needed(campaign, t) {
+            out.entry(si).or_default().push(Step::Trigger {
+                trigger_id: t.id.as_str().to_string(),
+                on: t.on.kind(),
+                anchor_id: t.at_anchor().map(str::to_string),
+                npc_id: t.on.npc_target().map(|n| n.as_str().to_string()),
+                assembly_id: t.on.assembly_target().map(|a| a.as_str().to_string()),
+                pos,
+                range: match t.on {
+                    delvewright_dsl::TriggerOn::Approach { range } => Some(range),
+                    _ => None,
+                },
+                stand: None,
+            });
+        }
     }
     out
 }
 
+/// How many times a path performs `t` before the effect it is performed for
+/// happens: 1, unless `t` is repeatable and an effect that opens a way or sets
+/// a flag is gated on a datum `t`'s own bundle counts up ahead of it — a hit
+/// count (spec-0082 §3.3). Then it is the least `n` for which the datum's
+/// declared initial plus `n` times the bundle's ungated `add-state` amounts
+/// satisfies every term of that gate on it. A gate the count cannot open
+/// within 64 performances, or one that reads anything the bundle does not
+/// count, is left at 1 — the path performs the trigger and the step fails
+/// where it stands, the direction that can only turn a proof red.
+fn fires_needed(campaign: &Campaign, t: &delvewright_dsl::EnvTrigger) -> usize {
+    if t.once {
+        return 1;
+    }
+    let mut needed = 1usize;
+    let mut counted: BTreeMap<&str, i64> = BTreeMap::new();
+    for e in &t.effects {
+        if let delvewright_dsl::Verb::AddState { state, amount } = &e.verb
+            && e.when.is_none()
+        {
+            *counted.entry(state.as_str()).or_insert(0) += i64::from(*amount);
+            continue;
+        }
+        let pays = opens_a_way(e) || matches!(e.verb, delvewright_dsl::Verb::SetFlag { .. });
+        let terms = e.requires_state();
+        if !pays || terms.is_empty() {
+            continue;
+        }
+        let holds = |n: i64| {
+            terms.iter().all(|c| {
+                let Some(step) = counted.get(c.state.as_str()).copied() else {
+                    return false;
+                };
+                let Some(decl) = campaign.quests.content.state_decl(c.state.as_str()) else {
+                    return false;
+                };
+                let v = i64::from(decl.initial) + n * step;
+                let want = i64::from(c.value);
+                match c.op {
+                    delvewright_dsl::CompareOp::Equals => v == want,
+                    delvewright_dsl::CompareOp::NotEquals => v != want,
+                    delvewright_dsl::CompareOp::AtLeast => v >= want,
+                    delvewright_dsl::CompareOp::AtMost => v <= want,
+                }
+            })
+        };
+        if let Some(n) = (1..=64).find(|n| holds(*n)) {
+            needed = needed.max(n as usize);
+        }
+    }
+    needed
+}
+
 /// Whether a critical path could ever perform this trigger — its bundle opens a
 /// way or sets a flag, the only two things [`path_triggers`] performs a trigger
-/// for. The emitter broadcasts a fired marker from exactly these, so
-/// every `trigger` step has a line to pass on and no other trigger prints one.
+/// for, or it hosts a **link** (a repeatable trigger carrying a `teleport`,
+/// spec-0083 §3.1), which the route proof performs where a walk fails. The
+/// emitter broadcasts a fired marker from exactly these, so every `trigger`
+/// step has a line to pass on and no other trigger prints one.
 pub(crate) fn trigger_may_be_performed(t: &delvewright_dsl::EnvTrigger) -> bool {
+    fn carries(effs: &[QuestEffect]) -> bool {
+        effs.iter().any(|e| {
+            e.teleport().is_some()
+                || matches!(&e.verb, delvewright_dsl::Verb::Sequence { steps }
+                    if steps.iter().any(|s| carries(&s.effects)))
+        })
+    }
+    if !t.once && carries(&t.effects) {
+        return true;
+    }
     fn deep(effs: &[QuestEffect]) -> bool {
         effs.iter().any(|e| {
             opens_a_way(e)
@@ -5839,6 +6643,15 @@ pub(crate) enum EffectRoot<'a> {
     /// credited with one of the fight's bodies, so it has no step and is
     /// optional: nobody is forced to be credited with a kill. Carries the fight.
     OnKill(delvewright_dsl::Fight<'a>),
+    /// An assembly strike step's `on_land` (spec-0082) — fired by the strike
+    /// machine while a player stands in the arming region, so it has no step
+    /// and is optional: nobody is forced to stand where a blow lands.
+    AssemblyLand(&'a delvewright_dsl::Assembly),
+    /// A loop's `on_cross` (spec-0086) — fired by a body crossing the holding
+    /// slab. Unforced from step 0 on its own (a mob crossing fires it too); the
+    /// crossings the path's exercise step performs are credited as forced at
+    /// that step by `Plan::build`, effect by effect, from the loop replay.
+    LoopCross(&'a delvewright_dsl::Loop),
 }
 
 /// **The area an [`EffectRoot`]'s bundle plays in, when it has one.**
@@ -5937,6 +6750,8 @@ pub(crate) fn for_each_effect_root<'a>(
             delvewright_dsl::EffectRootOwner::OnDeath => EffectRoot::OnDeath,
             delvewright_dsl::EffectRootOwner::ShopOffer(_) => EffectRoot::ShopOffer,
             delvewright_dsl::EffectRootOwner::OnKill(f) => EffectRoot::OnKill(f),
+            delvewright_dsl::EffectRootOwner::AssemblyLand(m) => EffectRoot::AssemblyLand(m),
+            delvewright_dsl::EffectRootOwner::LoopCross(l) => EffectRoot::LoopCross(l),
         };
         f(
             &EffectRootSite {
@@ -6000,7 +6815,7 @@ pub(crate) fn for_each_gate_effect<'a>(
 /// nothing a body can stand on. Resolving the region without the block is what let
 /// that conclusion be assumed instead of derived, so there is deliberately no
 /// region-only variant of this lookup.
-fn gate_region_block_any(
+pub(crate) fn gate_region_block_any(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     name: &str,
 ) -> Option<([i32; 3], [i32; 3], String)> {
@@ -6018,7 +6833,7 @@ fn gate_region_block_any(
 /// core of [`Plan::point_any`], so the planning stage can resolve a box *while*
 /// building the `Plan` (which is where the region-write model is collected) rather
 /// than needing a finished one.
-fn point_any_in(
+pub(crate) fn point_any_in(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     anchor: &str,
 ) -> Option<[i32; 3]> {
@@ -6033,7 +6848,7 @@ fn point_any_in(
 /// Resolve an anchor-centred box (`anchor ± extent`) over a resolved-anchor map —
 /// the free-function core of [`Plan::zone_box`], for the same reason
 /// [`point_any_in`] exists.
-fn zone_box_in(
+pub(crate) fn zone_box_in(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     zone: &delvewright_dsl::StealthZone,
 ) -> Option<([i32; 3], [i32; 3])> {
@@ -6146,6 +6961,11 @@ fn collect_region_events(
                 f.word(),
                 f.id()
             ),
+            EffectRoot::LoopCross(l) => format!(
+                "the `on_cross` bundle of loop `{}` at `{}`, which fires only on a crossing \
+                 the path does not make",
+                l.id, site.path
+            ),
             // The two DAG roots reach this arm when their owning quest is
             // OPTIONAL (spec-0051 §8.6), or when this path never plays the beat
             // at all (a branch the path does not take) — on a path that plays a
@@ -6192,6 +7012,11 @@ fn collect_region_events(
                 "the effects of trigger `{}`, which the critical path never performs",
                 t.id
             ),
+            EffectRoot::AssemblyLand(m) => format!(
+                "a strike `on_land` bundle of assembly `{}` at `{}`, which fires only if a \
+                 blow lands on a player who stood in its reach",
+                m.id, site.path
+            ),
         };
         let (fire_step, forced) = firing_of(site, path, &optional);
         // The three spellings of one write. A gate names a prefab gate anchor and
@@ -6207,25 +7032,23 @@ fn collect_region_events(
             match (e.gate_region_write(), e.region_write(), e.way_write()) {
                 (Some((anchor, fills)), _, _) => gate_region_block_any(anchors, anchor.as_str())
                     .map(|(from, to, gate_block)| {
-                        vec![(
-                            (from, to),
-                            if fills {
-                                RegionWrite::of_block(&gate_block)
-                            } else {
-                                RegionWrite::Unseal
-                            },
-                        )]
+                        vec![if fills {
+                            (
+                                (from, to),
+                                RegionWrite::of_block(&gate_block),
+                                Some(gate_block),
+                            )
+                        } else {
+                            ((from, to), RegionWrite::Unseal, None)
+                        }]
                     })
                     .unwrap_or_default(),
                 (_, Some((zone, block)), _) => zone_box_in(anchors, zone)
                     .map(|r| {
-                        vec![(
-                            r,
-                            match block {
-                                Some(b) => RegionWrite::of_block(b),
-                                None => RegionWrite::Clear,
-                            },
-                        )]
+                        vec![match block {
+                            Some(b) => (r, RegionWrite::of_block(b), Some(b.to_string())),
+                            None => (r, RegionWrite::Clear, None),
+                        }]
                     })
                     .unwrap_or_default(),
                 // An unresolvable way reference is `DW0547`'s finding, raised by
@@ -6234,11 +7057,13 @@ fn collect_region_events(
                 (_, _, Some((piece, name))) => ways
                     .resolve(piece.as_str(), name)
                     .map(|w| {
-                        let write = match w.sign {
-                            crate::compiler::ways::Sign::Laid => RegionWrite::of_block(&w.block),
-                            crate::compiler::ways::Sign::Cleared => RegionWrite::Clear,
+                        let (write, laid) = match w.sign {
+                            crate::compiler::ways::Sign::Laid => {
+                                (RegionWrite::of_block(&w.block), Some(w.block.clone()))
+                            }
+                            crate::compiler::ways::Sign::Cleared => (RegionWrite::Clear, None),
                         };
-                        w.boxes.iter().map(|b| (*b, write)).collect()
+                        w.boxes.iter().map(|b| (*b, write, laid.clone())).collect()
                     })
                     .unwrap_or_default(),
                 _ => return,
@@ -6246,7 +7071,7 @@ fn collect_region_events(
         if resolved.is_empty() {
             return; // an unresolvable anchor is DW0142/DW0343/DW0360's finding
         }
-        for (region, write) in resolved {
+        for (region, write, laid) in resolved {
             // A trigger's FILL keeps the treatment it has always had — fired at
             // step 0 and forced, which seals every leg against it. Only its
             // openings are dated by the step that performs it: a wall is assumed
@@ -6263,14 +7088,185 @@ fn collect_region_events(
                 // survive it.
                 continue;
             }
-            out.push(if forced {
+            let ev = if forced {
                 RegionEvent::forced(region, write, fire_step)
             } else {
                 RegionEvent::unforced(region, write, fire_step, blame())
+            };
+            out.push(match &laid {
+                Some(b) => ev.laying(b),
+                None => ev,
             });
         }
     });
     out
+}
+
+/// **Every flag write and datum the region model reads off one path**
+/// (spec-0088 §4.2): the [`RegionEvents`] beside `writes`, in the path's own
+/// step space.
+///
+/// The flags are collected by the walk [`collect_region_events`] takes, and
+/// dated by the same [`firing_of`]:
+///
+/// - a `set-flag` effect at any root: [`firing_of`]'s step and forcedness;
+/// - a dialogue option's `set-flag`: unforced at step 0 — a button can be
+///   pressed whenever its own gate holds, which no step bounds — and, for the
+///   option a `talk-to` on this path takes, forced at that objective's step too;
+/// - a trap's or a timed gate's `disarm.sets_flag`: unforced at step 0 — an act
+///   nothing forces;
+///
+/// and a setter in a bundle of a quest this path's world never completes, or an
+/// unforced setter of a branch flag this path's world never holds
+/// ([`PathFiring::branch_excluded`]), is dropped: the world that takes that
+/// alternative is a different path, judged on its own.
+///
+/// The data are the guaranteed replay's values ([`PathFiring::data_before`]),
+/// keyed by critical-path step, plus every datum an unforced firing writes.
+pub(crate) fn region_events_of(
+    campaign: &Campaign,
+    writes: Vec<RegionEvent>,
+    path: &PathFiring,
+    npcs: &[NpcPlan],
+) -> RegionEvents {
+    let optional = campaign.quest_plan.content.optional();
+    let mut flags: Vec<FlagEvent> = Vec::new();
+    let mut unforced_writers: BTreeSet<String> = BTreeSet::new();
+    for_each_gate_effect(campaign, &mut |site, e| {
+        let set = match &e.verb {
+            Verb::SetFlag { flag, .. } => Some(flag.as_str()),
+            _ => None,
+        };
+        let writes_state = e.writes_state().map(|(id, _)| id.as_str().to_string());
+        if set.is_none() && writes_state.is_none() {
+            return;
+        }
+        // A bundle of a quest this path's world never completes never fires on
+        // it: the world that completes it is a different path, judged on its
+        // own.
+        let quest = match &site.root {
+            EffectRoot::ObjectiveComplete { quest, .. } => Some(*quest),
+            EffectRoot::QuestComplete(q) => Some(q.id.as_str()),
+            _ => None,
+        };
+        if quest.is_some_and(|q| !path.quests.contains(q)) {
+            return;
+        }
+        let (fire_step, forced) = firing_of(site, path, &optional);
+        if let Some(flag) = set {
+            flags.push(FlagEvent {
+                flag: flag.to_string(),
+                fire_step,
+                forced,
+            });
+        }
+        if let Some(id) = writes_state
+            && !forced
+        {
+            unforced_writers.insert(id);
+        }
+    });
+    for npc in npcs {
+        for opt in &npc.options {
+            for f in &opt.sets_flags {
+                flags.push(FlagEvent {
+                    flag: f.clone(),
+                    fire_step: 0,
+                    forced: false,
+                });
+                for (obj, (who, n)) in &path.talk_taken {
+                    if *who == npc.npc_id
+                        && i32::try_from(*n).is_ok_and(|n| n == opt.n)
+                        && let Some(&step) = path.obj_step.get(obj)
+                    {
+                        flags.push(FlagEvent {
+                            flag: f.clone(),
+                            fire_step: step,
+                            forced: true,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    let disarms = campaign
+        .quests
+        .content
+        .traps
+        .iter()
+        .filter_map(|t| t.disarm.as_ref().map(|d| d.sets_flag.as_str()))
+        .chain(
+            campaign
+                .quests
+                .content
+                .timed_gates
+                .iter()
+                .filter_map(|g| g.disarm.as_ref().map(|d| d.sets_flag.as_str())),
+        );
+    for f in disarms {
+        flags.push(FlagEvent {
+            flag: f.to_string(),
+            fire_step: 0,
+            forced: false,
+        });
+    }
+    // A branch alternative this path's world does not take is set by nothing
+    // on this path, whatever root its setters hang off.
+    flags.retain(|e| e.forced || !path.branch_excluded.contains(&e.flag));
+    let before = path
+        .data_before
+        .iter()
+        .filter_map(|(obj, vals)| Some((*path.obj_step.get(obj)?, vals.clone())))
+        .collect();
+    RegionEvents {
+        writes,
+        flags,
+        data: DataReplay {
+            before,
+            end: path.data_end.clone(),
+            unforced_writers,
+        },
+    }
+}
+
+/// **The loop half of a path's datum replay and flags** (spec-0086 §5.2 ×
+/// spec-0088 §4.1): the data only loops write are dated by the path's exercise
+/// steps — each objective step after an exercise, and the end of the path,
+/// reads the loop-owned values the exercise left — and every flag an
+/// exercise's `on_cross` set is set, forced, at that step. So a loop slab's
+/// gate is read by [`crate::compiler::nav::liveness_of`] from the same events
+/// every staged gate is, and a loop-owned datum is never an undatable write.
+fn with_loop_exercises(
+    mut events: RegionEvents,
+    spliced: &crate::compiler::r#loop::Spliced,
+) -> RegionEvents {
+    for id in &spliced.owned {
+        events.data.unforced_writers.remove(id);
+    }
+    for ex in &spliced.exercises {
+        // The leg that arrives at the exercise step itself is walked before its
+        // crossings: it reads the values as they stood, not as they will be.
+        let standing = events.data.at(ex.step).clone();
+        events.data.before.entry(ex.step).or_insert(standing);
+        for (step, vals) in events.data.before.iter_mut() {
+            if *step > ex.step {
+                for (id, v) in &ex.owned_after {
+                    vals.insert(id.clone(), Some(*v));
+                }
+            }
+        }
+        for (id, v) in &ex.owned_after {
+            events.data.end.insert(id.clone(), Some(*v));
+        }
+        for f in &ex.flags_after {
+            events.flags.push(FlagEvent {
+                flag: f.clone(),
+                fire_step: ex.step,
+                forced: true,
+            });
+        }
+    }
+    events
 }
 
 /// **When a firing happens, and whether the party can avoid causing it** — read
@@ -6334,7 +7330,23 @@ pub(crate) fn firing_of(
         | EffectRoot::ShortcutUnlock
         | EffectRoot::OnDeath
         | EffectRoot::ShopOffer
-        | EffectRoot::OnKill(_) => (0, false),
+        | EffectRoot::OnKill(_)
+        | EffectRoot::AssemblyLand(_)
+        | EffectRoot::LoopCross(_) => (0, false),
+    }
+}
+
+/// The critical-path step an effect root's bundle fires at on the default path,
+/// for a reader that orders writes along it (spec-0086 §4.6): an objective's
+/// step, a quest's completion step, and step `0` — preceding everything — for
+/// every root with no step of its own.
+pub(crate) fn root_step(plan: &Plan, root: &EffectRoot<'_>) -> usize {
+    match root {
+        EffectRoot::ObjectiveComplete { objective, .. } => {
+            plan.objective_steps.get(*objective).copied().unwrap_or(0)
+        }
+        EffectRoot::QuestComplete(q) => quest_complete_step(q, &plan.objective_steps),
+        _ => 0,
     }
 }
 
@@ -6366,33 +7378,6 @@ pub(crate) fn collect_way_openings(
             fire_step,
             forced,
         });
-    });
-    out
-}
-
-/// Collect every declared `teleport`'s resolved source volume with the step it
-/// fires at ([`TeleportTransit`]), over the **same** general effect walk the
-/// region-write model uses — so a `teleport` nested in a `sequence` step, in a trap
-/// payload or in a shop offer is found by existing rather than by being
-/// remembered.
-///
-/// Unlike [`collect_region_events`] it draws no forced/optional distinction: a
-/// firing that may never happen must not be *leaned on* to prove a delve
-/// completable, and must not be *ignored* when the question is whether the party is
-/// even standing where the proof thinks they are. See [`Plan::transit_teleports`].
-fn collect_transit_teleports(
-    campaign: &Campaign,
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-) -> Vec<([i32; 3], [i32; 3])> {
-    let mut out = Vec::new();
-    for_each_gate_effect(campaign, &mut |_site, e| {
-        let Some((from, _to)) = e.teleport() else {
-            return;
-        };
-        // A dangling `from` anchor is `DW0360`'s finding, not this model's.
-        if let Some(region) = zone_box_in(anchors, from) {
-            out.push(region);
-        }
     });
     out
 }
@@ -6681,6 +7666,75 @@ fn collect_loot(
         .collect()
 }
 
+/// **A gate, reduced to scoreboard terms** — the one reduction ([`GateTerm`])
+/// every consumer takes: [`Plan::gate_terms`] for a site the plan holds, and a
+/// lethal volume's [`StagedGate`] before the plan exists. Empty for an ungated
+/// site.
+pub fn gate_terms_of(campaign: &Campaign, gate: delvewright_dsl::gate::Gate<'_>) -> Vec<GateTerm> {
+    let mut out: Vec<GateTerm> = Vec::new();
+    for f in gate.requires_flags {
+        out.push(GateTerm {
+            objective: flag_score(f.as_str()),
+            party: true,
+            min: Some(1),
+            max: Some(1),
+            negate: false,
+        });
+    }
+    for f in gate.forbids_flags {
+        out.push(GateTerm {
+            objective: flag_score(f.as_str()),
+            party: true,
+            min: Some(1),
+            max: Some(1),
+            negate: true,
+        });
+    }
+    out.extend(state_terms_of(campaign, gate.requires_state));
+    out
+}
+
+/// The numeric half of a gate, as [`GateTerm`]s.
+///
+/// `equals` and `not-equals` are the same one-value range under opposite
+/// keywords; `at-least` and `at-most` are the half-open ranges. Who holds the
+/// value is the datum's declared scope and nothing else — a `party` datum
+/// lives on [`PARTY`], a `player` one on the acting player. An undeclared
+/// datum (already `DW0500`) answers `party`, so a campaign that failed
+/// validation still yields something well-formed rather than panicking
+/// mid-build.
+pub fn state_terms_of(
+    campaign: &Campaign,
+    cmps: &[delvewright_dsl::StateCompare],
+) -> Vec<GateTerm> {
+    use delvewright_dsl::{CompareOp, StateScope};
+    cmps.iter()
+        .map(|c| {
+            let party = !matches!(
+                campaign
+                    .quests
+                    .content
+                    .state_decl(c.state.as_str())
+                    .map(|s| s.scope),
+                Some(StateScope::Player)
+            );
+            let (min, max, negate) = match c.op {
+                CompareOp::Equals => (Some(c.value), Some(c.value), false),
+                CompareOp::NotEquals => (Some(c.value), Some(c.value), true),
+                CompareOp::AtLeast => (Some(c.value), None, false),
+                CompareOp::AtMost => (None, Some(c.value), false),
+            };
+            GateTerm {
+                objective: state_score(c.state.as_str()),
+                party,
+                min,
+                max,
+                negate,
+            }
+        })
+        .collect()
+}
+
 /// Resolve every declared lethal volume (DSL v0.10, spec-0031) against the solved
 /// layout, in declaration order.
 ///
@@ -6713,6 +7767,20 @@ fn collect_lethal_volumes(
                     .damage_type
                     .unwrap_or(delvewright_dsl::DamageKind::Generic),
                 shown_by: v.shown_by.clone(),
+                staged: v.when.as_ref().map(|g| StagedGate {
+                    requires_flags: g
+                        .requires_flags
+                        .iter()
+                        .map(|f| f.as_str().to_string())
+                        .collect(),
+                    forbids_flags: g
+                        .forbids_flags
+                        .iter()
+                        .map(|f| f.as_str().to_string())
+                        .collect(),
+                    requires_state: g.requires_state.clone(),
+                    terms: gate_terms_of(campaign, v.gate()),
+                }),
             })
         })
         .collect()
@@ -6794,6 +7862,8 @@ impl V06Collector<'_> {
                 prompt: None,
                 rest_label: None,
                 save_label: None,
+                rest_tooltip: None,
+                save_tooltip: None,
             });
             self.checkpoints.push(CheckpointPlan {
                 index: self.checkpoints.len(),
@@ -6817,6 +7887,8 @@ impl V06Collector<'_> {
                     .save_label
                     .map(str::to_string)
                     .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_SAVE.tagged()),
+                rest_tooltip: labels.rest_tooltip.map(str::to_string),
+                save_tooltip: labels.save_tooltip.map(str::to_string),
             });
         }
     }

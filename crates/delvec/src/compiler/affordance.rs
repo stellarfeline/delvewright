@@ -89,43 +89,49 @@
 use crate::compiler::emit::{BuildFailure, BuildOutput};
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0420`: a compiler-owned interact affordance with **no visible hardware**.
-///
-/// The player is expected to right-click a point in the world; nothing the
-/// compiler emits makes that point visible. Vanilla's `minecraft:interaction`
-/// is an invisible hitbox by design, so an affordance built from one alone is
-/// findable only by luck. This is an error and not a warning because the
-/// failure mode is a soft-lock: the drowned bell's shortcut was the only route
-/// back, and an unfindable lever is an unopenable door.
-pub const DW_AFFORDANCE_INVISIBLE: DwCode = DwCode::new("DW0420", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0420`: a compiler-owned interact affordance with **no visible hardware**.
+    ///
+    /// The player is expected to right-click a point in the world; nothing the
+    /// compiler emits makes that point visible. Vanilla's `minecraft:interaction`
+    /// is an invisible hitbox by design, so an affordance built from one alone is
+    /// findable only by luck. This is an error and not a warning because the
+    /// failure mode is a soft-lock: the drowned bell's shortcut was the only route
+    /// back, and an unfindable lever is an unopenable door.
+    pub const DW_AFFORDANCE_INVISIBLE: DwCode = DwCode::new("DW0420", ExitTier::Build);
+}
 
-/// `DW0421`: an affordance's visible hardware is destroyed by a function that
-/// does not own the affordance.
-///
-/// Hardware may be retired by exactly one thing — the affordance's own
-/// consumption (a shortcut's `shortcut_open_*`, a trap's `trap_disarm_*`).
-/// Anything else reaching it (a cleanup pass whose selector widened, a tag
-/// collision of the `DW0361` family) erases the player's only way to find a
-/// live affordance, which is how the drowned bell read as a vanished lever.
-pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::new("DW0421", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0421`: an affordance's visible hardware is destroyed by a function that
+    /// does not own the affordance.
+    ///
+    /// Hardware may be retired by exactly one thing — the affordance's own
+    /// consumption (a shortcut's `shortcut_open_*`, a trap's `trap_disarm_*`).
+    /// Anything else reaching it (a cleanup pass whose selector widened, a tag
+    /// collision of the `DW0361` family) erases the player's only way to find a
+    /// live affordance, which is how the drowned bell read as a vanished lever.
+    pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::new("DW0421", ExitTier::Build);
+}
 
-/// `DW0545`: an engine **fixture** — an entity whose position is engine state —
-/// is reachable by a selector that quantifies over a **box**.
-///
-/// `DW0421`'s rule, one verb wider and one binding wider: only an affordance's
-/// owner may disturb its hardware, and *moving* it is disturbing it. The rule is
-/// stated over the emitted datapack, from its two ends, because either end alone
-/// is a green that binds to nothing:
-///
-/// * a summon that declares neither class — the fixture is invisible to every
-///   region selector's exclusion, so the exclusion protects nothing;
-/// * a positional-box selector with no exclusion — the class exists and this verb
-///   does not read it.
-///
-/// Both are compiler defects, never authoring ones: no campaign JSON can cause
-/// either, and no campaign JSON can fix either. That is why the message is
-/// addressed to whoever is changing the engine.
-pub const DW_FIXTURE_REACHABLE: DwCode = DwCode::new("DW0545", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0545`: an engine **fixture** — an entity whose position is engine state —
+    /// is reachable by a selector that quantifies over a **box**.
+    ///
+    /// `DW0421`'s rule, one verb wider and one binding wider: only an affordance's
+    /// owner may disturb its hardware, and *moving* it is disturbing it. The rule is
+    /// stated over the emitted datapack, from its two ends, because either end alone
+    /// is a green that binds to nothing:
+    ///
+    /// * a summon that declares neither class — the fixture is invisible to every
+    ///   region selector's exclusion, so the exclusion protects nothing;
+    /// * a positional-box selector with no exclusion — the class exists and this verb
+    ///   does not read it.
+    ///
+    /// Both are compiler defects, never authoring ones: no campaign JSON can cause
+    /// either, and no campaign JSON can fix either. That is why the message is
+    /// addressed to whoever is changing the engine.
+    pub const DW_FIXTURE_REACHABLE: DwCode = DwCode::new("DW0545", ExitTier::Build);
+}
 
 /// The class tag on every engine-summoned entity whose position **is** engine
 /// state — an affordance hitbox, its visible hardware, a stake marker, a
@@ -424,7 +430,7 @@ fn box_narrowed_entity_selectors(line: &str) -> Vec<String> {
 /// character count from the start: a `tellraw` component elsewhere on the line
 /// may hold a translated string, and slicing a byte offset produced by counting
 /// characters would land mid-codepoint and panic.
-fn matching_bracket(line: &str, open: usize) -> Option<usize> {
+pub(crate) fn matching_bracket(line: &str, open: usize) -> Option<usize> {
     let mut depth = 0usize;
     for (off, c) in line.get(open..)?.char_indices() {
         let i = open + off;
@@ -441,7 +447,7 @@ fn matching_bracket(line: &str, open: usize) -> Option<usize> {
 
 /// A selector's top-level `key=value` terms, splitting on commas that are not
 /// inside a nested `[…]` or `{…}`.
-fn selector_terms(args: &str) -> impl Iterator<Item = &str> {
+pub(crate) fn selector_terms(args: &str) -> impl Iterator<Item = &str> {
     let mut depth = 0usize;
     let mut start = 0usize;
     let mut out: Vec<&str> = Vec::new();
@@ -463,13 +469,13 @@ fn selector_terms(args: &str) -> impl Iterator<Item = &str> {
 }
 
 /// Whether a selector's argument list carries `term` as a whole top-level term.
-fn selector_has_term(args: &str, term: &str) -> bool {
+pub(crate) fn selector_has_term(args: &str, term: &str) -> bool {
     selector_terms(args).any(|t| t == term)
 }
 
 /// The shipped delve's `.mcfunction` bodies as `(unqualified name, body)`, in
 /// deterministic path order. Excludes `packtest-datapack/` (tooling, ADR-0003).
-fn shipped_functions(out: &BuildOutput) -> Vec<(String, String)> {
+pub(crate) fn shipped_functions(out: &BuildOutput) -> Vec<(String, String)> {
     out.iter()
         .filter(|(p, _)| {
             p.starts_with("datapack/") && p.ends_with(".mcfunction") && p.contains("/function/")

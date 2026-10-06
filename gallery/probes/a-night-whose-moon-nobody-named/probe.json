@@ -1,0 +1,15 @@
+{
+  "code": "DW0931",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/time",
+      "value": {
+        "moon": "just-risen"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The world's own time with its phase deleted: the moon just risen, +2.86° above the eastern horizon, and nothing saying which moon. The party sees it the moment the delve starts, so the phase is a judgement nobody may leave to a default — and the default a missing phase would fall to, day 0's full moon, is the one a new-moon design does not want. `DW0931` refuses it at validation and lists the eight names the pinned game gives. It declares no unit: `CelestialTime.phase` is bound by the primary."
+}

@@ -1,0 +1,244 @@
+{
+  "campaign_id": "ferry-site",
+  "content": {
+    "quests": [
+      {
+        "happening": {
+          "text": "The party stands on the near jetty with the ferry moored below.",
+          "verb": "arrives"
+        },
+        "id": "quest/the-crossing",
+        "objectives": [
+          {
+            "anchor": "anchor/hull",
+            "happening": {
+              "text": "They step down into the near ferry's hull.",
+              "verb": "arrives"
+            },
+            "hint": "Step down into the ferry's hull.",
+            "id": "obj/board",
+            "radius": 1,
+            "title": "Board the ferry",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/board"
+            ],
+            "anchor": "anchor/node-far",
+            "happening": {
+              "text": "They climb out onto the far jetty.",
+              "verb": "arrives"
+            },
+            "hint": "Pull the tiller from inside the hull.",
+            "id": "obj/far-shore",
+            "radius": 1,
+            "title": "Cross to the far jetty",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/far-shore"
+            ],
+            "anchor": "anchor/far-hull",
+            "happening": {
+              "text": "They step down into the far ferry.",
+              "verb": "arrives"
+            },
+            "hint": "The far ferry is moored beside you.",
+            "id": "obj/board-back",
+            "radius": 1,
+            "title": "Board the far ferry",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/board-back"
+            ],
+            "anchor": "anchor/node-near",
+            "happening": {
+              "text": "They are back on the near jetty.",
+              "verb": "arrives"
+            },
+            "hint": "Pull the far tiller from inside its hull.",
+            "id": "obj/home",
+            "radius": 1,
+            "title": "Ride home",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "The crossing is made both ways.",
+              "verb": "departs"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/board": [
+            {
+              "flag": "flag/boarded",
+              "happening": {
+                "text": "The near tiller answers anyone aboard.",
+                "verb": "gains"
+              },
+              "type": "set-flag"
+            }
+          ],
+          "obj/far-shore": [
+            {
+              "flag": "flag/far-shore",
+              "happening": {
+                "text": "The far ferry can take them back now.",
+                "verb": "gains"
+              },
+              "type": "set-flag"
+            },
+            {
+              "style": "subtitle",
+              "text": "Behind you the strait closes in mist.",
+              "type": "narrate"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ],
+    "triggers": [
+      {
+        "at": "anchor/tiller",
+        "effects": [
+          {
+            "steps": [
+              {
+                "at_ticks": 0,
+                "effects": [
+                  {
+                    "path": [
+                      {
+                        "anchor": "anchor/node-near",
+                        "offset": [
+                          0,
+                          3,
+                          -3
+                        ]
+                      },
+                      {
+                        "anchor": "anchor/node-near",
+                        "offset": [
+                          0,
+                          3,
+                          3
+                        ]
+                      }
+                    ],
+                    "seconds": 2,
+                    "type": "cutscene"
+                  }
+                ]
+              },
+              {
+                "at_ticks": 42,
+                "effects": [
+                  {
+                    "from": {
+                      "anchor": "anchor/hull",
+                      "extent": [
+                        0,
+                        1,
+                        0
+                      ]
+                    },
+                    "to": {
+                      "anchor": "anchor/far-landing"
+                    },
+                    "type": "teleport"
+                  }
+                ]
+              }
+            ],
+            "type": "sequence"
+          }
+        ],
+        "id": "trigger/near-tiller",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "requires_flags": [
+          "flag/boarded"
+        ]
+      },
+      {
+        "at": "anchor/far-tiller",
+        "effects": [
+          {
+            "steps": [
+              {
+                "at_ticks": 0,
+                "effects": [
+                  {
+                    "path": [
+                      {
+                        "anchor": "anchor/node-far",
+                        "offset": [
+                          0,
+                          3,
+                          -3
+                        ]
+                      },
+                      {
+                        "anchor": "anchor/node-far",
+                        "offset": [
+                          0,
+                          3,
+                          3
+                        ]
+                      }
+                    ],
+                    "seconds": 2,
+                    "type": "cutscene"
+                  }
+                ]
+              },
+              {
+                "at_ticks": 42,
+                "effects": [
+                  {
+                    "from": {
+                      "anchor": "anchor/far-hull",
+                      "extent": [
+                        0,
+                        1,
+                        0
+                      ]
+                    },
+                    "to": {
+                      "anchor": "anchor/home-landing"
+                    },
+                    "type": "teleport"
+                  }
+                ]
+              }
+            ],
+            "type": "sequence"
+          }
+        ],
+        "id": "trigger/far-tiller",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "requires_flags": [
+          "flag/far-shore"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "quests"
+}

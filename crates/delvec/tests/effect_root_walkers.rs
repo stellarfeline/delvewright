@@ -75,6 +75,21 @@ use delvewright_dsl::{
 /// Everything else a row needs is added to the parsed campaign.
 const NS: &str = "souls-shortcut";
 
+/// Root 10 (spec-0086) needs a loop, and a loop compiles only over a corridor
+/// whose view closes inside identical bays (`DW0945`–`DW0948`), which no
+/// mutation of `hello-room` can invent. Its row is built from the
+/// `long-gallery` fixture over the synthesised corridor
+/// ([`common::corridor`]) instead; every walker asks it the same questions.
+const LOOP_NS: &str = "long-gallery";
+
+/// The campaign directory a root's row is built from.
+fn ns_for(k: EffectRootKind) -> &'static str {
+    match k {
+        EffectRootKind::LoopCross => LOOP_NS,
+        _ => NS,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // per-root identity
 // ---------------------------------------------------------------------------
@@ -191,13 +206,48 @@ fn prefabs_with_trap() -> PathBuf {
             serde_json::json!({ "pos": [7, 1, 8] }),
         );
         std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+        // …and the one-part rig the assembly probe (root 10) names.
+        let rig = dir.join("rigs").join("probe");
+        std::fs::create_dir_all(&rig).unwrap();
+        let cube = serde_json::json!({ "translation": [-0.5, 0.0, -0.5],
+            "left_rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0],
+            "right_rotation": [0.0, 0.0, 0.0, 1.0] });
+        std::fs::write(
+            rig.join("rig.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "rig_version": 1,
+                "parts": [ { "id": "block", "kind": "block", "block": "minecraft:stone" } ],
+                "clips": { "idle": { "ticks_per_frame": 5, "loop": false, "frames": [[cube]] } },
+                "provenance": { "generator": "crates/delvec/tests/effect_root_walkers.rs",
+                                "source": "original", "spdx": "GPL-3.0-or-later" }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         dir
     })
     .clone()
 }
 
-fn load() -> LoadedCampaign {
-    load_campaign_dir(&common::compiler_fixtures_dir().join(NS)).unwrap()
+/// The corridor's prefab tree, materialised once per process for the same
+/// reason [`prefabs_with_trap`] is.
+fn corridor_prefabs() -> PathBuf {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        common::corridor::gallery_prefabs("effect-root-walkers", &common::corridor::Cuts::default())
+    })
+    .clone()
+}
+
+fn prefabs_dir(k: EffectRootKind) -> PathBuf {
+    match k {
+        EffectRootKind::LoopCross => corridor_prefabs(),
+        _ => prefabs_with_trap(),
+    }
+}
+
+fn load(k: EffectRootKind) -> LoadedCampaign {
+    load_campaign_dir(&common::compiler_fixtures_dir().join(ns_for(k))).unwrap()
 }
 
 /// The fixture campaign with `bundle` bound at root `k` and nowhere else.
@@ -272,6 +322,11 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
         // the probe's own free anchor, whose `on_kill` IS the probe bundle. It
         // comes back through nothing (no bonfire, no seating beat), so `fires`
         // is left off — the judgement is owed only where a fight returns.
+        // Root 10 (spec-0086). The fixture's one loop, whose `on_cross` IS the
+        // probe bundle; the loop is exercised on the path, so the bundle runs.
+        EffectRootKind::LoopCross => {
+            c.quests.content.loops[0].on_cross = bundle;
+        }
         EffectRootKind::OnKill => {
             let mut actor: delvewright_dsl::Actor = serde_json::from_str(
                 r#"{ "id": "actor/probe", "entity": "minecraft:zombie",
@@ -287,19 +342,36 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
             c.world.content.difficulty =
                 Some(serde_json::from_str("\"easy\"").expect("difficulty parses"));
         }
+        // Root 10 (spec-0082). The smallest assembly with a strike step: the
+        // probe library's one-part rig on the probe's free anchor, armed over
+        // that anchor, whose one step's `on_land` IS the probe bundle. The
+        // bundle carries no `damage-players`, so there is no landing for
+        // `DW0938` to judge — the probe is about the root, not the blow.
+        EffectRootKind::AssemblyLand => {
+            let mut a: delvewright_dsl::Assembly = serde_json::from_str(
+                r#"{ "id": "assembly/probe", "rig": "rig/probe",
+                     "at": { "anchor": "anchor/shop" },
+                     "strikes": {
+                       "while_in": { "anchor": "anchor/shop", "extent": [1, 1, 1] },
+                       "pattern": [ { "windup": "idle", "hold": 0, "strike": "idle" } ] } }"#,
+            )
+            .expect("probe assembly parses");
+            a.strikes.as_mut().expect("declared above").pattern[0].on_land = bundle;
+            c.quests.content.assemblies.push(a);
+        }
     }
     c
 }
 
-fn prefabs() -> PrefabRegistry {
-    PrefabRegistry::load_dir(&prefabs_with_trap()).unwrap()
+fn prefabs(k: EffectRootKind) -> PrefabRegistry {
+    PrefabRegistry::load_dir(&prefabs_dir(k)).unwrap()
 }
 
 fn assert_validates(c: &Campaign, k: EffectRootKind) {
     let d = common::validation_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
-        &prefabs(),
+        &prefabs(k),
         &FullEntityRegistry::v1_21_11(),
     );
     assert!(
@@ -310,10 +382,14 @@ fn assert_validates(c: &Campaign, k: EffectRootKind) {
     );
 }
 
-fn build(loaded: &LoadedCampaign, c: &Campaign) -> Result<BuildOutput, BuildFailure> {
-    let pf = prefabs();
+fn build(
+    loaded: &LoadedCampaign,
+    c: &Campaign,
+    k: EffectRootKind,
+) -> Result<BuildOutput, BuildFailure> {
+    let pf = prefabs(k);
     let plan = Plan::build(c, &pf).expect("plan builds");
-    let structures = common::plan_structures_with_trap_triggers(&plan, &prefabs_with_trap());
+    let structures = common::plan_structures_with_trap_triggers(&plan, &prefabs_dir(k));
     emit::build(
         &plan,
         &loaded.inputs,
@@ -343,10 +419,10 @@ fn all_text(out: &BuildOutput) -> String {
 /// inheriting the single enumeration fails here by name, on the root it lost.
 #[test]
 fn every_root_is_visited_by_every_walker() {
-    let loaded = load();
     let mut rows = 0usize;
     for k in EffectRootKind::ALL {
         rows += 1;
+        let loaded = load(k);
         let c = probe_at(&loaded, k, &probe_bundle(k));
         assert_validates(&c, k);
 
@@ -403,13 +479,16 @@ fn every_root_is_visited_by_every_walker() {
             k.label()
         );
 
-        let out = build(&loaded, &c).expect("the probed fixture builds");
+        let out = build(&loaded, &c, k).expect("the probed fixture builds");
 
         // W5 — `emit::declared_flags`: the flag's scoreboard objective exists. A
         // flag whose objective is never declared is a gate that never opens.
         let setup = std::str::from_utf8(
-            out.get(&format!("datapack/data/{NS}/function/setup.mcfunction"))
-                .expect("setup exists"),
+            out.get(&format!(
+                "datapack/data/{}/function/setup.mcfunction",
+                ns_for(k)
+            ))
+            .expect("setup exists"),
         )
         .unwrap();
         assert!(
@@ -447,10 +526,10 @@ fn every_root_is_visited_by_every_walker() {
 /// that sprang and did nothing.
 #[test]
 fn a_bogus_anchor_is_rejected_at_every_root() {
-    let loaded = load();
     for k in EffectRootKind::ALL {
+        let loaded = load(k);
         let c = probe_at(&loaded, k, &bogus_anchor_bundle(k));
-        let err = build(&loaded, &c).err().unwrap_or_else(|| {
+        let err = build(&loaded, &c, k).err().unwrap_or_else(|| {
             panic!(
                 "an unresolvable anchor at the {} root built CLEAN — the effect \
                  would ship emitting nothing at all",
@@ -484,6 +563,8 @@ fn site_kind(site: &EffectSite) -> EffectRootKind {
         EffectSite::OnDeath => EffectRootKind::OnDeath,
         EffectSite::ShopOffer { .. } => EffectRootKind::ShopOffer,
         EffectSite::OnKill { .. } => EffectRootKind::OnKill,
+        EffectSite::AssemblyLand { .. } => EffectRootKind::AssemblyLand,
+        EffectSite::LoopCross { .. } => EffectRootKind::LoopCross,
     }
 }
 

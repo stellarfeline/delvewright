@@ -64,21 +64,35 @@ use delvewright_dsl::{DwCode, ExitTier};
 // to HAVE something — a declared branch point, a `happening`, a per-branch
 // cast placement.
 
-/// A flag forks casts / staging / structure but belongs to no declared branch point.
-pub const DW_FORK_UNDECLARED: DwCode = DwCode::new("DW0480", ExitTier::Build);
-/// A story node carries no `happening` declaration (DSL v0.8+).
-pub const DW_HAPPENING_MISSING: DwCode = DwCode::new("DW0481", ExitTier::Build);
-/// A declared branch reaches no ending — or not the one it declares.
-pub const DW_BRANCH_TERMINAL: DwCode = DwCode::new("DW0482", ExitTier::Build);
-/// A quest's cast selector does not resolve to exactly one placement on a branch.
-pub const DW_BRANCH_CAST: DwCode = DwCode::new("DW0483", ExitTier::Build);
-/// Branch-exclusive content is reachable under a sibling branch's assignment.
-pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::new("DW0484", ExitTier::Build);
-/// Two chronicle lines on one branch contradict each other.
-pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::new("DW0485", ExitTier::Build);
-/// Whether any play order of a branch shows a `DW0485` clash is unproven: the
-/// every-order search reached [`MAX_ORDER_STATES`].
-pub const DW_BRANCH_CONTRADICTION_UNPROVEN: DwCode = DwCode::new("DW0927", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// A flag forks casts / staging / structure but belongs to no declared branch point.
+    pub const DW_FORK_UNDECLARED: DwCode = DwCode::new("DW0480", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A story node carries no `happening` declaration (DSL v0.8+).
+    pub const DW_HAPPENING_MISSING: DwCode = DwCode::new("DW0481", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A declared branch reaches no ending — or not the one it declares.
+    pub const DW_BRANCH_TERMINAL: DwCode = DwCode::new("DW0482", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A quest's cast selector does not resolve to exactly one placement on a branch.
+    pub const DW_BRANCH_CAST: DwCode = DwCode::new("DW0483", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// Branch-exclusive content is reachable under a sibling branch's assignment.
+    pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::new("DW0484", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// Two chronicle lines on one branch contradict each other.
+    pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::new("DW0485", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// Whether any play order of a branch shows a `DW0485` clash is unproven: the
+    /// every-order search reached [`MAX_ORDER_STATES`].
+    pub const DW_BRANCH_CONTRADICTION_UNPROVEN: DwCode = DwCode::new("DW0927", ExitTier::Build);
+}
 
 // ---------------------------------------------------------------------------
 // enumeration

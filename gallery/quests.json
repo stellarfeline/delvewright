@@ -202,6 +202,69 @@
         }
       }
     ],
+    "assemblies": [
+      {
+        "at": {
+          "anchor": "anchor/plinth"
+        },
+        "facing": "west",
+        "hitbox": {
+          "height": 2.5,
+          "offset": [
+            0,
+            1,
+            0
+          ],
+          "width": 1.5
+        },
+        "id": "assembly/sentinel",
+        "initial": "idle",
+        "rig": "rig/gallery-sentinel",
+        "strikes": {
+          "aim": {
+            "facings": 4
+          },
+          "pattern": [
+            {
+              "hold": 20,
+              "on_land": [
+                {
+                  "amount": 2,
+                  "in": {
+                    "anchor": "anchor/plinth",
+                    "extent": [
+                      0,
+                      0,
+                      0
+                    ]
+                  },
+                  "type": "damage-players"
+                },
+                {
+                  "at": {
+                    "anchor": "anchor/plinth",
+                    "at": "anchor"
+                  },
+                  "sound": "minecraft:block.anvil.land",
+                  "type": "play-sound"
+                }
+              ],
+              "strike": "strike",
+              "ticks_per_frame": 3,
+              "windup": "windup"
+            }
+          ],
+          "while_in": {
+            "anchor": "anchor/plinth",
+            "extent": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    ],
     "lethal_volumes": [
       {
         "damage_type": "fall",
@@ -231,6 +294,128 @@
         "shown_by": [
           "minecraft:magma_block"
         ]
+      },
+      {
+        "damage_type": "fall",
+        "id": "lethal/lid-pit",
+        "message": "The floor over the terrace pit was a lid, and the pit under it has no bottom you would survive.",
+        "region": {
+          "anchor": "anchor/lid-pit",
+          "extent": [
+            0,
+            0,
+            0
+          ]
+        },
+        "when": {
+          "requires_flags": [
+            "flag/lid-fell"
+          ]
+        }
+      }
+    ],
+    "loops": [
+      {
+        "counts": "state/gallery-crossings",
+        "forbids_flags": [
+          "flag/hall-sealed"
+        ],
+        "id": "loop/long-gallery",
+        "on_cross": [
+          {
+            "anchor": "anchor/long-gallery-lamp-0",
+            "block": "minecraft:lantern[hanging=true]",
+            "happening": {
+              "text": "a second lamp is lit in bay 0 of the long gallery",
+              "verb": "opens"
+            },
+            "type": "set-block",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/gallery-crossings",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-1",
+            "block": "minecraft:lantern[hanging=true]",
+            "happening": {
+              "text": "a second lamp is lit in bay 1 of the long gallery",
+              "verb": "opens"
+            },
+            "type": "set-block",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/gallery-crossings",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-2",
+            "block": "minecraft:lantern[hanging=true]",
+            "happening": {
+              "text": "a second lamp is lit in bay 2 of the long gallery",
+              "verb": "opens"
+            },
+            "type": "set-block",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/gallery-crossings",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-3",
+            "block": "minecraft:lantern[hanging=true]",
+            "happening": {
+              "text": "a second lamp is lit in bay 3 of the long gallery",
+              "verb": "opens"
+            },
+            "type": "set-block",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/gallery-crossings",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        ],
+        "region": {
+          "anchor": "anchor/long-gallery-slab",
+          "extent": [
+            1,
+            1,
+            0
+          ]
+        },
+        "requires_flags": [
+          "flag/hall-open"
+        ],
+        "requires_state": [
+          {
+            "op": "at-most",
+            "state": "state/gallery-crossings",
+            "value": 1
+          }
+        ],
+        "to": {
+          "anchor": "anchor/long-gallery-landing"
+        }
       }
     ],
     "loot": [
@@ -468,7 +653,9 @@
             "hint": "The Factor keeps the counter on the east side of the near hall.",
             "id": "obj/reach-the-counter",
             "radius": 3,
-            "requires_flags": [],
+            "requires_flags": [
+              "flag/sentinel-sunk"
+            ],
             "requires_state": [
               {
                 "op": "at-most",
@@ -531,7 +718,9 @@
             ],
             "prompt": "Rest at the hearth",
             "rest_label": "Rest",
+            "rest_tooltip": "The hearth keeps you, and the hall sets itself back up.",
             "save_label": "Save and quit",
+            "save_tooltip": "The hearth keeps you; nothing in the hall is reset.",
             "type": "bonfire"
           },
           {
@@ -659,6 +848,30 @@
                   }
                 ]
               }
+            },
+            {
+              "assembly": "assembly/sentinel",
+              "type": "spawn-assembly"
+            },
+            {
+              "flag": "flag/lid-fell",
+              "type": "set-flag"
+            },
+            {
+              "happening": {
+                "subject": "anchor/lid",
+                "text": "The lid over the terrace pit drops away, and the pit's bottom starts to kill.",
+                "verb": "opens"
+              },
+              "region": {
+                "anchor": "anchor/lid",
+                "extent": [
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "type": "clear-region"
             }
           ],
           "obj/press-the-case": [
@@ -736,6 +949,105 @@
                   }
                 ]
               }
+            },
+            {
+              "steps": [
+                {
+                  "at_ticks": 0,
+                  "effects": [
+                    {
+                      "at": "players",
+                      "audience": "actor",
+                      "in": {
+                        "anchor": "anchor/pedestal",
+                        "extent": [
+                          6,
+                          4,
+                          6
+                        ]
+                      },
+                      "particle": "minecraft:elder_guardian",
+                      "type": "particle"
+                    },
+                    {
+                      "audience": "actor",
+                      "effect": "minecraft:nausea",
+                      "hide_particles": true,
+                      "in": {
+                        "anchor": "anchor/pedestal",
+                        "extent": [
+                          6,
+                          4,
+                          6
+                        ]
+                      },
+                      "seconds": 3,
+                      "type": "give-effect"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 30,
+                  "effects": [
+                    {
+                      "at": {
+                        "anchor": "anchor/pedestal",
+                        "offset": [
+                          0,
+                          1,
+                          0
+                        ]
+                      },
+                      "audience": "party",
+                      "count": 24,
+                      "particle": "minecraft:soul",
+                      "speed": 0.02,
+                      "spread": [
+                        0.5,
+                        0.5,
+                        0.5
+                      ],
+                      "type": "particle"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 60,
+                  "effects": [
+                    {
+                      "at": {
+                        "at": "players",
+                        "offset": [
+                          0,
+                          0,
+                          -3
+                        ]
+                      },
+                      "audience": "actor",
+                      "pitch": 0.5,
+                      "sound": "minecraft:entity.warden.nearby_closest",
+                      "type": "play-sound",
+                      "volume": 1.0
+                    }
+                  ]
+                }
+              ],
+              "type": "sequence",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             }
           ],
           "obj/reach-the-counter": [
@@ -784,7 +1096,9 @@
               }
             },
             {
-              "time": "dusk",
+              "time": {
+                "sun": "high"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -853,6 +1167,11 @@
                 "anchor": "anchor/pocket"
               },
               "type": "move-npc"
+            },
+            {
+              "atmosphere": "atmosphere/frost-hall",
+              "place": "area/hall",
+              "type": "set-atmosphere"
             }
           ],
           "obj/take-the-emeralds": [
@@ -1134,7 +1453,7 @@
           },
           {
             "after": [
-              "obj/take-the-bone"
+              "obj/walk-the-long-gallery"
             ],
             "anchor": "anchor/loft",
             "forbids_flags": [
@@ -1179,6 +1498,64 @@
             ],
             "stealth": false,
             "title": "Reach the end of the hall",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/reach-the-end"
+            ],
+            "anchor": "anchor/ferry-deck",
+            "happening": {
+              "subject": "anchor/ferry-deck",
+              "text": "They step down onto the ferry's deck.",
+              "verb": "arrives"
+            },
+            "id": "obj/board-the-ferry",
+            "radius": 1,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "title": "Board the ferry",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/board-the-ferry"
+            ],
+            "anchor": "anchor/cabin",
+            "happening": {
+              "subject": "anchor/cabin",
+              "text": "They step off the ferry into the sealed cabin.",
+              "verb": "arrives"
+            },
+            "id": "obj/cross-the-strait",
+            "radius": 1,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "title": "Cross to the ferry cabin",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/take-the-bone"
+            ],
+            "anchor": "anchor/long-gallery-end",
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "text": "The long gallery on the roof lets the party through to its end room.",
+              "verb": "arrives"
+            },
+            "hint": "Up the stair by the far wall. The gallery repeats until it has been walked enough.",
+            "id": "obj/walk-the-long-gallery",
+            "radius": 1,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "stealth": false,
+            "title": "Walk the long gallery",
             "type": "reach-anchor"
           }
         ],
@@ -1245,6 +1622,17 @@
           }
         ],
         "on_objective_complete": {
+          "obj/board-the-ferry": [
+            {
+              "flag": "flag/boarded",
+              "happening": {
+                "subject": "anchor/ferry-deck",
+                "text": "The ferry's tiller answers anyone aboard.",
+                "verb": "gains"
+              },
+              "type": "set-flag"
+            }
+          ],
           "obj/clear-the-muster": [
             {
               "flag": "flag/muster-cleared",
@@ -1576,40 +1964,6 @@
               "projectile": "minecraft:arrow",
               "salvos": 3,
               "type": "volley",
-              "when": {
-                "forbids_flags": [
-                  "flag/hall-sealed"
-                ],
-                "requires_flags": [
-                  "flag/hall-open"
-                ],
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/labels-read",
-                    "value": 9
-                  }
-                ]
-              }
-            },
-            {
-              "from": {
-                "anchor": "anchor/march",
-                "extent": [
-                  2,
-                  2,
-                  1
-                ]
-              },
-              "to": {
-                "anchor": "anchor/vantage",
-                "offset": [
-                  -1,
-                  0,
-                  0
-                ]
-              },
-              "type": "teleport",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -2056,7 +2410,9 @@
               "type": "despawn-actor"
             },
             {
-              "time": "dawn",
+              "time": {
+                "sun": "setting"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -2075,7 +2431,9 @@
               }
             },
             {
-              "time": "night",
+              "time": {
+                "moon": "below"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -2094,7 +2452,10 @@
               }
             },
             {
-              "time": "midnight",
+              "time": {
+                "phase": "waxing-crescent",
+                "sun": "just-set"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -2250,6 +2611,10 @@
                   "flag/hall-open"
                 ]
               }
+            },
+            {
+              "assembly": "assembly/sentinel",
+              "type": "despawn-assembly"
             }
           ],
           "obj/take-the-bone": [
@@ -2283,6 +2648,40 @@
                 ],
                 "requires_flags": [
                   "flag/muster-cleared"
+                ]
+              }
+            },
+            {
+              "from": {
+                "anchor": "anchor/march",
+                "extent": [
+                  2,
+                  2,
+                  1
+                ]
+              },
+              "to": {
+                "anchor": "anchor/vantage",
+                "offset": [
+                  -1,
+                  0,
+                  0
+                ]
+              },
+              "type": "teleport",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
                 ]
               }
             }
@@ -2705,6 +3104,17 @@
         "name": "Bounty",
         "note": "What the lane's kills pay into. Party-scoped, so one kill pays the party once, whoever lands it; the bay's kill rings when the bounty is already paid.",
         "scope": "party"
+      },
+      {
+        "id": "state/sentinel-hits",
+        "initial": 0,
+        "note": "How many times the party has struck the sentinel. Three blows send it back into the floor.",
+        "scope": "party"
+      },
+      {
+        "id": "state/gallery-crossings",
+        "note": "How many times a body has crossed the long gallery's slab.",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -2965,6 +3375,18 @@
                 }
               ]
             }
+          },
+          {
+            "atmosphere": "atmosphere/still-air",
+            "region": {
+              "anchor": "anchor/east-bay",
+              "extent": [
+                3,
+                3,
+                3
+              ]
+            },
+            "type": "set-atmosphere"
           }
         ],
         "forbids_flags": [
@@ -3028,6 +3450,115 @@
           "on": "approach",
           "range": 3
         }
+      },
+      {
+        "at": "anchor/ferry-tiller",
+        "effects": [
+          {
+            "steps": [
+              {
+                "at_ticks": 0,
+                "effects": [
+                  {
+                    "path": [
+                      {
+                        "anchor": "anchor/ferry-deck",
+                        "offset": [
+                          0,
+                          3,
+                          2
+                        ]
+                      },
+                      {
+                        "anchor": "anchor/ferry-deck",
+                        "offset": [
+                          0,
+                          3,
+                          -2
+                        ]
+                      }
+                    ],
+                    "seconds": 1,
+                    "type": "cutscene"
+                  }
+                ]
+              },
+              {
+                "at_ticks": 22,
+                "effects": [
+                  {
+                    "from": {
+                      "anchor": "anchor/ferry-deck",
+                      "extent": [
+                        1,
+                        1,
+                        1
+                      ]
+                    },
+                    "to": {
+                      "anchor": "anchor/ferry-landing"
+                    },
+                    "type": "teleport"
+                  }
+                ]
+              }
+            ],
+            "type": "sequence"
+          }
+        ],
+        "id": "trigger/ferry-tiller",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "requires_flags": [
+          "flag/boarded"
+        ]
+      },
+      {
+        "effects": [
+          {
+            "amount": 1,
+            "state": "state/sentinel-hits",
+            "type": "add-state"
+          },
+          {
+            "assembly": "assembly/sentinel",
+            "clip": "retract",
+            "type": "play-clip",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/sentinel-hits",
+                  "value": 3
+                }
+              ]
+            }
+          },
+          {
+            "flag": "flag/sentinel-sunk",
+            "type": "set-flag",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/sentinel-hits",
+                  "value": 3
+                }
+              ]
+            }
+          }
+        ],
+        "forbids_flags": [
+          "flag/sentinel-sunk"
+        ],
+        "id": "trigger/strike-the-sentinel",
+        "on": {
+          "assembly": "assembly/sentinel",
+          "on": "strike-assembly"
+        },
+        "once": false
       }
     ],
     "waves": [
@@ -3171,6 +3702,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.0",
+  "dsl_version": "0.35.1",
   "stage": "quests"
 }

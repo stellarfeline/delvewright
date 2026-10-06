@@ -1,0 +1,71 @@
+{
+  "campaign_id": "long-gallery",
+  "content": {
+    "loops": [
+      {
+        "counts": "state/crossings",
+        "id": "loop/gallery",
+        "region": {
+          "anchor": "anchor/slab",
+          "extent": [
+            1,
+            1,
+            0
+          ]
+        },
+        "requires_state": [
+          {
+            "op": "at-most",
+            "state": "state/crossings",
+            "value": 1
+          }
+        ],
+        "to": {
+          "anchor": "anchor/landing"
+        }
+      }
+    ],
+    "quests": [
+      {
+        "happening": {
+          "text": "the party takes on quest/walk-the-gallery",
+          "verb": "learns"
+        },
+        "id": "quest/walk-the-gallery",
+        "objectives": [
+          {
+            "anchor": "anchor/end",
+            "happening": {
+              "text": "the party reaches the far end",
+              "verb": "arrives"
+            },
+            "id": "obj/end",
+            "radius": 1,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "the delve is complete",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ],
+    "state": [
+      {
+        "id": "state/crossings",
+        "note": "How many times a body has crossed the gallery's slab.",
+        "scope": "party"
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "quests"
+}

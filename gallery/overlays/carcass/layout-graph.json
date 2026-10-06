@@ -1,0 +1,78 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "beats": [
+      {
+        "node": "node/flat",
+        "objective": "obj/ask-the-keeper",
+        "quest": "quest/walk-the-carcass"
+      },
+      {
+        "node": "node/inside",
+        "objective": "obj/inside",
+        "quest": "quest/walk-the-carcass"
+      },
+      {
+        "node": "node/back",
+        "objective": "obj/back",
+        "quest": "quest/walk-the-carcass"
+      }
+    ],
+    "critical_path": [
+      "node/arrival",
+      "node/flat",
+      "node/inside",
+      "node/back"
+    ],
+    "edges": [
+      {
+        "a": "node/arrival",
+        "b": "node/flat",
+        "class": "walk",
+        "id": "edge/along-the-flank"
+      },
+      {
+        "a": "node/flat",
+        "b": "node/inside",
+        "class": "walk",
+        "id": "edge/through-the-wound"
+      },
+      {
+        "a": "node/inside",
+        "b": "node/back",
+        "class": "walk",
+        "id": "edge/up-the-flank"
+      }
+    ],
+    "entry": "node/arrival",
+    "goal": "node/back",
+    "nodes": [
+      {
+        "id": "node/arrival",
+        "intent": "threshold",
+        "note": "the mud flat beside the wound in the west flank, where the party arrives",
+        "size_class": "room"
+      },
+      {
+        "id": "node/flat",
+        "intent": "hub",
+        "note": "the mud flat on the west side, where the keeper stands",
+        "size_class": "room"
+      },
+      {
+        "id": "node/inside",
+        "intent": "side-gallery",
+        "note": "the room inside the body, floored by the mud it lies on",
+        "size_class": "room"
+      },
+      {
+        "id": "node/back",
+        "intent": "side-gallery",
+        "note": "the top of the back, reached by the stair cut up the east flank",
+        "size_class": "room"
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "layout-graph"
+}

@@ -68,6 +68,8 @@ export const STEP_ACTIONS = [
   "interact",
   "rest",
   "trigger",
+  "witness-strike",
+  "loop",
   "assert-complete",
 ] as const;
 
@@ -232,7 +234,7 @@ export interface RestStep extends PresentationMarkers {
 }
 
 /** The environment-trigger events a `trigger` step performs — the DSL's `on` tags. */
-export const TRIGGER_KINDS = ["strike", "use", "approach", "strike-npc"] as const;
+export const TRIGGER_KINDS = ["strike", "use", "approach", "strike-npc", "strike-assembly"] as const;
 
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
@@ -242,22 +244,98 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[number];
  * flag a later step reads, because nothing on the quest DAG makes anybody fire
  * it. The bot does what a player does — a `strike` is a real attack on the
  * target's hitbox, a `use` a real right-click, an `approach` a walk into range,
- * a `strike-npc` an attack on the NPC's own hitbox — and the step passes only on
- * the trigger's own fired marker, never on the click landing.
+ * a `strike-npc` an attack on the NPC's own hitbox, a `strike-assembly` an attack
+ * on the assembly's own hitbox — and the step passes only on the trigger's own
+ * fired marker, never on the click landing. A hit count is N such steps, each
+ * owed its own marker.
  */
 export interface TriggerStep {
   readonly action: "trigger";
   /** The `trigger/<id>` performed — also the marker token the step passes on. */
   readonly trigger: string;
   readonly on: TriggerKind;
-  /** The watched anchor; absent exactly for `strike-npc`. */
+  /** The watched anchor; absent exactly for `strike-npc` and `strike-assembly`. */
   readonly anchor?: string;
   /** The watched NPC; present exactly for `strike-npc`. */
   readonly npc?: string;
-  /** The cell the target stands on: the anchor, or the NPC's body at this beat. */
+  /** The struck assembly; present exactly for `strike-assembly`. */
+  readonly assembly?: string;
+  /**
+   * The cell the target stands on: the anchor, the NPC's body at this beat, or
+   * the assembly's mark (its hitbox is the interaction nearest it).
+   */
   readonly pos: Vec3Tuple;
   /** An `approach` trigger's radius; present exactly for `approach`. */
   readonly range?: number;
+  /**
+   * spec-0083 §4: where the party stands to be carried — a cell inside the
+   * link's volume the act reaches the body from. Present exactly when the step
+   * carries the party, together with {@link transport}.
+   */
+  readonly stand?: Vec3Tuple;
+  /** The link's `to`: where performing this trigger puts the party. */
+  readonly transport?: Vec3Tuple;
+}
+
+/**
+ * gap 8: how close (blocks, per horizontal axis) counts as "arrived at a
+ * transport's destination" — the tolerance the executor's arrival predicate
+ * (`atTransportDest`) reads, held here so the parser can refuse a hop that
+ * predicate could not observe (spec-0083 §4).
+ */
+export const TRANSPORT_NEAR = 4;
+
+/** The vertical tolerance of the same arrival predicate. */
+export const TRANSPORT_NEAR_Y = 4;
+
+/**
+ * Witness an assembly's blow (spec-0082 §5.4, §5.7): stand on `pos` for up to
+ * `windowTicks` and see what the strike does to the body there. `struck`: the
+ * cell is under the limb in the landing region of facing `facing` (of
+ * `facingCount`), the facing a body standing there draws, so a blow must take
+ * health within the window. `spared`: no body standing there can be selected
+ * by the arming region, so nothing is wound up for it and no health is taken.
+ * Proves no objective.
+ */
+export interface WitnessStrikeStep {
+  readonly action: "witness-strike";
+  /** The assembly whose blow is witnessed. */
+  readonly assembly: string;
+  readonly expect: "struck" | "spared";
+  /** The cell the bot stands on. */
+  readonly pos: Vec3Tuple;
+  /** How long to stand, in ticks. */
+  readonly windowTicks: number;
+  /** `struck` only: the pattern step, the facing drawn, the facing count, the
+   * root yaw that draws it, and the blow's amount. */
+  readonly step?: number;
+  readonly facing?: number;
+  readonly facingCount?: number;
+  readonly yaw?: number;
+  readonly amount?: number;
+}
+
+/**
+ * Exercise a loop (spec-0086 §6): walk to `pos` on the approach, cross the slab
+ * at `cross`, be moved by exactly `offset`, and repeat until `times` moves have
+ * been seen. The party goes on from `transport` — `cross + offset`, the landing
+ * every crossing puts a body down on. A path EXPORT step, like `trigger`: it
+ * proves no objective.
+ */
+export interface LoopStep {
+  readonly action: "loop";
+  /** The `loop/<id>` exercised. */
+  readonly loop: string;
+  /** A standable cell on the approach, inside the loop's span, on the route. */
+  readonly pos: Vec3Tuple;
+  /** The slab cell the route crosses at. */
+  readonly cross: Vec3Tuple;
+  /** The loop's whole-block offset; never zero. */
+  readonly offset: Vec3Tuple;
+  /** How many crossings the step makes; at least one. */
+  readonly times: number;
+  /** `cross + offset`: where the party stands after the step. */
+  readonly transport: Vec3Tuple;
 }
 
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
@@ -286,6 +364,8 @@ export type Step =
   | InteractStep
   | RestStep
   | TriggerStep
+  | WitnessStrikeStep
+  | LoopStep
   | AssertCompleteStep;
 
 /**
@@ -785,7 +865,11 @@ function parseStep(value: unknown, pointer: string): Step {
       };
     }
     case "trigger": {
-      rejectUnknownKeys(obj, ["action", "trigger", "on", "anchor", "npc", "pos", "range"], pointer);
+      rejectUnknownKeys(
+        obj,
+        ["action", "trigger", "on", "anchor", "npc", "assembly", "pos", "range", "stand", "transport"],
+        pointer,
+      );
       const trigger = requireString(obj, "trigger", pointer);
       if (!/^trigger\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trigger)) {
         fail(`${pointer}/trigger`, `must be a \`trigger/<kebab>\` id, got ${JSON.stringify(trigger)}`);
@@ -796,10 +880,12 @@ function parseStep(value: unknown, pointer: string): Step {
       }
       const kind = on as TriggerKind;
       // Each field is present exactly when the kind has one: a strike-npc watches
-      // a character and no cell, an approach has a radius and a click does not.
+      // a character and no cell, a strike-assembly an assembly and no cell, an
+      // approach has a radius and a click does not.
       const anchor = obj["anchor"];
-      if (kind === "strike-npc") {
-        if (anchor !== undefined) fail(`${pointer}/anchor`, "a strike-npc trigger watches no anchor");
+      const object = kind === "strike-npc" || kind === "strike-assembly";
+      if (object) {
+        if (anchor !== undefined) fail(`${pointer}/anchor`, `a ${kind} trigger watches no anchor`);
       } else if (typeof anchor !== "string" || anchor.length === 0) {
         fail(`${pointer}/anchor`, `a ${kind} trigger must name its anchor, got ${describe(anchor)}`);
       }
@@ -811,6 +897,14 @@ function parseStep(value: unknown, pointer: string): Step {
       } else if (npc !== undefined) {
         fail(`${pointer}/npc`, `a ${kind} trigger watches no npc`);
       }
+      const assembly = obj["assembly"];
+      if (kind === "strike-assembly") {
+        if (typeof assembly !== "string" || assembly.length === 0) {
+          fail(`${pointer}/assembly`, `a strike-assembly trigger must name its assembly, got ${describe(assembly)}`);
+        }
+      } else if (assembly !== undefined) {
+        fail(`${pointer}/assembly`, `a ${kind} trigger watches no assembly`);
+      }
       const range = obj["range"];
       if (kind === "approach") {
         if (!Number.isInteger(range) || (range as number) <= 0) {
@@ -819,14 +913,134 @@ function parseStep(value: unknown, pointer: string): Step {
       } else if (range !== undefined) {
         fail(`${pointer}/range`, `a ${kind} trigger has no range`);
       }
+      // spec-0083 §4: a trigger that carries the party says where to stand and
+      // where it lands — both, or neither.
+      const carried = transportFields(obj, pointer);
+      const stand = obj["stand"] === undefined ? undefined : requireVec3(obj, "stand", pointer);
+      if ((stand === undefined) !== (carried.transport === undefined)) {
+        fail(
+          `${pointer}/${stand === undefined ? "stand" : "transport"}`,
+          "a trigger that carries the party names both where to stand (`stand`) and where it " +
+            "lands (`transport`)",
+        );
+      }
+      if (stand !== undefined && carried.transport !== undefined) {
+        const to = carried.transport;
+        // Observability: a landing the arrival predicate would already accept
+        // with the bot still on `stand` cannot be told apart from no carry at all.
+        if (
+          Math.abs(to[0] - stand[0]) < 2 * TRANSPORT_NEAR &&
+          Math.abs(to[2] - stand[2]) < 2 * TRANSPORT_NEAR &&
+          Math.abs(to[1] - stand[1]) <= TRANSPORT_NEAR_Y
+        ) {
+          fail(
+            `${pointer}/transport`,
+            `the hop from stand [${stand.join(", ")}] to [${to.join(", ")}] is shorter than ` +
+              `2 x TRANSPORT_NEAR (${2 * TRANSPORT_NEAR}) blocks on both horizontal axes and ` +
+              `within ${TRANSPORT_NEAR_Y} vertically — the bot's arrival check would accept the ` +
+              `landing before the press, so the carry cannot be observed. Move the link's \`to\` ` +
+              `further from its volume`,
+          );
+        }
+      }
       return {
         action: "trigger",
         trigger,
         on: kind,
         ...(typeof anchor === "string" ? { anchor } : {}),
         ...(typeof npc === "string" ? { npc } : {}),
+        ...(typeof assembly === "string" ? { assembly } : {}),
         pos: requirePos(obj, pointer),
         ...(kind === "approach" ? { range: range as number } : {}),
+        ...(stand === undefined ? {} : { stand }),
+        ...carried,
+      };
+    }
+    case "witness-strike": {
+      const expect = obj["expect"];
+      if (expect !== "struck" && expect !== "spared") {
+        fail(`${pointer}/expect`, `must be "struck" or "spared", got ${describe(expect)}`);
+      }
+      rejectUnknownKeys(
+        obj,
+        expect === "struck"
+          ? ["action", "assembly", "expect", "pos", "window_ticks", "step", "facing", "facing_count", "yaw", "amount"]
+          : ["action", "assembly", "expect", "pos", "window_ticks"],
+        pointer,
+      );
+      const window = obj["window_ticks"];
+      if (!Number.isInteger(window) || (window as number) <= 0) {
+        fail(`${pointer}/window_ticks`, `must be a positive integer, got ${describe(window)}`);
+      }
+      const int = (key: string): number => {
+        const v = obj[key];
+        if (!Number.isInteger(v) || (v as number) < 0) {
+          fail(`${pointer}/${key}`, `must be a non-negative integer, got ${describe(v)}`);
+        }
+        return v as number;
+      };
+      const base = {
+        action: "witness-strike" as const,
+        assembly: requireString(obj, "assembly", pointer),
+        expect: expect as "struck" | "spared",
+        pos: requirePos(obj, pointer),
+        windowTicks: window as number,
+      };
+      if (expect === "spared") return base;
+      const yaw = obj["yaw"];
+      if (typeof yaw !== "number" || !Number.isFinite(yaw)) {
+        fail(`${pointer}/yaw`, `must be a number, got ${describe(yaw)}`);
+      }
+      return {
+        ...base,
+        step: int("step"),
+        facing: int("facing"),
+        facingCount: int("facing_count"),
+        yaw,
+        amount: int("amount"),
+      };
+    }
+    case "loop": {
+      rejectUnknownKeys(
+        obj,
+        ["action", "loop", "pos", "cross", "offset", "times", "transport"],
+        pointer,
+      );
+      const loop = requireString(obj, "loop", pointer);
+      if (!/^loop\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(loop)) {
+        fail(`${pointer}/loop`, `must be a \`loop/<kebab>\` id, got ${JSON.stringify(loop)}`);
+      }
+      const offset = requireVec3(obj, "offset", pointer);
+      if (offset.every((c) => c === 0)) {
+        fail(`${pointer}/offset`, "must not be zero: a loop moves a body somewhere");
+      }
+      const times = obj["times"];
+      if (!Number.isInteger(times) || (times as number) < 1) {
+        fail(`${pointer}/times`, `must be an integer of at least 1, got ${describe(times)}`);
+      }
+      const cross = requireVec3(obj, "cross", pointer);
+      // One reading of `transport` for every carried step (spec-0086 §5.4): the
+      // same field a crossing and a link name, required here because an
+      // exercise always puts the party down somewhere.
+      const { transport } = transportFields(obj, pointer);
+      if (transport === undefined) {
+        fail(`${pointer}/transport`, "a loop step names where the party stands after it (`transport`)");
+      }
+      if (transport.some((c, i) => c !== cross[i]! + offset[i]!)) {
+        fail(
+          `${pointer}/transport`,
+          `must be cross + offset (${JSON.stringify(cross.map((c, i) => c + offset[i]!))}), ` +
+            `got ${JSON.stringify(transport)}`,
+        );
+      }
+      return {
+        action: "loop",
+        loop,
+        pos: requirePos(obj, pointer),
+        cross,
+        offset,
+        times: times as number,
+        transport,
       };
     }
     case "assert-complete": {

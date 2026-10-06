@@ -28,7 +28,7 @@
 //! 3. **The sun can be up while it fights.** Some state the delve can be in
 //!    between the body's entering and its death runs the burn tick at a
 //!    sky-open cell — the pinned hour window, and no rain falling there
-//!    ([`Clock`], [`hour_burns`], [`precipitates_at`]).
+//!    ([`Clock`], [`hour_burns`], the biome map).
 //! 4. **The sun can reach it.** Open sky stands on ground it can walk to, within
 //!    one aggro radius of where it is staged ([`sky_within_reach`]).
 //! 5. **Nothing on its head.** No `equipment.head` — except for a phantom, whose
@@ -119,7 +119,9 @@
 //!
 //! **Rain protects only where it falls.** The burn tick is skipped while
 //! `isInWaterOrRain`, and "in rain" is `Level.isRainingAt`: raining, sky
-//! visible, **and the biome at the cell precipitates rain** ([`precipitates_at`]).
+//! visible, **and the biome at the cell precipitates rain**
+//! ([`crate::compiler::horizon::biome_map`], and any repaint the fight can stand
+//! under — spec-0080 §4.2).
 //! Which biome a cell stands in, and whether it rains, is
 //! [`crate::compiler::horizon`]'s one answer — the same one emission lays in
 //! `generator-settings` — so the weather this proof reasons about is the weather
@@ -182,10 +184,12 @@ use crate::compiler::nav::{DEFAULT_FOLLOW_RANGE, World};
 use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0496`: a body vanilla burns in daylight is staged for a fight whose ground
-/// reaches open sky, in an hour and weather the fight can stand in that burn it,
-/// with nothing on its head.
-pub const DW_DAYLIGHT_BURNS_STAGING: DwCode = DwCode::new("DW0496", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0496`: a body vanilla burns in daylight is staged for a fight whose ground
+    /// reaches open sky, in an hour and weather the fight can stand in that burn it,
+    /// with nothing on its head.
+    pub const DW_DAYLIGHT_BURNS_STAGING: DwCode = DwCode::new("DW0496", ExitTier::Build);
+}
 
 /// Vanilla's built-in daylight-burn tag, vendored from Mojang's generated
 /// reports (`crates/dsl/data/entity-tags-1.21.11.json`; `data/PROVENANCE.md`).
@@ -234,50 +238,67 @@ fn head_piece_is_a_remedy(entity: &str) -> bool {
         && delvewright_dsl::equipment::shows_slot(entity, delvewright_dsl::EquipSlot::Head)
 }
 
-/// Where the pinned `minecraft:day` timeline turns `minecraft:gameplay/monsters_burn`
-/// off: tick 12542 of the day. Read from `data/minecraft/timeline/day.json` in
-/// the pinned 1.21.11 server jar (`versions.toml` `[minecraft]`
-/// `server_jar_sha256` `f83b8e09…dd1726`, the bundled
-/// `META-INF/versions/1.21.11/server-1.21.11.jar`), keyframe
-/// `{"ticks": 12542, "value": false}`.
-const MONSTERS_BURN_OFF_AT: i64 = 12542;
-
-/// Where it turns back on: tick 23460, keyframe `{"ticks": 23460, "value": true}`
-/// of the same file.
-const MONSTERS_BURN_ON_AT: i64 = 23460;
-
 /// Whether the pinned game runs the sun-burn tick at this hour: the
-/// `monsters_burn` window of the `minecraft:day` timeline, read by tick.
+/// `gameplay/monsters_burn` track of the pinned `minecraft:day` timeline, read
+/// by tick from the vendored file (`delvewright_dsl::celestial`; off at 12542,
+/// on again at 23460). A celestial time answers it with no rule of its own.
 pub fn hour_burns(time: WorldTime) -> bool {
-    let tick = time.daytime_ticks().rem_euclid(24_000);
-    !(MONSTERS_BURN_OFF_AT..MONSTERS_BURN_ON_AT).contains(&tick)
+    delvewright_dsl::celestial::monsters_burn(time.daytime_ticks())
 }
 
-/// The biome `cell` stands in: the surround rectangle painting it, else the
-/// ground biome the generator lays ([`crate::compiler::horizon::ground_biome`]).
-fn biome_at(plan: &Plan, cell: [i32; 3]) -> (String, bool) {
-    if let Some(surround) = &plan.surround
-        && let Some(rect) = surround
-            .biome
-            .iter()
-            .find(|r| (0..3).all(|i| r.min[i] <= cell[i] && cell[i] <= r.max[i]))
-    {
-        let rains =
-            crate::compiler::horizon::vanilla_precipitates(rect.biome).unwrap_or_else(|| {
-                panic!(
-                    "the surround paints `{}`, whose precipitation is unrecorded",
-                    rect.biome
-                )
-            });
-        return (rect.biome.to_string(), rains);
+/// One state a cell's sky can be in while a fight stands on it: the biome
+/// there at the first tick ([`crate::compiler::horizon::biome_map`]), or a
+/// repaint that reaches it (spec-0080 §4.2).
+struct Ground {
+    map: crate::compiler::horizon::BiomeMap,
+    /// Every `set-atmosphere` with a resolvable volume, by effect address.
+    repaints: BTreeMap<usize, Repaint>,
+}
+
+/// One repaint as the proof reads it: the 4-cells it paints, its biome, and
+/// whether rain falls in it.
+type Repaint = (([i32; 3], [i32; 3]), String, bool);
+
+impl Ground {
+    fn of(plan: &Plan) -> Self {
+        let c = plan.campaign;
+        let map = crate::compiler::horizon::biome_map(plan);
+        let repaints = crate::compiler::atmosphere::set_atmospheres(c)
+            .into_iter()
+            .filter_map(|(_, _, e)| {
+                let (min, max) = crate::compiler::horizon::repaint_volume(plan, e)?;
+                let Verb::SetAtmosphere { atmosphere, .. } = &e.verb else {
+                    return None;
+                };
+                let biome = map.biome_of(atmosphere.as_ref().map(|a| a.as_str()));
+                let rains = map.precipitates(&biome);
+                Some((
+                    addr(e),
+                    (
+                        crate::compiler::atmosphere::painted_box(min, max),
+                        biome,
+                        rains,
+                    ),
+                ))
+            })
+            .collect();
+        Ground { map, repaints }
     }
-    let ground = crate::compiler::horizon::ground_biome(plan.campaign, &plan.namespace);
-    (ground.id, ground.precipitates)
-}
 
-/// Whether declared rain falls on `cell`: the biome there precipitates.
-pub fn precipitates_at(plan: &Plan, cell: [i32; 3]) -> bool {
-    biome_at(plan, cell).1
+    /// The first biome `cell` can stand in, among the states `sky` reaches,
+    /// in which no rain falls — the first tick's biome, then each reachable
+    /// repaint that covers the cell, in effect order.
+    fn dry_biome(&self, sky: &Sky, cell: [i32; 3]) -> Option<String> {
+        let (first, rains) = self.map.at(cell);
+        if !rains {
+            return Some(first.to_string());
+        }
+        sky.paints.iter().find_map(|a| {
+            let ((lo, hi), biome, rains) = self.repaints.get(a)?;
+            let covers = (0..3).all(|i| lo[i] <= cell[i] && cell[i] <= hi[i]);
+            (covers && !rains).then(|| biome.clone())
+        })
+    }
 }
 
 /// A place in the quest DAG an effect root has: an objective's completion
@@ -304,6 +325,9 @@ type FireKey = (u64, usize);
 enum Cut {
     Time(WorldTime),
     Weather(WorldWeather),
+    /// A `set-atmosphere` (spec-0080 §4.2), by effect address: a cut of the
+    /// same kind as the other two, except that it reaches only its own volume.
+    Paint(usize),
 }
 
 /// One DAG-placed bundle: every cut in it that fires at a known offset, and
@@ -330,6 +354,9 @@ pub(crate) enum Beat {
 pub(crate) struct Sky {
     pub(crate) times: Vec<WorldTime>,
     pub(crate) weathers: Vec<WorldWeather>,
+    /// The `set-atmosphere` effects (by address) whose repaint the body can
+    /// stand under.
+    pub(crate) paints: Vec<usize>,
 }
 
 impl Sky {
@@ -337,6 +364,7 @@ impl Sky {
         match cut {
             Cut::Time(t) if !self.times.contains(&t) => self.times.push(t),
             Cut::Weather(w) if !self.weathers.contains(&w) => self.weathers.push(w),
+            Cut::Paint(a) if !self.paints.contains(&a) => self.paints.push(a),
             _ => {}
         }
     }
@@ -362,6 +390,7 @@ fn cut_of(e: &QuestEffect) -> Option<Cut> {
     e.set_time()
         .map(Cut::Time)
         .or_else(|| e.set_weather().map(Cut::Weather))
+        .or_else(|| matches!(e.verb, Verb::SetAtmosphere { .. }).then(|| Cut::Paint(addr(e))))
 }
 
 fn addr(e: &QuestEffect) -> usize {
@@ -535,7 +564,21 @@ impl Clock {
     /// Every state the delve can be in, whenever.
     fn everything(&self, c: &Campaign) -> Sky {
         let (times, weathers) = crate::compiler::light::reachable_time_weather(c);
-        Sky { times, weathers }
+        let mut sky = Sky {
+            times,
+            weathers,
+            paints: Vec::new(),
+        };
+        for cut in self.anywhere.iter().chain(
+            self.bundles
+                .values()
+                .flat_map(|b| b.cuts.iter().map(|(_, c)| c)),
+        ) {
+            if let Cut::Paint(_) = cut {
+                sky.add(*cut);
+            }
+        }
+        sky
     }
 
     /// Every state a body entering at one of `beats` can stand in before it
@@ -552,8 +595,24 @@ impl Clock {
             }
             // At the beat, per dimension.
             let own = self.bundles.get(p);
+            // A repaint is kept whichever side of the beat it falls: one that
+            // ran before still stands over its volume, and the first tick's
+            // biome is kept beside it — which can only over-report.
+            for (x, b) in &self.bundles {
+                for (k, cut) in &b.cuts {
+                    if matches!(cut, Cut::Paint(_))
+                        && ((x == p && k < key) || self.strictly_before(x, p))
+                    {
+                        sky.add(*cut);
+                    }
+                }
+            }
             for time in [true, false] {
-                let same = |cut: &Cut| matches!(cut, Cut::Time(_)) == time;
+                let same = |cut: &Cut| match cut {
+                    Cut::Time(_) => time,
+                    Cut::Weather(_) => !time,
+                    Cut::Paint(_) => false,
+                };
                 let local = own.and_then(|b| {
                     b.cuts
                         .iter()
@@ -761,6 +820,7 @@ pub fn check_daylight_staging(
         return Ok(());
     }
     let light = LightModel::from_shared(std::sync::Arc::clone(blocks));
+    let ground = Ground::of(plan);
     for body in &staged {
         if !burns_in_daylight(&body.entity) {
             continue;
@@ -780,12 +840,13 @@ pub fn check_daylight_staging(
         };
         let clear = sky.weathers.contains(&WorldWeather::Clear);
         let Some(cell) = sky_within_reach(world, &light, &body.cells, body.radius, &|cell| {
-            clear || !precipitates_at(plan, cell)
+            clear || ground.dry_biome(&sky, cell).is_some()
         }) else {
             continue;
         };
-        let (biome, rains) = biome_at(plan, cell);
-        let dry = !rains;
+        let dry_biome = ground.dry_biome(&sky, cell);
+        let dry = dry_biome.is_some();
+        let biome = dry_biome.unwrap_or_default();
         let weather = if dry && sky.weathers.contains(&declared.1) {
             declared.1
         } else if clear {
@@ -980,11 +1041,12 @@ fn burn_message(body: &Staged, exposure: &Exposure) -> String {
         ),
         None => String::new(),
     };
+    let (burn_off, burn_on) = delvewright_dsl::celestial::monsters_burn_switches();
     format!(
         "{kind} `{owner}` stages `{entity}` at [{}, {}, {}], and vanilla burns that species in \
          daylight (`#minecraft:burn_in_daylight`). The fight can stand in `{}` with `{}`, an \
          hour the pinned game burns undead in (its `minecraft:day` timeline keeps \
-         `monsters_burn` on from tick {MONSTERS_BURN_ON_AT} to tick {MONSTERS_BURN_OFF_AT}), \
+         `monsters_burn` on from tick {burn_on} to tick {burn_off}), \
          and open sky stands at [{}, {}, {}] — walkable ground inside this stack's own \
          {radius}-block aggro radius.{rain} A player retreating there is still its target, so \
          the fight the party is meant to have is decided by the sun instead: this is the \
@@ -1046,6 +1108,37 @@ mod tests {
         assert!(!hour_burns(WorldTime::Night));
         assert!(!hour_burns(WorldTime::Midnight));
         assert!(!hour_burns(WorldTime::Dawn));
+        // The window is the vendored track's, and it is the window the two
+        // constants this reader replaced stated: off at 12542, on at 23460.
+        use delvewright_dsl::celestial::monsters_burn;
+        assert!(monsters_burn(12541) && !monsters_burn(12542));
+        assert!(!monsters_burn(23459) && monsters_burn(23460));
+        // spec-0081 §5.2: the four horizon ticks do not burn.
+        for (body, pos) in [
+            (
+                delvewright_dsl::Body::Sun,
+                delvewright_dsl::Position::JustSet,
+            ),
+            (
+                delvewright_dsl::Body::Sun,
+                delvewright_dsl::Position::Setting,
+            ),
+            (
+                delvewright_dsl::Body::Moon,
+                delvewright_dsl::Position::JustSet,
+            ),
+            (
+                delvewright_dsl::Body::Sun,
+                delvewright_dsl::Position::Rising,
+            ),
+        ] {
+            let t = WorldTime::Celestial(delvewright_dsl::CelestialTime {
+                sun: (body == delvewright_dsl::Body::Sun).then_some(pos),
+                moon: (body == delvewright_dsl::Body::Moon).then_some(pos),
+                phase: None,
+            });
+            assert!(!hour_burns(t), "{} burns", t.keyword());
+        }
     }
 
     /// The radius is the declared `follow_range` or the one documented default —

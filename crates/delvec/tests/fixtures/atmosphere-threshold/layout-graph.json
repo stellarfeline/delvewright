@@ -1,0 +1,48 @@
+{
+  "campaign_id": "the-threshold",
+  "content": {
+    "beats": [
+      {
+        "node": "node/far",
+        "objective": "obj/ring-the-bell",
+        "quest": "quest/the-threshold"
+      },
+      {
+        "node": "node/near",
+        "objective": "obj/walk-back",
+        "quest": "quest/the-threshold"
+      }
+    ],
+    "critical_path": [
+      "node/near",
+      "node/far",
+      "node/near"
+    ],
+    "edges": [
+      {
+        "a": "node/near",
+        "b": "node/far",
+        "class": "walk",
+        "id": "edge/the-door"
+      }
+    ],
+    "entry": "node/near",
+    "goal": "node/near",
+    "nodes": [
+      {
+        "id": "node/near",
+        "intent": "threshold",
+        "note": "An ordinary afternoon: the horizon's own sky over an open hall.",
+        "size_class": "hall"
+      },
+      {
+        "id": "node/far",
+        "intent": "goal-chamber",
+        "note": "The same hall past the door, under the wrong sky from the first tick, with a bell in the middle.",
+        "size_class": "hall"
+      }
+    ]
+  },
+  "dsl_version": "0.35.1",
+  "stage": "layout-graph"
+}

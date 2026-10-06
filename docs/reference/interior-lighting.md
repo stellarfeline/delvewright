@@ -441,7 +441,102 @@ obtained. Two wiki facts are contested and are **not** relied on above: whether 
 when inactive (two wiki pages disagree), and whether light passes a *closed* trapdoor at full
 strength (no wiki statement found).
 
-## 7. Rule provenance
+## 7. Caves and the inside of a body
+
+A cave, or the inside of a creature, has no architecture to hang a lamp from, so §2's placements
+(sconce, chain, sill) have nothing to attach to. This section is what a sculpted interior
+(`delvec sculpt`, a form's `lights[].hull`) is lit by. Each rule is marked as above.
+
+### 7.1 A cave's own light is in its surface, and much of it is overhead **[cited]**
+
+Minecraft's own natural cave light is set into the rock, not stood on it:
+
+> "Glow lichen generates naturally in the interior of caves (at any height) on the surface of
+> stone … that are exposed to air" — [Glow Lichen](https://minecraft.wiki/w/Glow_Lichen)
+
+> "Cave vines can be found in lush caves, hanging from the ceilings of the caves." —
+> [Glow Berries](https://minecraft.wiki/w/Glow_Berries)
+
+The real-world reference for a cave lit by living things puts the light on the vault:
+
+> "glowworms are found in the Demonstration Chamber and on the ceiling of the Glowworm Grotto … a
+> ceiling covered in glowworms" — [Waitomo Glowworm Cave](https://en.wikipedia.org/wiki/Waitomo_Glowworm_Cave)
+
+**Consequence [authored]:** a natural source in a sculpted interior is **embedded** — it takes the
+place of a block of the surface, flush with it — and it is placed over the walls **and the
+vault**, not along the floor. A room lit only at floor level leaves its upper volume black, which
+is what a walk of the spec-0087 demo level found in both of its bays.
+
+### 7.2 An artificial source is hidden, its light is not **[cited]**
+
+§6.1 records the practice: "You can cover torches with half slabs or stairs on floors and
+ceilings." A lantern standing on a cave floor reads as someone having set it down there; behind a
+partial block, set into the surface, only its light reads.
+
+**Consequence [authored]:** an artificial-looking source in a sculpted interior is **recessed**:
+it sits one block behind the surface, a stair or slab of the surface's own family stands in the
+surface in front of it, and a one-block slot beside that cover lets the light out. The light
+model ([`light.rs`](../../crates/delvec/src/compiler/light.rs)) counts a stair or slab as
+opaque (§1), so the slot is the path it measures: three steps from the source to the room cell in
+front of the slot. In vanilla the stair passes light through its open quarter, by the same three
+steps, so the model and the game agree on this geometry.
+
+### 7.3 Placement is staggered and irregular, never a grid **[cited]**
+
+> "if you place everything only along the grid, it can become easy to break down the modularity
+> of a scene at first sight." — Lea Kronenberger,
+> [Balancing modularity and uniqueness in Environment Art](https://www.beyondextent.com/articles/balancing-modularity-and-uniqueness-in-environment-art)
+
+The established mechanism for scattering things irregularly but evenly is a Poisson-disk
+("blue noise") distribution:
+
+> "Blue noise sample patterns—for example produced by Poisson disk distributions, where all
+> samples are at least distance r apart for some user-supplied density parameter r—are generally
+> considered ideal for many applications" … "practitioners tend to use either uniform random
+> distributions (despite undesirable clustering), jittered/stratified sampling (which reduces but
+> doesn't eliminate clustering), or more structured distributions which induce anisotropy." —
+> Robert Bridson, *Fast Poisson Disk Sampling in Arbitrary Dimensions*, SIGGRAPH 2007 sketches
+> ([PDF](https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph07-poissondisk.pdf))
+
+**Consequence [authored]:** a hull light's density is stated as Bridson's `r` — the form's
+`spacing`, the least distance between two sources — and the sculpt draws the sources as a maximal
+Poisson-disk set over the candidate surface blocks, in the order of a seeded shuffle (ADR-0006).
+Uniform random placement clusters and a jittered grid still reads as a grid; the disk does
+neither.
+
+### 7.4 What the numbers come to **[authored — measured on the spec-0087 demo level]**
+
+From §1's `E − 3` rule and §7.2's three-step slot:
+
+| source | light at the room cell | holds light 3 out to |
+|---|---:|---:|
+| embedded crying obsidian (10) | 9, in the cell it faces | 6 more steps |
+| recessed soul lantern (10) | 7, in front of its slot | 4 more steps |
+
+So a recessed source lights a band about four blocks deep from the surface it is set in, and an
+embedded one about six. Measured on the demo level's bays (a release build of the engine that
+carries this section): a 26-wide, 28-long bay lit only by recessed soul lanterns in its walls and vault left 437
+of its floor cells below light 3 at a spacing of 5; five slender columns cut that to 235, and a
+spacing of 3 on top to 104 — density alone does not reach the middle of a wide room. What did was
+**putting surface into the middle**: one mass of flesh standing in a 19-wide bay, floor to vault,
+turns the floor into a ring about four blocks wide, lit from both sides, and that bay measured 0
+dark cells. The 18-wide crying-obsidian bay passed with two columns, because an embedded source
+reaches two steps further.
+
+The rule that follows, for a room lit from its own hull: **every floor cell within about four
+blocks of a recessed source's slot, or six of an embedded source** — by the room's shape (narrow
+it, or stand a mass in it), and then by density. Light set low in the walls lights the floor;
+light set in the vault lights the upper space; a room needs both, as two `hull` entries over the
+same surface (a dense band at floor height, a sparser one over walls and vault).
+
+### 7.5 What could not be found
+
+No published level-design source was found that states numbers for lighting a creature's
+interior; the creature-interior references found (*Ocarina of Time*'s Jabu-Jabu's Belly, *Monster
+Hunter: World*'s Rotten Vale) describe the look — organic walls, flesh, bone — and not how it is
+lit. §7.4's numbers are therefore this engine's own measurement, not established practice.
+
+## 8. Rule provenance
 
 | rule | § | provenance |
 |---|---|---|
@@ -467,3 +562,10 @@ strength (no wiki statement found).
 | conceal by recessing, not by covering | 6.1 | **authored** — from §2 |
 | "gradient" means palette | 6.3 | **cited** — Conquest Reforged |
 | do not pave | 6.4 | **authored** — from §1; the community citation is **unverified** |
+| a cave's own light is in its surface, much of it overhead | 7.1 | **cited** — wiki (glow lichen, cave vines), Waitomo |
+| natural sources are embedded over walls and vault | 7.1 | **authored** — from 7.1 |
+| an artificial source is recessed behind a partial block, its light let out by a slot | 7.2 | **cited** — §6.1 forum practice; **authored** — the slot geometry |
+| staggered and irregular, never a grid | 7.3 | **cited** — Kronenberger |
+| density as a Poisson-disk radius, drawn in a seeded order | 7.3 | **cited** — Bridson 2007; **authored** — the discrete, seeded draw |
+| a recessed 10-emitter lights a band about 4 deep, an embedded one about 6; wide rooms need surface in the middle | 7.4 | **authored** — measured on the spec-0087 demo level |
+| no source states numbers for a creature's interior | 7.5 | **authored** — a gap |
