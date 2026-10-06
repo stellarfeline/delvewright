@@ -623,8 +623,7 @@ pub fn build_with_warnings(
                 .filter(|p| !crate::compiler::nav::returned_from(returned, *p))
                 .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))
         };
-        let (binding, findings) =
-            crate::compiler::assembly::check(plan, &|c| population.contains(&c), &reaches);
+        let (binding, findings) = crate::compiler::assembly::check(plan, &population, &reaches);
         eprintln!("{}", binding.line());
         eprintln!("{}", binding.cost_line());
         if let Some((first, rest)) = findings.split_first() {
@@ -4340,6 +4339,7 @@ fn emit_functions(
                 body,
             )
         },
+        &|e, lines, body| guard_effect_lines(plan, e, lines, body),
     ));
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
@@ -6053,9 +6053,21 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
 /// selector would not work). An ungated effect (both lists empty) is emitted
 /// verbatim.
 fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
-    let gate = eff.gate();
     let mut inner: Vec<String> = Vec::new();
     emit_quest_effect(plan, eff, aud, &mut inner);
+    guard_effect_lines(plan, eff, inner, body);
+}
+
+/// Wrap lines lowered for `eff` in its own gate (`when`), the one guard every
+/// gated effect takes — also for lines a feature module lowered itself (an
+/// aimed assembly's turned blow, spec-0082 §5.5).
+pub(crate) fn guard_effect_lines(
+    plan: &Plan,
+    eff: &QuestEffect,
+    inner: Vec<String>,
+    body: &mut Vec<String>,
+) {
+    let gate = eff.gate();
     if gate.is_empty() {
         body.extend(inner);
         return;

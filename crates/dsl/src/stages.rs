@@ -4479,6 +4479,28 @@ pub struct AssemblyStrikes {
     pub while_in: StealthZone,
     /// The steps, in order.
     pub pattern: Vec<StrikeStep>,
+    /// Aim (spec-0082 §5.5). Absent: every blow lands where its `on_land`
+    /// boxes say. Present: at the start of every wind-up the assembly turns to
+    /// the one of its declared facings nearest the bearing of the nearest
+    /// player in `while_in`, and every `damage-players` box in `on_land` turns
+    /// with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aim: Option<StrikeAim>,
+}
+
+/// An aimed strike pattern's facings (spec-0082 §5.5): `facings` turns
+/// evenly spaced round the vertical axis through the mark, the first being the
+/// assembly's declared `facing`. Every `on_land` box is written for that first
+/// facing; the compiler turns it to each of the others and proves every facing
+/// a player in `while_in` can draw (`DW0938`, judged per facing). Which facing
+/// a blow takes is chosen at run time among the proven ones; nothing about
+/// where it lands is computed there.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StrikeAim {
+    /// How many facings, evenly spaced: 4 is a quarter turn apart, 8 an eighth,
+    /// 16 a sixteenth. At least 1 (1 is the declared facing alone).
+    pub facings: std::num::NonZeroU32,
 }
 
 /// One step of a strike pattern: wind up, hold, strike, land.

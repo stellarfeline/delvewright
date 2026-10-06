@@ -28,9 +28,14 @@
 //!   blow lands only where it was announced (every landing box, grown to its
 //!   keep-out, lies inside the arming region's keep-out; a `damage-players`
 //!   with no `in` strikes every player in the world and is refused), and the
-//!   blow is where the limb is (every caught cell of a landing box has a cell
-//!   of the strike clip's last-frame footprint in its column, from its floor to
-//!   three cells above it).
+//!   blow's area is the area the limb comes down on, both ways
+//!   ([`correspondence`]): every standable cell of the landing box has the
+//!   strike clip's last frame in the standing body's space above it (its feet
+//!   and head cells), and every standable cell where the last frame meets that
+//!   space and the strike clip's first frame did not is caught by the landing
+//!   box, to within the box's keep-out ring. An aimed pattern is judged per
+//!   facing a player in the arming region can draw, the box and the limb
+//!   turned together.
 //!
 //! **Not judged, by a standing ruling** (spec-0016 §3, applied in spec-0082
 //! §5.4): when a blow lands and how hard. The wind-up's length, the hold and
@@ -96,9 +101,19 @@ pub const MAX_HITBOX_WIDTH: f64 = 6.0;
 /// the whole-block bound under it.
 pub const MAX_HITBOX_HEIGHT: f64 = 22.0;
 
-/// How far above a caught cell's floor the blow may land and still be the
-/// thing that hurt the player standing there (spec-0082 §5.4 shape 2).
-pub const LANDING_REACH_CELLS: i32 = 3;
+/// How many cells tall the standing body's space is above a floor cell: the
+/// player's height rounded up to whole cells — its feet cell and its head cell
+/// (spec-0082 §5.4 shape 2). A limb above the head has not reached the body.
+pub fn body_cells(body: Body) -> i32 {
+    body.height.ceil() as i32
+}
+
+/// The widening, in degrees, of each facing's sector when the compiler asks
+/// which facings a player in the arming region can draw (spec-0082 §5.5): the
+/// run-time choice reads the bearing as a whole number of `1/facings` degrees,
+/// so a bearing within this of a sector's edge may fall either side, and both
+/// facings are proved.
+pub const AIM_SECTOR_MARGIN_DEG: f64 = 0.5;
 
 /// The `interpolation_duration` a return to the rest pose is drawn over, in
 /// ticks: the spike's own summon cadence (spec-0082 §8).
@@ -180,6 +195,20 @@ impl Placed<'_> {
     }
 }
 
+/// The drawn facing a run-time pick `k` resolves to: `k` itself when it is
+/// drawn, else the drawn facing fewest steps round from it (the lower on a
+/// tie). The compiler emits no facing it has not proved.
+fn nearest_drawn(drawn: &[u32], k: u32, n: u32) -> u32 {
+    drawn
+        .iter()
+        .copied()
+        .min_by_key(|&d| {
+            let a = (i64::from(d) - i64::from(k)).rem_euclid(i64::from(n));
+            (a.min(i64::from(n) - a), d)
+        })
+        .unwrap_or(0)
+}
+
 /// Shift a set of mark-relative cells to the world.
 fn offset_all(cells: &BTreeSet<[i32; 3]>, mark: [i32; 3]) -> BTreeSet<[i32; 3]> {
     cells
@@ -229,6 +258,9 @@ pub struct Landing {
     pub declares_in: bool,
     /// `amount`, for the staging record.
     pub amount: u32,
+    /// Whether it stands inside another effect's list rather than at the top
+    /// of `on_land` — where an aimed pattern cannot turn it.
+    pub nested: bool,
 }
 
 /// One strike step, as the judgement reads it.
@@ -276,6 +308,298 @@ pub struct Subject<'a> {
     pub struck_by: Vec<&'a str>,
     /// Of those, the ones the critical path performs.
     pub performed: Vec<&'a str>,
+    /// The aimed pattern's facing count (`strikes.aim.facings`); `None` when
+    /// the pattern is not aimed.
+    pub aim: Option<u32>,
+}
+
+impl Subject<'_> {
+    /// How many facings the pattern is spaced over: the aim's count, or 1.
+    pub fn facing_count(&self) -> u32 {
+        self.aim.unwrap_or(1)
+    }
+
+    /// The facings a blow can take: for an aimed pattern every facing a player
+    /// in the arming region can draw ([`drawn_facings`]), else the declared
+    /// facing alone.
+    pub fn facings(&self) -> Vec<u32> {
+        match (&self.strikes, self.aim) {
+            (Some((arming, _)), Some(n)) => {
+                drawn_facings(self.mark, *arming, n, rig::facing_angle(self.facing))
+            }
+            _ => vec![0],
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Facings (spec-0082 §5.5)
+// ---------------------------------------------------------------------------
+
+/// The turn, in radians about `+y` (`+z` toward `+x`), of facing `k` of `n`
+/// from the declared facing.
+pub fn facing_turn(k: u32, n: u32) -> f64 {
+    if k == 0 {
+        0.0
+    } else {
+        std::f64::consts::TAU * f64::from(k) / f64::from(n)
+    }
+}
+
+/// The root's yaw, in Minecraft degrees, that draws facing `k` of `n`. A
+/// display entity draws its transformation turned by its own yaw, and a turn of
+/// `+a` about `+y` is a yaw of `-a` (yaw 90 faces west, `-x`). The rig's frames
+/// already carry the declared facing, so facing 0 is yaw 0. In `(-180, 180]`.
+pub fn root_yaw(k: u32, n: u32) -> f64 {
+    let mut y = -360.0 * f64::from(k) / f64::from(n);
+    while y <= -180.0 {
+        y += 360.0;
+    }
+    if y == 0.0 { 0.0 } else { y }
+}
+
+/// A yaw as a command token: at most four decimals, trailing zeros dropped.
+pub fn yaw_token(y: f64) -> String {
+    let t = format!("{y:.4}");
+    let t = t.trim_end_matches('0').trim_end_matches('.').to_string();
+    if t == "-0" { "0".to_string() } else { t }
+}
+
+/// Wrap an angle to `(-π, π]`.
+fn wrap(a: f64) -> f64 {
+    let t = std::f64::consts::TAU;
+    let mut a = a % t;
+    if a <= -std::f64::consts::PI {
+        a += t;
+    }
+    if a > std::f64::consts::PI {
+        a -= t;
+    }
+    a
+}
+
+/// The bearing, as a turn about `+y` from `+z`, of a horizontal offset.
+fn bearing(dx: f64, dz: f64) -> f64 {
+    dx.atan2(dz)
+}
+
+/// **The facings a player in the arming region can draw** (spec-0082 §5.5):
+/// those of the `n` facings (spaced from `base`, the declared facing's turn)
+/// whose sector — half a step either side, widened by
+/// [`AIM_SECTOR_MARGIN_DEG`] — meets the bearings, from the mark cell's
+/// centre, of every position a body selected by the arming region can stand
+/// at (the region grown by the body's half-width). All of them when the mark
+/// lies inside that. Ascending; never empty.
+pub fn drawn_facings(mark: [i32; 3], arming: CellBox, n: u32, base: f64) -> Vec<u32> {
+    if n <= 1 {
+        return vec![0];
+    }
+    let half = Body::PLAYER.half_width();
+    let lo = [f64::from(arming.0[0]) - half, f64::from(arming.0[2]) - half];
+    let hi = [
+        f64::from(arming.1[0]) + 1.0 + half,
+        f64::from(arming.1[2]) + 1.0 + half,
+    ];
+    let m = [f64::from(mark[0]) + 0.5, f64::from(mark[2]) + 0.5];
+    if lo[0] <= m[0] && m[0] <= hi[0] && lo[1] <= m[1] && m[1] <= hi[1] {
+        return (0..n).collect();
+    }
+    let centre = bearing((lo[0] + hi[0]) / 2.0 - m[0], (lo[1] + hi[1]) / 2.0 - m[1]);
+    let rel: Vec<f64> = [
+        [lo[0], lo[1]],
+        [lo[0], hi[1]],
+        [hi[0], lo[1]],
+        [hi[0], hi[1]],
+    ]
+    .iter()
+    .map(|c| wrap(bearing(c[0] - m[0], c[1] - m[1]) - centre))
+    .collect();
+    let rmin = rel.iter().copied().fold(f64::INFINITY, f64::min);
+    let rmax = rel.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let mid = centre + (rmin + rmax) / 2.0;
+    let half_span = (rmax - rmin) / 2.0;
+    let step = std::f64::consts::TAU / f64::from(n);
+    let margin = AIM_SECTOR_MARGIN_DEG.to_radians();
+    let out: Vec<u32> = (0..n)
+        .filter(|&k| {
+            let at = base + facing_turn(k, n);
+            wrap(at - mid).abs() <= half_span + step / 2.0 + margin
+        })
+        .collect();
+    if out.is_empty() { vec![0] } else { out }
+}
+
+/// The facing the run-time choice draws for a body at `cell`: the facing
+/// nearest the bearing from the mark cell's centre to the cell's centre.
+pub fn facing_for(mark: [i32; 3], cell: [i32; 3], n: u32, base: f64) -> u32 {
+    if n <= 1 {
+        return 0;
+    }
+    let b = bearing(f64::from(cell[0] - mark[0]), f64::from(cell[2] - mark[2]));
+    let step = std::f64::consts::TAU / f64::from(n);
+    let k = (wrap(b - base) / step).round() as i64;
+    k.rem_euclid(i64::from(n)) as u32
+}
+
+/// **A landing box turned to a facing** (spec-0082 §5.5): every cell whose
+/// centre, turned back by `turn` about the vertical axis through the mark
+/// cell's centre, lies in the box; the box's own cells at turn 0. Every
+/// course of the box keeps its height.
+pub fn turned_region(mark: [i32; 3], (lo, hi): CellBox, turn: f64) -> BTreeSet<[i32; 3]> {
+    if turn == 0.0 {
+        return cells_of((lo, hi)).into_iter().collect();
+    }
+    let m = [f64::from(mark[0]) + 0.5, f64::from(mark[2]) + 0.5];
+    let (sn, cs) = turn.sin_cos();
+    // Forward: (x, z) turned by +turn about the mark.
+    let fwd = |x: f64, z: f64| {
+        let (dx, dz) = (x - m[0], z - m[1]);
+        (m[0] + dx * cs + dz * sn, m[1] - dx * sn + dz * cs)
+    };
+    let back = |x: f64, z: f64| {
+        let (dx, dz) = (x - m[0], z - m[1]);
+        (m[0] + dx * cs - dz * sn, m[1] + dx * sn + dz * cs)
+    };
+    let (x0, x1) = (f64::from(lo[0]), f64::from(hi[0]) + 1.0);
+    let (z0, z1) = (f64::from(lo[2]), f64::from(hi[2]) + 1.0);
+    let corners = [fwd(x0, z0), fwd(x0, z1), fwd(x1, z0), fwd(x1, z1)];
+    let bx0 = corners
+        .iter()
+        .map(|c| c.0)
+        .fold(f64::INFINITY, f64::min)
+        .floor() as i32
+        - 1;
+    let bx1 = corners
+        .iter()
+        .map(|c| c.0)
+        .fold(f64::NEG_INFINITY, f64::max)
+        .ceil() as i32
+        + 1;
+    let bz0 = corners
+        .iter()
+        .map(|c| c.1)
+        .fold(f64::INFINITY, f64::min)
+        .floor() as i32
+        - 1;
+    let bz1 = corners
+        .iter()
+        .map(|c| c.1)
+        .fold(f64::NEG_INFINITY, f64::max)
+        .ceil() as i32
+        + 1;
+    const EPS: f64 = 1e-9;
+    let mut out = BTreeSet::new();
+    for x in bx0..=bx1 {
+        for z in bz0..=bz1 {
+            let (px, pz) = back(f64::from(x) + 0.5, f64::from(z) + 0.5);
+            if x0 <= px + EPS && px < x1 - EPS && z0 <= pz + EPS && pz < z1 - EPS {
+                for y in lo[1]..=hi[1] {
+                    out.insert([x, y, z]);
+                }
+            }
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// The correspondence (spec-0082 §5.4 shape 2)
+// ---------------------------------------------------------------------------
+
+/// The standable cells whose standing body's space — the feet cell and the
+/// [`body_cells`] above it — a set of limb cells meets.
+pub fn struck_cells(
+    limb: &BTreeSet<[i32; 3]>,
+    population: &dyn Fn([i32; 3]) -> bool,
+) -> BTreeSet<[i32; 3]> {
+    let tall = body_cells(Body::PLAYER);
+    let mut out = BTreeSet::new();
+    for c in limb {
+        for dy in 0..tall {
+            let f = [c[0], c[1] - dy, c[2]];
+            if population(f) {
+                out.insert(f);
+            }
+        }
+    }
+    out
+}
+
+/// The standable cells a body can be caught from by a landing region: the
+/// union of every region cell's keep-out ([`keep_out_box`]) — the region and
+/// the ring round it a body standing at its edge reaches into.
+pub fn caught_cells(
+    region: &BTreeSet<[i32; 3]>,
+    population: &dyn Fn([i32; 3]) -> bool,
+) -> BTreeSet<[i32; 3]> {
+    let mut out = BTreeSet::new();
+    for c in region {
+        for k in cells_of(keep_out_box(Body::PLAYER, *c, *c)) {
+            if population(k) {
+                out.insert(k);
+            }
+        }
+    }
+    out
+}
+
+/// **What a landing and its limb disagree on** — the one rule of the strike's
+/// correspondence, both ways (spec-0082 §5.4 shape 2, settled by the owner's
+/// ruling that an attack's hit area corresponds as closely as it can to what
+/// its animation shows).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Correspondence {
+    /// Standable cells a body can be caught from (the region and its keep-out
+    /// ring) where the strike clip's last frame does not reach: no part meets
+    /// the standing body's space above them. A blow lands where no limb is
+    /// seen.
+    pub unstruck: Vec<[i32; 3]>,
+    /// Standable cells the last frame comes down on — it meets the standing
+    /// body's space there and the strike clip's first frame did not — that the
+    /// landing does not catch, even by its keep-out ring (the stated
+    /// tolerance: a body there reaches into the region). A limb comes down
+    /// where no blow lands.
+    pub uncaught: Vec<[i32; 3]>,
+    /// The standable cells of the region (what `unstruck` is drawn from).
+    pub landing: Vec<[i32; 3]>,
+    /// Every standable cell a body can be caught from.
+    pub caught: Vec<[i32; 3]>,
+    /// The standable cells the last frame comes down on (what `uncaught` is
+    /// drawn from).
+    pub comes_down: Vec<[i32; 3]>,
+    /// The standable cells whose body space the last frame meets.
+    pub struck: Vec<[i32; 3]>,
+}
+
+impl Correspondence {
+    /// Whether the two agree.
+    pub fn holds(&self) -> bool {
+        self.unstruck.is_empty() && self.uncaught.is_empty()
+    }
+}
+
+/// Judge a landing region against the limb's last frame (`last`) and the
+/// pose the strike began from (`first`), both world cells at the facing the
+/// region is turned to.
+pub fn correspondence(
+    region: &BTreeSet<[i32; 3]>,
+    first: &BTreeSet<[i32; 3]>,
+    last: &BTreeSet<[i32; 3]>,
+    population: &dyn Fn([i32; 3]) -> bool,
+) -> Correspondence {
+    let landing: BTreeSet<[i32; 3]> = region.iter().copied().filter(|c| population(*c)).collect();
+    let caught = caught_cells(region, population);
+    let struck = struck_cells(last, population);
+    let before = struck_cells(first, population);
+    let comes_down: BTreeSet<[i32; 3]> = struck.difference(&before).copied().collect();
+    Correspondence {
+        unstruck: caught.difference(&struck).copied().collect(),
+        uncaught: comes_down.difference(&caught).copied().collect(),
+        landing: landing.into_iter().collect(),
+        caught: caught.into_iter().collect(),
+        comes_down: comes_down.into_iter().collect(),
+        struck: struck.into_iter().collect(),
+    }
 }
 
 /// One step's record, for the staging artifact.
@@ -289,12 +613,34 @@ pub struct StepRecord {
     pub windup_ticks: u32,
     /// The hold.
     pub hold: u32,
-    /// Ticks from the strike clip starting to the landing.
+    /// Ticks from the strike clip starting to the landing: to the tick the
+    /// client has drawn its last frame whole ([`rig::Clip::landing_ticks`]).
     pub strike_ticks: u32,
     /// Every landing's `amount`.
     pub amounts: Vec<u32>,
-    /// Every caught cell of every landing box, in the world.
+    /// Every caught cell of every landing box at every facing, in the world.
     pub caught: Vec<[i32; 3]>,
+    /// How many facings the pattern is spaced over (1 when not aimed).
+    pub facing_count: u32,
+    /// Per facing a blow can take.
+    pub facings: Vec<FacingRecord>,
+}
+
+/// One facing of one step, for the staging artifact and the bot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FacingRecord {
+    /// The facing's index, `0..facing_count`.
+    pub k: u32,
+    /// The root's yaw that draws it.
+    pub yaw: f64,
+    /// The standable cells its landing regions catch a body from.
+    pub caught: Vec<[i32; 3]>,
+    /// The standable cells its limb comes down on.
+    pub comes_down: Vec<[i32; 3]>,
+    /// A cell of the landing, inside the arming region and under the limb,
+    /// from which a body draws this facing: where the bot stands to take the
+    /// blow. `None` when there is none.
+    pub stand: Option<[i32; 3]>,
 }
 
 /// What one [`judge`] examined.
@@ -304,6 +650,8 @@ pub struct Judged {
     pub hitboxes: usize,
     /// Strike steps checked.
     pub steps: usize,
+    /// Facings judged across those steps.
+    pub facings: usize,
     /// Per-step records.
     pub records: Vec<StepRecord>,
 }
@@ -396,26 +744,36 @@ pub fn judge(
                 .and_then(|c| c.frames.first().cloned())
                 .or_else(|| s.rig.rest_pose())
                 .unwrap_or_default();
-            let seen = offset_all(&rig::frame_footprint(&pose, s.facing), s.mark);
-            if !seen.iter().any(|c| cell_meets(*c, lo, hi)) {
-                out.push(Failure::new(
-                    DW_ASSEMBLY_HITBOX,
-                    format!(
-                        "assembly `{}`'s hitbox ({}/hitbox) spans {lo:?}..{hi:?} and meets none of \
-                         the {} cell(s) its parts stand in when it spawns ({}): {}. The player \
-                         strikes what the player sees, and a box beside the thing is a box \
-                         nobody aims at. Move the hitbox's `offset` (or size it) so it covers the \
-                         parts",
-                        s.id,
-                        s.path,
-                        seen.len(),
-                        match s.initial {
-                            Some(c) => format!("the first frame of `{c}`"),
-                            None => "the rest pose".to_string(),
-                        },
-                        rig::cells_line(&seen)
-                    ),
-                ));
+            // At every facing the pattern can turn it to: a turned thing goes
+            // back to its clip at the facing it struck from.
+            let base = rig::facing_angle(s.facing);
+            let n = s.facing_count();
+            for k in s.facings() {
+                let seen = offset_all(
+                    &rig::frame_footprint_turned(&pose, base + facing_turn(k, n)),
+                    s.mark,
+                );
+                if !seen.iter().any(|c| cell_meets(*c, lo, hi)) {
+                    out.push(Failure::new(
+                        DW_ASSEMBLY_HITBOX,
+                        format!(
+                            "assembly `{}`'s hitbox ({}/hitbox) spans {lo:?}..{hi:?} and meets none \
+                             of the {} cell(s) its parts stand in when it spawns ({}){}: {}. The \
+                             player strikes what the player sees, and a box beside the thing is a \
+                             box nobody aims at. Move the hitbox's `offset` (or size it) so it \
+                             covers the parts",
+                            s.id,
+                            s.path,
+                            seen.len(),
+                            match s.initial {
+                                Some(c) => format!("the first frame of `{c}`"),
+                                None => "the rest pose".to_string(),
+                            },
+                            facing_words(k, n),
+                            rig::cells_line(&seen)
+                        ),
+                    ));
+                }
             }
         }
     }
@@ -436,22 +794,46 @@ pub fn judge(
     }
     let body = Body::PLAYER;
     let arm_keep = keep_out_box(body, arming.0, arming.1);
+    let base = rig::facing_angle(s.facing);
+    let n = s.facing_count();
+    let facings = s.facings();
     for step in steps {
         j.steps += 1;
         let strike_clip = s.rig.clips.get(step.strike);
         let windup_clip = s.rig.clips.get(step.windup);
-        let limb = strike_clip
-            .map(|c| offset_all(&rig::last_frame_footprint(c, s.facing), s.mark))
-            .unwrap_or_default();
         let mut record = StepRecord {
             assembly: s.id.to_string(),
             step: step.index,
             windup_ticks: windup_clip.map(|c| c.length_ticks()).unwrap_or(0),
             hold: step.hold,
-            strike_ticks: strike_clip.map(|c| c.length_ticks()).unwrap_or(0),
+            strike_ticks: strike_clip.map(|c| c.landing_ticks()).unwrap_or(0),
             amounts: step.landings.iter().map(|l| l.amount).collect(),
             caught: Vec::new(),
+            facing_count: n,
+            facings: Vec::new(),
         };
+        // The limb at each facing: where the strike began and where it lands.
+        let limb_at = |k: u32| -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+            let turn = base + facing_turn(k, n);
+            let pose = |f: Option<&Vec<Transform>>| {
+                f.map(|f| offset_all(&rig::frame_footprint_turned(f, turn), s.mark))
+                    .unwrap_or_default()
+            };
+            (
+                pose(strike_clip.and_then(|c| c.frames.first())),
+                pose(strike_clip.and_then(|c| c.frames.last())),
+            )
+        };
+        let mut per_facing: Vec<FacingRecord> = facings
+            .iter()
+            .map(|&k| FacingRecord {
+                k,
+                yaw: root_yaw(k, n),
+                caught: Vec::new(),
+                comes_down: Vec::new(),
+                stand: None,
+            })
+            .collect();
         for l in &step.landings {
             let Some(within) = l.within else {
                 if !l.declares_in {
@@ -469,87 +851,195 @@ pub fn judge(
                 }
                 continue;
             };
-            // Shape 1: it lands only where it was announced.
-            let keep = keep_out_box(body, within.0, within.1);
-            if !(in_box(keep.0, arm_keep) && in_box(keep.1, arm_keep)) {
+            if s.aim.is_some() && l.nested {
                 out.push(Failure::new(
                     DW_ASSEMBLY_STRIKE,
                     format!(
-                        "assembly `{}`'s strike step {} lands a blow ({}) whose box catches a body \
-                         from the feet cells {:?}..={:?}, and the arming region `while_in` catches \
-                         one only from {:?}..={:?}. A player who never entered the arming region \
-                         would be struck by a blow that was never wound up for them. Shrink or \
-                         move the landing box inside `while_in`, or widen `while_in` to cover it",
-                        s.id, step.index, l.path, keep.0, keep.1, arm_keep.0, arm_keep.1
+                        "assembly `{}`'s strike pattern is aimed, and its step {} lands a \
+                         `damage-players` ({}) inside another effect's list. An aimed pattern \
+                         turns every landing box with the facing it strikes from, and only a box \
+                         at the top of `on_land` is turned; this one would land where the first \
+                         facing put it whichever way the thing turned. Move the `damage-players` \
+                         to the top of `on_land` (a `when` on it is kept)",
+                        s.id, step.index, l.path
                     ),
                 ));
                 continue;
             }
-            // Shape 2: the blow is where the limb is.
-            let caught: Vec<[i32; 3]> = cells_of(keep)
-                .into_iter()
-                .filter(|c| population(*c))
-                .collect();
-            let unmet: Vec<[i32; 3]> = caught
-                .iter()
-                .copied()
-                .filter(|c| {
-                    !(0..=LANDING_REACH_CELLS).any(|dy| limb.contains(&[c[0], c[1] + dy, c[2]]))
-                })
-                .collect();
-            record.caught.extend(caught.iter().copied());
-            if !unmet.is_empty() {
-                // The part of the limb that answers the question: its cells in
-                // the caught cells' floor band, at most `NAME_LIMIT` of them.
-                let lo_y = caught.iter().map(|c| c[1]).min().unwrap_or(0);
-                let hi_y = caught.iter().map(|c| c[1]).max().unwrap_or(0) + LANDING_REACH_CELLS;
-                let low: Vec<[i32; 3]> = limb
+            for (fi, &k) in facings.iter().enumerate() {
+                let region = turned_region(s.mark, within, facing_turn(k, n));
+                // Shape 1: it lands only where it was announced.
+                let outside: Vec<[i32; 3]> = region
                     .iter()
                     .copied()
-                    .filter(|c| (lo_y..=hi_y).contains(&c[1]))
+                    .filter(|c| {
+                        let keep = keep_out_box(body, *c, *c);
+                        !(in_box(keep.0, arm_keep) && in_box(keep.1, arm_keep))
+                    })
                     .collect();
-                let shown = low
-                    .iter()
-                    .take(NAME_LIMIT)
-                    .map(|c| format!("[{}, {}, {}]", c[0], c[1], c[2]))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let limb_says = match low.len() {
-                    0 => format!("none of its {} cell(s) is within that band", limb.len()),
-                    n if n > NAME_LIMIT => format!("{shown}, and {} more", n - NAME_LIMIT),
-                    _ => shown,
-                };
-                out.push(Failure::new(
-                    DW_ASSEMBLY_STRIKE,
-                    format!(
-                        "assembly `{}`'s strike step {} lands a blow ({}) on {} standable cell(s) \
-                         the strike clip `{}` never reaches — no part stands in the column from \
-                         the cell's floor to {LANDING_REACH_CELLS} above it on the clip's last \
-                         frame: {}. The thing the player saw come down must be the thing that \
-                         hurt them. Where the clip's last frame stands from that floor to \
-                         {LANDING_REACH_CELLS} above it: {}. Move the landing box under the limb \
-                         (`delvec rig describe` prints the footprint), or choose a strike clip \
-                         that reaches it",
-                        s.id,
-                        step.index,
-                        l.path,
-                        unmet.len(),
-                        step.strike,
-                        unmet
-                            .iter()
-                            .map(|c| format!("[{}, {}, {}]", c[0], c[1], c[2]))
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                        limb_says
-                    ),
-                ));
+                if !outside.is_empty() {
+                    let keep = region
+                        .iter()
+                        .fold(([i32::MAX; 3], [i32::MIN; 3]), |(lo, hi), c| {
+                            let (a, b) = keep_out_box(body, *c, *c);
+                            (
+                                [lo[0].min(a[0]), lo[1].min(a[1]), lo[2].min(a[2])],
+                                [hi[0].max(b[0]), hi[1].max(b[1]), hi[2].max(b[2])],
+                            )
+                        });
+                    out.push(Failure::new(
+                        DW_ASSEMBLY_STRIKE,
+                        format!(
+                            "assembly `{}`'s strike step {} lands a blow ({}){} whose box catches \
+                             a body from the feet cells {:?}..={:?}, and the arming region \
+                             `while_in` catches one only from {:?}..={:?}. A player who never \
+                             entered the arming region would be struck by a blow that was never \
+                             wound up for them. Shrink or move the landing box inside `while_in`, \
+                             or widen `while_in` to cover it",
+                            s.id,
+                            step.index,
+                            l.path,
+                            facing_words(k, n),
+                            keep.0,
+                            keep.1,
+                            arm_keep.0,
+                            arm_keep.1
+                        ),
+                    ));
+                    continue;
+                }
+                // Shape 2: the blow's area is the area the limb comes down on.
+                let (first, last) = limb_at(k);
+                let c = correspondence(&region, &first, &last, population);
+                j.facings += 1;
+                record.caught.extend(c.caught.iter().copied());
+                let fr = &mut per_facing[fi];
+                fr.caught.extend(c.caught.iter().copied());
+                fr.comes_down.extend(c.comes_down.iter().copied());
+                if fr.stand.is_none() {
+                    fr.stand = stand_cell(s.mark, *arming, &c, k, n, base);
+                }
+                if !c.unstruck.is_empty() {
+                    out.push(Failure::new(
+                        DW_ASSEMBLY_STRIKE,
+                        format!(
+                            "assembly `{}`'s strike step {} lands a blow ({}){} that catches a \
+                             body on {} standable cell(s) — its box and the keep-out ring round \
+                             it — the strike clip `{}` never reaches: on its last frame, \
+                             drawn whole when the blow lands, no part meets the standing body's \
+                             space above the cell (its feet cell and the {} above it): {}. The \
+                             thing the player saw come down must be the thing that hurt them. \
+                             Where the last frame meets a standing body: {}. Move the landing box \
+                             under the limb (`delvec rig describe` prints the footprint), or \
+                             choose a strike clip that comes down on it",
+                            s.id,
+                            step.index,
+                            l.path,
+                            facing_words(k, n),
+                            c.unstruck.len(),
+                            step.strike,
+                            body_cells(body) - 1,
+                            cells_named(&c.unstruck),
+                            if c.struck.is_empty() {
+                                "nowhere — it meets no standable cell's body space".to_string()
+                            } else {
+                                cells_named(&c.struck)
+                            }
+                        ),
+                    ));
+                }
+                if !c.uncaught.is_empty() {
+                    out.push(Failure::new(
+                        DW_ASSEMBLY_STRIKE,
+                        format!(
+                            "assembly `{}`'s strike step {}: the strike clip `{}` comes down on {} \
+                             standable cell(s){} its blow ({}) does not land on — its last frame \
+                             meets the standing body's space there, its first frame did not, and a \
+                             body standing there is not caught by the landing box even by the \
+                             box's edge (its keep-out, one cell round it for a player): {}. The \
+                             blow's area must be the area the limb comes down on; a long limb's \
+                             blow is a long area along where it lands. Widen the landing box to \
+                             cover them (`delvec rig describe` prints the footprint), or choose a \
+                             strike clip that comes down only where the blow lands",
+                            s.id,
+                            step.index,
+                            step.strike,
+                            c.uncaught.len(),
+                            facing_words(k, n),
+                            l.path,
+                            cells_named(&c.uncaught)
+                        ),
+                    ));
+                }
             }
         }
         record.caught.sort();
         record.caught.dedup();
+        for fr in &mut per_facing {
+            fr.caught.sort();
+            fr.caught.dedup();
+            fr.comes_down.sort();
+            fr.comes_down.dedup();
+        }
+        record.facings = per_facing;
         j.records.push(record);
     }
     (j, out)
+}
+
+/// ", at facing k of n (turned D degrees)" for an aimed pattern; nothing for
+/// one facing.
+fn facing_words(k: u32, n: u32) -> String {
+    if n <= 1 {
+        String::new()
+    } else {
+        format!(
+            " at facing {k} of {n} (turned {} degrees from the declared facing, root yaw {})",
+            yaw_token(360.0 * f64::from(k) / f64::from(n)),
+            yaw_token(root_yaw(k, n))
+        )
+    }
+}
+
+/// Cells as a refusal names them, at most [`NAME_LIMIT`] and a count.
+fn cells_named(cells: &[[i32; 3]]) -> String {
+    let shown = cells
+        .iter()
+        .take(NAME_LIMIT)
+        .map(|c| format!("[{}, {}, {}]", c[0], c[1], c[2]))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if cells.len() > NAME_LIMIT {
+        format!("{shown}, and {} more", cells.len() - NAME_LIMIT)
+    } else {
+        shown
+    }
+}
+
+/// Where a body stands to take facing `k`'s blow: a landing cell under the
+/// limb, inside the arming region itself, from which the run-time choice draws
+/// `k` — the one whose bearing is nearest the facing's own, then in cell
+/// order.
+fn stand_cell(
+    mark: [i32; 3],
+    arming: CellBox,
+    c: &Correspondence,
+    k: u32,
+    n: u32,
+    base: f64,
+) -> Option<[i32; 3]> {
+    let struck: BTreeSet<[i32; 3]> = c.struck.iter().copied().collect();
+    let at = base + facing_turn(k, n);
+    c.landing
+        .iter()
+        .copied()
+        .filter(|x| struck.contains(x) && in_box(*x, arming) && facing_for(mark, *x, n, base) == k)
+        .min_by(|a, b| {
+            let off = |x: [i32; 3]| {
+                wrap(bearing(f64::from(x[0] - mark[0]), f64::from(x[2] - mark[2])) - at).abs()
+            };
+            off(*a).total_cmp(&off(*b)).then(a.cmp(b))
+        })
 }
 
 /// Every cell of an inclusive box.
@@ -566,7 +1056,7 @@ fn cells_of((lo, hi): ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
 }
 
 /// Every `damage-players` inside a list, at any depth, with its pointer.
-fn landings(plan: &Plan, path: &str, effs: &[QuestEffect], out: &mut Vec<Landing>) {
+fn landings(plan: &Plan, path: &str, effs: &[QuestEffect], nested: bool, out: &mut Vec<Landing>) {
     for (i, e) in effs.iter().enumerate() {
         let here = format!("{path}/{i}");
         if let Verb::DamagePlayers { amount, within, .. } = &e.verb {
@@ -575,10 +1065,11 @@ fn landings(plan: &Plan, path: &str, effs: &[QuestEffect], out: &mut Vec<Landing
                 within: within.as_ref().and_then(|z: &StealthZone| plan.zone_box(z)),
                 declares_in: within.is_some(),
                 amount: *amount,
+                nested,
             });
         }
         for (seg, _, list) in e.nested_effect_lists_labeled() {
-            landings(plan, &format!("{here}/{seg}"), list, out);
+            landings(plan, &format!("{here}/{seg}"), list, true, out);
         }
     }
 }
@@ -598,6 +1089,7 @@ pub fn subject<'a>(plan: &'a Plan<'a>, p: &Placed<'a>) -> Subject<'a> {
                     plan,
                     &format!("{path}/strikes/pattern/{i}/on_land"),
                     &step.on_land,
+                    false,
                     &mut ls,
                 );
                 StepSubject {
@@ -642,6 +1134,12 @@ pub fn subject<'a>(plan: &'a Plan<'a>, p: &Placed<'a>) -> Subject<'a> {
         strikes,
         struck_by,
         performed,
+        aim: p
+            .decl
+            .strikes
+            .as_ref()
+            .and_then(|st| st.aim.as_ref())
+            .map(|a| a.facings.get()),
     }
 }
 
@@ -663,6 +1161,9 @@ pub struct AssemblyBinding {
     pub hitboxes: usize,
     /// Strike steps checked.
     pub steps: usize,
+    /// Facings judged across those steps (one per landing per facing a blow
+    /// can take).
+    pub facings: usize,
     /// Refusals.
     pub refused: usize,
     /// The keyframe writes per tick the declared cadences add up to, at worst:
@@ -670,6 +1171,11 @@ pub struct AssemblyBinding {
     pub writes_per_tick: f64,
     /// Per-step records.
     pub records: Vec<StepRecord>,
+    /// Per assembly with a strike pattern: a standable cell no body standing
+    /// in can be selected by the arming region — where the bot stands to see
+    /// that no blow is wound up for it. `None` when the walked population has
+    /// no such cell.
+    pub spared: Vec<(String, Option<[i32; 3]>)>,
 }
 
 impl AssemblyBinding {
@@ -677,8 +1183,14 @@ impl AssemblyBinding {
     pub fn line(&self) -> String {
         format!(
             "assembly binding: {} assembl(ies) declared, {} part(s), {} clip(s), {} hitbox(es) \
-             examined, {} strike step(s) checked, {} refused",
-            self.declared, self.parts, self.clips, self.hitboxes, self.steps, self.refused
+             examined, {} strike step(s) checked over {} facing(s), {} refused",
+            self.declared,
+            self.parts,
+            self.clips,
+            self.hitboxes,
+            self.steps,
+            self.facings,
+            self.refused
         )
     }
 
@@ -702,6 +1214,7 @@ impl AssemblyBinding {
             "clips": self.clips,
             "hitboxes": self.hitboxes,
             "steps": self.steps,
+            "facings": self.facings,
             "refused": self.refused,
             "writes_per_tick": self.writes_per_tick,
             "strike_steps": self.records.iter().map(|r| serde_json::json!({
@@ -712,18 +1225,32 @@ impl AssemblyBinding {
                 "strike_ticks": r.strike_ticks,
                 "amounts": r.amounts,
                 "caught": r.caught,
+                "facing_count": r.facing_count,
+                "facings": r.facings.iter().map(|f| serde_json::json!({
+                    "k": f.k,
+                    "yaw": f.yaw,
+                    "caught": f.caught,
+                    "comes_down": f.comes_down,
+                    "stand": f.stand,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "spared": self.spared.iter().map(|(a, c)| serde_json::json!({
+                "assembly": a,
+                "stand": c,
             })).collect::<Vec<_>>(),
         })
     }
 }
 
 /// **Judge every assembly in the build** and return what was examined beside
-/// the refusals. `population` and `reaches` are as for [`judge`].
+/// the refusals. `population` is the walked population `P`; `reaches` is as
+/// for [`judge`].
 pub fn check(
     plan: &Plan<'_>,
-    population: &dyn Fn([i32; 3]) -> bool,
+    population: &BTreeSet<[i32; 3]>,
     reaches: &Reaches<'_>,
 ) -> (AssemblyBinding, Vec<Failure>) {
+    let within = |c: [i32; 3]| population.contains(&c);
     let mut b = AssemblyBinding {
         declared: plan.campaign.quests.content.assemblies.len(),
         ..AssemblyBinding::default()
@@ -741,14 +1268,35 @@ pub fn check(
             .unwrap_or(1);
         b.writes_per_tick += p.rig.parts.len() as f64 / f64::from(fastest);
         let s = subject(plan, &p);
-        let (j, f) = judge(&s, population, reaches);
+        let (j, f) = judge(&s, &within, reaches);
         b.hitboxes += j.hitboxes;
         b.steps += j.steps;
+        b.facings += j.facings;
         b.records.extend(j.records);
+        if let Some((arming, _)) = &s.strikes {
+            b.spared
+                .push((s.id.to_string(), spared_cell(population, *arming)));
+        }
         failures.extend(f);
     }
     b.refused = failures.len();
     (b, failures)
+}
+
+/// A standable cell outside the arming region's keep-out — no body standing
+/// in it can be selected — as near the region as the population has one (by
+/// the larger of the x and z gaps), then in cell order.
+fn spared_cell(population: &BTreeSet<[i32; 3]>, arming: CellBox) -> Option<[i32; 3]> {
+    let keep = keep_out_box(Body::PLAYER, arming.0, arming.1);
+    let gap = |c: [i32; 3]| {
+        let d = |i: usize| (arming.0[i] - c[i]).max(c[i] - arming.1[i]).max(0);
+        d(0).max(d(2))
+    };
+    population
+        .iter()
+        .copied()
+        .filter(|c| !in_box(*c, keep))
+        .min_by(|a, b| gap(*a).cmp(&gap(*b)).then(a.cmp(b)))
 }
 
 // ---------------------------------------------------------------------------
@@ -880,11 +1428,68 @@ pub fn verb_lines(plan: &Plan<'_>, verb: &Verb) -> Option<Vec<String>> {
     })
 }
 
+/// The function an aimed wind-up calls to turn the root to facing `k`.
+pub fn aim_fn(safe: &str, k: u32) -> String {
+    format!("asm_aim_{safe}_{k}")
+}
+
+/// The tag a turned landing marks the players it catches with, for one blow.
+pub fn struck_tag(safe: &str) -> String {
+    format!("dw_asm_{safe}_struck")
+}
+
+/// **A turned landing region's blow** (spec-0082 §5.5): every player whose
+/// body meets the region is tagged once — the region as runs of cells along
+/// `x`, each one selector volume — then each tagged player is dealt the blow
+/// once and the tag is cleared.
+pub fn region_damage_lines(
+    safe: &str,
+    region: &BTreeSet<[i32; 3]>,
+    amount: u32,
+    kind: &str,
+) -> Vec<String> {
+    let t = struck_tag(safe);
+    let Some(y0) = region.iter().map(|c| c[1]).min() else {
+        return Vec::new();
+    };
+    let y1 = region.iter().map(|c| c[1]).max().unwrap_or(y0);
+    // The region's columns, by z then x.
+    let cols: BTreeSet<(i32, i32)> = region.iter().map(|c| (c[2], c[0])).collect();
+    let mut runs: Vec<(i32, i32, i32)> = Vec::new();
+    for (z, x) in cols {
+        match runs.last_mut() {
+            Some((rz, _, x1)) if *rz == z && *x1 + 1 == x => *x1 = x,
+            _ => runs.push((z, x, x)),
+        }
+    }
+    let mut out: Vec<String> = runs
+        .iter()
+        .map(|(z, x0, x1)| {
+            format!(
+                "tag @a[{},tag=!{}] add {t}",
+                crate::compiler::emit::box_selector_args([*x0, y0, *z], [*x1, y1, *z]),
+                crate::compiler::emit::CUTSCENE_TAG
+            )
+        })
+        .collect();
+    out.push(format!(
+        "execute as @a[tag={t}] run damage @s {amount} {kind}"
+    ));
+    out.push(format!("tag @a[tag={t}] remove {t}"));
+    out
+}
+
+/// Wraps lines lowered for an effect in that effect's own `when`.
+pub type Guard<'g> = dyn Fn(&QuestEffect, Vec<String>, &mut Vec<String>) + 'g;
+
 /// Every function the build's assemblies need. `land` lowers one effect of an
-/// `on_land` bundle (the ordinary effect emitter, with no acting player).
+/// `on_land` bundle (the ordinary effect emitter, with no acting player);
+/// `guard` wraps lines this module wrote for an effect in that effect's own
+/// `when`, as `land` would have.
 pub fn assembly_functions(
     plan: &Plan<'_>,
     land: &dyn Fn(&QuestEffect, &mut Vec<String>),
+    guard: &Guard<'_>,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out: Vec<(String, String)> = Vec::new();
@@ -949,6 +1554,7 @@ pub fn assembly_functions(
         summon.push(format!("scoreboard players set {} dw.sys 1", h("live")));
         summon.push(format!("scoreboard players set {} dw.sys 0", h("sm")));
         summon.push(format!("scoreboard players set {} dw.sys 0", h("step")));
+        summon.push(format!("scoreboard players set {} dw.sys 0", h("aim")));
         summon.push(format!(
             "scoreboard players set {} dw.sys {}",
             h("base"),
@@ -1134,13 +1740,75 @@ pub fn assembly_functions(
                 h("sm"),
                 h("done")
             ));
+            // The blow lands once the client has drawn the strike's last frame
+            // whole — one cadence after it is applied — so the limb the player
+            // sees is the pose the strike check judged (spec-0082 §5.4).
             tick.push(format!(
-                "execute if score {} dw.sys matches 3 if score {} dw.sys matches 1 run function {ns}:{}",
+                "execute if score {} dw.sys matches 3 if score {} dw.sys matches 1 if score {} dw.sys >= {} dw.sys run function {ns}:{}",
                 h("sm"),
                 h("done"),
+                h("t"),
+                h("tpf"),
                 land_fn(s)
             ));
             let mut begin = vec![format!("scoreboard players set {} dw.sys 1", h("sm"))];
+            // An aimed pattern turns to its target before the wind-up plays.
+            let n = st.aim.as_ref().map(|a| a.facings.get()).unwrap_or(1);
+            let drawn: Vec<u32> = if st.aim.is_some() {
+                drawn_facings(p.mark, arming, n, rig::facing_angle(facing))
+            } else {
+                vec![0]
+            };
+            if st.aim.is_some() {
+                let root = format!("@e[tag={},limit=1]", root_tag(s));
+                let target = format!(
+                    "@a[{},tag=!{},sort=nearest,limit=1]",
+                    crate::compiler::emit::box_selector_args(arming.0, arming.1),
+                    crate::compiler::emit::CUTSCENE_TAG
+                );
+                let base_deg = rig::facing_angle(facing).to_degrees().round() as i64;
+                let n64 = i64::from(n);
+                begin.push(format!(
+                    "execute as {root} at @s facing entity {target} feet run tp @s ~ ~ ~ ~ 0"
+                ));
+                begin.push(format!(
+                    "execute store result score {} dw.sys run data get entity {root} Rotation[0] {n}",
+                    h("yaw")
+                ));
+                // k = floor((-yaw*n - base*n + 180) / 360) mod n: the facing
+                // nearest the bearing, with the scoreboard's floor division and
+                // non-negative remainder (both measured on the pinned server).
+                for (op, c) in [
+                    ("*=", -1),
+                    ("+=", 180 - base_deg * n64),
+                    ("/=", 360),
+                    ("%=", n64),
+                ] {
+                    begin.push(format!("scoreboard players set {} dw.sys {c}", h("c")));
+                    begin.push(format!(
+                        "scoreboard players operation {} dw.sys {op} {} dw.sys",
+                        h("yaw"),
+                        h("c")
+                    ));
+                }
+                for k in 0..n {
+                    let to = nearest_drawn(&drawn, k, n);
+                    begin.push(format!(
+                        "execute if score {} dw.sys matches {k} run function {ns}:{}",
+                        h("yaw"),
+                        aim_fn(s, to)
+                    ));
+                }
+                for &k in &drawn {
+                    out.push((
+                        aim_fn(s, k),
+                        join(vec![
+                            format!("tp {root} {} {} 0", pos(p.mark), yaw_token(root_yaw(k, n))),
+                            format!("scoreboard players set {} dw.sys {k}", h("aim")),
+                        ]),
+                    ));
+                }
+            }
             let mut hold = vec![
                 format!("scoreboard players set {} dw.sys 2", h("sm")),
                 format!("scoreboard players set {} dw.sys 0", h("hold")),
@@ -1166,7 +1834,7 @@ pub fn assembly_functions(
                         h("step")
                     ));
                 }
-                if !step.on_land.is_empty() {
+                if !step.on_land.is_empty() && st.aim.is_none() {
                     landing.push(format!(
                         "execute if score {} dw.sys matches {j} run function {ns}:asm_land_{s}_{j}",
                         h("step")
@@ -1176,6 +1844,40 @@ pub fn assembly_functions(
                         land(e, &mut body);
                     }
                     out.push((format!("asm_land_{s}_{j}"), join(body)));
+                }
+                if !step.on_land.is_empty() && st.aim.is_some() {
+                    for &k in &drawn {
+                        landing.push(format!(
+                            "execute if score {} dw.sys matches {j} if score {} dw.sys matches {k} run function {ns}:asm_land_{s}_{j}_{k}",
+                            h("step"),
+                            h("aim")
+                        ));
+                        let mut body = Vec::new();
+                        for e in &step.on_land {
+                            match &e.verb {
+                                Verb::DamagePlayers {
+                                    amount,
+                                    within: Some(z),
+                                    damage_type,
+                                } => {
+                                    let Some(bx) = plan.zone_box(z) else {
+                                        continue;
+                                    };
+                                    let region = turned_region(p.mark, bx, facing_turn(k, n));
+                                    let kind = damage_type
+                                        .unwrap_or(delvewright_dsl::DamageKind::Generic)
+                                        .id();
+                                    guard(
+                                        e,
+                                        region_damage_lines(s, &region, *amount, kind),
+                                        &mut body,
+                                    );
+                                }
+                                _ => land(e, &mut body),
+                            }
+                        }
+                        out.push((format!("asm_land_{s}_{j}_{k}"), join(body)));
+                    }
                 }
             }
             landing.push(format!("scoreboard players add {} dw.sys 1", h("lands")));
@@ -1204,27 +1906,48 @@ mod tests {
     use delvewright_dsl::rig::{Clip, PartKind, RigPart, RigProvenance};
     use std::collections::BTreeMap;
 
-    fn cube(t: [f64; 3]) -> Transform {
+    fn block(t: [f64; 3], scale: [f64; 3]) -> Transform {
         Transform {
             translation: t,
             left_rotation: [0.0, 0.0, 0.0, 1.0],
-            scale: [1.0, 1.0, 1.0],
+            scale,
             right_rotation: [0.0, 0.0, 0.0, 1.0],
         }
     }
 
-    /// A one-part rig: `idle` stands the cube on the mark cell, `windup` keeps
-    /// it there, `strike` lays it two cells south (+z) on the floor.
-    fn rig() -> Rig {
+    fn cube(t: [f64; 3]) -> Transform {
+        block(t, [1.0, 1.0, 1.0])
+    }
+
+    /// The slab a strike lays: three cells wide on x, five long on z, from
+    /// one cell in front of the mark, `lift` above the floor.
+    fn slab(lift: f64) -> Transform {
+        block([-1.5, lift, 0.5], [3.0, 1.0, 5.0])
+    }
+
+    /// A one-part rig: `idle` stands the cube on the mark cell, `windup` lifts
+    /// it a cell, `strike` brings it from there down into a slab three wide
+    /// and five long lying in front of the mark (+z) — world cells x 9..=11,
+    /// z 11..=15 on the floor course `y = 1` for a mark at [10, 1, 10].
+    fn rig_with(landing: Transform) -> Rig {
         let mut clips = BTreeMap::new();
-        let still = |t: [f64; 3], looping| Clip {
+        let clip = |frames: Vec<Transform>, looping| Clip {
             ticks_per_frame: 5,
             looping,
-            frames: vec![vec![cube(t)]],
+            frames: frames.into_iter().map(|t| vec![t]).collect(),
         };
-        clips.insert("idle".to_string(), still([-0.5, 0.0, -0.5], true));
-        clips.insert("windup".to_string(), still([-0.5, 1.0, -0.5], false));
-        clips.insert("strike".to_string(), still([-0.5, 0.0, 1.5], false));
+        clips.insert(
+            "idle".to_string(),
+            clip(vec![cube([-0.5, 0.0, -0.5])], true),
+        );
+        clips.insert(
+            "windup".to_string(),
+            clip(vec![cube([-0.5, 1.0, -0.5])], false),
+        );
+        clips.insert(
+            "strike".to_string(),
+            clip(vec![cube([-0.5, 1.0, -0.5]), landing], false),
+        );
         Rig {
             rig_version: 1,
             parts: vec![RigPart {
@@ -1240,6 +1963,10 @@ mod tests {
                 spdx: "GPL-3.0-or-later".into(),
             },
         }
+    }
+
+    fn rig() -> Rig {
+        rig_with(slab(0.0))
     }
 
     fn subject<'a>(
@@ -1267,14 +1994,17 @@ mod tests {
                         within: landing,
                         declares_in: landing.is_some(),
                         amount: 6,
+                        nested: false,
                     }],
                 }],
             )),
             struck_by: vec![],
             performed: vec![],
+            aim: None,
         }
     }
 
+    /// The floor: every cell of the course `y = 1`.
     fn floor(c: [i32; 3]) -> bool {
         c[1] == 1
     }
@@ -1287,20 +2017,117 @@ mod tests {
         f.iter().map(|x| x.code.id()).collect()
     }
 
-    /// The landing box under the strike's last frame, inside the arming
-    /// region, is green; one cell further it is refused (shape 2).
+    /// The slab's own line, one cell in from every edge, is a landing whose
+    /// keep-out is exactly the slab: green both ways.
     #[test]
-    fn a_blow_lands_where_the_limb_is() {
+    fn a_blow_lands_where_the_limb_comes_down() {
         let r = rig();
-        // The strike lays the cube at [10, 1, 12]; a body is caught from the
-        // keep-out of the box, one cell wider on x and z.
-        let ok = subject(&r, None, Some(([10, 1, 12], [10, 1, 12])));
-        let (_, f) = judge(&ok, &|c| floor(c) && c == [10, 1, 12], &near);
-        assert!(f.is_empty(), "{:?}", codes(&f));
-        let bad = subject(&r, None, Some(([10, 1, 14], [10, 1, 14])));
-        let (_, f) = judge(&bad, &|c| floor(c) && c == [10, 1, 14], &near);
+        let ok = subject(&r, None, Some(([10, 1, 12], [10, 1, 14])));
+        let (j, f) = judge(&ok, &floor, &near);
+        assert!(
+            f.is_empty(),
+            "{:?}",
+            f.iter().map(|x| &x.message).collect::<Vec<_>>()
+        );
+        assert_eq!(j.facings, 1);
+        assert_eq!(j.records[0].caught.len(), 15);
+        assert_eq!(j.records[0].facings[0].comes_down.len(), 15);
+        assert_eq!(j.records[0].facings[0].stand, Some([10, 1, 12]));
+    }
+
+    /// Defect 1: a limb that stops above the head has not reached the body.
+    /// The slab hangs two courses up — in the column a floor-to-three-above
+    /// band would have read as reached — and every caught cell is refused.
+    #[test]
+    fn a_limb_above_the_head_has_not_reached() {
+        let r = rig_with(slab(2.0));
+        let s = subject(&r, None, Some(([10, 1, 12], [10, 1, 14])));
+        let (_, f) = judge(&s, &floor, &near);
         assert_eq!(codes(&f), vec!["DW0938"]);
-        assert!(f[0].message.contains("[10, 1, 14]"), "{}", f[0].message);
+        assert!(f[0].message.contains("never reaches"), "{}", f[0].message);
+        assert!(
+            f[0].message
+                .contains("meets no standable cell's body space"),
+            "{}",
+            f[0].message
+        );
+    }
+
+    /// Defect 2: a one-cell landing under the five-long slab is refused — the
+    /// limb comes down on cells the blow does not catch.
+    #[test]
+    fn a_one_cell_landing_under_a_long_limb_is_refused() {
+        let r = rig();
+        let s = subject(&r, None, Some(([10, 1, 13], [10, 1, 13])));
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0938"]);
+        assert!(f[0].message.contains("comes down on 6"), "{}", f[0].message);
+        assert!(f[0].message.contains("[10, 1, 11]"), "{}", f[0].message);
+        assert!(f[0].message.contains("[10, 1, 15]"), "{}", f[0].message);
+    }
+
+    /// The tolerance is the keep-out ring and no more: a landing one cell
+    /// short of the slab's inner line at the far end leaves the slab's last
+    /// row a ring away — still caught; two short, refused.
+    #[test]
+    fn the_tolerance_is_the_keep_out_ring() {
+        let r = rig();
+        // Landing z 12..=13: its keep-out reaches z 14, the slab's z 15 row
+        // is two away.
+        let s = subject(&r, None, Some(([10, 1, 12], [10, 1, 13])));
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0938"]);
+        assert!(f[0].message.contains("[10, 1, 15]"), "{}", f[0].message);
+        assert!(!f[0].message.contains("[10, 1, 14]"), "{}", f[0].message);
+    }
+
+    /// A landing box beyond the limb is refused both ways: it catches where
+    /// the limb is not, and the limb comes down where it does not land.
+    #[test]
+    fn a_blow_beside_the_limb_is_refused_both_ways() {
+        let r = rig();
+        let bad = subject(&r, None, Some(([13, 1, 13], [13, 1, 13])));
+        let (_, f) = judge(&bad, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0938", "DW0938"]);
+        assert!(f[0].message.contains("never reaches"), "{}", f[0].message);
+        assert!(f[1].message.contains("comes down on"), "{}", f[1].message);
+    }
+
+    /// The pose the strike began from is not where it came down: a part that
+    /// stands over a floor behind the mark through the whole strike (the
+    /// limb's root) is not owed a landing there; the same part arriving there only
+    /// on the last frame is.
+    #[test]
+    fn where_the_limb_already_stood_is_not_owed_a_blow() {
+        let root = cube([-0.5, 1.0, -2.5]);
+        let two = |first_root: Transform| {
+            let mut r = rig();
+            r.parts.push(r.parts[0].clone());
+            r.parts[1].id = "b".into();
+            for c in r.clips.values_mut() {
+                for f in &mut c.frames {
+                    f.push(root.clone());
+                }
+            }
+            r.clips.get_mut("strike").unwrap().frames[0][1] = first_root;
+            r
+        };
+        let stood = two(root.clone());
+        let s = subject(&stood, None, Some(([10, 1, 12], [10, 1, 14])));
+        let (j, f) = judge(&s, &floor, &near);
+        assert!(
+            f.is_empty(),
+            "{:?}",
+            f.iter().map(|x| &x.message).collect::<Vec<_>>()
+        );
+        assert!(!j.records[0].facings[0].comes_down.contains(&[10, 1, 8]));
+        // The root swung in from elsewhere: now it came down there, and the
+        // landing does not catch the mark's floor.
+        let arrived = two(cube([5.5, 1.0, -0.5]));
+        let s = subject(&arrived, None, Some(([10, 1, 12], [10, 1, 14])));
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0938"]);
+        assert!(f[0].message.contains("[10, 1, 8]"), "{}", f[0].message);
     }
 
     /// A landing box one cell outside the arming region's keep-out is refused
@@ -1329,19 +2156,131 @@ mod tests {
 
     /// A one-frame wind-up, a hold of 0 and a blow of 40 build green with no
     /// finding at all: no telegraph rule and no damage rule (spec-0016 §3).
+    /// The strike lands one cadence after its last frame is applied.
     #[test]
     fn no_telegraph_or_damage_rule() {
         let r = rig();
-        let mut s = subject(&r, None, Some(([10, 1, 12], [10, 1, 12])));
+        let mut s = subject(&r, None, Some(([10, 1, 12], [10, 1, 14])));
         if let Some((_, steps)) = &mut s.strikes {
             steps[0].hold = 0;
             steps[0].landings[0].amount = 40;
         }
-        let (j, f) = judge(&s, &|c| c == [10, 1, 12], &near);
+        let (j, f) = judge(&s, &floor, &near);
         assert!(f.is_empty());
         assert_eq!(j.records[0].amounts, vec![40]);
         assert_eq!(j.records[0].hold, 0);
         assert_eq!(j.records[0].windup_ticks, 1);
+        // Two frames at 5: applied on tick 6, drawn whole on tick 11.
+        assert_eq!(j.records[0].strike_ticks, 11);
+    }
+
+    // ---- aim (spec-0082 §5.5) ----
+
+    /// Facing k of n is a turn of k/n about +y and a root yaw of -k/n turns.
+    #[test]
+    fn facings_turn_and_yaw() {
+        assert_eq!(root_yaw(0, 8), 0.0);
+        assert_eq!(root_yaw(2, 8), -90.0);
+        assert_eq!(root_yaw(4, 8), 180.0);
+        assert_eq!(root_yaw(6, 8), 90.0);
+        assert_eq!(yaw_token(root_yaw(1, 16)), "-22.5");
+        assert_eq!(yaw_token(root_yaw(5, 8)), "135");
+        assert!((facing_turn(2, 8) - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    }
+
+    /// A box turned a quarter turn is the box's cells turned exactly; turned
+    /// an eighth, the cells whose centres fall inside it.
+    #[test]
+    fn a_landing_box_turns_about_the_mark() {
+        let m = [10, 1, 10];
+        let line = ([10, 1, 12], [10, 1, 14]);
+        let quarter = turned_region(m, line, facing_turn(2, 8));
+        assert_eq!(
+            quarter,
+            [[12, 1, 10], [13, 1, 10], [14, 1, 10]]
+                .into_iter()
+                .collect()
+        );
+        let eighth = turned_region(m, line, facing_turn(1, 8));
+        assert!(
+            eighth.contains(&[11, 1, 11]) || eighth.contains(&[12, 1, 12]),
+            "{eighth:?}"
+        );
+        assert!(eighth.iter().all(|c| c[0] > 10 && c[2] > 10), "{eighth:?}");
+        assert_eq!(turned_region(m, line, 0.0).len(), 3);
+    }
+
+    /// An arming region all round the mark draws every facing; one on its
+    /// south side only draws the facings whose sector meets it.
+    #[test]
+    fn the_facings_a_player_can_draw() {
+        let m = [10, 1, 10];
+        assert_eq!(drawn_facings(m, ([6, 1, 6], [14, 3, 16]), 8, 0.0).len(), 8);
+        let south = drawn_facings(m, ([9, 1, 14], [11, 1, 16]), 8, 0.0);
+        assert_eq!(south, vec![0, 1, 7]);
+        assert_eq!(facing_for(m, [10, 1, 15], 8, 0.0), 0);
+        assert_eq!(facing_for(m, [15, 1, 10], 8, 0.0), 2);
+        assert_eq!(facing_for(m, [5, 1, 10], 8, 0.0), 6);
+        assert_eq!(drawn_facings(m, ([9, 1, 14], [11, 1, 16]), 1, 0.0), vec![0]);
+    }
+
+    /// An aimed pattern is judged at every facing it can draw, the limb and
+    /// the box turned together: green at all eight; a nested blow is refused.
+    #[test]
+    fn an_aimed_strike_is_judged_per_facing() {
+        let r = rig();
+        let mut s = subject(&r, None, Some(([10, 1, 12], [10, 1, 14])));
+        s.aim = Some(4);
+        let (j, f) = judge(&s, &floor, &near);
+        assert!(
+            f.is_empty(),
+            "{:?}",
+            f.iter().map(|x| &x.message).collect::<Vec<_>>()
+        );
+        assert_eq!(j.facings, 4);
+        let ks: Vec<u32> = j.records[0].facings.iter().map(|x| x.k).collect();
+        assert_eq!(ks, vec![0, 1, 2, 3]);
+        assert_eq!(j.records[0].facings[1].stand, Some([12, 1, 10]));
+        if let Some((_, steps)) = &mut s.strikes {
+            steps[0].landings[0].nested = true;
+        }
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0938"]);
+        assert!(f[0].message.contains("aimed"), "{}", f[0].message);
+    }
+
+    /// A one-cell landing under the long slab is refused at the facing it is
+    /// refused at, and the refusal names the facing.
+    #[test]
+    fn an_aimed_refusal_names_its_facing() {
+        let r = rig();
+        let mut s = subject(&r, None, Some(([10, 1, 13], [10, 1, 13])));
+        s.aim = Some(4);
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(f.len(), 4);
+        assert!(f[1].message.contains("facing 1 of 4"), "{}", f[1].message);
+    }
+
+    /// The region's blow tags each caught player once, runs of cells along
+    /// x one selector each, deals the blow once, and clears the tag.
+    #[test]
+    fn a_turned_blow_is_dealt_once() {
+        let region: BTreeSet<[i32; 3]> = [[11, 1, 11], [12, 1, 11], [12, 1, 12]]
+            .into_iter()
+            .collect();
+        let lines = region_damage_lines("limb", &region, 6, "minecraft:generic");
+        assert_eq!(
+            lines,
+            vec![
+                "tag @a[x=11,dx=1,y=1,dy=0,z=11,dz=0,tag=!dw_cutscene] add dw_asm_limb_struck",
+                "tag @a[x=12,dx=0,y=1,dy=0,z=12,dz=0,tag=!dw_cutscene] add dw_asm_limb_struck",
+                "execute as @a[tag=dw_asm_limb_struck] run damage @s 6 minecraft:generic",
+                "tag @a[tag=dw_asm_limb_struck] remove dw_asm_limb_struck",
+            ]
+        );
+        assert_eq!(nearest_drawn(&[0, 1, 7], 4, 8), 1);
+        assert_eq!(nearest_drawn(&[0, 1, 7], 5, 8), 7);
+        assert_eq!(nearest_drawn(&[0, 1, 7], 1, 8), 1);
     }
 
     /// Width 7 and height 23 are refused; 6 and 22 are not; a hitbox beside

@@ -281,10 +281,13 @@ fn a_body_on_the_hitbox_is_dw0359() {
 #[test]
 fn a_performed_strike_out_of_reach_is_dw0937_and_one_cell_lower_is_not() {
     assert_eq!(delvec::compiler::strand::STRIKE_REACH, 3.0);
+    // The strike is not this test's subject: a mark raised off the floor
+    // lays its slab in the air, which the strike check refuses.
     let at = |dy: i32| {
         quests_with(|q| {
             assembly(q)["at"] = json!({ "anchor": "anchor/exit", "offset": [0, dy, 0] });
             assembly(q)["hitbox"] = json!({ "width": 1.0, "height": 2.0, "offset": [0, 2, 0] });
+            assembly(q).as_object_mut().unwrap().remove("strikes");
         })
     };
     let m = refusal(&at(3), rig(), "DW0937");
@@ -327,6 +330,105 @@ fn shape_two_end_to_end() {
         "{m}"
     );
     assert_eq!(build_code(&quests(), rig()), None);
+}
+
+/// Defect 1 end to end: the same slab laid two courses above the floor hangs
+/// over the head of anybody standing there. A floor-to-three-above band read
+/// it as reaching them; the standing body's space (feet and head cells) does
+/// not, and the build is refused naming every caught cell.
+#[test]
+fn a_limb_that_never_reaches_the_body_is_refused() {
+    let q = quests_with(|q| {
+        assembly(q)["at"] = json!({ "anchor": "anchor/exit", "offset": [0, 2, 0] });
+        assembly(q)["hitbox"] = json!({ "width": 1.0, "height": 4.0, "offset": [0, -2, 0] });
+    });
+    let m = refusal(&q, rig(), "DW0938");
+    assert!(
+        m.contains("never reaches") && m.contains("[5, 65, 8]"),
+        "{m}"
+    );
+    assert!(m.contains("meets no standable cell's body space"), "{m}");
+}
+
+/// The fixture rig with its strike laying a slab three wide and seven long,
+/// centred on the mark, its length along z.
+fn long_rig() -> Rig {
+    let mut r = rig();
+    let last = r
+        .clips
+        .get_mut("strike")
+        .unwrap()
+        .frames
+        .last_mut()
+        .unwrap();
+    last[0].translation = [-1.5, 0.0, -3.5];
+    last[0].scale = [3.0, 0.5, 7.0];
+    r
+}
+
+/// Defect 2 end to end: a one-cell landing under a seven-long limb is refused
+/// naming the cells it comes down on and does not catch; the landing along the
+/// limb's line, one cell in from its ends, builds.
+#[test]
+fn a_one_cell_landing_under_a_long_limb_is_refused() {
+    let m = refusal(&quests(), long_rig(), "DW0938");
+    assert!(
+        m.contains("comes down on") && m.contains("does not land on"),
+        "{m}"
+    );
+    let along = quests_with(|q| {
+        let l = &mut assembly(q)["strikes"]["pattern"][0]["on_land"][0]["in"];
+        *l = json!({ "anchor": "anchor/exit", "extent": [0, 0, 2] });
+        assembly(q)["strikes"]["while_in"] =
+            json!({ "anchor": "anchor/exit", "extent": [2, 1, 7] });
+    });
+    assert_eq!(build_code(&along, long_rig()), None);
+}
+
+/// An aimed pattern: the root turns to the facing nearest its target before
+/// the wind-up, one landing function per facing a player can draw, each
+/// tagging the turned region's players once; the blow lands one cadence after
+/// the strike's last frame is applied; the record states every facing.
+#[test]
+fn an_aimed_strike_turns_and_lands_per_facing() {
+    let q = quests_with(|q| {
+        assembly(q)["strikes"]["aim"] = json!({ "facings": 4 });
+        assembly(q)["strikes"]["while_in"] =
+            json!({ "anchor": "anchor/exit", "extent": [2, 1, 2] });
+    });
+    let out = match try_build(&campaign(&q), &prefabs_with(rig())) {
+        Ok(o) => o,
+        Err(e) => panic!("{e:?}"),
+    };
+    let begin = function(&out, "asm_begin_limb");
+    assert!(
+        begin.contains("facing entity @a[") && begin.contains("Rotation[0] 4"),
+        "{begin}"
+    );
+    for k in 0..4 {
+        assert!(
+            begin.contains(&format!("function {NS}:asm_aim_limb_{k}")),
+            "{begin}"
+        );
+        let land = function(&out, &format!("asm_land_limb_0_{k}"));
+        assert!(land.contains("add dw_asm_limb_struck"), "{land}");
+        assert!(land.contains("run damage @s 4 minecraft:generic"), "{land}");
+    }
+    assert!(
+        function(&out, "asm_aim_limb_1")
+            .starts_with("tp @e[tag=dw_asm_limb_root,limit=1] 5.5 65 8.5 -90 0"),
+        "{}",
+        function(&out, "asm_aim_limb_1")
+    );
+    let tick = function(&out, "asm_tick_limb");
+    assert!(
+        tick.contains("if score #asm_limb_t dw.sys >= #asm_limb_tpf dw.sys run function hello-world:asm_land_limb"),
+        "{tick}"
+    );
+    let record: Value =
+        serde_json::from_slice(out.get("validation/assembly.json").unwrap()).unwrap();
+    assert_eq!(record["facings"], 4, "{record:#}");
+    assert_eq!(record["strike_steps"][0]["facing_count"], 4);
 }
 
 /// A one-frame wind-up, a hold of 0 and a blow of 40 build green with no
@@ -399,7 +501,10 @@ fn the_staging_record_states_the_blow() {
     let step = &record["strike_steps"][0];
     assert_eq!(step["windup_ticks"], 3);
     assert_eq!(step["hold"], 10);
-    assert_eq!(step["strike_ticks"], 2);
+    // Two frames at one tick: applied on tick 2, drawn whole on tick 3.
+    assert_eq!(step["strike_ticks"], 3);
+    assert_eq!(step["facing_count"], 1);
+    assert_eq!(step["facings"][0]["stand"], json!([5, 65, 8]));
     assert_eq!(step["amounts"], json!([4]));
     assert_eq!(step["caught"].as_array().unwrap().len(), 9, "{record:#}");
 }
@@ -636,7 +741,7 @@ fn the_binding_line_is_printed_on_every_build() {
     assert!(
         String::from_utf8_lossy(&plain.stderr).contains(
             "assembly binding: 0 assembl(ies) declared, 0 part(s), 0 clip(s), 0 hitbox(es) \
-             examined, 0 strike step(s) checked, 0 refused"
+             examined, 0 strike step(s) checked over 0 facing(s), 0 refused"
         ),
         "{}",
         String::from_utf8_lossy(&plain.stderr)
@@ -671,7 +776,7 @@ fn the_binding_line_is_printed_on_every_build() {
     assert!(
         err.contains(
             "assembly binding: 1 assembl(ies) declared, 3 part(s), 4 clip(s), 1 hitbox(es) \
-             examined, 1 strike step(s) checked, 0 refused"
+             examined, 1 strike step(s) checked over 1 facing(s), 0 refused"
         ),
         "{err}"
     );

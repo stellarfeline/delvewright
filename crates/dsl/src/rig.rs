@@ -118,6 +118,15 @@ impl Clip {
     pub fn length_ticks(&self) -> u32 {
         1 + (self.frames.len().saturating_sub(1) as u32) * self.ticks_per_frame
     }
+
+    /// How long from the switch until a client has drawn the clip's last
+    /// frame whole: [`Self::length_ticks`] plus one cadence, because each
+    /// keyframe is drawn over `ticks_per_frame` ticks after it is applied. A
+    /// strike's blow lands on this tick, so the limb the player sees is the
+    /// last frame the strike check judges (spec-0082 §5.4).
+    pub fn landing_ticks(&self) -> u32 {
+        self.length_ticks() + self.ticks_per_frame
+    }
 }
 
 /// A display entity's transformation (`Display` entity data, Minecraft Wiki):
@@ -362,7 +371,7 @@ impl RigPart {
 
 /// The yaw a facing turns the rig's `+z` front to, as the angle of a rotation
 /// about `+y` (right-handed: `+z` turns toward `+x`). `south` is the identity.
-fn facing_angle(f: Facing) -> f64 {
+pub fn facing_angle(f: Facing) -> f64 {
     match f {
         Facing::South => 0.0,
         Facing::East => std::f64::consts::FRAC_PI_2,
@@ -411,7 +420,14 @@ impl Transform {
     /// and no client fact about how a display's own yaw composes with its
     /// transformation is relied on (spec-0082 §3.2).
     pub fn faced(&self, facing: Facing) -> Transform {
-        let a = facing_angle(facing);
+        self.turned(facing_angle(facing))
+    }
+
+    /// This transform turned by `a` radians about the vertical axis through the
+    /// mark (right-handed about `+y`: `+z` turns toward `+x`) — what
+    /// [`Self::faced`] does for a quarter turn, for any angle. An aimed
+    /// assembly's facings are turns of this kind (spec-0082 §5.5).
+    pub fn turned(&self, a: f64) -> Transform {
         if a == 0.0 {
             return self.clone();
         }
@@ -447,13 +463,18 @@ impl Transform {
         out
     }
 
-    /// The cells this part's box meets, relative to the mark's cell. The box
-    /// is the axis-aligned hull of the transformed unit cube; the entity
-    /// stands at the mark cell's centre (`x + 0.5`, `z + 0.5`) on its floor
-    /// (`y`). A cell is met when the box overlaps it with positive length on
-    /// every axis.
+    /// The cells this part's box meets, relative to the mark's cell: every
+    /// cell the transformed unit cube overlaps with positive volume, judged
+    /// exactly (a separating-axis test of the oriented box against the cell),
+    /// not by the box's axis-aligned hull — a part laid on a diagonal meets the
+    /// cells along it, never the empty corners of its hull. The entity stands
+    /// at the mark cell's centre (`x + 0.5`, `z + 0.5`) on its floor (`y`).
     pub fn cells(&self) -> BTreeSet<[i32; 3]> {
-        let corners = self.corners();
+        // The entity's own position inside the mark cell.
+        let origin = [0.5, 0.0, 0.5];
+        let corners = self
+            .corners()
+            .map(|c| [c[0] + origin[0], c[1] + origin[1], c[2] + origin[2]]);
         let mut lo = [f64::INFINITY; 3];
         let mut hi = [f64::NEG_INFINITY; 3];
         for c in corners {
@@ -462,28 +483,88 @@ impl Transform {
                 hi[i] = hi[i].max(c[i]);
             }
         }
-        // The entity's own position inside the mark cell.
-        let origin = [0.5, 0.0, 0.5];
         let span = |i: usize| -> (i32, i32) {
-            let a = lo[i] + origin[i];
-            let b = hi[i] + origin[i];
-            let from = (a + 1e-9).floor() as i32;
-            let to = (b - 1e-9).ceil() as i32 - 1;
+            let from = (lo[i] + CELL_EPS).floor() as i32;
+            let to = (hi[i] - CELL_EPS).ceil() as i32 - 1;
             (from, to.max(from))
         };
         let (x0, x1) = span(0);
         let (y0, y1) = span(1);
         let (z0, z1) = span(2);
+        let axes = separating_axes(&corners);
         let mut out = BTreeSet::new();
         for x in x0..=x1 {
             for y in y0..=y1 {
                 for z in z0..=z1 {
-                    out.insert([x, y, z]);
+                    if box_meets_cell(&corners, &axes, [x, y, z]) {
+                        out.insert([x, y, z]);
+                    }
                 }
             }
         }
         out
     }
+}
+
+/// How far a box must reach into a cell to meet it: a billionth of a block,
+/// so a face lying on a cell boundary meets neither side, and two machines whose
+/// sines differ in the last bit decide every cell the same way.
+const CELL_EPS: f64 = 1e-9;
+
+/// The candidate separating axes of a parallelepiped against an axis-aligned
+/// cell: the three world axes, its three edge directions and their nine cross
+/// products.
+fn separating_axes(c: &[[f64; 3]; 8]) -> Vec<[f64; 3]> {
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let edges = [sub(c[1], c[0]), sub(c[2], c[0]), sub(c[4], c[0])];
+    let world = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    let mut axes: Vec<[f64; 3]> = world.to_vec();
+    let mut push = |v: [f64; 3]| {
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        if n > 1e-12 {
+            axes.push([v[0] / n, v[1] / n, v[2] / n]);
+        }
+    };
+    for e in edges {
+        push(e);
+    }
+    for a in world {
+        for e in edges {
+            push([
+                a[1] * e[2] - a[2] * e[1],
+                a[2] * e[0] - a[0] * e[2],
+                a[0] * e[1] - a[1] * e[0],
+            ]);
+        }
+    }
+    axes
+}
+
+/// Whether the parallelepiped `c` overlaps the unit cell at `cell` with
+/// positive volume: no candidate axis separates them, an overlap thinner than
+/// [`CELL_EPS`] counting as none.
+fn box_meets_cell(c: &[[f64; 3]; 8], axes: &[[f64; 3]], cell: [i32; 3]) -> bool {
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    axes.iter().all(|a| {
+        let (mut p0, mut p1) = (f64::INFINITY, f64::NEG_INFINITY);
+        for v in c {
+            let d = dot(*v, *a);
+            p0 = p0.min(d);
+            p1 = p1.max(d);
+        }
+        let (mut q0, mut q1) = (f64::INFINITY, f64::NEG_INFINITY);
+        for k in 0..8 {
+            let v = [
+                f64::from(cell[0] + (k & 1)),
+                f64::from(cell[1] + ((k >> 1) & 1)),
+                f64::from(cell[2] + ((k >> 2) & 1)),
+            ];
+            let d = dot(v, *a);
+            q0 = q0.min(d);
+            q1 = q1.max(d);
+        }
+        p1 > q0 + CELL_EPS && q1 > p0 + CELL_EPS
+    })
 }
 
 /// **The frame footprint** (spec-0082 §5.2): the union over parts of the cells
@@ -493,9 +574,16 @@ impl Transform {
 /// check (`DW0938`) judges by it, so the region a creator declares from the
 /// printed cells is the region the engine measures.
 pub fn frame_footprint(frame: &[Transform], facing: Facing) -> BTreeSet<[i32; 3]> {
+    frame_footprint_turned(frame, facing_angle(facing))
+}
+
+/// The frame footprint with the rig turned `a` radians about the mark's
+/// vertical axis ([`Transform::turned`]) — the one footprint function;
+/// [`frame_footprint`] is it at a quarter turn.
+pub fn frame_footprint_turned(frame: &[Transform], a: f64) -> BTreeSet<[i32; 3]> {
     let mut out = BTreeSet::new();
     for t in frame {
-        out.extend(t.faced(facing).cells());
+        out.extend(t.turned(a).cells());
     }
     out
 }
@@ -646,6 +734,31 @@ mod tests {
     /// Scaled to three blocks tall and turned a quarter about z, a centred
     /// column lies along -x: its cells are the three cells west of the mark
     /// at floor height (the rotation lays it down, the scale lengthens it).
+    #[test]
+    fn a_diagonal_part_meets_the_cells_along_it_not_its_hull() {
+        // A bar 0.2 thick and 4.24 long, turned 45 degrees about y, laid from
+        // the mark cell's centre toward +x +z: its hull spans a 4 x 4 square of
+        // columns; the bar itself crosses only the cells along the diagonal and
+        // the ones its edge clips beside them.
+        let a = std::f64::consts::FRAC_PI_4;
+        let t = Transform {
+            translation: [0.0, 0.0, 0.0],
+            left_rotation: [0.0, (a / 2.0).sin(), 0.0, (a / 2.0).cos()],
+            scale: [0.2, 1.0, 4.24],
+            right_rotation: [0.0, 0.0, 0.0, 1.0],
+        };
+        let cells = t.cells();
+        assert!(
+            cells.contains(&[0, 0, 0]) && cells.contains(&[2, 0, 2]),
+            "{cells:?}"
+        );
+        assert!(
+            !cells.contains(&[0, 0, 3]) && !cells.contains(&[3, 0, 0]),
+            "{cells:?}"
+        );
+        assert!(cells.len() < 16, "{} cells: {cells:?}", cells.len());
+    }
+
     #[test]
     fn rotation_and_scale_move_the_cell_set() {
         let s = std::f64::consts::FRAC_1_SQRT_2;

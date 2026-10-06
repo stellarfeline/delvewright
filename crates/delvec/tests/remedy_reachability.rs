@@ -2242,6 +2242,8 @@ fn dw0937_lowering_the_mark_builds() {
                 serde_json::json!({ "anchor": "anchor/exit", "offset": [0, dy, 0] });
             assembly(q)["hitbox"] =
                 serde_json::json!({ "width": 1.0, "height": 2.0, "offset": [0, 2, 0] });
+            // A raised mark lays its slab in the air; the strike is another row's.
+            assembly(q).as_object_mut().unwrap().remove("strikes");
         })
     };
     assert_eq!(assembly_verdict(&at(3), rig()).as_deref(), Some("DW0937"));
@@ -2273,4 +2275,48 @@ fn dw0938_shrinking_the_box_or_choosing_a_clip_that_reaches_it_builds() {
         Some("DW0938")
     );
     assert_eq!(assembly_verdict(&clip("strike"), rig()), None);
+}
+
+/// `DW0938`'s two-way moves (spec-0082 §5.4 shape 2): a one-cell landing under
+/// a long limb is refused for the cells the limb comes down on uncaught, and
+/// widening the landing box along the limb — the move the message names —
+/// builds; a limb hanging above the body is refused for the cells it never
+/// reaches, and moving the box under a clip that comes down — the other move —
+/// builds.
+#[test]
+fn dw0938_widening_the_box_along_the_limb_builds() {
+    use common::assembly_fixture::{assembly, quests, quests_with, rig};
+    let mut long = rig();
+    let last = long
+        .clips
+        .get_mut("strike")
+        .unwrap()
+        .frames
+        .last_mut()
+        .unwrap();
+    last[0].translation = [-1.5, 0.0, -3.5];
+    last[0].scale = [3.0, 0.5, 7.0];
+    assert_eq!(
+        assembly_verdict(&quests(), long.clone()).as_deref(),
+        Some("DW0938")
+    );
+    let widened = quests_with(|q| {
+        assembly(q)["strikes"]["pattern"][0]["on_land"][0]["in"]["extent"] =
+            serde_json::json!([0, 0, 2]);
+        assembly(q)["strikes"]["while_in"]["extent"] = serde_json::json!([2, 1, 4]);
+    });
+    assert_eq!(assembly_verdict(&widened, long), None);
+    let mut high = rig();
+    let last = high
+        .clips
+        .get_mut("strike")
+        .unwrap()
+        .frames
+        .last_mut()
+        .unwrap();
+    for t in last.iter_mut() {
+        t.translation[1] += 2.0;
+    }
+    assert_eq!(assembly_verdict(&quests(), high).as_deref(), Some("DW0938"));
+    assert_eq!(assembly_verdict(&quests(), rig()), None);
 }
