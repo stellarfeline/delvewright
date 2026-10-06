@@ -295,6 +295,12 @@ form and the commands are in *Reference: drawing the map's reference*.
    - `delvec validate` prints every box's derived corner and which seam placed
      it. Read your `volumes[]`, `sightlines[]` and `views[]` against that
      output — they are still world coordinates.
+   - **A sightline or a view is only as long as the served view distance**:
+     `16 × world.view_distance` blocks, 160 at the floor, and the build refuses
+     a longer one. A vista
+     longer than that declares the distance it needs (the refusal names the
+     fewest chunks), because what its far end looks at is never sent to a
+     client standing at its near end.
 
 **A site-plan campaign has one area, `area/site`.** Quests, NPCs and waves name
 it; `world.json`'s `areas[]` is empty, and declaring both authorities is

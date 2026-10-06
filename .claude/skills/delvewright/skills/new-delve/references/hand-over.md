@@ -1,5 +1,14 @@
 # Step 14 — handing it over
 
+## Contents
+
+- [The storybook](#the-storybook)
+- [The engine-version marker](#the-engine-version-marker)
+- [The render-distance line](#the-render-distance-line)
+- [The host line](#the-host-line)
+- [The report](#the-report)
+
+## The storybook
 
 **The storybook.** Write `campaigns/<id>/README.md` — the
 reader-facing introduction. Background and setting ONLY: premise, lore, public
@@ -18,6 +27,8 @@ image with `$DELVEWRIGHT_ENGINE/validation/chunky.sh` from
 corner). Never hand-edit a scene JSON: if the frame you want is not emittable,
 that is a `delvec render` gap to report, not a file to patch.
 The whole-map hero's distance and the sky: `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §2a–§2b.
+
+## The engine-version marker
 
 **Every edition opens with the engine-version marker**, on its own line directly
 under the title. This is the one piece of internal machinery a storybook carries
@@ -55,7 +66,23 @@ above names: Multiplayer → Direct Connect → `localhost:25565`.
 ```
 
 `localhost:25565` and `-p 25565:25565` are safe to write: the check knows a port
-from a version. Then prove it:
+from a version.
+
+## The render-distance line
+
+**The render-distance line, when the delve declares a view distance.** A
+client draws the smaller of its own render-distance setting and the server's,
+and nothing on the server can raise a client's; the pinned client's default is
+12 chunks. So a storybook for a delve whose `world.view_distance` is above 12
+carries, directly under the connect line, what the player sets — the number is
+the build's `server/README.md`'s, copied, never typed from memory:
+
+```
+Set your render distance to at least <view_distance> chunks (Options → Video
+Settings) — the far views this delve was designed with are not drawn below it.
+```
+
+Then prove it:
 
 ```sh
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/check-storybook-version.py" --campaigns campaigns
@@ -63,6 +90,8 @@ from a version. Then prove it:
 
 Green before you report. A stale marker waves a host on an old engine straight
 into a delve their engine cannot run.
+
+## The host line
 
 **The host line, for a server strangers join.** A delve does not clean itself, so a
 storybook whose reader will leave it running for people they do not know owes them
@@ -77,10 +106,16 @@ container under a party ends that party's run. Leave it out and the world is kep
 The floor is 60 seconds; below it the server refuses to start.
 ```
 
+## The report
+
 **Then report to the user** — this hand-over ends the run: the campaign
 summary, the playtime estimate, the validation results, what the walk found and
-what was done about it, anything still open, and the two commands they will
-actually use.
+what was done about it, anything still open, **what the delve asks of its
+host** — the view distance it serves and the heap the build stated for it
+(`server/resources.properties` `heap-max`, which the image and the playtest
+server start with; the hosting side meets it, and a host that cannot runs the
+image with `-e MEMORY=<size>` knowing what it gives up) — and the two commands
+they will actually use.
 
 ```sh
 

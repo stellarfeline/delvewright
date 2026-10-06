@@ -342,10 +342,13 @@ the pictures, and stops the staging gate in step 14, so this is before the walk
 and not after it. A camera answers one picture: never re-aim one at a second,
 write another row. `delvec cameras` draws the record against that tree and
 renders its scenes; `delvec place-camera` is the record's one writer. A row no
-camera answers is `DW0900`. The craft — which side, how high, how close, how
-wide — is `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4; placing one
-by hand, in the running game, is
-`$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
+camera answers is `DW0900`; a camera whose subject is farther than the served
+view distance is refused, and the remedy it names is `world.view_distance`
+(the picture promises a view no player gets otherwise). The craft — which
+side, how high, how close, how wide — is
+`$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4; placing one by
+hand, in the running game, is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`
+§4a.
 
 ## 9. The walk — STOP, this one is the user's
 
