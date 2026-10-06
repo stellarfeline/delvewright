@@ -573,10 +573,44 @@ pub fn keep_out_box(body: Body, lo: [i32; 3], hi: [i32; 3]) -> ([i32; 3], [i32; 
 
 /// Can a body whose feet block is `cell` meet the volume `lo..=hi` from **some**
 /// position inside that cell? The refusing reading — see [`keep_out_box`].
+///
+/// Its feet are taken at the cell's own floor. A body standing on a partial
+/// block stands lower than that, and a caller that knows where its feet are asks
+/// [`feet_can_meet_volume`] instead; this is that function at `cell.y * 16`.
 #[must_use]
 pub fn cell_can_meet_volume(cell: [i32; 3], body: Body, lo: [i32; 3], hi: [i32; 3]) -> bool {
+    feet_can_meet_volume(cell, i64::from(cell[1]) * 16, body, lo, hi)
+}
+
+/// Can a body whose feet block is `cell`, with its feet at `feet_16` sixteenths
+/// of a block (absolute height), meet the volume `lo..=hi` from **some**
+/// horizontal position inside that cell?
+///
+/// Horizontally it is [`keep_out_box`]'s reading. Vertically the body's box is
+/// `[feet, feet + height)` and the volume's is `[lo.y, hi.y + 1)`, compared
+/// strictly as vanilla's `AABB::intersects` is. The feet are an argument because
+/// the cell does not fix them: a body standing on a bottom slab, a soul-sand
+/// floor or an upward dripstone tip has its feet below its cell's floor — 0.6875
+/// into the tip's own cell — and its box reaches a volume drawn in the course it
+/// stands on, which a reading from the cell floor misses. At `feet_16 =
+/// cell.y * 16` it answers exactly what [`keep_out_box`] does.
+#[must_use]
+pub fn feet_can_meet_volume(
+    cell: [i32; 3],
+    feet_16: i64,
+    body: Body,
+    lo: [i32; 3],
+    hi: [i32; 3],
+) -> bool {
     let (klo, khi) = keep_out_box(body, lo, hi);
-    (0..3).all(|i| klo[i] <= cell[i] && cell[i] <= khi[i])
+    if ![0usize, 2]
+        .iter()
+        .all(|&i| klo[i] <= cell[i] && cell[i] <= khi[i])
+    {
+        return false;
+    }
+    let feet = feet_16 as f64 / 16.0;
+    feet < f64::from(hi[1]) + 1.0 && feet + body.height > f64::from(lo[1])
 }
 
 // ---------------------------------------------------------------------------
@@ -2137,6 +2171,44 @@ mod tests {
             v.0,
             v.1
         ));
+    }
+
+    /// **Feet below the cell floor reach a volume in the course underneath.**
+    /// At the cell floor [`feet_can_meet_volume`] is [`keep_out_box`] exactly,
+    /// over every cell round a volume, for two bodies. A body standing on an
+    /// upward dripstone tip (feet 11/16 into the tip's cell) meets a volume
+    /// drawn in the tip course from the cell above it, which the cell-floor
+    /// reading refuses; one standing on a full block over the volume does not.
+    #[test]
+    fn feet_below_the_floor_reach_the_course_they_stand_on() {
+        let v = ([10, 60, 10], [12, 62, 12]);
+        for body in [Body::PLAYER, Body::new(0.9, 2.9)] {
+            let (klo, khi) = keep_out_box(body, v.0, v.1);
+            for x in 7..=15 {
+                for y in 55..=66 {
+                    for z in 7..=15 {
+                        let c = [x, y, z];
+                        let boxed = (0..3).all(|i| klo[i] <= c[i] && c[i] <= khi[i]);
+                        assert_eq!(
+                            feet_can_meet_volume(c, i64::from(y) * 16, body, v.0, v.1),
+                            boxed,
+                            "{c:?}"
+                        );
+                    }
+                }
+            }
+        }
+        // The tip course is y = 62, the volume's top; the body stands in 63.
+        let tip = [11, 63, 11];
+        assert!(!cell_can_meet_volume(tip, Body::PLAYER, v.0, v.1));
+        assert!(feet_can_meet_volume(
+            tip,
+            62 * 16 + 11,
+            Body::PLAYER,
+            v.0,
+            v.1
+        ));
+        assert!(!feet_can_meet_volume(tip, 63 * 16, Body::PLAYER, v.0, v.1));
     }
 
     #[test]

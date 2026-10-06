@@ -1634,13 +1634,13 @@ impl World {
     /// geometry that was never wrong — the exact failure `lethal_regions` was
     /// carried to prevent.
     fn lethal_volumes_over(&self, cells: &[[i32; 3]]) -> Vec<&str> {
-        let body = delvewright_dsl::metrics::Body::PLAYER;
+        let fp = Footprint::player();
         self.lethal_regions
             .iter()
             .filter(|(_, (lo, hi))| {
                 cells
                     .iter()
-                    .any(|c| delvewright_dsl::metrics::cell_can_meet_volume(*c, body, *lo, *hi))
+                    .any(|c| self.body_can_meet_volume(*c, &fp, *lo, *hi))
             })
             .map(|(id, _)| id.as_str())
             .collect()
@@ -1661,10 +1661,30 @@ impl World {
         if self.lethal_regions.is_empty() {
             return false;
         }
-        let body = fp.body();
         self.lethal_regions
             .iter()
-            .any(|(_, (lo, hi))| delvewright_dsl::metrics::cell_can_meet_volume(c, body, *lo, *hi))
+            .any(|(_, (lo, hi))| self.body_can_meet_volume(c, fp, *lo, *hi))
+    }
+
+    /// **Can a body of this footprint, in cell `c`, meet the volume `lo..=hi`?**
+    /// — [`delvewright_dsl::metrics::feet_can_meet_volume`] with the feet where
+    /// this model puts them ([`World::feet_16_fp`]): on the collision top of the
+    /// block under the cell, which for a partial block is below the cell floor.
+    ///
+    /// The one answer every proof that asks whether a body in a cell is caught
+    /// by a volume takes — the router's keep-out, the reach flood, the
+    /// danger-visibility population and the blind reach — so the height a body
+    /// stands at is read off the block it stands on in all of them, and a body
+    /// on an upward dripstone tip (feet 11/16 into the tip's cell) meets a
+    /// volume drawn in the tip course, as it does in the game.
+    pub fn body_can_meet_volume(
+        &self,
+        c: [i32; 3],
+        fp: &Footprint,
+        lo: [i32; 3],
+        hi: [i32; 3],
+    ) -> bool {
+        delvewright_dsl::metrics::feet_can_meet_volume(c, self.feet_16_fp(c, fp), fp.body(), lo, hi)
     }
 
     /// Build the walkability model from a collision-classified [`Occupancy`] and
@@ -7767,10 +7787,13 @@ impl World {
             .iter()
             .map(|(lo, hi)| delvewright_dsl::metrics::keep_out_box(body, *lo, *hi))
             .collect();
+        // Whether a body in `c` is caught: by its feet where this model puts
+        // them, so a body standing on a partial block meets a volume in the
+        // course it stands on.
         let meets = |c: [i32; 3]| -> Option<usize> {
-            keep_outs
+            volumes
                 .iter()
-                .position(|(lo, hi)| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]))
+                .position(|(lo, hi)| self.body_can_meet_volume(c, fp, *lo, *hi))
         };
         // Below this a drop is in no volume's keep-out, so it is not followed.
         let bottom = keep_outs.iter().map(|(lo, _)| lo[1]).min().unwrap_or(0);
