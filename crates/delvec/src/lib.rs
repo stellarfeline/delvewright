@@ -17,3 +17,4 @@ pub mod orchestrator;
 pub mod par;
 pub mod render;
 pub mod schem;
+pub mod sculpt;

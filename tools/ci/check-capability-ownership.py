@@ -96,6 +96,17 @@ INTERACTION_SITES = {
         "DSL's first-class 'player clicked a thing here, run effects'. Every other "
         "entry in this ledger is a verb that did not use it."
     ),
+    "assembly_functions": (
+        "An assembly's hitbox (spec-0082). Legitimately its own, for the reason an "
+        "NPC's is: the box belongs to an OBJECT — a body of display entities at a "
+        "mark, sized by the assembly's own `hitbox` — not to a cell, and the "
+        "assembly summons and removes it with its parts. The general construct "
+        "RIDES it: `TriggerOn::StrikeAssembly` is an ordinary `EnvTrigger` whose "
+        "poll and clear read this box's `attack` record (`emit::trigger_carrier_tag`), "
+        "exactly as `strike-npc` rides `npc_summon_commands`'s body, so a hit, a "
+        "count and what happens at the count are the general trigger, state and "
+        "gate. Shape 3, closed rather than catalogued."
+    ),
     "npc_summon_commands": (
         "An NPC's dialogue hitbox. Legitimately its own: the box must track a "
         "character's body, not a cell, and it carries the NPC's identity. It is "
@@ -347,11 +358,23 @@ EFFECT_BUNDLES = {
         "once-only `#sc_<id>` sentinel and it clears the gate region — so "
         "desugaring it would have introduced a second detector for one event."
     ),
+    "on_land": (
+        "ROOT R10 (`EffectRootKind::AssemblyLand`) — an assembly strike step's "
+        "landing (spec-0082). Added as a root on the day the surface was added: "
+        "it hangs off an object with runtime machinery of its own (the per-assembly "
+        "strike machine), so desugaring it into a trigger would put a second "
+        "detector on one event."
+    ),
     "on_death": (
         "ROOT R7 (`EffectRootKind::OnDeath`) — the campaign-wide death beat "
         "(spec-0031). Added as a root on the day the surface was added, which is "
         "the point: 'the purse is dropped on death' is then ordinary content in a "
         "general mechanism rather than an engine feature."
+    ),
+    "on_cross": (
+        "ROOT R10 (`EffectRootKind::LoopCross`) — a loop's answer to each crossing "
+        "(spec-0086), run under `Audience::Scheduled`. Added as a root with the "
+        "surface, for the reason `on_death` was."
     ),
 }
 

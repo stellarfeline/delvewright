@@ -117,6 +117,13 @@ NOT_CONNECTION_EMITTERS = {
         "and the shell it frames is written into a temp directory and never admitted into the "
         "library."
     ),
+    "crates/delvec/tests/staged_lethal.rs": (
+        "test fixture for spec-0088's staged lethal volume: the lid room. Its palette is four "
+        "plain ids — stone, magma block, glowstone and the room's air — judged against the "
+        "pinned registry before the bytes are written, none of them a fence, wall, pane or "
+        "multiface block, and the room is written into the test target's scratch directory and "
+        "never admitted into the library."
+    ),
     "crates/delvec/tests/edit.rs": (
         "test fixture for the edit-stage determinism gate. Its palette is four states — air, "
         "stone, a lantern and an oak log — none of them a fence, wall, pane or multiface block, "

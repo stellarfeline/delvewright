@@ -1,0 +1,20 @@
+{
+  "code": "DW0940",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/textures/0",
+      "value": {
+        "id": "blank",
+        "license": {
+          "source": "original",
+          "spdx": "original"
+        },
+        "replaces": "minecraft:block/redstone_dust_overlay"
+      }
+    }
+  ],
+  "units": [],
+  "why": "This edit replaces the row with one pointing `textures/blank.png` at `minecraft:block/redstone_dust_overlay`. The gallery generator writes `blank.png` byte for byte as the pinned client's own file there — a fully transparent 16×16 image, whose encoding is a stream of zeros and carries nothing to license. An override equal to vanilla replaces nothing: the build would ship a pack entry that changes no pixel anywhere, which is the vacuous shape. The census records the sha256 of vanilla's bytes, and the refusal is an exact comparison against it; a re-encoded copy of vanilla's pixels is not detected."
+}

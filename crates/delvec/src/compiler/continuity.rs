@@ -500,8 +500,14 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
         | delvewright_dsl::EffectRootOwner::ShortcutUnlock(_)
         | delvewright_dsl::EffectRootOwner::ShopOffer(_)
         | delvewright_dsl::EffectRootOwner::OnDeath
-        | delvewright_dsl::EffectRootOwner::OnKill(_) => {
+        | delvewright_dsl::EffectRootOwner::OnKill(_)
+        | delvewright_dsl::EffectRootOwner::AssemblyLand(_)
+        | delvewright_dsl::EffectRootOwner::LoopCross(_) => {
             let reason = match site.owner {
+                delvewright_dsl::EffectRootOwner::LoopCross(_) => {
+                    "its lifecycle is driven from a loop's `on_cross` bundle, which fires on \
+                     every crossing any body makes while the loop holds — at any time, or never"
+                }
                 delvewright_dsl::EffectRootOwner::Trigger(_) => {
                     "its lifecycle is driven from an environment trigger, which the \
                      player may fire at any time (or never)"
@@ -527,6 +533,11 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
                     "its lifecycle is driven from a fight's `on_kill` bundle, which \
                      fires only on a kill a player is credited with — at any time, or \
                      never"
+                }
+                delvewright_dsl::EffectRootOwner::AssemblyLand(_) => {
+                    "its lifecycle is driven from an assembly's `on_land` bundle, which \
+                     fires only on a blow landing on a player who stood in its reach — \
+                     at any time, or never"
                 }
                 _ => {
                     "its lifecycle is driven from a dialogue option's `on_respawn` \

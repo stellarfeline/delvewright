@@ -38,11 +38,11 @@ order a player would:
 
 | Where | What it holds |
 | --- | --- |
-| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall |
+| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall; and and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required; and the seconds a fallen player waits before rejoining the party |
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
-| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, two killing volumes, and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076) |
+| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076); the hearth's two buttons, like every shop offer and some dialogue options, hover a tooltip saying what pressing them does (spec-0078) |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch |
 | `world-edits.json` | the annex's piece-verb batches, the shards stamped by `fragment`, the barrier course, and the batches that dress the floor, lay the hearth, open the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
@@ -177,6 +177,19 @@ holding them at once.
 | `an-atmosphere-nobody-stands-in` | `DW0930` | `validate` | declaring a third sky no place carries and no beat paints |
 | `a-repaint-past-the-edge-of-the-world` | `DW0929` | `build` | widening the vantage's repaint four hundred blocks past every placed piece, into chunks nothing loads |
 | `a-repaint-that-names-both-a-box-and-a-place` | `DW0929` | `validate` | giving the vantage's repaint both an anchor-centred region and a whole place |
+| `a-landing-in-the-wall` | `DW0947` | `build` | moving the long gallery's landing two bays past its slab, so the view out of it runs through the end room's far wall into open air |
+| `a-lamp-missing-from-one-bay` | `DW0946` | `build` | swapping the lantern in the bay the loop lands a body in for a soul lantern, so that bay is a different block and a different light from the one behind it |
+| `a-light-round-the-corner` | `DW0946` | `build` | standing a lantern in the sealed cavity behind one bay's window, where no eye sees it but its light reaches one bay and not the next |
+| `a-slab-too-thin-to-catch-a-fall` | `DW0945` | `build` | turning the loop on its side: a slab one cell thick in y under a drop, which a falling body passes between two polls |
+| `a-crossing-that-moves-you-twice` | `DW0945` | `build` | drawing the slab seven courses thick while the landing stays one bay back, so a moved body is still in the slab and is moved again |
+| `a-release-one-player-holds` | `DW0949` | `validate` | declaring the count the long gallery's release reads `player`-scoped, so one player is released and another still looped |
+| `a-figure-in-the-hall` | `DW0948` | `build` | posting the hall moth in a bay of the long gallery, a body with an identity the move cannot repeat |
+| `a-hall-nobody-releases` | `DW0311` | `build` | raising the count the long gallery waits for from 1 to 99, so the forced path never releases the loop and the route across its slab never opens |
+| `a-floor-that-wakes-underfoot` | `DW0891` | `build` | raising the lidded pit's volume onto the lid, so the floor a body stands on before the beat is killed under it when the beat lands — the fourth shape, named in the configuration before the flip |
+| `a-way-onward-through-a-pit-that-woke` | `DW0891` | `build` | moving the lidded pit's volume onto the counter the party walks to after the beat; its keep-out catches floor walked before the beat, so the visibility proof refuses it before the route proof would (`DW0510`) |
+| `a-stage-with-no-term` | `DW0953` | `validate` | emptying the lidded pit's `when` to `{}` — a stage with no term |
+| `a-stage-one-player-holds` | `DW0953` | `validate` | staging the lidded pit on the tokens, a datum each player holds for themselves |
+| `a-wait-longer-than-two-minutes` | `DW0925` | `validate` | making a fallen player wait 121 seconds before rejoining, one past the two minutes a wait may last |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
@@ -230,13 +243,13 @@ because an exemption whose proof stopped holding is no longer an exemption.
 
 ## Building it
 
-The piece and the mannequin skins are generated by the engine's own generator, so
+The piece, the mannequin skins and the texture images are generated by the engine's own generator, so
 the whole thing builds from this repository alone — no content checkout:
 
 ```
 mkdir -p gallery-prefabs
 cargo run --release --manifest-path prefabs/gallery-generator/Cargo.toml \
-  -- gallery-prefabs --skins gallery/skins --design gallery/design
+  -- gallery-prefabs --skins gallery/skins --design gallery/design --textures gallery/textures
 cargo build --release -p delvec --bin delvec
 target/release/delvec build gallery -o gallery-out --prefabs gallery-prefabs
 ```
@@ -492,6 +505,25 @@ Four probes show what the engine refuses about it:
 `a-crossing-the-cutscene-undoes` (the teleport at tick 0, `DW0933`) and
 `a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
 
+## The long gallery
+
+On the far hall's roof, up a stair at the hall's east end, is a corridor of three
+identical bays, each with two staggered baffles that close the view inside the bay: `loop/long-gallery` (spec-0086). Its slab
+crosses the gallery at bay 2's mouth and moves every body that crosses it one bay
+back, so the gallery goes on. It holds once `hall-open` is set and until
+`hall-sealed`, and at most until `state/gallery-crossings` passes 1: the first
+crossing counts 1 and lights a second lamp in every bay and the end room at once (`on_cross`, keyed by
+`when`), the second counts 2 and the gate shuts, and the same plane is floor.
+`obj/walk-the-long-gallery` waits at the gallery's far end, so the critical path
+carries a `loop` step that crosses twice.
+
+The build publishes `validation/loop-gate.json`: one loop, its 15 eyes, a span of
+325 cells closed by geometry, 144 visible cells compared as blocks and as light at
+two skies over 10 configurations, and one exercise step. The eight probes above
+whose names start with a landing, a lamp, a light, a slab, a crossing, a release,
+a figure and a hall are each this gallery plus one edit, and each is refused by
+the rule that edit breaks.
+
 ## The fight, and the floor it needs
 
 The far hall carries the one mandatory encounter — the muster, billed `elite`.
@@ -543,7 +575,7 @@ ordering is the half a later edit can undo without moving a coordinate.
 The generator holds the geometry of all of it, on every run, and prints what it examined:
 
 ```
-gallery-hall: muster clearance bound — 2 killing volume(s), both across the wall at z=15 from the muster: anchor/west-pit 20.62, anchor/east-pit 18.68 (floor 8.0 block(s))
+gallery-hall: muster clearance bound — 3 killing volume(s), all across the wall at z=15 from the muster: anchor/west-pit 20.62, anchor/lid-pit 17.80, anchor/east-pit 22.80 (floor 8.0 block(s))
 gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [15, 1, 29], 10.00 block(s) away (floor 10.0)
 ```
 

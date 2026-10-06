@@ -66,8 +66,17 @@
   (the checkpoint, nothing else). In a party, a respawn resets the scene only
   after a wipe — every player dead at once; one fallen player comes back to the
   fight the others are still in, with only their own flask refilled. Write
-  `on_rest[]` lines for the party that rests or wipes, not for one death. The
-  replenished item is a class-kit entry marked `"flask": true`, and **every class
+  `on_rest[]` lines for the party that rests or wipes, not for one death.
+  **A respawn wait is how a party feels a wipe coming.** Without one, a fallen
+  player is back at the fire the moment they click *Respawn*, so two players who
+  trade deaths almost never wipe. `world.respawn_wait { seconds, alone }` makes
+  the fallen player watch a teammate as a spectator for `seconds` (1–120;
+  holding sneak frees the view), and while they wait they count as down: the
+  survivor fights short-handed, and if they fall too it is a wipe that ends
+  every wait at once and re-seats the scene. Declare it in a party delve whose
+  fights are meant to be held together, and tune `seconds` against how long
+  those fights run. A party of one never waits unless you write `alone: true`.
+  The replenished item is a class-kit entry marked `"flask": true`, and **every class
   kit in a campaign that places a bonfire must declare one** — a bonfire campaign
   with a flaskless kit is the build error `DW0476`. Author it as a real recovery
   consumable with the per-rest budget you tuned against as its `count`: resting
@@ -101,7 +110,8 @@
   0 = level I. Anything vanilla cannot pour is `DW0486`. The bonfire's three
   dialog strings default to canonical English; author `prompt`/`rest_label`/
   `save_label` only when the fiction wants its own words, and keep the two labels
-  button captions (`DW0331`).
+  button captions (`DW0331`); what a button does in a sentence goes in its
+  optional `rest_tooltip` / `save_tooltip`.
 ## Where a bonfire may stand
 
 - **Place a bonfire OUT of every hostile's reach.** A rest point is where the

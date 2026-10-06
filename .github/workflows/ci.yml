@@ -516,7 +516,7 @@ jobs:
         run: |
           set -euo pipefail
           for g in generator cave-generator gallery-generator hello-room-generator \
-                   island-generator island-terrain-generator tidal-keep-generator; do
+                   island-generator island-terrain-generator rig-generator tidal-keep-generator; do
             echo "::group::$g"
             rm -rf "/tmp/$g-a" "/tmp/$g-b"
             mkdir -p "/tmp/$g-a" "/tmp/$g-b"
@@ -1670,7 +1670,8 @@ jobs:
           set -euo pipefail
           mkdir -p gallery-prefabs
           cargo run --locked --manifest-path prefabs/gallery-generator/Cargo.toml \
-            -- gallery-prefabs --skins gallery/skins --design gallery/design
+            -- gallery-prefabs --skins gallery/skins --design gallery/design \
+            --textures gallery/textures
           target/debug/delvec build gallery \
             -o validation/delve-output-gallery --prefabs gallery-prefabs
 

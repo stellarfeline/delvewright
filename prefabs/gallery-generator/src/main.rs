@@ -67,13 +67,21 @@ const DATA_VERSION: i32 = 4671;
 /// The piece's id — the `.nbt`/`.json` stem and what the invariants report against.
 const ID: &str = "gallery-hall";
 
-/// Structure extent: 31 (x) × 8 (y) × 31 (z).
+/// Structure extent: 31 (x) × 12 (y) × 31 (z): the hall, roofed at
+/// [`HALL_ROOF_Y`], and the long gallery standing on its roof.
 ///
-/// One room, deliberately. The gallery's job is to be exhaustive over the DSL
+/// One room, deliberately — and one corridor on top of it, reached by a stair
+/// from the far hall, because a place the party is carried to across the void
+/// would put the loop behind a crossing and its proofs behind a checkpoint the
+/// crossing outruns. The gallery's job is to be exhaustive over the DSL
 /// and **legible**, and a maze of chambers would make the second impossible: a
 /// reader looking up where `anchor/hearth` is should find it on one floor plan.
 /// Everything vertical the DSL can express is expressed against the same floor.
-const SIZE: [i32; 3] = [31, 8, 31];
+const SIZE: [i32; 3] = [31, 12, 31];
+
+/// The hall's roof course: the room is `y ∈ 1..HALL_ROOF_Y`, and the long
+/// gallery's floor IS this course.
+const HALL_ROOF_Y: i32 = 7;
 
 /// The z of the dividing wall that gives the hall a far side worth opening a
 /// gate onto. Everything with `z < DIVIDER_Z` is the near hall (spawn, the two
@@ -112,6 +120,28 @@ const TERRACE_TOP_Y: i32 = 3;
 /// The well's column, `(x, z)` — the cell `anchor/west-pit` names, cut open from
 /// the hall's floor to the terrace's rim.
 const WELL: (i32, i32) = (2, 3);
+
+/// **The lidded pit** — a second pit sunk in the terrace, roofed by the terrace's
+/// own top course until a story beat clears it (spec-0088).
+///
+/// Two courses of air under the lid (`y ∈ 1..TERRACE_TOP_Y`) and the lid itself,
+/// terrace stone, at `y = TERRACE_TOP_Y`. It is sunk in [`TERRACE_ANNEX`], not in
+/// the terrace proper: the west well's reach (`obj/look-into-the-well`,
+/// radius 3) covers the whole terrace, and a sealed chamber a body could stand
+/// in inside that volume is floor it cannot walk to the well from (`DW0881`). The volume `lethal/lid-pit`
+/// sits at the pit's bottom on `anchor/lid-pit`, three courses under the rim, so
+/// no rim cell is in its keep-out; the beat that arms it clears `anchor/lid`, so
+/// the floor that was a lid becomes a hole in the same beat the bottom starts to
+/// kill. Before the beat nobody can reach the pit; after it a fall does. The
+/// column is inside the terrace on every side, so its keep-out lies wholly under
+/// stone.
+const LID_PIT: (i32, i32) = (8, 5);
+
+/// **The terrace annex** — the terrace carried east beside its treads, at the
+/// same height, so the lidded pit has a terrace floor on every side and stands
+/// clear of the west well's reach. `(x0, x1, z0, z1)` inclusive, in room space;
+/// walked onto from the terrace at `x = 5`.
+const TERRACE_ANNEX: (i32, i32, i32, i32) = (6, 9, 4, 6);
 
 /// The treads that climb the terrace from the near hall, `(x, top_y)` on the
 /// well's own `z` — one course of rise each, so the rim is somewhere the party
@@ -450,6 +480,26 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/lid-pit",
+        pos: [LID_PIT.0, 1, LID_PIT.1],
+        facing: None,
+        trigger_block: None,
+        note: "the bottom of the lidded pit in the terrace: a killing volume live \
+               from the beat that clears the lid over it (spec-0088), three \
+               courses under the rim, in the near hall with the west pit and for \
+               the same reason (MUSTER_PIT_CLEARANCE)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/lid-rim",
+        pos: [LID_PIT.0, TERRACE_TOP_Y + 1, LID_PIT.1],
+        facing: None,
+        trigger_block: None,
+        note: "the terrace floor standing on the lid — the cell a body crosses \
+               before the beat and falls through after it",
+        role: None,
+    },
+    Anchor {
         name: "anchor/east-pit",
         pos: [29, 1, 1],
         facing: None,
@@ -459,6 +509,20 @@ const ANCHORS: &[Anchor] = &[
                the piece's own bodies walk or are teleported along, and beyond the \
                pursuit of every fight the hall seats (DW0922). Its `extent` is 0 on \
                x and z, so the walls behind it are not part of it",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/plinth",
+        pos: [23, 1, 12],
+        facing: Some("west"),
+        trigger_block: None,
+        note: "where the sentinel stands — the gallery's assembly (spec-0082): a \
+               statue of display entities that sways, can be struck, and stamps \
+               the 3 x 3 of floor round its own feet. Its arming region and its \
+               landing box are this one cell, so a body is caught only from the \
+               ring of cells beside it. Three cells east of the walk through the \
+               near hall and two north of the counter, so the critical path never \
+               stands where it stamps",
         role: None,
     },
     Anchor {
@@ -573,6 +637,33 @@ const ANCHORS: &[Anchor] = &[
         note: "the finale: the last thing a player reaches",
         role: None,
     },
+    Anchor {
+        name: "anchor/long-gallery-end",
+        pos: long_gallery_cell(2, 1, CORRIDOR_SIZE[2] - 3),
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the long gallery's end room, past its three bays: the beat the loop stands in \
+               front of until the party has crossed it enough",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-chest",
+        pos: long_gallery_cell(2, 2, CORRIDOR_SIZE[2] - 2),
+        facing: None,
+        trigger_block: None,
+        note: "the top of the chest at the long gallery's far end, two bays past anything a \
+               body in the loop's span can see: what the end room holds",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-hall",
+        pos: long_gallery_cell(3, 1, corridor_bay(1) + 3),
+        facing: Some("north"),
+        trigger_block: None,
+        note: "a cell of the long gallery's bay 1, inside the loop's span: where a probe posts a \
+               figure the move cannot repeat",
+        role: None,
+    },
 ];
 
 /// **Container anchors** — the cells that hold a chest.
@@ -609,14 +700,25 @@ const CONTAINERS: &[Anchor] = &[
 /// ("nothing beneath stops the debris"). So the hall carries a stone canopy over
 /// the east bay, and this anchor points at it. A point anchor cannot serve: the
 /// standable rule demands air, and this rule demands the opposite.
-const SOLID_ANCHORS: &[Anchor] = &[Anchor {
-    name: "anchor/east-vault",
-    pos: [25, 5, 22],
-    facing: None,
-    trigger_block: None,
-    note: "the stone canopy a `collapse` brings down onto the east bay floor",
-    role: None,
-}];
+const SOLID_ANCHORS: &[Anchor] = &[
+    Anchor {
+        name: "anchor/east-vault",
+        pos: [25, 5, 22],
+        facing: None,
+        trigger_block: None,
+        note: "the stone canopy a `collapse` brings down onto the east bay floor",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/lid",
+        pos: [LID_PIT.0, TERRACE_TOP_Y, LID_PIT.1],
+        facing: None,
+        trigger_block: None,
+        note: "the lid over the lidded pit: terrace stone a `clear-region` takes \
+               away in the beat that arms `lethal/lid-pit` (spec-0088)",
+        role: None,
+    },
+];
 
 /// The canopy the collapse anchor points at: `(x0, x1, y, z0, z1)`, inclusive.
 const CANOPY: (i32, i32, i32, i32, i32) = (22, 28, 5, 19, 25);
@@ -765,7 +867,7 @@ fn lanterns() -> Vec<[i32; 3]> {
         let mut x = 3;
         while x < SIZE[0] - 1 {
             if z != DIVIDER_Z {
-                out.push([x, SIZE[1] - 2, z]);
+                out.push([x, HALL_ROOF_Y - 1, z]);
             }
             x += 6;
         }
@@ -776,7 +878,7 @@ fn lanterns() -> Vec<[i32; 3]> {
     // dais's far corner at light 7 — one under the `lit` bar the metadata
     // claims. A floor the grid does not reach carries its own light rather than
     // the profile carrying a claim it cannot meet.
-    out.push([19, SIZE[1] - 2, 18]);
+    out.push([19, HALL_ROOF_Y - 1, 18]);
     out
 }
 
@@ -878,10 +980,23 @@ fn block_at(
         }
         return ("minecraft:stone", None);
     }
-    if y == SIZE[1] - 1 {
+    if y >= HALL_ROOF_Y {
+        // The long gallery on the roof and the shaft its stair climbs through;
+        // everything else above the roof is solid, so no air of the piece's own
+        // reaches its box boundary and nothing has to answer for an outside a
+        // body could stand in (`DW0886`).
+        if let Some(b) = long_gallery_at(x, y, z) {
+            return b;
+        }
         return ("minecraft:stone", None);
     }
     if x == 0 || x == SIZE[0] - 1 || z == 0 || z == SIZE[2] - 1 {
+        return ("minecraft:stone", None);
+    }
+    // The long gallery's stair: one course of rise per cell, climbing east
+    // along the far wall from the far hall's floor to the gallery's porch, in
+    // the corner away from the lane the boss marches.
+    if z == LONG_GALLERY_STAIR_Z && (21..=27).contains(&x) && y <= x - 20 {
         return ("minecraft:stone", None);
     }
     if z == DIVIDER_Z {
@@ -900,6 +1015,14 @@ fn block_at(
         && (tz0..=tz1).contains(&z)
         && (1..=TERRACE_TOP_Y).contains(&y)
         && (x, z) != WELL
+    {
+        return ("minecraft:stone", None);
+    }
+    let (ax0, ax1, az0, az1) = TERRACE_ANNEX;
+    if (ax0..=ax1).contains(&x)
+        && (az0..=az1).contains(&z)
+        && (1..=TERRACE_TOP_Y).contains(&y)
+        && ((x, z) != LID_PIT || y == TERRACE_TOP_Y)
     {
         return ("minecraft:stone", None);
     }
@@ -1090,6 +1213,15 @@ fn assert_anchors_are_standable(s: &Structure) {
             a.name
         );
     }
+    // A volume's centre hangs in the air it centres.
+    for a in VOLUME_ANCHORS {
+        assert_eq!(
+            at(a.pos),
+            "minecraft:air",
+            "{ID}: volume anchor `{}` is not in air",
+            a.name
+        );
+    }
     for a in SOLID_ANCHORS {
         assert_eq!(
             at(a.pos),
@@ -1235,7 +1367,7 @@ fn plan_dist(a: [i32; 3], b: [i32; 3]) -> f64 {
 fn assert_the_muster_clears_the_pits() {
     let muster = anchor_at("anchor/muster");
     let mut pits = Vec::new();
-    for pit in ["anchor/west-pit", "anchor/east-pit"] {
+    for pit in ["anchor/west-pit", "anchor/lid-pit", "anchor/east-pit"] {
         let at = anchor_at(pit);
         assert!(
             (muster[2] > DIVIDER_Z) != (at[2] > DIVIDER_Z),
@@ -1258,12 +1390,12 @@ fn assert_the_muster_clears_the_pits() {
     }
     assert_eq!(
         pits.len(),
-        2,
-        "{ID}: the pit clearance examined {} volume(s), not 2",
+        3,
+        "{ID}: the pit clearance examined {} volume(s), not 3",
         pits.len()
     );
     println!(
-        "{ID}: muster clearance bound — 2 killing volume(s), both across the wall at \
+        "{ID}: muster clearance bound — 3 killing volume(s), all across the wall at \
          z={DIVIDER_Z} from the muster: {} (floor {MUSTER_PIT_CLEARANCE:.1} block(s))",
         pits.join(", ")
     );
@@ -1537,7 +1669,7 @@ fn spatial_contract() -> serde_json::Value {
     let (lx0, lx1, lz0, lz1) = LOFT;
     let (fx0, fx1, fz0, fz1) = FLIGHT;
     let (in0, in1) = (1, SIZE[0] - 2); // the interior, wall to wall
-    let (top, floor) = (SIZE[1] - 2, 1);
+    let (top, floor) = (HALL_ROOF_Y - 1, 1);
 
     // A stair lands ON the dais, so the flight's run starts where the dais's
     // south face is. The decomposition below relies on that — with a gap
@@ -1639,7 +1771,12 @@ fn spatial_contract() -> serde_json::Value {
 fn metadata() -> serde_json::Value {
     use serde_json::{json, Map, Value};
     let mut anchors = Map::new();
-    for a in ANCHORS.iter().chain(CONTAINERS).chain(SOLID_ANCHORS) {
+    for a in ANCHORS
+        .iter()
+        .chain(CONTAINERS)
+        .chain(SOLID_ANCHORS)
+        .chain(VOLUME_ANCHORS)
+    {
         let mut m = Map::new();
         m.insert("pos".into(), json!(a.pos));
         if let Some(f) = a.facing {
@@ -2156,6 +2293,72 @@ fn write_design(out: &Path) {
             .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
         println!("wrote {}", path.display());
     }
+}
+
+/// The images the gallery's `world.textures[]` row and its probes name
+/// (spec-0084 §7), written into `--textures <dir>`.
+///
+/// - `hall-stone` replaces `minecraft:block/stone_bricks` — the annex tiles'
+///   walls, the hall's tread courses and the seal an unmated socket gets: one
+///   flat colour, deliberately not art, so a render of the annex shows at a
+///   glance which block the pack replaced.
+/// - `wrong-shape` is 24×24, which no 16×16 texture can be replaced by —
+///   `a-texture-of-another-shape` points the row at it.
+/// - `blank` is byte-for-byte the pinned client's own
+///   `block/redstone_dust_overlay.png`, a fully transparent 16×16 grey-alpha
+///   image — `a-texture-that-changes-nothing` points a row at it.
+fn write_textures(out: &Path) {
+    std::fs::create_dir_all(out).unwrap_or_else(|e| panic!("mkdir {}: {e}", out.display()));
+    for (id, bytes) in [
+        ("hall-stone", flat_png(16, 16, [0xB0, 0x30, 0x6A])),
+        ("wrong-shape", flat_png(24, 24, [0xB0, 0x30, 0x6A])),
+        ("blank", blank_png()),
+    ] {
+        let path = out.join(format!("{id}.png"));
+        std::fs::write(&path, bytes).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+        println!("wrote {}", path.display());
+    }
+}
+
+/// A `w`×`h` opaque RGB image of one colour.
+fn flat_png(w: u32, h: u32, c: [u8; 3]) -> Vec<u8> {
+    // Each scanline is filter type 0 (None) followed by its pixels.
+    let row: Vec<u8> = std::iter::once(0).chain((0..w).flat_map(|_| c)).collect();
+    let raw: Vec<u8> = (0..h).flat_map(|_| row.iter().copied()).collect();
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), Compression::new(6));
+    z.write_all(&raw).expect("zlib write");
+    let idat = z.finish().expect("zlib finish");
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&w.to_be_bytes());
+    ihdr.extend_from_slice(&h.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]); // 8-bit, RGB, deflate, no filter, no interlace
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"IDAT", &idat));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+    png
+}
+
+/// A fully transparent 16×16 8-bit grey-alpha image, encoded exactly as the
+/// pinned client encodes its own `block/redstone_dust_overlay.png` (census
+/// sha256 `d9ec0ce5…7759`): the IDAT is that file's 14-byte zlib stream, which
+/// encodes 528 zero bytes — sixteen filter bytes and 256 transparent pixels —
+/// and nothing else. A stream of zeros carries no expression (ADR-0013); it is
+/// spelled out because no compressor this repository runs emits that exact
+/// stream (zlib levels 0–9 all differ), and the probe needs vanilla's bytes.
+fn blank_png() -> Vec<u8> {
+    const IDAT: [u8; 14] = [
+        0x78, 0xDA, 0x63, 0x18, 0x05, 0xA3, 0x00, 0x09, 0x00, 0x00, 0x02, 0x10, 0x00, 0x01,
+    ];
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&16u32.to_be_bytes());
+    ihdr.extend_from_slice(&16u32.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 4, 0, 0, 0]); // 8-bit, grey-alpha, deflate, no filter, no interlace
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"IDAT", &IDAT));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+    png
 }
 
 fn write_skins(out: &Path) {
@@ -3210,22 +3413,199 @@ fn write_quay(out: &Path) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The long gallery (spec-0086): a corridor of identical bays that never ends
+// ---------------------------------------------------------------------------
+
+/// The long gallery's extent in its own frame, `(width, height, length)`: 7
+/// across — the west wall, the passage 1..=3, the east wall with a glass window
+/// in every bay, a sealed cavity strip behind the windows, the outer wall — 5
+/// high (its floor is the hall's roof, the passage three courses, its own roof),
+/// and 27 long. Its frame is laid on the hall's roof by [`long_gallery_frame`].
+const CORRIDOR_SIZE: [i32; 3] = [7, 5, 27];
+
+/// How many courses one bay repeats over, along the gallery's length.
+const CORRIDOR_PERIOD: i32 = 6;
+
+/// The first of the three bays starts four courses in; the porch is 1..=3.
+const CORRIDOR_FIRST_BAY: i32 = 4;
+
+/// How many identical bays the gallery holds.
+const CORRIDOR_BAYS: i32 = 3;
+
+/// Bay `k`'s mouth, in the gallery's own frame.
+const fn corridor_bay(k: i32) -> i32 {
+    CORRIDOR_FIRST_BAY + CORRIDOR_PERIOD * k
+}
+
+/// The hall's `z` the stair climbs along, against the far wall.
+const LONG_GALLERY_STAIR_Z: i32 = SIZE[2] - 3;
+
+/// A hall cell `(x, y, z)` in the gallery's own frame `(u, v, w)`: across the
+/// hall's east strip from its outer wall inward, up from the roof, and along
+/// the hall's length from the far wall toward the near one — so the porch
+/// stands over the stair and the gallery runs back toward the stall.
+fn long_gallery_frame(x: i32, y: i32, z: i32) -> Option<[i32; 3]> {
+    let (u, v, w) = ((SIZE[0] - 1) - x, y - HALL_ROOF_Y, (SIZE[2] - 1) - z);
+    let inside = (0..CORRIDOR_SIZE[0]).contains(&u)
+        && (0..CORRIDOR_SIZE[1]).contains(&v)
+        && (0..CORRIDOR_SIZE[2]).contains(&w);
+    inside.then_some([u, v, w])
+}
+
+/// The hall cell of a gallery-frame cell — the inverse of [`long_gallery_frame`].
+const fn long_gallery_cell(u: i32, v: i32, w: i32) -> [i32; 3] {
+    [(SIZE[0] - 1) - u, v + HALL_ROOF_Y, (SIZE[2] - 1) - w]
+}
+
+/// The cells cut through the hall's roof and the gallery's east wall so the
+/// stair's top courses have headroom and step into the porch: everything over
+/// the stair's three highest treads up to the passage's head height.
+fn in_stair_shaft(x: i32, y: i32, z: i32) -> bool {
+    z == LONG_GALLERY_STAIR_Z
+        && (24..=26).contains(&x)
+        && (HALL_ROOF_Y..=HALL_ROOF_Y + 2).contains(&y)
+        && !(x == 24 && y > HALL_ROOF_Y)
+}
+
+/// What stands at a hall cell the long gallery owns, or `None` off it.
+///
+/// Each bay is the same six courses: its mouth open (where the loop's slab
+/// stands), a lantern hung from the roof, a baffle across the passage's two
+/// western cells, two open courses with a window east, and a baffle across the
+/// two eastern cells. The two baffles stagger, so a line of sight down the
+/// passage closes inside one bay — the jog the loop's seamlessness proof asks
+/// for — and a body walks it as a zigzag. The end room past bay 2 opens exactly
+/// as a bay 3 would, with its lantern where bay 3's would hang, so the light a
+/// body sees from the slab is the light it sees from the landing.
+/// A block id and its optional block-state properties.
+type BlockWithState = (
+    &'static str,
+    Option<&'static [(&'static str, &'static str)]>,
+);
+
+fn long_gallery_at(x: i32, y: i32, z: i32) -> Option<BlockWithState> {
+    if in_stair_shaft(x, y, z) {
+        return Some(("minecraft:air", None));
+    }
+    let [u, v, w] = long_gallery_frame(x, y, z)?;
+    let [su, sv, sw] = CORRIDOR_SIZE;
+    const LANTERN: Option<&[(&str, &str)]> = Some(&[("hanging", "true")]);
+    let shell = v == 0 || v == sv - 1 || w == 0 || w == sw - 1 || u == 0 || u == su - 1;
+    if shell {
+        return Some(("minecraft:stone", None));
+    }
+    let in_bays = (corridor_bay(0)..corridor_bay(CORRIDOR_BAYS)).contains(&w);
+    let o = (w - CORRIDOR_FIRST_BAY).rem_euclid(CORRIDOR_PERIOD);
+    if u == 4 {
+        if in_bays && o == 3 && v == 2 {
+            return Some(("minecraft:glass", None));
+        }
+        return Some(("minecraft:stone", None));
+    }
+    if u == 5 {
+        return Some(if in_bays {
+            ("minecraft:air", None)
+        } else {
+            ("minecraft:stone", None)
+        });
+    }
+    if in_bays {
+        let baffle = (o == 2 && (u == 1 || u == 2)) || (o == 5 && (u == 2 || u == 3));
+        if baffle {
+            return Some(("minecraft:stone", None));
+        }
+        if o == 1 && u == 2 && v == sv - 2 {
+            return Some(("minecraft:lantern", LANTERN));
+        }
+    }
+    if w == corridor_bay(CORRIDOR_BAYS) + 1 && u == 2 && v == sv - 2 {
+        return Some(("minecraft:lantern", LANTERN));
+    }
+    // The chest at the far end: what the end room holds, and what a body
+    // arriving there looks at.
+    if w == sw - 2 && u == 2 && v == 1 {
+        return Some(("minecraft:barrel", None));
+    }
+    Some(("minecraft:air", None))
+}
+
+/// **The anchors that centre a volume rather than stand a body** — the loop's
+/// slab and its landing, each at the passage's mid-height so `± [1, 1, 0]` is
+/// exactly the open cross-section. They hang in air by design, so they are held
+/// to air and to an open cross-section, not to a floor.
+const VOLUME_ANCHORS: &[Anchor] = &[
+    Anchor {
+        name: "anchor/long-gallery-slab",
+        pos: long_gallery_cell(2, 2, corridor_bay(2)),
+        facing: None,
+        trigger_block: None,
+        note: "the mouth of the long gallery's bay 2, mid-height: the loop's slab is this cell \
+               ± [1, 1, 0], exactly the passage's open cross-section",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-landing",
+        pos: long_gallery_cell(2, 2, corridor_bay(1)),
+        facing: None,
+        trigger_block: None,
+        note: "the mouth of the long gallery's bay 1, one bay back toward the porch: where a body \
+               crossing the slab is put down",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-lamp-0",
+        pos: long_gallery_cell(1, 3, corridor_bay(0) + 3),
+        facing: None,
+        trigger_block: None,
+        note:
+            "under the long gallery's roof in bay 0: where the first crossing hangs a second lamp",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-lamp-1",
+        pos: long_gallery_cell(1, 3, corridor_bay(1) + 3),
+        facing: None,
+        trigger_block: None,
+        note: "the same cell of bay 1",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-lamp-2",
+        pos: long_gallery_cell(1, 3, corridor_bay(2) + 3),
+        facing: None,
+        trigger_block: None,
+        note: "the same cell of bay 2",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-lamp-3",
+        pos: long_gallery_cell(1, 3, corridor_bay(3) + 3),
+        facing: None,
+        trigger_block: None,
+        note: "the same cell of the end room, where a bay 3 would hang it",
+        role: None,
+    },
+];
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(out) = args.next() else {
         eprintln!(
             "usage: gallery-prefab-gen <out_dir> [--skins <skins_dir>] \
-              [--design <design_dir>]   \
+              [--design <design_dir>] [--textures <textures_dir>]   \
              (a BUILD directory — spec-0039 §6 commits no generated bytes)"
         );
         std::process::exit(2);
     };
     let mut skins: Option<String> = None;
     let mut design: Option<String> = None;
+    let mut textures: Option<String> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--skins" => skins = args.next(),
             "--design" => design = args.next(),
+            "--textures" => textures = args.next(),
             other => {
                 eprintln!("gallery-prefab-gen: unknown argument `{other}`");
                 std::process::exit(2);
@@ -3250,6 +3630,7 @@ fn main() {
     write_yard(out);
     write_quay(out);
     write_bank(out);
+    write_rig(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.
@@ -3262,4 +3643,156 @@ fn main() {
     if let Some(d) = design {
         write_design(Path::new(&d));
     }
+    // The texture images, for the same reason again (spec-0084 §7).
+    if let Some(t) = textures {
+        write_textures(Path::new(&t));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The sentinel's rig (spec-0082 §10)
+// ---------------------------------------------------------------------------
+
+/// The gallery's one rig: `rig/gallery-sentinel`, the assembly that stands on
+/// `anchor/plinth`.
+///
+/// Four parts, so every clip role an assembly has is written: a base, a body,
+/// a head and a stone hammer. `idle` loops a sway, `windup` lifts the hammer
+/// overhead, `strike` brings it down flat on the floor round the plinth — a
+/// 3 × 3 slab, the footprint the hall's landing box is declared under — and
+/// `retract` sinks the whole statue below the floor. `sweep` and `hover` are
+/// strikes only the probes play.
+///
+/// Written through `delvewright_dsl::rig::Rig`, the type the engine parses, so
+/// a field this generator could misspell is a field the compiler would refuse
+/// it for.
+const RIG_ID: &str = "gallery-sentinel";
+
+fn write_rig(out: &Path) {
+    use delvewright_dsl::rig::{self, Clip, PartKind, Rig, RigPart, RigProvenance, Transform};
+    let t = |translation: [f64; 3], scale: [f64; 3]| Transform {
+        translation,
+        left_rotation: [0.0, 0.0, 0.0, 1.0],
+        scale,
+        right_rotation: [0.0, 0.0, 0.0, 1.0],
+    };
+    // The three parts that do not swing, raised by `dy`.
+    let figure = |dy: f64| {
+        vec![
+            t([-0.5, dy, -0.5], [1.0, 1.0, 1.0]),
+            t([-0.45, dy + 1.0, -0.45], [0.9, 1.0, 0.9]),
+            t([-0.3, dy + 2.0, -0.3], [0.6, 0.6, 0.6]),
+        ]
+    };
+    let with_hammer = |dy: f64, hammer: Transform| {
+        let mut f = figure(dy);
+        f.push(hammer);
+        f
+    };
+    // The hammer hanging at the statue's side, held overhead, and laid flat.
+    let hanging = |sway: f64| t([0.55, 0.2 + sway, -0.15], [0.3, 1.4, 0.3]);
+    let raised = |lift: f64| t([0.55, 1.6 + lift, -0.15], [0.3, 1.4, 0.3]);
+    let mut clips = std::collections::BTreeMap::new();
+    clips.insert(
+        "idle".to_string(),
+        Clip {
+            ticks_per_frame: 10,
+            looping: true,
+            frames: vec![
+                with_hammer(0.0, hanging(0.0)),
+                with_hammer(0.0, hanging(0.1)),
+            ],
+        },
+    );
+    clips.insert(
+        "windup".to_string(),
+        Clip {
+            ticks_per_frame: 4,
+            looping: false,
+            frames: vec![with_hammer(0.0, raised(0.0)), with_hammer(0.0, raised(0.4))],
+        },
+    );
+    clips.insert(
+        "strike".to_string(),
+        Clip {
+            ticks_per_frame: 2,
+            looping: false,
+            frames: vec![
+                with_hammer(0.0, t([0.55, 1.0, 0.2], [0.3, 0.3, 1.4])),
+                with_hammer(0.0, t([-1.5, 0.0, -1.5], [3.0, 0.3, 3.0])),
+            ],
+        },
+    );
+    clips.insert(
+        "retract".to_string(),
+        Clip {
+            ticks_per_frame: 5,
+            looping: false,
+            frames: vec![with_hammer(-3.0, t([0.55, -2.8, -0.15], [0.3, 1.4, 0.3]))],
+        },
+    );
+    // Two strikes no step of the primary plays, for the probes that refuse a
+    // blow and its limb disagreeing (spec-0082 §5.4 shape 2): `sweep` lays the
+    // hammer out long in front of the statue, five cells of floor under it;
+    // `hover` brings the 3 x 3 slab down only to a block over the floor.
+    clips.insert(
+        "sweep".to_string(),
+        Clip {
+            ticks_per_frame: 2,
+            looping: false,
+            frames: vec![
+                with_hammer(0.0, t([0.55, 1.0, 0.2], [0.3, 0.3, 1.4])),
+                with_hammer(0.0, t([-0.5, 0.0, 0.5], [1.0, 0.3, 5.0])),
+            ],
+        },
+    );
+    clips.insert(
+        "hover".to_string(),
+        Clip {
+            ticks_per_frame: 2,
+            looping: false,
+            frames: vec![
+                with_hammer(0.0, t([0.55, 1.0, 0.2], [0.3, 0.3, 1.4])),
+                with_hammer(0.0, t([-1.5, 1.2, -1.5], [3.0, 0.3, 3.0])),
+            ],
+        },
+    );
+    let part = |id: &str, block: &str| RigPart {
+        id: id.to_string(),
+        kind: PartKind::Block,
+        block: block.to_string(),
+        rest: None,
+    };
+    let r = Rig {
+        rig_version: rig::RIG_VERSION,
+        parts: vec![
+            part("base", "minecraft:polished_deepslate"),
+            part("body", "minecraft:deepslate_tiles"),
+            part("head", "minecraft:chiseled_deepslate"),
+            part("hammer", "minecraft:polished_blackstone"),
+        ],
+        clips,
+        provenance: RigProvenance {
+            generator: "prefabs/gallery-generator".to_string(),
+            source: "original".to_string(),
+            spdx: "GPL-3.0-or-later".to_string(),
+        },
+    };
+    let issues = rig::check(&r);
+    assert!(
+        issues.is_empty(),
+        "{RIG_ID}: the rig breaks a rig rule the engine refuses with DW0935: {issues:?}"
+    );
+    let dir = out.join(rig::RIGS_DIR).join(RIG_ID);
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("create {}: {e}", dir.display()));
+    let path = dir.join(rig::RIG_FILE);
+    let mut text = serde_json::to_string_pretty(&r).expect("a rig serializes");
+    text.push('\n');
+    std::fs::write(&path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    println!(
+        "wrote {} ({} part(s), {} clip(s))",
+        path.display(),
+        r.parts.len(),
+        r.clips.len()
+    );
 }

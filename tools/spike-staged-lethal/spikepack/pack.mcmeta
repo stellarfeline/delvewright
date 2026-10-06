@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "Delvewright SPIKE - a lethal volume gated on a party score (1.21.11). Research only; never shipped.",
+    "min_format": [94, 1],
+    "max_format": [94, 1]
+  }
+}

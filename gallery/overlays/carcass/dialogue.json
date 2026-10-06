@@ -1,0 +1,163 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/carcass-greeting",
+            "options": [
+              {
+                "label": "What is it?",
+                "next": "dlg/carcass-outside"
+              },
+              {
+                "label": "Show me another hour.",
+                "next": "dlg/carcass-hours"
+              },
+              {
+                "label": "And other weather.",
+                "next": "dlg/carcass-weather"
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/ask-the-keeper",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "I will walk it, then."
+              }
+            ],
+            "text": "It lay down here when the water went, and the mud has had it ever since. There is a way into it on this side, and a stair up its other flank."
+          },
+          {
+            "id": "dlg/carcass-outside",
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/carcass-greeting"
+              }
+            ],
+            "text": "Nobody asked it. Go in through the wound and look, then climb the stair onto its back."
+          },
+          {
+            "id": "dlg/carcass-hours",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "time": {
+                      "sun": "rising"
+                    },
+                    "type": "set-time"
+                  }
+                ],
+                "label": "First light.",
+                "next": "dlg/carcass-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": {
+                      "sun": "high"
+                    },
+                    "type": "set-time"
+                  }
+                ],
+                "label": "The top of the day.",
+                "next": "dlg/carcass-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": {
+                      "sun": "setting"
+                    },
+                    "type": "set-time"
+                  }
+                ],
+                "label": "The light going.",
+                "next": "dlg/carcass-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": {
+                      "moon": "just-risen"
+                    },
+                    "type": "set-time"
+                  }
+                ],
+                "label": "After dark.",
+                "next": "dlg/carcass-hours"
+              },
+              {
+                "effects": [
+                  {
+                    "time": {
+                      "phase": "waxing-crescent",
+                      "sun": "just-set"
+                    },
+                    "type": "set-time"
+                  }
+                ],
+                "label": "A thin moon at sundown.",
+                "next": "dlg/carcass-hours"
+              },
+              {
+                "label": "Enough.",
+                "next": "dlg/carcass-greeting"
+              }
+            ],
+            "text": "Name one. The mountains hold whatever light you ask for."
+          },
+          {
+            "id": "dlg/carcass-weather",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "type": "set-weather",
+                    "weather": "clear"
+                  }
+                ],
+                "label": "Clear.",
+                "next": "dlg/carcass-weather"
+              },
+              {
+                "effects": [
+                  {
+                    "type": "set-weather",
+                    "weather": "rain"
+                  }
+                ],
+                "label": "Rain.",
+                "next": "dlg/carcass-weather"
+              },
+              {
+                "effects": [
+                  {
+                    "type": "set-weather",
+                    "weather": "thunder"
+                  }
+                ],
+                "label": "Thunder.",
+                "next": "dlg/carcass-weather"
+              },
+              {
+                "label": "Enough.",
+                "next": "dlg/carcass-greeting"
+              }
+            ],
+            "text": "Ask, and it comes over the rim."
+          }
+        ],
+        "npc": "npc/carcass-keeper",
+        "root": "dlg/carcass-greeting"
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "dialogue"
+}

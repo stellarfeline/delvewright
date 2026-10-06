@@ -275,23 +275,38 @@ fn a_player_scoped_datum_needs_an_acting_player() {
         "`on_death` runs as the dying player, so a per-player write is legal: {d:#?}"
     );
 
-    // The scheduler seam: a `sequence` step writes a per-player datum with no
+    // The scheduler seam: a step of a timeline started from a scheduler-only
+    // bundle (here a `move-npc`'s `on_arrive`) writes a per-player datum with no
     // player to write it to — the same seam `DW0357` polices for `carrier: one`.
-    let doc = quests_doc()
-        .replace(
+    let player = |doc: String| {
+        doc.replace(
             r#"{ "id": "state/ride", "scope": "party" }"#,
             r#"{ "id": "state/ride", "scope": "player" }"#,
         )
-        .replace(
-            r#"{ "type": "set-state", "state": "state/ride", "value": 1 },"#,
-            r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
-              { "type": "set-state", "state": "state/ride", "value": 1 } ] } ] },"#,
-        );
+    };
+    let doc = player(quests_doc()).replace(
+        r#"{ "type": "set-state", "state": "state/ride", "value": 1 },"#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
+              "on_arrive": [ { "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
+              { "type": "set-state", "state": "state/ride", "value": 1 } ] } ] } ] },"#,
+    );
     let d = check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
             .any(|x| x.code == "DW0503" && x.message.contains("`sequence` step")),
         "a scheduled write of a per-player datum is DW0503: {d:#?}"
+    );
+    // A timeline started from a beat a player completes carries that player
+    // (spec-0085 §3.2): the same write in its step is legal.
+    let doc = player(quests_doc()).replace(
+        r#"{ "type": "set-state", "state": "state/ride", "value": 1 },"#,
+        r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
+              { "type": "set-state", "state": "state/ride", "value": 1 } ] } ] },"#,
+    );
+    let d = check_campaign(&campaign_with(&doc, None));
+    assert!(
+        !d.iter().any(|x| x.code == "DW0503"),
+        "the timeline carries its actor: {d:#?}"
     );
 }
 

@@ -202,24 +202,39 @@ impl StrandBinding {
 /// its height, so a perched or partially floored body is never out of reach by a
 /// half block the model does not carry.
 pub(crate) fn strikes(world: &World, p: [i32; 3], m: [i32; 3], w: f64, h: f64) -> bool {
+    let half = w / 2.0;
+    eye_reaches_box(
+        world,
+        p,
+        [
+            f64::from(m[0]) + 0.5 - half,
+            f64::from(m[1]),
+            f64::from(m[2]) + 0.5 - half,
+        ],
+        [
+            f64::from(m[0]) + 0.5 + half,
+            f64::from(m[1]) + 1.0 + h,
+            f64::from(m[2]) + 0.5 + half,
+        ],
+    )
+}
+
+/// **The one strike-reach measure**: whether a player standing in cell `p`
+/// holds an eye within [`STRIKE_REACH`] of the box `lo..hi` — the eye at the
+/// cell's centre, [`PLAYER_EYE_HEIGHT`] over the floor the model gives the
+/// cell, the distance to the nearest point of the box. Read by `DW0924` here
+/// and by `DW0937` (`compiler::assembly`), so the two can never disagree about
+/// what a blow reaches.
+pub fn eye_reaches_box(world: &World, p: [i32; 3], lo: [f64; 3], hi: [f64; 3]) -> bool {
     let eye = [
         f64::from(p[0]) + 0.5,
         world.feet_y(p) + PLAYER_EYE_HEIGHT,
         f64::from(p[2]) + 0.5,
     ];
-    let half = w / 2.0;
     let gap = |e: f64, lo: f64, hi: f64| (lo - e).max(e - hi).max(0.0);
-    let dx = gap(
-        eye[0],
-        f64::from(m[0]) + 0.5 - half,
-        f64::from(m[0]) + 0.5 + half,
-    );
-    let dz = gap(
-        eye[2],
-        f64::from(m[2]) + 0.5 - half,
-        f64::from(m[2]) + 0.5 + half,
-    );
-    let dy = gap(eye[1], f64::from(m[1]), f64::from(m[1]) + 1.0 + h);
+    let dx = gap(eye[0], lo[0], hi[0]);
+    let dy = gap(eye[1], lo[1], hi[1]);
+    let dz = gap(eye[2], lo[2], hi[2]);
     (dx * dx + dy * dy + dz * dz).sqrt() <= STRIKE_REACH
 }
 

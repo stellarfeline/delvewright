@@ -44,11 +44,14 @@ import {
   seatAtRespawn,
   stakesDropped,
   tableAnchor,
+  type Box,
   type DeathPlan,
   type GateTerm,
   type LethalTrial,
   type LethalVolume,
   type StakeRule,
+  volumeGateVerdict,
+  volumeIsStaged,
 } from "../src/death-loop.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
 import { createRequire } from "node:module";
@@ -67,6 +70,7 @@ function planDoc(): Record<string, unknown> {
         message: "The stone floor gives way beneath you.",
         message_key: "lethal.the-drop.message",
         damage_type: "minecraft:fall",
+        gate: { terms: [] },
       },
     ],
     on_death: {
@@ -142,6 +146,7 @@ const VOLUME: LethalVolume = {
   message: "The stone floor gives way beneath you.",
   messageKey: "lethal.the-drop.message",
   damageType: "minecraft:fall",
+  gate: { terms: [] },
 };
 
 function stakeRule(over: Partial<StakeRule> = {}): StakeRule {
@@ -889,6 +894,8 @@ test("the binding counts what was really examined", () => {
     forfeitsExamined: 1,
     seatsMatched: 1,
     walksBack: 1,
+    stagedVolumes: 0,
+    stagedLiveAtTrial: 0,
   });
   assert.deepEqual(deathLoopBindingFailures(b), []);
 });
@@ -1357,4 +1364,82 @@ test("a blocked walk in asks for the sill a player jumps to, nearest the volume 
   assert.deepEqual(got[0], [31, 68, 80], "the sill first: nearest the volume, the smallest climb");
   assert.ok(!got.some((c) => c[0] <= 30), "nothing no nearer the volume than the body already is");
   assert.deepEqual(wayInCandidates([30, 67, 79], UNDERTIDE, () => false), []);
+});
+
+// --- spec-0088: a volume live from a story stage -----------------------------
+
+test("a volume row without `gate` is refused: a staged volume cannot be told from one always live", () => {
+  const doc = planDoc();
+  const volumes = doc["lethal_volumes"] as Record<string, unknown>[];
+  delete volumes[0]!["gate"];
+  assert.throws(() => parseDeathPlan(doc), (e: unknown) => {
+    assert.ok(e instanceof DeathPlanParseError);
+    assert.equal(e.pointer, "/lethal_volumes/0/gate");
+    assert.match(e.message, /always kills/);
+    return true;
+  });
+});
+
+test("a volume's gate reads as the conjunction of its terms, and an empty gate is open", () => {
+  const doc = planDoc();
+  const volumes = doc["lethal_volumes"] as Record<string, unknown>[];
+  const staged = { objective: "dw.f_lid_fell", holder: "#party", min: 1, max: 1, negate: false };
+  volumes[0]!["gate"] = { terms: [staged] };
+  const plan = parseDeathPlan(doc);
+  const v = plan.volumes[0]!;
+  assert.equal(volumeIsStaged(v), true);
+  assert.equal(volumeGateVerdict(v, () => true).kind, "open");
+  const shut = volumeGateVerdict(v, () => false);
+  assert.equal(shut.kind, "shut");
+  assert.match(shut.kind === "shut" ? shut.why : "", /its gate reads `dw\.f_lid_fell`/);
+  assert.equal(volumeGateVerdict(v, () => undefined).kind, "unread");
+  volumes[0]!["gate"] = { terms: [] };
+  const always = parseDeathPlan(doc).volumes[0]!;
+  assert.equal(volumeIsStaged(always), false);
+  assert.equal(volumeGateVerdict(always, () => undefined).kind, "open");
+});
+
+test("a staged volume shut at its trial is stated, counted apart, and exercises nothing", () => {
+  const doc = planDoc();
+  const volumes = doc["lethal_volumes"] as Record<string, unknown>[];
+  volumes[0]!["gate"] = {
+    terms: [{ objective: "dw.f_cold", holder: "#party", min: 1, max: 1, negate: true }],
+  };
+  const plan = parseDeathPlan(doc);
+  const t = openLethalTrial(plan.volumes[0]!, plan.volumes[0]!.region.lo, []);
+  t.notLiveAtTrial = "its gate reads `dw.f_cold` for #party NOT in 1, which does not hold";
+  const binding = deathLoopBinding(plan, [t]);
+  assert.equal(binding.stagedVolumes, 1);
+  assert.equal(binding.stagedLiveAtTrial, 0);
+  assert.equal(binding.volumesEntered, 0);
+  const stage = deathLoopStage({
+    enabled: true,
+    disabledReason: "",
+    pathProven: true,
+    interruption: undefined,
+    skipReason: undefined,
+    binding,
+    trials: [t],
+    trialsFinished: 1,
+  });
+  assert.equal(stage.passed, false, "a run that exercised none of its volumes is never a pass");
+  assert.ok(
+    stage.findings.some((f) => /was not live at its trial/.test(f) && /dw\.f_cold/.test(f)),
+    JSON.stringify(stage.findings),
+  );
+});
+
+test("a blocked walk in reaches a rim three courses up, which the pathfinder walks to", () => {
+  // The gallery's lidded pit (spec-0088): its bottom is at the hall floor's own
+  // height inside the terrace annex, so the placement table's lip is the hall
+  // floor beside the annex at [8, 67, 3], and the way in is the annex's top at
+  // y 70, round the hole the beat opened over [8, 67, 5].
+  const pit: Box = { lo: [8, 67, 5], hi: [8, 67, 5] };
+  const rim = new Set(["7,70,5", "9,70,5", "8,70,4", "8,70,6", "8,67,3"]);
+  const got = wayInCandidates([8, 67, 3], pit, (c) => rim.has(c.join(",")));
+  assert.ok(got.length > 0, "a rim cell three courses up is a way in");
+  assert.ok(
+    got.every((c) => c[1] === 70),
+    `only the rim is nearer the volume than the lip: ${JSON.stringify(got)}`,
+  );
 });

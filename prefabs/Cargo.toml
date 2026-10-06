@@ -36,6 +36,7 @@ members = [
     "invariants",
     "island-generator",
     "island-terrain-generator",
+    "rig-generator",
     "tidal-keep-generator",
 ]
 

@@ -118,22 +118,22 @@
       "kind": "pov"
     },
     {
-      "area": "area/hall",
+      "area": "",
       "id": "pov/leg1/wp0",
       "kind": "pov"
     },
     {
-      "area": "area/hall",
+      "area": "",
       "id": "pov/leg1/wp1",
       "kind": "pov"
     },
     {
-      "area": "area/hall",
+      "area": "",
       "id": "pov/leg1/wp2",
       "kind": "pov"
     },
     {
-      "area": "area/hall",
+      "area": "",
       "id": "pov/leg1/wp3",
       "kind": "pov"
     },
@@ -148,6 +148,121 @@
       "kind": "pov"
     },
     {
+      "area": "",
+      "id": "pov/leg10/wp10",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp11",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp12",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp13",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp14",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp15",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp16",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp17",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp18",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp19",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp20",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp21",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp22",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp23",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp24",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp7",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp8",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp9",
+      "kind": "pov"
+    },
+    {
       "area": "area/hall",
       "id": "pov/leg11/wp0",
       "kind": "pov"
@@ -159,42 +274,362 @@
     },
     {
       "area": "area/hall",
+      "id": "pov/leg11/wp10",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp11",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp12",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp13",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp14",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp15",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp16",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp17",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp18",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp19",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp20",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp7",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp8",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp9",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp10",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp11",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp12",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp13",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp14",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp15",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp16",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp17",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp18",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp19",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp20",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp21",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp22",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp23",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp24",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp25",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp26",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp27",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp28",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp29",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp30",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp31",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp32",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp33",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp7",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp8",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp9",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp7",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg13/wp8",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg14/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg14/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg14/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg14/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg15/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg15/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg16/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg16/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "",
       "id": "pov/leg2/wp0",
       "kind": "pov"
     },
     {
-      "area": "area/hall",
+      "area": "",
       "id": "pov/leg3/wp0",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg3/wp1",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg3/wp2",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg3/wp3",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg3/wp4",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg3/wp5",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg3/wp6",
       "kind": "pov"
     },
     {
@@ -219,37 +654,42 @@
     },
     {
       "area": "area/hall",
-      "id": "pov/leg4/wp4",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg4/wp5",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg4/wp6",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg4/wp7",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
       "id": "pov/leg5/wp0",
       "kind": "pov"
     },
     {
       "area": "area/hall",
-      "id": "pov/leg5/wp1",
+      "id": "pov/leg6/wp0",
       "kind": "pov"
     },
     {
       "area": "area/hall",
-      "id": "pov/leg6/wp0",
+      "id": "pov/leg6/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg6/wp6",
       "kind": "pov"
     },
     {
@@ -260,11 +700,6 @@
     {
       "area": "area/hall",
       "id": "pov/leg7/wp1",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg7/wp10",
       "kind": "pov"
     },
     {
@@ -299,16 +734,6 @@
     },
     {
       "area": "area/hall",
-      "id": "pov/leg7/wp8",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg7/wp9",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
       "id": "pov/leg8/wp0",
       "kind": "pov"
     },
@@ -319,57 +744,7 @@
     },
     {
       "area": "area/hall",
-      "id": "pov/leg8/wp2",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg8/wp3",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg8/wp4",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg8/wp5",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg8/wp6",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg8/wp7",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg8/wp8",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
       "id": "pov/leg9/wp0",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg9/wp1",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg9/wp2",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg9/wp3",
       "kind": "pov"
     },
     {

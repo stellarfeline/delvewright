@@ -1,0 +1,53 @@
+{
+  "code": "DW0944",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/2/on_complete/-",
+      "value": {
+        "steps": [
+          {
+            "at_ticks": 0,
+            "effects": [
+              {
+                "effect": "minecraft:night_vision",
+                "hide_particles": true,
+                "seconds": 3,
+                "type": "give-effect"
+              },
+              {
+                "look_at": {
+                  "anchor": "anchor/exit"
+                },
+                "path": [
+                  {
+                    "anchor": "anchor/muster",
+                    "offset": [
+                      0,
+                      2,
+                      0
+                    ]
+                  },
+                  {
+                    "anchor": "anchor/vantage",
+                    "offset": [
+                      0,
+                      2,
+                      0
+                    ]
+                  }
+                ],
+                "seconds": 10,
+                "type": "cutscene"
+              }
+            ]
+          }
+        ],
+        "type": "sequence"
+      }
+    }
+  ],
+  "units": [],
+  "why": "One timeline grants three seconds of night vision and, on the same tick, holds the camera for a ten-second shot. The grant ends at tick 60 with the shot running to tick 200, and night vision winds down (it flickers through its last 200 ticks), so the player watches the light fail mid-shot. A granted sight effect outlasts any authored camera it overlaps, plus its wind-down: validation names the grant, the shot, the tick the grant ends and the `seconds` that would clear it. The hall's own cutscenes are top-level effects, so the probe adds the timeline. It declares no unit: `sequence`, `give-effect` and `cutscene` are bound. The remedy is a longer `seconds`, or a later `at_ticks`."
+}

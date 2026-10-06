@@ -80,6 +80,39 @@ gs=$(prop generator-settings); if [ -n "$gs" ]; then export GENERATOR_SETTINGS="
 # simulation-distance -> SIMULATION_DISTANCE).
 vd=$(prop view-distance);       if [ -n "$vd" ]; then export VIEW_DISTANCE="$vd";       fi
 sd=$(prop simulation-distance); if [ -n "$sd" ]; then export SIMULATION_DISTANCE="$sd"; fi
+# The delve's resource pack (spec-0084 §11, as spec-0009 and spec-0024 decided
+# it). Served, never installed into a player's own folder: every server that
+# boots this build points `resource-pack` at a URL the client can reach and
+# forwards the pack's SHA-1 verbatim.
+#   - RESOURCE_PACK set by the operator (a release bakes the Release asset URL
+#     and its SHA-1, spec-0024 §2) is obeyed as given.
+#   - Otherwise DELVE_RESOURCE_PACK_URL is the address a sidecar serves the
+#     build's resourcepack.zip at, templated where the server is started because
+#     a container cannot know its own public address; it is applied only when
+#     the build's manifest records a pack, with the SHA-1 read from that same
+#     manifest, so a build with no pack is never pointed at one.
+#   - The prompt is a JSON text component (spec-0009), defaulted only when unset.
+#   - `require-resource-pack=true` in the build's file is the campaign's own
+#     declaration and becomes RESOURCE_PACK_ENFORCE=TRUE, unless the operator
+#     named RESOURCE_PACK_ENFORCE, which is obeyed in either direction.
+manifest="${DELVE_MANIFEST:-/delve/manifest.json}"
+if [ -z "${RESOURCE_PACK:-}" ] && [ -n "${DELVE_RESOURCE_PACK_URL:-}" ] && [ -f "$manifest" ]; then
+  pack_sha1=$(sed -n '/^  "resource_pack_sha1": "\([0-9a-f]\{40\}\)",\{0,1\}$/{s//\1/;p;q;}' "$manifest")
+  if [ -n "$pack_sha1" ]; then
+    export RESOURCE_PACK="$DELVE_RESOURCE_PACK_URL" RESOURCE_PACK_SHA1="$pack_sha1"
+    echo "[init] Resource pack served at $RESOURCE_PACK (sha1 $RESOURCE_PACK_SHA1, from $manifest)"
+  else
+    echo "[init] $manifest records no resource pack - none is served"
+  fi
+fi
+if [ -n "${RESOURCE_PACK:-}" ] && [ -z "${RESOURCE_PACK_PROMPT:-}" ]; then
+  export RESOURCE_PACK_PROMPT='{"text":"This delve brings its own resource pack."}'
+fi
+rp=$(prop require-resource-pack)
+if [ "$rp" = "true" ] && [ -z "${RESOURCE_PACK_ENFORCE+set}" ]; then
+  export RESOURCE_PACK_ENFORCE=TRUE
+  echo "[init] The campaign requires its resource pack (require-resource-pack=true)"
+fi
 # Java heap. itzg's own ceiling is 1G, and a delve's structure templates live on
 # that heap: a campaign of 84 tiles plus 170 horizon templates threw
 # java.lang.OutOfMemoryError at 1G and never finished loading. The default

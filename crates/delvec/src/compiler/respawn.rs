@@ -514,7 +514,9 @@ fn site_effects(plan: &Plan) -> Vec<Sited> {
             | EffectRoot::ShortcutUnlock
             | EffectRoot::OnDeath
             | EffectRoot::ShopOffer
-            | EffectRoot::OnKill(_) => (Root::Ambient, Vec::new()),
+            | EffectRoot::OnKill(_)
+            | EffectRoot::AssemblyLand(_)
+            | EffectRoot::LoopCross(_) => (Root::Ambient, Vec::new()),
         };
         let id = bundle;
         bundle += 1;
@@ -886,6 +888,8 @@ mod tests {
                 ..Default::default()
             }),
             happening: None,
+            audience: None,
+            within: None,
             verb: Verb::MoveNpc {
                 npc: NpcId("npc/keeper".into()),
                 to: delvewright_dsl::Mark::at(AnchorId("anchor/door".into())),
@@ -906,6 +910,8 @@ mod tests {
             prompt: String::new(),
             rest_label: String::new(),
             save_label: String::new(),
+            rest_tooltip: None,
+            save_tooltip: None,
         }
     }
 

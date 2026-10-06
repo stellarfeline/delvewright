@@ -1,0 +1,21 @@
+{
+  "code": "DW0953",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/lethal_volumes/2/when",
+      "value": {
+        "requires_state": [
+          {
+            "op": "at-least",
+            "state": "state/tokens",
+            "value": 0
+          }
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the lidded pit staged on `state/tokens`, the purse each player holds for themselves. A volume's liveness is a fact about the place, so its gate has to be a fact about the party: a term one player satisfies and another does not would be a pit that kills one body and spares the one beside it, and the sweep's entity half has no player to read a per-player score from. Refused at the document, naming the volume and the datum, with the remedy — name a flag or a `party` datum, or leave `when` out. It declares no unit."
+}

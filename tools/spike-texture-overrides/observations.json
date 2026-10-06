@@ -1,0 +1,253 @@
+{
+  "asset_classes": {
+    "atlases": 15,
+    "blockstates": 1168,
+    "equipment": 44,
+    "font": 7,
+    "items": 1505,
+    "lang": 2,
+    "models": 3673,
+    "particles": 104,
+    "post_effect": 6,
+    "shaders": 93,
+    "texts": 4,
+    "textures": 3682,
+    "waypoint_style": 2
+  },
+  "binding": {
+    "asset_classes_counted": 10305,
+    "client_strings_asked": 10,
+    "client_strings_found": 10,
+    "watched_textures_asked": 13,
+    "watched_textures_present": 13
+  },
+  "chunky": {
+    "core": "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb.jar",
+    "entity_classes": [
+      "ArmorStand",
+      "Armored",
+      "BannerDesign",
+      "BeaconBeam",
+      "Book",
+      "CalibratedSculkSensorAmethyst",
+      "Campfire",
+      "ChickenEntity",
+      "CopperGolemEntity",
+      "CopperGolemStatueEntity",
+      "CoralFanEntity",
+      "CowEntity",
+      "Dyeable",
+      "Entity",
+      "FlameParticles",
+      "Geared",
+      "HangingSignEntity",
+      "HeadEntity",
+      "Lectern",
+      "LilyPadEntity",
+      "MooshroomEntity",
+      "PaintingEntity",
+      "PigEntity",
+      "PlayerEntity",
+      "Poseable",
+      "Saddleable",
+      "SheepEntity",
+      "SignEntity",
+      "SkullEntity",
+      "SporeBlossom",
+      "SquidEntity",
+      "StandingBanner",
+      "Variant",
+      "WallBanner",
+      "WallCoralFanEntity",
+      "WallHangingSignEntity",
+      "WallSignEntity"
+    ],
+    "layered_resource_pack_classes": [
+      "se/llbit/chunky/resources/LayeredResourcePacks$Entry.class",
+      "se/llbit/chunky/resources/LayeredResourcePacks$ResourcePack.class",
+      "se/llbit/chunky/resources/LayeredResourcePacks.class"
+    ],
+    "sha256": "79ea46233cfa4929e738c6074ff8aabf4f8a2e59cfe9925abc3888a782bad15c",
+    "texture_options": [
+      "-texture",
+      "-texture <FILE>        use FILE as the texture pack (must be a Zip file)",
+      "-textures",
+      "-textures <FILES>      use FILES as the texture packs (must be Zip files),"
+    ]
+  },
+  "client_jar": {
+    "bytes": 31152600,
+    "classes": 10291,
+    "entries": 28163,
+    "sha256": "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd",
+    "version_json": {
+      "build_time": "2025-12-09T12:20:42+00:00",
+      "id": "1.21.11",
+      "java_component": "java-runtime-delta",
+      "java_version": 21,
+      "name": "1.21.11",
+      "pack_version": {
+        "data_major": 94,
+        "data_minor": 1,
+        "resource_major": 75,
+        "resource_minor": 0
+      },
+      "protocol_version": 774,
+      "series_id": "main",
+      "stable": true,
+      "use_editor": false,
+      "world_version": 4671
+    }
+  },
+  "client_strings": {
+    " missing field, must declare both min_format and max_format": {
+      "exact": 1,
+      "within": 1
+    },
+    ", but is missing mandatory fields min_format and max_format": {
+      "exact": 1,
+      "within": 1
+    },
+    "downloads": {
+      "exact": 1,
+      "within": 1
+    },
+    "environment/celestial": {
+      "exact": 1,
+      "within": 1
+    },
+    "max_format": {
+      "exact": 1,
+      "within": 5
+    },
+    "min_format": {
+      "exact": 1,
+      "within": 5
+    },
+    "pack_format": {
+      "exact": 1,
+      "within": 2
+    },
+    "resourcepacks": {
+      "exact": 1,
+      "within": 4
+    },
+    "server_resource_pack": {
+      "exact": 1,
+      "within": 1
+    },
+    "textures/atlas/celestials.png": {
+      "exact": 1,
+      "within": 1
+    }
+  },
+  "moon_phase_textures": [
+    "assets/minecraft/textures/environment/celestial/moon/first_quarter.png",
+    "assets/minecraft/textures/environment/celestial/moon/full_moon.png",
+    "assets/minecraft/textures/environment/celestial/moon/new_moon.png",
+    "assets/minecraft/textures/environment/celestial/moon/third_quarter.png",
+    "assets/minecraft/textures/environment/celestial/moon/waning_crescent.png",
+    "assets/minecraft/textures/environment/celestial/moon/waning_gibbous.png",
+    "assets/minecraft/textures/environment/celestial/moon/waxing_crescent.png",
+    "assets/minecraft/textures/environment/celestial/moon/waxing_gibbous.png"
+  ],
+  "texture_census": {
+    "other": [],
+    "png": 3517,
+    "png_mcmeta": 165,
+    "total": 3682
+  },
+  "watched_textures": {
+    "assets/minecraft/textures/entity/zombie/drowned.png": {
+      "bytes": 426,
+      "size": [
+        64,
+        64
+      ]
+    },
+    "assets/minecraft/textures/entity/zombie/drowned_outer_layer.png": {
+      "bytes": 914,
+      "size": [
+        64,
+        64
+      ]
+    },
+    "assets/minecraft/textures/entity/zombie/zombie.png": {
+      "bytes": 700,
+      "size": [
+        64,
+        64
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/end_flash.png": {
+      "bytes": 1341,
+      "size": [
+        64,
+        64
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/moon/first_quarter.png": {
+      "bytes": 496,
+      "size": [
+        32,
+        32
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/moon/full_moon.png": {
+      "bytes": 497,
+      "size": [
+        32,
+        32
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/moon/new_moon.png": {
+      "bytes": 451,
+      "size": [
+        32,
+        32
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/moon/third_quarter.png": {
+      "bytes": 492,
+      "size": [
+        32,
+        32
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/moon/waning_crescent.png": {
+      "bytes": 466,
+      "size": [
+        32,
+        32
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/moon/waning_gibbous.png": {
+      "bytes": 499,
+      "size": [
+        32,
+        32
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/moon/waxing_crescent.png": {
+      "bytes": 472,
+      "size": [
+        32,
+        32
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/moon/waxing_gibbous.png": {
+      "bytes": 500,
+      "size": [
+        32,
+        32
+      ]
+    },
+    "assets/minecraft/textures/environment/celestial/sun.png": {
+      "bytes": 458,
+      "size": [
+        32,
+        32
+      ]
+    }
+  }
+}

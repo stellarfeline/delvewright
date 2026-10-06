@@ -10,9 +10,11 @@
 //! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
+//! - [`assembly`]: an assembly's hitbox, reach and strike judgements, and its emission (spec-0082).
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
 //! - [`atmosphere`]: a campaign's declared skies (spec-0080) — the attribute, paint and declaration refusals (`DW0928`–`DW0930`), the biome each atmosphere ships as, and the one writer of `fillbiome`.
 //! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
+//! - [`blind`]: a blinding beside a drop — the reach a `give-effect` of blindness or darkness owes the world it lands in (`DW0943`).
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
 //! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
 //! - [`blockstate`]: interned block states — the assembled world's block map holds one handle per cell, not one string.
@@ -53,11 +55,13 @@
 //! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
 //! - [`link`]: a teleport the route proof takes as a link — the one enumeration of links and gathers, and the cutscene and carry-edge checks (`DW0932`/`DW0933`/`DW0934`).
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
+//! - [`r#loop`]: an endless corridor (spec-0086) — the slab, the closed view, identical blocks and light, and the loop's seal and exercise (`DW0945`–`DW0950`).
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
 //! - [`muster`]: what a wave declares, phrased as questions the live bodies are asked.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
+//! - [`observer`]: a watching player is out of play everywhere — the positional-selector census a respawn wait owes (`DW0926`).
 //! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
 //! - [`png`]: the deterministic hand-rolled PNG writer.
@@ -82,6 +86,7 @@
 //! - [`surround`]: horizon surround generation — the tiles that dress the world outside the placed pieces.
 //! - [`teleport`]: the `teleport` verb's one compile-time obligation, and the ledger saying what it looked at.
 //! - [`textfit`]: on-screen text that does not fit what draws it (`DW0330`/`DW0331`).
+//! - [`textures`]: a delve wears its own textures — `world.textures[]` against the pinned client's census and the campaign's files (`DW0939`/`DW0940`/`DW0309`), the pack entries, and the comparison sheet (spec-0084).
 //! - [`timeline`]: per-effect-timeline gate state — the static half of the `close-gate` model (`DW0410`).
 //! - [`trap_trigger`]: a trap's trigger cell holds the block its trigger kind names (`DW0917`).
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
@@ -94,9 +99,11 @@
 pub mod affordance;
 pub mod analyze;
 pub mod assembled;
+pub mod assembly;
 pub mod atmos;
 pub mod atmosphere;
 pub mod batchstate;
+pub mod blind;
 pub mod blocking;
 pub mod blockout;
 pub mod blockstate;
@@ -137,12 +144,14 @@ pub mod lethal;
 pub mod light;
 pub mod link;
 pub mod load;
+pub mod r#loop;
 pub mod loot;
 pub mod mark;
 pub mod massing;
 pub mod muster;
 pub mod nav;
 pub(crate) mod nbtread;
+pub mod observer;
 pub mod onkill;
 pub mod plan;
 pub mod png;
@@ -167,6 +176,7 @@ pub mod strand;
 pub mod surround;
 pub mod teleport;
 pub mod textfit;
+pub mod textures;
 pub mod timeline;
 pub mod trap_trigger;
 pub mod traversal;

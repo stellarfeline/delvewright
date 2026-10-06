@@ -9,6 +9,7 @@ import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
 import {
   SUPPORTED_DEATH_PLAN_FORMAT,
+  deathLoopBinding,
   lethalTrialFailures,
   openLethalTrial,
   parseDeathPlan,
@@ -3767,6 +3768,7 @@ function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
         message: "The floor gives way.",
         message_key: null,
         damage_type: "minecraft:fall",
+        gate: { terms: [] },
       },
     ],
     on_death: { effects: 1, drops_stake: [] },
@@ -3801,6 +3803,7 @@ function westPitPlan(): ReturnType<typeof parseDeathPlan> {
         message: "The floor in the west corner is not a floor.",
         message_key: "lethal.west-pit.message",
         damage_type: "minecraft:fall",
+        gate: { terms: [] },
       },
     ],
     on_death: { effects: 1, drops_stake: [] },
@@ -4025,6 +4028,7 @@ function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
         message: "The floor in the west corner is not a floor.",
         message_key: "lethal.west-pit.message",
         damage_type: "minecraft:fall",
+        gate: { terms: [] },
       },
     ],
     on_death: { effects: 1, drops_stake: [] },
@@ -4292,7 +4296,7 @@ test("a drop beyond the fight's radius is not this fight's drop", async () => {
 
 // --- trigger steps: the bot does to the target what a player does ---------------
 
-import type { TriggerStep } from "../src/critical-path.ts";
+import type { LoopStep, TriggerStep } from "../src/critical-path.ts";
 
 /**
  * A fake server with one environment trigger's `interaction` hitbox at the
@@ -4845,6 +4849,7 @@ test("the death-loop walk back stages away a wave the death put back, before it 
       message: "The undertide took you.",
       messageKey: undefined,
       damageType: "minecraft:drown",
+      gate: { terms: [] },
     },
     [37, 60, 79],
     [],
@@ -4889,6 +4894,7 @@ test("the bounties a staged clear pays into a wagered purse are taken back befor
       message: "The undertide took you.",
       messageKey: undefined,
       damageType: "minecraft:drown",
+      gate: { terms: [] },
     },
     [37, 60, 79],
     [
@@ -4930,4 +4936,249 @@ test("the bounties a staged clear pays into a wagered purse are taken back befor
   assert.ok(
     executor.stagedBodies().some((r) => r.kind === "player" && /set back from 26 to 0/.test(r.why)),
   );
+});
+
+/**
+ * spec-0086 §6: a loop's slab. The fake server answers a walk toward a goal past
+ * the slab the way the pinned server does: the body reaches the slab, the
+ * physics tick reads it there, and a forced move by `answer` puts it back. A
+ * walk to any other goal arrives.
+ */
+class LoopFakeBot extends InteractFakeBot {
+  answer: [number, number, number] | null = [0, 0, -6];
+  moves = 0;
+  constructor() {
+    super();
+    this.entity.position = new FakeVec3(2.5, 67, 10.5);
+  }
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (...args: unknown[]): Promise<void> => {
+      const goal = args[0] as { x: number; y: number; z: number };
+      this.calls.push(`goto(${goal.x},${goal.y},${goal.z})`);
+      if (goal.z > 22) {
+        // Across the slab at z = 22: the body enters it, and the server answers.
+        this.entity.position = new FakeVec3(2.5, 67, 22.3);
+        this.emit("physicsTick");
+        if (this.answer) {
+          const [dx, dy, dz] = this.answer;
+          const p = this.entity.position;
+          this.entity.position = new FakeVec3(p.x + dx, p.y + dy, p.z + dz);
+          this.moves += 1;
+          this.emit("forcedMove");
+        }
+        await delay(30);
+        return;
+      }
+      this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+      this.emit("physicsTick");
+    },
+  };
+}
+
+const LOOP: LoopStep = {
+  action: "loop",
+  loop: "loop/gallery",
+  pos: [2, 67, 16],
+  cross: [2, 67, 22],
+  offset: [0, 0, -6],
+  times: 2,
+  transport: [2, 67, 16],
+};
+
+test("a loop step crosses, sees the exact offset, stops pathfinding, and repeats `times` times", async () => {
+  const bot = new LoopFakeBot();
+  const executor = attach(bot);
+  executor.useLoops([LOOP]);
+  await within("executor.exerciseLoop(LOOP)", executor.exerciseLoop(LOOP));
+  assert.equal(bot.moves, 2, "two moves seen");
+  // Every crossing aimed past the slab along z, and each move stopped the walk.
+  assert.equal(bot.calls.filter((c) => c === "goto(2,67,24)").length, 2, bot.calls.join(" "));
+  assert.ok(bot.pathfinderStops >= 2, `${bot.pathfinderStops} stop(s)`);
+  // …and the body is on the landing side, where the next leg begins.
+  assert.ok(bot.entity.position.z < 22, `bot at z ${bot.entity.position.z}`);
+});
+
+test("a loop step fails naming the loop and the delta when the move is not the offset", async () => {
+  const bot = new LoopFakeBot();
+  bot.answer = [0, 0, -5];
+  const executor = attach(bot);
+  await assert.rejects(
+    within("executor.exerciseLoop(wrong delta)", executor.exerciseLoop(LOOP)),
+    (e: unknown) =>
+      e instanceof Error &&
+      e.message.includes("loop/gallery") &&
+      e.message.includes("[0.000, 0.000, -5.000]") &&
+      e.message.includes("0 of 2"),
+  );
+});
+
+test("a loop step fails naming the count reached when no move comes", async () => {
+  const bot = new LoopFakeBot();
+  bot.answer = null;
+  const executor = attach(bot, { DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS: "200" });
+  await assert.rejects(
+    within("executor.exerciseLoop(no move)", executor.exerciseLoop(LOOP)),
+    (e: unknown) =>
+      e instanceof Error &&
+      e.message.includes("loop/gallery") &&
+      e.message.includes("no forced move") &&
+      e.message.includes("0 of 2"),
+  );
+});
+
+test("a forced move equal to a loop's offset during a plain walk fails that walk naming the loop", async () => {
+  const bot = new LoopFakeBot();
+  const executor = attach(bot);
+  executor.useLoops([LOOP]);
+  // A plain reach across the slab, after the proof read the loop released.
+  const reach: ReachStep = {
+    action: "reach",
+    objective: "obj/end",
+    anchor: "anchor/end",
+    pos: [2, 67, 41],
+    radius: 1,
+    completion: { kind: "cube", lo: [1, 66, 40], hi: [3, 68, 42] },
+  };
+  await assert.rejects(
+    within("executor.reach(across a holding loop)", executor.reach(reach)),
+    (e: unknown) => e instanceof Error && e.message.includes("loop/gallery") && e.message.includes("plain walk"),
+  );
+});
+
+// --- spec-0088: a volume live from a story stage -----------------------------
+
+import type { Box as DeathBox } from "../src/death-loop.ts";
+
+/**
+ * A drivable bot whose server answers the gate questions `askTerm` puts to it,
+ * from a scripted party scoreboard. An objective absent from the board leaves
+ * the question unanswered both ways — the shape of a server that said nothing.
+ */
+class GateAnsweringBot extends DrivableFakeBot {
+  private readonly board: Map<string, number | undefined>;
+  constructor(board: Map<string, number | undefined>) {
+    super();
+    this.board = board;
+  }
+  readonly asked: string[] = [];
+  chat(message: string): void {
+    const m =
+      /^\/execute (if|unless) score (\S+) (\S+) matches (-?\d*)(\.\.)?(-?\d*) run tellraw @s (.*)$/.exec(
+        message,
+      );
+    if (!m) return;
+    this.asked.push(message);
+    const [, kw, , objective, lo, dots, hi, json] = m;
+    const value = this.board.get(objective!);
+    if (value === undefined) return;
+    const min = lo === "" ? -Infinity : Number(lo);
+    const max = dots === undefined ? min : hi === "" ? Infinity : Number(hi);
+    const holds = value >= min && value <= max;
+    if (holds === (kw === "if")) {
+      const text = (JSON.parse(json!) as { text: string }).text;
+      setImmediate(() => this.emit("messagestr", text));
+    }
+  }
+}
+
+/** The one-volume plan, its volume staged on `flag/lid-fell`. */
+function stagedVolumePlan(): ReturnType<typeof parseDeathPlan> {
+  return parseDeathPlan({
+    format_version: SUPPORTED_DEATH_PLAN_FORMAT,
+    version: PLAN_VERSION,
+    campaign_id: "probe",
+    lethal_volumes: [
+      {
+        id: "lethal/the-pit",
+        region: { lo: [4, 65, 8], hi: [6, 65, 10] },
+        keep_out: { lo: [3, 64, 7], hi: [7, 65, 11] },
+        message: "The floor gives way.",
+        message_key: null,
+        damage_type: "minecraft:fall",
+        gate: {
+          terms: [
+            { objective: "dw.f_lid_fell", holder: "#party", min: 1, max: 1, negate: false },
+          ],
+        },
+      },
+    ],
+    on_death: { effects: 1, drops_stake: [] },
+    stakes: [],
+    placement: { seats: [], regions: [], rows: [] },
+    binding: {
+      lethal_volumes: 1,
+      on_death_effects: 1,
+      stakes: 0,
+      respawn_seats: 0,
+      placement_rows: 0,
+      unbound: false,
+      reason: null,
+    },
+  });
+}
+
+/** The navigator's view of the exclusion, refreshed as a walk leg refreshes it. */
+async function excludedFor(bot: GateAnsweringBot): Promise<readonly DeathBox[]> {
+  const executor = attach(bot);
+  executor.useDeathPlan(stagedVolumePlan());
+  const peek = executor as unknown as {
+    refreshStagedExclusion(): Promise<void>;
+    lethalBoxes: readonly DeathBox[];
+  };
+  await peek.refreshStagedExclusion();
+  return peek.lethalBoxes;
+}
+
+test("a staged volume is excluded from a walk leg only while its gate reads open", async () => {
+  // Before the flip the server says the flag is clear: the leg may cross the cells.
+  const shut = new GateAnsweringBot(new Map([["dw.f_lid_fell", 0]]));
+  assert.deepEqual(await excludedFor(shut), [], "a dead volume is not excluded");
+  assert.ok(
+    shut.asked.some((a) => a.startsWith("/execute if score #party dw.f_lid_fell matches 1 ")),
+    `the term was put to the server as the clause the compiler wrote: ${JSON.stringify(shut.asked)}`,
+  );
+  // After the flip: the region is excluded.
+  const open = new GateAnsweringBot(new Map([["dw.f_lid_fell", 1]]));
+  assert.deepEqual(
+    (await excludedFor(open)).map((b) => b.lo),
+    [[4, 65, 8]],
+    "a live volume is excluded",
+  );
+});
+
+test("a staged volume whose gate the server does not answer is excluded as if live", async () => {
+  const silent = new GateAnsweringBot(new Map());
+  assert.deepEqual(
+    (await excludedFor(silent)).map((b) => b.lo),
+    [[4, 65, 8]],
+    "an unanswered term is the conservative direction",
+  );
+});
+
+test("the death-loop trial of a staged volume whose gate reads shut records not_live_at_trial", async () => {
+  const bot = new GateAnsweringBot(new Map([["dw.f_lid_fell", 0]]));
+  bot.entity.position = new FakeVec3(0.5, 65, 0.5);
+  const executor = attach(bot);
+  const plan = stagedVolumePlan();
+  executor.useDeathPlan(plan);
+  await within("executor.runDeathLoop()", executor.runDeathLoop());
+  const trials = executor.deathLoopTrials();
+  assert.equal(trials.length, 1);
+  const t = trials[0]!;
+  assert.match(t.notLiveAtTrial ?? "", /dw\.f_lid_fell/, "the term that shut it");
+  assert.equal(t.enteredVolume, false, "a shut volume is not entered");
+  assert.deepEqual(lethalTrialFailures(t), [], "not live is a stated fact, not a failure");
+  const binding = deathLoopBinding(plan, trials);
+  assert.equal(binding.stagedVolumes, 1);
+  assert.equal(binding.stagedLiveAtTrial, 0);
+  assert.equal(binding.volumesEntered, 0);
 });

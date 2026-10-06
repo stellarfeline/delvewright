@@ -1,0 +1,8 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "batches": []
+  },
+  "dsl_version": "0.35.0",
+  "stage": "world-edits"
+}

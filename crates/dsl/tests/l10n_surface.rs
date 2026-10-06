@@ -80,6 +80,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
         "water",
         NotPlayerVisible("a biome colour (`#rrggbb`), drawn, never read"),
     ),
+    // spec-0082: a clip name is an id local to the assembly's library rig.
+    ("Assembly", "initial", Reference),
     ("Boundary", "message", Inventoried),
     ("BranchDecl", "leads_to", Reference),
     ("CastBarks", "barks", Inventoried),
@@ -120,9 +122,54 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("ItemDrop", "name", Inventoried),
     ("KitItem", "item", Reference),
     ("KitItem", "name", Inventoried),
+    (
+        "LicenseEvidence",
+        "archived_proof",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "attribution",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "note",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "source",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "spdx",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
+    (
+        "LicenseEvidence",
+        "url",
+        NotPlayerVisible(
+            "a licence record (spec-0084): read by the build's pack note and a release's aggregated attribution, never drawn in the game",
+        ),
+    ),
     ("LethalVolume", "message", Inventoried),
     ("LethalVolume", "shown_by", Reference),
     ("Forfeit", "kind", Machine),
+    ("QuestEffect", "clip", Reference),
+    ("StrikeStep", "strike", Reference),
+    ("StrikeStep", "windup", Reference),
     ("Shop", "title", Inventoried),
     ("Shop", "marker_item", Reference),
     ("ShopOffer", "label", Inventoried),
@@ -189,11 +236,14 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("QuestEffect", "effect", Reference),
     ("QuestEffect", "falling_block", Reference),
     ("QuestEffect", "item", Reference),
+    ("QuestEffect", "particle", Reference),
     ("QuestEffect", "name", Inventoried),
     ("QuestEffect", "projectile", Reference),
     ("QuestEffect", "prompt", Inventoried),
     ("QuestEffect", "rest_label", Inventoried),
+    ("QuestEffect", "rest_tooltip", Inventoried),
     ("QuestEffect", "save_label", Inventoried),
+    ("QuestEffect", "save_tooltip", Inventoried),
     ("QuestEffect", "sealed_hint", Inventoried),
     ("QuestEffect", "sound", Reference),
     ("QuestEffect", "text", Inventoried),
@@ -226,6 +276,8 @@ const SURFACE: &[(&str, &str, Kind)] = &[
                           never rendered (spec-0031)",
         ),
     ),
+    ("TextureOverride", "id", Reference),
+    ("TextureOverride", "replaces", Reference),
     ("Trigger", "type", Machine),
     ("TriggerOn", "on", Machine),
     ("WaveMob", "entity", Reference),
