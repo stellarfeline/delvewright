@@ -517,12 +517,37 @@ crossing counts 1 and lights a second lamp in every bay and the end room at once
 `obj/walk-the-long-gallery` waits at the gallery's far end, so the critical path
 carries a `loop` step that crosses twice.
 
-The build publishes `validation/loop-gate.json`: one loop, its 15 eyes, a span of
-325 cells closed by geometry, 144 visible cells compared as blocks and as light at
-two skies over 10 configurations, and one exercise step. The eight probes above
+The build publishes `validation/loop-gate.json`. Its row for this loop holds 24
+eyes (the landing's standing eyes and the catch band, where a walking body is
+when the poll finds it), a span of 325 cells, 155 visible cells, all of them in
+the near field and compared as blocks and as light at two skies over 10
+configurations, no far differences, and one exercise step. The eight probes above
 whose names start with a landing, a lamp, a light, a slab, a crossing, a release,
 a figure and a hall are each this gallery plus one edit, and each is refused by
 the rule that edit breaks.
+
+## The long hall
+
+In an area of its own, `area/long-hall` (`prefab/gallery-long-hall`), stands one
+straight hall of identical 6-block bays with no fog. A soul lantern and a pillar
+pair mark every bay, and a glowstone lintel lights the exit into a room at the
+far end. `loop/the-hall-that-runs-on` stands across one bay's mouth and returns
+a crossing body one bay back, so the lit exit, 54 blocks past the slab, stays
+where it was (spec-0090). The gallery's long gallery closes its view inside one
+bay and sees no far field; this hall is where the far field binds. Past the near
+field of a 6-block jump (10.6 blocks), its cells may differ from their images,
+and the build measures how far the jump moves each one on screen against the
+1.2852° threshold. The binding line states the count of far differences admitted
+and the largest shift (0.7574°). No route enters the area, so the route proof
+reports the loop as one the forced route never meets (`DW0950`, an advisory),
+and its world proofs run like every loop's.
+
+Two probes show what the far field refuses: `an-exit-too-near-to-hide` (a wall
+across the hall 36 blocks past the slab, so the hall ends in view too near for a
+6-block jump to hide; `DW0947`, raised at the world-edits replay, which prints
+its loop binding first) and `a-figure-down-the-long-hall` (the hall moth posted 16
+blocks past the slab, past the near field but moved too far by the jump;
+`DW0947`).
 
 ## The fight, and the floor it needs
 

@@ -123,7 +123,7 @@ A declared volume's tiling (spec-0086 §4.6) is judged in the near field. A volu
 
 ## 9. The gallery
 
-**Authored**, under spec-0039. The gallery's own loop sees no far field: its view closes inside one bay, and its binding says `far-field differences 0`. That zero is reported, not passed: the far field is bound by the gallery's long hall (`area/long-hall`, `prefab/gallery-long-hall`, `loop/the-hall-that-runs-on`), a straight station-4 hall with a 6-block offset and a lit exit 54 blocks past its slab, whose binding admits a non-zero count of far differences. Probes, each the gallery plus one declared edit: `an-exit-too-near-to-hide` (the long hall's end brought 42 blocks past the slab, `DW0947` far field) and `a-figure-down-the-long-hall` (an NPC posted 30 blocks down it, `DW0947` far body).
+**Authored**, under spec-0039. The gallery's own loop sees no far field: its view closes inside one bay, and its binding says `far-field differences 0`. That zero is reported, not passed: the far field is bound by the gallery's long hall (`area/long-hall`, `prefab/gallery-long-hall`, `loop/the-hall-that-runs-on`), a straight station-4 hall with a 6-block offset and a lit exit 54 blocks past its slab, whose binding admits a non-zero count of far differences. No route enters that area, so the route proof reports its loop as unmet (`DW0950`, an advisory); its world proofs run like every loop's. Probes, each the gallery plus one declared edit: `an-exit-too-near-to-hide` (a wall across the long hall 36 blocks past the slab, `DW0947` far field, raised at the world-edits replay) and `a-figure-down-the-long-hall` (the hall moth posted 16 blocks past the slab, `DW0947` far body).
 
 ## 10. What the engine does not check, by name
 
