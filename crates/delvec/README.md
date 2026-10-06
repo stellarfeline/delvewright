@@ -102,7 +102,7 @@ behind the verbs above, and `grammar`, `schem`, `admit`, `orchestrator` and
 
 ```toml
 [dependencies]
-delvec = "1.7"
+delvec = "1.8"
 ```
 
 ```rust
