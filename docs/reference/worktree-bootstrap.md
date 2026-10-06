@@ -15,7 +15,10 @@ reader use it, and they read different things:
   `crates/delvec/tests/common/pinned.rs`: it takes `versions.toml`
   `[content].sha`, reads that commit out of the clone's git object store
   (git-lfs objects out of its own LFS store), and materialises it once into
-  `target/tmp/pinned-content/<sha>/`. The revision the clone's working tree
+  `target/tmp/pinned-content/<sha>/`, under a lock file every test process
+  takes, renamed into place only once its manifest is written. A directory
+  there without a manifest — what the CI cache's cleaner leaves of it, every
+  file deleted — is replaced, never judged. The revision the clone's working tree
   sits on never reaches a test, so a test run is a property of this
   repository's revision alone. The clone must hold the pinned commit and its
   LFS objects (`git -C campaigns fetch origin && git -C campaigns lfs fetch
