@@ -2297,3 +2297,10 @@ publishes an **ephemeral** loopback port and never takes the 25565 mutex. The
 compiler consumes two of its numbers, never the rig: the fastest horizontal
 tick and the fall law's limit, held as `dsl::metrics::POLL_HORIZONTAL_BLOCKS_PER_TICK`
 and `POLL_FALL_BLOCKS_PER_TICK` with the rig named as their instrument (`DW0945`).
+`tools/spike-seamless-loop/far_field.py` (`python3 tools/spike-seamless-loop/far_field.py
+[--ahead N] [--jump N] [--lit]`) is the second method for the far-field threshold
+(spec-0090 §5): the eldritch spike's station 4 rebuilt from the spike's own
+constants, with its own block-light flood and voxel walk and no engine code, printing
+the largest shift the jump gives any far cell that differs from its image, the cell,
+why it differs and the eye. `tools/tests/test_far_field.py` holds its station-4
+reading (1.285125°) against `compiler::loop::FAR_FIELD_SHIFT_DEGREES`.
