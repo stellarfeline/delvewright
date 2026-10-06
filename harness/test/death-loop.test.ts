@@ -36,6 +36,7 @@ import {
   parseDeathPlan,
   stagedBalance,
   wayInCandidates,
+  firstWayIn,
   SINK_BLOCKS_PER_TICK,
   sinkBudgetMs,
   volumeReachesCell,
@@ -1361,7 +1362,7 @@ test("a blocked walk in asks for the sill a player jumps to, nearest the volume 
   // floor west of the cut at [29, 68, 80]. The volume is the shaft's bottom.
   const standable = new Set(["31,68,80", "29,68,80", "29,68,79", "30,67,80", "31,70,81"]);
   const got = wayInCandidates([30, 67, 79], UNDERTIDE, (c) => standable.has(c.join(",")));
-  assert.deepEqual(got[0], [31, 68, 80], "the sill first: nearest the volume, the smallest climb");
+  assert.deepEqual(got[0], [31, 68, 80], "the sill first: the smallest climb, nearest the volume");
   assert.ok(!got.some((c) => c[0] <= 30), "nothing no nearer the volume than the body already is");
   assert.deepEqual(wayInCandidates([30, 67, 79], UNDERTIDE, () => false), []);
 });
@@ -1442,4 +1443,92 @@ test("a blocked walk in reaches a rim three courses up, which the pathfinder wal
     got.every((c) => c[1] === 70),
     `only the rim is nearer the volume than the lip: ${JSON.stringify(got)}`,
   );
+});
+
+// --- the order a way in is tried in --------------------------------------------
+
+/**
+ * Walk `candidates` with {@link firstWayIn} over a world where only `reachable`
+ * cells can be walked to and only `goesIn` cells lead into the volume; returns
+ * the cells asked for, in order, and the outcome.
+ */
+async function tryWaysIn(
+  candidates: readonly Vec3Tuple[],
+  reachable: ReadonlySet<string>,
+  goesIn: ReadonlySet<string>,
+) {
+  const asked: string[] = [];
+  let at: string | undefined;
+  const outcome = await firstWayIn(
+    candidates,
+    async (c) => {
+      asked.push(c.join(","));
+      if (!reachable.has(c.join(","))) return false;
+      at = c.join(",");
+      return true;
+    },
+    async () => (at !== undefined && goesIn.has(at) ? "released" : "blocked"),
+  );
+  return { asked, outcome };
+}
+
+test("a blocked walk in onto vesperhold's well tries the sill before the curb top it cannot climb", async () => {
+  // The 1.8.0 release ladder: the walk in stopped on the cut's floor at
+  // [30, 66, 79] (feet at y 66.5). Standing there, the curb top at y 69 —
+  // [33, 69, 77], [33, 69, 83], [32, 69, 79] — is nearer the well than the sill
+  // at [31, 68, 80], and the pathfinder reached none of the three: the body
+  // ended at y 67.5 each time. The sill is the way in the beta.2 ladder took.
+  const feet: Vec3Tuple = [30, 66, 79];
+  const curbTop = ["33,69,77", "33,69,83", "32,69,79", "34,69,77", "34,69,83"];
+  const standable = new Set([...curbTop, "31,68,80", "29,68,80", "29,68,79"]);
+  const got = wayInCandidates(feet, UNDERTIDE, (c) => standable.has(c.join(",")));
+  const at = (cell: string): number => got.findIndex((c) => c.join(",") === cell);
+  assert.ok(at("31,68,80") >= 0, `the sill is a candidate: ${JSON.stringify(got)}`);
+  for (const c of curbTop) {
+    assert.ok(at("31,68,80") < at(c), `the sill (two up) is tried before ${c} (three up)`);
+  }
+  const { asked, outcome } = await tryWaysIn(got, new Set(["31,68,80"]), new Set(["31,68,80"]));
+  assert.deepEqual(outcome.from, [31, 68, 80]);
+  assert.equal(outcome.result, "released");
+  assert.equal(asked[0], "31,68,80", `the reachable sill is asked for first: ${asked.join(" ")}`);
+});
+
+test("every way in is tried: no rank hides the one that goes in", async () => {
+  // However the order falls, a cell the body can walk to and walk in from is
+  // found while any candidate is left — four unreachable cells ahead of it do not
+  // end the search, and a cell reached whose own walk in is blocked is passed over.
+  const candidates: Vec3Tuple[] = [
+    [1, 0, 0],
+    [2, 0, 0],
+    [3, 0, 0],
+    [4, 0, 0],
+    [5, 0, 0],
+    [6, 0, 0],
+  ];
+  const { asked, outcome } = await tryWaysIn(
+    candidates,
+    new Set(["5,0,0", "6,0,0"]),
+    new Set(["6,0,0"]),
+  );
+  assert.deepEqual(outcome.from, [6, 0, 0]);
+  assert.equal(outcome.tried, 6);
+  assert.equal(outcome.reached, 2, "the reached cell whose walk in was blocked is counted");
+  assert.equal(asked.length, 6);
+  const none = await tryWaysIn(candidates, new Set(), new Set());
+  assert.equal(none.outcome.result, "blocked");
+  assert.equal(none.outcome.from, undefined);
+  assert.equal(none.outcome.tried, 6, "blocked is said only after every candidate was asked for");
+});
+
+test("the lidded pit's rim, three courses up, is still found and walked to", async () => {
+  // The gallery's lidded pit (spec-0088): nothing lower is nearer the volume than
+  // the lip, so the rim is the whole list and the climb order changes nothing.
+  const pit: Box = { lo: [8, 67, 5], hi: [8, 67, 5] };
+  const rim = new Set(["7,70,5", "9,70,5", "8,70,4", "8,70,6", "8,67,3"]);
+  const got = wayInCandidates([8, 67, 3], pit, (c) => rim.has(c.join(",")));
+  assert.equal(got.length, 4, `the four rim cells round the hole: ${JSON.stringify(got)}`);
+  const { asked, outcome } = await tryWaysIn(got, rim, rim);
+  assert.deepEqual(outcome.from, got[0]);
+  assert.equal(outcome.result, "released");
+  assert.equal(asked.length, 1, "the first rim cell reached is the way in");
 });
