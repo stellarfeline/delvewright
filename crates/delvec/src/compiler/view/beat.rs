@@ -354,8 +354,10 @@ pub fn stand(
     let cfg = path.at(plan, world, i + 1);
     let moved = cfg.moved_from(load);
     if moved == 0 {
+        // The remedy names a step a camera can state: one the path carries
+        // once, so the step it names is never refused as a candidate.
         let first = (0..path.steps.len())
-            .filter(|j| step_id(&path.steps[*j]).is_some())
+            .filter(|j| step_id(&path.steps[*j]).is_some_and(|id| path.indices_of(id).len() == 1))
             .find(|j| path.at(plan, world, j + 1).moved_from(load) > 0)
             .and_then(|j| step_id(&path.steps[j]).map(str::to_string));
         return Err(format!(
@@ -367,7 +369,7 @@ pub fn stand(
             cam.name,
             match first {
                 Some(f) => format!("the first on {label} is `{f}`"),
-                None => format!("{label} moves no block at all"),
+                None => format!("{label} moves no block at all after a step it carries once"),
             }
         ));
     }

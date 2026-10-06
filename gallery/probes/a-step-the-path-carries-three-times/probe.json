@@ -1,0 +1,13 @@
+{
+  "code": "DW0721",
+  "patch": [
+    {
+      "doc": "design/cameras.json",
+      "op": "replace",
+      "path": "/cameras/7/after/step",
+      "value": "trigger/strike-the-sentinel"
+    }
+  ],
+  "units": [],
+  "why": "The eighth camera is moved onto `trigger/strike-the-sentinel`, which the critical path performs three times — the sentinel is struck once per witnessed strike (`critical-path.json` carries the trigger at three steps). Nothing else moves. An id that names more than one step is a candidate, not a match: the picture would be of whichever strike was meant. `DW0721` refuses it, naming the camera, the three step numbers and the steps the path carries once, which are the remedy. It declares no unit: `CameraAfter.step` is bound by the primary, and this is a refusal demonstration."
+}

@@ -1,0 +1,13 @@
+{
+  "code": "DW0721",
+  "patch": [
+    {
+      "doc": "design/cameras.json",
+      "op": "replace",
+      "path": "/cameras/7/after/step",
+      "value": "obj/nowhere"
+    }
+  ],
+  "units": [],
+  "why": "The record's eighth camera, `east-bay-after-the-muster`, is taken after `obj/clear-the-muster`. The probe names `obj/nowhere` instead — an objective no quest declares, so no step of the critical path carries it. Nothing else moves: the lens, the frame, the row it answers and every other camera stand where they stood, so `DW0724`, `DW0890` and `DW0900` are green and the record still parses. A camera is taken after a step the path carries, named by its objective or trigger id, and a step the path never reaches pictures nothing. `DW0721` refuses it through the record's one reader, naming the camera and listing the steps the path carries — the remedy is one of them. It declares no unit: `CameraAfter.step` is bound by the primary, and this is a refusal demonstration."
+}

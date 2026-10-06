@@ -2204,8 +2204,11 @@ fn to_shore(
 /// in is exactly what that code refuses.
 type DesignScene = (&'static str, [u8; 3], [u8; 3], [u8; 3]);
 
-/// The six scenes — see [`DesignScene`] for the tuple.
-const DESIGN_SCENES: [DesignScene; 6] = [
+/// The seven scenes — see [`DesignScene`] for the tuple. The seventh is the
+/// east bay after the muster is cleared (spec-0089): the hall's own noon, the
+/// picture of a room a beat has changed, which a showcase camera answers from
+/// the configuration after that beat.
+const DESIGN_SCENES: [DesignScene; 7] = [
     (
         "morning-quay",
         [150, 190, 230],
@@ -2232,6 +2235,12 @@ const DESIGN_SCENES: [DesignScene; 6] = [
         [195, 165, 145],
         [255, 225, 165],
     ),
+    (
+        "bay-after-the-muster",
+        [170, 200, 235],
+        [150, 150, 145],
+        [235, 235, 225],
+    ),
 ];
 
 /// A 48x48 RGB stand-in for an approved concept image: a vertical sky gradient
@@ -2242,7 +2251,7 @@ const DESIGN_SCENES: [DesignScene; 6] = [
 /// holds the world to the TOKEN a creator wrote beside the picture, never to
 /// its pixels (spec-0061 §12) — so what the gallery needs here is a file that
 /// exists, resolves from a row's stem, and reads at a glance as a different
-/// hour from its five neighbours.
+/// picture from its six neighbours.
 fn concept_png(top: [u8; 3], bottom: [u8; 3], lamp: [u8; 3]) -> Vec<u8> {
     const W: usize = 48;
     const H: usize = 48;

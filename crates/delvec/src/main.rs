@@ -2014,9 +2014,19 @@ fn camera_stands(
     let structures = read_structures(&plan, &prefabs, prefabs_dir, json).map_err(|c| (None, c))?;
     let assembled = edited_assembled(&plan, &prefabs, &structures, json).map_err(|c| (None, c))?;
     let world = camera_world(&plan, &assembled);
-    let base = camera_base(&plan, &assembled);
+    // The path the build's proofs read: the links the route proof takes
+    // spliced in (spec-0083), so a step is the step `critical-path.json` names.
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            print_build_error(f.code, &f.message, json);
+            return Err((None, 3));
+        }
+    };
+    let plan = relinked.as_ref().unwrap_or(&plan);
+    let base = camera_base(plan, &assembled);
     let stands =
-        delvec::compiler::view::beat::stands(&plan, &world, &base, cameras).map_err(|why| {
+        delvec::compiler::view::beat::stands(plan, &world, &base, cameras).map_err(|why| {
             (
                 Some(delvec::compiler::view::diag::Diagnostic::error(
                     delvec::compiler::view::camera::DW_RECORD_AT_BUILD.id(),
@@ -2025,7 +2035,7 @@ fn camera_stands(
                 2,
             )
         })?;
-    let biomes = delvec::compiler::horizon::biome_map(&plan);
+    let biomes = delvec::compiler::horizon::biome_map(plan);
     Ok(delvec::compiler::view::beat::Stood {
         stands,
         biome: Box::new(move |c| biomes.at(c).0.to_string()),
@@ -2136,8 +2146,16 @@ fn run_cameras_preview(
     // one grid per distinct world, the record's `after` rules refused here as
     // `delvec cameras` refuses them.
     let world = camera_world(&plan, &assembled);
-    let base = camera_base(&plan, &assembled);
-    let stood = match delvec::compiler::view::beat::stands(&plan, &world, &base, &cameras) {
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            print_build_error(f.code, &f.message, json);
+            return ExitCode::from(3);
+        }
+    };
+    let plan = relinked.as_ref().unwrap_or(&plan);
+    let base = camera_base(plan, &assembled);
+    let stood = match delvec::compiler::view::beat::stands(plan, &world, &base, &cameras) {
         Ok(s) => s,
         Err(why) => {
             return delvec::compiler::view::cli::fail(
