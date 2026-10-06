@@ -22035,7 +22035,9 @@ fn emit_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
 ///   Stripping the gate guard from the poll reds it.
 ///
 /// Both are synchronous — no `await` — so each runs as one uninterrupted
-/// function on the shared batch server, and the two never see each other's gate.
+/// function on the shared batch server, and the two never see each other's gate;
+/// each puts back every score it wrote ([`restoring_what_it_writes`]), so no
+/// other test of the batch sees it either.
 fn emit_loop_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
@@ -22135,13 +22137,6 @@ fn emit_loop_packtests(plan: &Plan, out: &mut BuildOutput) {
             t.push(format!("assert score #lp_n1_{} dw.sys matches 1", l.safe));
         }
         t.push(format!("kill @e[tag={tag}]"));
-        out.insert(
-            format!(
-                "packtest-datapack/data/{ns}/test/loop_{}.mcfunction",
-                l.safe
-            ),
-            lines(&t).into_bytes(),
-        );
 
         // --- the loop stood down moves nothing ---
         let shut: Vec<String> = if let Some(f) = decl.forbids_flags.first() {
@@ -22202,6 +22197,19 @@ fn emit_loop_packtests(plan: &Plan, out: &mut BuildOutput) {
             r.push(format!("assert score #lp_n1_{} dw.sys matches 0", l.safe));
         }
         r.push(format!("kill @e[tag={tag}]"));
+        let counted: Vec<(String, String)> = count
+            .iter()
+            .map(|c| (plan::PARTY.to_string(), c.clone()))
+            .collect();
+        let t = restoring_what_it_writes(t, &counted, &format!("{}_m", l.safe));
+        let r = restoring_what_it_writes(r, &counted, &format!("{}_r", l.safe));
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/loop_{}.mcfunction",
+                l.safe
+            ),
+            lines(&t).into_bytes(),
+        );
         out.insert(
             format!(
                 "packtest-datapack/data/{ns}/test/loop_{}_released.mcfunction",
@@ -22210,6 +22218,68 @@ fn emit_loop_packtests(plan: &Plan, out: &mut BuildOutput) {
             lines(&r).into_bytes(),
         );
     }
+}
+
+/// **A synchronous PackTest leaves the shared batch server as it found it.**
+/// Every test of a batch runs on one server, and a test with no `await` runs
+/// whole inside one tick, so a score it writes and leaves is read by every test
+/// that runs after it in that tick: a loop test that shut its gate by sealing
+/// the hall left the hall sealed, and the shop test after it was refused its
+/// purchase. So every score `body` writes through `scoreboard players
+/// set|reset <holder> <objective>` (the compiler's own `#lp_` scratch
+/// excepted), and each of `also` (written by a function the test calls), is
+/// saved right after the test's `setup` — its value, or that it was unset — and
+/// put back as the test's last act. A test that fails an assertion stops
+/// before the restore, as a failed test may.
+fn restoring_what_it_writes(
+    body: Vec<String>,
+    also: &[(String, String)],
+    key: &str,
+) -> Vec<String> {
+    let mut written: Vec<(String, String)> = Vec::new();
+    for line in &body {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        if let [
+            "scoreboard",
+            "players",
+            "set" | "reset",
+            holder,
+            objective,
+            ..,
+        ] = w.as_slice()
+            && !holder.starts_with("#lp_")
+        {
+            let pair = (holder.to_string(), objective.to_string());
+            if !written.contains(&pair) {
+                written.push(pair);
+            }
+        }
+    }
+    for pair in also {
+        if !written.contains(pair) {
+            written.push(pair.clone());
+        }
+    }
+    let any = "-2147483648..2147483647";
+    let at = body
+        .iter()
+        .position(|l| l.starts_with("function ") && l.ends_with(":setup"))
+        .map_or(0, |i| i + 1);
+    let mut out: Vec<String> = body[..at].to_vec();
+    for (i, (holder, objective)) in written.iter().enumerate() {
+        out.push(format!("scoreboard players reset #lp_sv{i}_{key} dw.sys"));
+        out.push(format!(
+            "execute if score {holder} {objective} matches {any} run scoreboard players operation #lp_sv{i}_{key} dw.sys = {holder} {objective}"
+        ));
+    }
+    out.extend_from_slice(&body[at..]);
+    for (i, (holder, objective)) in written.iter().enumerate() {
+        out.push(format!("scoreboard players reset {holder} {objective}"));
+        out.push(format!(
+            "execute if score #lp_sv{i}_{key} dw.sys matches {any} run scoreboard players operation {holder} {objective} = #lp_sv{i}_{key} dw.sys"
+        ));
+    }
+    out
 }
 
 /// PackTest templates for the economy (spec-0032) — **exactly the two halves this

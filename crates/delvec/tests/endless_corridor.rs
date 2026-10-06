@@ -1351,3 +1351,58 @@ fn dw0946_a_staged_volume_that_stands_down_in_one_bay_only() {
         "names the configuration: {line}"
     );
 }
+
+/// **A loop PackTest leaves the batch server as it found it.** Both loop tests
+/// drive the loop's gate and count through party scores, and a test with no
+/// `await` runs whole inside one tick of a server every test of the batch
+/// shares: a score left written is read by every test after it in that tick.
+/// On the assembled gallery the released test left the hall sealed, and the
+/// shop test after it was refused its purchase. So every score either test
+/// writes (the compiler's `#lp_` scratch excepted) is saved after `setup` and
+/// put back after the test's last act, value or unset.
+#[test]
+fn a_loop_packtest_puts_back_every_score_it_writes() {
+    let run = build(&campaign("restores", |_| {}));
+    run.green();
+    let ns = "long-gallery";
+    for name in ["loop_gallery", "loop_gallery_released"] {
+        let t = run.text(&format!(
+            "packtest-datapack/data/{ns}/test/{name}.mcfunction"
+        ));
+        let lines: Vec<&str> = t.lines().collect();
+        let last_kill = lines
+            .iter()
+            .rposition(|l| l.starts_with("kill @e[tag=dw_looptest_"))
+            .unwrap_or_else(|| panic!("{name} kills its dummy: {t}"));
+        let mut written = std::collections::BTreeSet::new();
+        for l in &lines[..last_kill] {
+            let w: Vec<&str> = l.split_whitespace().collect();
+            if let [
+                "scoreboard",
+                "players",
+                "set" | "reset",
+                holder,
+                objective,
+                ..,
+            ] = w.as_slice()
+                && !holder.starts_with("#lp_")
+            {
+                written.insert((holder.to_string(), objective.to_string()));
+            }
+        }
+        assert!(
+            written.contains(&("#party".to_string(), "dw.s_crossings".to_string())),
+            "{name} writes the count, the binding this test is bound to: {t}"
+        );
+        let tail = lines[last_kill + 1..].join("\n");
+        for (holder, objective) in &written {
+            assert!(
+                tail.contains(&format!("scoreboard players reset {holder} {objective}"))
+                    && tail.contains(&format!(
+                        "run scoreboard players operation {holder} {objective} = #lp_sv"
+                    )),
+                "{name} puts back {holder} {objective} after its last act: {t}"
+            );
+        }
+    }
+}
