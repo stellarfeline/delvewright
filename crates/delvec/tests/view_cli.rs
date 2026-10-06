@@ -348,24 +348,67 @@ fn panorama_purges_stale_chunky_caches() {
     assert!(!out.join("mini_panorama_se_45.dump").exists());
 }
 
-/// A campaign directory holding only what `delvec cameras` reads: `design.json`
-/// rows and a `design/cameras.json` record.
+/// A hello-world copy carrying what `delvec cameras` reads beside the stage
+/// documents: `design.json` rows and a `design/cameras.json` record. `delvec
+/// cameras` assembles the campaign to write the world each camera stands in
+/// (spec-0089), so the record stands in a campaign that plans.
 fn camera_campaign(dir: &Path, cameras: serde_json::Value) {
+    common::copy_dir_all(&common::hello_world_dir(), dir);
     std::fs::create_dir_all(dir.join("design")).unwrap();
     std::fs::write(
         dir.join("design.json"),
-        br#"{"campaign_id":"mini","content":{"references":[
-            {"name":"concept/gate","shows":"the gate","time":"dusk","weather":"clear"},
-            {"name":"concept/hall","shows":"the hall","time":"dusk","weather":"clear"}]},
-            "stage":"design"}"#,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "dsl_version": delvewright_dsl::DSL_VERSION,
+            "campaign_id": "hello-world",
+            "stage": "design",
+            "content": {"references": [
+                {"name": "concept/gate", "shows": "the gate", "time": "dusk", "weather": "clear"},
+                {"name": "concept/hall", "shows": "the hall", "time": "dusk", "weather": "clear"}
+            ]}
+        }))
+        .unwrap(),
     )
     .unwrap();
     std::fs::write(
         dir.join("design/cameras.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({"campaign_id": "mini", "cameras": cameras}))
-            .unwrap(),
+        serde_json::to_vec_pretty(
+            &serde_json::json!({"campaign_id": "hello-world", "cameras": cameras}),
+        )
+        .unwrap(),
     )
     .unwrap();
+}
+
+/// hello-world built once into `<dir>/build`, with no camera record: the
+/// render plan `delvec cameras` reads.
+fn hello_build(dir: &Path) -> PathBuf {
+    let out = dir.join("build");
+    let r = Command::new(BIN)
+        .arg("build")
+        .arg(common::hello_world_dir())
+        .arg("-o")
+        .arg(&out)
+        .arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .output()
+        .unwrap();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    out
+}
+
+/// `delvec cameras` over `built`, the campaign assembled from the pinned
+/// library.
+fn cameras_cmd(built: &Path, campaign: &Path, out: &Path) -> Command {
+    let mut c = Command::new(BIN);
+    c.arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .arg("cameras")
+        .arg(built)
+        .arg("--campaign")
+        .arg(campaign)
+        .arg("-o")
+        .arg(out);
+    c
 }
 
 fn a_camera(name: &str, answers: &str) -> serde_json::Value {
@@ -381,8 +424,7 @@ fn a_camera(name: &str, answers: &str) -> serde_json::Value {
 #[test]
 fn cameras_emits_the_stated_cameras_and_their_candidates() {
     let build_dir = tmp("cameras-ok");
-    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
-    stub_world(&build_dir.join("world"));
+    let built = hello_build(&build_dir);
     let campaign = build_dir.join("campaign");
     // Every approved image is answered, or nothing is emitted (spec-0070): the
     // emitting fixture answers both rows.
@@ -395,18 +437,10 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
     );
     let out = build_dir.join("scenes");
 
-    let result = Command::new(BIN)
-        .args(["cameras"])
-        .arg(&build_dir)
-        .arg("--campaign")
-        .arg(&campaign)
-        .arg("-o")
-        .arg(&out)
-        .output()
-        .unwrap();
+    let result = cameras_cmd(&built, &campaign, &out).output().unwrap();
     assert_eq!(result.status.code(), Some(0), "{result:?}");
-    let v = scene_json(&out.join("mini_camera_gate.json"));
-    assert_eq!(v["name"], "mini_camera_gate");
+    let v = scene_json(&out.join("hello-world_camera_gate.json"));
+    assert_eq!(v["name"], "hello-world_camera_gate");
     assert_eq!(v["width"], 800);
     assert_eq!(v["sppTarget"], 64);
     assert_eq!(v["exposure"], 2.0);
@@ -424,13 +458,7 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
     );
 
     let bracketed = build_dir.join("bracketed");
-    let result = Command::new(BIN)
-        .args(["cameras"])
-        .arg(&build_dir)
-        .arg("--campaign")
-        .arg(&campaign)
-        .arg("-o")
-        .arg(&bracketed)
+    let result = cameras_cmd(&built, &campaign, &bracketed)
         .args(["--bracket", "yaw=10,truck=2", "--draft"])
         .output()
         .unwrap();
@@ -458,7 +486,7 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
         ]
     );
     for n in &names {
-        let draft = scene_json(&bracketed.join(format!("mini_camera_{n}_draft.json")));
+        let draft = scene_json(&bracketed.join(format!("hello-world_camera_{n}_draft.json")));
         assert_eq!(draft["width"], 200, "{n}");
     }
 }
@@ -468,8 +496,7 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
 #[test]
 fn cameras_refuses_a_camera_that_answers_nothing() {
     let build_dir = tmp("cameras-refused");
-    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
-    stub_world(&build_dir.join("world"));
+    let built = hello_build(&build_dir);
     for (tag, cameras) in [
         (
             "stray",
@@ -484,15 +511,7 @@ fn cameras_refuses_a_camera_that_answers_nothing() {
         let campaign = build_dir.join(tag);
         camera_campaign(&campaign, cameras);
         let out = build_dir.join(format!("out-{tag}"));
-        let result = Command::new(BIN)
-            .args(["cameras"])
-            .arg(&build_dir)
-            .arg("--campaign")
-            .arg(&campaign)
-            .arg("-o")
-            .arg(&out)
-            .output()
-            .unwrap();
+        let result = cameras_cmd(&built, &campaign, &out).output().unwrap();
         assert_eq!(result.status.code(), Some(2), "{tag}: {result:?}");
         assert!(
             String::from_utf8_lossy(&result.stderr).contains("DW0721"),
@@ -514,8 +533,7 @@ fn cameras_refuses_a_camera_that_answers_nothing() {
 #[test]
 fn cameras_refuses_a_record_that_leaves_an_approved_image_unanswered() {
     let build_dir = tmp("cameras-unanswered");
-    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
-    stub_world(&build_dir.join("world"));
+    let built = hello_build(&build_dir);
     let campaign = build_dir.join("campaign");
     camera_campaign(
         &campaign,
@@ -523,13 +541,7 @@ fn cameras_refuses_a_record_that_leaves_an_approved_image_unanswered() {
     );
     for (tag, extra) in [("all", vec![]), ("only", vec!["--only", "gate"])] {
         let out = build_dir.join(format!("out-{tag}"));
-        let result = Command::new(BIN)
-            .args(["cameras"])
-            .arg(&build_dir)
-            .arg("--campaign")
-            .arg(&campaign)
-            .arg("-o")
-            .arg(&out)
+        let result = cameras_cmd(&built, &campaign, &out)
             .args(&extra)
             .output()
             .unwrap();
@@ -558,8 +570,7 @@ fn cameras_refuses_a_record_that_leaves_an_approved_image_unanswered() {
 #[test]
 fn cameras_prints_the_sky_binding_line() {
     let build_dir = tmp("cameras-sky-line");
-    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
-    stub_world(&build_dir.join("world"));
+    let built = hello_build(&build_dir);
     let mut rain = a_camera("hall", "concept/hall");
     rain["sky"] = serde_json::json!({"time": "dusk", "weather": "rain"});
     let mut restated = a_camera("hall", "concept/hall");
@@ -597,13 +608,7 @@ fn cameras_prints_the_sky_binding_line() {
             &campaign,
             serde_json::json!([a_camera("gate", "concept/gate"), hall]),
         );
-        let result = Command::new(BIN)
-            .args(["cameras"])
-            .arg(&build_dir)
-            .arg("--campaign")
-            .arg(&campaign)
-            .arg("-o")
-            .arg(build_dir.join(format!("out-{tag}")))
+        let result = cameras_cmd(&built, &campaign, &build_dir.join(format!("out-{tag}")))
             .output()
             .unwrap();
         let stderr = String::from_utf8_lossy(&result.stderr);

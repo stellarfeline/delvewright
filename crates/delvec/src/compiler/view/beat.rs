@@ -188,6 +188,7 @@ pub fn after_key(step: &str, slug: Option<&str>) -> String {
 
 /// What a set of cameras stands in: the load map, and per distinct key the
 /// configuration's bytes.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Stands {
     /// Per camera, in the order asked.
     pub stands: Vec<Stand>,

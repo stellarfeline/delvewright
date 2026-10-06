@@ -2178,7 +2178,7 @@ fn run_cameras_preview(
             );
         }
         let frame = snapshot::render_frame(
-            &grid,
+            grid,
             &snapshot::Camera {
                 pos: cam.pos,
                 yaw: cam.yaw,

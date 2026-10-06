@@ -29,6 +29,19 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 
 use crate::compiler::blockstate::BlockMap;
+use delvewright_dsl::{DwCode, ExitTier};
+
+delvewright_dsl::dw_code! {
+    /// `DW0955`: the world the engine writes for a camera is not the world the
+    /// pinned server builds from the same datapack (spec-0089 §5.4). Raised by
+    /// `tools/ci/check-written-world.py`, which compares the written load world
+    /// with a `validation/world-save.sh` save cell by cell inside the layout box
+    /// and reds on any differing cell no named class (a gravity settle, a fluid
+    /// flow, a state re-derived on a block update, a clock's phase) explains —
+    /// declared here, beside the writer it holds to the game, so the code has
+    /// one home.
+    pub const DW_CAMERA_STEP_WORLD: DwCode = DwCode::new("DW0955", ExitTier::Build);
+}
 
 /// The `DataVersion` a written chunk carries: the pinned game's (ADR-0009).
 pub const DATA_VERSION: i32 = delvewright_dsl::blocks::PIN_DATA_VERSION;
@@ -435,7 +448,7 @@ mod tests {
         let idx: Vec<usize> = (0..24).map(|i| i % 17).collect();
         let longs = pack(&idx, 5);
         assert_eq!(longs.len(), 2);
-        assert_eq!((longs[1] as u64) & 0x1f, 12 % 17);
+        assert_eq!((longs[1] as u64) & 0x1f, 12);
     }
 
     #[test]

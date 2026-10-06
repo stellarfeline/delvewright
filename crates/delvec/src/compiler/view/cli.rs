@@ -574,7 +574,29 @@ fn run_scene(build_dir: &Path, out: &Path, world: Option<&Path>, vopts: &ViewOpt
         out.display(),
         scene::CHUNKY_CORE
     );
+    eprintln!("{}", review_frame_limit(&bytes));
     ExitCode::SUCCESS
+}
+
+/// The review frames' stated limit (spec-0089 §8): they render the world at
+/// load, and the plan states which POV shots stand in a configuration other
+/// than load (`after.cells_moved` above zero) — counted here so the limit is a
+/// measured one.
+pub fn review_frame_limit(plan_json: &[u8]) -> String {
+    let doc: serde_json::Value = serde_json::from_slice(plan_json).unwrap_or_default();
+    let pov: Vec<&serde_json::Value> = doc["shots"]
+        .as_array()
+        .map(|a| a.iter().filter(|s| s["kind"] == "pov").collect())
+        .unwrap_or_default();
+    let moved = pov
+        .iter()
+        .filter(|s| s["after"]["cells_moved"].as_u64().is_some_and(|n| n > 0))
+        .count();
+    format!(
+        "review frames render the world at load; {moved} of {} POV shots stand in a configuration \
+         other than load",
+        pov.len()
+    )
 }
 
 /// Write scene JSONs into `out`, deleting each one's now-stale Chunky caches
