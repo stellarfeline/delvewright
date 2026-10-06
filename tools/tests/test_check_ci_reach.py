@@ -325,3 +325,35 @@ def test_a_missing_filter_output_is_refused(tmp_path, capsys):
     code, out = run_gate(capsys, wf)
     assert code == 1
     assert "table group `harness` is not an output of `changes`" in out
+
+
+# --------------------------------------------------------- job-on-job needs
+
+
+def test_the_live_workflow_judges_every_job_on_job_need(capsys):
+    code, out = run_gate(capsys)
+    assert code == 0, out
+    jobs = gate.load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    pairs = sum(1 for j in jobs.values() for d in gate.needs_of(j) if d != "changes")
+    assert pairs > 0
+    assert f"{pairs} job-on-job need(s)" in out
+
+
+def test_a_needed_job_that_skips_a_consumers_group_is_refused(tmp_path, capsys):
+    """The binary job forgets the gallery's group: a gallery-only pull request
+    would skip the binary job, so Actions would skip `gallery` with it."""
+    wf = perturbed(tmp_path, " || needs.changes.outputs.gallery == 'true' || ", " || ")
+    code, out = run_gate(capsys, wf)
+    assert code == 1
+    assert "job `gallery` needs `delvec-binary`, which does not run on a pull request that reaches `gallery`'s group `gallery`" in out
+
+
+def test_a_need_of_a_job_that_does_not_exist_is_refused(tmp_path, capsys):
+    wf = perturbed(
+        tmp_path,
+        "    needs: [changes, delvec-binary]\n    if: github.event_name != 'pull_request' || needs.changes.outputs.mecha-crosscheck == 'true'\n",
+        "    needs: [changes, delvec-binaries]\n    if: github.event_name != 'pull_request' || needs.changes.outputs.mecha-crosscheck == 'true'\n",
+    )
+    code, out = run_gate(capsys, wf)
+    assert code == 1
+    assert "job `mecha-crosscheck` needs `delvec-binaries`, which is not a job in the workflow" in out
