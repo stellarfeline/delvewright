@@ -57,6 +57,10 @@ const CABIN_ROOF_Y: i32 = 4;
 /// the roof and lights nothing inside a sealed room.
 const CABIN_LANTERN: [i32; 3] = [2, 3, 27];
 
+/// The top of the ferryman's chest against the cabin's far wall (the chest
+/// stands in the cell under it). What the arrival view in the cabin frames.
+const CABIN_LAMP: [i32; 3] = [2, 2, 29];
+
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
 
@@ -542,10 +546,20 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/cabin",
-        pos: [2, 1, 29],
+        pos: [2, 1, 28],
         facing: Some("north"),
         trigger_block: None,
-        note: "the cabin's far wall: the beat only the link reaches",
+        note: "in front of the ferryman's chest against the cabin's far wall: the beat only \
+               the link reaches",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/cabin-chest",
+        pos: CABIN_LAMP,
+        facing: None,
+        trigger_block: None,
+        note: "the top of the ferryman's chest, the thing a body arriving in the cabin \
+               looks at",
         role: None,
     },
     // Kept clear of the outer wall on purpose: a POV camera stands on an anchor
@@ -925,6 +939,9 @@ fn block_at(
     if (fx0..=fx1).contains(&x) && (fz0..=fz1).contains(&z) && (1..=CABIN_ROOF_Y).contains(&y) {
         if [x, y, z] == CABIN_LANTERN {
             return ("minecraft:lantern", Some(&[("hanging", "true")]));
+        }
+        if [x, y, z] == [CABIN_LAMP[0], CABIN_LAMP[1] - 1, CABIN_LAMP[2]] {
+            return ("minecraft:barrel", None);
         }
         if y == CABIN_ROOF_Y || x == fx1 || z == fz0 {
             return ("minecraft:stone", None);
