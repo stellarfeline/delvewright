@@ -1,0 +1,12 @@
+{
+  "code": "DW0951",
+  "form": "gallery-carcass.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/palette/0/full/0/0",
+      "value": "minecraft:glowstone"
+    }
+  ],
+  "why": "A palette tone of glowstone: a body whose own material glows. Light is placed where the room is designed and the engine only checks it, and paving a floor with a glowing block is the type specimen of inventing light rather than placing it. The emission is read from the relight pass's own table, so the refusal cannot disagree with what the game lights; the form's light enters through `lights[]` and through cuts that reach the sky, and nothing else."
+}

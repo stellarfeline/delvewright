@@ -1,0 +1,124 @@
+{
+  "anchors": {
+    "anchor/entry": {
+      "facing": "east",
+      "pos": [
+        1,
+        1,
+        1
+      ],
+      "role": "entry"
+    }
+  },
+  "box": [
+    402,
+    62,
+    402
+  ],
+  "form_version": "1.0.0",
+  "ground": {
+    "block": "minecraft:packed_mud",
+    "top": 0
+  },
+  "id": "prefab/sculpt-scale",
+  "noise": {
+    "amplitude": 0.0,
+    "cell": 4.0
+  },
+  "palette": [
+    {
+      "family": "diorite",
+      "full": [
+        [
+          "minecraft:bone_block",
+          3
+        ],
+        [
+          "minecraft:dead_horn_coral_block",
+          3
+        ],
+        [
+          "minecraft:calcite",
+          2
+        ],
+        [
+          "minecraft:diorite",
+          2
+        ]
+      ]
+    },
+    {
+      "family": "andesite",
+      "full": [
+        [
+          "minecraft:dead_horn_coral_block",
+          3
+        ],
+        [
+          "minecraft:dead_bubble_coral_block",
+          3
+        ],
+        [
+          "minecraft:andesite",
+          2
+        ],
+        [
+          "minecraft:diorite",
+          2
+        ]
+      ]
+    },
+    {
+      "family": "andesite",
+      "full": [
+        [
+          "minecraft:andesite",
+          4
+        ],
+        [
+          "minecraft:dead_brain_coral_block",
+          3
+        ],
+        [
+          "minecraft:tuff",
+          3
+        ]
+      ]
+    },
+    {
+      "family": "mossy_cobblestone",
+      "full": [
+        [
+          "minecraft:tuff",
+          5
+        ],
+        [
+          "minecraft:mossy_cobblestone",
+          3
+        ],
+        [
+          "minecraft:andesite",
+          2
+        ]
+      ]
+    }
+  ],
+  "sink": 1,
+  "solids": [
+    {
+      "centre": [
+        201.0,
+        0.0,
+        201.0
+      ],
+      "op": "add",
+      "radii": [
+        12.0,
+        6.0,
+        20.0
+      ],
+      "shape": "ellipsoid"
+    }
+  ],
+  "sub": 2
+}
