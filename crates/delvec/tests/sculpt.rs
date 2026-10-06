@@ -1257,3 +1257,23 @@ fn the_library_names_the_code_of_each_refusal() {
         other => panic!("{:?}", other.map(|s| s.id)),
     }
 }
+
+/// The metadata a sculpt writes is already in the repository's canonical form
+/// (`delvec fmt`), so a library commits exactly what the sculpt wrote and a
+/// re-sculpt is byte-identical to the committed file.
+#[test]
+fn the_metadata_a_sculpt_writes_is_canonical() {
+    let run = common::sculpt::sculpt(&gallery_form(), "canonical-metadata", &[]);
+    assert_eq!(run.code, 0, "{}", run.said);
+    let mut n = 0;
+    for e in std::fs::read_dir(&run.out).unwrap() {
+        let p = e.unwrap().path();
+        if p.extension().is_some_and(|x| x == "json") {
+            let text = std::fs::read_to_string(&p).unwrap();
+            let canon = delvewright_dsl::fmt::format_text(&text).unwrap();
+            assert_eq!(text, canon, "{} is not in canonical form", p.display());
+            n += 1;
+        }
+    }
+    assert!(n > 0, "the sculpt wrote no metadata");
+}
