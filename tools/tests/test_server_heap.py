@@ -123,6 +123,14 @@ def test_the_entrypoint_takes_the_builds_stated_ceiling(tmp_path):
     seen, out = run_entrypoint(tmp_path, {"DELVE_RESOURCES_PROPERTIES": str(resources)})
     assert seen["MAX_MEMORY"] == "7G", out
     assert "heap-max=7G" in out, out
+    # Unnamed, the file is read from beside the properties file — wherever a
+    # service mounted the build's server/ directory (the PackTest runner names
+    # the properties file through DELVE_SERVER_PROPERTIES under /packs/server).
+    beside = tmp_path / "resources.properties"
+    beside.write_text("heap-max=6G\nplayers=4\n")
+    seen, out = run_entrypoint(tmp_path, {})
+    assert seen["MAX_MEMORY"] == "6G", out
+    beside.unlink()
     # An operator's own figure still wins over the build's statement.
     seen, out = run_entrypoint(
         tmp_path, {"DELVE_RESOURCES_PROPERTIES": str(resources), "MAX_MEMORY": "9G"}

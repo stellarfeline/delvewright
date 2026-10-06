@@ -124,7 +124,7 @@ fi
 # itzg's 1G, so a small delve commits only what it uses. An operator who names
 # any of MEMORY, INIT_MEMORY or MAX_MEMORY (`docker run -e MEMORY=2G ...`) is
 # obeyed as given.
-resources="${DELVE_RESOURCES_PROPERTIES:-/delve/server/resources.properties}"
+resources="${DELVE_RESOURCES_PROPERTIES:-$(dirname "$props")/resources.properties}"
 heap_max=$(sed -n "/^heap-max=/{s///;p;q;}" "$resources" 2>/dev/null || true)
 if [ -z "${MEMORY:-}" ] && [ -z "${INIT_MEMORY:-}" ] && [ -z "${MAX_MEMORY:-}" ]; then
   export MAX_MEMORY="${heap_max:-4G}"
