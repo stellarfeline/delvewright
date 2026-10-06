@@ -1480,8 +1480,8 @@ fn block_writes(plan: &crate::compiler::plan::Plan) -> Vec<(usize, String, Regio
     out
 }
 
-/// The world as shipped, before any runtime write: the assembled blocks, the
-/// relight fixtures, and every gate the placed world authors shut.
+/// The world as shipped inside `clip` ([`crate::compiler::assembled::shipped_blocks`]),
+/// as text.
 fn shipped(
     plan: &crate::compiler::plan::Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
@@ -1489,24 +1489,10 @@ fn shipped(
     seals: &[crate::compiler::assembled::GateSeal],
     clip: ([i32; 3], [i32; 3]),
 ) -> BTreeMap<[i32; 3], String> {
-    let mut m: BTreeMap<[i32; 3], String> = blocks
-        .range(clip.0..=clip.1)
-        .filter(|(c, _)| inside(clip, **c))
-        .map(|(c, b)| (*c, b.as_str().to_string()))
-        .collect();
-    for p in placements {
-        if inside(clip, p.pos) {
-            m.insert(p.pos, p.block.clone());
-        }
-    }
-    for s in seals.iter().filter(|s| s.sealed()) {
-        if let Some((from, to, block)) =
-            crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
-        {
-            write_box(&mut m, (from, to), &block, clip);
-        }
-    }
-    m
+    crate::compiler::assembled::shipped_blocks(plan, blocks, placements, seals, Some(clip))
+        .into_iter()
+        .map(|(c, b)| (c, b.as_str().to_string()))
+        .collect()
 }
 
 fn write_box(

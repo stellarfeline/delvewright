@@ -2097,8 +2097,17 @@ pub fn build_with_warnings(
     // proof — every kind, not the one that needed it first. It also states the
     // proof's binding count in the artifact and hands back a warning when that
     // count is zero.
-    let (render_plan_doc, camera_warnings) =
-        crate::compiler::render_plan::render_plan(plan, prefabs, &pov_shots, &world)?;
+    let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
+        plan,
+        prefabs,
+        &pov_shots,
+        &world,
+        Some(&crate::compiler::view::beat::picture_base(
+            plan,
+            assembled,
+            &relight.placements,
+        )),
+    )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
 

@@ -51,6 +51,7 @@
 //! at the step that needs it.
 
 pub mod assets;
+pub mod beat;
 pub mod blockcolor;
 pub mod cache;
 pub mod camera;
@@ -68,3 +69,4 @@ pub mod showing;
 pub mod sight;
 pub mod tileset;
 pub mod viewer;
+pub mod world;

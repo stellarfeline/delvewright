@@ -1455,10 +1455,20 @@ impl World {
     /// state (CLAUDE.md): every gate examined, and how many of them the model
     /// treats as shut.
     pub fn gate_seal_ledger(&self) -> serde_json::Value {
-        crate::compiler::assembled::gate_seal_ledger(
+        let mut v = crate::compiler::assembled::gate_seal_ledger(
             &self.world_load_seals,
             self.modelled_seals().count(),
-        )
+        );
+        // Each gate says whether a clock owns its region (spec-0016 §4): its
+        // blocks at any instant are the clock's phase, so a reader comparing a
+        // server's save against the model (`tools/ci/check-written-world.py`)
+        // counts those cells as the clock's, never as the model's.
+        if let Some(gates) = v.get_mut("gates").and_then(|g| g.as_array_mut()) {
+            for (g, s) in gates.iter_mut().zip(&self.world_load_seals) {
+                g["clocked"] = serde_json::json!(self.clocked_gates.contains(&s.region));
+            }
+        }
+        v
     }
 
     /// Whether the layout resolved any gate anchor at all — a campaign with none
@@ -7202,6 +7212,52 @@ impl Configuration {
         base: &crate::compiler::blockstate::BlockMap,
     ) -> crate::compiler::blockstate::BlockMap {
         self.state.blocks_over(base)
+    }
+
+    /// How many cells this configuration's bytes ([`Configuration::blocks`]
+    /// over the same base) hold differently from `load` — counted over the
+    /// cells its laid writes reach, which are the only cells
+    /// [`RegionState::blocks_over`] can move (spec-0089 §7's `cells moved from
+    /// load`). Every forced write `load` lays is laid here too or overridden
+    /// by a later write on its region, so no moved cell lies outside.
+    pub fn moved_from(&self, load: &crate::compiler::blockstate::BlockMap) -> usize {
+        let mut over: BTreeMap<[i32; 3], Option<&str>> = BTreeMap::new();
+        for ((lo, hi), block) in &self.state.laid {
+            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
+                over.insert(c, block.as_deref());
+            }
+        }
+        over.iter()
+            .filter(|(c, b)| load.get(*c).map(|s| s.as_str()) != **b)
+            .count()
+    }
+
+    /// How many regions an **unforced** write holds here — writes a beat
+    /// nobody has to play lays, which [`RegionState::blocks_over`] does not lay
+    /// (spec-0089 §7's `unforced write(s) not laid`).
+    pub fn unforced_writes(&self) -> usize {
+        self.state.unforced_regions.len()
+    }
+}
+
+/// **The configuration a path holds on arrival at step `arrival`** — the state
+/// [`World::region_state_at`] gives that arrival over `events` under
+/// `ancestor`, the one every route proof asks. `arrival` may be the path's
+/// length: the end state, every step on the path preceding it.
+///
+/// Public for spec-0089: a showcase camera taken after step `i` stands in the
+/// configuration arriving at `i + 1`, and the plan's POV shots in the one
+/// arriving at their leg.
+pub fn configuration_at(
+    world: &World,
+    events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    arrival: usize,
+) -> Configuration {
+    Configuration {
+        step: arrival,
+        live: world.staged_liveness(events, arrival, ancestor),
+        state: world.region_state_at(events, arrival, ancestor),
     }
 }
 

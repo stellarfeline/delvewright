@@ -145,6 +145,11 @@ pub struct CameraSheet {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Camera {
+    /// The critical-path step the picture is taken after (spec-0089): the
+    /// world as the region model holds it once that step is played. Absent:
+    /// the world at load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<CameraAfter>,
     /// The `design.json` row whose approved image this camera answers.
     pub answers: String,
     /// The camera's exposure: `1.0` renders the light as the path tracer
@@ -173,6 +178,63 @@ pub struct Camera {
     pub width: u32,
     /// Minecraft yaw, degrees: 0 south, 90 west, 180 north, 270 east.
     pub yaw: f64,
+}
+
+/// The step a camera is taken after (spec-0089 §3): a step of an exported
+/// path, named in the vocabulary `critical-path.json` speaks — an objective id
+/// (`obj/<id>`) or a trigger id (`trigger/<id>`), never an index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CameraAfter {
+    /// The branch id (`validation/branch-plan.json`) whose path the step is
+    /// on. Absent: the critical path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The step's id: `obj/<id>` or `trigger/<id>`.
+    pub step: String,
+}
+
+impl CameraAfter {
+    /// Parse `<step>[@<path>]` — `delvec place-camera --after`'s spelling.
+    pub fn parse(spec: &str) -> Result<CameraAfter, String> {
+        let shape = "an `--after` is `<step>[@<path>]`: an objective id (`obj/<id>`) or a trigger \
+                     id (`trigger/<id>`), and optionally `@` and the branch id whose path it is on \
+                     (`obj/clear-the-muster`, `obj/open-the-vault@branch/skipped`)";
+        let (step, path) = match spec.split_once('@') {
+            Some((s, p)) => (s, Some(p)),
+            None => (spec, None),
+        };
+        let well_formed = |s: &str, prefix: &str| {
+            s.strip_prefix(prefix).is_some_and(|rest| {
+                !rest.is_empty()
+                    && rest.chars().all(|c| {
+                        c.is_ascii_lowercase()
+                            || c.is_ascii_digit()
+                            || matches!(c, '-' | '_' | '/' | '.')
+                    })
+            })
+        };
+        if !(well_formed(step, "obj/") || well_formed(step, "trigger/")) {
+            return Err(format!("`{spec}` is not a step: {shape}"));
+        }
+        if let Some(p) = path
+            && (p.is_empty() || p.contains('@') || p.chars().any(char::is_whitespace))
+        {
+            return Err(format!("`{spec}` names no path after `@`: {shape}"));
+        }
+        Ok(CameraAfter {
+            path: path.map(str::to_string),
+            step: step.to_string(),
+        })
+    }
+
+    /// `obj/x` or `obj/x@branch/y`: the pair as every line prints it.
+    pub fn label(&self) -> String {
+        match &self.path {
+            Some(p) => format!("{}@{p}", self.step),
+            None => self.step.clone(),
+        }
+    }
 }
 
 /// Who placed a camera. A hand camera is final: no estimate is written over it
@@ -952,8 +1014,9 @@ pub struct Emission {
 /// Options for [`emit`].
 #[derive(Debug, Clone, Default)]
 pub struct EmitOptions {
-    /// Absolute path of the world save the scenes load.
-    pub world_path: String,
+    /// Per camera name, the absolute path of the world its scene loads — the
+    /// world written for the configuration it stands in (spec-0089 §5.3).
+    pub world_paths: std::collections::BTreeMap<String, String>,
     /// Only these cameras, by name; empty = every camera.
     pub only: Vec<String>,
     pub bracket: Option<Bracket>,
@@ -1078,11 +1141,21 @@ pub fn emit(
     for c in cameras {
         let sky = resolve_sky(&c, rows).map_err(|why| Diagnostic::error(DW_INPUT, why))?;
         let stem = camera_stem(&plan.campaign_id, &c.name, opts.draft);
+        let world_path = opts.world_paths.get(&c.name).ok_or_else(|| {
+            Diagnostic::error(
+                DW_INPUT,
+                format!(
+                    "camera `{}` stands in no written world: every camera a run frames is asked \
+                     where it stands before a scene is emitted",
+                    c.name
+                ),
+            )
+        })?;
         let scene = world_scene(
             &plan,
             &stem,
             &Frame::of(&c, opts.draft),
-            &opts.world_path,
+            world_path,
             sky.sky.scene(),
         )?;
         out.scenes.push((format!("{stem}.json"), scene.to_bytes()?));
@@ -1138,6 +1211,7 @@ pub fn place(
     name: &str,
     answers: Option<&str>,
     sky: Option<CameraSky>,
+    after: Option<CameraAfter>,
     placement: Placement,
 ) -> Result<(CameraSheet, Placed), Diagnostic> {
     let refuse = |why: String| Diagnostic::error(DW_INPUT, format!("{CAMERAS_FILE}: {why}"));
@@ -1219,6 +1293,7 @@ pub fn place(
                 )));
             };
             Camera {
+                after: None,
                 answers: answers.to_string(),
                 exposure: 1.0,
                 fov: *fov,
@@ -1238,6 +1313,12 @@ pub fn place(
     // (a person placed the pose, not the sky) and an estimate carries its own.
     if sky.is_some() {
         row.sky = sky;
+    }
+    // `--after` states the step the picture is taken after (spec-0089 §3.4);
+    // without it a hand row keeps the step it had and an estimate carries its
+    // own — the overlay cannot read the quest state, so a stamp never carries one.
+    if after.is_some() {
+        row.after = after;
     }
     row.check()
         .map_err(|why| refuse(format!("camera `{name}`: {why}")))?;
@@ -1422,6 +1503,7 @@ mod tests {
 
     fn cam(name: &str) -> Camera {
         Camera {
+            after: None,
             answers: "concept/quay".to_string(),
             exposure: 1.0,
             fov: 50.0,
@@ -1453,8 +1535,18 @@ mod tests {
             .collect()
     }
 
+    /// Emit with every framed camera standing in `/abs/world` unless the
+    /// options say otherwise: these tests are about the scene, not the world.
     fn emit3(plan: &[u8], sheet: &CameraSheet, opts: &EmitOptions) -> Result<Emission, Diagnostic> {
-        emit(plan, sheet, &rows(), opts)
+        let mut o = opts.clone();
+        if o.world_paths.is_empty() {
+            for c in
+                selected(&sheet.campaign_id, sheet, &o.only, o.bracket.as_ref()).unwrap_or_default()
+            {
+                o.world_paths.insert(c.name, "/abs/world".into());
+            }
+        }
+        emit(plan, sheet, &rows(), &o)
     }
 
     fn place5(
@@ -1464,7 +1556,7 @@ mod tests {
         answers: Option<&str>,
         placement: Placement,
     ) -> Result<(CameraSheet, Placed), Diagnostic> {
-        place(sheet, campaign_id, name, answers, None, placement)
+        place(sheet, campaign_id, name, answers, None, None, placement)
     }
 
     fn sheet(id: &str, cams: Vec<Camera>) -> CameraSheet {
@@ -1562,15 +1654,7 @@ mod tests {
     #[test]
     fn a_stated_camera_is_emitted_verbatim() {
         let s = sheet("isle", vec![cam("hero")]);
-        let e = emit3(
-            OCEAN,
-            &s,
-            &EmitOptions {
-                world_path: "/abs/world".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let e = emit3(OCEAN, &s, &EmitOptions::default()).unwrap();
         assert_eq!(e.scenes.len(), 1);
         let (file, bytes) = &e.scenes[0];
         assert_eq!(file, "isle_camera_hero.json");
