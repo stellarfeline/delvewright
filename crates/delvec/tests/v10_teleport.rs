@@ -149,7 +149,10 @@ fn quests(teleport_extent: &str) -> String {
             {{ "type": "clear-effect", "effect": "minecraft:poison" }}
           ]
         }},
-        "on_complete": [ {{ "type": "narrate", "text": "The bolt slides back." }} ]
+        "on_complete": [
+          {{ "type": "narrate", "text": "The bolt slides back." }},
+          {{ "type": "open-gate", "anchor": "anchor/door" }}
+        ]
       }},
       {{
         "id": "quest/leave",
