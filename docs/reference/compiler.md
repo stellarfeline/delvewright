@@ -2427,6 +2427,22 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   there, passes on the trigger's fired marker and then awaits the landing as for
   every carried step. The same keys ride every `branch-path-<branch>.json`.
 
+  **A `reach` step a landing completes** carries `completed_on_landing: true`
+  (`plan::completed_on_landing`, the one place the rule lives). It is present
+  exactly when the step before it carries the party — a crossing, a link or a
+  loop, through its `transport` — and the landing lies in this reach's completion
+  volume, read by `ReachCompletion::completes_on_landing`: the vanilla
+  intersection test with the body centred on the cell and its feet on the cell's
+  floor for a crossing and a link, which put a body on a fixed point, and the
+  certain reading (the cell inside the cube) for a loop, whose landing keeps the
+  body's place in the cell. The server completes such a reach on arrival, during
+  the carrying step, so the path keeps the step and the bot walks nothing for it:
+  it asserts the marker already arrived, and the endgame rule counts the campaign
+  marker as due at the carrying step when the last objective step is such a
+  reach. A sealed room reached only by a link, whose beat stands where the link
+  lands, is the shape. The harness refuses the key on a step with no carrying step
+  before it (a bonfire `rest` between the two is looked past).
+
   **`non_combatants` — who the bot may never swing at** (format 4,
   `combat::non_combatants`). A block of `kinds`, `ambiguous`, `examined`,
   `unbound` and (exactly when unbound) `reason`. `kinds` names the entity kinds,

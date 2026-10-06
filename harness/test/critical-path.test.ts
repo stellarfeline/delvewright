@@ -4,6 +4,7 @@ import {
   CRITICAL_PATH_FORMAT_VERSION,
   CriticalPathParseError,
   insideCompletion,
+  landingCarrier,
   parseCriticalPath,
   parseCriticalPathJson,
   reachGoal,
@@ -887,6 +888,64 @@ test("a hop the arrival check would accept before the press is refused, naming b
   // Eight blocks east is observable, and so is a short hop five blocks down.
   parseCriticalPath(withStep({ ...base, stand: [1, 64, 0], transport: [9, 64, 0] }));
   parseCriticalPath(withStep({ ...base, stand: [1, 64, 0], transport: [2, 59, 0] }));
+});
+
+// --- a reach the previous carry's landing completes ----------------------------
+
+const ferry = {
+  action: "trigger",
+  trigger: "trigger/tiller",
+  on: "use",
+  anchor: "anchor/tiller",
+  pos: [13, 67, 21],
+  stand: [10, 67, 21],
+  transport: [2, 67, 27],
+};
+const cabin = {
+  action: "reach",
+  objective: "obj/cabin",
+  anchor: "anchor/cabin",
+  pos: [2, 67, 28],
+  radius: 1,
+  completion: { kind: "cube", lo: [1, 66, 27], hi: [3, 68, 29] },
+};
+
+function withSteps(...steps: Record<string, unknown>[]): Record<string, unknown> {
+  const raw = validRaw();
+  (raw["steps"] as unknown[]).splice(2, 0, ...steps);
+  return raw;
+}
+
+test("a reach a landing completes parses the mark behind a carrying step", () => {
+  const path = parseCriticalPath(withSteps(ferry, { ...cabin, completed_on_landing: true }));
+  const step = path.steps[3];
+  assert.equal(step?.action, "reach");
+  assert.equal(step?.action === "reach" && step.completedOnLanding, true);
+  assert.equal(landingCarrier(path.steps, 3), 2);
+  // Absent means false, and leaves no key.
+  const plain = parseCriticalPath(withSteps(ferry, cabin)).steps[3];
+  assert.equal(plain !== undefined && "completedOnLanding" in plain, false);
+});
+
+test("a bonfire rest between the carry and the reach is looked past", () => {
+  const rest = { action: "rest", bonfire: 0, anchor: "anchor/fire", pos: [2, 67, 29], command: "/trigger dw.rest set 2" };
+  const path = parseCriticalPath(withSteps(ferry, rest, { ...cabin, completed_on_landing: true }));
+  assert.equal(landingCarrier(path.steps, 4), 2);
+});
+
+test("a landing mark with no carry before it, or not `true`, is refused", () => {
+  const { transport: _t, stand: _s, ...still } = ferry;
+  assert.throws(
+    () => parseCriticalPath(withSteps(still, { ...cabin, completed_on_landing: true })),
+    (e: unknown) =>
+      e instanceof CriticalPathParseError &&
+      e.pointer === "/steps/3/completed_on_landing" &&
+      /no earlier step/.test(e.message),
+  );
+  assert.throws(
+    () => parseCriticalPath(withSteps(ferry, { ...cabin, completed_on_landing: false })),
+    (e: unknown) => e instanceof CriticalPathParseError && e.pointer === "/steps/3/completed_on_landing",
+  );
 });
 
 // --- witness-strike steps ---------------------------------------------------

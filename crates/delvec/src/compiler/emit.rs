@@ -25826,6 +25826,14 @@ fn critical_path_json(
             if let (Some(pos), Some(obj)) = (transport, step.as_object_mut()) {
                 obj.insert("transport".to_string(), json!(pos));
             }
+            // A reach the previous step's landing puts the party inside completes
+            // on that landing (`plan::completed_on_landing`); present only when
+            // true, so every path without one is byte-identical.
+            if plan::completed_on_landing(walked, transports, i)
+                && let Some(obj) = step.as_object_mut()
+            {
+                obj.insert("completed_on_landing".to_string(), json!(true));
+            }
             // DSL v0.4 harness hints. `sneak` is emitted ONLY when true (absent =
             // false, per the harness contract). `cutscene_seconds` is a positive
             // integer on the step whose completion triggers the cutscene.

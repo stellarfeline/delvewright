@@ -224,6 +224,24 @@ impl ReachCompletion {
         }
     }
 
+    /// Does a **carry** that puts a body down on cell `landing` complete this
+    /// objective on arrival?
+    ///
+    /// `exact` says whether the carry fixes where in the cell the body ends up. A
+    /// crossing (`teleport @s X Y Z`) and a link (`tp … X.5 Y Z.5`) both do: an
+    /// integer x and z are centred by the command, and the feet sit at `Y`, so
+    /// [`ReachCompletion::possibly_completes_from`] with those feet is the vanilla
+    /// test itself, not a bound on it. A loop moves the body by an offset from
+    /// wherever it crossed, so only the cell is known and the certain reading is
+    /// the one that holds.
+    pub fn completes_on_landing(&self, landing: [i32; 3], exact: bool) -> bool {
+        if exact {
+            self.possibly_completes_from(landing, f64::from(landing[1]))
+        } else {
+            self.certainly_completes_from(landing)
+        }
+    }
+
     /// Every cell [`ReachCompletion::possibly_completes_from`] could answer yes
     /// about, before the world is asked anything.
     ///
@@ -906,4 +924,29 @@ pub fn check_reach_footprint(
         ));
     }
     (binding, first.map_or(Ok(()), Err))
+}
+
+#[cfg(test)]
+mod landing_tests {
+    use super::*;
+
+    /// A carry onto a fixed point is judged by the vanilla test itself: a body
+    /// set down one course under the volume reaches up into it and completes; a
+    /// loop's landing, whose place in the cell is not fixed, completes only from
+    /// inside.
+    #[test]
+    fn a_fixed_landing_reads_the_vanilla_test_and_a_loop_landing_the_certain_one() {
+        let c = reach_completion([10, 67, 10], 1);
+        // Inside.
+        assert!(c.completes_on_landing([10, 67, 10], true));
+        assert!(c.completes_on_landing([10, 67, 10], false));
+        // Feet one course under the cube: the body's box rises into it.
+        assert!(c.completes_on_landing([10, 65, 10], true));
+        assert!(!c.completes_on_landing([10, 65, 10], false));
+        // One column outside on x: a centred body does not touch it.
+        assert!(!c.completes_on_landing([12, 67, 10], true));
+        assert!(!c.completes_on_landing([12, 67, 10], false));
+        // Two courses under: out of reach either way.
+        assert!(!c.completes_on_landing([10, 64, 10], true));
+    }
 }

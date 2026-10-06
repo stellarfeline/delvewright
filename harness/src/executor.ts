@@ -4331,6 +4331,32 @@ export class MineflayerExecutor implements StepExecutor {
    * sentence naming the volume, the position, and which of the two is wrong.
    */
   async reach(step: ReachStep): Promise<void> {
+    if (step.completedOnLanding) {
+      // The compiler says the previous step's carry put the party down inside
+      // this volume, so the objective completed on that landing. Nothing is
+      // walked; the marker is asserted, and its absence is the compiler's claim
+      // failing, never a reason to go looking for the volume.
+      const done = this.completedObjectives.get(step.objective);
+      if (done !== undefined) {
+        process.stderr.write(
+          `[reach] ${step.objective} completed on the landing (step ${done}), as the path says\n`,
+        );
+        return;
+      }
+      try {
+        await this.requireObjective(step.objective, `reach ${step.anchor} (on the landing)`);
+      } catch (err) {
+        if (err instanceof BotDeathError) throw err;
+        throw new Error(
+          `reach ${step.anchor}: the path says the previous carry's landing completes ` +
+            `${step.objective} (completed_on_landing), and no marker arrived — the bot is at ` +
+            `${fmt(this.requireBot().entity.position)}, volume ${JSON.stringify(step.completion)}. ` +
+            `The landing and the volume disagree with the compiler's reading of them. ` +
+            `Original: ${(err as Error).message}`,
+        );
+      }
+      return;
+    }
     const goal = reachGoal(step.completion);
     await this.walkTo(goal.pos, goal.range, `anchor ${step.anchor}`, step.sneak, {
       objective: step.objective,
