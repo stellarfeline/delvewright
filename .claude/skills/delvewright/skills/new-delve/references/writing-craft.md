@@ -213,7 +213,8 @@ pass afterwards. Which rules bind which line:
 - **Functional text** — objective titles and hints, `missing_item_hint`,
   `sealed_hint`, bonfire prompts and labels, dialogue option labels and
   tooltips, shop labels and tooltips, item names, class blurbs: F1–F6. It says
-  the action, the object and the place; a refusal says what is wrong and what
+  the action, the object and the place, the place by a landmark the player can
+  see and a position relative to it, never by a compass point; a refusal says what is wrong and what
   fixes it; an item tooltip says what the item does first.
 - **Story text** — dialogue, barks, narration: S1–S5. State the fact; end on
   information; a joke carries the function too.
