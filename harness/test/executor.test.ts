@@ -4372,6 +4372,61 @@ test("a use trigger step RIGHT-CLICKS the hitbox instead of hitting it", async (
   );
 });
 
+/**
+ * spec-0083 §4: a link's tiller. The fake server records every walk goal, and
+ * a right-click on the hitbox fires the trigger's marker and then — as the
+ * link's `teleport` does — puts the bot on the far landing with a forced move.
+ */
+class LinkFakeBot extends TriggerFakeBot {
+  goals: Array<[number, number, number, number]> = [];
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (...args: unknown[]): Promise<void> => {
+      const goal = args[0] as { x: number; y: number; z: number; rangeSq: number };
+      this.goals.push([goal.x, goal.y, goal.z, goal.rangeSq]);
+      this.calls.push("goto");
+      this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+    },
+  };
+  override async activateEntity(e: { id: number }): Promise<void> {
+    await super.activateEntity(e);
+    setTimeout(() => {
+      this.entity.position = new FakeVec3(20.5, 64, 0.5);
+      this.emit("forcedMove");
+    }, 40);
+  }
+}
+
+test("a carrying trigger step walks to its stand cell, right-clicks from there, and awaits the landing", async () => {
+  const bot = new LinkFakeBot();
+  bot.watches = "interaction";
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  executor.beginStep(4);
+  const step: TriggerStep = {
+    ...STRIKE_STEP,
+    on: "use",
+    stand: [-1, 64, 0],
+    transport: [20, 64, 0],
+  };
+  await within("executor.fireTrigger(link step)", executor.fireTrigger(step));
+  // The last walk was a BLOCK goal on the stand cell — inside the volume — and
+  // nothing walked the bot off it toward the hitbox before the click.
+  assert.deepEqual(bot.goals.at(-1), [-1, 64, 0, 0]);
+  assert.deepEqual(bot.calls.filter((c) => c !== "goto"), ["lookAt", "activateEntity(77)"]);
+  // What the sequencer does next for a step carrying `transport`.
+  await within("executor.awaitTransport([20, 64, 0])", executor.awaitTransport([20, 64, 0]));
+  assert.equal(Math.floor(bot.entity.position.x), 20, "carried to the landing");
+});
+
 test("a strike-npc trigger step hits the NPC's own hitbox at its station", async () => {
   const bot = new TriggerFakeBot();
   const executor = attach(bot);

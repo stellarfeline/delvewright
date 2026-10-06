@@ -1073,21 +1073,26 @@ pub struct Plan<'a> {
     /// a finding, and an absent file is the honest statement that there was
     /// nothing to enumerate.
     pub way_gate: Option<crate::compiler::ways::WayGate>,
-    /// **Where the party can be CARRIED rather than walk**: every declared
-    /// `teleport`'s resolved source volume (DSL v0.10, spec-0031), content-ordered.
-    /// Empty for every campaign that declares no `teleport`, which is what keeps
-    /// those campaigns' routing byte-identical.
-    ///
-    /// The completability model reads it for one purpose: a walked leg whose
-    /// *start* lies inside one of these boxes is a leg the party may never walk, so
-    /// a world-load gate seal is not applied to it and
-    /// [`crate::compiler::nav::DW_GATE_NEVER_OPENED`] declines to judge it. It deliberately
-    /// carries **no firing step**: the suppression must hold for a branch path too,
-    /// whose step indices are its own, and here the conservative direction is *not
-    /// to fire* — refusing a campaign over a door the party is teleported past is
-    /// the false positive this model must not have. The class left unproven as a
-    /// result is named in `docs/reference/compiler.md`.
-    pub transit_teleports: Vec<([i32; 3], [i32; 3])>,
+    /// **Every link** (spec-0083 §3.1): a `teleport` hosted in a `triggers[]`
+    /// entry declared `once: false`, in [`crate::compiler::link::collect`] order.
+    /// Empty for every campaign that declares none.
+    pub links: Vec<crate::compiler::link::LinkPlan>,
+    /// **Every gather** — every other `teleport`. Read by the put-at population
+    /// and by `DW0311`'s message; never leaned on by a route.
+    pub gathers: Vec<crate::compiler::link::GatherPlan>,
+    /// Per critical-path step, the links live there (indices into
+    /// [`Plan::links`]): the trigger's flag gate and every `when` on the way to
+    /// the teleport hold under the flags the path holds walking up to the step,
+    /// and every numeric term compares true against the writes the path has
+    /// performed by then (spec-0083 §3.3). Aligned 1:1 with `critical_path`.
+    pub critical_path_live_links: Vec<Vec<usize>>,
+    /// The links this plan's path takes ([`LinkTakes`]) — empty for a plan built
+    /// without a world, and for every campaign whose walks route unaided.
+    pub link_takes: LinkTakes,
+    /// The blockout perturbation this plan was built under, kept so a plan
+    /// rebuilt with the route proof's link decisions ([`Plan::relinked`]) is
+    /// the same plan with those steps added and nothing else changed.
+    pub perturb: Perturb,
     /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
     /// (spec-0017), keyed by batch id — the editor's per-batch snapshot
     /// framing for massing batches. Empty for a campaign without massing.
@@ -1553,6 +1558,12 @@ pub enum Step {
         pos: [i32; 3],
         /// An `approach` trigger's radius; `None` for a click.
         range: Option<u32>,
+        /// **Where the party stands to perform a link** (spec-0083 §3.2): a cell
+        /// inside the link's `from` volume the act reaches the body from. `Some`
+        /// exactly when performing this trigger carries the party — the step's
+        /// `transport` marker is then the link's `to`. `None` for every trigger
+        /// the path performs for its openings or its flags alone.
+        stand: Option<[i32; 3]>,
     },
     /// Assert a scoreboard objective value.
     AssertComplete {
@@ -1602,6 +1613,15 @@ impl Step {
     pub fn trigger(&self) -> Option<&str> {
         match self {
             Step::Trigger { trigger_id, .. } => Some(trigger_id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The cell the party stands on to perform a **link** (spec-0083 §3.2) —
+    /// `Some` exactly when performing this step carries the party.
+    pub fn stand(&self) -> Option<[i32; 3]> {
+        match self {
+            Step::Trigger { stand, .. } => *stand,
             _ => None,
         }
     }
@@ -2643,6 +2663,48 @@ mod waterline_binding_tests {
     }
 }
 
+/// `DW0932` (spec-0083 §3.2, §3.6): a **link** whose geometry does not hold —
+/// four faults under one code, because they are one claim, *a body in this
+/// volume is carried onto a route cell*: no standable cell inside the volume
+/// performs the trigger; `to` inside `from`; `to` not standable at the
+/// teleport's tick; `from` and `to` in different areas.
+pub const DW_TELEPORT_LINK: DwCode = DwCode::new("DW0932", ExitTier::Build);
+
+/// `DW0933` (spec-0083 §3.5): a `teleport` fires at or before the tick its
+/// root's `cutscene` ends, and `cs_end` undoes it. Validation tier.
+pub const DW_TELEPORT_UNDER_CUTSCENE: DwCode = DwCode::new("DW0933", ExitTier::Build);
+
+/// `DW0934` (spec-0083 §7): the layout graph and the quests disagree about
+/// carries. Validation tier.
+pub const DW_TELEPORT_CARRY_UNREALISED: DwCode = DwCode::new("DW0934", ExitTier::Build);
+
+/// **Which links a path takes, and where** (spec-0083 §3.4) — the route
+/// proof's decision, handed back to the path builder so the steps it splices
+/// are in the ONE path every consumer reads.
+///
+/// Keyed by step indices of the path as built WITHOUT any link; the builder is
+/// deterministic, so the same campaign rebuilds the same unlinked path and the
+/// keys mean the same steps. Empty for every campaign the walk proof routes
+/// without a link — which is what keeps those builds byte-identical.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LinkTakes {
+    /// Leg end (unlinked step index) → the links taken on that leg, in the order
+    /// taken, each `(index into Plan::links, stand cell)`. Each becomes a
+    /// `trigger` step spliced directly in front of the leg's end.
+    pub spliced: BTreeMap<usize, Vec<(usize, [i32; 3])>>,
+    /// A `trigger` step the path already performs (unlinked step index) whose
+    /// trigger is a link the party stands in: `(link index, stand cell)`. A
+    /// performed trigger that carries, carries.
+    pub performed: BTreeMap<usize, (usize, [i32; 3])>,
+}
+
+impl LinkTakes {
+    /// Whether the path takes no link at all.
+    pub fn is_empty(&self) -> bool {
+        self.spliced.is_empty() && self.performed.is_empty()
+    }
+}
+
 /// Inter-area transport map: objective id → absolute teleport target (see
 /// [`Plan::transport`]).
 pub type TransportMap = BTreeMap<String, [i32; 3]>;
@@ -2663,6 +2725,34 @@ impl<'a> Plan<'a> {
         campaign: &'a Campaign,
         prefabs: &PrefabRegistry,
         perturb: Perturb,
+    ) -> Result<Self, PlanError> {
+        Self::build_linked(campaign, prefabs, perturb, LinkTakes::default(), true)
+    }
+
+    /// **This plan with the route proof's link decisions in its path**
+    /// (spec-0083 §3.4): the same campaign, prefabs and perturbation, rebuilt
+    /// with each taken link spliced in front of the leg it carries and each
+    /// performed link marked. Every field derived from the path — the step
+    /// indices, the region-write firings, the ancestor relation, the
+    /// checkpoints, the transport markers — is derived again from the one path,
+    /// so no consumer can read a step index that means something else.
+    ///
+    /// Called by the build once the world exists, because whether a walk fails
+    /// is a question about blocks; `takes` is what [`crate::compiler::nav::take_links`]
+    /// decided over them.
+    pub fn relinked(&self, prefabs: &PrefabRegistry, takes: LinkTakes) -> Result<Self, PlanError> {
+        Ok(
+            Self::build_linked(self.campaign, prefabs, self.perturb.clone(), takes, false)?
+                .with_design_files(self.design_files.clone()),
+        )
+    }
+
+    fn build_linked(
+        campaign: &'a Campaign,
+        prefabs: &PrefabRegistry,
+        perturb: Perturb,
+        link_takes: LinkTakes,
+        announce: bool,
     ) -> Result<Self, PlanError> {
         let namespace = campaign.world.campaign_id.as_str().to_string();
         let seed = campaign.world.content.seed;
@@ -2933,47 +3023,50 @@ impl<'a> Plan<'a> {
         // A campaign with no site plan gets `None` and nothing below runs, so its
         // output does not move by a byte.
         let mut blockout_reads = delvewright_dsl::metrics::Reads::new();
-        let blockout =
-            match crate::compiler::blockout::derive_with(campaign, &mut blockout_reads, perturb) {
-                None => None,
-                Some((mut placement, derived)) => {
-                    // The derivation is a producer of anchors exactly as a prefab
-                    // is, so it says what each one is FOR (spec-0046): the entry
-                    // node's anchor arrives carrying `AnchorRole::Entry`, and the
-                    // spelling `siteplan::ENTRY_ANCHOR` gives it stops being what
-                    // resolves it.
-                    for (name, resolved, role) in derived.anchors() {
-                        anchors.place(&placement.area_id, name, resolved, role)?;
-                    }
-                    // ---- the detail plan's pieces (spec-0050 §1) ----
-                    //
-                    // **The second tooth, and it is in the same door as the first.**
-                    // A `details[]` row carries no coordinate, no extent and no
-                    // offset; where its piece goes is `Frame::of` over the plan's
-                    // own resolved box, computed here. There is no flag and no
-                    // second entry point, so a part that wanted a different box
-                    // would have to have built a `Plan` some other way, and there is
-                    // none.
-                    //
-                    // The anchors go in AFTER the derived ones on purpose: the
-                    // derivation names `anchor/node-…` at the massing's own footing,
-                    // and where a piece stands there the piece's anchor is the
-                    // truth. Overwriting is what keeps the campaign's stage-3
-                    // vocabulary working without a quest edit.
-                    let detailing = crate::compiler::detail::place(campaign, prefabs);
-                    placement.pieces.extend(detailing.pieces);
-                    for (name, pos, facing) in detailing.anchors {
-                        anchors.place(
-                            &placement.area_id,
-                            &name,
-                            ResolvedAnchor::Point { pos, facing },
-                            None,
-                        )?;
-                    }
-                    areas.push(placement);
-                    Some(derived)
+        let blockout = match crate::compiler::blockout::derive_with(
+            campaign,
+            &mut blockout_reads,
+            perturb.clone(),
+        ) {
+            None => None,
+            Some((mut placement, derived)) => {
+                // The derivation is a producer of anchors exactly as a prefab
+                // is, so it says what each one is FOR (spec-0046): the entry
+                // node's anchor arrives carrying `AnchorRole::Entry`, and the
+                // spelling `siteplan::ENTRY_ANCHOR` gives it stops being what
+                // resolves it.
+                for (name, resolved, role) in derived.anchors() {
+                    anchors.place(&placement.area_id, name, resolved, role)?;
                 }
-            };
+                // ---- the detail plan's pieces (spec-0050 §1) ----
+                //
+                // **The second tooth, and it is in the same door as the first.**
+                // A `details[]` row carries no coordinate, no extent and no
+                // offset; where its piece goes is `Frame::of` over the plan's
+                // own resolved box, computed here. There is no flag and no
+                // second entry point, so a part that wanted a different box
+                // would have to have built a `Plan` some other way, and there is
+                // none.
+                //
+                // The anchors go in AFTER the derived ones on purpose: the
+                // derivation names `anchor/node-…` at the massing's own footing,
+                // and where a piece stands there the piece's anchor is the
+                // truth. Overwriting is what keeps the campaign's stage-3
+                // vocabulary working without a quest edit.
+                let detailing = crate::compiler::detail::place(campaign, prefabs);
+                placement.pieces.extend(detailing.pieces);
+                for (name, pos, facing) in detailing.anchors {
+                    anchors.place(
+                        &placement.area_id,
+                        &name,
+                        ResolvedAnchor::Point { pos, facing },
+                        None,
+                    )?;
+                }
+                areas.push(placement);
+                Some(derived)
+            }
+        };
 
         // ---- gate-aware reachability (M2 fix 7, DW0306) ----
         // With the layout solved, verify no objective's anchor is sealed behind a
@@ -3021,7 +3114,11 @@ impl<'a> Plan<'a> {
         // when it was zero is what let a build read `0 with a spatial contract`
         // as an unremarkable advisory line rather than as a check that examined
         // nothing.
-        eprintln!("{}", binding.line(placed));
+        // A relinked plan is the same placement measured a second time; its
+        // binding line was printed by the first build and is not printed twice.
+        if announce {
+            eprintln!("{}", binding.line(placed));
+        }
         if let Some(finding) = binding.finding(placed, campaign.site_plan.is_some()) {
             warnings.push(finding);
         }
@@ -3058,6 +3155,19 @@ impl<'a> Plan<'a> {
             })
             .collect::<Vec<_>>();
 
+        // ---- links and gathers (spec-0083) ----
+        //
+        // Before the path, because the path records which links are live at
+        // each of its steps and splices the ones the route proof took. The
+        // static half of `DW0932` is judged here, where every link is known
+        // and no block is needed.
+        let (links, gathers) = crate::compiler::link::collect(campaign, &anchors);
+        for l in &links {
+            if let Some(message) = crate::compiler::link::static_fault(l) {
+                return Err(PlanError::new(DW_TELEPORT_LINK, message).with_warnings(warnings));
+            }
+        }
+
         // ---- critical path + inter-area transport ----
         let flow = crate::compiler::flow::Flow::new(campaign);
         let start = resolve_campaign_start(&areas, &anchors);
@@ -3068,6 +3178,10 @@ impl<'a> Plan<'a> {
             &flow,
             &flow.playthrough(),
             start.as_ref(),
+            PathLinks {
+                links: &links,
+                takes: &link_takes,
+            },
         )?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
@@ -3169,9 +3283,6 @@ impl<'a> Plan<'a> {
             &trigger_steps,
             cp.steps.len(),
         );
-        // v0.10 (spec-0031): where the party can be CARRIED rather than walk.
-        let transit_teleports = collect_transit_teleports(campaign, &anchors);
-
         let region_events = region_events;
 
         // ---- what became of every staged way (spec-0042 §2.5, DW0548) ----
@@ -3242,6 +3353,11 @@ impl<'a> Plan<'a> {
             critical_path_transport: cp.transport_by_step,
             critical_path_sneak: cp.sneak_by_step,
             critical_path_cutscene: cp.cutscene_by_step,
+            critical_path_live_links: cp.live_links_by_step,
+            links,
+            gathers,
+            link_takes,
+            perturb,
             checkpoints,
             lethal_volumes,
             furniture,
@@ -3259,7 +3375,6 @@ impl<'a> Plan<'a> {
             region_events,
             ways,
             way_gate,
-            transit_teleports,
             strict_ancestor_steps,
             massing_bounds,
             blockout,
@@ -3327,6 +3442,18 @@ impl<'a> Plan<'a> {
         flow: &crate::compiler::flow::Flow<'_>,
         path: &crate::compiler::flow::Playthrough,
     ) -> Result<CriticalPath, PlanError> {
+        self.branch_critical_path_linked(flow, path, &LinkTakes::default())
+    }
+
+    /// [`Plan::branch_critical_path`] with the route proof's link decisions for
+    /// THIS branch's path spliced in (spec-0083 §6) — the branch counterpart of
+    /// [`Plan::relinked`], keyed by the branch's own unlinked step indices.
+    pub fn branch_critical_path_linked(
+        &self,
+        flow: &crate::compiler::flow::Flow<'_>,
+        path: &crate::compiler::flow::Playthrough,
+        takes: &LinkTakes,
+    ) -> Result<CriticalPath, PlanError> {
         build_critical_path(
             self.campaign,
             &self.anchors,
@@ -3334,6 +3461,10 @@ impl<'a> Plan<'a> {
             flow,
             path,
             self.campaign_start().as_ref(),
+            PathLinks {
+                links: &self.links,
+                takes,
+            },
         )
     }
 
@@ -4324,9 +4455,20 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
     }
 }
 
+/// What the path builder needs to know about links (spec-0083): every link
+/// the campaign declares, and which of them the route proof took on this path.
+#[derive(Clone, Copy)]
+pub(crate) struct PathLinks<'l> {
+    links: &'l [crate::compiler::link::LinkPlan],
+    takes: &'l LinkTakes,
+}
+
 /// The computed critical path and its per-step metadata.
 pub struct CriticalPath {
     pub steps: Vec<Step>,
+    /// Per step, the links live there (spec-0083 §3.3), indices into
+    /// [`Plan::links`]. Aligned 1:1 with `steps`.
+    pub live_links_by_step: Vec<Vec<usize>>,
     pub(crate) transport: TransportMap,
     pub transport_by_step: Vec<Option<[i32; 3]>>,
     pub sneak_by_step: Vec<bool>,
@@ -4394,8 +4536,14 @@ fn build_critical_path(
     flow: &crate::compiler::flow::Flow<'_>,
     path: &crate::compiler::flow::Playthrough,
     start: Option<&(String, [i32; 3])>,
+    carry: PathLinks<'_>,
 ) -> Result<CriticalPath, PlanError> {
+    let PathLinks { links, takes } = carry;
     let mut steps = Vec::new();
+    // `(path step index, first critical step it produced)`, in path order — how
+    // a critical step is mapped back to the flags and data the party holds
+    // walking up to it.
+    let mut si_start: Vec<(usize, usize)> = Vec::new();
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
     let mut obj_areas: Vec<(String, String, usize)> = Vec::new();
@@ -4456,6 +4604,7 @@ fn build_critical_path(
     let mut trigger_step: BTreeMap<String, usize> = BTreeMap::new();
 
     for (si, st) in path.steps.iter().enumerate() {
+        si_start.push((si, steps.len()));
         let qid = st.quest.as_str();
         let Some(quest) = stage5.get(qid) else {
             continue;
@@ -4955,13 +5104,122 @@ fn build_critical_path(
         }
     }
 
-    let obj_step: BTreeMap<String, usize> = obj_areas
+    let mut obj_step: BTreeMap<String, usize> = obj_areas
         .iter()
         .map(|(id, _, idx)| (id.clone(), *idx))
         .collect();
 
+    // ---- the links live at each step (spec-0083 §3.3) ----
+    //
+    // A link is live where the trigger's flag gate and every `when` on the way
+    // to its teleport hold under the flags the party holds walking up to the
+    // step, and every numeric term compares true against the writes the path
+    // has performed by then — the same replay `DW0879` reads (`Flow::walk`).
+    // Computed only when the campaign declares a link, so nothing else moves.
+    let mut live_links_by_step: Vec<Vec<usize>> = vec![Vec::new(); steps.len()];
+    if !links.is_empty() {
+        let mut data_at: Vec<BTreeMap<String, Option<i64>>> = Vec::new();
+        let mut walk = flow.walk();
+        for st in &path.steps {
+            data_at.push(
+                walk.data()
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+            );
+            walk.take(st);
+        }
+        for (k, live) in live_links_by_step.iter_mut().enumerate() {
+            let Some(si) = si_start
+                .iter()
+                .rev()
+                .find(|(_, first)| *first <= k)
+                .map(|(si, _)| *si)
+            else {
+                continue;
+            };
+            let (Some(held), Some(data)) = (flags_at.get(si), data_at.get(si)) else {
+                continue;
+            };
+            *live = links
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.flags_open(held) && l.state_open(data))
+                .map(|(i, _)| i)
+                .collect();
+        }
+    }
+
+    // ---- the links the route proof took (spec-0083 §3.4) ----
+    //
+    // A performed trigger that carries is marked where it stands; a taken link
+    // is a `trigger` step spliced directly in front of the leg it carries, in
+    // the order taken. Every per-step vector and every step-index map is
+    // re-indexed in the same pass, so the path is one path again.
+    for (&k, &(li, stand)) in &takes.performed {
+        if let (Some(Step::Trigger { stand: at, .. }), Some(l)) = (steps.get_mut(k), links.get(li))
+        {
+            *at = Some(stand);
+            transport_by_step[k] = Some(l.to);
+        }
+    }
+    if !takes.spliced.is_empty() {
+        let n = steps.len();
+        let mut new_steps = Vec::with_capacity(n);
+        let mut new_transport = Vec::with_capacity(n);
+        let mut new_sneak = Vec::with_capacity(n);
+        let mut new_cutscene = Vec::with_capacity(n);
+        let mut new_live = Vec::with_capacity(n);
+        let mut moved: Vec<usize> = Vec::with_capacity(n);
+        let mut spliced_at: Vec<(String, usize)> = Vec::new();
+        for (k, step) in steps.into_iter().enumerate() {
+            for &(li, stand) in takes.spliced.get(&k).into_iter().flatten() {
+                let Some(l) = links.get(li) else { continue };
+                spliced_at.push((l.trigger_id.clone(), new_steps.len()));
+                new_steps.push(Step::Trigger {
+                    trigger_id: l.trigger_id.clone(),
+                    on: l.on,
+                    anchor_id: l.anchor_id.clone(),
+                    npc_id: l.npc_id.clone(),
+                    pos: l.body.first().copied().unwrap_or(stand),
+                    range: l.range,
+                    stand: Some(stand),
+                });
+                new_transport.push(Some(l.to));
+                new_sneak.push(false);
+                new_cutscene.push(None);
+                new_live.push(live_links_by_step[k].clone());
+            }
+            moved.push(new_steps.len());
+            new_steps.push(step);
+            new_transport.push(transport_by_step[k]);
+            new_sneak.push(sneak_by_step[k]);
+            new_cutscene.push(cutscene_by_step[k]);
+            new_live.push(std::mem::take(&mut live_links_by_step[k]));
+        }
+        for idx in obj_step.values_mut() {
+            *idx = moved[*idx];
+        }
+        // Every trigger step moves with its step; a spliced link records the
+        // first step that performs its trigger, which is what the region model
+        // roots that trigger's openings at.
+        for idx in trigger_step.values_mut() {
+            *idx = moved[*idx];
+        }
+        for (id, at) in spliced_at {
+            let e = trigger_step.entry(id).or_insert(at);
+            *e = (*e).min(at);
+        }
+        steps = new_steps;
+        transport_by_step = new_transport;
+        sneak_by_step = new_sneak;
+        cutscene_by_step = new_cutscene;
+        live_links_by_step = new_live;
+    }
+
     Ok(CriticalPath {
         steps,
+        live_links_by_step,
         transport,
         transport_by_step,
         sneak_by_step,
@@ -5145,6 +5403,7 @@ fn path_triggers(
                 delvewright_dsl::TriggerOn::Approach { range } => Some(range),
                 _ => None,
             },
+            stand: None,
         });
     }
     out
@@ -5152,9 +5411,21 @@ fn path_triggers(
 
 /// Whether a critical path could ever perform this trigger — its bundle opens a
 /// way or sets a flag, the only two things [`path_triggers`] performs a trigger
-/// for. The emitter broadcasts a fired marker from exactly these, so
-/// every `trigger` step has a line to pass on and no other trigger prints one.
+/// for, or it hosts a **link** (a repeatable trigger carrying a `teleport`,
+/// spec-0083 §3.1), which the route proof performs where a walk fails. The
+/// emitter broadcasts a fired marker from exactly these, so every `trigger`
+/// step has a line to pass on and no other trigger prints one.
 pub(crate) fn trigger_may_be_performed(t: &delvewright_dsl::EnvTrigger) -> bool {
+    fn carries(effs: &[QuestEffect]) -> bool {
+        effs.iter().any(|e| {
+            e.teleport().is_some()
+                || matches!(&e.verb, delvewright_dsl::Verb::Sequence { steps }
+                    if steps.iter().any(|s| carries(&s.effects)))
+        })
+    }
+    if !t.once && carries(&t.effects) {
+        return true;
+    }
     fn deep(effs: &[QuestEffect]) -> bool {
         effs.iter().any(|e| {
             opens_a_way(e)
@@ -6366,33 +6637,6 @@ pub(crate) fn collect_way_openings(
             fire_step,
             forced,
         });
-    });
-    out
-}
-
-/// Collect every declared `teleport`'s resolved source volume with the step it
-/// fires at ([`TeleportTransit`]), over the **same** general effect walk the
-/// region-write model uses — so a `teleport` nested in a `sequence` step, in a trap
-/// payload or in a shop offer is found by existing rather than by being
-/// remembered.
-///
-/// Unlike [`collect_region_events`] it draws no forced/optional distinction: a
-/// firing that may never happen must not be *leaned on* to prove a delve
-/// completable, and must not be *ignored* when the question is whether the party is
-/// even standing where the proof thinks they are. See [`Plan::transit_teleports`].
-fn collect_transit_teleports(
-    campaign: &Campaign,
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-) -> Vec<([i32; 3], [i32; 3])> {
-    let mut out = Vec::new();
-    for_each_gate_effect(campaign, &mut |_site, e| {
-        let Some((from, _to)) = e.teleport() else {
-            return;
-        };
-        // A dangling `from` anchor is `DW0360`'s finding, not this model's.
-        if let Some(region) = zone_box_in(anchors, from) {
-            out.push(region);
-        }
     });
     out
 }

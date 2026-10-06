@@ -738,6 +738,14 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
                 zeroes.append(f"{f.name}: `{k}` is 0")
         for root in doc.get("unbound_roots") or []:
             zeroes.append(f"{f.name}: no bundle at root `{root}`")
+        # spec-0083 §8: the gallery binds a link and a gather, so either column of
+        # the teleport ledger's partition reading zero is a proof that stopped
+        # reaching what the document writes.
+        teleports = doc.get("teleports") if f.name == "teleport-gate.json" else None
+        if isinstance(teleports, dict):
+            for k in ("links", "gathers"):
+                if teleports.get(k) == 0:
+                    zeroes.append(f"{f.name}: `teleports.{k}` is 0")
     return ledgers, zeroes
 
 

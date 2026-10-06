@@ -201,7 +201,7 @@ impl StrandBinding {
 /// feet cell is `m`. The body's box is taken from the cell floor to a block over
 /// its height, so a perched or partially floored body is never out of reach by a
 /// half block the model does not carry.
-fn strikes(world: &World, p: [i32; 3], m: [i32; 3], w: f64, h: f64) -> bool {
+pub(crate) fn strikes(world: &World, p: [i32; 3], m: [i32; 3], w: f64, h: f64) -> bool {
     let eye = [
         f64::from(p[0]) + 0.5,
         world.feet_y(p) + PLAYER_EYE_HEIGHT,

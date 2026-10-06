@@ -1,0 +1,12 @@
+{
+  "code": "DW0934",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "remove",
+      "path": "/content/edges/12"
+    }
+  ],
+  "units": [],
+  "why": "The layout graph's `carry` edge from the exit to the ferry cabin removed, and nothing else. The quests still carry the party from the deck — a station of the exit — to the landing — a station of the cabin — so the graph's claim about how its places connect is missing a way the delve uses, and the cabin is a place the graph says nothing reaches. It declares no unit: the `carry` class and its fields are bound by the primary. The refusal names both places and the direction; the remedy is to draw the edge."
+}

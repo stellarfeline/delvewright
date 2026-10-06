@@ -1,0 +1,27 @@
+{
+  "campaign_id": "ferry-site",
+  "content": {
+    "areas": [],
+    "boundary": {
+      "margin": 16,
+      "message": "The strait ends here."
+    },
+    "difficulty": "normal",
+    "horizon": {
+      "base": "valley",
+      "ratio": 2.5,
+      "rim_height": 48
+    },
+    "min_players": 1,
+    "outro": "The ferry is tied up at the near jetty again.",
+    "premise": "spec-0083's site-plan fixture: two boathouses no walk joins, a ferry at each, and the strait drawn as two one-way `carry` edges. It is the content repository's demo level `the-ferry` under its own id, so the engine holds the shape in its own tests.",
+    "seed": 20261002,
+    "target_minutes": 10,
+    "theme": "A ferry crossing between two sealed boathouses.",
+    "time": "day",
+    "title": "The Ferry",
+    "weather": "clear"
+  },
+  "dsl_version": "0.35.0",
+  "stage": "world"
+}

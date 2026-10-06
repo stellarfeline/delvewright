@@ -628,6 +628,19 @@ pub fn build_with_warnings(
         }
     }
 
+    // ---- the links the route proof takes (spec-0083 §3.4) ----
+    //
+    // Whether a walk fails is a question about blocks, so it is asked here, the
+    // first point the final world exists. Every leg a walk cannot cross is
+    // retried through the links live at its end, and each one taken is spliced
+    // into the plan's ONE path ([`Plan::relinked`]) — so the walk proof, the
+    // branch proofs, the waypoint export, the bot contract, the leave proof and
+    // both party populations below all read the same steps. A campaign whose
+    // legs all walk takes nothing and keeps the plan it was handed, byte for
+    // byte.
+    let relinked = crate::compiler::nav::with_links_taken(plan, prefabs, &world)?;
+    let plan: &Plan = relinked.as_ref().unwrap_or(plan);
+
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     //
     // **Bound here, and here is the only door.** This is the one function that
@@ -736,6 +749,13 @@ pub fn build_with_warnings(
     // emitted alongside the branch paths. Empty for a campaign with no declared
     // branch points, so nothing moves for anybody who has not opted in.
     let mut branch_waypoints: Vec<(String, Value)> = Vec::new();
+    // Per branch, the links its own path takes (spec-0083 §6), decided over the
+    // world below and spliced again where `branch-path-<slug>.json` is written,
+    // so the bot walks the steps the branch proof judged.
+    let mut branch_takes: BTreeMap<String, plan::LinkTakes> = BTreeMap::new();
+    // Legs the default path crosses by a link — `teleport-gate.json`'s
+    // `legs_carried`.
+    let mut legs_carried = 0usize;
     // Every exported path's steps and proven routes — the exported path and each
     // reachable branch's — kept for the run-back finder, which needs the seated
     // hostiles and the lanes that are only resolved further down.
@@ -1256,7 +1276,14 @@ pub fn build_with_warnings(
                     );
                     binding
                 };
-                crate::compiler::nav::check_critical_path(plan, &world)?;
+                // DW0311, with its binding stated whichever way it goes
+                // (spec-0083 §5): every leg partitioned into walked, carried by
+                // a crossing and carried by a link.
+                let (route_binding, route_verdict) =
+                    crate::compiler::nav::check_critical_path_bound(plan, &world);
+                eprintln!("{}", route_binding.line());
+                route_verdict?;
+                legs_carried = route_binding.carried;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
@@ -1285,7 +1312,7 @@ pub fn build_with_warnings(
                         plan,
                         &world,
                         &waves,
-                        &crate::compiler::lethal::population_roots(plan, campaign_spawn(plan)),
+                        &crate::compiler::lethal::stands_at_roots(plan, campaign_spawn(plan)),
                         playable_region(plan).map(|r| (r.min, r.max)),
                     );
                     if strand.waves > 0 {
@@ -1494,25 +1521,56 @@ pub fn build_with_warnings(
                     let flow = crate::compiler::flow::Flow::new(plan.campaign);
                     for r in &realized {
                         let Some(widx) = r.world else { continue };
-                        let cp = plan
-                            .branch_critical_path(&flow, &flow.playthrough_in(widx))
-                            .map_err(|e| BuildFailure::Diagnostic {
-                                code: e.failure.code,
-                                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
-                            })?;
-                        let (region_events, ancestors) = plan.branch_gate_model(&cp);
-                        let ancestor = |g: usize, s: usize| {
-                            g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
-                        };
                         let label = |e: Failure| Failure {
                             code: e.code,
                             message: format!("branch `{}`: {}", r.branch.id, e.message),
                         };
+                        let branch_fail = |e: plan::PlanError| BuildFailure::Diagnostic {
+                            code: e.failure.code,
+                            message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
+                        };
+                        let unlinked = plan
+                            .branch_critical_path(&flow, &flow.playthrough_in(widx))
+                            .map_err(branch_fail)?;
+                        // The branch's own links (spec-0083 §6): taken over its
+                        // own steps and gate model, then spliced into its path.
+                        let takes = if plan.links.is_empty() {
+                            plan::LinkTakes::default()
+                        } else {
+                            let (region_events, ancestors) = plan.branch_gate_model(&unlinked);
+                            let ancestor = |g: usize, s: usize| {
+                                g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
+                            };
+                            crate::compiler::nav::take_branch_links(
+                                plan,
+                                &world,
+                                campaign_spawn(plan),
+                                &unlinked,
+                                &region_events,
+                                &ancestor,
+                            )
+                            .map_err(label)?
+                        };
+                        let cp = if takes.is_empty() {
+                            unlinked
+                        } else {
+                            plan.branch_critical_path_linked(
+                                &flow,
+                                &flow.playthrough_in(widx),
+                                &takes,
+                            )
+                            .map_err(branch_fail)?
+                        };
+                        branch_takes.insert(r.branch.slug.clone(), takes);
+                        let (region_events, ancestors) = plan.branch_gate_model(&cp);
+                        let ancestor = |g: usize, s: usize| {
+                            g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
+                        };
                         crate::compiler::nav::check_branch_path(
+                            plan,
                             &world,
                             campaign_spawn(plan),
-                            &cp.steps,
-                            &cp.transport_by_step,
+                            &cp,
                             &region_events,
                             &ancestor,
                         )
@@ -2137,7 +2195,7 @@ pub fn build_with_warnings(
     // A branch's scripted dialogue choices ride inside its own `talk-to` steps
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
-    for (slug, path) in branch_paths(plan, &moves, &actor_moves)? {
+    for (slug, path) in branch_paths(plan, &moves, &actor_moves, &branch_takes)? {
         put_json(
             &mut out,
             &format!("validation/branch-path-{slug}.json"),
@@ -2242,6 +2300,7 @@ pub fn build_with_warnings(
         // generated.
         let mut gate = teleport_gate;
         gate.packtests = teleport_fns(plan).len();
+        gate.legs_carried = legs_carried;
         put_json(&mut out, "validation/teleport-gate.json", &gate.to_json());
     }
     if let Some(gate) = &lethal_gate {
@@ -23826,6 +23885,7 @@ fn branch_paths(
     plan: &Plan,
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
+    takes: &BTreeMap<String, plan::LinkTakes>,
 ) -> Result<Vec<(String, Value)>, BuildFailure> {
     let branches = crate::compiler::branch::realize(plan.campaign);
     if branches.is_empty() {
@@ -23835,8 +23895,13 @@ fn branch_paths(
     let mut out = Vec::new();
     for r in &branches {
         let Some(w) = r.world else { continue };
+        let none = plan::LinkTakes::default();
         let cp = plan
-            .branch_critical_path(&flow, &flow.playthrough_in(w))
+            .branch_critical_path_linked(
+                &flow,
+                &flow.playthrough_in(w),
+                takes.get(&r.branch.slug).unwrap_or(&none),
+            )
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.failure.code,
                 message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
@@ -23952,11 +24017,17 @@ fn critical_path_json(
                 // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
                 // broadcast from its bundle), never on the click landing. `anchor`
                 // / `npc` / `range` are present exactly when the kind has one.
-                Step::Trigger { trigger_id, on, anchor_id, npc_id, pos, range } => {
+                Step::Trigger { trigger_id, on, anchor_id, npc_id, pos, range, stand } => {
                     let mut v = json!({
                         "action": "trigger", "trigger": trigger_id, "on": on, "pos": pos
                     });
                     if let Some(obj) = v.as_object_mut() {
+                        // spec-0083 §4: a trigger that carries the party says
+                        // where to stand to be carried; its `transport` is the
+                        // link's `to`, written below like every carried step's.
+                        if let Some(c) = stand {
+                            obj.insert("stand".to_string(), json!(c));
+                        }
                         if let Some(a) = anchor_id {
                             obj.insert("anchor".to_string(), json!(a));
                         }
