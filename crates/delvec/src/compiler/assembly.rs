@@ -1176,6 +1176,9 @@ pub struct AssemblyBinding {
     /// that no blow is wound up for it. `None` when the walked population has
     /// no such cell.
     pub spared: Vec<(String, Option<[i32; 3]>)>,
+    /// The assemblies whose blow the critical path's bot witnesses
+    /// ([`with_witness_steps`]); filled when the path is written.
+    pub witnessed: Vec<String>,
 }
 
 impl AssemblyBinding {
@@ -1238,6 +1241,7 @@ impl AssemblyBinding {
                 "assembly": a,
                 "stand": c,
             })).collect::<Vec<_>>(),
+            "witnessed": self.witnessed,
         })
     }
 }
@@ -1297,6 +1301,89 @@ fn spared_cell(population: &BTreeSet<[i32; 3]>, arming: CellBox) -> Option<[i32;
         .copied()
         .filter(|c| !in_box(*c, keep))
         .min_by(|a, b| gap(*a).cmp(&gap(*b)).then(a.cmp(b)))
+}
+
+// ---------------------------------------------------------------------------
+// The bot's witness of a blow
+// ---------------------------------------------------------------------------
+
+/// How long past the pattern's cycles a witness waits, in ticks: two seconds
+/// of slack for a server that runs a tick late.
+pub const WITNESS_SLACK_TICKS: u32 = 40;
+
+/// **The critical-path steps that witness each strike pattern** (spec-0082
+/// §5.4, §5.5): per assembly with a pattern, the bot stands on facing 0's
+/// stand cell (a landing cell under the limb from which a body draws that
+/// facing) until a blow takes health from it, then on a cell no body in which
+/// the arming region can select, for as long, and is not struck. The window is
+/// one cycle of every step plus the longest step again — a bot that arrives
+/// while a blow aimed elsewhere is in flight still sees the next whole cycle —
+/// plus [`WITNESS_SLACK_TICKS`]. An assembly without a stand cell or a spared
+/// cell gets no witness, and the record says so (`witnessed`).
+pub fn witness_steps(b: &AssemblyBinding) -> Vec<(String, Vec<serde_json::Value>)> {
+    let mut out: Vec<(String, Vec<serde_json::Value>)> = Vec::new();
+    for (id, spared) in &b.spared {
+        let steps: Vec<&StepRecord> = b.records.iter().filter(|r| &r.assembly == id).collect();
+        let cycle = |r: &StepRecord| r.windup_ticks + r.hold + r.strike_ticks;
+        let window = steps.iter().map(|r| cycle(r)).sum::<u32>()
+            + steps.iter().map(|r| cycle(r)).max().unwrap_or(0)
+            + WITNESS_SLACK_TICKS;
+        let Some(first) = steps.first() else { continue };
+        let Some(face) = first.facings.iter().find(|f| f.stand.is_some()) else {
+            continue;
+        };
+        let (Some(stand), Some(spared)) = (face.stand, spared) else {
+            continue;
+        };
+        out.push((
+            id.clone(),
+            vec![
+                serde_json::json!({
+                    "action": "witness-strike",
+                    "assembly": id,
+                    "expect": "struck",
+                    "pos": stand,
+                    "step": first.step,
+                    "facing": face.k,
+                    "facing_count": first.facing_count,
+                    "yaw": face.yaw,
+                    "amount": first.amounts.first().copied().unwrap_or(0),
+                    "window_ticks": window,
+                }),
+                serde_json::json!({
+                    "action": "witness-strike",
+                    "assembly": id,
+                    "expect": "spared",
+                    "pos": spared,
+                    "window_ticks": window,
+                }),
+            ],
+        ));
+    }
+    out
+}
+
+/// Put each assembly's witness steps on the critical path, just before the
+/// first step that strikes that assembly — the last moment the thing is
+/// certainly standing. Returns the assemblies witnessed.
+pub fn with_witness_steps(
+    steps: &mut Vec<serde_json::Value>,
+    witnesses: Vec<(String, Vec<serde_json::Value>)>,
+) -> Vec<String> {
+    let mut placed = Vec::new();
+    for (id, ws) in witnesses {
+        let Some(at) = steps
+            .iter()
+            .position(|s| s["action"] == "trigger" && s["assembly"] == id.as_str())
+        else {
+            continue;
+        };
+        for (k, w) in ws.into_iter().enumerate() {
+            steps.insert(at + k, w);
+        }
+        placed.push(id);
+    }
+    placed
 }
 
 // ---------------------------------------------------------------------------

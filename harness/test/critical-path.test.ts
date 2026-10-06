@@ -191,7 +191,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, assert-complete/.test(err.message),
   );
 });
 
@@ -831,4 +831,62 @@ test("a trigger step's fields are present exactly when its kind has them", () =>
       JSON.stringify(bad),
     );
   }
+});
+
+// --- witness-strike steps ---------------------------------------------------
+
+test("a struck witness parses with its facing, yaw, amount and window", () => {
+  const raw = validRaw();
+  (raw["steps"] as unknown[]).splice(1, 0, {
+    action: "witness-strike",
+    assembly: "assembly/limb",
+    expect: "struck",
+    pos: [8211, 64, 8212],
+    step: 0,
+    facing: 1,
+    facing_count: 8,
+    yaw: -45,
+    amount: 6,
+    window_ticks: 120,
+  });
+  const step = parseCriticalPath(raw).steps[1]!;
+  assert.deepEqual(step, {
+    action: "witness-strike",
+    assembly: "assembly/limb",
+    expect: "struck",
+    pos: [8211, 64, 8212],
+    windowTicks: 120,
+    step: 0,
+    facing: 1,
+    facingCount: 8,
+    yaw: -45,
+    amount: 6,
+  });
+});
+
+test("a spared witness carries no facing, and an unknown expectation is refused", () => {
+  const raw = validRaw();
+  (raw["steps"] as unknown[]).splice(1, 0, {
+    action: "witness-strike",
+    assembly: "assembly/limb",
+    expect: "spared",
+    pos: [8211, 64, 8222],
+    window_ticks: 120,
+    facing: 0,
+  });
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/1/facing",
+  );
+  (raw["steps"] as Array<Record<string, unknown>>)[1] = {
+    action: "witness-strike",
+    assembly: "assembly/limb",
+    expect: "missed",
+    pos: [8211, 64, 8222],
+    window_ticks: 120,
+  };
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && err.pointer === "/steps/1/expect",
+  );
 });

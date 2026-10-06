@@ -68,6 +68,7 @@ export const STEP_ACTIONS = [
   "interact",
   "rest",
   "trigger",
+  "witness-strike",
   "assert-complete",
 ] as const;
 
@@ -267,6 +268,33 @@ export interface TriggerStep {
   readonly range?: number;
 }
 
+/**
+ * Witness an assembly's blow (spec-0082 §5.4, §5.5): stand on `pos` for up to
+ * `windowTicks` and see what the strike does to the body there. `struck`: the
+ * cell is under the limb in the landing region of facing `facing` (of
+ * `facingCount`), the facing a body standing there draws, so a blow must take
+ * health within the window. `spared`: no body standing there can be selected
+ * by the arming region, so nothing is wound up for it and no health is taken.
+ * Proves no objective.
+ */
+export interface WitnessStrikeStep {
+  readonly action: "witness-strike";
+  /** The assembly whose blow is witnessed. */
+  readonly assembly: string;
+  readonly expect: "struck" | "spared";
+  /** The cell the bot stands on. */
+  readonly pos: Vec3Tuple;
+  /** How long to stand, in ticks. */
+  readonly windowTicks: number;
+  /** `struck` only: the pattern step, the facing drawn, the facing count, the
+   * root yaw that draws it, and the blow's amount. */
+  readonly step?: number;
+  readonly facing?: number;
+  readonly facingCount?: number;
+  readonly yaw?: number;
+  readonly amount?: number;
+}
+
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
 export interface AssertCompleteStep {
   readonly action: "assert-complete";
@@ -293,6 +321,7 @@ export type Step =
   | InteractStep
   | RestStep
   | TriggerStep
+  | WitnessStrikeStep
   | AssertCompleteStep;
 
 /**
@@ -845,6 +874,50 @@ function parseStep(value: unknown, pointer: string): Step {
         ...(typeof assembly === "string" ? { assembly } : {}),
         pos: requirePos(obj, pointer),
         ...(kind === "approach" ? { range: range as number } : {}),
+      };
+    }
+    case "witness-strike": {
+      const expect = obj["expect"];
+      if (expect !== "struck" && expect !== "spared") {
+        fail(`${pointer}/expect`, `must be "struck" or "spared", got ${describe(expect)}`);
+      }
+      rejectUnknownKeys(
+        obj,
+        expect === "struck"
+          ? ["action", "assembly", "expect", "pos", "window_ticks", "step", "facing", "facing_count", "yaw", "amount"]
+          : ["action", "assembly", "expect", "pos", "window_ticks"],
+        pointer,
+      );
+      const window = obj["window_ticks"];
+      if (!Number.isInteger(window) || (window as number) <= 0) {
+        fail(`${pointer}/window_ticks`, `must be a positive integer, got ${describe(window)}`);
+      }
+      const int = (key: string): number => {
+        const v = obj[key];
+        if (!Number.isInteger(v) || (v as number) < 0) {
+          fail(`${pointer}/${key}`, `must be a non-negative integer, got ${describe(v)}`);
+        }
+        return v as number;
+      };
+      const base = {
+        action: "witness-strike" as const,
+        assembly: requireString(obj, "assembly", pointer),
+        expect: expect as "struck" | "spared",
+        pos: requirePos(obj, pointer),
+        windowTicks: window as number,
+      };
+      if (expect === "spared") return base;
+      const yaw = obj["yaw"];
+      if (typeof yaw !== "number" || !Number.isFinite(yaw)) {
+        fail(`${pointer}/yaw`, `must be a number, got ${describe(yaw)}`);
+      }
+      return {
+        ...base,
+        step: int("step"),
+        facing: int("facing"),
+        facingCount: int("facing_count"),
+        yaw,
+        amount: int("amount"),
       };
     }
     case "assert-complete": {

@@ -588,6 +588,10 @@ pub fn build_with_warnings(
 
     // ---- spec-0082: the assemblies (`DW0936`–`DW0938`) ----
     //
+    // The binding is kept: the critical path carries the bot's witness of each
+    // blow, and the staging record states which were witnessed.
+    let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding>;
+    //
     // Asked over the world the other proofs read, before any route is derived:
     // a hitbox, its reach and where a blow lands are facts about cells, and
     // nothing below changes them. The binding and the cost the host meets are
@@ -624,6 +628,7 @@ pub fn build_with_warnings(
                 .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))
         };
         let (binding, findings) = crate::compiler::assembly::check(plan, &population, &reaches);
+        assembly_binding = Some(binding.clone());
         eprintln!("{}", binding.line());
         eprintln!("{}", binding.cost_line());
         if let Some((first, rest)) = findings.split_first() {
@@ -634,9 +639,6 @@ pub fn build_with_warnings(
                 code: first.code,
                 message: first.message.clone(),
             });
-        }
-        if binding.declared > 0 {
-            put_json(&mut out, "validation/assembly.json", &binding.to_json());
         }
     }
 
@@ -1915,11 +1917,19 @@ pub fn build_with_warnings(
     emit_server(plan, &mut out);
 
     // ---- critical path ----
-    put_json(
-        &mut out,
-        "critical-path.json",
-        &emit_critical_path(plan, &moves, &actor_moves),
-    );
+    let mut cp = emit_critical_path(plan, &moves, &actor_moves);
+    if let Some(mut b) = assembly_binding {
+        if let Some(steps) = cp.get_mut("steps").and_then(Value::as_array_mut) {
+            b.witnessed = crate::compiler::assembly::with_witness_steps(
+                steps,
+                crate::compiler::assembly::witness_steps(&b),
+            );
+        }
+        if b.declared > 0 {
+            put_json(&mut out, "validation/assembly.json", &b.to_json());
+        }
+    }
+    put_json(&mut out, "critical-path.json", &cp);
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
