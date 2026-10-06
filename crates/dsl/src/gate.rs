@@ -1,10 +1,11 @@
 //! **The one gate.**
 //!
-//! A *gate* is the campaign's answer to "may this happen yet?". Six object
+//! A *gate* is the campaign's answer to "may this happen yet?". Eight object
 //! classes ask it — an objective, an effect, an environment trigger, a trap, a
-//! dialogue option and a cast placement — and until DSL v0.10 each of them
-//! carried its own copy of the same two fields, `requires_flags` and
-//! `forbids_flags`, with nothing in the type system saying they were one thing.
+//! dialogue option, a cast placement, a shop offer and a lethal volume. The
+//! first six once each carried its own copy of the same two fields,
+//! `requires_flags` and `forbids_flags`, with nothing in the type system saying
+//! they were one thing.
 //!
 //! That arrangement is the defect CLAUDE.md names first. When spec-0031 needed a
 //! numeric comparison ("this door opens at 500", "this line is withheld below
@@ -201,6 +202,19 @@ impl crate::stages::Loop {
     }
 }
 
+impl crate::stages::LethalVolume {
+    /// This volume's whole gate, as one value (spec-0088) — the [`Guard`]
+    /// under `when`, or the always-open gate when it declares none.
+    ///
+    /// [`Guard`]: crate::stages::Guard
+    pub fn gate(&self) -> Gate<'_> {
+        match &self.when {
+            Some(g) => Gate::of(&g.requires_flags, &g.forbids_flags, &g.requires_state),
+            None => Gate::OPEN,
+        }
+    }
+}
+
 /// The object classes that carry a gate. **A closed set.**
 ///
 /// `ALL` is the enumeration; [`GateConsumer::label`] and every consumer that
@@ -232,12 +246,16 @@ pub enum GateConsumer {
     /// A stage-5 `loops[]` (spec-0086) — the gate decides whether the loop
     /// holds. Read against the party on the tick, before any body is selected.
     Loop,
+    /// A stage-5 `lethal_volumes[]` entry (spec-0088) — the gate decides
+    /// whether the volume kills. A volume's liveness is a fact about the place,
+    /// so its gate is a party predicate: the tick reads it on `#party`.
+    LethalVolume,
 }
 
 impl GateConsumer {
     /// Every consumer class, in enumeration order (= visit order in
     /// [`for_each_gate`]).
-    pub const ALL: [GateConsumer; 8] = [
+    pub const ALL: [GateConsumer; 9] = [
         GateConsumer::Objective,
         GateConsumer::Effect,
         GateConsumer::Trigger,
@@ -246,6 +264,7 @@ impl GateConsumer {
         GateConsumer::CastPlacement,
         GateConsumer::ShopOffer,
         GateConsumer::Loop,
+        GateConsumer::LethalVolume,
     ];
 
     /// How many consumer classes there are.
@@ -262,6 +281,7 @@ impl GateConsumer {
             GateConsumer::CastPlacement => "cast placement",
             GateConsumer::ShopOffer => "shop offer",
             GateConsumer::Loop => "loop",
+            GateConsumer::LethalVolume => "lethal volume",
         }
     }
 
@@ -303,7 +323,8 @@ impl GateConsumer {
             GateConsumer::Objective
             | GateConsumer::Trigger
             | GateConsumer::Trap
-            | GateConsumer::Loop => Some(false),
+            | GateConsumer::Loop
+            | GateConsumer::LethalVolume => Some(false),
             // Ask the root (and then the seams inside the bundle).
             GateConsumer::Effect => None,
         }
@@ -317,7 +338,8 @@ impl GateConsumer {
             | GateConsumer::Trap
             | GateConsumer::CastPlacement
             | GateConsumer::ShopOffer
-            | GateConsumer::Loop => "quests",
+            | GateConsumer::Loop
+            | GateConsumer::LethalVolume => "quests",
             // An effect root hangs off the quests stage four times out of five and
             // off dialogue once; the site's own path says which.
             GateConsumer::Effect => "quests",
@@ -382,7 +404,7 @@ impl GateBinding {
 /// Order: every objective (quest order, objective order); every effect (via
 /// [`crate::stages::for_each_campaign_effect`], which inherits the single effect-root
 /// enumeration and descends nesting); every trigger; every trap; every dialogue
-/// option; every cast placement.
+/// option; every cast placement; every shop offer; every lethal volume.
 ///
 /// Returns the [`GateBinding`] ledger.
 ///
@@ -403,6 +425,7 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
         (GateConsumer::CastPlacement, 0usize),
         (GateConsumer::ShopOffer, 0usize),
         (GateConsumer::Loop, 0usize),
+        (GateConsumer::LethalVolume, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -539,6 +562,20 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
             GateConsumer::Loop,
             format!("/content/loops/{li}"),
             l.gate(),
+            &mut sites,
+            &mut gated,
+            &mut terms,
+        );
+    }
+
+    // C9 lethal volumes (spec-0088), after every shop offer, in declaration
+    // order. The pointer names the `when` object, as an effect's does.
+    enumerated[slot_of(GateConsumer::LethalVolume)] = true;
+    for (vi, v) in c.quests.content.lethal_volumes.iter().enumerate() {
+        visit(
+            GateConsumer::LethalVolume,
+            format!("/content/lethal_volumes/{vi}/when"),
+            v.gate(),
             &mut sites,
             &mut gated,
             &mut terms,

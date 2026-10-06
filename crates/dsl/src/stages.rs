@@ -6160,6 +6160,21 @@ pub struct LethalVolume {
     /// refuses every cell of the keep-out either way.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shown_by: Vec<String>,
+    /// **When this volume kills** (spec-0088): the one [`Guard`] every other
+    /// gated object carries, verbatim. Absent, the volume is live from
+    /// world-load to the end. Present, it is live while its gate holds —
+    /// `requires_flags` is a pit that kills from a beat on, `forbids_flags` a
+    /// shaft that kills until one, `requires_state` a chamber that kills while
+    /// a party datum stands in range.
+    ///
+    /// A volume's liveness is a fact about the place, so the gate is a fact
+    /// about the party: `when: {}` (a stage with no term) and a term on a
+    /// `player`-scoped datum are refused at the document (`DW0953`). The
+    /// navigation world holds the volume per quest configuration, and `DW0891`
+    /// judges what shows it in every configuration a body can meet it in,
+    /// including the last one before it goes live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<Guard>,
 }
 
 /// A stage-5 **loop** (spec-0086): a slab a body crosses and is returned from,

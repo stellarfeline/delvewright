@@ -230,6 +230,27 @@ pub struct LoopPlan {
 }
 
 impl LoopPlan {
+    /// This loop's gate as the region model reads one (spec-0086 §5.1 ×
+    /// spec-0088 §4.1): the three axes as declared, and the gate's term
+    /// reduction ([`crate::compiler::plan::gate_terms_of`]) over the declared
+    /// loop's own gate.
+    pub fn staged_gate(&self, campaign: &Campaign) -> crate::compiler::plan::StagedGate {
+        let terms = campaign
+            .quests
+            .content
+            .loops
+            .iter()
+            .find(|d| d.id.as_str() == self.id)
+            .map(|d| crate::compiler::plan::gate_terms_of(campaign, d.gate()))
+            .unwrap_or_default();
+        crate::compiler::plan::StagedGate {
+            requires_flags: self.requires_flags.clone(),
+            forbids_flags: self.forbids_flags.clone(),
+            requires_state: self.requires_state.clone(),
+            terms,
+        }
+    }
+
     /// The crossing axis: the one axis the offset moves along. `None` when the
     /// offset is zero or moves along more than one axis — not a slab.
     pub fn axis(&self) -> Option<usize> {
@@ -774,43 +795,6 @@ impl LoopReplay {
     }
 }
 
-/// The seal's state along a path, as region events (spec-0086 §5.1): a
-/// [`RegionWrite::Hold`] over the slab at each step the gate opens — step `0`
-/// when it holds from the start — and a [`RegionWrite::Unseal`] at each step it
-/// shuts. `holds` is the gate at each step, after that step; an undatable gate
-/// holds.
-pub fn seal_events(l: &LoopPlan, holds: &[Option<bool>], terms: &[String]) -> Vec<RegionEvent> {
-    let mut out = Vec::new();
-    let mut prev = false;
-    for (k, h) in holds.iter().enumerate() {
-        let cur = *h != Some(false);
-        if cur != prev || (k == 0 && cur) {
-            out.push(if cur {
-                let term = terms.get(k).map(String::as_str).unwrap_or("");
-                RegionEvent::held(
-                    l.slab,
-                    k,
-                    format!(
-                        "the slab of loop `{}` ([{}, {}, {}]..[{}, {}, {}]), which holds from \
-                         critical-path step {k}: read there, its gate term {term} is open",
-                        l.id,
-                        l.slab.0[0],
-                        l.slab.0[1],
-                        l.slab.0[2],
-                        l.slab.1[0],
-                        l.slab.1[1],
-                        l.slab.1[2],
-                    ),
-                )
-            } else {
-                RegionEvent::forced(l.slab, RegionWrite::Unseal, k)
-            });
-        }
-        prev = cur;
-    }
-    out
-}
-
 /// The exercise step's record, carried on the critical path beside the step
 /// itself so the route proof and the ledger read one answer.
 #[derive(Clone, Debug)]
@@ -825,6 +809,13 @@ pub struct ExerciseRecord {
     pub releases: bool,
     /// The top-level `on_cross` effects each crossing fired.
     pub fired: Vec<Vec<usize>>,
+    /// Every loop-owned datum's value after the step (spec-0086 §5.2): what the
+    /// region model's datum replay reads from here on (spec-0088 §4.1), since
+    /// nothing but a loop writes these.
+    pub owned_after: BTreeMap<String, i64>,
+    /// Every flag an exercise's `on_cross` has set by the end of the step,
+    /// credited to the region model as set, forced, at the step.
+    pub flags_after: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -835,8 +826,13 @@ pub struct ExerciseRecord {
 /// region events, in the path's own step space, and one record per exercise.
 #[derive(Clone, Debug, Default)]
 pub struct Spliced {
-    /// The slab seals (spec-0086 §5.1) and every exercise's forced writes.
+    /// Every exercise's forced region writes. The slab itself is not an event:
+    /// whether it holds is read off its gate per configuration by the region
+    /// model ([`crate::compiler::nav::liveness_of`]), from the datum replay this
+    /// record dates (`exercises`).
     pub events: Vec<RegionEvent>,
+    /// The data only loops write ([`LoopReplay`]).
+    pub owned: BTreeSet<String>,
     /// One record per exercise step, in path order.
     pub exercises: Vec<ExerciseRecord>,
     /// Per loop (declaration order), the gate at each step of the path, after
@@ -991,6 +987,8 @@ impl LoopSplice {
                 times: ex.times,
                 releases: ex.releases,
                 fired: ex.fired,
+                owned_after: self.replay.values.clone(),
+                flags_after: self.replay.flags.iter().cloned().collect(),
             });
             self.record();
             self.party = Some((area.to_string(), l.transport()));
@@ -1000,13 +998,7 @@ impl LoopSplice {
     /// The path is built: the seal events from each loop's gate along it, and
     /// every exercise's forced writes at its own step.
     pub fn finish(mut self) -> Spliced {
-        for (i, l) in self.loops.iter().enumerate() {
-            self.spliced.events.extend(seal_events(
-                l,
-                &self.spliced.holds[i],
-                &self.spliced.terms[i],
-            ));
-        }
+        self.spliced.owned = self.replay.owned.clone();
         for (idx, r, w) in self.writes {
             self.spliced.events.push(RegionEvent::forced(r, w, idx));
         }
@@ -1913,66 +1905,106 @@ fn check_one(
         [both.0[0] - 16, both.0[1] - 16, both.0[2] - 16],
         [both.1[0] + 16, top.max(both.1[1] + 16), both.1[2] + 16],
     );
-    // Volumes in the span tile or are refused.
-    let mut volumes: Vec<(String, Region)> = plan
-        .lethal_volumes
+    // Volumes in the span tile or are refused — in every configuration the
+    // route stands under: a staged lethal volume (spec-0088) counts where it may
+    // be live there ([`crate::compiler::nav::World::staged_liveness`]), so a
+    // volume live in one bay and its image dead in the next is a seam.
+    let keep_out = |r: Region| {
+        delvewright_dsl::metrics::keep_out_box(delvewright_dsl::metrics::Body::PLAYER, r.0, r.1)
+    };
+    let staged_ids: Vec<String> = world
+        .staged_volumes()
         .iter()
-        .map(|v| {
-            (
-                format!("lethal volume `{}`'s keep-out", v.id),
-                delvewright_dsl::metrics::keep_out_box(
-                    delvewright_dsl::metrics::Body::PLAYER,
-                    v.region.0,
-                    v.region.1,
-                ),
-            )
-        })
+        .map(|v| v.id.clone())
         .collect();
-    volumes.extend(
-        crate::compiler::link::source_volumes(plan)
-            .into_iter()
-            .map(|b| ("a `teleport` volume".to_string(), b)),
-    );
-    volumes.retain(|(_, b)| boxes_meet(*b, both));
-    row.volumes = volumes.len();
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut live_sets: Vec<BTreeSet<String>> = Vec::new();
+    for arrival in 0..=plan.critical_path.len() {
+        let set: BTreeSet<String> = staged_ids
+            .iter()
+            .zip(world.staged_liveness(&plan.region_events, arrival, &ancestor))
+            .filter(|(_, l)| l.may)
+            .map(|(id, _)| id.clone())
+            .collect();
+        if !live_sets.contains(&set) {
+            live_sets.push(set);
+        }
+    }
     let span_cells: Vec<[i32; 3]> = (span.b.0[0]..=span.b.1[0])
         .flat_map(|x| {
             (span.b.0[1]..=span.b.1[1])
                 .flat_map(move |y| (span.b.0[2]..=span.b.1[2]).map(move |z| [x, y, z]))
         })
         .collect();
-    for (label, b) in &volumes {
-        let in_vol = |c: [i32; 3]| volumes.iter().any(|(_, v)| inside(*v, c));
-        if let Some(c) = span_cells
+    let mut counted: BTreeSet<String> = BTreeSet::new();
+    for live in &live_sets {
+        let mut volumes: Vec<(String, Region)> = plan
+            .lethal_volumes
             .iter()
-            .find(|c| in_vol(**c) != in_vol(image(**c)))
-        {
-            return Err(Failure {
-                code: DW_LOOP_TILING,
-                message: format!(
-                    "loop `{}`: {label} {} lies in the periodic span without its image under the \
-                     offset — the span's cell {} is {} and the cell it stands for from the slab, \
-                     {}, is {}. A pit the player sees in one bay and not the next is the frame \
-                     jump by other means. Make the sections the same: put the same volume under \
-                     the other bay, or move it out of the span",
-                    l.id,
-                    box_words(*b),
-                    cell_words(*c),
-                    if in_vol(*c) {
-                        "inside it"
-                    } else {
-                        "outside it"
-                    },
-                    cell_words(image(*c)),
-                    if in_vol(image(*c)) {
-                        "inside it"
-                    } else {
-                        "outside it"
-                    },
-                ),
-            });
+            .filter(|v| v.staged.is_none() || live.contains(&v.id))
+            .map(|v| {
+                (
+                    format!("lethal volume `{}`'s keep-out", v.id),
+                    keep_out(v.region),
+                )
+            })
+            .collect();
+        volumes.extend(
+            crate::compiler::link::source_volumes(plan)
+                .into_iter()
+                .map(|b| ("a `teleport` volume".to_string(), b)),
+        );
+        volumes.retain(|(_, b)| boxes_meet(*b, both));
+        counted.extend(volumes.iter().map(|(l, b)| format!("{l}{b:?}")));
+        let when = if staged_ids.is_empty() {
+            String::new()
+        } else if live.is_empty() {
+            " (in a configuration where no staged lethal volume may be live)".to_string()
+        } else {
+            format!(
+                " (in the configuration where {} may be live)",
+                live.iter()
+                    .map(|id| format!("`{id}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        for (label, b) in &volumes {
+            let in_vol = |c: [i32; 3]| volumes.iter().any(|(_, v)| inside(*v, c));
+            if let Some(c) = span_cells
+                .iter()
+                .find(|c| in_vol(**c) != in_vol(image(**c)))
+            {
+                row.volumes = counted.len();
+                return Err(Failure {
+                    code: DW_LOOP_TILING,
+                    message: format!(
+                        "loop `{}`: {label} {} lies in the periodic span without its image under \
+                         the offset{when} — the span's cell {} is {} and the cell it stands for \
+                         from the slab, {}, is {}. A pit the player sees in one bay and not the \
+                         next is the frame jump by other means. Make the sections the same: put \
+                         the same volume, live from the same stage, under the other bay, or move \
+                         it out of the span",
+                        l.id,
+                        box_words(*b),
+                        cell_words(*c),
+                        if in_vol(*c) {
+                            "inside it"
+                        } else {
+                            "outside it"
+                        },
+                        cell_words(image(*c)),
+                        if in_vol(image(*c)) {
+                            "inside it"
+                        } else {
+                            "outside it"
+                        },
+                    ),
+                });
+            }
         }
     }
+    row.volumes = counted.len();
     let base = shipped(plan, i.blocks, i.placements, i.seals, clip);
     let mut configs: Vec<Config> = vec![Config {
         label: "the world as it is placed, before any runtime write".to_string(),
@@ -2198,25 +2230,6 @@ mod tests {
         assert_eq!(l.landing(), ([-1, 1, 4], [1, 3, 4]));
         assert_eq!(plan_loop([0, 0, 0]).axis(), None);
         assert_eq!(plan_loop([1, 0, -6]).axis(), None);
-    }
-
-    /// The seal is the gate: held from step 0, unsealed at the step it shuts,
-    /// held again when it reopens.
-    #[test]
-    fn the_seal_follows_the_gate_step_by_step() {
-        let l = plan_loop([0, 0, -6]);
-        let holds = [Some(true), None, Some(false), Some(false), Some(true)];
-        let terms = vec![String::new(); holds.len()];
-        let ev = seal_events(&l, &holds, &terms);
-        let shape: Vec<(usize, RegionWrite)> = ev.iter().map(|e| (e.fire_step, e.write)).collect();
-        assert_eq!(
-            shape,
-            vec![
-                (0, RegionWrite::Hold),
-                (2, RegionWrite::Unseal),
-                (4, RegionWrite::Hold)
-            ]
-        );
     }
 
     #[test]

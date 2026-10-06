@@ -298,6 +298,7 @@ sites = [
     "tools/spike-fluid-plane/run.sh",
     "tools/spike-jump-arc/run.sh",
     "tools/spike-seamless-loop/run.sh",
+    "tools/spike-staged-lethal/run.sh",
     "validation/Dockerfile.delve",
     "validation/Dockerfile.toolserver",
     "versions.toml",

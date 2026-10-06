@@ -1324,3 +1324,30 @@ fn dw0947_a_repaint_that_clears_the_fog_opens_the_view() {
         "the refusal names the repaint the view opens under: {line}"
     );
 }
+
+/// spec-0086 §4.6 × spec-0088: **a volume in the span tiles in every
+/// configuration.** A pit under every bay tiles; stage the one under bay 2 so it
+/// stands down once `obj/end` completes (`forbids_flags`), and in that
+/// configuration bay 2 has no pit while its neighbours do — a seam the player
+/// walks into. Judged with every volume always present, the hall ships.
+#[test]
+fn dw0946_a_staged_volume_that_stands_down_in_one_bay_only() {
+    let (dir, prefabs) = magma_campaign("vol-staged-one-bay", None);
+    common::patch_file(&dir.join("quests.json"), |q| {
+        q["content"]["lethal_volumes"][2]["when"] = json!({ "forbids_flags": ["flag/ended"] });
+        q["content"]["quests"][0]["on_objective_complete"] = json!({
+            "obj/end": [{
+                "type": "set-flag",
+                "flag": "flag/ended",
+                "happening": { "text": "the gallery is walked", "verb": "learns" }
+            }]
+        });
+    });
+    let run = build_over(&dir, &prefabs);
+    let line = run.refused("DW0946");
+    assert!(line.contains("without its image"), "{line}");
+    assert!(
+        line.contains("in a configuration where no staged lethal volume may be live"),
+        "names the configuration: {line}"
+    );
+}

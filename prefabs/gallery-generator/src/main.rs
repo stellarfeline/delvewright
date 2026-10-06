@@ -121,6 +121,28 @@ const TERRACE_TOP_Y: i32 = 3;
 /// the hall's floor to the terrace's rim.
 const WELL: (i32, i32) = (2, 3);
 
+/// **The lidded pit** — a second pit sunk in the terrace, roofed by the terrace's
+/// own top course until a story beat clears it (spec-0088).
+///
+/// Two courses of air under the lid (`y ∈ 1..TERRACE_TOP_Y`) and the lid itself,
+/// terrace stone, at `y = TERRACE_TOP_Y`. It is sunk in [`TERRACE_ANNEX`], not in
+/// the terrace proper: the west well's reach (`obj/look-into-the-well`,
+/// radius 3) covers the whole terrace, and a sealed chamber a body could stand
+/// in inside that volume is floor it cannot walk to the well from (`DW0881`). The volume `lethal/lid-pit`
+/// sits at the pit's bottom on `anchor/lid-pit`, three courses under the rim, so
+/// no rim cell is in its keep-out; the beat that arms it clears `anchor/lid`, so
+/// the floor that was a lid becomes a hole in the same beat the bottom starts to
+/// kill. Before the beat nobody can reach the pit; after it a fall does. The
+/// column is inside the terrace on every side, so its keep-out lies wholly under
+/// stone.
+const LID_PIT: (i32, i32) = (8, 5);
+
+/// **The terrace annex** — the terrace carried east beside its treads, at the
+/// same height, so the lidded pit has a terrace floor on every side and stands
+/// clear of the west well's reach. `(x0, x1, z0, z1)` inclusive, in room space;
+/// walked onto from the terrace at `x = 5`.
+const TERRACE_ANNEX: (i32, i32, i32, i32) = (6, 9, 4, 6);
+
 /// The treads that climb the terrace from the near hall, `(x, top_y)` on the
 /// well's own `z` — one course of rise each, so the rim is somewhere the party
 /// can actually stand and look in. Without them the terrace is scenery and every
@@ -458,6 +480,26 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/lid-pit",
+        pos: [LID_PIT.0, 1, LID_PIT.1],
+        facing: None,
+        trigger_block: None,
+        note: "the bottom of the lidded pit in the terrace: a killing volume live \
+               from the beat that clears the lid over it (spec-0088), three \
+               courses under the rim, in the near hall with the west pit and for \
+               the same reason (MUSTER_PIT_CLEARANCE)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/lid-rim",
+        pos: [LID_PIT.0, TERRACE_TOP_Y + 1, LID_PIT.1],
+        facing: None,
+        trigger_block: None,
+        note: "the terrace floor standing on the lid — the cell a body crosses \
+               before the beat and falls through after it",
+        role: None,
+    },
+    Anchor {
         name: "anchor/east-pit",
         pos: [29, 1, 1],
         facing: None,
@@ -649,14 +691,25 @@ const CONTAINERS: &[Anchor] = &[
 /// ("nothing beneath stops the debris"). So the hall carries a stone canopy over
 /// the east bay, and this anchor points at it. A point anchor cannot serve: the
 /// standable rule demands air, and this rule demands the opposite.
-const SOLID_ANCHORS: &[Anchor] = &[Anchor {
-    name: "anchor/east-vault",
-    pos: [25, 5, 22],
-    facing: None,
-    trigger_block: None,
-    note: "the stone canopy a `collapse` brings down onto the east bay floor",
-    role: None,
-}];
+const SOLID_ANCHORS: &[Anchor] = &[
+    Anchor {
+        name: "anchor/east-vault",
+        pos: [25, 5, 22],
+        facing: None,
+        trigger_block: None,
+        note: "the stone canopy a `collapse` brings down onto the east bay floor",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/lid",
+        pos: [LID_PIT.0, TERRACE_TOP_Y, LID_PIT.1],
+        facing: None,
+        trigger_block: None,
+        note: "the lid over the lidded pit: terrace stone a `clear-region` takes \
+               away in the beat that arms `lethal/lid-pit` (spec-0088)",
+        role: None,
+    },
+];
 
 /// The canopy the collapse anchor points at: `(x0, x1, y, z0, z1)`, inclusive.
 const CANOPY: (i32, i32, i32, i32, i32) = (22, 28, 5, 19, 25);
@@ -953,6 +1006,14 @@ fn block_at(
         && (tz0..=tz1).contains(&z)
         && (1..=TERRACE_TOP_Y).contains(&y)
         && (x, z) != WELL
+    {
+        return ("minecraft:stone", None);
+    }
+    let (ax0, ax1, az0, az1) = TERRACE_ANNEX;
+    if (ax0..=ax1).contains(&x)
+        && (az0..=az1).contains(&z)
+        && (1..=TERRACE_TOP_Y).contains(&y)
+        && ((x, z) != LID_PIT || y == TERRACE_TOP_Y)
     {
         return ("minecraft:stone", None);
     }
@@ -1297,7 +1358,7 @@ fn plan_dist(a: [i32; 3], b: [i32; 3]) -> f64 {
 fn assert_the_muster_clears_the_pits() {
     let muster = anchor_at("anchor/muster");
     let mut pits = Vec::new();
-    for pit in ["anchor/west-pit", "anchor/east-pit"] {
+    for pit in ["anchor/west-pit", "anchor/lid-pit", "anchor/east-pit"] {
         let at = anchor_at(pit);
         assert!(
             (muster[2] > DIVIDER_Z) != (at[2] > DIVIDER_Z),
@@ -1320,12 +1381,12 @@ fn assert_the_muster_clears_the_pits() {
     }
     assert_eq!(
         pits.len(),
-        2,
-        "{ID}: the pit clearance examined {} volume(s), not 2",
+        3,
+        "{ID}: the pit clearance examined {} volume(s), not 3",
         pits.len()
     );
     println!(
-        "{ID}: muster clearance bound — 2 killing volume(s), both across the wall at \
+        "{ID}: muster clearance bound — 3 killing volume(s), all across the wall at \
          z={DIVIDER_Z} from the muster: {} (floor {MUSTER_PIT_CLEARANCE:.1} block(s))",
         pits.join(", ")
     );

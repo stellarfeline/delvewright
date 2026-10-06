@@ -1,0 +1,13 @@
+{
+  "code": "DW0953",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/lethal_volumes/2/when",
+      "value": {}
+    }
+  ],
+  "units": [],
+  "why": "One edit: the lidded pit's `when` emptied to `{}`. A volume live from world-load is spelled by leaving `when` out; an empty gate says nothing and is not a stage, so it is refused at the document, by validation, with no world built — naming the volume. It declares no unit: `when` is bound by the gallery proper, and what must not compile is a stage with no term."
+}

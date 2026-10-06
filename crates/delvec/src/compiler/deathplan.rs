@@ -64,7 +64,14 @@ use crate::compiler::stake::StakeTable;
 /// refusal to take those two purses as "the death took the wrong amount". The
 /// version exists for exactly this: a v2 bot reading a v3 plan, or the reverse,
 /// would under-assert without saying so.
-pub const DEATH_PLAN_FORMAT_VERSION: u32 = 3;
+///
+/// Version 4 makes every `lethal_volumes[]` row carry its **gate**
+/// (`gate.terms`, spec-0088): the same [`GateTerm`] rows a `drop-stake`'s gates
+/// carry, empty for a volume live from world-load. A volume live from a story
+/// stage is impassable to the bot only while its gate reads open, and is entered
+/// by the death loop only when it does; a v3 bot reading a v4 plan would avoid a
+/// pit the proof crossed before the beat, and enter one that was not yet live.
+pub const DEATH_PLAN_FORMAT_VERSION: u32 = 4;
 
 /// What the bot tier will be able to examine — counted at build time, so a reader
 /// of the artifact alone can tell an empty contract from a proven one.
@@ -312,6 +319,13 @@ pub fn build(
                 "message": english,
                 "message_key": key,
                 "damage_type": v.damage_type.id(),
+                "gate": {
+                    "terms": v
+                        .staged
+                        .as_ref()
+                        .map(|g| g.terms.iter().map(term_json).collect::<Vec<_>>())
+                        .unwrap_or_default(),
+                },
             })
         })
         .collect();
