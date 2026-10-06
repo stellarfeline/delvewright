@@ -551,3 +551,42 @@ fn a_repaint_to_dry_from_a_trigger_is_dw0496() {
     campaign_with(control.path(), true, |world, _| dry_yard(world, "none"));
     build(control.path()).expect("without the repaint the yard is wet");
 }
+
+// --- spec-0081 × spec-0080: one reader for the hour and the ground ------------
+
+/// A celestial night under a dry atmosphere: the hour comes from the stated
+/// moon (spec-0081, the vendored day timeline), the ground from the carried
+/// atmosphere (spec-0080, the biome map), and `DW0496` reads both through one
+/// reader. The moon high is outside the `monsters_burn` window, so a body
+/// staged in a yard no rain reaches still does not burn.
+#[test]
+fn a_celestial_night_under_a_dry_atmosphere_is_silent() {
+    let tmp = TempCampaign::new("atm-dry-celestial-night");
+    campaign_with(tmp.path(), true, |world, _| {
+        dry_yard(world, "none");
+        world["content"]["time"] = serde_json::json!({"moon": "high", "phase": "full-moon"});
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
+    });
+    build(tmp.path()).expect("the moon is high: nothing burns, dry or wet");
+}
+
+/// The pair's other half: the same dry yard under a celestial day — the sun
+/// high, in rain — burns, so what keeps the night silent is the stated hour
+/// and nothing else; and the message names the atmosphere's biome, so the
+/// ground was read from the same map.
+#[test]
+fn a_celestial_day_under_a_dry_atmosphere_is_dw0496() {
+    let tmp = TempCampaign::new("atm-dry-celestial-day");
+    campaign_with(tmp.path(), true, |world, _| {
+        dry_yard(world, "none");
+        world["content"]["time"] = serde_json::json!({"sun": "high"});
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
+    });
+    let err = build(tmp.path()).expect_err("the sun is high and no rain falls in the yard");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+    assert!(
+        message_of(&err).contains("daylight-yard:atmosphere/yard"),
+        "the message names the biome the cell stands in: {}",
+        message_of(&err)
+    );
+}
