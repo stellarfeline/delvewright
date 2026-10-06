@@ -189,6 +189,18 @@ impl crate::stages::ShopOffer {
     }
 }
 
+impl crate::stages::Loop {
+    /// This loop's whole gate, as one value (spec-0086): the loop **holds** while
+    /// it is open and stands down while it is shut.
+    pub fn gate(&self) -> Gate<'_> {
+        Gate::of(
+            &self.requires_flags,
+            &self.forbids_flags,
+            &self.requires_state,
+        )
+    }
+}
+
 /// The object classes that carry a gate. **A closed set.**
 ///
 /// `ALL` is the enumeration; [`GateConsumer::label`] and every consumer that
@@ -217,12 +229,15 @@ pub enum GateConsumer {
     /// anything. **This is where a price lives**: a shop declares no comparison
     /// surface of its own, because "may this happen yet?" already has an owner.
     ShopOffer,
+    /// A stage-5 `loops[]` (spec-0086) — the gate decides whether the loop
+    /// holds. Read against the party on the tick, before any body is selected.
+    Loop,
 }
 
 impl GateConsumer {
     /// Every consumer class, in enumeration order (= visit order in
     /// [`for_each_gate`]).
-    pub const ALL: [GateConsumer; 7] = [
+    pub const ALL: [GateConsumer; 8] = [
         GateConsumer::Objective,
         GateConsumer::Effect,
         GateConsumer::Trigger,
@@ -230,6 +245,7 @@ impl GateConsumer {
         GateConsumer::DialogueOption,
         GateConsumer::CastPlacement,
         GateConsumer::ShopOffer,
+        GateConsumer::Loop,
     ];
 
     /// How many consumer classes there are.
@@ -245,6 +261,7 @@ impl GateConsumer {
             GateConsumer::DialogueOption => "dialogue option",
             GateConsumer::CastPlacement => "cast placement",
             GateConsumer::ShopOffer => "shop offer",
+            GateConsumer::Loop => "loop",
         }
     }
 
@@ -283,7 +300,10 @@ impl GateConsumer {
             GateConsumer::DialogueOption
             | GateConsumer::CastPlacement
             | GateConsumer::ShopOffer => Some(true),
-            GateConsumer::Objective | GateConsumer::Trigger | GateConsumer::Trap => Some(false),
+            GateConsumer::Objective
+            | GateConsumer::Trigger
+            | GateConsumer::Trap
+            | GateConsumer::Loop => Some(false),
             // Ask the root (and then the seams inside the bundle).
             GateConsumer::Effect => None,
         }
@@ -296,7 +316,8 @@ impl GateConsumer {
             | GateConsumer::Trigger
             | GateConsumer::Trap
             | GateConsumer::CastPlacement
-            | GateConsumer::ShopOffer => "quests",
+            | GateConsumer::ShopOffer
+            | GateConsumer::Loop => "quests",
             // An effect root hangs off the quests stage four times out of five and
             // off dialogue once; the site's own path says which.
             GateConsumer::Effect => "quests",
@@ -381,6 +402,7 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
         (GateConsumer::DialogueOption, 0usize),
         (GateConsumer::CastPlacement, 0usize),
         (GateConsumer::ShopOffer, 0usize),
+        (GateConsumer::Loop, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -508,6 +530,19 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
                 &mut terms,
             );
         }
+    }
+
+    // C8 loops (spec-0086). The gate is the release.
+    enumerated[slot_of(GateConsumer::Loop)] = true;
+    for (li, l) in c.quests.content.loops.iter().enumerate() {
+        visit(
+            GateConsumer::Loop,
+            format!("/content/loops/{li}"),
+            l.gate(),
+            &mut sites,
+            &mut gated,
+            &mut terms,
+        );
     }
 
     let missed: Vec<&str> = GateConsumer::ALL

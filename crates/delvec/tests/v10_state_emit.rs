@@ -9,6 +9,13 @@
 //! has, and asserts the clause in each emitted guard. The binding count is
 //! printed and asserted: `GateConsumer::COUNT` classes, all of them bound.
 //!
+//! One class cannot stand in that campaign: a loop (spec-0086) compiles only
+//! over a corridor whose view closes inside identical bays, which `hello-room`
+//! is not. Its numeric gate is bound by a second build, the `long-gallery`
+//! fixture over the synthesised corridor ([`common::corridor`]), whose binding is
+//! counted the same way and whose emitted guard is asserted beside the others —
+//! so every class is still bound, by a campaign that can carry it.
+//!
 //! Built on the `cast-ledger` fixture (two quests, a cast ledger, a dialogue
 //! tree) with the stages raised to 0.10.0, a `state` section added, and — via a
 //! private prefab copy, exactly as `v06_traps` does — an `anchor/trap` so the
@@ -245,6 +252,52 @@ static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
+/// The consumer classes a gate in `campaign` carries a `requires_state` term at.
+fn numeric_classes(campaign: &delvewright_dsl::Campaign) -> BTreeMap<&'static str, usize> {
+    let mut per: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for_each_gate(campaign, &mut |site, gate| {
+        if !gate.requires_state.is_empty() {
+            *per.entry(site.consumer.label()).or_default() += 1;
+        }
+    });
+    per
+}
+
+/// The second campaign: the `long-gallery` fixture, whose loop holds while
+/// `state/crossings` is at most 1. Built once per process, read-only after.
+static CORRIDOR: LazyLock<(BuildOutput, BTreeMap<&'static str, usize>)> = LazyLock::new(|| {
+    let dir = common::compiler_fixtures_dir().join("long-gallery");
+    let prefab_dir =
+        common::corridor::gallery_prefabs("v10-state", &common::corridor::Cuts::default());
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("long-gallery parses");
+    let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
+    let diags = validate_campaign_with(
+        &campaign,
+        &FullItemRegistry::v1_21_11(),
+        &prefabs,
+        &FullEntityRegistry::v1_21_11(),
+    );
+    assert!(
+        diags.is_empty(),
+        "long-gallery must validate clean: {diags:#?}"
+    );
+    let per = numeric_classes(&campaign);
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let structures = common::plan_structures_with_trap_triggers(&plan, &prefab_dir);
+    let out = emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        &BTreeMap::new(),
+    )
+    .expect("the corridor builds");
+    (out, per)
+});
+
 /// Materialize the campaign and build it, returning `(output, binding ledger)`.
 fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
     build_from(who, QUESTS.as_str())
@@ -279,16 +332,20 @@ fn build_from(who: &str, quests: &str) -> (BuildOutput, delvewright_dsl::GateBin
     // The binding ledger for the assertions below: how many gates this campaign
     // actually has, per consumer class. A class at zero would make every
     // assertion about it vacuous, which is why it is checked rather than assumed.
-    let mut per: BTreeMap<&'static str, usize> = BTreeMap::new();
-    let binding = for_each_gate(&campaign, &mut |site, gate| {
-        if !gate.requires_state.is_empty() {
-            *per.entry(site.consumer.label()).or_default() += 1;
-        }
-    });
+    let per = numeric_classes(&campaign);
+    let binding = for_each_gate(&campaign, &mut |_, _| {});
     println!("gate binding: {}", binding.summary());
+    // The loop class is bound by the corridor campaign and by no other: its
+    // count is read off that campaign, never assumed.
+    let corridor = &CORRIDOR.1;
+    println!("corridor gate binding: {corridor:?}");
     let unbound: Vec<&str> = GateConsumer::ALL
         .iter()
-        .filter(|k| !per.contains_key(k.label()))
+        .filter(|k| {
+            let bound_here = per.contains_key(k.label());
+            let bound_there = **k == GateConsumer::Loop && corridor.contains_key(k.label());
+            !(bound_here || bound_there)
+        })
         .map(|k| k.label())
         .collect();
     assert!(
@@ -448,6 +505,19 @@ fn the_comparison_reaches_every_consumers_guard() {
     assert!(
         cast.contains("if score @s dw.s_nerve matches ..0"),
         "a cast placement's branch gate must carry the comparison:\n{cast}"
+    );
+
+    // 8. loop — the poll's guard, on the corridor campaign (see the module doc).
+    let poll = std::str::from_utf8(
+        CORRIDOR
+            .0
+            .get("datapack/data/long-gallery/function/loop_gallery_poll.mcfunction")
+            .expect("the loop's poll is emitted"),
+    )
+    .unwrap();
+    assert!(
+        poll.starts_with("execute if score #party dw.s_crossings matches ..1 as @e["),
+        "a loop's poll must carry the comparison before it selects a body:\n{poll}"
     );
 }
 

@@ -1878,6 +1878,18 @@ a player does: `strike` and `strike-npc` are a real attack (`bot.attack`) on the
 acquired by the crosshair rule below, and the step passes only on the trigger's
 own fired marker, `[dw:complete <campaign> trigger/<id>]`.
 
+**Loop steps (`MineflayerExecutor.exerciseLoop`).** A `loop` step in
+`critical-path.json` is a loop the forced route meets while it holds (see
+`docs/reference/compiler.md`, "`loop` steps"). The bot walks to `pos`, then
+`times` times walks through the slab at `cross` along the loop's axis and waits
+for the forced move; each move's delta must equal `offset` to within 0.001 block
+per axis (`sameDelta`), measured from the physics tick before the move. The step
+fails naming the loop when a crossing is not moved within
+`DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS` (default 20 s), and any other step fails when
+a walk is moved by the offset of a loop the path exercises, outside that loop's
+step (the loop was expected to have stood down). The leg after the step starts from the landing,
+`transport`.
+
 **Run-backs (`MineflayerExecutor.beforeStep`, `combat.ts` `dueRunBacks`).** Before
 each step the sequencer asks the executor for anything the path owes ahead of the
 step's own action. For every `combat-plan.json` `run_backs` entry naming that
@@ -1933,6 +1945,7 @@ remain is `DELVEWRIGHT_NOTE_TEXT`, because `validation/playtest-note-flow.sh` ru
 | `DELVEWRIGHT_DEATH_LOOP` | `0` skips the **death-loop stage** (local iteration only); the report then records it as SKIPPED with that reason, never as passed. Default ON whenever the build ships `validation/death-plan.json` — i.e. whenever the campaign declares a lethal volume, an `on_death` or a recovery stake. ON, the bot walks into every declared lethal volume, DIES there, and asserts what the campaign promised: the volume's own wording reaching that player, the declared forfeit leaving the currency ledger for EVERY datum that death takes, the recovery stake standing at the anchor the compile-time placement table chose, the walk back from the respawn seat, an exact restore of every one of those datums under a double right-click in one tick, and the retirement of the collected hardware. A death that forfeits several datums leaves them all at ONE place, so the trial carries one wager per stake the campaign's `on_death` drops and judges each against its own declared forfeit rule — asserting the first stake the plan lists would be a fraction of the promise, and which fraction is not decidable from the campaign at all. A `drop-stake` carries a `when` like every other effect, so the promise is CONDITIONAL, and both of its halves are asserted: the bot reads every stake's gate at the moment it steps in, a stake whose gate reads open is FORFEITED by its declared rule, and a stake whose gate reads shut is KEPT — staged to a non-empty balance like a forfeited one and asserted unchanged across the death; neither is a skip. The gate arrives in the plan as the scoreboard terms the emitter renders into the `on_death` guard (`drops_stake[].gates[].terms[]`, `Plan::gate_terms`, the one reduction both read) and the bot puts each term to the server as that same `execute if|unless score … matches …` clause and reads which way it answered — vanilla's `matches` is FALSE for a holder with no score, which is how an unset flag holds a `forbids_flags` gate open — and a term answered neither way establishes nothing and REDS the trial. Kept stakes are named on the `[death-loop]` lines and counted in `death_loop.binding.datums_kept` beside `datums_promised`; a stage whose `forfeits_examined` is ZERO has proved no forfeit, placement or collection, and that is a finding, never a pass. This is the ONLY tier that can witness a player death at all — a PackTest fake player is permanently undamageable. A plan whose `binding.unbound` is true (a volume with no `on_death`, or an `on_death` with no volume) is reported as a finding and NOT walked |
 | `DELVEWRIGHT_BRANCHES` | **Which branches this run is answerable for** (spec-0025 §3). `all` (default, the release tier: every enumerated branch), a comma-separated list of branch ids (the narrowed tier), or `from-diff` — the PR tier spec-0025 describes, which **refuses**: the diff→branches mapping is compiler-side and is not emitted yet, and degrading to `all` would lie about cost while degrading to nothing would lie about coverage. A branch this tier excludes appears in the run report with the reason it did not run; a skipped branch is NAMED, never silent. A list naming a branch the build does not declare is an error, not a silent skip. Ignored for a build with no `validation/branch-plan.json` |
 | `DELVEWRIGHT_BRANCH` | **Which single branch THIS session walks.** The run then reads `validation/branch-path-<branch>.json` (the ordinary critical-path contract, computed under that branch) instead of `critical-path.json` — navigated leg-by-leg through that branch's own `validation/branch-waypoints-<branch>.json` (absent → single-goal fallback reported LOUDLY in stderr + the run report, never silently), and asserts the path really takes the choices that ENTER the branch — so a run cannot report branch coverage while having walked somebody else's storyline. One branch per invocation by construction: party progress only ever moves forward, so a second branch needs a second WORLD (`validation/branch-runs.sh` is that loop). Unset = the ordinary single-path run, unchanged. Refused if the branch is not in the build, or not one `DELVEWRIGHT_BRANCHES` selected |
+| `DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS` | How long one crossing of a `loop` step may take before the step fails (default 20 s; spec-0086) |
 
 An `interact` step whose `critical-path.json` entry carries `requires_item` puts
 that item in the bot's **mainhand** before it sends the trigger
@@ -2226,3 +2239,17 @@ and `execute store result … as <many> on passengers if entity @s` stores one
 branch's `1`, never a sum — a population is counted with `scoreboard players
 add` per branch, which is how a first reading of "one passenger per vehicle"
 was found to be the instrument and not the game.
+`tools/spike-seamless-loop/run.sh` (`EULA=TRUE tools/spike-seamless-loop/run.sh
+[--out <path>]`) measures, on the same throwaway pinned server, what a relative
+`tp` of a body crossing a one-cell slab does and tells: the body's position,
+motion and rotation read back on either side of the `tp` in one tick, the one
+relative position packet its client receives, the velocity and facing the client
+keeps, the chunk ring a move across a chunk boundary streams, whether a one-tick
+poll catches every crossing walking, sprinting, sprint-jumping and falling (with
+the fall law fitted from one drop), what a witness in the corridor is told, and
+that a party-wide release stands the loop down. Findings: spec-0086 §2; raw
+observations beside the rig (`tools/spike-seamless-loop/observations.json`). It
+publishes an **ephemeral** loopback port and never takes the 25565 mutex. The
+compiler consumes two of its numbers, never the rig: the fastest horizontal
+tick and the fall law's limit, held as `dsl::metrics::POLL_HORIZONTAL_BLOCKS_PER_TICK`
+and `POLL_FALL_BLOCKS_PER_TICK` with the rig named as their instrument (`DW0945`).

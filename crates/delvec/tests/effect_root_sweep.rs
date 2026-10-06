@@ -146,10 +146,10 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
     );
     assert_eq!(
         EffectRootKind::COUNT,
-        10,
-        "ten roots (spec-0022 + v0.6, then spec-0031's R6 shortcut `on_unlock` \
+        11,
+        "eleven roots (spec-0022 + v0.6, then spec-0031's R6 shortcut `on_unlock` \
          and R7 campaign `on_death`, then spec-0032's R8 shop offer, then \
-         spec-0074's R9 fight `on_kill`, then spec-0082's R10 assembly `on_land`)"
+         spec-0074's R9 fight `on_kill`, then spec-0082's R10 assembly `on_land`, then spec-0086's R11 loop `on_cross`)"
     );
 
     // hello-world has one quest with one `on_objective_complete` bundle and one
@@ -165,6 +165,7 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
     assert_eq!(n(EffectRootKind::ShopOffer), 0);
     assert_eq!(n(EffectRootKind::OnKill), 0);
     assert_eq!(n(EffectRootKind::AssemblyLand), 0);
+    assert_eq!(n(EffectRootKind::LoopCross), 0);
 
     // …and the ledger says so out loud, rather than leaving a reader to notice an
     // empty count on their own.
@@ -179,6 +180,7 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
             EffectRootKind::ShopOffer,
             EffectRootKind::OnKill,
             EffectRootKind::AssemblyLand,
+            EffectRootKind::LoopCross,
         ],
         "a root this campaign has no bundle at is NAMED as unbound"
     );
@@ -256,6 +258,12 @@ const ALL_ROOTS_PRELUDE: &str = r#""triggers": [
         "strikes": { "while_in": { "anchor": "anchor/exit", "extent": [1, 1, 1] },
           "pattern": [ { "windup": "idle", "hold": 0, "strike": "idle",
             "on_land": [ { "type": "set-flag", "flag": "flag/stamped" } ] } ] } }
+    ],
+    "loops": [
+      { "id": "loop/hall", "region": { "anchor": "anchor/exit", "extent": [1, 1, 0] },
+        "to": { "anchor": "anchor/exit", "offset": [0, 0, -6] },
+        "forbids_flags": ["flag/slain"],
+        "on_cross": [ { "type": "set-flag", "flag": "flag/crossed" } ] }
     ],"#;
 
 /// The campaign's `on_death` bundle — root 7, the only one that is a single list

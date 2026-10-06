@@ -195,6 +195,9 @@ pub struct DangerVisibility {
     /// Cells the party can walk to from everywhere it is PUT, over the world
     /// with lethality removed — the population `P`.
     pub population: usize,
+    /// The cells the population is flooded from — every place the party is PUT
+    /// ([`put_at_roots`]), a loop's landings included (spec-0086 §5.3).
+    pub roots: usize,
     /// One row per resolved volume, in declaration order.
     pub volumes: Vec<VolumeVisibility>,
     /// `shown_by` entries examined, over every volume.
@@ -296,6 +299,7 @@ impl DangerVisibility {
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "population": self.population,
+            "roots": self.roots,
             "caught": self.caught(),
             "shown": self.shown(),
             "reads_as_safe_floor": self.caught() - self.shown(),
@@ -339,11 +343,12 @@ fn cell_shows(
 /// (spec-0062 §2 decision 1), named by its quantifier (spec-0083 §3.8).
 ///
 /// The entry spawn, every `set-checkpoint` and `bonfire` seat, every crossing's
-/// entry point, and every `teleport` destination, link or gather. Rooted at all
-/// of them and not at the entry alone: a party teleported into an area stands
-/// on that area's floor, and a rule that judged only what walks from the door
-/// would be silent about every area reached by a carry. It roots `DW0891`,
-/// where a wider population can only refuse more.
+/// entry point, every `teleport` destination, link or gather, every cell of a
+/// loop's landing slab and every loop exercise step's landing (spec-0086 §5.3).
+/// Rooted at all of them and not at the entry alone: a party teleported into an
+/// area stands on that area's floor, and a rule that judged only what walks from
+/// the door would be silent about every area reached by a carry. It roots
+/// `DW0891`, where a wider population can only refuse more.
 ///
 /// Deterministic: entry, then checkpoints in content order, then crossings in
 /// objective order, then links and gathers in declaration order (ADR-0006).
@@ -354,21 +359,59 @@ pub fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
     out.extend(plan.gathers.iter().map(|g| g.to));
+    // spec-0086 §5.3: a loop puts a body down on every cell of its landing
+    // slab, and the party stands at each exercise step's landing.
+    out.extend(loop_landing_cells(plan));
+    out.extend(loop_exercise_landings(plan));
     out
 }
 
 /// **Every cell the party CERTAINLY stands at on the forced route** (spec-0083
 /// §3.8): the entry spawn, every checkpoint seat, every crossing's entry point
-/// and every link's `to` — and not a gather's destination, which an optional
-/// root may never fire. It roots `DW0924`'s party cells and `DW0881`'s
-/// population, where a wider population would hide a finding.
+/// every link's `to` and every loop exercise step's landing (spec-0086 §5.3) —
+/// and not a gather's destination, which an optional root may never fire, nor
+/// the rest of a loop's landing slab, where a body is put only if it crosses
+/// there. It roots `DW0924`'s party cells and `DW0881`'s population, where a
+/// wider population would hide a finding.
 pub fn stands_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
     out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
+    out.extend(loop_exercise_landings(plan));
     out
+}
+
+/// Every cell of every loop's landing slab (`region + to`, spec-0086 §5.3), in
+/// declaration order then x, y, z (ADR-0006): a loop may put a body down on
+/// any of them. A put-at root.
+fn loop_landing_cells(plan: &Plan) -> Vec<[i32; 3]> {
+    let mut out = Vec::new();
+    for l in &plan.loops {
+        let (lo, hi) = l.landing();
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    out.push([x, y, z]);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Each loop exercise step's landing on the forced route, in path order
+/// (spec-0086 §5.3): the party certainly stands there. A put-at and a
+/// stands-at root.
+fn loop_exercise_landings(plan: &Plan) -> Vec<[i32; 3]> {
+    plan.critical_path
+        .iter()
+        .filter_map(|s| match s {
+            crate::compiler::plan::Step::Loop { transport, .. } => Some(*transport),
+            _ => None,
+        })
+        .collect()
 }
 
 /// **The population `P`** (spec-0062 §2): every cell a player can walk to from
@@ -435,6 +478,7 @@ pub fn check_danger_is_visible(
     let body = delvewright_dsl::metrics::Body::PLAYER;
     // The counterfactual, not the world the router walks. See the note above.
     let open = world.without_exclusions();
+    binding.roots = put_at_roots(plan, entry).len();
     let population = walked_population(plan, &open, entry);
     binding.population = population.len();
     // The zero-binding question: can any player body get into each volume at
@@ -1259,6 +1303,7 @@ mod tests {
     fn a_volume_no_body_reaches_is_a_dw0891_warning() {
         let d = DangerVisibility {
             population: 10,
+            roots: 1,
             volumes: vec![
                 row("lethal/well", None),
                 row("lethal/pit", Some("a player")),
@@ -1283,6 +1328,7 @@ mod tests {
     fn a_wave_member_binds_a_volume_no_player_reaches() {
         let mut d = DangerVisibility {
             population: 10,
+            roots: 1,
             volumes: vec![row("lethal/well", None)],
             declarations: 0,
             borne_out: 0,

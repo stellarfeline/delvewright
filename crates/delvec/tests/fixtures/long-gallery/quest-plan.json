@@ -1,0 +1,19 @@
+{
+  "campaign_id": "long-gallery",
+  "content": {
+    "finale": "quest/walk-the-gallery",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/gallery",
+        "depends_on": [],
+        "goal": "Walk the gallery to its far end.",
+        "id": "quest/walk-the-gallery",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "quest-plan"
+}

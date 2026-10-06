@@ -6,6 +6,7 @@ import type {
   CriticalPath,
   InteractStep,
   KillStep,
+  LoopStep,
   ReachStep,
   RestStep,
   WitnessStrikeStep,
@@ -594,4 +595,40 @@ test("runSequence runs the executor's beforeStep ahead of each step's own action
     "before:assert-complete",
     "assert-complete",
   ]);
+});
+
+// --- loop steps (spec-0086 §6) ---------------------------------------------------
+
+const crossTheGallery: LoopStep = {
+  action: "loop",
+  loop: "loop/gallery",
+  pos: [2, 67, 16],
+  cross: [2, 67, 22],
+  offset: [0, 0, -6],
+  times: 2,
+  transport: [2, 67, 16],
+};
+
+test("a loop step is dispatched to the executor and is never the last objective", async () => {
+  const checked: Array<[number, number]> = [];
+  const executor = new (class extends RecordingExecutor {
+    exerciseLoop(_step: LoopStep): Promise<void> {
+      this.calls.push("loop");
+      return Promise.resolve();
+    }
+    assertEndgameNotReached(stepIndex: number, finalObjectiveIndex: number): void {
+      checked.push([stepIndex, finalObjectiveIndex]);
+    }
+  })();
+  await runSequence(path([selectClass, talkTo, crossTheGallery, assertComplete]), executor);
+  assert.deepEqual(executor.calls, ["select-class", "talk-to", "loop", "assert-complete"]);
+  assert.deepEqual(checked, [[0, 1]], "the last objective is the talk-to, not the loop");
+});
+
+test("a path with a loop step against an executor that cannot cross one fails loudly", async () => {
+  const executor = new RecordingExecutor();
+  await assert.rejects(
+    () => runSequence(path([selectClass, crossTheGallery, kill, assertComplete]), executor),
+    (err: unknown) => err instanceof StepExecutionError && /cannot cross a loop/.test(err.message),
+  );
 });

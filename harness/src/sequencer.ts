@@ -9,6 +9,7 @@ import type {
   CriticalPath,
   InteractStep,
   KillStep,
+  LoopStep,
   ReachStep,
   RestStep,
   WitnessStrikeStep,
@@ -45,6 +46,11 @@ export interface StepExecutor {
    * or strike-npc), then wait for its fired marker. Proves no objective — it
    * opens what the steps after it walk through. */
   fireTrigger(step: TriggerStep): Promise<void>;
+  /** Exercise a loop (spec-0086 §6): cross its slab until `times` forced moves
+   * of exactly its offset are seen. Proves no objective. Optional so existing
+   * fakes keep compiling; a path carrying a `loop` step against an executor
+   * without it is a hard failure, never a silent skip. */
+  exerciseLoop?(step: LoopStep): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
   /**
    * Optional (gap 8): after a step whose completion teleports the player to
@@ -208,6 +214,14 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
         );
       }
       return executor.witnessStrike(step);
+    case "loop":
+      if (!executor.exerciseLoop) {
+        throw new Error(
+          `critical path exercises ${step.loop} but this executor cannot cross a loop — ` +
+            `the walk after it would meet a slab the proof read as released`,
+        );
+      }
+      return executor.exerciseLoop(step);
     case "assert-complete":
       return executor.assertComplete(step);
   }
@@ -236,7 +250,7 @@ export async function runSequence(
   const finalObjectiveIndex = (() => {
     for (let i = path.steps.length - 2; i >= 0; i--) {
       const action = path.steps[i]!.action;
-      if (action !== "rest" && action !== "trigger" && action !== "witness-strike") return i;
+      if (action !== "rest" && action !== "trigger" && action !== "witness-strike" && action !== "loop") return i;
     }
     return path.steps.length - 2;
   })();

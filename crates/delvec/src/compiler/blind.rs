@@ -277,6 +277,9 @@ fn root_is_solo(root: &EffectRoot<'_>) -> bool {
         // spec-0082: a strike's landing runs from the assembly's scheduled
         // tick (`Audience::Scheduled`), with no acting player.
         EffectRoot::AssemblyLand(_)
+        // spec-0086: a loop's `on_cross` runs from the server source after the
+        // move (`Audience::Scheduled`).
+        | EffectRoot::LoopCross(_)
         | EffectRoot::ObjectiveComplete { .. }
         | EffectRoot::QuestComplete(_)
         | EffectRoot::TrapPayload(_)
@@ -417,7 +420,10 @@ fn standing_set(
         // spec-0082: a landing addresses the party from the assembly's tick;
         // every cell the party may stand on is a seat, which can only refuse
         // more.
-        | EffectRoot::AssemblyLand(_) => population.clone(),
+        | EffectRoot::AssemblyLand(_)
+        // spec-0086: an `on_cross` addresses the party (`@a`) from the loop's
+        // tick; every cell the party may stand on is a seat.
+        | EffectRoot::LoopCross(_) => population.clone(),
     }
 }
 

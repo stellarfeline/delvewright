@@ -216,6 +216,28 @@ pub fn check_marks_in_piece(plan: &Plan<'_>) -> (MarkBinding, Result<(), Failure
         );
     });
 
+    // A loop's landing (spec-0086 §3.1): where the slab's anchor cell is put
+    // down is a destination like a `teleport`'s.
+    for (li, l) in c.quests.content.loops.iter().enumerate() {
+        b.destinations += 1;
+        if l.to.is_offset() {
+            b.offset_destinations += 1;
+        }
+        let Some((area, anchor_cell)) = plan.point_any_site(l.to.anchor.as_str()) else {
+            continue;
+        };
+        judge(
+            plan,
+            format!("the landing of loop `{}`", l.id),
+            "quests",
+            format!("/content/loops/{li}/to/offset"),
+            &l.to,
+            &area,
+            anchor_cell,
+            &mut refused,
+        );
+    }
+
     // Cast rows spelled as a mark.
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         let beat_area = plan.quest_area(q.id.as_str()).unwrap_or("");

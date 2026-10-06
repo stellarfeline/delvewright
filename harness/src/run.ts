@@ -264,6 +264,9 @@ async function main(): Promise<number> {
   // Scope the completion oracle to this campaign: only markers naming it count
   // (AUDIT-P0). Comes from the contract, never inferred.
   executor.useCampaign(criticalPath.campaignId);
+  // spec-0086 §6: the loops this path exercises, so a plain walk that meets one
+  // still holding fails naming it.
+  executor.useLoops(criticalPath.steps);
   if (restSteps.length > 0) {
     executor.useRestSteps(restSteps);
     process.stderr.write(

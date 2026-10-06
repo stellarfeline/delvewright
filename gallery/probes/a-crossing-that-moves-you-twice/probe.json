@@ -1,0 +1,17 @@
+{
+  "code": "DW0945",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loops/0/region/extent",
+      "value": [
+        1,
+        1,
+        3
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The slab drawn seven courses thick along the gallery while the landing stays one bay — six courses — back. A body the loop moves lands still inside the slab and is moved again the next tick, every tick it stands there. The refusal names the offset and the thickness. It declares no unit."
+}

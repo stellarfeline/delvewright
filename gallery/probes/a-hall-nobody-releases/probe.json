@@ -1,0 +1,13 @@
+{
+  "code": "DW0311",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loops/0/requires_state/0/value",
+      "value": 99
+    }
+  ],
+  "units": [],
+  "why": "The long gallery's release moved out of reach: the count it waits for raised from 1 to 99, which no exercise of the loop on the path makes, so the exercise step crosses once and the loop still holds when the walk to the end room must cross its slab. The refusal is the route proof's, and it names the loop and the gate term still open — `requires_state: state/gallery-crossings at-most 99` — not a doorway, because a walk was never the way. It declares no unit."
+}

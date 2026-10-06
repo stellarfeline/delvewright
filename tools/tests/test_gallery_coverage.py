@@ -575,3 +575,28 @@ def test_the_binding_line_states_the_patch_figures():
     src = (REPO / "tools" / "ci" / "check-gallery-coverage.py").read_text()
     for phrase in ("probe patches:", "probe(s) examined", "JSON path(s) touched"):
         assert phrase in src, f"the binding line no longer states `{phrase}`"
+
+
+def test_a_loop_ledger_that_binds_nothing_is_a_zero_binding(tmp_path):
+    """spec-0086 §8 on the gallery: a loop ledger reading no loop, a row with no
+    eye or no visible cell, or no exercise step, is named as a zero binding — as
+    is a path that exercises a loop with no ledger beside it."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    row = {"id": "loop/long-gallery", "eyes": 15, "visible": 144, "slab_cells": 9,
+           "configurations": 10, "exercise": [{"step": 9, "times": 2}]}
+    ledger = out / "validation" / "loop-gate.json"
+    ledger.write_text(json.dumps({"loops": 1, "rows": [row]}))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({"loops": 1, "rows": [{**row, "visible": 0, "exercise": []}]}))
+    assert mod.read_build_ledgers(out)[1] == [
+        "loop-gate.json: `loop/long-gallery.visible` is 0",
+        "loop-gate.json: `loop/long-gallery` has no exercise step",
+    ]
+    ledger.write_text(json.dumps({"loops": 0, "rows": []}))
+    assert mod.read_build_ledgers(out)[1] == ["loop-gate.json: `loops` is 0"]
+    ledger.unlink()
+    (out / "critical-path.json").write_text(json.dumps({"steps": [{"action": "loop"}]}))
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("loop-gate.json: absent"), zeroes

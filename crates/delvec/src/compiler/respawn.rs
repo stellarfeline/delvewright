@@ -515,7 +515,8 @@ fn site_effects(plan: &Plan) -> Vec<Sited> {
             | EffectRoot::OnDeath
             | EffectRoot::ShopOffer
             | EffectRoot::OnKill(_)
-            | EffectRoot::AssemblyLand(_) => (Root::Ambient, Vec::new()),
+            | EffectRoot::AssemblyLand(_)
+            | EffectRoot::LoopCross(_) => (Root::Ambient, Vec::new()),
         };
         let id = bundle;
         bundle += 1;

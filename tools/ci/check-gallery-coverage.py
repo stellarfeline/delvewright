@@ -625,6 +625,14 @@ def main() -> int:
             f"compiler-stated bindings: {len(ledgers)} ledger(s) read from the "
             f"gallery's build, {len(zero_bindings)} reporting a ZERO binding."
         )
+        loops = ledgers.get("loop-gate.json")
+        if isinstance(loops, dict):
+            rows = loops.get("rows") or []
+            print(
+                f"loop ledger: {loops.get('loops', 0)} loop(s), "
+                f"{sum(len(r.get('exercise') or []) for r in rows)} exercise step(s), "
+                f"{sum(r.get('visible', 0) for r in rows)} visible cell(s) compared."
+            )
 
     report = {
         "compiler_bindings": ledgers,
@@ -746,6 +754,28 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
             for k in ("links", "gathers"):
                 if teleports.get(k) == 0:
                     zeroes.append(f"{f.name}: `teleports.{k}` is 0")
+        # spec-0086 §8: the gallery binds a loop on its critical path, so a loop
+        # ledger reading zero loops, zero eyes, zero visible cells or no exercise
+        # step is a proof that stopped reaching what the document writes.
+        if f.name == "loop-gate.json":
+            if not doc.get("loops"):
+                zeroes.append(f"{f.name}: `loops` is 0")
+            for row in doc.get("rows") or []:
+                for k in ("eyes", "visible", "slab_cells", "configurations"):
+                    if row.get(k) == 0:
+                        zeroes.append(f"{f.name}: `{row.get('id')}.{k}` is 0")
+                if not row.get("exercise"):
+                    zeroes.append(f"{f.name}: `{row.get('id')}` has no exercise step")
+    # …and a path that exercises a loop with no loop ledger beside it is a build
+    # that crossed a slab nothing judged.
+    path = out / "critical-path.json"
+    if path.is_file() and "loop-gate.json" not in ledgers:
+        steps = json.loads(path.read_text()).get("steps") or []
+        if any(isinstance(st, dict) and st.get("action") == "loop" for st in steps):
+            zeroes.append(
+                "loop-gate.json: absent beside a critical path that exercises a loop — the "
+                "slab it crosses was never judged"
+            )
     return ledgers, zeroes
 
 
