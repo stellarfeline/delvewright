@@ -661,6 +661,70 @@ fn dw0946_a_lamp_behind_a_window_lights_one_bay() {
     assert_ne!(a, b);
 }
 
+/// **A refusal from the post-world-edits pass prints the binding first**
+/// (issue #914): a world-edits batch that stands a lantern in the landing bay
+/// is refused by the batch replay, not the final build, and the loop binding
+/// line — the numbers that repair it — comes before the refusal.
+#[test]
+fn a_refusal_after_a_world_edits_batch_prints_the_loop_binding() {
+    let dir = campaign_with(
+        "edits-binding",
+        |_| {},
+        |d| {
+            let doc = json!({
+                "campaign_id": "long-gallery",
+                "dsl_version": "0.35.0",
+                "stage": "world-edits",
+                "content": { "batches": [{
+                    "area": "area/gallery",
+                    "id": "batch/a-lamp-in-the-landing-bay",
+                    "note": "A lantern stood on the floor of the landing bay alone.",
+                    "edits": [
+                        {
+                            "name": "region/the-lamp",
+                            "verb": "select",
+                            "shape": {
+                                "kind": "box",
+                                "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/long-gallery" },
+                                "min": [1, FLOOR_Y, bay(2) + 3],
+                                "max": [1, FLOOR_Y, bay(2) + 3]
+                            }
+                        },
+                        {
+                            "verb": "fill",
+                            "region": "region/the-lamp",
+                            "recipe": { "blocks": [{ "block": "minecraft:lantern", "weight": 1.0 }] }
+                        }
+                    ]
+                }]}
+            });
+            std::fs::write(
+                d.join("world-edits.json"),
+                serde_json::to_string_pretty(&doc).unwrap() + "\n",
+            )
+            .unwrap();
+        },
+    );
+    let run = build(&dir);
+    let line = run.refused("DW0946");
+    assert!(
+        line.contains("after world-edits batch `batch/a-lamp-in-the-landing-bay`"),
+        "the refusal is the batch replay's: {line}"
+    );
+    let at = |needle: &str| run.stderr.find(needle);
+    let binding = at("loop binding:").unwrap_or_else(|| {
+        panic!(
+            "the batch replay's refusal prints no loop binding line:\n{}",
+            run.stderr
+        )
+    });
+    assert!(
+        binding < at("DW0946").unwrap(),
+        "the binding line comes before the refusal:\n{}",
+        run.stderr
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Criterion 8 — the gate
 // ---------------------------------------------------------------------------

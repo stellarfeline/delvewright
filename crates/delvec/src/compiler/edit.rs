@@ -709,17 +709,26 @@ fn check_batch_invariants(
         // route its slab closes is the consequence. The seating pass has not
         // run at this door, so the body arm reads every declared post and no
         // wave seat; the final build reads both.
+        //
+        // A refusal here prints the binding of the pass that refused, before
+        // the refusal, so the numbers that repair it (the fog end the kernel
+        // read, the near range, the largest shift) reach the author whichever
+        // pass decides. A batch this pass admits prints nothing: the final
+        // build judges the world again and prints its own, so a build prints
+        // one binding line, the deciding pass's.
         if !plan.loops.is_empty() {
             let seats = BTreeMap::new();
-            let (_, refusal) = crate::compiler::r#loop::check(&crate::compiler::r#loop::Inputs {
-                plan,
-                world: &with_fixtures,
-                blocks: &assembled.blocks,
-                placements: &relight.placements,
-                seals: &assembled.gate_seals,
-                wave_seats: &seats,
-            });
+            let (binding, refusal) =
+                crate::compiler::r#loop::check(&crate::compiler::r#loop::Inputs {
+                    plan,
+                    world: &with_fixtures,
+                    blocks: &assembled.blocks,
+                    placements: &relight.placements,
+                    seals: &assembled.gate_seals,
+                    wave_seats: &seats,
+                });
             if let Some(f) = refusal {
+                eprintln!("{}", binding.line());
                 return Err(ctx(f));
             }
         }
