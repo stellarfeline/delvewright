@@ -33,12 +33,6 @@ this section is what they are *for* and the traps in each.
   knows — the entrance hall, the gate, a named NPC. Never room-shape jargon
   ("corner room", "L-shaped hall") and never solver-internal terms (anchor,
   piece or socket ids).
-- **A plate is stepped on, never clicked.** An `interact` completes on a
-  right-click, so a `prop` that is a pressure plate or a tripwire is refused
-  (`DW0957`). When the step is the act, write a trigger on the plate's anchor —
-  `{"on": {"on": "step"}}`, whose anchor cell must hold a plate or a tripwire
-  (`DW0917`) — and add `"audience": "presser"` when the beat answers the one
-  player who stepped on it.
 - **`interact.requires_item` is HELD, not carried**: the player must have the
   item in their **main hand** when they click — presenting it is the action.
   Author `missing_item_hint` whenever the empty-handed click deserves diegetic
@@ -141,7 +135,7 @@ this section is what they are *for* and the traps in each.
 - A `player`-scoped datum can only be touched where a player is acting — a
   dialogue option, a cast placement, an `on_death` beat, an effect on a quest
   beat a player completes, or a trigger declaring `audience: "presser"`, which
-  runs as the player who clicked (`use`) or stepped on (`step`). These have **no** acting player and reject one
+  runs as the player who clicked. These have **no** acting player and reject one
   (`DW0503`): an objective/trigger/trap *gate*, a party-audience trigger's
   `effects`, a trap's `payload`, a shortcut's `on_unlock`, a `move-npc`/
   `move-actor` `on_arrive`, a `bonfire`'s `on_rest`, and a `sequence` step of a
@@ -691,8 +685,8 @@ this section is what they are *for* and the traps in each.
   the gate discharges `DW0429`, whatever it does — but a `strike` does not,
   because pressing a thing is a right-click.
   - `audience: "presser"` addresses the one player who clicked, and works on
-    `on: use` and `on: step` only — vanilla can attribute a right-click and a
-    step and nothing else (`DW0427`). Leave it out and the beat addresses the whole party, which is
+    `on: use` only — vanilla can attribute right-clicks and nothing else
+    (`DW0427`). Leave it out and the beat addresses the whole party, which is
     right for a lever that opens a gate and wrong for a reply.
   - `style: "actionbar"` is the reply strip above the hotbar: it does not
     interrupt, does not stack, and is not width-checked. Use it for replies; use
