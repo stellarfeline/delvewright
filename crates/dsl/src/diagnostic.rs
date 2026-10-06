@@ -566,6 +566,15 @@ pub mod codes {
     /// Prescription: keep one `display`, give the datum a `name`, or declare it
     /// `player`-scoped; a `party` purse keeps its announcement and stands nowhere.
     pub const STATE_DISPLAY_UNDRAWABLE: DwCode = DwCode::new("DW0919", ExitTier::Build);
+    /// (spec-0081 §6) **A celestial time whose shape states nothing a sky can
+    /// show.** One rule about one value's shape, four ways to break it: the
+    /// object names neither or both of `sun` / `moon`; it states a `phase` where
+    /// the moon is below the horizon; `world.time` states no `phase` where the
+    /// moon is up; a `set-time`, a design row or a camera states the phase the
+    /// world already declares. Validation-tier (exit 1). Prescription: name one
+    /// body, remove the phase nobody can see, state the phase the party sees, or
+    /// remove the restated phase.
+    pub const CELESTIAL_TIME: DwCode = DwCode::new("DW0931", ExitTier::Build);
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective

@@ -1,0 +1,13 @@
+{
+  "code": "DW0929",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/3/effects/1/place",
+      "value": "area/hall"
+    }
+  ],
+  "units": [],
+  "why": "The vantage's repaint names both an anchor-centred `region` and a whole `place`. A repaint covers exactly one volume, and the two spellings are two kinds of input — a volume inside a place is the creator's judgement, a place's bounds are a derivation nobody types — so naming both leaves the engine to guess which was meant. It declares no unit: both fields are bound, one per repaint."
+}

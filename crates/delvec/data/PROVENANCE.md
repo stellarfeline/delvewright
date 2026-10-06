@@ -343,6 +343,27 @@ not third-party reconstructions.
   **Reproduce it**: `python3 tools/maintenance/extract-entity-tags.py
   <data/tag/entity_type/data.min.json> crates/dsl/data/entity-tags-1.21.11.json`.
 
+- **`timeline-day-1.21.11.json`** and **`timeline-moon-1.21.11.json`** (in
+  `crates/dsl/data/`) — **not** from the misode summary: read straight out of the
+  pinned server jar, `versions.toml` `[minecraft]` `server_jar_sha256`
+  `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726`, whose
+  bundled `META-INF/versions/1.21.11/server-1.21.11.jar` (sha256
+  `ec47239a8de246335e1d54f6ac319bd35641778eb4b6a6da06372840d02fcebc`) holds them
+  at `data/minecraft/timeline/day.json` (sha256
+  `6b6a64255d75579e0d3777d37174860c52899e01d77ea80a2daac87dd41719bf`) and
+  `data/minecraft/timeline/moon.json` (sha256
+  `947352a0fec398da6d227ab8becd32d5cbf35aa8ec47b0071de2d1273b35ccd3`). Copied byte
+  for byte with **one trailing newline appended** — the jar's files end at `}`,
+  and that newline is the only edit `delvec fmt --check` asks of a tracked JSON
+  file. Feeds `delvewright_dsl::celestial` (spec-0081): the moon's eight phase
+  names and their order, the `visual/sun_angle` keyframes and cubic-bezier ease
+  the scenes' sun and the celestial position table read, the
+  `gameplay/sky_light_level` ramp the light model judges, and the
+  `gameplay/monsters_burn` window `DW0496` reads.
+  **Check or reproduce it**: `python3 tools/maintenance/extract-timelines.py
+  <server.jar> [--write]` — refuses a jar off the pin, and without `--write`
+  refuses any difference between the jar's bytes and the committed ones.
+
 - **`item-equippable-1.21.11.json`** — every item that carries the
   `minecraft:equippable` default component (84), from `item_components/data.min.json`
   above, with its declared `slot`, its `asset_id`, its `allowed_entities` (always a
@@ -387,6 +408,37 @@ not third-party reconstructions.
   entity, so visibility itself is confirmed once by eye on the demo level. Re-read
   from the client when ADR-0009 moves the pin. Feeds `DW0898` and `DW0496`'s
   prescription.
+
+- **`environment-attributes-1.21.11.json`** — every environment attribute the
+  pinned game registers (45: 20 `admitted`, 5 `overridden`, 20 `gameplay`), each
+  with the `AttributeTypes` field it is built from, the value shape a campaign
+  writes (admitted ids only), the range its codec rejects outside of (or `null`),
+  and the modifier the overworld's timelines key it with; plus `records`, the
+  fields of the six record codecs a structured value is built from, each required
+  or optional with its codec's range. Read for spec-0080 by
+  `tools/maintenance/extract-environment-attributes.py` from the pinned server jar
+  (sha256 `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726`, its
+  bundled `META-INF/versions/1.21.11/server-1.21.11.jar`), the 1.21.11 client jar
+  (sha256 `1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd`) and
+  Mojang's official 1.21.11 server mappings (piston-meta `server_mappings`, sha1
+  `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`). Method: (1) every `.class` of each
+  jar scanned for `(visual|audio|gameplay)/[a-z_]+`, minus the strings that name a
+  loot table in the same jar (`gameplay/fishing`, `gameplay/hero_of_the_village`
+  and seven more) — the two jars' lists must be identical or the script refuses;
+  (2) the ids `EnvironmentAttributes.<clinit>` registers must equal that list, and
+  the registries summary's `environment_attribute` registry (mcmeta, sha256
+  `7efb1849…cf28f9` above) holds the same 45; (3) type and range per id from the
+  same `<clinit>` (`valueRange(AttributeRange.UNIT_FLOAT | NON_NEGATIVE_FLOAT)`,
+  bounds from `AttributeRange.<clinit>`), validated at load by
+  `EnvironmentAttribute.valueCodec`; (4) scope: `gameplay/` is out of scope
+  (spec-0080 §2.4), a `visual/` id an overworld timeline keys with `override`
+  (`dimension_type/overworld.json`, `#minecraft:in_overworld` expanded) is
+  `overridden`, the rest `admitted`. Feeds `DW0928`.
+- **`particle-types-1.21.11.json`** — every particle type (115), and whether it is a
+  `SimpleParticleType` (97), written `{"type": id}` with no options. Read by the
+  same script from `ParticleTypes.<clinit>` in the pinned server jar through the
+  same mappings: a type registered by `register(String, boolean)` returns a
+  `SimpleParticleType`; the 18 others take options. Feeds `DW0928`'s particle arm.
 
 ### What vanilla data does NOT provide (and what the compiler does about it)
 

@@ -11,6 +11,7 @@
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
+//! - [`atmosphere`]: a campaign's declared skies (spec-0080) — the attribute, paint and declaration refusals (`DW0928`–`DW0930`), the biome each atmosphere ships as, and the one writer of `fillbiome`.
 //! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
 //! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
@@ -23,6 +24,7 @@
 //! - [`cellset`]: copy-on-write cell sets and maps for the nav model, a bitset when dense, and a flood's visited set.
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
+//! - [`clock`]: the clock binding line — every time value the campaign states, as the clock it resolves to (spec-0081 §5.5).
 //! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
@@ -49,6 +51,7 @@
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
 //! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.
 //! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
+//! - [`link`]: a teleport the route proof takes as a link — the one enumeration of links and gathers, and the cutscene and carry-edge checks (`DW0932`/`DW0933`/`DW0934`).
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
@@ -93,6 +96,7 @@ pub mod affordance;
 pub mod analyze;
 pub mod assembled;
 pub mod atmos;
+pub mod atmosphere;
 pub mod batchstate;
 pub mod blocking;
 pub mod blockout;
@@ -105,6 +109,7 @@ pub mod cast;
 pub mod cellset;
 pub mod claims;
 pub mod clearance;
+pub mod clock;
 pub mod cohabit;
 pub mod combat;
 pub mod commands;
@@ -131,6 +136,7 @@ pub mod horizon;
 pub mod integrity;
 pub mod lethal;
 pub mod light;
+pub mod link;
 pub mod load;
 pub mod loot;
 pub mod mark;

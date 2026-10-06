@@ -1,0 +1,19 @@
+{
+  "campaign_id": "ferry",
+  "content": {
+    "finale": "quest/cross",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/strait",
+        "depends_on": [],
+        "goal": "Board the near hull and pull the tiller to cross to the far shore.",
+        "id": "quest/cross",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "quest-plan"
+}

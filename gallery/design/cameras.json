@@ -13,7 +13,9 @@
         44.5
       ],
       "sky": {
-        "time": "dusk",
+        "time": {
+          "sun": "just-risen"
+        },
         "weather": "clear"
       },
       "source": "estimated",

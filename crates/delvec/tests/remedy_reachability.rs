@@ -2187,6 +2187,474 @@ fn dw0721_removing_a_restated_sky_builds() {
 }
 
 // ---------------------------------------------------------------------------
+// spec-0080: the atmosphere refusals, each move taken
+// ---------------------------------------------------------------------------
+
+/// hello-world with `edit` applied to its world and quests documents.
+fn atmosphere_campaign(
+    tag: &str,
+    edit: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+) -> PathBuf {
+    let camp = campaign(&format!("atm-{tag}"), None);
+    let read = |f: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(camp.join(f)).unwrap()).unwrap()
+    };
+    let (mut world, mut quests) = (read("world.json"), read("quests.json"));
+    quests["dsl_version"] = serde_json::json!(DSL_VERSION);
+    edit(&mut world, &mut quests);
+    for (f, v) in [("world.json", &world), ("quests.json", &quests)] {
+        std::fs::write(camp.join(f), serde_json::to_string_pretty(v).unwrap()).unwrap();
+    }
+    camp
+}
+
+/// `delvec validate`, as an exit code and everything it said.
+fn validate_atm(camp: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+fn declare(world: &mut serde_json::Value, atmospheres: serde_json::Value, carried: bool) {
+    world["content"]["atmospheres"] = atmospheres;
+    if carried {
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/wrong-place");
+    }
+}
+
+fn talk_bundle(quests: &mut serde_json::Value) -> &mut Vec<serde_json::Value> {
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+        .as_array_mut()
+        .unwrap()
+}
+
+/// `DW0928` names the move: remove the line the overworld day cycle overrules.
+#[test]
+fn dw0928_removing_the_overridden_line_validates() {
+    let wrong = |tag: &str, attrs: serde_json::Value| {
+        atmosphere_campaign(tag, |w, _| {
+            declare(
+                w,
+                serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none", "attributes": attrs }]),
+                true,
+            )
+        })
+    };
+    let (code, log) = validate_atm(&wrong(
+        "sun",
+        serde_json::json!({ "visual/sun_angle": 90.0, "visual/sky_color": "#3b4a1e" }),
+    ));
+    assert_ne!(code, 0, "{log}");
+    assert!(log.contains("DW0928"), "{log}");
+    let (code, log) = validate_atm(&wrong(
+        "sun-removed",
+        serde_json::json!({ "visual/sky_color": "#3b4a1e" }),
+    ));
+    assert_eq!(code, 0, "{log}");
+    assert!(!log.contains("DW0928"), "{log}");
+}
+
+/// `DW0929` names the move: keep exactly one of `region` / `place`; and, at the
+/// build, shrink the region so the whole volume stands inside the map.
+#[test]
+fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_verdict() {
+    let atm = serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none" }]);
+    let both = atmosphere_campaign("both", |w, q| {
+        declare(w, atm.clone(), false);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
+            "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] }, "place": "area/keep"
+        }));
+    });
+    let (code, log) = validate_atm(&both);
+    assert!(code != 0 && log.contains("DW0929"), "{log}");
+    let one = atmosphere_campaign("one", |w, q| {
+        declare(w, atm.clone(), false);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place", "place": "area/keep"
+        }));
+    });
+    let (code, log) = validate_atm(&one);
+    assert_eq!(code, 0, "{log}");
+    let wide = |tag: &str, extent: [u32; 3]| {
+        atmosphere_campaign(tag, |w, q| {
+            declare(w, atm.clone(), false);
+            talk_bundle(q).push(serde_json::json!({
+                "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
+                "region": { "anchor": "anchor/exit", "extent": extent }
+            }));
+        })
+    };
+    let (code, log) = build(
+        "atm-wide",
+        &wide("wide", [64, 1, 1]),
+        &common::prefabs_dir(),
+    );
+    assert!(code != 0 && log.contains("DW0929"), "{log}");
+    let (code, log) = build(
+        "atm-narrow",
+        &wide("narrow", [1, 1, 1]),
+        &common::prefabs_dir(),
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// `DW0930` names its moves: carry the atmosphere on its place; drop the
+/// `climate` that contradicts the precipitation; give a duplicate its own id.
+#[test]
+fn dw0930_carrying_it_dropping_the_climate_and_renaming_the_duplicate_all_validate() {
+    let one = serde_json::json!({ "id": "atmosphere/wrong-place", "precipitation": "snow" });
+    let (code, log) = validate_atm(&atmosphere_campaign("unbound", |w, _| {
+        declare(w, serde_json::json!([one.clone()]), false)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    let (code, log) = validate_atm(&atmosphere_campaign("carried", |w, _| {
+        declare(w, serde_json::json!([one.clone()]), true)
+    }));
+    assert_eq!(code, 0, "{log}");
+    let mut hot = one.clone();
+    hot["climate"] = serde_json::json!({ "temperature": 0.8, "downfall": 0.4 });
+    let (code, log) = validate_atm(&atmosphere_campaign("hot", |w, _| {
+        declare(w, serde_json::json!([hot]), true)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    let mut twin = one.clone();
+    let (code, log) = validate_atm(&atmosphere_campaign("twin", |w, _| {
+        declare(w, serde_json::json!([one.clone(), twin.clone()]), true)
+    }));
+    assert!(code != 0 && log.contains("DW0930"), "{log}");
+    twin["id"] = serde_json::json!("atmosphere/other-place");
+    let (code, log) = validate_atm(&atmosphere_campaign("renamed", |w, q| {
+        declare(w, serde_json::json!([one.clone(), twin.clone()]), true);
+        talk_bundle(q).push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/other-place", "place": "area/keep"
+        }));
+    }));
+    assert_eq!(code, 0, "{log}");
+}
+
+/// A hello-world campaign whose world states `time` and whose first objective
+/// cuts to each of `cuts`.
+fn celestial_campaign(tag: &str, time: serde_json::Value, cuts: &[serde_json::Value]) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    common::patch_file(&camp.join("world.json"), |v| {
+        v["content"]["time"] = time;
+    });
+    if !cuts.is_empty() {
+        common::patch_file(&camp.join("quests.json"), |v| {
+            let q = &mut v["content"]["quests"][0];
+            let id = q["objectives"][0]["id"].as_str().unwrap().to_string();
+            let bundle = q["on_objective_complete"][&id]
+                .as_array_mut()
+                .expect("hello-world fires an effect on its first objective");
+            for t in cuts {
+                bundle.push(serde_json::json!({ "type": "set-time", "time": t }));
+            }
+        });
+    }
+    camp
+}
+
+/// `delvec validate`, as an exit code and everything it said.
+fn validate_at(camp: &Path, prefabs: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// `DW0931`, every move its four shapes name (spec-0081 §6): **NAME ONE
+/// BODY**, **REMOVE `phase`** where the moon is below, **STATE `phase`** where
+/// the world's moon is up, and **REMOVE `phase`** where a cut restates the
+/// world's. Each red meets the refusal and the move's edit validates green.
+#[test]
+fn dw0931_every_named_move_validates() {
+    let dir = common::prefabs_dir();
+    // (tag, red world time, red cuts, the move the message names, green world
+    // time, green cuts)
+    type Case = (
+        &'static str,
+        serde_json::Value,
+        Vec<serde_json::Value>,
+        &'static str,
+        serde_json::Value,
+        Vec<serde_json::Value>,
+    );
+    let cases: [Case; 4] = [
+        (
+            "two-bodies",
+            serde_json::json!({"sun": "high", "moon": "below"}),
+            vec![],
+            "NAME ONE BODY",
+            serde_json::json!({"sun": "high"}),
+            vec![],
+        ),
+        (
+            "phase-under-noon",
+            serde_json::json!({"sun": "high", "phase": "new-moon"}),
+            vec![],
+            "REMOVE `phase` from this time",
+            serde_json::json!({"sun": "high"}),
+            vec![],
+        ),
+        (
+            "unnamed-moon",
+            serde_json::json!({"sun": "just-set"}),
+            vec![],
+            "STATE `phase`",
+            serde_json::json!({"sun": "just-set", "phase": "first-quarter"}),
+            vec![],
+        ),
+        (
+            "restated-phase",
+            serde_json::json!({"moon": "high", "phase": "new-moon"}),
+            vec![serde_json::json!({"moon": "rising", "phase": "new-moon"})],
+            "REMOVE `phase` from this time",
+            serde_json::json!({"moon": "high", "phase": "new-moon"}),
+            vec![serde_json::json!({"moon": "rising"})],
+        ),
+    ];
+    for (tag, red_time, red_cuts, says, green_time, green_cuts) in cases {
+        let red = celestial_campaign(&format!("dw0931-{tag}-red"), red_time, &red_cuts);
+        let (code, before) = validate_at(&red, &dir);
+        assert_eq!(code, 1, "{tag} is refused:\n{before}");
+        assert!(before.contains("DW0931"), "{tag}:\n{before}");
+        assert!(
+            before.contains(says),
+            "{tag}: the message names the move:\n{before}"
+        );
+        let green = celestial_campaign(&format!("dw0931-{tag}-green"), green_time, &green_cuts);
+        let (code, after) = validate_at(&green, &dir);
+        assert_eq!(code, 0, "{tag}: the move validates:\n{after}");
+        assert!(!after.contains("DW0931"), "{tag}:\n{after}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0083: the link's three refusals, each move taken
+// ---------------------------------------------------------------------------
+
+/// The ferry primary (`tests/fixtures/ferry`) with `quests.json` edited by
+/// `quests`, at a claimed scratch directory.
+fn ferry(tag: &str, quests: impl FnOnce(&mut serde_json::Value)) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("ferry"), &camp);
+    common::patch_file(&camp.join("quests.json"), quests);
+    camp
+}
+
+fn tiller(q: &mut serde_json::Value) -> &mut serde_json::Value {
+    &mut q["content"]["triggers"][0]
+}
+
+/// The refusal's code, read off the run's own `[error]` line; `None` for a green
+/// build.
+fn refused_with(status: i32, text: &str) -> Option<String> {
+    if status == 0 {
+        return None;
+    }
+    text.lines()
+        .find(|l| l.contains("[error]"))
+        .and_then(|l| l.split_whitespace().next())
+        .map(str::to_string)
+}
+
+#[test]
+fn dw0932_widening_the_volume_to_reach_the_body_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-no-stand", |q| {
+        tiller(q)["effects"][0]["from"]["extent"] = serde_json::json!([0, 1, 1]);
+    });
+    let (s, t) = build("link-no-stand", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(
+        t.contains("widen the volume"),
+        "the message names the move:\n{t}"
+    );
+    // The move: widen the volume so a cell inside it reaches the body.
+    common::patch_file(&camp.join("quests.json"), |q| {
+        tiller(q)["effects"][0]["from"]["extent"] = serde_json::json!([1, 1, 1]);
+    });
+    let (s, t) = build("link-no-stand-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_moving_to_off_the_volume_onto_footing_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-to-inside", |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/boat"});
+    });
+    let (s, t) = build("link-to-inside", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("move `to` off the volume"), "{t}");
+    common::patch_file(&camp.join("quests.json"), |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/far-landing"});
+    });
+    let (s, t) = build("link-to-inside-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_laying_the_floor_at_an_earlier_tick_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let onto_air = |q: &mut serde_json::Value, deck: bool| {
+        let mut steps = vec![];
+        if deck {
+            steps.push(serde_json::json!({"at_ticks": 0, "effects": [{
+                "type": "fill-region", "block": "minecraft:stone",
+                "region": {"anchor": "anchor/far-deck", "extent": [0, 0, 0]}}]}));
+        }
+        steps.push(serde_json::json!({"at_ticks": 2, "effects": [{
+            "type": "teleport",
+            "from": {"anchor": "anchor/boat", "extent": [1, 1, 1]},
+            "to": {"anchor": "anchor/far-air"}}]}));
+        tiller(q)["effects"] = serde_json::json!([{"type": "sequence", "steps": steps}]);
+    };
+    let camp = ferry("link-to-air", |q| onto_air(q, false));
+    let (s, t) = build("link-to-air", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("lay the floor at an earlier tick"), "{t}");
+    common::patch_file(&camp.join("quests.json"), |q| onto_air(q, true));
+    let (s, t) = build("link-to-air-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+#[test]
+fn dw0932_using_a_crossing_for_another_area_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry("link-two-areas", |q| {
+        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/keeper-stand"});
+    });
+    common::patch_file(&camp.join("world.json"), |w| {
+        w["content"]["areas"].as_array_mut().unwrap().push(
+            serde_json::json!({"id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room"}),
+        );
+    });
+    let (s, t) = build("link-two-areas", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+    assert!(t.contains("use a crossing for another area"), "{t}");
+    // The move the message names: put the next objective in that area and let
+    // the compiler carry the party there — the tiller goes, and the beat after
+    // boarding stands in the keep.
+    common::patch_file(&camp.join("quests.json"), |q| {
+        q["content"]["triggers"] = serde_json::json!([]);
+        let quests = q["content"]["quests"].as_array_mut().unwrap();
+        quests[0]["objectives"].as_array_mut().unwrap().truncate(1);
+        quests[0]["on_complete"] = serde_json::json!([]);
+        quests.push(serde_json::json!({
+            "id": "quest/keep",
+            "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The keep, across the water."},
+            "trigger": {"type": "quest-complete", "quest": "quest/cross"},
+            "objectives": [{"id": "obj/keep", "type": "reach-anchor", "anchor": "anchor/exit", "radius": 1,
+                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "They reach the keep's door."}}],
+            "on_complete": [{"type": "campaign-complete",
+                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The journey ends."}}]
+        }));
+    });
+    common::patch_file(&camp.join("quest-plan.json"), |p| {
+        p["content"]["finale"] = serde_json::json!("quest/keep");
+        p["content"]["quests"].as_array_mut().unwrap().push(serde_json::json!({
+            "act": 1, "area": "area/keep", "depends_on": ["quest/cross"],
+            "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
+        }));
+    });
+    let (s, t) = build("link-two-areas-moved", &camp, &prefabs);
+    assert_ne!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
+}
+
+#[test]
+fn dw0933_putting_the_teleport_at_the_named_tick_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    let at = |q: &mut serde_json::Value, tick: u32| {
+        tiller(q)["effects"] = serde_json::json!([{"type": "sequence", "steps": [
+            {"at_ticks": 0, "effects": [{"type": "cutscene", "seconds": 1, "path": [
+                {"anchor": "anchor/boat", "offset": [0, 2, 1]},
+                {"anchor": "anchor/boat", "offset": [2, 2, 1]}]}]},
+            {"at_ticks": tick, "effects": [{"type": "teleport",
+                "from": {"anchor": "anchor/boat", "extent": [1, 1, 1]},
+                "to": {"anchor": "anchor/far-landing"}}]}
+        ]}]);
+    };
+    let camp = ferry("link-cutscene", |q| at(q, 5));
+    let (s, t) = build("link-cutscene", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0933"), "{t}");
+    // The move, at the tick the message itself names.
+    let named: u32 = t
+        .split("`sequence` step at tick ")
+        .nth(1)
+        .and_then(|r| r.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("the message names a tick:\n{t}"));
+    common::patch_file(&camp.join("quests.json"), |q| at(q, named));
+    let (s, t) = build("link-cutscene-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+/// The ferry's layout graph with `edges`.
+fn ferry_graph(camp: &Path, edges: serde_json::Value) {
+    let graph = serde_json::json!({
+        "campaign_id": "ferry", "dsl_version": DSL_VERSION, "stage": "layout-graph",
+        "content": {
+            "nodes": [
+                {"id": "node/west-shore", "intent": "jetty", "size_class": "room",
+                 "stations": [{"anchor": "anchor/boat", "kind": "point"}]},
+                {"id": "node/east-shore", "intent": "landing", "size_class": "room",
+                 "stations": [{"anchor": "anchor/far-landing", "kind": "point"}]}
+            ],
+            "edges": edges,
+            "entry": "node/west-shore", "goal": "node/east-shore",
+            "critical_path": ["node/west-shore", "node/east-shore"],
+            "beats": [
+                {"quest": "quest/cross", "objective": "obj/board", "node": "node/west-shore"},
+                {"quest": "quest/cross", "objective": "obj/far-shore", "node": "node/east-shore"}
+            ]
+        }
+    });
+    std::fs::write(
+        camp.join("layout-graph.json"),
+        serde_json::to_string_pretty(&graph).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn dw0934_drawing_the_edge_or_making_it_one_way_builds() {
+    let prefabs = common::ferry::ferry_prefabs();
+    // A link no edge joins: draw the edge.
+    let camp = ferry("link-no-edge", |_| {});
+    ferry_graph(&camp, serde_json::json!([]));
+    let (s, t) = build("link-no-edge", &camp, &prefabs);
+    assert!(t.contains("DW0934"), "{t}");
+    assert_ne!(s, 0);
+    assert!(t.contains("draw the edge"), "{t}");
+    let edge = serde_json::json!({"class": "carry", "id": "edge/strait", "a": "node/west-shore",
+        "b": "node/east-shore", "one_way": "a-to-b", "gating": {"flags": ["flag/boarded"]}});
+    ferry_graph(&camp, serde_json::json!([edge.clone()]));
+    let (s, t) = build("link-no-edge-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+    // An edge direction no link realises: make the edge one-way.
+    let camp = ferry("link-no-link", |_| {});
+    let mut both = edge.clone();
+    both.as_object_mut().unwrap().remove("one_way");
+    ferry_graph(&camp, serde_json::json!([both]));
+    let (s, t) = build("link-no-link", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0934"), "{t}");
+    assert!(t.contains("make the edge one-way"), "{t}");
+    ferry_graph(&camp, serde_json::json!([edge]));
+    let (s, t) = build("link-no-link-moved", &camp, &prefabs);
+    assert_eq!(refused_with(s, &t), None, "{t}");
+}
+
+// ---------------------------------------------------------------------------
 // spec-0084 — a delve wears its own textures: each refusal's named move
 // ---------------------------------------------------------------------------
 

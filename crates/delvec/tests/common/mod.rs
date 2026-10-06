@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod ferry;
 pub mod pinned;
 
 /// The six stage filenames (matching `delvec::compiler::load::STAGE_FILES`).

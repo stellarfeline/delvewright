@@ -138,6 +138,26 @@
       "kind": "pov"
     },
     {
+      "area": "",
+      "id": "pov/leg10/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "",
+      "id": "pov/leg10/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg11/wp1",
+      "kind": "pov"
+    },
+    {
       "area": "area/hall",
       "id": "pov/leg2/wp0",
       "kind": "pov"
@@ -330,6 +350,26 @@
     {
       "area": "area/hall",
       "id": "pov/leg8/wp8",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg9/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg9/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg9/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg9/wp3",
       "kind": "pov"
     },
     {

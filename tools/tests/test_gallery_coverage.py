@@ -466,6 +466,22 @@ def test_a_furniture_exclusion_that_withholds_nothing_is_a_zero_binding(tmp_path
     ]
 
 
+def test_a_teleport_ledger_with_no_link_or_no_gather_is_a_zero_binding(tmp_path):
+    """spec-0083 §8: the gallery binds one link and one gather, so either column
+    of `teleport-gate.json`'s partition reading zero is a proof that stopped
+    reaching what the gallery writes — named, so the reader knows which."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    ledger = out / "validation" / "teleport-gate.json"
+    ledger.write_text(json.dumps({"teleports": {"declared": 2, "links": 1, "gathers": 1}}))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({"teleports": {"declared": 1, "links": 0, "gathers": 1}}))
+    assert mod.read_build_ledgers(out)[1] == ["teleport-gate.json: `teleports.links` is 0"]
+    ledger.write_text(json.dumps({"teleports": {"declared": 1, "links": 1, "gathers": 0}}))
+    assert mod.read_build_ledgers(out)[1] == ["teleport-gate.json: `teleports.gathers` is 0"]
+
+
 def test_the_patch_declaration_is_refused_every_way_of_being_unreadable():
     """Shape, driven directly. Whether an edit APPLIES is `gallery_domain`'s half.
 

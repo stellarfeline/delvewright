@@ -5,37 +5,50 @@
       {
         "name": "concept/morning-quay",
         "shows": "the quay from off the water in early light, the lamp still lit",
-        "time": "day",
+        "time": {
+          "sun": "rising"
+        },
         "weather": "clear"
       },
       {
         "name": "concept/noon-hall",
         "shows": "the hall at its brightest, the doorway a flat white rectangle",
-        "time": "noon",
+        "time": {
+          "sun": "high"
+        },
         "weather": "clear"
       },
       {
         "name": "concept/dusk-rampart",
         "shows": "the rampart against a going sky, rain across the parapet",
-        "time": "dusk",
+        "time": {
+          "sun": "setting"
+        },
         "weather": "rain"
       },
       {
         "name": "concept/night-quay",
         "shows": "the same quay after dark, the lamp the only warm value",
-        "time": "night",
+        "time": {
+          "moon": "just-risen"
+        },
         "weather": "clear"
       },
       {
         "name": "concept/midnight-crypt",
         "shows": "the crypt stair at the darkest hour, lightning behind the grate",
-        "time": "midnight",
+        "time": {
+          "phase": "waxing-crescent",
+          "sun": "just-set"
+        },
         "weather": "thunder"
       },
       {
         "name": "concept/dawn-approach",
         "shows": "the approach at first light, the lamp about to be put out",
-        "time": "dawn",
+        "time": {
+          "moon": "setting"
+        },
         "weather": "clear"
       }
     ]

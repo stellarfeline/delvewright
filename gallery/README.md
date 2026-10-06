@@ -38,7 +38,7 @@ order a player would:
 
 | Where | What it holds |
 | --- | --- |
-| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required |
+| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall; and and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required |
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
@@ -148,7 +148,12 @@ holding them at once.
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
 | `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |
 | `a-sky-no-picture-shows` | `DW0890` | `validate` | moving the midnight row to `night`, leaving an hour the world reaches that no approved picture shows |
-| `a-sky-that-restates-its-picture` | `DW0721` | `build` | stating on `hall-exterior` the `noon`+`clear` sky of the very row it answers, in place of the `dusk`+`clear` it states |
+| `a-sky-that-restates-its-picture` | `DW0721` | `build` | stating on `hall-exterior` the `{"sun": "high"}`+`clear` sky of the very row it answers, in place of the sun just risen it states |
+| `a-moon-named-under-the-noon-sun` | `DW0931` | `validate` | naming the moon's phase on the counter's `{"sun": "high"}` cut, where the moon stands at the nadir |
+| `a-night-whose-moon-nobody-named` | `DW0931` | `validate` | deleting the phase from the world's new moon just risen, which the party sees from the first tick |
+| `a-sky-with-two-bodies` | `DW0931` | `validate` | naming both the moon just risen and the sun setting as the world's one time |
+| `a-phase-that-restates-the-world` | `DW0931` | `validate` | copying the world's `new-moon` onto the Curator's sunrise cut, which already keeps the world's moon |
+| `a-ninth-phase` | `DW0100` | `validate` | naming the world's moon `blood-moon`, a phase the pinned game does not have |
 | `a-walk-plane-the-void-still-owes` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on a `void` horizon |
 | `nothing-places-the-whole` | `DW0883` | `validate` | deleting the entry box's pinned `min`, so nothing places the site plan |
 | `two-faces-at-one-place` | `DW0880` | `build` | giving two recovery stakes that share a place two different marker items |
@@ -165,6 +170,13 @@ holding them at once.
 | `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
 | `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
 | `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
+| `a-sky-the-sun-does-not-obey` | `DW0928` | `validate` | holding the hall's sun in place: the overworld's day timeline overrides `visual/sun_angle` every tick, so the line would ship and do nothing |
+| `an-attribute-the-game-never-heard-of` | `DW0928` | `validate` | spelling `visual/sky_colour`, which the pinned game does not register — the refusal names `visual/sky_color` |
+| `a-colour-that-is-a-number` | `DW0928` | `validate` | writing the hall's sky colour as an integer where vanilla's data writes `#rrggbb` |
+| `a-snow-at-summer-heat` | `DW0930` | `validate` | declaring snow in a climate at temperature 0.8, where vanilla rains |
+| `an-atmosphere-nobody-stands-in` | `DW0930` | `validate` | declaring a third sky no place carries and no beat paints |
+| `a-repaint-past-the-edge-of-the-world` | `DW0929` | `build` | widening the vantage's repaint four hundred blocks past every placed piece, into chunks nothing loads |
+| `a-repaint-that-names-both-a-box-and-a-place` | `DW0929` | `validate` | giving the vantage's repaint both an anchor-centred region and a whole place |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
@@ -439,6 +451,46 @@ them by name. Reproduce it in one edit —
 The pocket sits off the critical path on purpose. Blocking geometry on the route
 makes the build's render plan and the one `delvec snapshot` derives disagree —
 see below.
+
+## The ferry, and what a link is
+
+In the far hall's west corner is a **sealed cabin**: three walls and a roof,
+no door, no gap. The last beat of the delve, `obj/cross-the-strait`, stands
+inside it, and the only way in is the ferry. The party boards the deck
+(`obj/board-the-ferry`, which sets `flag/boarded`) and pulls the tiller:
+
+```json
+{ "id": "trigger/ferry-tiller", "at": "anchor/ferry-tiller", "on": { "on": "use" },
+  "once": false, "requires_flags": ["flag/boarded"],
+  "effects": [{ "type": "sequence", "steps": [
+    { "at_ticks": 0,  "effects": [{ "type": "cutscene", "seconds": 1, "path": [ … ] }] },
+    { "at_ticks": 22, "effects": [{ "type": "teleport",
+        "from": { "anchor": "anchor/ferry-deck", "extent": [1, 1, 1] },
+        "to": { "anchor": "anchor/ferry-landing" } }] } ] }] }
+```
+
+A `teleport` in a trigger declared `once: false` is a **link**: a carry the
+route proof takes where a walk fails, because a straggler left on the deck can
+pull the tiller again and follow. The build splices the pull into the path —
+`critical-path.json` carries a `trigger` step with `stand` (the deck cell the
+tiller is pulled from, inside the volume) and `transport` (the landing) — and
+the `DW0311 binding:` line counts one leg carried by a link. The hall's other
+teleport, on `obj/take-the-bone`'s completion, is a **gather**: whoever is in
+the march's box travels, once, and no proof leans on it. So
+`validation/teleport-gate.json` reads one link and one gather.
+
+The cutscene plays first and the teleport fires one tick after it ends: a
+cutscene's end puts every player back where it started, so a carry under the
+open bracket is undone. The layout graph draws the crossing as a `carry` edge
+from `node/exit` (the deck is its station) to `node/ferry-cabin` (the landing
+is its station), gated on the same flag, and nothing else joins the two.
+
+Four probes show what the engine refuses about it:
+`a-way-onward-that-fires-once` (the teleport on the cabin beat's own completion
+— a gather, `DW0311` naming it and prescribing the link), `a-lever-outside-its-own-boat`
+(the deck shrunk so no cell inside it reaches the tiller, `DW0932`),
+`a-crossing-the-cutscene-undoes` (the teleport at tick 0, `DW0933`) and
+`a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
 
 ## The fight, and the floor it needs
 

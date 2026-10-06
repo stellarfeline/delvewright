@@ -962,6 +962,12 @@ fn validate_loaded(
             // (exit 1) — no-op for a campaign that uses neither surface.
             diags.extend(delvec::compiler::atmos::check_sounds(&campaign));
             diags.extend(delvec::compiler::atmos::check_art(&campaign, &sidecars));
+            // spec-0080: a campaign's atmospheres and its repaints, refused at
+            // the document they are written in — an attribute the pinned game
+            // does not accept here (DW0928), a repaint naming neither or both of
+            // its volumes (DW0929), an atmosphere declared against itself or
+            // against nothing (DW0930). No-op for a campaign that declares none.
+            diags.extend(delvec::compiler::atmosphere::check(&campaign));
             // On-screen narrate text that overruns the title/subtitle/art width
             // budget (DW0330). Advisory tier — see `textfit` for why this warns
             // rather than rejects. Runs over the English source and every
@@ -983,6 +989,15 @@ fn validate_loaded(
             diags.extend(delvec::compiler::gates::check_close_gates(
                 &campaign, &prefabs,
             ));
+            // spec-0083 §3.5: a `teleport` that fires while its root's cutscene
+            // is still playing is undone by `cs_end` (DW0933); and §7: the
+            // layout graph's `carry` edges and the campaign's links agree
+            // (DW0934). Both are read off the documents alone, so they are
+            // refused at validation, where the fault is entered.
+            diags.extend(delvec::compiler::link::check_teleport_under_cutscene(
+                &campaign,
+            ));
+            diags.extend(delvec::compiler::link::check_carry_realised(&campaign));
             // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
             // wording. No-op for a campaign that authors none.
             diags.extend(delvec::compiler::gates::check_seal_hints(&campaign));
@@ -1154,6 +1169,9 @@ fn validate_loaded(
                 examined.push(dbind.line());
                 diags.extend(dd);
             }
+            // spec-0081 §5.5: every time value the campaign states, as the clock
+            // it resolves to — printed on every run, zeroes included.
+            examined.extend(delvec::compiler::clock::binding_lines(&campaign));
             print_diags(&diags, json);
             report_binding_notes(&campaign, &examined);
             Ok(Validated {
@@ -2185,6 +2203,12 @@ fn camera_from_shot(
     use delvec::compiler::render_plan;
     use delvec::compiler::snapshot::{Camera, DEFAULT_FOV};
 
+    // The path the build reads: the links the route proof takes spliced in
+    // (spec-0083), so a `pov/…` id names the leg the build's own render plan
+    // named.
+    let relinked = delvec::compiler::nav::with_links_taken(plan, prefabs, world)
+        .map_err(|f| format!("{}: {}", f.code, f.message))?;
+    let plan = relinked.as_ref().unwrap_or(plan);
     let pov = if id.starts_with("pov/") {
         let routes = delvec::compiler::nav::critical_path_routes(plan, world);
         render_plan::pov_shots(plan, &routes)
@@ -2293,8 +2317,16 @@ fn run_blocking_chart(
     );
     let blocks = assembled.blocks;
     let targets = delvec::compiler::snapshot::collect_targets(&plan);
+    // The build's path: the links the route proof takes spliced in (spec-0083).
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            eprintln!("{} [error] build: {}", f.code, f.message);
+            return ExitCode::from(f.code.exit_tier().exit_status());
+        }
+    };
     let corridor: std::collections::BTreeSet<[i32; 3]> =
-        delvec::compiler::nav::critical_path_routes(&plan, &world)
+        delvec::compiler::nav::critical_path_routes(relinked.as_ref().unwrap_or(&plan), &world)
             .into_iter()
             .flat_map(|leg| leg.cells)
             .collect();

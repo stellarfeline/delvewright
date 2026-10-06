@@ -309,6 +309,33 @@ def test_a_digit_run_that_is_not_a_colours_length_stays_a_finding(tree, capsys):
     assert "#18" in capsys.readouterr().out
 
 
+def test_a_json_colour_value_is_not_a_citation(tree, capsys):
+    """Vendored game data writes a colour as a whole JSON string (the pinned
+    day timeline's `"value": "#000000"`), and the vendored file stays byte for
+    byte the jar's — so the value, and only the whole value, is a colour."""
+    tree.commit({"data/timeline.json": '{"sky": "#000000", "fog": "#0f0f16", "tint": "#23273233"}\n'})
+    assert tree.checker().main([]) == 0
+
+
+def test_the_json_colour_exemption_does_not_reach_prose_in_a_string(tree, capsys):
+    tree.commit({"data/a.json": '{"note": "fixed in #313745"}\n'})
+    assert tree.checker().main([]) == 1
+    assert "#313745" in capsys.readouterr().out
+
+
+def test_the_json_colour_exemption_does_not_reach_a_short_whole_string(tree, capsys):
+    """`"#510"` as a whole value is a citation written as a field: three digits
+    is a length a pull-request number has, so it stays a finding."""
+    tree.commit({"data/a.json": '{"ref": "#510"}\n'})
+    assert tree.checker().main([]) == 1
+    assert "#510" in capsys.readouterr().out
+
+
+def test_the_json_colour_exemption_does_not_leave_json(tree, capsys):
+    tree.commit({"docs/a.md": '"#313745"\n'})
+    assert tree.checker().main([]) == 1
+
+
 def test_a_single_digit_reference_is_left_alone(tree, capsys):
     """Row numbers, list indices and numbered sections inside the document that
     writes them resolve for the reader; this repository has never numbered a

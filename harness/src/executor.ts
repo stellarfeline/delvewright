@@ -31,7 +31,7 @@ import type {
   Transport,
   Vec3Tuple,
 } from "./critical-path.ts";
-import { insideCompletion, reachGoal } from "./critical-path.ts";
+import { TRANSPORT_NEAR, insideCompletion, reachGoal } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import {
   BotDeathError,
@@ -132,6 +132,7 @@ import {
   type CensusMob,
   type CensusSummary,
 } from "./markers.ts";
+import { RepaintWatch, type RepaintPlan, type RepaintVerdict } from "./repaint.ts";
 import {
   allowNonCollidingEntities,
   configureLeg,
@@ -1082,7 +1083,8 @@ const UNSTICK_SETTLE_MS = 300;
  * "arrived at the destination", and how long to settle once it has.
  */
 const TRANSPORT_TIMEOUT_MS = 15_000;
-const TRANSPORT_NEAR = 4;
+// `TRANSPORT_NEAR` lives in `critical-path.ts`, where the parser refuses a link
+// hop it could not observe (spec-0083 §4).
 const TRANSPORT_SETTLE_MS = 1_500;
 /**
  * gap 8: a server-forced position jump of at least this many blocks
@@ -1494,6 +1496,8 @@ export class MineflayerExecutor implements StepExecutor {
    * wait for it) and campaign completion lands during the last objective step.
    */
   private readonly completedObjectives = new Map<string, number>();
+  /** The repaint ledger (spec-0080 §5.2), when the build repaints anything. */
+  private repaintWatch: RepaintWatch | undefined;
   /**
    * The step index at which the campaign-completion marker arrived, if it has.
    * Endgame discipline: campaign completion belongs to the LAST objective step; its
@@ -2352,6 +2356,7 @@ export class MineflayerExecutor implements StepExecutor {
   private observeMarker(message: string): void {
     const marker = parseCompletionMarker(message);
     if (!marker || marker.campaignId !== this.campaignId) return;
+    this.repaintWatch?.marker(marker.token, Date.now());
     if (marker.token === CAMPAIGN_TOKEN) {
       this.campaignCompleteAtStep ??= this.currentStep;
       return;
@@ -2669,6 +2674,19 @@ export class MineflayerExecutor implements StepExecutor {
    * Adopt the build's death contract. Also hands the declared lethal volumes to
    * the navigator, which has to agree with the compiler that they are impassable.
    */
+  /**
+   * spec-0080 §5.2: watch every repaint the build performs reach the client —
+   * a `chunk_biomes` for each held chunk of its volume, and no `map_chunk`.
+   */
+  useRepaintPlan(plan: RepaintPlan): void {
+    this.repaintWatch = new RepaintWatch(plan);
+  }
+
+  /** The repaint verdicts so far; empty when the build repaints nothing. */
+  repaintVerdicts(): RepaintVerdict[] {
+    return this.repaintWatch?.verdicts() ?? [];
+  }
+
   useDeathPlan(plan: DeathPlan): void {
     this.deathPlan = plan;
     // The DECLARED regions, not the keep-out boxes, and the difference is a
@@ -2756,6 +2774,14 @@ export class MineflayerExecutor implements StepExecutor {
     // not read rather than passing.
     const client = bot._client as Bot["_client"] | undefined;
     if (typeof client?.on !== "function") return;
+    // spec-0080 §5.2: every chunk packet, for the repaint ledger. Off the raw
+    // stream for the reason the score observer is: mineflayer's world model
+    // applies a biome update without saying so.
+    client.on("packet", (data: unknown, meta: { name?: unknown }) => {
+      if (this.repaintWatch && typeof meta?.name === "string") {
+        this.repaintWatch.packet(meta.name, data, Date.now());
+      }
+    });
     client.on("scoreboard_score", (packet: unknown) => {
       if (typeof packet !== "object" || packet === null) return;
       const p = packet as { itemName?: unknown; scoreName?: unknown; value?: unknown };
@@ -4115,7 +4141,9 @@ export class MineflayerExecutor implements StepExecutor {
     explicitWaypoints?: readonly Vec3Tuple[],
   ): Promise<void> {
     this.requireBot();
-    const r = Math.max(1, Math.floor(range));
+    // A range of exactly 0 is a block goal: a link's stand cell, which the bot
+    // must be IN to be carried (spec-0083 §4). Every other range keeps its floor.
+    const r = range === 0 ? 0 : Math.max(1, Math.floor(range));
     // Every walk leg starts at full health and is held there (see
     // `holdFullHealth`): whether the bot survives the walk is not what a walk
     // leg is for.
@@ -6530,12 +6558,27 @@ export class MineflayerExecutor implements StepExecutor {
   async fireTrigger(step: TriggerStep): Promise<void> {
     const bot = this.requireBot();
     const label = `trigger ${step.trigger} (${step.on})`;
+    // spec-0083 §4: a trigger that carries the party is performed from INSIDE
+    // its volume — the compiler names the cell. The bot walks there as a block
+    // goal, and then acts without walking again; the sequencer awaits the
+    // landing (`transport`) after the fired marker, as for every carried step.
+    if (step.stand) {
+      await this.walkTo(step.stand, 0, `${label} — to its stand cell`);
+      process.stderr.write(
+        `[trigger] ${step.trigger}: standing at [${step.stand.join(", ")}] to be carried to ` +
+          `[${(step.transport ?? []).join(", ")}]\n`,
+      );
+    }
     if (step.on === "approach") {
       // The tick fires on `distance=..range` from the anchor cell; aim a block
       // inside it so the goal's own tolerance cannot leave the bot on the rim.
-      await this.walkTo(step.pos, Math.max(1, (step.range ?? 1) - 1), label);
+      if (!step.stand) {
+        await this.walkTo(step.pos, Math.max(1, (step.range ?? 1) - 1), label);
+      }
     } else {
-      await this.walkTo(step.pos, INTERACT_RANGE, label);
+      if (!step.stand) {
+        await this.walkTo(step.pos, INTERACT_RANGE, label);
+      }
       const acquired = this.requireCrosshair(step.pos, label, INTERACT_RANGE);
       const target = acquired ? bot.entities[acquired.target.id] : undefined;
       if (!acquired || !target) {

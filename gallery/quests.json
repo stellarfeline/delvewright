@@ -784,7 +784,9 @@
               }
             },
             {
-              "time": "dusk",
+              "time": {
+                "sun": "high"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -853,6 +855,11 @@
                 "anchor": "anchor/pocket"
               },
               "type": "move-npc"
+            },
+            {
+              "atmosphere": "atmosphere/frost-hall",
+              "place": "area/hall",
+              "type": "set-atmosphere"
             }
           ],
           "obj/take-the-emeralds": [
@@ -1180,6 +1187,42 @@
             "stealth": false,
             "title": "Reach the end of the hall",
             "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/reach-the-end"
+            ],
+            "anchor": "anchor/ferry-deck",
+            "happening": {
+              "subject": "anchor/ferry-deck",
+              "text": "They step down onto the ferry's deck.",
+              "verb": "arrives"
+            },
+            "id": "obj/board-the-ferry",
+            "radius": 1,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "title": "Board the ferry",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/board-the-ferry"
+            ],
+            "anchor": "anchor/cabin",
+            "happening": {
+              "subject": "anchor/cabin",
+              "text": "They step off the ferry into the sealed cabin.",
+              "verb": "arrives"
+            },
+            "id": "obj/cross-the-strait",
+            "radius": 1,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "title": "Cross to the ferry cabin",
+            "type": "reach-anchor"
           }
         ],
         "on_complete": [
@@ -1245,6 +1288,17 @@
           }
         ],
         "on_objective_complete": {
+          "obj/board-the-ferry": [
+            {
+              "flag": "flag/boarded",
+              "happening": {
+                "subject": "anchor/ferry-deck",
+                "text": "The ferry's tiller answers anyone aboard.",
+                "verb": "gains"
+              },
+              "type": "set-flag"
+            }
+          ],
           "obj/clear-the-muster": [
             {
               "flag": "flag/muster-cleared",
@@ -1576,40 +1630,6 @@
               "projectile": "minecraft:arrow",
               "salvos": 3,
               "type": "volley",
-              "when": {
-                "forbids_flags": [
-                  "flag/hall-sealed"
-                ],
-                "requires_flags": [
-                  "flag/hall-open"
-                ],
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/labels-read",
-                    "value": 9
-                  }
-                ]
-              }
-            },
-            {
-              "from": {
-                "anchor": "anchor/march",
-                "extent": [
-                  2,
-                  2,
-                  1
-                ]
-              },
-              "to": {
-                "anchor": "anchor/vantage",
-                "offset": [
-                  -1,
-                  0,
-                  0
-                ]
-              },
-              "type": "teleport",
               "when": {
                 "forbids_flags": [
                   "flag/hall-sealed"
@@ -2056,7 +2076,9 @@
               "type": "despawn-actor"
             },
             {
-              "time": "dawn",
+              "time": {
+                "sun": "setting"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -2075,7 +2097,9 @@
               }
             },
             {
-              "time": "night",
+              "time": {
+                "moon": "below"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -2094,7 +2118,10 @@
               }
             },
             {
-              "time": "midnight",
+              "time": {
+                "phase": "waxing-crescent",
+                "sun": "just-set"
+              },
               "type": "set-time",
               "when": {
                 "forbids_flags": [
@@ -2283,6 +2310,40 @@
                 ],
                 "requires_flags": [
                   "flag/muster-cleared"
+                ]
+              }
+            },
+            {
+              "from": {
+                "anchor": "anchor/march",
+                "extent": [
+                  2,
+                  2,
+                  1
+                ]
+              },
+              "to": {
+                "anchor": "anchor/vantage",
+                "offset": [
+                  -1,
+                  0,
+                  0
+                ]
+              },
+              "type": "teleport",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
                 ]
               }
             }
@@ -2965,6 +3026,18 @@
                 }
               ]
             }
+          },
+          {
+            "atmosphere": "atmosphere/still-air",
+            "region": {
+              "anchor": "anchor/east-bay",
+              "extent": [
+                3,
+                3,
+                3
+              ]
+            },
+            "type": "set-atmosphere"
           }
         ],
         "forbids_flags": [
@@ -3028,6 +3101,70 @@
           "on": "approach",
           "range": 3
         }
+      },
+      {
+        "at": "anchor/ferry-tiller",
+        "effects": [
+          {
+            "steps": [
+              {
+                "at_ticks": 0,
+                "effects": [
+                  {
+                    "path": [
+                      {
+                        "anchor": "anchor/ferry-deck",
+                        "offset": [
+                          0,
+                          3,
+                          2
+                        ]
+                      },
+                      {
+                        "anchor": "anchor/ferry-deck",
+                        "offset": [
+                          0,
+                          3,
+                          -2
+                        ]
+                      }
+                    ],
+                    "seconds": 1,
+                    "type": "cutscene"
+                  }
+                ]
+              },
+              {
+                "at_ticks": 22,
+                "effects": [
+                  {
+                    "from": {
+                      "anchor": "anchor/ferry-deck",
+                      "extent": [
+                        1,
+                        1,
+                        1
+                      ]
+                    },
+                    "to": {
+                      "anchor": "anchor/ferry-landing"
+                    },
+                    "type": "teleport"
+                  }
+                ]
+              }
+            ],
+            "type": "sequence"
+          }
+        ],
+        "id": "trigger/ferry-tiller",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "requires_flags": [
+          "flag/boarded"
+        ]
       }
     ],
     "waves": [
