@@ -432,7 +432,7 @@ pub fn build_with_warnings(
     // under different atmospheres; a repaint past the map's extent), and the
     // binding line — printed on every build, a campaign with no atmosphere
     // included, because a zero is a measurement.
-    {
+    let biome_map = {
         let map = crate::compiler::horizon::biome_map(plan);
         crate::compiler::horizon::check_paints(plan, &map).map_err(|e| {
             BuildFailure::Diagnostic {
@@ -441,26 +441,8 @@ pub fn build_with_warnings(
             }
         })?;
         eprintln!("{}", atmosphere_binding(plan, &map).line());
-        // What the camera reads in each carried place: its fog and sky are the
-        // client's blend over the 4-cells within `BLEND_REACH`, so a place too
-        // small for its paint shows a sky mixed with the one outside it.
-        for p in map.places() {
-            let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
-                continue;
-            };
-            match crate::compiler::horizon::standing_reach(plan, &map, place, &p.biome) {
-                Some((whole, eyes, best)) => eprintln!(
-                    "atmosphere reach: `{place}` — {whole} of {eyes} standing eye(s) read `{}` \
-                     whole; the best reads {:.1}% of it",
-                    p.biome,
-                    best * 100.0
-                ),
-                None => eprintln!(
-                    "atmosphere reach: `{place}` — unmeasured: an area states no floor to stand on"
-                ),
-            }
-        }
-    }
+        map
+    };
 
     // The templates are the size their metadata says they are (DW0803). Bound
     // here, before any model is built out of them, because every later pass —
@@ -620,6 +602,31 @@ pub fn build_with_warnings(
             assembled.gate_seals.clone(),
         ))
         .with_extra_solid(&relight.extra_solid);
+
+    // What the camera reads in each carried place (spec-0080 §2.2): its fog
+    // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so
+    // a place too small for its paint shows a sky mixed with the one outside
+    // it. A box's eyes stand over its floor; an area's are the party's walk
+    // inside its bounds, read off this world.
+    if biome_map.places().next().is_some() {
+        let walk = world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan));
+        for p in biome_map.places() {
+            let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
+                continue;
+            };
+            if let Some((whole, eyes, best, worst)) =
+                crate::compiler::horizon::standing_reach(plan, &biome_map, place, &p.biome, &walk)
+            {
+                eprintln!(
+                    "atmosphere reach: `{place}` — {whole} of {eyes} standing eye(s) read `{}` \
+                     whole; the best reads {:.1}% of it, the worst {:.1}%",
+                    p.biome,
+                    best * 100.0,
+                    worst * 100.0
+                );
+            }
+        }
+    }
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     //

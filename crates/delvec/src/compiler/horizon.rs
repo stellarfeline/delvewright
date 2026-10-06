@@ -507,34 +507,52 @@ pub fn place_paint(
     Some((lo, hi))
 }
 
-/// What the camera reads inside one carried site-plan box: how many of the
-/// standing eyes over its footprint (one per column, at the block centre,
-/// 1.62 over the floor) read `biome` whole, of how many, and the best weight
-/// any of them gives it. `None` for a place whose floor the plan does not
-/// state (an area).
+/// What the camera reads inside one carried place: how many of its standing
+/// eyes read `biome` whole, of how many, and the best and the worst weight any
+/// of them gives it (the worst is 1.0 for a place with no eye). Every eye stands at the block centre, 1.62 over its floor.
+///
+/// A site-plan box states its floor, so its eyes are one per footprint column
+/// over the box's floor. An area states none, so its eyes are the cells of
+/// `walk` (the party's walk, read off the assembled world) inside the area's
+/// placed bounds: every cell a body can stand in there. `None` for a place the
+/// plan does not place.
 pub fn standing_reach(
     plan: &crate::compiler::plan::Plan,
     map: &BiomeMap,
     place: &str,
     biome: &str,
-) -> Option<(usize, usize, f64)> {
-    let mut reads = delvewright_dsl::metrics::Reads::new();
-    let placed = delvewright_dsl::placed_boxes(plan.campaign, &mut reads);
-    let b = placed.iter().find(|b| b.node.as_str() == place)?;
-    let (lo, hi) = b.space();
-    let eye_y = lo[1] as f64 + 1.62;
-    let (mut whole, mut eyes, mut best) = (0usize, 0usize, 0.0f64);
-    for x in lo[0]..=hi[0] {
-        for z in lo[2]..=hi[2] {
-            let w = camera_weight(map, [x as f64 + 0.5, eye_y, z as f64 + 0.5], biome);
-            eyes += 1;
-            if w >= WHOLE {
-                whole += 1;
+    walk: &std::collections::BTreeSet<[i32; 3]>,
+) -> Option<(usize, usize, f64, f64)> {
+    let mut eyes: Vec<[f64; 3]> = Vec::new();
+    if let Some(a) = plan.areas.iter().find(|a| a.area_id == place) {
+        let (lo, hi) = a.bounds();
+        eyes.extend(
+            walk.iter()
+                .filter(|c| (0..3).all(|k| lo[k] <= c[k] && c[k] <= hi[k]))
+                .map(|c| [c[0] as f64 + 0.5, c[1] as f64 + 1.62, c[2] as f64 + 0.5]),
+        );
+    } else {
+        let mut reads = delvewright_dsl::metrics::Reads::new();
+        let placed = delvewright_dsl::placed_boxes(plan.campaign, &mut reads);
+        let b = placed.iter().find(|b| b.node.as_str() == place)?;
+        let (lo, hi) = b.space();
+        let eye_y = lo[1] as f64 + 1.62;
+        for x in lo[0]..=hi[0] {
+            for z in lo[2]..=hi[2] {
+                eyes.push([x as f64 + 0.5, eye_y, z as f64 + 0.5]);
             }
-            best = best.max(w);
         }
     }
-    Some((whole, eyes, best))
+    let (mut whole, mut best, mut worst) = (0usize, 0.0f64, 1.0f64);
+    for &eye in &eyes {
+        let w = camera_weight(map, eye, biome);
+        if w >= WHOLE {
+            whole += 1;
+        }
+        best = best.max(w);
+        worst = worst.min(w);
+    }
+    Some((whole, eyes.len(), best, worst))
 }
 
 /// The block box a `set-atmosphere` repaints: its `region` through
