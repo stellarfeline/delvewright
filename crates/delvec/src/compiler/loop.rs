@@ -1375,10 +1375,10 @@ fn see(
         for c in std::mem::take(&mut frontier) {
             // The span covers every cell the walk asked about: a seen open
             // cell's neighbours are where sight may go on, seen or not.
-            for i in 0..3 {
-                b.0[i] = b.0[i].min(c[i]);
-                b.1[i] = b.1[i].max(c[i]);
-            }
+            b = (
+                std::array::from_fn(|i| b.0[i].min(c[i])),
+                std::array::from_fn(|i| b.1[i].max(c[i])),
+            );
             let (s, eye) = sight(world, eyes, fogs, c);
             match s {
                 Sight::Hidden => {
@@ -1548,6 +1548,9 @@ pub fn near_range(len: f64) -> f64 {
     }
     hi
 }
+
+/// One light flood: the level of every lit cell.
+type LightLevels = BTreeMap<[i32; 3], u8>;
 
 /// Keep the largest far shift a row has read, and where it was read.
 fn record(row: &mut LoopRow, s: f64, c: [i32; 3], eye: [f64; 3]) {
@@ -2412,7 +2415,7 @@ fn check_one(
         }
         let model =
             crate::compiler::light::LightModel::from_blocks_within(m.clone(), clip.0, clip.1);
-        let floods: Vec<(&str, u8, BTreeMap<[i32; 3], u8>)> = skies
+        let floods: Vec<(&str, u8, LightLevels)> = skies
             .iter()
             .map(|(w, sky)| (*w, *sky, model.flood(*sky)))
             .collect();
