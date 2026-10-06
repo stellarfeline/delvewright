@@ -69,15 +69,30 @@
 # step that reaches for `delvec`, `validation/render-shots.sh`.
 #
 # Owner-facing contract: `up` ends by printing the connect address and, if the
-# build ships a resource pack, the pack file name to enable. `down` removes the
-# container, reclaims the staged world directory and prints what it reclaimed
-# (server lifecycle rule: tear down as soon as feedback arrives). `status` lists
-# the container and what the session is holding on disk.
+# build ships a resource pack, where it is served and its SHA-1. `down` removes
+# the containers, reclaims the staged world directory and prints what it
+# reclaimed (server lifecycle rule: tear down as soon as feedback arrives).
+# `status` lists the containers and what the session is holding on disk.
 #
-# Machine-local paths (resource-pack install dir) come from the environment,
-# never from this script: set DELVEWRIGHT_RESOURCEPACKS_DIR to the Minecraft
-# instance's resourcepacks directory; unset, the pack is left in the build
-# output and its path printed instead.
+# ## The delve's resource pack is SERVED, never installed (spec-0084 §11)
+#
+# A pack copied into a player's own `resourcepacks/` stays enabled in every world
+# and server they open until they find the toggle — a delve that replaces the
+# moon would replace it everywhere. Served, it applies while the player is
+# connected and is gone when they leave. So a build that ships
+# `resourcepack.zip` gets a SIDECAR, `<name>-pack`: a busybox httpd (spec-0009's
+# verified pattern, pinned in versions.toml [images.pack_server]) over the build
+# output, published on 127.0.0.1:25580 — the address a client on this machine
+# reaches — and the staged `server.properties` carries `resource-pack`,
+# `resource-pack-sha1` (the manifest's) and `resource-pack-prompt` (a JSON text
+# component). They are written into the file, not passed as itzg's
+# RESOURCE_PACK* variables, because this server runs with
+# OVERRIDE_SERVER_PROPERTIES=false and itzg applies none of its variables to a
+# file it was told not to touch. Before the server starts, the URL is fetched
+# and its SHA-1 held to the manifest's, so a pack the client would fail to
+# download refuses here. A campaign's own `require-resource-pack=true` arrives
+# in the copied file as it stands. DELVEWRIGHT_RESOURCEPACKS_DIR is never
+# written: when it is set, this says so and leaves it alone.
 #
 # The container is a throwaway itzg/minecraft-server pinned to the project MC
 # version. It binds host 25565 — with `validation/owner-play.yaml`, one of the two
@@ -113,6 +128,11 @@ set -euo pipefail  # mutex.sh sets its own options when sourced; take ours back
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/lib/server-heap.sh"
 
 MC_VERSION="1.21.11"
+# The resource-pack sidecar (spec-0084 §11): the pinned image and the loopback
+# port a client on this machine fetches the pack from. The port is under the
+# same 25565 mutex as the server, so one session holds both at a time.
+PACK_IMAGE="busybox:1.37@sha256:9532d8c39891ca2ecde4d30d7710e01fb739c87a8b9299685c63704296b16028"
+PACK_PORT="25580"
 NAME="dw-playtest"
 LANG_ARG=""
 PREFABS_ARG=""
@@ -151,6 +171,24 @@ dw_playtest_docker_run_argv() {
     -v "$stage:/data" itzg/minecraft-server:latest
 }
 
+# The pack sidecar's docker-run argv, one token per line — the same seam as
+# the server's: a test asserts the flags without a docker. <out> is the build
+# output directory the sidecar serves, read-only.
+dw_playtest_pack_run_argv() {
+  local name="$1" image="$2" port="$3" out="$4"
+  printf '%s\n' docker run -d --name "$name-pack" -p "127.0.0.1:$port:8000" \
+    -v "$out:/srv:ro" --entrypoint httpd "$image" -f -p 8000 -h /srv
+}
+
+# The three properties that serve the pack, appended to the staged
+# server.properties — written into the file because this server runs with
+# OVERRIDE_SERVER_PROPERTIES=false (see the header).
+dw_playtest_pack_properties() {
+  local url="$1" sha1="$2"
+  printf 'resource-pack=%s\nresource-pack-sha1=%s\nresource-pack-prompt=%s\n' \
+    "$url" "$sha1" '{"text":"This delve brings its own resource pack."}'
+}
+
 # The `up` EXIT trap. Defined here (above the test seam) rather than beside
 # where it is armed, so a test can call it directly — with NAME, STAGE,
 # SESSION_FILE and UP_OK set by hand and a fake docker on PATH — without going
@@ -175,6 +213,13 @@ dw_playtest_docker_run_argv() {
 # has nothing else to diagnose from.
 up_failed() {
   [ "${UP_OK:-0}" = 1 ] && return 0
+  if dw_playtest_container_exists "$NAME-pack"; then
+    if docker rm -f "$NAME-pack" >/dev/null 2>&1; then
+      echo "playtest-server: removed the pack sidecar this failed session started ($NAME-pack)" >&2
+    else
+      echo "playtest-server: could not remove $NAME-pack — remove it by hand: docker rm -f $NAME-pack" >&2
+    fi
+  fi
   if dw_playtest_container_exists "$NAME"; then
     if [ -n "${STAGE:-}" ] && [ -d "${STAGE:-}" ]; then
       docker logs "$NAME" >"$STAGE/docker-boot.log" 2>&1 || true
@@ -331,6 +376,13 @@ if [ "$cmd" = "down" ]; then
   else
     echo "$NAME was not running"
   fi
+  # The pack sidecar is the session's third container class (spec-0084 §11):
+  # named, and accounted for whether or not this session started one.
+  if dw_playtest_container_exists "$NAME-pack"; then
+    docker rm -f "$NAME-pack" >/dev/null 2>&1 && echo "$NAME-pack removed" || echo "$NAME-pack existed but could not be removed"
+  else
+    echo "no $NAME-pack sidecar to remove"
+  fi
   # The staged world. This is `up`'s own copy — a server.properties, the campaign
   # datapack and whatever the server then generated on top — so nothing outside
   # the session refers to it and `down` is the moment it stops being wanted.
@@ -430,6 +482,7 @@ RUNNING="$(docker ps --format '{{.Names}}' || true)"
 if [[ $'\n'"$RUNNING"$'\n' == *$'\n'"$NAME"$'\n'* ]]; then die "$NAME already running — 'down' first"; fi
 BOUND_PORTS="$(docker ps --format '{{.Ports}}' || true)"
 if [[ $BOUND_PORTS == *":25565->"* ]]; then die "host 25565 already bound by another container"; fi
+if [[ $BOUND_PORTS == *":$PACK_PORT->"* ]]; then die "host $PACK_PORT (the resource-pack sidecar's port) already bound by another container"; fi
 # Claim the port before building anything: if a human is already playing, this
 # session must not start at all. Nothing is torn down before the lock is ours.
 dw_mutex_acquire "owner-play-session" || die "another 25565 session holds the mutex"
@@ -538,6 +591,37 @@ session_record stage-dir "$STAGE"
 mkdir -p "$STAGE/world/datapacks"
 cp "$OUT_DIR/server/server.properties" "$STAGE/server.properties"
 printf 'enable-rcon=true\nrcon.password=%s\nrcon.port=25575\n' "$RCON_PW" >> "$STAGE/server.properties"
+
+# ---- the delve's resource pack: served, never installed (spec-0084 §11) ------
+PACK_NOTE="no resource pack in this build"
+if [ -n "${DELVEWRIGHT_RESOURCEPACKS_DIR:-}" ]; then
+  echo "resource pack: DELVEWRIGHT_RESOURCEPACKS_DIR is set and is NOT written — a delve's pack is served by the server, never installed into a player's own folder (spec-0084 §11)"
+fi
+if [ -f "$OUT_DIR/resourcepack.zip" ]; then
+  PACK_SHA1="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1])).get("resource_pack_sha1", ""))' "$OUT_DIR/manifest.json")" \
+    || die "cannot read resource_pack_sha1 from $OUT_DIR/manifest.json"
+  [ -n "$PACK_SHA1" ] || die "$OUT_DIR ships resourcepack.zip and its manifest records no resource_pack_sha1"
+  PACK_URL="http://127.0.0.1:$PACK_PORT/resourcepack.zip"
+  PACK_ARGV=()
+  while IFS= read -r dw_argv_line; do
+    PACK_ARGV+=("$dw_argv_line")
+  done < <(dw_playtest_pack_run_argv "$NAME" "$PACK_IMAGE" "$PACK_PORT" "$OUT_DIR")
+  "${PACK_ARGV[@]}" >/dev/null || die "could not start the resource-pack sidecar $NAME-pack"
+  # The response is READ: the bytes a client will download, hashed, and held to
+  # the manifest's SHA-1 — which is the hash the client checks them against.
+  SERVED_SHA1=""
+  for _ in $(seq 1 20); do
+    SERVED_SHA1="$(python3 -c 'import hashlib, sys, urllib.request; sys.stdout.reconfigure(newline="\n"); print(hashlib.sha1(urllib.request.urlopen(sys.argv[1], timeout=5).read()).hexdigest())' "$PACK_URL" 2>/dev/null || true)"
+    [ -n "$SERVED_SHA1" ] && break
+    sleep 1
+  done
+  [ "$SERVED_SHA1" = "$PACK_SHA1" ] || die "the pack sidecar serves sha1 '${SERVED_SHA1:-nothing}' at $PACK_URL, and the manifest records $PACK_SHA1 — a client would refuse the pack"
+  dw_playtest_pack_properties "$PACK_URL" "$PACK_SHA1" >> "$STAGE/server.properties"
+  PACK_NOTE="resource pack: served at $PACK_URL (sha1 $PACK_SHA1) — accept the prompt when you join"
+  if grep -q '^require-resource-pack=true$' "$STAGE/server.properties"; then
+    PACK_NOTE="$PACK_NOTE; this delve REQUIRES it (declining disconnects)"
+  fi
+fi
 # The datapack's directory name. A campaign is a directory, so its basename is
 # already a name; a prefab may arrive as `the-castle.json`, whose basename would
 # put a `.json` in a datapack directory name. Strip the extension and nothing
@@ -647,16 +731,6 @@ else
   echo "browse world binding: $LABELS of $EXPECTED_EXHIBITS exhibit(s) placed and labelled"
 fi
 
-PACK_NOTE="no resource pack in this build"
-if [ -f "$OUT_DIR/resourcepack.zip" ]; then
-  if [ -n "${DELVEWRIGHT_RESOURCEPACKS_DIR:-}" ] && [ -d "$DELVEWRIGHT_RESOURCEPACKS_DIR" ]; then
-    cp "$OUT_DIR/resourcepack.zip" "$DELVEWRIGHT_RESOURCEPACKS_DIR/$CAMP_ID.zip"
-    PACK_NOTE="enable resource pack: $CAMP_ID.zip"
-  else
-    PACK_NOTE="resource pack at $OUT_DIR/resourcepack.zip (set DELVEWRIGHT_RESOURCEPACKS_DIR to auto-install)"
-  fi
-fi
-
 UP_OK=1   # the session exists; the 25565 mutex stays held until `down`
 echo
 echo "READY — Multiplayer -> Direct Connect: localhost:25565"
@@ -664,4 +738,4 @@ if [ "$SUBJECT_KIND" = "prefab" ]; then
   echo "creative, flight on; you spawn on a stone platform beside the building"
 fi
 echo "$PACK_NOTE"
-echo "teardown: tools/creator/playtest-server.sh down --name $NAME  (also frees the 25565 mutex)"
+echo "teardown: tools/creator/playtest-server.sh down --name $NAME  (also removes $NAME-pack and frees the 25565 mutex)"

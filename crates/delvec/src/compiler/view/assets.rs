@@ -26,6 +26,11 @@ pub enum AssetSource {
     },
     /// An unpacked resource-pack directory (the root that contains `assets/`).
     Directory { path: PathBuf },
+    /// Several sources, highest first — a delve's `resourcepack.zip` above the
+    /// pinned jar, the order a client applies a server-sent pack in (spec-0084
+    /// §5.1). An entry is read from the first layer that has it, so a texture
+    /// the pack replaces is the pack's and everything else is the jar's.
+    Layered(Vec<AssetSource>),
 }
 
 /// Failure to open or read an asset source.
@@ -60,10 +65,32 @@ impl AssetSource {
         })
     }
 
-    /// The path this source was opened from, for diagnostics.
+    /// Open `pack` layered above `base` (spec-0084 §5.1): the delve's pack
+    /// first, the pinned jar beneath it.
+    pub fn open_layered(pack: &Path, base: &Path) -> Result<Self, AssetError> {
+        Ok(AssetSource::Layered(vec![
+            AssetSource::open(pack)?,
+            AssetSource::open(base)?,
+        ]))
+    }
+
+    /// The path this source was opened from, for diagnostics. A layered source
+    /// names its lowest layer — the jar every other layer is read over.
     pub fn path(&self) -> &Path {
         match self {
             AssetSource::Archive { path, .. } | AssetSource::Directory { path } => path,
+            AssetSource::Layered(layers) => layers
+                .last()
+                .map(AssetSource::path)
+                .unwrap_or_else(|| Path::new("")),
+        }
+    }
+
+    /// The paths of every layer, highest first.
+    pub fn layer_paths(&self) -> Vec<&Path> {
+        match self {
+            AssetSource::Layered(layers) => layers.iter().map(AssetSource::path).collect(),
+            other => vec![other.path()],
         }
     }
 
@@ -81,6 +108,7 @@ impl AssetSource {
                 Some(buf)
             }
             AssetSource::Directory { path } => std::fs::read(path.join(name)).ok(),
+            AssetSource::Layered(layers) => layers.iter().find_map(|l| l.read(name)),
         }
     }
 }
@@ -100,8 +128,21 @@ impl Assets {
         })
     }
 
+    /// [`AssetSource::open_layered`], with the cache.
+    pub fn open_layered(pack: &Path, base: &Path) -> Result<Self, AssetError> {
+        Ok(Assets {
+            source: AssetSource::open_layered(pack, base)?,
+            cache: RefCell::new(BTreeMap::new()),
+        })
+    }
+
     pub fn path(&self) -> &Path {
         self.source.path()
+    }
+
+    /// Every layer this source reads, highest first.
+    pub fn layer_paths(&self) -> Vec<&Path> {
+        self.source.layer_paths()
     }
 
     /// Cached [`AssetSource::read`].
@@ -194,6 +235,39 @@ mod tests {
         // A miss is `None`, not an error, and is cached as a miss.
         assert!(a.blockstate("minecraft", "no_such_block").is_none());
         assert!(a.blockstate("minecraft", "no_such_block").is_none());
+    }
+
+    #[test]
+    fn a_layered_source_reads_the_top_layer_first_and_falls_through() {
+        let pack = tmp("layer-pack");
+        let base = tmp("layer-base");
+        for (root, body) in [(&pack, "pack"), (&base, "base")] {
+            std::fs::create_dir_all(root.join("assets/minecraft/textures/block")).unwrap();
+            std::fs::write(
+                root.join("assets/minecraft/textures/block/stone_bricks.png"),
+                body,
+            )
+            .unwrap();
+        }
+        std::fs::write(base.join("version.json"), br#"{"id":"1.21.11"}"#).unwrap();
+        std::fs::write(
+            base.join("assets/minecraft/textures/block/stone.png"),
+            "base",
+        )
+        .unwrap();
+        let a = Assets::open_layered(&pack, &base).unwrap();
+        assert_eq!(
+            a.read("assets/minecraft/textures/block/stone_bricks.png")
+                .unwrap(),
+            b"pack"
+        );
+        assert_eq!(
+            a.read("assets/minecraft/textures/block/stone.png").unwrap(),
+            b"base"
+        );
+        // The jar beneath decides the version, so a layered source is still the pin.
+        assert_eq!(a.declared_version().as_deref(), Some("1.21.11"));
+        assert_eq!(a.layer_paths(), vec![pack.as_path(), base.as_path()]);
     }
 
     #[test]

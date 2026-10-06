@@ -954,3 +954,38 @@ deflate instead, and a test makes `Image.save` raise to keep it that way.
 
 CHOSEN AS the version the unpinned line already resolved to. POLICY `immutable`.
 """
+
+# --- spec-0084: a delve wears its own textures --------------------------------
+
+[[pin]]
+id = "pack-server-image"
+value = "sha256:9532d8c39891ca2ecde4d30d7710e01fb739c87a8b9299685c63704296b16028"
+sites = [
+    "tools/creator/playtest-server.sh",
+    "validation/compose.yaml",
+    "versions.toml",
+]
+policy = "immutable"
+why = """
+The multi-arch OCI index digest of busybox:1.37, the sidecar that serves a
+delve's resourcepack.zip to clients (spec-0009's verified pattern; spec-0084
+section 11: a pack is served, never installed). versions.toml
+[images.pack_server] is the value; `validation/check-versions.sh` holds the
+compose `pack` service and `playtest-server.sh` to it.
+"""
+
+[[pin]]
+id = "client-jar"
+value = "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd"
+sites = [
+    "tools/spike-texture-overrides/measure.py",
+    "versions.toml",
+]
+policy = "immutable"
+why = """
+The sha256 of the pinned 1.21.11 client jar (versions.toml [render]
+textures_sha256). `tools/maintenance/derive-client-textures.py` refuses any
+other jar, the texture census a `world.textures[]` row is judged against
+states it in its header, and the spec-0084 rig refused any other jar when it
+measured. It moves only with ADR-0009's Minecraft pin.
+"""

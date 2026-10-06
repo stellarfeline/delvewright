@@ -17,6 +17,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::admit::diag::{DW_CATALOG, DW_LICENSE, Diagnostic};
 
+/// The licence record and the allowlist are the DSL's, so a catalog card and a
+/// campaign's declared image record a licence in one shape and are judged by one
+/// list (`delvewright_dsl::license`).
+pub use delvewright_dsl::license::{LicenseEvidence, license_allowed};
+
 /// A catalog card. `deny_unknown_fields` makes the schema closed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -112,26 +117,6 @@ pub enum Verdict {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LicenseEvidence {
-    /// SPDX id (or `original`).
-    pub spdx: String,
-    /// Where the asset came from: `original`, `modrinth`, `planetminecraft`, ...
-    pub source: String,
-    /// The licensing URL ("free download" ≠ licensed).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    /// Archived proof (an archive.org URL or an in-repo evidence path).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub archived_proof: Option<String>,
-    /// Attribution string for the aggregated `ATTRIBUTION` file (CC BY).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub attribution: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Curation {
     /// Gallery-walk notes harvested from `dw.note`.
     #[serde(default)]
@@ -216,46 +201,5 @@ impl CatalogCard {
             }
         }
         diags
-    }
-}
-
-/// Enforce the ADR-0013 license allowlist. `Ok(())` ⇒ allowed; `Err(reason)` ⇒
-/// rejected. NC / ND / ShareAlike / unknown are rejected. Case-insensitive.
-///
-/// FLAGGED for owner review: ShareAlike (`-SA`) is rejected for **prefab** assets
-/// — spec-0007 lists "CC0 / CC BY / original" for prefabs (CC BY-SA is the
-/// *campaign* license, not a prefab license). Loosen here if the owner wants CC
-/// BY-SA prefabs admitted.
-pub fn license_allowed(spdx: &str) -> Result<(), String> {
-    let s = spdx.trim().to_ascii_uppercase();
-    if s.is_empty() {
-        return Err("empty license".to_string());
-    }
-    if s.contains("-NC") || s.contains("NONCOMMERCIAL") {
-        return Err("NonCommercial (NC) is forbidden".to_string());
-    }
-    if s.contains("-ND") || s.contains("NODERIV") {
-        return Err("NoDerivatives (ND) is forbidden".to_string());
-    }
-    if s.contains("-SA") || s.contains("SHAREALIKE") {
-        return Err("ShareAlike (SA) not admitted for prefab assets".to_string());
-    }
-    let ok = s == "ORIGINAL"
-        || s == "CC0"
-        || s.starts_with("CC0-")
-        || s == "CC-BY"
-        || s.starts_with("CC-BY-") // versions, already NC/ND/SA-filtered above
-        || s == "MIT"
-        || s == "APACHE-2.0"
-        || s == "BSD-2-CLAUSE"
-        || s == "BSD-3-CLAUSE"
-        || s == "GPL-3.0-ONLY"
-        || s == "GPL-3.0-OR-LATER"
-        || s == "LGPL-3.0-ONLY"
-        || s == "LGPL-3.0-OR-LATER";
-    if ok {
-        Ok(())
-    } else {
-        Err(format!("`{spdx}` is not in the ADR-0013 allowlist"))
     }
 }
