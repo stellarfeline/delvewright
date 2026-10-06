@@ -13,6 +13,7 @@ tree nothing perturbs.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import os
 import pathlib
@@ -741,11 +742,9 @@ def fake_release(walk_record: dict):
     return delvec
 
 
-def release_rep(mod, walk_record, binary=None):
+def release_rep(mod, walk_record):
     rep = mod.Report()
-    if binary is None:
-        binary = b" ".join(c.encode() for c in mod.page_dw_codes())
-    mod.release_binary_rule(rep, fake_release(walk_record), binary, "v0.0.0")
+    mod.release_binary_rule(rep, fake_release(walk_record), "v0.0.0")
     return rep
 
 
@@ -801,14 +800,23 @@ def test_a_value_given_to_a_field_some_document_leaves_open_is_not_judged(mod, t
     assert not has(rep, "gives `verdict`"), rep.findings
 
 
-def test_a_dw_code_the_release_binary_does_not_spell_reds(mod, tree):
-    """The second method for rule 17, sharing nothing with it: the bytes of the
-    checksum-verified binary rather than the source at the tag."""
-    codes = sorted(mod.page_dw_codes())
-    assert codes, "the page names no DW code, so this rule binds to nothing"
-    binary = b" ".join(c.encode() for c in codes[1:])
-    rep = release_rep(mod, WALK_TWO, binary)
-    assert has(rep, f"name `{codes[0]}`, and the v0.0.0 binary"), rep.findings
+def test_a_code_the_release_prints_is_read_from_its_tree_not_its_bytes(mod, tree, engine):
+    """The measured false negative: `delvec--v1.8.0` raises `DW0944` and its bytes
+    never spell it — the six-byte literal is written by two immediate stores,
+    `"DW09"` and `"44"`, on both shelf targets. A code is read where the release
+    was built from (rule 17), so rule 18 takes no bytes and a page naming a code
+    the pinned engine declares is green under both rules."""
+    engine_root, _rev, _tag_exists = engine
+    code = max(mod.engine_dw_declarations(engine_root))
+    path = tree / "references" / "when-red.md"
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\nA refusal carries `{code}`.\n",
+        encoding="utf-8",
+    )
+    assert code in mod.page_dw_codes()
+    assert "binary" not in inspect.signature(mod.release_binary_rule).parameters
+    assert not has(run(mod, engine), f"`{code}`"), code
+    assert not has(release_rep(mod, WALK_TWO), f"`{code}`"), code
 
 
 # --------------------------------------------------------------- the gate refuses --

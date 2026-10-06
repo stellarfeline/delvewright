@@ -97,8 +97,7 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        `delvec`, fetched and checksum-verified
        the way `scripts/fetch-delvec.py` fetches it, is asked for every schema it
        exports; every key a campaign-document fragment of the page names is a
-       field of one, every value it gives a closed-set field is a member, and
-       every DW code the page names is in the binary's bytes.
+       field of one, and every value it gives a closed-set field is a member.
                                                RED: `verdict: "unwalked"` against
                                                     a walk record of two verdicts
    19  the pin check runs on every run: the run shape's `Init` entry names
@@ -154,8 +153,16 @@ A page names an engine in three vocabularies — commands, diagnostics and
 document fields — and until these two rules only the first was held to the pin,
 so a page written against a newer engine than it installs stayed green. Rule 17
 is offline because a DW code is declared in source by one shape the DW-code gate
-already reads (`check-dw-codes.py`'s `CONST_RE`, imported, not copied). Rule 18
-is online because a field's name and a variant's spelling are serde's, and the
+already reads (`check-dw-codes.py`'s `CONST_RE`, imported, not copied), and
+the tree it reads is the one the release was built from: the online half holds
+the remote tag to that commit and `fetch-delvec.py` holds the binary to the
+tag's shelf by checksum. The release's bytes are no reading of its codes. A
+code is a six-byte literal copied into a heap `String`, and where one site
+raises it the optimiser writes it with immediate stores instead of keeping the
+literal — `DW0944` in `delvec--v1.8.0` is `"DW09"` and `"44"` in two
+instructions on both shelf targets, one of nine declared codes the bytes never
+spell, while two retired codes stay spelled in help prose. Rule 18 is online
+because a field's name and a variant's spelling are serde's, and the
 only faithful reading of serde is the binary's own `delvec schema`.
 
 A fragment — one inline span, or one whole fence — is read as a campaign
@@ -2118,8 +2125,13 @@ def release_schemas(delvec) -> dict[str, dict]:
     return schemas
 
 
-def release_binary_rule(rep: Report, delvec, binary: bytes, ref: str) -> None:
-    """Rule 18: the fields, variants and codes the page names, asked of the release."""
+def release_binary_rule(rep: Report, delvec, ref: str) -> None:
+    """Rule 18: the fields and variants the page names, asked of the release.
+
+    Not the DW codes: those are rule 17's, read at the tree the release was
+    built from, because a scan of the binary's bytes cannot see a code the
+    optimiser stored as immediates (see RULES 17 AND 18).
+    """
     schemas = release_schemas(delvec)
     fields = schema_fields(schemas)
     print(
@@ -2174,21 +2186,6 @@ def release_binary_rule(rep: Report, delvec, binary: bytes, ref: str) -> None:
         )
         for where, keys in sorted(unread.items()):
             print(f"         {where}: {', '.join(sorted(keys))}")
-
-    in_binary = {c.decode("ascii") for c in re.findall(rb"DW[0-9]{4}", binary)}
-    named = page_dw_codes()
-    for code, where in sorted(named.items()):
-        if code not in in_binary:
-            rep.find(
-                f"{', '.join(where)} name `{code}`, and the {ref} binary's bytes "
-                f"never spell it — the release cannot print a diagnostic it does not "
-                f"carry."
-            )
-    rep.bind(
-        "DW code(s) named that the release binary carries",
-        sum(1 for code in named if code in in_binary),
-        len(named),
-    )
 
 
 def acquire_release(into: pathlib.Path) -> pathlib.Path:
@@ -2798,7 +2795,7 @@ def main(argv: list[str] | None = None) -> int:
                 if tag_exists:
                     print("== the names the page gives the release, asked of the release ==")
                     binary = acquire_release(pathlib.Path(tmp) / "release-bin")
-                    release_binary_rule(rep, runner(binary), binary.read_bytes(), ref)
+                    release_binary_rule(rep, runner(binary), ref)
                 else:
                     # Not a skipped rule dressed as a pass: the object rule 18
                     # asks does not exist yet, and the run says so where a reader
