@@ -9,7 +9,8 @@
 //!    the sub-block shapes so a curved surface does not pit.
 //! 2. **Thin-plate refit.** Where the fit says air, the block is refitted from
 //!    the solid thickened by one sub-voxel, so a plate thinner than half an
-//!    octant is kept; thick material is never refitted, so it never bloats.
+//!    octant is kept; thick material is never refitted, so it never bloats; and
+//!    a shelf's headroom is never refitted, so a walkway stays clear over it.
 //! 3. **The apron.** Every air block at `y <= ground.top` becomes ground.
 //! 4. **Islands.** A disconnected group of fewer than [`MIN_COMPONENT`] blocks
 //!    is dropped and counted.
@@ -262,7 +263,7 @@ pub fn fit(form: &Form, grid: &SubGrid, owners: &Owners) -> (Blocks, FitCounts) 
         for y in 0..dims[1] {
             for z in 0..dims[2] {
                 let i = blocks.index(x, y, z);
-                if blocks.kind[i] != Kind::Air {
+                if blocks.kind[i] != Kind::Air || owners.headroom[i] {
                     continue;
                 }
                 let frac = fractions(&thick, x, y, z);

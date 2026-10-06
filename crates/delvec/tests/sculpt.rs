@@ -1038,6 +1038,76 @@ fn a_solid_with_its_own_material_writes_its_blocks_in_it() {
     assert_ne!(b.files, s.files, "the material reaches the bytes");
 }
 
+/// **A shelf's headroom stays clear.** The walkway is clear for `clearance`
+/// over its feet surface; nothing the fit or its thin-plate refit lays may
+/// stand in that volume, or a stair whose treads rise a full block meets a
+/// ceiling it cannot jump under. Bound on the gallery form's shelf and on the
+/// demo-shaped case (a shelf cut up a body's flank, the body over it), with the
+/// cells examined counted.
+#[test]
+fn a_shelf_s_headroom_stays_clear() {
+    let mut v = gallery_form();
+    // A body over the gallery's shelf: a slab of flesh lying on its headroom,
+    // whose underside the thin-plate refit would thicken down into it.
+    v["solids"].as_array_mut().unwrap().insert(
+        6,
+        serde_json::json!({"shape": "box", "op": "add", "from": [19.0, 12.0, 22.0],
+                           "to": [29.0, 22.0, 42.0], "noisy": true}),
+    );
+    let form = form_of(&v);
+    let s = sculpt::sculpt(&form, 0, None).expect("the roofed gallery form sculpts");
+    let shelf = &v["solids"][7];
+    assert_eq!(shelf["shape"], "shelf");
+    let path: Vec<[f64; 3]> = shelf["path"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| [0, 1, 2].map(|a| k[a].as_f64().unwrap()))
+        .collect();
+    let half = shelf["width"].as_f64().unwrap() / 2.0;
+    let clearance = shelf["clearance"].as_f64().unwrap();
+    let floor = form.body_floor() as f64;
+    // The feet height and lateral distance at a block centre: the nearest
+    // point of the path, as the shelf is stamped.
+    let at = |p: [f64; 3]| {
+        let mut best = (f64::INFINITY, 0.0);
+        for w in path.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let ab = [b[0] - a[0], b[2] - a[2]];
+            let l2 = ab[0] * ab[0] + ab[1] * ab[1];
+            let t = (((p[0] - a[0]) * ab[0] + (p[2] - a[2]) * ab[1]) / l2).clamp(0.0, 1.0);
+            let d2 = (p[0] - a[0] - t * ab[0]).powi(2) + (p[2] - a[2] - t * ab[1]).powi(2);
+            if d2 < best.0 {
+                best = (d2, a[1] + (b[1] - a[1]) * t);
+            }
+        }
+        (best.0.sqrt() - half, best.1)
+    };
+    let (mut examined, mut filled) = (0usize, Vec::new());
+    for p in s.model.region().positions() {
+        let c = [
+            p[0] as f64 + 0.5,
+            p[1] as f64 + 0.5 - floor,
+            p[2] as f64 + 0.5,
+        ];
+        let (lateral, feet) = at(c);
+        if lateral < 0.0 && c[1] >= feet + 0.5 && c[1] + 0.5 <= feet + clearance {
+            examined += 1;
+            if s.model.get(p).is_some_and(|b| !b.is_air()) {
+                filled.push((p, s.model.get(p).unwrap().to_string()));
+            }
+        }
+    }
+    assert!(examined > 0, "the headroom binds cells");
+    assert!(
+        filled.is_empty(),
+        "{} of {examined} headroom cell(s) hold a block: {:?}",
+        filled.len(),
+        &filled[..filled.len().min(6)]
+    );
+    println!("headroom: {examined} cell(s) examined, 0 filled");
+}
+
 // ---------------------------------------------------------------------------
 // 9. Scale
 // ---------------------------------------------------------------------------

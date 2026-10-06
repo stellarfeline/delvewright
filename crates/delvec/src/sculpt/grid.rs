@@ -206,6 +206,10 @@ pub struct Owners {
     /// in a walkway may face only the way the walkway climbs — its `facing` is the
     /// direction a body ascends (`DW0430`) — so the fit is restricted by this.
     pub climb: Vec<u8>,
+    /// Whether the block lies in a shelf's headroom — its centre over the
+    /// tread and under `clearance` — where nothing may be laid: the stamp
+    /// clears it, and the thin-plate refit must not thicken material back in.
+    pub headroom: Vec<bool>,
 }
 
 /// Half a block's space diagonal, `√3 / 2`: how far outside a solid with its
@@ -237,6 +241,7 @@ pub fn stamp(form: &Form, seed: u64) -> (SubGrid, Owners) {
     let mut owners = Owners {
         owner: vec![0; blocks[0] * blocks[1] * blocks[2]],
         climb: vec![0; blocks[0] * blocks[1] * blocks[2]],
+        headroom: vec![false; blocks[0] * blocks[1] * blocks[2]],
     };
     for (si, solid) in form.solids.iter().enumerate() {
         // The ordinal a block owned by this solid's material records.
@@ -273,8 +278,11 @@ pub fn stamp(form: &Form, seed: u64) -> (SubGrid, Owners) {
                                 continue;
                             }
                             let (lateral, feet, climb) = shelf.lateral_and_feet(p);
+                            let i = (x * blocks[1] + y) * blocks[2] + z;
+                            if lateral < 0.5 && p[1] >= feet + 0.5 && p[1] < feet + clearance {
+                                owners.headroom[i] = true;
+                            }
                             if lateral < 0.5 && p[1] > feet - depth && p[1] < feet + 0.5 {
-                                let i = (x * blocks[1] + y) * blocks[2] + z;
                                 owners.climb[i] = climb;
                                 if material.is_some() {
                                     owners.owner[i] = ordinal;
