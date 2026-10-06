@@ -27,6 +27,15 @@ MECHA_BUILD = """          target/debug/delvec \\
             -o out --prefabs campaigns/prefabs"""
 
 
+# The download action as the live workflow pins it (`.github/pins.toml` holds the
+# version; this file does not restate it).
+DOWNLOAD = next(
+    line.split("uses:", 1)[1].strip()
+    for line in WORKFLOW.read_text(encoding="utf-8").splitlines()
+    if "uses: actions/download-artifact@" in line
+)
+
+
 def run_gate(capsys, workflow: pathlib.Path = WORKFLOW) -> tuple[int, str]:
     code = gate.main(["--workflow", str(workflow), "--repo", str(REPO)])
     out = capsys.readouterr()
@@ -100,7 +109,7 @@ def test_a_consumer_that_skips_the_hash_is_refused(tmp_path, capsys):
 def test_a_consumer_that_downloads_the_artifact_itself_is_refused(tmp_path, capsys):
     wf = perturbed(tmp_path, MECHA_TAKE, MECHA_TAKE.replace(
         "      # A DIFFERENT interpreter line",
-        "      - uses: actions/download-artifact@v4\n        with: { name: delvec-binary }\n      # A DIFFERENT interpreter line",
+        f"      - uses: {DOWNLOAD}\n        with: {{ name: delvec-binary }}\n      # A DIFFERENT interpreter line",
     ))
     code, out = run_gate(capsys, wf)
     assert code == 1
