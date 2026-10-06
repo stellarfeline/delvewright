@@ -819,6 +819,96 @@ fn a_box_past_the_schematic_cap_is_written_as_parts() {
     );
 }
 
+/// **The parts re-assemble the fitted body exactly.** A body past 48 on an axis
+/// is written as parts; the reader a consumer reassembles them with
+/// (`tileset::assemble`, through the manifest's offsets) must give back the
+/// model the sculpt fitted, cell for cell, with no cell written by two parts and
+/// no cell on a seam lost or moved. The binding is the cells compared (the whole
+/// region) and the body cells that lie on a seam plane, both non-zero.
+#[test]
+fn every_part_reassembles_the_sculpted_body_exactly() {
+    use std::collections::BTreeMap;
+    // The gallery form's material over a column that crosses every seam plane:
+    // a weathered pillar standing on the apron at the corner where four parts
+    // meet, rising past the third.
+    let mut v = gallery_form();
+    v["box"] = serde_json::json!([60, 60, 60]);
+    v["solids"] = serde_json::json!([
+        {"shape": "capsule", "op": "add", "from": [48.0, 2.0, 48.0], "to": [48.0, 54.0, 48.0],
+         "radius_from": 9.0, "radius_to": 5.0, "noisy": true},
+        {"shape": "ellipsoid", "op": "cut", "centre": [48.0, 30.0, 48.0], "radii": [4.0, 6.0, 4.0]}
+    ]);
+    v["anchors"] = serde_json::json!({
+        "anchor/entry": {"pos": [1, 5, 1], "facing": "east", "role": "entry"}
+    });
+    v["lights"] = serde_json::json!([
+        {"at": [3, 5, 3], "block": "minecraft:lantern[hanging=false,waterlogged=false]"}
+    ]);
+    let form = form_of(&v);
+    let s = sculpt::sculpt(&form, 0, None).expect("the seam pillar sculpts");
+    let set = s
+        .metadata
+        .structure_set
+        .as_ref()
+        .expect("a box past 48 on every axis is written as parts");
+    assert_eq!(set.grid, [2, 2, 2], "parts on every axis: {:?}", set.grid);
+
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sculpt-seams");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    s.write_to_dir(&dir).unwrap();
+    let (piece, _) =
+        delvec::compiler::view::tileset::load_piece(&dir.join(format!("{}.json", s.id)))
+            .expect("the manifest and its parts load as one zone");
+    let zone = piece.structure();
+    assert_eq!(zone.size, [60, 60, 60]);
+
+    let mut placed: BTreeMap<[i32; 3], &str> = BTreeMap::new();
+    for (pos, i) in &zone.blocks {
+        let state = zone.palette[*i].as_str();
+        assert!(
+            placed.insert(*pos, state).is_none(),
+            "two parts write the cell {pos:?}"
+        );
+    }
+    let part_max = set.part_max;
+    let on_seam = |p: [i32; 3]| {
+        (0..3).any(|a| {
+            let r = p[a].rem_euclid(part_max);
+            (r == 0 && p[a] > 0) || (r == part_max - 1 && p[a] + 1 < zone.size[a])
+        })
+    };
+    let (mut compared, mut seam_filled) = (0usize, 0usize);
+    for p in s.model.region().positions() {
+        let want = s
+            .model
+            .get(p)
+            .filter(|b| !b.is_air())
+            .map(|b| b.to_string());
+        let have = placed
+            .get(&p)
+            .filter(|b| !b.ends_with(":air") && !b.contains(":air["))
+            .map(|b| b.to_string());
+        assert_eq!(have, want, "the cell {p:?} after reassembly");
+        compared += 1;
+        // The body, not the apron: a uniform apron reads the same however a
+        // seam is cut, so only the body's cells discriminate.
+        if want
+            .as_deref()
+            .is_some_and(|w| !w.starts_with("minecraft:packed_mud"))
+            && on_seam(p)
+        {
+            seam_filled += 1;
+        }
+    }
+    assert_eq!(compared, 60 * 60 * 60, "every cell of the region compared");
+    assert!(seam_filled > 0, "body cells on a seam plane: {seam_filled}");
+    println!(
+        "seams: {compared} cell(s) compared, {seam_filled} body cell(s) on a seam plane, {} part(s)",
+        set.parts.len()
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The error type the library returns
 // ---------------------------------------------------------------------------
