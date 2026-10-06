@@ -1501,6 +1501,8 @@ jobs:
             echo
             python3 - <<'PY' 2>/dev/null || echo "(no run report)"
           import json
+          import sys
+          sys.stdout.reconfigure(newline="\n")
           r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
           for st in r["stages"]:
               print(f"- stage `{st['stage']}`: ran {st['ran']}, passed {st['passed']}")
