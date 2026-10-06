@@ -639,11 +639,20 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/long-gallery-end",
-        pos: long_gallery_cell(2, 1, CORRIDOR_SIZE[2] - 2),
+        pos: long_gallery_cell(2, 1, CORRIDOR_SIZE[2] - 3),
         facing: Some("north"),
         trigger_block: None,
         note: "the long gallery's end room, past its three bays: the beat the loop stands in \
                front of until the party has crossed it enough",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-chest",
+        pos: long_gallery_cell(2, 2, CORRIDOR_SIZE[2] - 2),
+        facing: None,
+        trigger_block: None,
+        note: "the top of the chest at the long gallery's far end, two bays past anything a \
+               body in the loop's span can see: what the end room holds",
         role: None,
     },
     Anchor {
@@ -3512,6 +3521,11 @@ fn long_gallery_at(x: i32, y: i32, z: i32) -> Option<BlockWithState> {
     }
     if w == corridor_bay(CORRIDOR_BAYS) + 1 && u == 2 && v == sv - 2 {
         return Some(("minecraft:lantern", LANTERN));
+    }
+    // The chest at the far end: what the end room holds, and what a body
+    // arriving there looks at.
+    if w == sw - 2 && u == 2 && v == 1 {
+        return Some(("minecraft:barrel", None));
     }
     Some(("minecraft:air", None))
 }
