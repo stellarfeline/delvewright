@@ -690,11 +690,11 @@ jobs:
       # gitignored — a ledger of one person's decisions is not a repository
       # artifact (CLAUDE.md *Privacy in repo artifacts*) — so CI cannot see the
       # file it would check, and a CI step is not what binds them any more.
-      # `tools/planner/planner-state.sh` does, on `SessionStart` and on
-      # `UserPromptSubmit --if-stale 12`, and it REFUSES by name when either the
+      # `tools/planner/planner-state.sh` does, on `SessionStart` (startup, resume
+      # and every compaction), and it REFUSES by name when either the
       # ledger or the operating-practice page is absent. That is a weaker gate
       # than a pull-request red and is stated as such rather than papered over:
-      # a broken binding now surfaces at the first prompt of the session that
+      # a broken binding now surfaces at the start of the session that
       # broke it instead of on the PR. Nothing in the required-context list
       # changed — this was a STEP of `docs (local link check)`, never a job.
       # The same document's VERSION HEADER was bound to nothing. It claimed
