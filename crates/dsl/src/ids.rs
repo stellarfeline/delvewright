@@ -215,6 +215,12 @@ prefixed_id!(
     /// the sky a silhouette needs kept empty. Unique within the site plan.
     VolumeId, "volume");
 prefixed_id!(
+    /// Atmosphere id: `atmosphere/<kebab>` (stage-1 `atmospheres[]`, spec-0080).
+    /// Unique within the campaign; it names the datapack biome the atmosphere
+    /// ships as (`<ns>:atmosphere/<kebab>`), which a place carries and a
+    /// `set-atmosphere` paints.
+    AtmosphereId, "atmosphere");
+prefixed_id!(
     /// Site-plan view id: `view/<kebab>` (spec-0049 §4.1). A named exterior
     /// vantage the walk judges the silhouette from. Unique within the site plan.
     ViewId, "view");

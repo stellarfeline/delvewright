@@ -1,0 +1,16 @@
+{
+  "code": "DW0931",
+  "patch": [
+    {
+      "doc": "dialogue.json",
+      "op": "replace",
+      "path": "/content/dialogues/0/nodes/0/options/1/effects/4/time",
+      "value": {
+        "phase": "new-moon",
+        "sun": "rising"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The Curator's sunrise cut, `{\"sun\": \"rising\"}`, with the world's own phase copied onto it: `new-moon`. A cut that leaves `phase` out keeps the world's moon, so this one changes nothing the party sees and is a copy that goes stale the moment the world's phase changes. `DW0931` refuses it at validation with the remedy: remove `phase`. It declares no unit: `CelestialTime.phase` is bound by the primary."
+}

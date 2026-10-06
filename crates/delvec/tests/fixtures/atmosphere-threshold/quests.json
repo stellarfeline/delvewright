@@ -1,0 +1,73 @@
+{
+  "campaign_id": "the-threshold",
+  "content": {
+    "quests": [
+      {
+        "happening": {
+          "text": "The party stands in the near half of the hall, under an ordinary noon.",
+          "verb": "arrives"
+        },
+        "id": "quest/the-threshold",
+        "objectives": [
+          {
+            "anchor": "anchor/node-far",
+            "happening": {
+              "text": "The bell's note goes back through the door the way they came.",
+              "verb": "opens"
+            },
+            "hint": "Through the door, in the middle of the far half.",
+            "id": "obj/ring-the-bell",
+            "prop": {
+              "block": "minecraft:bell"
+            },
+            "title": "Ring the bell",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/ring-the-bell"
+            ],
+            "anchor": "anchor/node-near",
+            "happening": {
+              "text": "They come back to where they started, and it is not there any more.",
+              "verb": "arrives"
+            },
+            "hint": "Back through the door, to where you started.",
+            "id": "obj/walk-back",
+            "radius": 3,
+            "title": "Walk back",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "The walk is over, and both halves are the same wrong place.",
+              "verb": "departs"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/ring-the-bell": [
+            {
+              "atmosphere": "atmosphere/wrong-place",
+              "place": "node/near",
+              "type": "set-atmosphere"
+            },
+            {
+              "style": "subtitle",
+              "text": "Behind you, the afternoon goes out.",
+              "type": "narrate"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.35.0",
+  "stage": "quests"
+}

@@ -484,3 +484,109 @@ fn the_roofed_fixture_warns_only_about_vanilla_stats() {
         "DW0496 is an error, never a warning: {warnings:#?}"
     );
 }
+
+// --- spec-0080: the biome a fight stands in is the map's -----------------------
+
+/// An atmosphere the creator declared dry. Under a rainy `dusk` the keep would
+/// be wet in the horizon's biome; carried by the yard, it is not.
+fn dry_yard(world: &mut serde_json::Value, precipitation: &str) {
+    world["content"]["time"] = serde_json::json!("dusk");
+    world["content"]["weather"] = serde_json::json!("rain");
+    world["content"]["atmospheres"] = serde_json::json!([
+        { "id": "atmosphere/yard", "precipitation": precipitation }
+    ]);
+}
+
+/// A body staged in a `precipitation: none` atmosphere under `dusk` + `rain`
+/// burns: the creator has said no rain falls there, and the proof holds them to
+/// it.
+#[test]
+fn a_dry_atmosphere_under_rain_at_dusk_is_dw0496() {
+    let tmp = TempCampaign::new("atm-dry");
+    campaign_with(tmp.path(), true, |world, _| {
+        dry_yard(world, "none");
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
+    });
+    let err = build(tmp.path()).expect_err("no rain falls in the yard's atmosphere");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+    assert!(
+        message_of(&err).contains("daylight-yard:atmosphere/yard"),
+        "the message names the biome the cell stands in: {}",
+        message_of(&err)
+    );
+}
+
+/// The same body in a `rain` atmosphere stays wet.
+#[test]
+fn a_rainy_atmosphere_under_rain_at_dusk_is_silent() {
+    let tmp = TempCampaign::new("atm-rain");
+    campaign_with(tmp.path(), true, |world, _| {
+        dry_yard(world, "rain");
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
+    });
+    build(tmp.path()).expect("rain falls in the yard's atmosphere");
+}
+
+/// A trigger repaints the fight's ground dry: a cut of the same kind as
+/// `set-weather`, with no place in the DAG, so the fight can stand in it.
+#[test]
+fn a_repaint_to_dry_from_a_trigger_is_dw0496() {
+    let tmp = TempCampaign::new("atm-repaint");
+    campaign_with(tmp.path(), true, |world, quests| {
+        dry_yard(world, "none");
+        quests["content"]["triggers"] = serde_json::json!([{
+            "id": "trigger/the-air-turns",
+            "at": "anchor/exit",
+            "on": { "on": "approach", "range": 2 },
+            "effects": [
+                { "type": "set-atmosphere", "atmosphere": "atmosphere/yard", "place": "area/keep" }
+            ]
+        }]);
+    });
+    let err = build(tmp.path()).expect_err("the repaint dries the yard");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+    // The control: the same yard with no repaint stands in the horizon's
+    // biome, which rains, so what reds above is the repaint and nothing else.
+    let control = TempCampaign::new("atm-repaint-control");
+    campaign_with(control.path(), true, |world, _| dry_yard(world, "none"));
+    build(control.path()).expect("without the repaint the yard is wet");
+}
+
+// --- spec-0081 × spec-0080: one reader for the hour and the ground ------------
+
+/// A celestial night under a dry atmosphere: the hour comes from the stated
+/// moon (spec-0081, the vendored day timeline), the ground from the carried
+/// atmosphere (spec-0080, the biome map), and `DW0496` reads both through one
+/// reader. The moon high is outside the `monsters_burn` window, so a body
+/// staged in a yard no rain reaches still does not burn.
+#[test]
+fn a_celestial_night_under_a_dry_atmosphere_is_silent() {
+    let tmp = TempCampaign::new("atm-dry-celestial-night");
+    campaign_with(tmp.path(), true, |world, _| {
+        dry_yard(world, "none");
+        world["content"]["time"] = serde_json::json!({"moon": "high", "phase": "full-moon"});
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
+    });
+    build(tmp.path()).expect("the moon is high: nothing burns, dry or wet");
+}
+
+/// The pair's other half: the same dry yard under a celestial day — the sun
+/// high, in rain — burns, so what keeps the night silent is the stated hour
+/// and nothing else; and the message names the atmosphere's biome, so the
+/// ground was read from the same map.
+#[test]
+fn a_celestial_day_under_a_dry_atmosphere_is_dw0496() {
+    let tmp = TempCampaign::new("atm-dry-celestial-day");
+    campaign_with(tmp.path(), true, |world, _| {
+        dry_yard(world, "none");
+        world["content"]["time"] = serde_json::json!({"sun": "high"});
+        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
+    });
+    let err = build(tmp.path()).expect_err("the sun is high and no rain falls in the yard");
+    assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
+    assert!(
+        message_of(&err).contains("daylight-yard:atmosphere/yard"),
+        "the message names the biome the cell stands in: {}",
+        message_of(&err)
+    );
+}

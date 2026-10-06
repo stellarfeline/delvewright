@@ -40,7 +40,8 @@
 //! | night (13000), dawn (23000) | 8.09 → dark | | |
 //! | midnight (18000) | 4.00 → dark | | |
 //!
-//! [`bright_outside`] is that table. `dusk` in `rain` is the tight cell: `skyDarken`
+//! [`bright_outside`] is that arithmetic, read at any tick (a celestial hour
+//! included); at the six hours it is that table. `dusk` in `rain` is the tight cell: `skyDarken`
 //! is `(int)3.995 = 3`, bright by five thousandths of a light level, which is why the
 //! table was also taken from the running game rather than from the arithmetic
 //! alone: `tools/maintenance/probe-drowned-engagement.py` summons a drowned beside a
@@ -122,11 +123,25 @@ const SOURCE_SURFACE_16: f64 = 16.0 * 8.0 / 9.0;
 /// How far a body stepping off an edge is followed down in search of water.
 const MAX_DROP: i32 = 64;
 
+/// Rain's alpha toward the 4.0 floor in `WeatherAttributes` (module docs).
+const RAIN_BLEND: f64 = 0.3125;
+/// Thunder's alpha toward the 4.0 floor.
+const THUNDER_BLEND: f64 = 0.52734375;
+
 /// Whether `Level.isBrightOutside()` holds at this frozen `(time, weather)` on the
-/// pinned server — the table in the module docs, measured two ways.
+/// pinned server: `skyDarken = (int)(15 − level) < 4`, the level being 15 × the
+/// vendored `sky_light_level` track at the hour's tick, alpha-blended toward 4.0
+/// by the weather. At the six keyword hours this is the table in the module
+/// docs, measured two ways (`bright_is_day_noon_or_dusk_unless_thunder`); a
+/// celestial hour is read by the same arithmetic at its own tick.
 pub fn bright_outside(time: WorldTime, weather: WorldWeather) -> bool {
-    matches!(time, WorldTime::Day | WorldTime::Noon | WorldTime::Dusk)
-        && matches!(weather, WorldWeather::Clear | WorldWeather::Rain)
+    let level = 15.0 * delvewright_dsl::celestial::sky_light_factor(time.daytime_ticks());
+    let level = match weather {
+        WorldWeather::Clear => level,
+        WorldWeather::Rain => level + (4.0 - level) * RAIN_BLEND,
+        WorldWeather::Thunder => level + (4.0 - level) * THUNDER_BLEND,
+    };
+    ((15.0 - level) as i64) < 4
 }
 
 /// The states in effect while the fight is live, when every one of them is
@@ -300,7 +315,12 @@ pub fn check_engagement(
     (b, first)
 }
 
-fn message(body: &Staged, Sky { times, weathers }: &Sky) -> String {
+fn message(
+    body: &Staged,
+    Sky {
+        times, weathers, ..
+    }: &Sky,
+) -> String {
     let Staged {
         owner,
         kind,
@@ -310,9 +330,16 @@ fn message(body: &Staged, Sky { times, weathers }: &Sky) -> String {
         ..
     } = body;
     let at = cells[0];
-    let list = |words: Vec<&str>| words.join("`, `");
-    let time = list(times.iter().map(|t| t.keyword()).collect());
-    let weather = list(weathers.iter().map(|w| w.keyword()).collect());
+    let time = times
+        .iter()
+        .map(|t| t.keyword())
+        .collect::<Vec<_>>()
+        .join("`, `");
+    let weather = weathers
+        .iter()
+        .map(|w| w.keyword())
+        .collect::<Vec<_>>()
+        .join("`, `");
     format!(
         "{kind} `{owner}` stages `{entity}` at [{}, {}, {}] as a fight the party must win, and \
          vanilla's own AI will not fight it there: a drowned neither targets nor strikes anyone \
@@ -521,7 +548,7 @@ mod tests {
             WorldWeather::Rain,
             WorldWeather::Thunder,
         ];
-        let bright_times: Vec<&str> = times
+        let bright_times: Vec<String> = times
             .iter()
             .filter(|&&t| weathers.iter().any(|&w| bright_outside(t, w)))
             .map(|t| t.keyword())
@@ -550,7 +577,7 @@ mod tests {
             line,
             format!(
                 "DISENGAGED = {{(t, w) for t in ({}) for w in ({})}}",
-                quoted(&bright_times),
+                quoted(&bright_times.iter().map(String::as_str).collect::<Vec<_>>()),
                 quoted(&bright_weathers)
             )
         );

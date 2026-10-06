@@ -1078,8 +1078,8 @@ pub fn render_plan(
 /// **The hour this delve is played at**, as the render layer needs it.
 ///
 /// Two fields, and the second is the one that carries the meaning: `time` is the
-/// keyword the author wrote (so a creator reading the plan reads their own
-/// document's vocabulary), and `daytime_ticks` is the vanilla `daytime` value
+/// author's spelling — the keyword, or the celestial object (spec-0081) — so a
+/// creator reading the plan reads their own document's vocabulary, and `daytime_ticks` is the vanilla `daytime` value
 /// that keyword sets — the number the sun's position in the sky is a function
 /// of. The renderer derives its sun from the ticks and never from the keyword,
 /// so a state vanilla does not name (`dusk` is `12000`, not a keyword) is worth
@@ -1098,7 +1098,7 @@ pub fn render_plan(
 fn sky_fact(c: &Campaign) -> Value {
     let t = c.world.content.time;
     json!({
-        "time": t.keyword(),
+        "time": t,
         "daytime_ticks": t.daytime_ticks(),
         "weather": c.world.content.weather.keyword(),
     })
