@@ -41,6 +41,9 @@ use crate::grammar::block::BlockState;
 /// refuses rather than reading the parts it recognises.
 pub const LATEST_FORM_VERSION: &str = "1.0.0";
 
+/// The least `spacing` a `hull` light may declare, in blocks.
+pub const MIN_HULL_SPACING: f64 = 2.0;
+
 /// Every form version this engine reads.
 pub const SUPPORTED_FORM_VERSIONS: &[&str] = &["1.0.0"];
 
@@ -112,14 +115,93 @@ pub struct Tone {
     pub full: Vec<(String, u32)>,
 }
 
-/// A light-emitting block at a cell of the body's frame.
+/// Light placed where the room is designed: either one block at a cell the
+/// form names (`at`), or a distribution the sculpt derives over the body's
+/// inside surface (`hull`). Exactly one of the two.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Light {
-    /// The cell, body frame.
-    pub at: [i32; 3],
+    /// The cell, body frame — a light placed by hand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[i32; 3]>,
     /// A block that emits light (`minecraft:soul_lantern[hanging=false]`).
     pub block: String,
+    /// Sources the sculpt places itself, in the body's inside surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hull: Option<Hull>,
+}
+
+/// **Light set into the body's inside surface** (spec-0087 §9): the sculpt
+/// finds every body block inside `within` whose face meets air with the body
+/// over it, keeps those on the surfaces `on` names, and draws sources from
+/// them by a seeded Poisson-disk distribution — no two closer than `spacing`
+/// blocks — so the sources are staggered and irregular, never a grid, over
+/// walls and vault alike.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Hull {
+    /// The partial block a `recessed` source sits behind: a `<family>_stairs`
+    /// or `<family>_slab` id, oriented by the sculpt. Absent for `embedded`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
+    /// How a source sits in the surface.
+    pub mode: LightMode,
+    /// The surfaces sources may sit in: `wall`, `vault`, `floor` (a body
+    /// block facing up; the ground is never a host).
+    pub on: Vec<Surface>,
+    /// The least distance between two sources of this entry, in blocks — the
+    /// density, stated as the Poisson-disk radius.
+    pub spacing: f64,
+    /// The cells the surface is taken from, body frame, inclusive.
+    pub within: CellBox,
+}
+
+/// An inclusive box of cells.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CellBox {
+    /// The low corner.
+    pub from: [i32; 3],
+    /// The high corner.
+    pub to: [i32; 3],
+}
+
+/// How a hull source sits in the surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LightMode {
+    /// The source replaces a block of the surface, flush with it — a cave's
+    /// own light. The block must be a full cube.
+    Embedded,
+    /// The source sits one block behind the surface, hidden behind the
+    /// `cover` set in the surface in front of it, with a one-block slot beside
+    /// the cover through which the light reaches the room.
+    Recessed,
+}
+
+/// A kind of surface, by the way its block faces the air.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Surface {
+    /// Faces air sideways.
+    Wall,
+    /// Faces air below it.
+    Vault,
+    /// Faces air above it.
+    Floor,
+}
+
+impl Surface {
+    /// The schema word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Surface::Wall => "wall",
+            Surface::Vault => "vault",
+            Surface::Floor => "floor",
+        }
+    }
 }
 
 /// An anchor, in prefab metadata's own anchor shape (the four fields a form
@@ -175,6 +257,10 @@ pub enum Solid {
         /// Vertical stretch of the cross-section (1 when absent).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stretch_y: Option<f64>,
+        /// This solid's own material: every block whose centre it contains
+        /// takes this tone instead of the palette's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        material: Option<Tone>,
         /// Weathered by the form's noise.
         #[serde(default, skip_serializing_if = "is_false")]
         noisy: bool,
@@ -187,6 +273,10 @@ pub enum Solid {
         centre: [f64; 3],
         /// The three semi-axes.
         radii: [f64; 3],
+        /// This solid's own material: every block whose centre it contains
+        /// takes this tone instead of the palette's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        material: Option<Tone>,
         /// Weathered by the form's noise.
         #[serde(default, skip_serializing_if = "is_false")]
         noisy: bool,
@@ -203,6 +293,10 @@ pub enum Solid {
         radius: f64,
         /// The full height along the axis.
         height: f64,
+        /// This solid's own material: every block whose centre it contains
+        /// takes this tone instead of the palette's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        material: Option<Tone>,
         /// Weathered by the form's noise.
         #[serde(default, skip_serializing_if = "is_false")]
         noisy: bool,
@@ -215,6 +309,10 @@ pub enum Solid {
         from: [f64; 3],
         /// The opposite corner.
         to: [f64; 3],
+        /// This solid's own material: every block whose centre it contains
+        /// takes this tone instead of the palette's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        material: Option<Tone>,
         /// Weathered by the form's noise.
         #[serde(default, skip_serializing_if = "is_false")]
         noisy: bool,
@@ -238,6 +336,17 @@ pub enum Solid {
 }
 
 impl Solid {
+    /// The solid's own material, if it declares one.
+    pub fn material(&self) -> Option<&Tone> {
+        match self {
+            Solid::Capsule { material, .. }
+            | Solid::Ellipsoid { material, .. }
+            | Solid::Disc { material, .. }
+            | Solid::Box { material, .. }
+            | Solid::Shelf { material, .. } => material.as_ref(),
+        }
+    }
+
     /// The schema name of the shape, for a message.
     pub fn shape_name(&self) -> &'static str {
         match self {
@@ -424,11 +533,8 @@ impl Form {
             .map(|(i, t)| (format!("palette[{i}]"), t))
             .collect();
         for (i, s) in self.solids.iter().enumerate() {
-            if let Solid::Shelf {
-                material: Some(t), ..
-            } = s
-            {
-                materials.push((format!("solids[{i}] (shelf) material"), t));
+            if let Some(t) = s.material() {
+                materials.push((format!("solids[{i}] ({}) material", s.shape_name()), t));
             }
         }
         let mut unparsed = Vec::new();
@@ -477,6 +583,12 @@ impl Form {
                 Ok(s) => declared.push((format!("lights[{i}] block"), s)),
                 Err(e) => unparsed.push(format!("lights[{i}] block {e}")),
             }
+            if let Some(cover) = l.hull.as_ref().and_then(|h| h.cover.as_ref()) {
+                match parse_state(cover) {
+                    Ok(s) => declared.push((format!("lights[{i}] (hull) cover"), s)),
+                    Err(e) => unparsed.push(format!("lights[{i}] (hull) cover {e}")),
+                }
+            }
         }
         out.extend(unparsed);
         let states: Vec<BlockState> = declared.iter().map(|(_, s)| s.clone()).collect();
@@ -496,6 +608,24 @@ impl Form {
                 continue; // the gate above named it
             }
             let emits = crate::compiler::light::emission(&state.to_string());
+            if field.ends_with("(hull) cover") {
+                let stem = id
+                    .strip_suffix("_stairs")
+                    .or_else(|| id.strip_suffix("_slab"));
+                if stem.is_none() || !state.properties.is_empty() {
+                    out.push(format!(
+                        "{field} `{state}` is not a bare `<family>_stairs` or `<family>_slab` id: \
+                         the cover is a partial block the sculpt orients in front of the source, \
+                         so it names the block and the sculpt writes its facing, half or type"
+                    ));
+                }
+                if emits > 0 {
+                    out.push(format!(
+                        "{field} `{state}` emits light {emits}; a cover hides a source, it is not one"
+                    ));
+                }
+                continue;
+            }
             let is_light = field.starts_with("lights[");
             let is_full = field.ends_with("full block") || field == "ground block";
             if is_light {
@@ -642,20 +772,115 @@ impl Form {
         {
             out.push("`noise` needs amplitude >= 0 and cell > 0".to_string());
         }
+        let inside_piece = |c: [i32; 3]| {
+            let p = [c[0] as i64, c[1] as i64 + self.body_floor(), c[2] as i64];
+            ((0..3).all(|a| p[a] >= 0 && p[a] < self.extent[a] as i64), p)
+        };
         for (i, l) in self.lights.iter().enumerate() {
-            let at = [
-                l.at[0] as i64,
-                l.at[1] as i64 + self.body_floor(),
-                l.at[2] as i64,
-            ];
-            if !(0..3).all(|a| at[a] >= 0 && at[a] < self.extent[a] as i64) {
-                out.push(format!(
-                    "lights[{i}] at body {:?} is piece {at:?}, outside the box {:?}",
-                    l.at, self.extent
-                ));
+            match (&l.at, &l.hull) {
+                (Some(_), Some(_)) | (None, None) => out.push(format!(
+                    "lights[{i}] declares {}; a light is either placed by hand at a cell (`at`) \
+                     or distributed over the body's inside surface (`hull`), exactly one",
+                    if l.at.is_some() {
+                        "both `at` and `hull`"
+                    } else {
+                        "neither `at` nor `hull`"
+                    }
+                )),
+                _ => {}
+            }
+            if let Some(at) = l.at {
+                let (inside, p) = inside_piece(at);
+                if !inside {
+                    out.push(format!(
+                        "lights[{i}] at body {at:?} is piece {p:?}, outside the box {:?}",
+                        self.extent
+                    ));
+                }
+            }
+            if let Some(h) = &l.hull {
+                out.extend(self.check_hull(i, &l.block, h));
             }
         }
         if out.is_empty() { Ok(()) } else { Err(out) }
+    }
+
+    /// The refusals of one `hull` light (spec-0087 §9).
+    fn check_hull(&self, i: usize, block: &str, h: &Hull) -> Vec<String> {
+        let mut out = Vec::new();
+        let field = format!("lights[{i}] (hull)");
+        if !(h.spacing.is_finite() && h.spacing >= MIN_HULL_SPACING) {
+            out.push(format!(
+                "{field} `spacing` is {}; the least distance between two sources is a finite \
+                 number of blocks, at least {MIN_HULL_SPACING}: two sources nearer than that \
+                 touch, and the surface between them is gone",
+                h.spacing
+            ));
+        }
+        if h.on.is_empty() {
+            out.push(format!(
+                "{field} `on` names no surface; name `wall`, `vault` or `floor`"
+            ));
+        }
+        let mut seen = h.on.clone();
+        seen.sort();
+        seen.dedup();
+        if seen.len() != h.on.len() {
+            out.push(format!("{field} `on` names a surface twice"));
+        }
+        let floor = self.body_floor();
+        for (name, c) in [("from", h.within.from), ("to", h.within.to)] {
+            let p = [c[0] as i64, c[1] as i64 + floor, c[2] as i64];
+            if !(0..3).all(|a| p[a] >= 0 && p[a] < self.extent[a] as i64) {
+                out.push(format!(
+                    "{field} `within.{name}` at body {c:?} is piece {p:?}, outside the box {:?}",
+                    self.extent
+                ));
+            }
+        }
+        if (0..3).any(|a| h.within.from[a] > h.within.to[a]) {
+            out.push(format!(
+                "{field} `within` runs from {:?} to {:?}: `from` is the low corner on every axis",
+                h.within.from, h.within.to
+            ));
+        }
+        let name = parse_state(block).map(|s| s.name).unwrap_or_default();
+        match h.mode {
+            LightMode::Embedded => {
+                if h.cover.is_some() {
+                    out.push(format!(
+                        "{field} declares a `cover` with `mode: embedded`; an embedded source is \
+                         flush with the surface and has nothing in front of it — a hidden source \
+                         is `recessed`"
+                    ));
+                }
+                if delvewright_dsl::blockshape::collision_class(&name)
+                    != delvewright_dsl::blockshape::Collision::FullCube
+                {
+                    out.push(format!(
+                        "{field} embeds `{block}`, which is not a full cube: set into the \
+                         surface it would leave a hole in the hull. A small source (a lantern) \
+                         is `recessed` behind a `cover`"
+                    ));
+                }
+            }
+            LightMode::Recessed => {
+                if h.cover.is_none() {
+                    out.push(format!(
+                        "{field} is `recessed` with no `cover`; name the `<family>_stairs` or \
+                         `<family>_slab` the source sits behind"
+                    ));
+                }
+                if h.on.contains(&Surface::Floor) {
+                    out.push(format!(
+                        "{field} recesses into a `floor`: the slot beside the cover would be a \
+                         hole in a surface a body walks. Recess into `wall` and `vault`; embed \
+                         in a floor"
+                    ));
+                }
+            }
+        }
+        out
     }
 
     fn inside(&self, pos: [i32; 3]) -> bool {

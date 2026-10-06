@@ -194,10 +194,12 @@ fn smooth121(v: &[f64], dims: [usize; 3], axis: usize) -> Vec<f64> {
     out
 }
 
-/// Which blocks a shelf's tread owns, per block, x-major (`(x*Y + y)*Z + z`).
-pub struct ShelfOwners {
-    /// The ordinal (1-based, among the form's shelves) of the shelf whose tread
-    /// holds the block, when that shelf carries its own material; `0` otherwise.
+/// What each block belongs to, x-major (`(x*Y + y)*Z + z`): the solid whose
+/// material it takes, and the walkway climb it carries.
+pub struct Owners {
+    /// The ordinal (1-based index into `solids`) of the solid whose material
+    /// the block takes — a shelf's tread, or a block whose centre a solid with
+    /// its own material contains — or `0` for the palette.
     pub owner: Vec<u16>,
     /// The walkway's climb at the block: `0` not a walkway, [`FLAT`] a level
     /// walkway, or [`climb_code`] of the cardinal direction it ascends. A stair
@@ -206,10 +208,10 @@ pub struct ShelfOwners {
     pub climb: Vec<u8>,
 }
 
-/// [`ShelfOwners::climb`] for a level stretch of walkway: no stair belongs there.
+/// [`Owners::climb`] for a level stretch of walkway: no stair belongs there.
 pub const FLAT: u8 = 1;
 
-/// [`ShelfOwners::climb`] for a walkway ascending toward `facing`.
+/// [`Owners::climb`] for a walkway ascending toward `facing`.
 pub fn climb_code(facing: crate::schem::stairs::Facing) -> u8 {
     use crate::schem::stairs::Facing;
     match facing {
@@ -220,20 +222,21 @@ pub fn climb_code(facing: crate::schem::stairs::Facing) -> u8 {
     }
 }
 
-/// Stamp every solid of `form` into a fresh grid, and record which blocks lie in
-/// a shelf's tread — its material, where it has one, and the way it climbs.
-pub fn stamp(form: &Form, seed: u64) -> (SubGrid, ShelfOwners) {
+/// Stamp every solid of `form` into a fresh grid, and record what each block
+/// belongs to — the solid whose material it takes, and a shelf tread's climb.
+pub fn stamp(form: &Form, seed: u64) -> (SubGrid, Owners) {
     let sub = form.sub as usize;
     let mut grid = SubGrid::new(form.extent, sub);
     let noise = Noise::new(form.extent, form.noise.cell, form.noise.amplitude, seed);
     let floor = form.body_floor() as f64;
     let blocks = form.extent.map(|v| v as usize);
-    let mut owners = ShelfOwners {
+    let mut owners = Owners {
         owner: vec![0; blocks[0] * blocks[1] * blocks[2]],
         climb: vec![0; blocks[0] * blocks[1] * blocks[2]],
     };
-    let mut shelf_ordinal = 0u16;
-    for solid in &form.solids {
+    for (si, solid) in form.solids.iter().enumerate() {
+        // The ordinal a block owned by this solid's material records.
+        let ordinal = u16::try_from(si + 1).unwrap_or(u16::MAX);
         match solid {
             Solid::Shelf {
                 path,
@@ -242,7 +245,6 @@ pub fn stamp(form: &Form, seed: u64) -> (SubGrid, ShelfOwners) {
                 depth,
                 material,
             } => {
-                shelf_ordinal += 1;
                 let shelf = Shelf {
                     path,
                     half: width / 2.0,
@@ -271,7 +273,7 @@ pub fn stamp(form: &Form, seed: u64) -> (SubGrid, ShelfOwners) {
                                 let i = (x * blocks[1] + y) * blocks[2] + z;
                                 owners.climb[i] = climb;
                                 if material.is_some() {
-                                    owners.owner[i] = shelf_ordinal;
+                                    owners.owner[i] = ordinal;
                                 }
                             }
                         }
@@ -288,6 +290,32 @@ pub fn stamp(form: &Form, seed: u64) -> (SubGrid, ShelfOwners) {
                     }
                     (d < 0.0).then_some(value)
                 });
+                // A solid with its own material owns every block whose centre
+                // it contains; a later one with a material takes it over.
+                if value && other.material().is_some() {
+                    let lo_i = [0, 1, 2].map(|a| {
+                        let v = if a == 1 { lo[a] + floor } else { lo[a] };
+                        (v.floor().max(0.0) as usize).min(blocks[a])
+                    });
+                    let hi_i = [0, 1, 2].map(|a| {
+                        let v = if a == 1 { hi[a] + floor } else { hi[a] };
+                        ((v.ceil() + 1.0).max(0.0) as usize).min(blocks[a])
+                    });
+                    for x in lo_i[0]..hi_i[0] {
+                        for y in lo_i[1]..hi_i[1] {
+                            for z in lo_i[2]..hi_i[2] {
+                                let p = [x as f64 + 0.5, y as f64 + 0.5 - floor, z as f64 + 0.5];
+                                let mut d = distance(other, p);
+                                if noisy {
+                                    d += noise.at([p[0], p[1] + floor, p[2]]);
+                                }
+                                if d < 0.0 {
+                                    owners.owner[(x * blocks[1] + y) * blocks[2] + z] = ordinal;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -307,6 +335,7 @@ fn bounds(s: &Solid) -> (Op, bool, [f64; 3], [f64; 3]) {
             radius_to,
             stretch_y,
             noisy,
+            ..
         } => {
             let r = radius_from.max(*radius_to) * stretch_y.unwrap_or(1.0).max(1.0) + pad;
             let lo = [0, 1, 2].map(|a| from[a].min(to[a]) - r);
@@ -318,6 +347,7 @@ fn bounds(s: &Solid) -> (Op, bool, [f64; 3], [f64; 3]) {
             centre,
             radii,
             noisy,
+            ..
         } => (
             *op,
             *noisy,
@@ -345,6 +375,7 @@ fn bounds(s: &Solid) -> (Op, bool, [f64; 3], [f64; 3]) {
             from,
             to,
             noisy,
+            ..
         } => (
             *op,
             *noisy,
@@ -483,7 +514,7 @@ impl Shelf<'_> {
 
     /// How far `p` lies outside the walkway's width (negative inside it), the
     /// feet height at the nearest point of the path, both in blocks, and the
-    /// walkway's climb there ([`ShelfOwners::climb`]).
+    /// walkway's climb there ([`Owners::climb`]).
     fn lateral_and_feet(&self, p: [f64; 3]) -> (f64, f64, u8) {
         use crate::schem::stairs::Facing;
         let mut best = (f64::INFINITY, self.path[0][1], FLAT);

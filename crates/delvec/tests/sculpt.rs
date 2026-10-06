@@ -781,6 +781,247 @@ fn without_its_shelf_the_back_is_not_walked() {
 }
 
 // ---------------------------------------------------------------------------
+// 8b. Hull light (spec-0087 §9)
+// ---------------------------------------------------------------------------
+
+/// The gallery form's `hull` entries, by mode.
+fn hull_index(form: &serde_json::Value, mode: &str) -> usize {
+    form["lights"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|l| l["hull"]["mode"] == mode)
+        .unwrap_or_else(|| panic!("the gallery form carries a `{mode}` hull light"))
+}
+
+#[test]
+fn hull_sources_are_staggered_over_walls_and_vault_never_a_grid() {
+    use delvec::sculpt::form::Surface;
+    let v = gallery_form();
+    let form = form_of(&v);
+    let s = sculpt::sculpt(&form, 0, None).expect("the gallery form sculpts");
+    let r = &s.readings.hull_lights;
+    assert_eq!(r.len(), 2, "both hull entries read back");
+    let all: Vec<_> = r.iter().flat_map(|h| h.sources.iter()).collect();
+    assert!(
+        all.iter().any(|x| x.surface == Surface::Wall)
+            && all.iter().any(|x| x.surface == Surface::Vault),
+        "sources on the walls and on the vault: {all:?}"
+    );
+    // Every pair of one entry's sources at least its spacing apart, measured
+    // by the surface block each took (the recess's cover, an embed's own cell).
+    for h in r {
+        let spacing: f64 = h.spacing.parse().unwrap();
+        let at: Vec<[i32; 3]> = h.sources.iter().map(|x| x.host).collect();
+        for (i, a) in at.iter().enumerate() {
+            for b in &at[i + 1..] {
+                let d2: i32 = (0..3).map(|k| (a[k] - b[k]).pow(2)).sum();
+                assert!(
+                    (d2 as f64) >= spacing * spacing,
+                    "lights[{}]: {a:?} and {b:?} are nearer than its spacing allows",
+                    h.light
+                );
+            }
+        }
+    }
+    // Never a grid: the sources do not share one stride on any axis, and they
+    // lie on more than one height.
+    let ys: BTreeSet<i32> = all.iter().map(|x| x.at[1]).collect();
+    assert!(ys.len() > 2, "sources at {} height(s)", ys.len());
+    for axis in [0usize, 2] {
+        let mut v: Vec<i32> = all.iter().map(|x| x.at[axis]).collect();
+        v.sort();
+        v.dedup();
+        let gaps: BTreeSet<i32> = v.windows(2).map(|w| w[1] - w[0]).collect();
+        assert!(gaps.len() > 1, "axis {axis}: one stride {gaps:?} is a grid");
+    }
+    // Deterministic, and the seed reaches the draw.
+    let again = sculpt::sculpt(&form, 0, None).unwrap();
+    assert_eq!(again.readings.hull_lights, s.readings.hull_lights);
+    let other = sculpt::sculpt(&form, 1, None).unwrap();
+    assert_ne!(other.readings.hull_lights, s.readings.hull_lights);
+}
+
+#[test]
+fn an_embedded_source_is_flush_and_a_recessed_one_hides_behind_its_cover() {
+    let v = gallery_form();
+    let s = sculpt::sculpt(&form_of(&v), 0, None).unwrap();
+    let m = &s.model;
+    let name = |p: [i32; 3]| m.get(p).map(|b| b.name.clone()).unwrap_or_default();
+    let emb = &s.readings.hull_lights[hull_index(&v, "embedded") - 1];
+    let rec = &s.readings.hull_lights[hull_index(&v, "recessed") - 1];
+    assert!(!emb.sources.is_empty() && !rec.sources.is_empty());
+    for x in &emb.sources {
+        assert_eq!(name(x.at), "minecraft:crying_obsidian", "{x:?}");
+        assert_eq!(
+            name(x.room),
+            "minecraft:air",
+            "an embed faces the room: {x:?}"
+        );
+        let d: i32 = (0..3).map(|k| (x.room[k] - x.at[k]).abs()).sum();
+        assert_eq!(d, 1, "flush: the room cell touches the source");
+    }
+    let mut covered = 0;
+    for x in &rec.sources {
+        assert_eq!(name(x.at), "minecraft:soul_lantern", "{x:?}");
+        assert_eq!(name(x.room), "minecraft:air", "{x:?}");
+        // The source touches its cover, and no face of the source is room air.
+        let faces = [
+            [1, 0, 0],
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+            [0, 0, -1],
+        ];
+        let touching: Vec<String> = faces
+            .iter()
+            .map(|f| name([x.at[0] + f[0], x.at[1] + f[1], x.at[2] + f[2]]))
+            .collect();
+        if touching.iter().any(|n| n == "minecraft:andesite_stairs") {
+            covered += 1;
+        }
+        let d: i32 = (0..3).map(|k| (x.room[k] - x.at[k]).abs()).sum();
+        assert_eq!(
+            d, 3,
+            "the light leaves through a slot: three steps to the room"
+        );
+    }
+    assert_eq!(
+        covered,
+        rec.sources.len(),
+        "every recessed source has its cover"
+    );
+    // The light model measures each one's room cell lit, and says so.
+    let (lo, _) = rec.room_light.expect("measured");
+    assert!(
+        lo >= 7,
+        "a soul lantern (10) reaches the room at 10 - 3: {lo}"
+    );
+    let (lo, _) = emb.room_light.expect("measured");
+    assert!(
+        lo >= 9,
+        "crying obsidian (10) lights the cell it faces at 9: {lo}"
+    );
+}
+
+#[test]
+fn every_hull_entry_prints_its_binding_line() {
+    let run = common::sculpt::sculpt(&gallery_form(), "hull-lines", &[]);
+    assert_eq!(run.code, 0, "{}", run.said);
+    for mode in ["recessed", "embedded"] {
+        assert!(
+            run.said
+                .lines()
+                .any(|l| l.contains(&format!("hull {mode}: ")) && l.contains("room light ")),
+            "{mode}: {}",
+            run.said
+        );
+    }
+}
+
+#[test]
+fn a_hull_light_is_refused_where_its_declaration_cannot_be_built() {
+    let v = gallery_form();
+    let emb = hull_index(&v, "embedded");
+    let rec = hull_index(&v, "recessed");
+    let cases: Vec<(serde_json::Value, &str)> = vec![
+        (
+            serde_json::json!({"op": "replace", "path": format!("/lights/{emb}/block"),
+                "value": "minecraft:soul_lantern[hanging=false,waterlogged=false]"}),
+            "is not a full cube",
+        ),
+        (
+            serde_json::json!({"op": "remove", "path": format!("/lights/{rec}/hull/cover")}),
+            "with no `cover`",
+        ),
+        (
+            serde_json::json!({"op": "replace", "path": format!("/lights/{rec}/hull/on"),
+                "value": ["wall", "floor"]}),
+            "recesses into a `floor`",
+        ),
+        (
+            serde_json::json!({"op": "replace", "path": format!("/lights/{rec}/hull/cover"),
+                "value": "minecraft:andesite"}),
+            "is not a bare `<family>_stairs` or `<family>_slab` id",
+        ),
+        (
+            serde_json::json!({"op": "add", "path": format!("/lights/{emb}/hull/cover"),
+                "value": "minecraft:andesite_slab"}),
+            "with `mode: embedded`",
+        ),
+        (
+            serde_json::json!({"op": "add", "path": format!("/lights/{emb}/at"),
+                "value": [15, 5, 22]}),
+            "both `at` and `hull`",
+        ),
+        (
+            serde_json::json!({"op": "replace", "path": format!("/lights/{emb}/hull/spacing"),
+                "value": 1.5}),
+            "`spacing` is 1.5",
+        ),
+        (
+            serde_json::json!({"op": "replace", "path": format!("/lights/{emb}/hull/within/to"),
+                "value": [21, 13, 300]}),
+            "outside the box",
+        ),
+        (
+            serde_json::json!({"op": "replace", "path": format!("/lights/{emb}/hull/on"),
+                "value": []}),
+            "names no surface",
+        ),
+    ];
+    for (i, (edit, needle)) in cases.into_iter().enumerate() {
+        let run =
+            common::sculpt::sculpt(&apply(v.clone(), &[edit]), &format!("hull-refuse-{i}"), &[]);
+        assert_form_refused(&run, needle);
+    }
+}
+
+#[test]
+fn a_hull_light_that_places_nothing_refuses_the_body() {
+    let v = gallery_form();
+    let emb = hull_index(&v, "embedded");
+    // A region with no inside surface in it: the open ground beside the body.
+    let edit = serde_json::json!({"op": "replace", "path": format!("/lights/{emb}/hull/within"),
+        "value": {"from": [0, 5, 0], "to": [3, 8, 3]}});
+    let run = common::sculpt::sculpt(&apply(v, &[edit]), "hull-nothing", &[]);
+    assert_eq!(run.code, 3, "{}", run.said);
+    assert!(
+        run.said.lines().any(|l| l.starts_with("DW0952 [error]")
+            && l.contains(&format!("lights[{emb}] (hull) placed no source"))),
+        "{}",
+        run.said
+    );
+    assert!(!run.out.exists(), "nothing written");
+}
+
+#[test]
+fn a_solid_with_its_own_material_writes_its_blocks_in_it() {
+    let v = gallery_form();
+    let s = sculpt::sculpt(&form_of(&v), 0, None).unwrap();
+    let altar = (2..5)
+        .flat_map(|x| (5..7).flat_map(move |y| (38..41).map(move |z| [x, y, z])))
+        .filter_map(|p| s.model.get(p).map(|b| b.name.clone()))
+        .filter(|n| n != "minecraft:air")
+        .collect::<Vec<_>>();
+    assert!(!altar.is_empty());
+    assert!(
+        altar.iter().all(|n| n.contains("polished_blackstone")),
+        "the box's own material, not the palette: {altar:?}"
+    );
+    // Without it, the palette.
+    let mut bare = v.clone();
+    for solid in bare["solids"].as_array_mut().unwrap() {
+        if solid["shape"] == "box" && solid.get("material").is_some() {
+            solid.as_object_mut().unwrap().remove("material");
+        }
+    }
+    let b = sculpt::sculpt(&form_of(&bare), 0, None).unwrap();
+    assert_ne!(b.files, s.files, "the material reaches the bytes");
+}
+
+// ---------------------------------------------------------------------------
 // 9. Scale
 // ---------------------------------------------------------------------------
 

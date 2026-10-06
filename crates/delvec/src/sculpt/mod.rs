@@ -31,6 +31,7 @@ pub mod cli;
 pub mod fit;
 pub mod form;
 pub mod grid;
+pub mod hull;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -133,6 +134,9 @@ pub struct Readings {
     pub light_measured_cells: usize,
     /// The piece `y` of body `y = 0`.
     pub body_floor: i64,
+    /// What each `hull` light placed, and the light its sources bring to the
+    /// room.
+    pub hull_lights: Vec<hull::HullReading>,
 }
 
 /// A sculpted piece, rendered but not yet written.
@@ -216,8 +220,9 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
     // Steps 1–7: stamp, fit, refit, apron, islands, lights, shade, states.
     let (grid, owners) = grid::stamp(form, seed);
     let sub_voxels = grid.count();
-    let (blocks, counts) = fit::fit(form, &grid, &owners);
+    let (mut blocks, counts) = fit::fit(form, &grid, &owners);
     drop(grid);
+    let hull_lights = hull::place(form, &mut blocks, seed);
     let (tone, pick) = fit::shade(&blocks, seed);
     let states = fit::states(form, &blocks, &owners, &tone, &pick);
 
@@ -234,8 +239,10 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
             (i % dz) as i32,
         ];
         match blocks.kind[i] {
-            fit::Kind::Stair(..) => stairs += 1,
-            fit::Kind::SlabBottom | fit::Kind::SlabTop => slabs += 1,
+            fit::Kind::Stair(..) | fit::Kind::Cover(_, fit::CoverShape::Stair(..)) => stairs += 1,
+            fit::Kind::SlabBottom
+            | fit::Kind::SlabTop
+            | fit::Kind::Cover(_, fit::CoverShape::Slab(_)) => slabs += 1,
             _ => {}
         }
         model.set(pos, state).map_err(|e| {
@@ -251,6 +258,7 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
         stairs,
         slabs,
         body_floor: form.body_floor(),
+        hull_lights,
         ..Readings::default()
     };
 
@@ -314,6 +322,10 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
             ));
         }
     }
+
+    // Hull light reaches the room: the engine's own light model, block light
+    // only, over the piece; a source placed nowhere is a zero binding.
+    hull_light_reaches(&model, &mut readings.hull_lights, &mut refusals);
 
     // No pocket: the leave relation `DW0921` floods, over the piece alone.
     readings.pockets = pockets(form, &model, &grade);
@@ -496,18 +508,90 @@ fn describe_cell(model: &VoxelModel, pos: [i32; 3]) -> String {
     )
 }
 
-/// **The pocket proof** over the piece alone (spec-0087 §3.4): the leave
-/// relation `DW0921` floods, from every anchor, with the ground at the box's
-/// vertical faces as the way out and the box's outside as gone.
-fn pockets(form: &Form, model: &VoxelModel, grade: &BTreeSet<[i32; 3]>) -> PocketReading {
-    let blocks: BTreeMap<[i32; 3], String> = model
+/// Every non-air cell of the model, by its block state string.
+fn block_map(model: &VoxelModel) -> BTreeMap<[i32; 3], String> {
+    model
         .region()
         .positions()
         .filter_map(|p| {
             let b = model.get(p)?;
             (!b.is_air()).then(|| (p, b.to_string()))
         })
-        .collect();
+        .collect()
+}
+
+/// **The hull's light reaches the room** (spec-0087 §9): flood the piece with
+/// the compiler's one light model ([`crate::compiler::light::LightModel`]),
+/// block light only, and read each `hull` source's room cell. A `hull` entry
+/// that placed no source, or a source whose room cell measures 0, refuses the
+/// sculpt.
+fn hull_light_reaches(
+    model: &VoxelModel,
+    readings: &mut [hull::HullReading],
+    refusals: &mut Vec<String>,
+) {
+    if readings.is_empty() {
+        return;
+    }
+    let max = model.maximum();
+    let light = crate::compiler::light::LightModel::from_blocks_within(
+        block_map(model),
+        model.origin(),
+        [max[0] - 1, max[1] - 1, max[2] - 1],
+    )
+    .flood(0);
+    for r in readings.iter_mut() {
+        if r.sources.is_empty() {
+            let [w, v, f] = r.candidates;
+            refusals.push(format!(
+                "lights[{}] (hull) placed no source: {} candidate cell(s) in `within` on the \
+                 surfaces `on` names ({w} wall, {v} vault, {f} floor){}. Widen `within`, name \
+                 another surface, or thicken the body round the room",
+                r.light,
+                w + v + f,
+                if r.mode == form::LightMode::Recessed {
+                    ", counting only those where a recess fits — a cover in the surface, the \
+                     source behind it and a slot beside it, sealed by solid body"
+                } else {
+                    ""
+                }
+            ));
+            continue;
+        }
+        let levels: Vec<u8> = r
+            .sources
+            .iter()
+            .map(|s| light.get(&s.room).copied().unwrap_or(0))
+            .collect();
+        let lo = *levels.iter().min().expect("non-empty");
+        let hi = *levels.iter().max().expect("non-empty");
+        r.room_light = Some((lo, hi));
+        let dark: Vec<String> = r
+            .sources
+            .iter()
+            .zip(&levels)
+            .filter(|(_, l)| **l == 0)
+            .take(POCKETS_NAMED)
+            .map(|(s, _)| format!("{:?} (room cell {:?})", s.at, s.room))
+            .collect();
+        if !dark.is_empty() {
+            refusals.push(format!(
+                "lights[{}] (hull): the light model measures no light in the room in front of \
+                 {} source(s): {}. The light leaves a recess through its slot; a slot the body \
+                 closes is a source the room never sees",
+                r.light,
+                levels.iter().filter(|l| **l == 0).count(),
+                dark.join("; ")
+            ));
+        }
+    }
+}
+
+/// **The pocket proof** over the piece alone (spec-0087 §3.4): the leave
+/// relation `DW0921` floods, from every anchor, with the ground at the box's
+/// vertical faces as the way out and the box's outside as gone.
+fn pockets(form: &Form, model: &VoxelModel, grade: &BTreeSet<[i32; 3]>) -> PocketReading {
+    let blocks = block_map(model);
     let world = crate::compiler::nav::World::from_occupancy(
         crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
         crate::compiler::nav::Premises::geometry_only(),
@@ -542,5 +626,68 @@ fn pockets(form: &Form, model: &VoxelModel, grade: &BTreeSet<[i32; 3]>) -> Pocke
                 )
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grammar::block::BlockState;
+    use crate::sculpt::form::{LightMode, Surface};
+    use crate::sculpt::hull::{HullReading, Source};
+
+    fn state(s: &str) -> BlockState {
+        s.parse().expect("a block state")
+    }
+
+    /// A source whose room cell the model sees no light in refuses the
+    /// sculpt, and one it sees lit does not: the arm the slot geometry keeps
+    /// from firing, held here over a model built to fire it.
+    #[test]
+    fn a_hull_source_the_room_never_sees_is_refused() {
+        let mut model = VoxelModel::new(Box3::at_origin([7, 5, 7]));
+        for p in model.region().positions().collect::<Vec<_>>() {
+            model.set(p, &state("minecraft:stone")).unwrap();
+        }
+        let lantern = [3, 2, 3];
+        model
+            .set(
+                lantern,
+                &state("minecraft:soul_lantern[hanging=false,waterlogged=false]"),
+            )
+            .unwrap();
+        // A sealed pocket two blocks away, and an open one beside the source.
+        let sealed = [3, 2, 5];
+        let open = [4, 2, 3];
+        model.set(sealed, &state("minecraft:air")).unwrap();
+        model.set(open, &state("minecraft:air")).unwrap();
+        let reading = |room| HullReading {
+            light: 0,
+            mode: LightMode::Recessed,
+            spacing: "3".to_string(),
+            candidates: [1, 0, 0],
+            sources: vec![Source {
+                at: lantern,
+                host: lantern,
+                room,
+                surface: Surface::Wall,
+            }],
+            room_light: None,
+        };
+        let mut refusals = Vec::new();
+        let mut dark = vec![reading(sealed)];
+        hull_light_reaches(&model, &mut dark, &mut refusals);
+        assert_eq!(dark[0].room_light, Some((0, 0)));
+        assert_eq!(refusals.len(), 1, "{refusals:?}");
+        assert!(
+            refusals[0].contains("measures no light in the room"),
+            "{refusals:?}"
+        );
+
+        let mut refusals = Vec::new();
+        let mut lit = vec![reading(open)];
+        hull_light_reaches(&model, &mut lit, &mut refusals);
+        assert_eq!(lit[0].room_light, Some((9, 9)));
+        assert!(refusals.is_empty(), "{refusals:?}");
     }
 }

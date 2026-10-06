@@ -68,6 +68,9 @@ fn print_readings(r: &Readings) {
         r.entry.anchors_walked,
         r.entry.anchors
     );
+    for h in &r.hull_lights {
+        eprintln!("  {}", h.line());
+    }
     eprintln!("  {}", r.pockets.line());
     eprintln!(
         "  walk_y         {}",

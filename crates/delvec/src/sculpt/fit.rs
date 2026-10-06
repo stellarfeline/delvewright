@@ -29,8 +29,8 @@ use std::collections::BTreeMap;
 use crate::grammar::block::BlockState;
 use crate::grammar::rng::Rng;
 use crate::schem::stairs::{Facing, Half, Stair, derive_shape};
-use crate::sculpt::form::{Form, Solid, Tone, parse_state};
-use crate::sculpt::grid::{self, ShelfOwners, SubGrid, normal_draw};
+use crate::sculpt::form::{Form, Tone, parse_state};
+use crate::sculpt::grid::{self, Owners, SubGrid, normal_draw};
 
 /// What the fit put in a block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +49,30 @@ pub enum Kind {
     Ground,
     /// A declared light, by its index in `lights[]`.
     Light(usize),
+    /// The partial block a `recessed` hull light sits behind, by the light's
+    /// index in `lights[]`, with the orientation the sculpt chose.
+    Cover(usize, CoverShape),
+}
+
+/// How a cover is oriented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoverShape {
+    /// A stair of this facing and half (its corner is derived later).
+    Stair(Facing, Half),
+    /// A slab, `true` for a top slab.
+    Slab(bool),
+}
+
+impl Kind {
+    /// The stair this block is to vanilla's corner rule, fitted or cover.
+    pub(crate) fn as_stair(self) -> Option<Stair> {
+        match self {
+            Kind::Stair(facing, half) | Kind::Cover(_, CoverShape::Stair(facing, half)) => {
+                Some(Stair { facing, half })
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Kind {
@@ -122,11 +146,11 @@ pub struct Blocks {
 
 impl Blocks {
     #[inline]
-    fn index(&self, x: usize, y: usize, z: usize) -> usize {
+    pub(crate) fn index(&self, x: usize, y: usize, z: usize) -> usize {
         (x * self.dims[1] + y) * self.dims[2] + z
     }
 
-    fn kind_at(&self, x: i64, y: i64, z: i64) -> Kind {
+    pub(crate) fn kind_at(&self, x: i64, y: i64, z: i64) -> Kind {
         if x < 0 || y < 0 || z < 0 {
             return Kind::Air;
         }
@@ -165,7 +189,7 @@ fn fractions(grid: &SubGrid, x: usize, y: usize, z: usize) -> [f64; 8] {
 }
 
 /// Whether a candidate may stand in a block of walkway with this climb
-/// ([`crate::sculpt::grid::ShelfOwners::climb`]): anything off a walkway; no stair
+/// ([`crate::sculpt::grid::Owners::climb`]): anything off a walkway; no stair
 /// on a level stretch; on a climbing stretch, only a stair facing the climb.
 fn allowed(kind: Kind, climb: u8) -> bool {
     match (kind, climb) {
@@ -212,7 +236,7 @@ pub struct FitCounts {
 
 /// Steps 1–5: the octant fit, the refit, the apron, the islands and the lights.
 /// A block of walkway is fitted only to the shapes its climb allows.
-pub fn fit(form: &Form, grid: &SubGrid, owners: &ShelfOwners) -> (Blocks, FitCounts) {
+pub fn fit(form: &Form, grid: &SubGrid, owners: &Owners) -> (Blocks, FitCounts) {
     let dims = form.extent.map(|v| v as usize);
     let n = dims[0] * dims[1] * dims[2];
     let cands = candidates();
@@ -273,13 +297,15 @@ pub fn fit(form: &Form, grid: &SubGrid, owners: &ShelfOwners) -> (Blocks, FitCou
     let (dropped, kept) = drop_islands(&mut blocks);
     counts.islands_dropped = dropped;
     counts.components = kept;
-    // Lights replace their cells.
+    // Lights placed by hand replace their cells; `hull` lights are placed
+    // after, by [`crate::sculpt::hull::place`], over the finished surface.
     let floor = form.body_floor();
     for (li, l) in form.lights.iter().enumerate() {
+        let Some(at) = l.at else { continue };
         let (x, y, z) = (
-            l.at[0] as usize,
-            (l.at[1] as i64 + floor) as usize,
-            l.at[2] as usize,
+            at[0] as usize,
+            (at[1] as i64 + floor) as usize,
+            at[2] as usize,
         );
         let i = blocks.index(x, y, z);
         blocks.kind[i] = Kind::Light(li);
@@ -351,17 +377,16 @@ pub fn stair_shapes(blocks: &Blocks) -> BTreeMap<usize, &'static str> {
         for y in 0..dy {
             for z in 0..dz {
                 let i = blocks.index(x, y, z);
-                let Kind::Stair(facing, half) = blocks.kind[i] else {
+                let Some(stair) = blocks.kind[i].as_stair() else {
                     continue;
                 };
                 let neighbour = |f: Facing| {
                     let s = f.step();
-                    match blocks.kind_at(x as i64 + s[0] as i64, y as i64, z as i64 + s[2] as i64) {
-                        Kind::Stair(facing, half) => Some(Stair { facing, half }),
-                        _ => None,
-                    }
+                    blocks
+                        .kind_at(x as i64 + s[0] as i64, y as i64, z as i64 + s[2] as i64)
+                        .as_stair()
                 };
-                out.insert(i, derive_shape(Stair { facing, half }, neighbour).as_str());
+                out.insert(i, derive_shape(stair, neighbour).as_str());
             }
         }
     }
@@ -547,20 +572,13 @@ fn run_axis(blocks: &Blocks, x: usize, y: usize, z: usize) -> &'static str {
 pub fn states(
     form: &Form,
     blocks: &Blocks,
-    owners: &ShelfOwners,
+    owners: &Owners,
     tone: &[u8],
     pick: &[f64],
 ) -> Vec<Option<BlockState>> {
     let registry = crate::schem::blocks::BlockRegistry::v1_21_11();
     let shapes = stair_shapes(blocks);
-    let shelf_materials: Vec<Option<&Tone>> = form
-        .solids
-        .iter()
-        .filter_map(|s| match s {
-            Solid::Shelf { material, .. } => Some(material.as_ref()),
-            _ => None,
-        })
-        .collect();
+
     let parsed = |s: &str| parse_state(s).expect("Form::check parsed every block");
     let ground = form.ground.as_ref().map(|g| parsed(&g.block));
     let [dx, dy, dz] = blocks.dims;
@@ -571,7 +589,9 @@ pub fn states(
                 let i = blocks.index(x, y, z);
                 let material = match owners.owner[i] {
                     0 => &form.palette[tone[i] as usize],
-                    s => shelf_materials[s as usize - 1].unwrap_or(&form.palette[tone[i] as usize]),
+                    s => form.solids[s as usize - 1]
+                        .material()
+                        .unwrap_or(&form.palette[tone[i] as usize]),
                 };
                 let full_with_axis = |mut state: BlockState| {
                     if registry
@@ -589,6 +609,31 @@ pub fn states(
                     Kind::Full => full_with_axis(parsed(member(material, pick[i]))),
                     Kind::Ground => full_with_axis(ground.clone().expect("a form has ground")),
                     Kind::Light(li) => complete(parsed(&form.lights[li].block)),
+                    Kind::Cover(li, shape) => {
+                        let cover = form.lights[li]
+                            .hull
+                            .as_ref()
+                            .and_then(|h| h.cover.as_deref())
+                            .expect("Form::check: a recessed hull light names a cover");
+                        let mut s = parsed(cover);
+                        match shape {
+                            CoverShape::Stair(facing, half) => {
+                                s.properties
+                                    .insert("facing".to_string(), facing.as_str().to_string());
+                                s.properties
+                                    .insert("half".to_string(), half.as_str().to_string());
+                                s.properties
+                                    .insert("shape".to_string(), shapes[&i].to_string());
+                            }
+                            CoverShape::Slab(top) => {
+                                s.properties.insert(
+                                    "type".to_string(),
+                                    if top { "top" } else { "bottom" }.to_string(),
+                                );
+                            }
+                        }
+                        complete(s)
+                    }
                     Kind::SlabBottom | Kind::SlabTop => {
                         let mut s = parsed(&format!("minecraft:{}_slab", material.family));
                         s.properties.insert(

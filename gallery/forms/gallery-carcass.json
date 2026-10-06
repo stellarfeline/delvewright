@@ -74,6 +74,53 @@
         22
       ],
       "block": "minecraft:lantern[hanging=false,waterlogged=false]"
+    },
+    {
+      "block": "minecraft:soul_lantern[hanging=false,waterlogged=false]",
+      "hull": {
+        "cover": "minecraft:andesite_stairs",
+        "mode": "recessed",
+        "on": [
+          "wall",
+          "vault"
+        ],
+        "spacing": 4.0,
+        "within": {
+          "from": [
+            9,
+            5,
+            14
+          ],
+          "to": [
+            21,
+            13,
+            30
+          ]
+        }
+      }
+    },
+    {
+      "block": "minecraft:crying_obsidian",
+      "hull": {
+        "mode": "embedded",
+        "on": [
+          "floor",
+          "wall"
+        ],
+        "spacing": 3.5,
+        "within": {
+          "from": [
+            9,
+            5,
+            14
+          ],
+          "to": [
+            21,
+            13,
+            30
+          ]
+        }
+      }
     }
   ],
   "noise": {
@@ -216,6 +263,19 @@
         5.0,
         38.0
       ],
+      "material": {
+        "family": "polished_blackstone",
+        "full": [
+          [
+            "minecraft:polished_blackstone",
+            3
+          ],
+          [
+            "minecraft:chiseled_polished_blackstone",
+            1
+          ]
+        ]
+      },
       "op": "add",
       "shape": "box",
       "to": [
@@ -306,6 +366,79 @@
         27.5,
         7.0,
         4.5
+      ]
+    },
+    {
+      "axis": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "centre": [
+        7.0,
+        4.5,
+        33.0
+      ],
+      "height": 1.0,
+      "material": {
+        "family": "mossy_cobblestone",
+        "full": [
+          [
+            "minecraft:moss_block",
+            1
+          ]
+        ]
+      },
+      "op": "add",
+      "radius": 2.2,
+      "shape": "disc"
+    },
+    {
+      "centre": [
+        8.0,
+        10.0,
+        5.0
+      ],
+      "material": {
+        "family": "blackstone",
+        "full": [
+          [
+            "minecraft:black_terracotta",
+            1
+          ]
+        ]
+      },
+      "op": "add",
+      "radii": [
+        1.2,
+        1.2,
+        1.2
+      ],
+      "shape": "ellipsoid"
+    },
+    {
+      "from": [
+        15.0,
+        14.5,
+        12.0
+      ],
+      "material": {
+        "family": "diorite",
+        "full": [
+          [
+            "minecraft:bone_block",
+            1
+          ]
+        ]
+      },
+      "op": "add",
+      "radius_from": 1.0,
+      "radius_to": 0.6,
+      "shape": "capsule",
+      "to": [
+        15.0,
+        17.0,
+        13.0
       ]
     }
   ],

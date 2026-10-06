@@ -2331,3 +2331,92 @@ fn dw0952_moving_a_buried_anchor_onto_the_ground_sculpts() {
         &moved,
     );
 }
+
+/// The gallery form's `hull` entry of `mode`, by index.
+fn gallery_hull(mode: &str) -> usize {
+    common::sculpt::gallery_form()["lights"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|l| l["hull"]["mode"] == mode)
+        .expect("the gallery form carries the hull mode")
+}
+
+/// `DW0951`, a lantern embedded: recessing it behind a cover, as the refusal
+/// says, sculpts. The gallery's own recessed entry is the room's recess, so the
+/// moved lantern takes its place rather than crowding it.
+#[test]
+fn dw0951_a_small_source_recessed_behind_a_cover_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let i = gallery_hull("embedded");
+    let lantern = serde_json::json!("minecraft:soul_lantern[hanging=false,waterlogged=false]");
+    let refused = apply(
+        gallery_form(),
+        &[op("replace", &format!("/lights/{i}/block"), lantern)],
+    );
+    let moved = apply(
+        refused.clone(),
+        &[
+            op(
+                "replace",
+                &format!("/lights/{i}/hull/mode"),
+                serde_json::json!("recessed"),
+            ),
+            op(
+                "replace",
+                &format!("/lights/{i}/hull/on"),
+                serde_json::json!(["wall", "vault"]),
+            ),
+            op(
+                "add",
+                &format!("/lights/{i}/hull/cover"),
+                serde_json::json!("minecraft:andesite_stairs"),
+            ),
+            serde_json::json!({"op": "remove", "path": format!("/lights/{}", gallery_hull("recessed"))}),
+        ],
+    );
+    sculpt_move("embed-lantern", &refused, 1, "is not a full cube", &moved);
+}
+
+/// `DW0951`, a recess into a floor: recessing into wall and vault only sculpts.
+#[test]
+fn dw0951_a_recess_kept_to_wall_and_vault_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let i = gallery_hull("recessed");
+    let path = format!("/lights/{i}/hull/on");
+    let refused = apply(
+        gallery_form(),
+        &[op("replace", &path, serde_json::json!(["wall", "floor"]))],
+    );
+    let moved = apply(
+        refused.clone(),
+        &[op("replace", &path, serde_json::json!(["wall", "vault"]))],
+    );
+    sculpt_move(
+        "recess-floor",
+        &refused,
+        1,
+        "recesses into a `floor`",
+        &moved,
+    );
+}
+
+/// `DW0952`, a hull entry that placed nothing: widening `within` over the
+/// room, as the refusal says, sculpts.
+#[test]
+fn dw0952_a_hull_widened_over_the_room_sculpts() {
+    use common::sculpt::{apply, gallery_form};
+    let i = gallery_hull("embedded");
+    let path = format!("/lights/{i}/hull/within");
+    let original = gallery_form()["lights"][i]["hull"]["within"].clone();
+    let refused = apply(
+        gallery_form(),
+        &[op(
+            "replace",
+            &path,
+            serde_json::json!({"from": [0, 5, 0], "to": [3, 8, 3]}),
+        )],
+    );
+    let moved = apply(refused.clone(), &[op("replace", &path, original)]);
+    sculpt_move("hull-nothing", &refused, 3, "placed no source", &moved);
+}
