@@ -5520,6 +5520,23 @@ fn v04_checks(
                     "minecraft:lever",
                     d,
                 );
+                if crate::stages::fires_on_step(&prop.block) {
+                    d.push(Diagnostic::error(
+                        codes::INTERACT_PROP_STEPPED,
+                        "quests",
+                        format!("/content/quests/{i}/objectives/{j}/prop/block"),
+                        format!(
+                            "`interact` objective `{}` uses `{}` as its prop, a block a player \
+                             fires by stepping on it — but an `interact` completes on a \
+                             right-click, so walking onto it does nothing. Prescription: give the \
+                             objective a block a hand works (a lever, a button), or make the step \
+                             the act: a `trigger` with `on: step` at an anchor whose cell holds the \
+                             plate, whose effects do what completing the objective did",
+                            o.id(),
+                            prop.block
+                        ),
+                    ));
+                }
             }
         }
         for_each_effect_deep(q, |path, eff| {

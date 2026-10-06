@@ -1009,6 +1009,13 @@ pub mod codes {
         pub const BLOCK_UNKNOWN: DwCode = DwCode::new("DW0193", ExitTier::Build);
     }
     crate::dw_code! {
+        /// An `interact` objective's `prop` is a block a step fires — a pressure
+        /// plate or the tripwire string ([`crate::stepped_blocks`]). The
+        /// objective completes on a right-click, so the block invites an act that
+        /// does nothing. A step is a `trigger` with `on: step`.
+        pub const INTERACT_PROP_STEPPED: DwCode = DwCode::new("DW0957", ExitTier::Build);
+    }
+    crate::dw_code! {
         /// (v0.4) An environment trigger id is malformed (`DW0110`-style) or
         /// duplicated within the stage-5 `triggers` namespace.
         pub const TRIGGER_INVALID: DwCode = DwCode::new("DW0194", ExitTier::Build);
