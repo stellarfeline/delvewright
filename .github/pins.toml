@@ -292,6 +292,7 @@ sites = [
     "tools/spike-area-effect-arrow/run.sh",
     "tools/spike-block-settling/run.sh",
     "tools/spike-death-teleport/run.sh",
+    "tools/spike-display-assembly/measure-aim.sh",
     "tools/spike-display-assembly/run.sh",
     "tools/spike-fluid-plane/run.sh",
     "tools/spike-jump-arc/run.sh",
