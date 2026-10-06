@@ -55,7 +55,7 @@ const SEG_L: f64 = 0.8;
 /// The base segment's width, the club's (the last thick segment's), and the
 /// tip's; the club ends at [`CLUB_END`], and the taper to the tip takes the rest.
 const W_BASE: f64 = 2.4;
-const W_CLUB: f64 = 1.6;
+const W_CLUB: f64 = 1.0;
 const W_TIP: f64 = 0.32;
 const CLUB_END: usize = 28;
 /// How deep the base sits when the limb is fully hidden, and when it is up.
@@ -187,11 +187,11 @@ fn slam() -> Vec<f64> {
     let mut run = |n: usize, each: f64| j.extend(std::iter::repeat_n(each, n));
     run(BASE_SEGS - 1, 0.0); // straight up; the last base joint starts the arch
     run(3, -q / 3.0); // over, to horizontal
-    run(3, 0.0); // across, over head height
+    run(8, 0.0); // across, over head height
     run(3, -q / 3.0); // down
     run(1, 0.0);
     run(3, q / 3.0); // along the floor
-    run(8, 0.0); // the club, on the floor
+    run(4, 0.0); // the club, on the floor
     run(2, q / 2.5); // the tip curls up and back
     run(N_SEG, 0.0);
     j.truncate(N_SEG);
@@ -373,6 +373,9 @@ mod tests {
         for f in &r.clips["strike"].frames {
             assert_eq!(&f[..BASE_SEGS], first);
         }
-        assert_eq!(&r.clips["windup"].frames.last().unwrap()[..BASE_SEGS], first);
+        assert_eq!(
+            &r.clips["windup"].frames.last().unwrap()[..BASE_SEGS],
+            first
+        );
     }
 }

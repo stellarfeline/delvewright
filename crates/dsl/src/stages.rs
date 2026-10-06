@@ -4517,8 +4517,15 @@ pub struct StrikeStep {
     pub hold: u32,
     /// The clip the blow is.
     pub strike: String,
-    /// Effects run, with no acting player, on the tick the strike clip's last
-    /// frame is applied. A step with none is a feint.
+    /// The step's pace: the keyframe cadence, in ticks per frame (1–20, the
+    /// rig's own bounds), its wind-up and strike clips play at. Absent: each
+    /// clip's own. The wind-up lasts `1 + (frames - 1) × cadence` ticks, then
+    /// `hold`; the blow lands one cadence after the strike's last frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ticks_per_frame: Option<u32>,
+    /// Effects run, with no acting player, on the tick a client has drawn the
+    /// strike clip's last frame whole (one cadence after it is applied). A step
+    /// with none is a feint.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_land: Vec<QuestEffect>,
 }

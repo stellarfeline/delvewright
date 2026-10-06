@@ -206,6 +206,35 @@ impl Placed<'_> {
     }
 }
 
+/// Where a strike step that sets its own pace (`ticks_per_frame`) plays its
+/// clips: two emitted clips after the rig's own, its wind-up then its strike,
+/// in step order, counting only steps whose clips the rig holds. `None` for a
+/// step at the clips' own pace.
+pub fn paced_index(
+    rig: &Rig,
+    pattern: &[delvewright_dsl::StrikeStep],
+    j: usize,
+) -> Option<(usize, usize)> {
+    let mut next = rig.clips.len();
+    for (i, step) in pattern.iter().enumerate() {
+        if step.ticks_per_frame.is_none() {
+            continue;
+        }
+        let w = rig.clips.contains_key(&step.windup).then(|| {
+            next += 1;
+            next - 1
+        });
+        let m = rig.clips.contains_key(&step.strike).then(|| {
+            next += 1;
+            next - 1
+        });
+        if i == j {
+            return w.zip(m);
+        }
+    }
+    None
+}
+
 /// The drawn facing a run-time pick `k` resolves to: `k` itself when it is
 /// drawn, else the drawn facing fewest steps round from it (the lower on a
 /// tie). The compiler emits no facing it has not proved.
@@ -285,6 +314,8 @@ pub struct StepSubject<'a> {
     pub hold: u32,
     /// The strike clip.
     pub strike: &'a str,
+    /// The step's own pace, when it sets one.
+    pub ticks_per_frame: Option<u32>,
     /// The landings in its `on_land`.
     pub landings: Vec<Landing>,
 }
@@ -821,9 +852,13 @@ pub fn judge(
         let mut record = StepRecord {
             assembly: s.id.to_string(),
             step: step.index,
-            windup_ticks: windup_clip.map(|c| c.length_ticks()).unwrap_or(0),
+            windup_ticks: windup_clip
+                .map(|c| paced(c, step.ticks_per_frame).0)
+                .unwrap_or(0),
             hold: step.hold,
-            strike_ticks: strike_clip.map(|c| c.landing_ticks()).unwrap_or(0),
+            strike_ticks: strike_clip
+                .map(|c| paced(c, step.ticks_per_frame).1)
+                .unwrap_or(0),
             amounts: step.landings.iter().map(|l| l.amount).collect(),
             caught: Vec::new(),
             facing_count: n,
@@ -1005,6 +1040,15 @@ pub fn judge(
     (j, out)
 }
 
+/// A clip's run at a pace: ticks from the switch to its last frame applied,
+/// and to that frame drawn whole — [`rig::Clip::length_ticks`] and
+/// [`rig::Clip::landing_ticks`] at `tpf` ticks per frame, or the clip's own.
+pub fn paced(clip: &rig::Clip, tpf: Option<u32>) -> (u32, u32) {
+    let t = tpf.unwrap_or(clip.ticks_per_frame);
+    let length = 1 + (clip.frames.len().saturating_sub(1) as u32) * t;
+    (length, length + t)
+}
+
 /// ", at facing k of n (turned D degrees)" for an aimed pattern; nothing for
 /// one facing.
 fn facing_words(k: u32, n: u32) -> String {
@@ -1115,6 +1159,7 @@ pub fn subject<'a>(plan: &'a Plan<'a>, p: &Placed<'a>) -> Subject<'a> {
                     windup: step.windup.as_str(),
                     hold: step.hold,
                     strike: step.strike.as_str(),
+                    ticks_per_frame: step.ticks_per_frame,
                     landings: ls,
                 }
             })
@@ -1608,6 +1653,22 @@ pub fn assembly_functions(
         let facing = p.decl.facing();
         let h = |w: &str| holder(s, w);
         let clips: Vec<(&String, &rig::Clip)> = p.rig.clips.iter().collect();
+        // Every clip as it is played: the rig's own at their cadence, then one
+        // per strike step that sets its own pace, for its wind-up and its
+        // strike (`paced_index`).
+        let mut plays: Vec<(&rig::Clip, u32)> =
+            clips.iter().map(|(_, c)| (*c, c.ticks_per_frame)).collect();
+        if let Some(st) = &p.decl.strikes {
+            for step in &st.pattern {
+                if let Some(tpf) = step.ticks_per_frame {
+                    for name in [&step.windup, &step.strike] {
+                        if let Some(c) = p.rig.clips.get(name) {
+                            plays.push((c, tpf));
+                        }
+                    }
+                }
+            }
+        }
         let initial = p.decl.initial.as_deref().and_then(|c| p.rig.clip_index(c));
         let spawn_tpf = initial
             .and_then(|k| clips.get(k))
@@ -1677,25 +1738,33 @@ pub fn assembly_functions(
         ));
 
         // ---- clip playback ----
-        for (k, (_, c)) in clips.iter().enumerate() {
+        for (k, (c, tpf)) in plays.iter().enumerate() {
             out.push((
                 format!("asm_play_{s}_{k}"),
                 join(vec![
                     format!("scoreboard players set {} dw.sys {k}", h("clip")),
                     format!("scoreboard players set {} dw.sys -1", h("f")),
-                    format!(
-                        "scoreboard players set {} dw.sys {}",
-                        h("t"),
-                        c.ticks_per_frame - 1
-                    ),
-                    format!(
-                        "scoreboard players set {} dw.sys {}",
-                        h("tpf"),
-                        c.ticks_per_frame
-                    ),
+                    format!("scoreboard players set {} dw.sys {}", h("t"), tpf - 1),
+                    format!("scoreboard players set {} dw.sys {tpf}", h("tpf")),
                     format!("scoreboard players set {} dw.sys 0", h("done")),
                 ]),
             ));
+            for (f, frame) in c.frames.iter().enumerate() {
+                let body: Vec<String> = frame
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| {
+                        format!(
+                            "execute as @e[tag={},limit=1] run data merge entity @s {{start_interpolation:0,interpolation_duration:{tpf},transformation:{}}}",
+                            part_tag(s, i),
+                            transformation(&t.faced(facing))
+                        )
+                    })
+                    .collect();
+                out.push((format!("asm_frame_{s}_{k}_{f}"), join(body)));
+            }
+        }
+        for (k, _) in clips.iter().enumerate() {
             out.push((
                 cue_fn(s, k),
                 join(vec![
@@ -1707,21 +1776,6 @@ pub fn assembly_functions(
                     ),
                 ]),
             ));
-            for (f, frame) in c.frames.iter().enumerate() {
-                let body: Vec<String> = frame
-                    .iter()
-                    .enumerate()
-                    .map(|(i, t)| {
-                        format!(
-                            "execute as @e[tag={},limit=1] run data merge entity @s {{start_interpolation:0,interpolation_duration:{},transformation:{}}}",
-                            part_tag(s, i),
-                            c.ticks_per_frame,
-                            transformation(&t.faced(facing))
-                        )
-                    })
-                    .collect();
-                out.push((format!("asm_frame_{s}_{k}_{f}"), join(body)));
-            }
         }
         // The rest pose, for an assembly that returns to no clip.
         let rest: Vec<String> = p
@@ -1763,7 +1817,7 @@ pub fn assembly_functions(
             format!("scoreboard players set {} dw.sys 0", h("t")),
             format!("scoreboard players add {} dw.sys 1", h("f")),
         ];
-        for (k, (_, c)) in clips.iter().enumerate() {
+        for (k, (c, _)) in plays.iter().enumerate() {
             let n = c.frames.len();
             if c.looping {
                 adv.push(format!(
@@ -1921,7 +1975,8 @@ pub fn assembly_functions(
             let mut swing = vec![format!("scoreboard players set {} dw.sys 3", h("sm"))];
             let mut landing = Vec::new();
             for (j, step) in st.pattern.iter().enumerate() {
-                if let Some(k) = idx(&step.windup) {
+                let paced = paced_index(p.rig, &st.pattern, j);
+                if let Some(k) = paced.map(|(w, _)| w).or_else(|| idx(&step.windup)) {
                     begin.push(format!(
                         "execute if score {} dw.sys matches {j} run function {ns}:asm_play_{s}_{k}",
                         h("step")
@@ -1933,7 +1988,7 @@ pub fn assembly_functions(
                     h("holdn"),
                     step.hold
                 ));
-                if let Some(k) = idx(&step.strike) {
+                if let Some(k) = paced.map(|(_, m)| m).or_else(|| idx(&step.strike)) {
                     swing.push(format!(
                         "execute if score {} dw.sys matches {j} run function {ns}:asm_play_{s}_{k}",
                         h("step")
@@ -2094,6 +2149,7 @@ mod tests {
                     windup: "windup",
                     hold: 20,
                     strike: "strike",
+                    ticks_per_frame: None,
                     landings: vec![Landing {
                         path: "/content/assemblies/0/strikes/pattern/0/on_land/0".into(),
                         within: landing,

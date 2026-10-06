@@ -5321,6 +5321,7 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
             if let Some(initial) = &a.initial {
                 need(initial, format!("{at}/initial"), "`initial`");
             }
+            let mut paced: Vec<Diagnostic> = Vec::new();
             if let Some(s) = &a.strikes {
                 for (j, step) in s.pattern.iter().enumerate() {
                     need(
@@ -5333,8 +5334,28 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                         format!("{at}/strikes/pattern/{j}/strike"),
                         "strike step's `strike`",
                     );
+                    if let Some(t) = step.ticks_per_frame
+                        && !(crate::rig::MIN_TICKS_PER_FRAME..=crate::rig::MAX_TICKS_PER_FRAME)
+                            .contains(&t)
+                    {
+                        paced.push(Diagnostic::error(
+                            codes::ASSEMBLY_RIG,
+                            "quests",
+                            format!("{at}/strikes/pattern/{j}/ticks_per_frame"),
+                            format!(
+                                "assembly `{}`'s strike step {j} plays its clips at {t} tick(s) per \
+                                 frame. A keyframe cadence is {} to {} — the bounds every rig clip \
+                                 is held to. Choose a cadence in that range, or drop \
+                                 `ticks_per_frame` to play each clip at its own",
+                                a.id,
+                                crate::rig::MIN_TICKS_PER_FRAME,
+                                crate::rig::MAX_TICKS_PER_FRAME
+                            ),
+                        ));
+                    }
                 }
             }
+            d.extend(paced);
         }
         if let Some(f) = station_kind_diag(
             &providers,

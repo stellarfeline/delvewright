@@ -547,6 +547,58 @@ fn the_generated_packtests() {
 // AC2 — the rig, at validation
 // ---------------------------------------------------------------------------
 
+/// A strike step's own pace: its wind-up and strike play as emitted clips
+/// after the rig's own, at the step's cadence, and the record times the
+/// wind-up and the landing by it; a cadence outside the rig's bounds is
+/// `DW0935` naming the field.
+#[test]
+fn a_strike_step_sets_its_own_pace() {
+    let q = quests_with(|q| {
+        assembly(q)["strikes"]["pattern"][0]["ticks_per_frame"] = json!(4);
+    });
+    let out = match try_build(&campaign(&q), &prefabs_with(rig())) {
+        Ok(o) => o,
+        Err(e) => panic!("{e:?}"),
+    };
+    // The rig has four clips (0..=3); the paced wind-up is 4, the strike 5.
+    let begin = function(&out, "asm_begin_limb");
+    assert!(
+        begin.contains("function hello-world:asm_play_limb_4"),
+        "{begin}"
+    );
+    assert!(
+        function(&out, "asm_swing_limb").contains("function hello-world:asm_play_limb_5"),
+        "{}",
+        function(&out, "asm_swing_limb")
+    );
+    assert!(
+        function(&out, "asm_play_limb_4").contains("#asm_limb_tpf dw.sys 4"),
+        "{}",
+        function(&out, "asm_play_limb_4")
+    );
+    assert!(
+        function(&out, "asm_frame_limb_5_1").contains("interpolation_duration:4,"),
+        "{}",
+        function(&out, "asm_frame_limb_5_1")
+    );
+    let record: Value =
+        serde_json::from_slice(out.get("validation/assembly.json").unwrap()).unwrap();
+    // Two frames each: applied on tick 5, the strike drawn whole on tick 9.
+    assert_eq!(record["strike_steps"][0]["windup_ticks"], 5);
+    assert_eq!(record["strike_steps"][0]["strike_ticks"], 9);
+    for tpf in [0, 21] {
+        let q = quests_with(|q| {
+            assembly(q)["strikes"]["pattern"][0]["ticks_per_frame"] = json!(tpf);
+        });
+        let codes = validation_codes(&q, rig());
+        assert!(
+            codes.iter().any(|(c, p, _)| c == "DW0935"
+                && p == "/content/assemblies/0/strikes/pattern/0/ticks_per_frame"),
+            "{tpf}: {codes:?}"
+        );
+    }
+}
+
 /// Each structural defect of the rig is `DW0935` naming its field, and a clip
 /// the rig lacks is `DW0935` listing the clips.
 #[test]
