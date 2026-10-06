@@ -636,7 +636,7 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
 1. **The surface.** `delvec schema --stage all` exports `assemblies[]` with
    `id`, `rig`, `at` (a `Mark`), `facing`, `initial`, `hitbox {width, height,
    offset}` and `strikes {while_in, pattern[] {windup, hold, strike,
-   on_land[]}}`; `QuestEffect` gains `spawn-assembly`, `despawn-assembly` and
+   ticks_per_frame, on_land[]}, aim {facings}}`; `QuestEffect` gains `spawn-assembly`, `despawn-assembly` and
    `play-clip` (41 verbs); `TriggerOn` gains `strike-assembly {assembly}` (5
    kinds), at the `dsl_version` the crate manifest states. *Instrument: a
    `crates/dsl/tests/` test over the export.*
@@ -686,8 +686,9 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
    `compiler::assembly::tests`, `crates/delvec/tests/assembly.rs`,
    `remedy_reachability.rs` (the widen-the-box and move-the-box moves build).*
 8. **The footprint arithmetic.** A unit test rotates and scales one part and
-   asserts its cell set; the same function serves `rig describe` and the
-   strike check (one symbol, asserted by call-graph test in the family
+   asserts its cell set (exact: a diagonal part meets fewer cells than its
+   hull); the same per-part cell set serves `rig describe` and the strike
+   check (one symbol, asserted by call-graph test in the family
    `call_graph_integrity.rs` belongs to).
 9. **Generated PackTests** of §10 run in the required `tier 2` job on the
    gallery: the root's passenger count equals the part count; a written `attack` record moves

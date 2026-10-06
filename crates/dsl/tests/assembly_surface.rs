@@ -61,10 +61,11 @@ fn the_quests_stage_declares_assemblies() {
         ["at", "facing", "hitbox", "id", "initial", "rig", "strikes"]
     );
     assert_eq!(props(&s, "AssemblyHitbox"), ["height", "offset", "width"]);
-    assert_eq!(props(&s, "AssemblyStrikes"), ["pattern", "while_in"]);
+    assert_eq!(props(&s, "AssemblyStrikes"), ["aim", "pattern", "while_in"]);
+    assert_eq!(props(&s, "StrikeAim"), ["facings"]);
     assert_eq!(
         props(&s, "StrikeStep"),
-        ["hold", "on_land", "strike", "windup"]
+        ["hold", "on_land", "strike", "ticks_per_frame", "windup"]
     );
     // `at` is a Mark, `while_in` the anchor-centred box `StealthZone` is.
     let at = &s["$defs"]["Assembly"]["properties"]["at"];

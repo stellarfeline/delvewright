@@ -110,7 +110,7 @@ pub const FLOOR_BAND: f64 = 1.0;
 /// to the mark's cell (which spans `[0, 1]`): the body's own width round the
 /// cell's centre, from its floor up [`FLOOR_BAND`]. What a landed limb meets
 /// when it comes down where a player stands.
-pub fn floor_footprint(f: [i32; 3]) -> ([f64; 3], [f64; 3]) {
+pub fn floor_band_body(f: [i32; 3]) -> ([f64; 3], [f64; 3]) {
     let half = Body::PLAYER.half_width();
     let (x, y, z) = (f64::from(f[0]), f64::from(f[1]), f64::from(f[2]));
     (
@@ -549,7 +549,7 @@ pub fn turned_region(mark: [i32; 3], (lo, hi): CellBox, turn: f64) -> BTreeSet<[
 // ---------------------------------------------------------------------------
 
 /// **The standable cells a pose lands on**: every walked cell whose standing
-/// body's footprint in the floor band ([`floor_footprint`]) a part of `frame`,
+/// body's footprint in the floor band ([`floor_band_body`]) a part of `frame`,
 /// turned `turn` about the mark, meets — judged exactly, part box against
 /// footprint box. World cells.
 pub fn struck_cells(
@@ -566,7 +566,7 @@ pub fn struck_cells(
             if out.contains(&f) || !population(f) {
                 continue;
             }
-            let (lo, hi) = floor_footprint(c);
+            let (lo, hi) = floor_band_body(c);
             if t.meets_box(lo, hi) {
                 out.insert(f);
             }

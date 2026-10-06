@@ -11,7 +11,8 @@
 //! `call_graph_integrity.rs` belongs to: both callers reach
 //! `delvewright_dsl::rig::last_frame_footprint` / `frame_footprint`, the dsl
 //! defines each exactly once, and neither caller defines a footprint of its
-//! own.
+//! own. Both reach the one per-part cell set, `Transform::cells`, through
+//! `frame_footprint_turned`.
 
 use std::path::Path;
 
@@ -57,12 +58,29 @@ fn rig_describe_and_the_strike_check_read_one_footprint() {
         describe.contains("rig::describe(") && describe.contains("rig::last_frame_footprint("),
         "`delvec rig describe` prints through the dsl's footprint"
     );
-    // The judged footprint.
+    // Every footprint is the per-part cell set, turned: `frame_footprint` is
+    // `frame_footprint_turned` at a quarter turn, which unions
+    // `Transform::turned(..).cells()`.
+    assert!(
+        body(&rig, "frame_footprint")
+            .contains("frame_footprint_turned(frame, facing_angle(facing))")
+    );
+    assert!(body(&rig, "frame_footprint_turned").contains("t.turned(a).cells()"));
+    // The judged footprint: the hitbox rule through the dsl's footprint at
+    // every facing, and the strike rule through the same per-part cells,
+    // each part then met against a standing body's box.
     let asm = read("crates/delvec/src/compiler/assembly.rs");
     let judge = body(&asm, "judge");
     assert!(
-        judge.contains("rig::last_frame_footprint(") && judge.contains("rig::frame_footprint("),
+        judge.contains("rig::frame_footprint_turned(") && judge.contains("struck_cells("),
         "`compiler::assembly::judge` judges by the dsl's footprint"
+    );
+    let struck = body(&asm, "struck_cells");
+    assert!(
+        struck.contains("t.turned(turn)")
+            && struck.contains("t.cells()")
+            && struck.contains("t.meets_box("),
+        "the strike rule reads the dsl's per-part cells: {struck}"
     );
     // Neither caller has a footprint of its own.
     for (file, src) in [("main.rs", &main), ("assembly.rs", &asm)] {
