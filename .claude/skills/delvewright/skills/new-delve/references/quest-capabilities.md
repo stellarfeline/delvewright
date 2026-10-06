@@ -273,17 +273,6 @@ this section is what they are *for* and the traps in each.
   twenty, and that is a hazard they can see coming — judge it in playtest. A
   display of many rockets is a `sequence` of `firework` effects, not one
   overloaded rocket.
-- **Who sees, hears or receives an effect is the effect's own `audience` and
-  `in`.** Any effect a player sees, hears or receives — `narrate`, `play-sound`,
-  `particle`, `give-effect`, `clear-effect`, `damage-players`, `give-item` —
-  takes `"audience": "party"` (everyone) or `"audience": "actor"` (the one player
-  whose act fired the beat: the completer, the presser, the dying player, the
-  buyer, the killer), and `"in": {anchor, extent}` (only players standing in that
-  box when it fires). Leave `audience` out and the beat keeps its root's answer:
-  a quest completion speaks to the party, a `presser` trigger to its presser. A
-  polled trigger, a trap and a shortcut have no actor, and `actor` there is
-  refused; so are `audience` and `in` on an effect that changes the world rather
-  than a player (a flag, a block, a gate, a timeline, a rocket).
 - **A perception beat is a `sequence` of `give-effect`, `particle` and
   `play-sound`** — the screen darkens and swims, a face fills it, something
   sounds from behind. `particle {particle, at, count?, spread?, speed?}` spawns a
@@ -292,9 +281,8 @@ this section is what they are *for* and the traps in each.
   "minecraft:elder_guardian", "at": "players"`. Only particle types a bare id
   spawns are admitted (not `dust`, `block`, `item`, …). A sound behind the
   listener is `"at": {"at": "players", "offset": [0, 0, -3]}` — the offset is in
-  the listener's own frame, `+z` the way they face. A timeline started from a
-  beat a player drove carries that player: `"audience": "actor"` on a step
-  reaches them alone. Three rules for the beat: **it is never the only signal** —
+  the listener's own frame, `+z` the way they face. Three rules for the beat:
+  **it is never the only signal** —
   each of these effects sits behind a player setting the engine cannot read
   (Distortion Effects, Darkness Pulsing, the sound sliders), so a change a
   player must act on is also told by a `narrate`, a changed block or a gate;
