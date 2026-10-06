@@ -108,7 +108,14 @@ fn the_trigger_union_gains_strike_assembly() {
     let kinds = tags(&s, "TriggerOn", "on");
     assert_eq!(
         kinds,
-        ["strike", "use", "approach", "strike-npc", "strike-assembly"]
+        [
+            "strike",
+            "use",
+            "approach",
+            "step",
+            "strike-npc",
+            "strike-assembly"
+        ]
     );
     let b = branch(&s, "TriggerOn", "on", "strike-assembly");
     let mut fields: Vec<&str> = b["properties"]
