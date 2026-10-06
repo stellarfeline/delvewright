@@ -1583,6 +1583,11 @@ fn dw0946_station_4_with_its_end_18_blocks_ahead() {
 fn dw0947_station_4_with_its_end_54_blocks_ahead_shifts_its_light() {
     let run = station4_run("end-54", Station4::calibrated().with_end(54), |_| {});
     let line = run.refused("DW0947");
+    assert!(
+        !run.binding().contains("far-field differences 0,"),
+        "a refused build counts the far differences it measured: {}",
+        run.binding()
+    );
     assert!(line.contains("a light far off reaches it"), "{line}");
     assert!(line.contains("past the near field"), "{line}");
     let shift: f64 = line

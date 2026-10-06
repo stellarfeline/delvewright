@@ -2509,6 +2509,7 @@ fn check_one(
                 ));
             }
         }
+        row.far_cells = far_cells.len();
         if let Some((sh, eye, c, what)) = over
             .iter()
             .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.2.cmp(&a.2)))
