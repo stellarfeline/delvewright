@@ -75,6 +75,7 @@ pub struct WrittenWorld {
 /// The tags this writer emits — the subset a minimal world needs, written in
 /// the order they are pushed.
 enum Tag {
+    Byte(i8),
     Int(i32),
     Str(String),
     LongArray(Vec<i64>),
@@ -85,6 +86,7 @@ enum Tag {
 impl Tag {
     fn id(&self) -> u8 {
         match self {
+            Tag::Byte(_) => 1,
             Tag::Int(_) => 3,
             Tag::Str(_) => 8,
             Tag::List(_) => 9,
@@ -95,6 +97,7 @@ impl Tag {
 
     fn write_payload(&self, out: &mut Vec<u8>) {
         match self {
+            Tag::Byte(v) => out.extend_from_slice(&v.to_be_bytes()),
             Tag::Int(v) => out.extend_from_slice(&v.to_be_bytes()),
             Tag::Str(s) => write_str(out, s),
             Tag::LongArray(v) => {
@@ -293,7 +296,11 @@ pub fn encode(
                     ])
                 });
                 compound(vec![
-                    ("Y", Tag::Int(*sy)),
+                    // A section's `Y` is a byte, as the game writes it: the
+                    // pinned core reads it as one, and an int `Y` loads the
+                    // chunk as empty (measured: an empty frame at rms 33.7
+                    // against the server save's frame).
+                    ("Y", Tag::Byte(*sy as i8)),
                     ("block_states", paletted(block_cells, 4)),
                     ("biomes", paletted(biome_cells, 0)),
                 ])

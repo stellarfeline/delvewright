@@ -465,6 +465,7 @@ fn the_writer_is_whole_and_deterministic() {
              \x20       assert ts == 0 and comp == 2\n\
              \x20       assert r['DataVersion'].value == {dv} and r['Status'].value == 'minecraft:full', r\n\
              \x20       for s in r['sections'].value:\n\
+             \x20           assert s.value['Y'].kind == anvil.T_BYTE, 'a section Y is a byte'\n\
              \x20           bs = s.value['block_states'].value; n = len(bs['palette'].value)\n\
              \x20           assert any(p.value['Name'].value != 'minecraft:air' for p in bs['palette'].value)\n\
              \x20           if n == 1: assert 'data' not in bs\n\
