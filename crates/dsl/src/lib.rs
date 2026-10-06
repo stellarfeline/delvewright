@@ -135,7 +135,7 @@ pub use stages::{
     StealthZone, StrikeAim, StrikeStep, TextureOverride, TimeKeyword, TimeSite, TimedGate, Trap,
     TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb,
     Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
-    enchantment_component, is_potion_bearing_item, offset_cell,
+    enchantment_component, fires_on_step, is_potion_bearing_item, offset_cell, stepped_blocks,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,

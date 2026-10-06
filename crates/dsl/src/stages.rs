@@ -2934,6 +2934,37 @@ impl TrapTrigger {
     }
 }
 
+impl TrapTrigger {
+    /// The trigger kinds a body fires by walking onto them — a plate and a
+    /// tripwire. A trapped chest is opened, not stepped on.
+    pub const STEPPED: [TrapTrigger; 2] = [TrapTrigger::PressurePlate, TrapTrigger::Tripwire];
+}
+
+/// **Every block of the pinned registry that a step fires**, sorted: the
+/// registry's ids that [`TrapTrigger::is_trigger_block`] accepts for a
+/// [`TrapTrigger::STEPPED`] kind. Read from `crates/dsl/data/blocks-1.21.11.json`
+/// rather than listed, so a pin that adds a plate adds it here;
+/// `crates/delvec/tests/stepped_blocks_tag.rs` holds the set equal to vanilla's
+/// own `#pressure_plates` tag plus the tripwire string.
+pub fn stepped_blocks() -> Vec<&'static str> {
+    crate::blocks::BlockRegistry::v1_21_11()
+        .ids()
+        .filter(|id| TrapTrigger::STEPPED.iter().any(|k| k.is_trigger_block(id)))
+        .collect()
+}
+
+/// Whether `block` — an id, bare or namespaced, with or without a blockstate —
+/// is one a step fires ([`stepped_blocks`]).
+pub fn fires_on_step(block: &str) -> bool {
+    let id = block.split('[').next().unwrap_or(block);
+    let id = if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    };
+    stepped_blocks().contains(&id.as_str())
+}
+
 /// What a [`Trap`] does when sprung (DSL v0.6, spec-0011). Externally tagged so a
 /// future effect adds a variant; a non-`dispense` key (e.g. `tnt`,
 /// `release-falling-block`, `crusher`) is an unknown variant → `DW0100`, keeping
