@@ -198,6 +198,11 @@ this section is what they are *for* and the traps in each.
   so it takes a full sentence. Use it for the *said line*, not for hints or
   mechanics; the button still has to be readable on its own, since a player on a
   controller or reading fast never hovers. It translates under its own key.
+- **Every dialog button takes the same optional `tooltip`**: a dialogue option's
+  `tooltip`, a shop offer's `tooltip`, and a bonfire's `rest_tooltip` /
+  `save_tooltip` (beside `rest_label` / `save_label`). A class button's tooltip is
+  its required `blurb`. Each is optional, wraps, and translates under its own key;
+  state one only when the button's caption cannot say what pressing it does.
 - **Premise and exposition options must retire once their moment passes**, via
   the cast ledger's dialogue swap (declare a later root) or a flag gate. A "who
   are we" / "what is that thing" option must be **impossible** at the finale.

@@ -910,6 +910,8 @@ mod tests {
             prompt: String::new(),
             rest_label: String::new(),
             save_label: String::new(),
+            rest_tooltip: None,
+            save_tooltip: None,
         }
     }
 

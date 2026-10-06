@@ -14979,6 +14979,30 @@ fn cast_bark_fns(
     out
 }
 
+/// **One dialog button** (spec-0078): every button the engine presents to a
+/// player — class selection, a bonfire's two options, a shop offer, a dialogue
+/// option — is built here and nowhere else, so every one of them carries the
+/// same optional hover `tooltip`.
+///
+/// Vanilla's 1.21.11 action button is `CommonButtonData` (`label`, optional
+/// `tooltip`, `width`) plus an optional action; see [`build_node_dialog`] for the
+/// codec proof. The label arrives already built (a bonfire's is chrome-rebound);
+/// a stated tooltip becomes `tr(tooltip)` and an absent one emits no key, so a
+/// campaign that states none is byte-identical. The action is a `/trigger`,
+/// the only command a non-op player may run.
+fn dialog_button(label: Value, tooltip: Option<&str>, command: &str) -> Value {
+    let mut button = serde_json::Map::new();
+    button.insert("label".to_string(), label);
+    if let Some(t) = tooltip {
+        button.insert("tooltip".to_string(), tr(t));
+    }
+    button.insert(
+        "action".to_string(),
+        json!({ "type": "minecraft:run_command", "command": command }),
+    );
+    Value::Object(button)
+}
+
 fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
     let c = plan.campaign;
     let mut dialogs = Vec::new();
@@ -14989,11 +15013,12 @@ fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, V
         .iter()
         .zip(&c.classes.content.classes)
         .map(|(cp, class)| {
-            json!({
-                "label": tr(&class.name),
-                "tooltip": tr(&class.blurb),
-                "action": { "type": "minecraft:run_command", "command": format!("/trigger dw.class set {}", cp.n) }
-            })
+            // spec-0078: the class button's tooltip is its required `blurb`.
+            dialog_button(
+                tr(&class.name),
+                Some(&class.blurb),
+                &format!("/trigger dw.class set {}", cp.n),
+            )
         })
         .collect();
     dialogs.push((
@@ -15026,10 +15051,16 @@ fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, V
                 "can_close_with_escape": true,
                 "after_action": "close",
                 "actions": [
-                    { "label": tr(&chrome.rebind(&bf.rest_label)),
-                      "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 2" } },
-                    { "label": tr(&chrome.rebind(&bf.save_label)),
-                      "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 1" } }
+                    dialog_button(
+                        tr(&chrome.rebind(&bf.rest_label)),
+                        bf.rest_tooltip.as_deref(),
+                        "/trigger dw.rest set 2",
+                    ),
+                    dialog_button(
+                        tr(&chrome.rebind(&bf.save_label)),
+                        bf.save_tooltip.as_deref(),
+                        "/trigger dw.rest set 1",
+                    )
                 ]
             }),
         ));
@@ -15046,19 +15077,11 @@ fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, V
             .iter()
             .enumerate()
             .map(|(j, off)| {
-                let mut a = json!({
-                    "label": tr(&off.label),
-                    "action": {
-                        "type": "minecraft:run_command",
-                        "command": format!("/trigger dw.shop set {}", j + 1)
-                    }
-                });
-                if let Some(t) = &off.tooltip {
-                    a.as_object_mut()
-                        .expect("json! builds an object")
-                        .insert("tooltip".to_string(), tr(t));
-                }
-                a
+                dialog_button(
+                    tr(&off.label),
+                    off.tooltip.as_deref(),
+                    &format!("/trigger dw.shop set {}", j + 1),
+                )
             })
             .collect();
         dialogs.push((
@@ -15177,14 +15200,11 @@ fn build_node_dialog(
         let actions: Vec<Value> = opts
             .iter()
             .map(|o| {
-                let mut action = json!({
-                    "label": tr(&o.label),
-                    "action": { "type": "minecraft:run_command", "command": format!("/trigger {trigger_objective} set {}", o.n) }
-                });
-                if let Some(tip) = &o.tooltip {
-                    action["tooltip"] = tr(tip);
-                }
-                action
+                dialog_button(
+                    tr(&o.label),
+                    o.tooltip.as_deref(),
+                    &format!("/trigger {trigger_objective} set {}", o.n),
+                )
             })
             .collect();
         json!({
