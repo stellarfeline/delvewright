@@ -637,8 +637,8 @@ if [[ -d "$OUT_DIR/creator-datapack" ]]; then
   cp -R "$OUT_DIR/creator-datapack" "$STAGE/world/datapacks/$CAMP_ID-creator"
 fi
 
-HEAP_ENV="$(dw_server_heap_env "$MEMORY_ARG")" || die "cannot read versions.toml [server].heap_max"
-echo "container heap: $HEAP_ENV (itzg's own ceiling is 1G; raise with --memory)"
+HEAP_ENV="$(dw_server_heap_env "$MEMORY_ARG" "$OUT_DIR")" || die "cannot read the heap ceiling (the build's server/resources.properties, else versions.toml [server].heap_max)"
+echo "container heap: $HEAP_ENV (the build's own statement for its view distance; itzg's own ceiling is 1G; override with --memory)"
 # Not `mapfile`/`readarray`: bash 3.2 (macOS's shipped /bin/bash — the creator's
 # own machine, CLAUDE.md) does not have them, and silently leaves the array
 # empty rather than failing (tools/ci/check-shell-bash32.py).

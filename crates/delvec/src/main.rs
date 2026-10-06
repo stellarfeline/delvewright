@@ -1337,6 +1337,9 @@ fn validate_loaded(
             // spec-0081 §5.5: every time value the campaign states, as the clock
             // it resolves to — printed on every run, zeroes included.
             examined.extend(delvec::compiler::clock::binding_lines(&campaign));
+            // spec-0091: the served view distance and the site-plan lines judged
+            // against it (the diagnostics were raised in `validate_campaign_with`).
+            examined.push(delvewright_dsl::viewdistance::checks(&campaign, &mut Vec::new()).line());
             print_diags(&diags, json);
             report_binding_notes(&campaign, &examined);
             Ok(Validated {

@@ -85,6 +85,22 @@ def test_memory_overrides_both_initial_and_ceiling():
     assert result.stdout.strip() == "MEMORY=8G"
 
 
+def test_the_default_is_the_builds_stated_ceiling_when_a_build_is_in_hand(tmp_path):
+    """spec-0091: `up` hands its build directory to the shared rule, so the
+    server starts at the heap the compiler stated for the declared view
+    distance; `--memory` still overrides it."""
+    (tmp_path / "server").mkdir()
+    (tmp_path / "server" / "resources.properties").write_text("heap-max=6G\nplayers=4\n")
+    result = run_hook(f'dw_server_heap_env "" "{tmp_path}"')
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "MAX_MEMORY=6G"
+    result = run_hook(f'dw_server_heap_env 8G "{tmp_path}"')
+    assert result.stdout.strip() == "MEMORY=8G"
+    # The real `up` flow passes OUT_DIR as that second argument.
+    text = SCRIPT.read_text()
+    assert 'dw_server_heap_env "$MEMORY_ARG" "$OUT_DIR"' in text
+
+
 # ---------------------------------------------------------------------------
 # `dw_playtest_docker_run_argv`: MEMORY reaches the real docker-run argv
 # ---------------------------------------------------------------------------

@@ -871,6 +871,9 @@ pub fn build_with_warnings(
     // firework — no ledger, no artifact, no byte moved for anybody who has not
     // opted in; a ledger that exists and reports zero columns is a finding.
     let mut firework_gate: Option<crate::compiler::firework::FireworkGate> = None;
+    // spec-0091: how many cutscene shots were judged against the served view
+    // distance, for the binding line printed beside the render plan.
+    let mut cutscene_shots_judged = 0usize;
     // The recovery stake's compile-time placement table (`compiler::stake`), and
     // the ledger of what its proofs looked at. `None` for a campaign that declares
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
@@ -1281,7 +1284,8 @@ pub fn build_with_warnings(
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::compiler::nav::plan_actor_moves(plan, &world)?;
-                crate::compiler::nav::check_cutscenes(plan, &world, &m, &am)?;
+                cutscene_shots_judged =
+                    crate::compiler::nav::check_cutscenes(plan, &world, &m, &am)?;
                 // spec-0031: the one lethal-volume obligation routing cannot see.
                 // A respawn SEAT inside a volume is reached by teleport and routes
                 // perfectly while killing the party on arrival, forever. The wave
@@ -2101,6 +2105,21 @@ pub fn build_with_warnings(
         crate::compiler::render_plan::render_plan(plan, prefabs, &pov_shots, &world)?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
+    // spec-0091: the served view distance, what the build judged against it
+    // (every showcase camera and cutscene shot — a refusal stopped the build
+    // before here), and the cost stated to the host.
+    eprintln!(
+        "{}",
+        crate::compiler::served::Binding {
+            chunks: delvewright_dsl::viewdistance::chunks(plan.campaign),
+            declared: plan.campaign.world.content.view_distance.is_some(),
+            showcase_cameras: render_plan_doc["camera_eye_proof"]["showcase"]
+                .as_u64()
+                .unwrap_or(0) as usize,
+            cutscene_shots: cutscene_shots_judged,
+        }
+        .line()
+    );
 
     // ---- validate every emitted vanilla mcfunction ----
     let mut errors = Vec::new();
@@ -24980,34 +24999,23 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     }
 }
 
-/// Shipped `view-distance`, in chunks — **10** = a 160-block render radius.
+/// Shipped `view-distance`, in chunks: **the campaign's declaration**
+/// (`world.view_distance`, spec-0091), or the engine's floor
+/// ([`delvewright_dsl::viewdistance::FLOOR`], 10 chunks = a 160-block radius)
+/// when it declares none. One reading, [`delvewright_dsl::viewdistance::chunks`],
+/// is what the properties file, the far-view refusals and the stated cost all
+/// take.
 ///
-/// What it answers to, in the order the number was established:
+/// The floor answers to the scenes: measured from the `forceload` AABBs the
+/// compiler emits, the largest delve built to date spans 114 × 165 blocks, so
+/// 160 blocks reach the far side of it from any standpoint inside it, and the
+/// horizon library's vista arithmetic is written against it. A campaign whose
+/// far views need more declares more, and the build states what that costs the
+/// host ([`crate::compiler::served`]).
 ///
-/// * **The scenes.** Measured from the `forceload` AABBs the compiler emits for
-///   the shipped campaigns, the largest delve built to date spans 114 × 165
-///   blocks and the next 35 × 115. A 160-block radius therefore reaches the far
-///   side of either from any standpoint inside it, and on an `ocean` horizon it
-///   puts the fog line 160 blocks of open sea past the shore — already all
-///   backdrop. Going up to 12 buys 32 more blocks of empty water or void on
-///   every delve that exists; going down to 8 (128 blocks) would clip the long
-///   axis of the largest scene from a standpoint at either end.
-/// * **The existing record.** `docs/notes/horizon-library-dossier.md` §3–4 and
-///   `docs/specs/spec-0026-horizon-library.md` §6 already do their vista
-///   arithmetic against a shipped `view-distance` of 10 (→ 160 blocks), with 12
-///   reserved as the summit horizon's floor. Writing the key makes that
-///   arithmetic bind to a fact rather than to an assumption about the host.
-/// * **Prod.** Perf is non-gating on the Raspberry Pi,
-///   so the Pi does not push the number DOWN; it is the absence of any delve
-///   content past 160 blocks that stops it going up.
-///
-/// It is also what both boot paths land on today, so pinning it changes no
-/// player-visible behaviour — this is a determinism fix, not a retune.
-pub const DELVE_VIEW_DISTANCE: u32 = 10;
-
-/// Shipped `simulation-distance`, in chunks — **10**, and the same number as
-/// [`DELVE_VIEW_DISTANCE`] for an unrelated reason. The two answer different
-/// questions and are deliberately separate constants.
+/// Shipped `simulation-distance`, in chunks — **10**, and not moved by the
+/// declaration above, for an unrelated reason. The two answer different
+/// questions and are deliberately separate.
 ///
 /// This value is **not** what makes a delve tick. `setup` force-loads every
 /// placed piece and never releases it, so scene chunks are entity-ticking
@@ -25405,9 +25413,10 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // sources happen to agree it is a coincidence of an upstream file we do not
     // own, not an invariant — so a key that matters is pinned, never inherited.
     //
-    // [`DELVE_VIEW_DISTANCE`] / [`DELVE_SIMULATION_DISTANCE`] carry the reasoning
-    // for the two chunk-distance values; `validation/world-settings-entrypoint.sh`
+    // `view-distance` is the campaign's (spec-0091) and `simulation-distance`
+    // is [`DELVE_SIMULATION_DISTANCE`]; `validation/world-settings-entrypoint.sh`
     // derives both from this file, so the image cannot boot a different pair.
+    let view_distance = delvewright_dsl::viewdistance::chunks(plan.campaign);
     let mut props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
         ("difficulty", difficulty.to_string()),
@@ -25423,7 +25432,7 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         ("simulation-distance", DELVE_SIMULATION_DISTANCE.to_string()),
         ("spawn-monsters", "false".to_string()),
         ("spawn-protection", "0".to_string()),
-        ("view-distance", DELVE_VIEW_DISTANCE.to_string()),
+        ("view-distance", view_distance.to_string()),
     ]);
     // spec-0084 §11: a campaign may declare its pack required. Written only when
     // declared, so every campaign that does not is byte-identical; the delve
@@ -25448,6 +25457,12 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         text.push_str(&format!("{k}={v}\n"));
     }
     out.insert("server/server.properties".to_string(), text.into_bytes());
+    // spec-0091 §4: what the declared view distance asks of the host, computed
+    // here and read by the image's entrypoint and the playtest server.
+    out.insert(
+        "server/resources.properties".to_string(),
+        crate::compiler::served::resources_properties(&plan.namespace, view_distance).into_bytes(),
+    );
 
     out.insert(
         "server/eula-note.txt".to_string(),
@@ -25473,8 +25488,16 @@ Level config for campaign `{}`. The world is generated on first server boot\n\
 from `server.properties` (no region files shipped, spec-0002):\n\n\
 {}- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
 - `gamemode=adventure`, `difficulty={}`, no structures/monsters.\n\
-- `view-distance={}` / `simulation-distance={}` (chunks) are pinned here rather\n\
-  than left to the host: the delve renders and ticks the same everywhere.\n\n\
+- `view-distance={vd}` / `simulation-distance={sd}` (chunks) are pinned here rather\n\
+  than left to the host: the delve renders and ticks the same everywhere. The\n\
+  view distance is the campaign's declaration ({how}); a player's client draws\n\
+  the smaller of it and their own render-distance setting, so a player who\n\
+  wants every far view this delve was designed with sets render distance to\n\
+  at least {vd} chunks.\n\
+- `resources.properties` states what this delve asks of its host: `heap-max={heap}`\n\
+  for {players} players at this view distance ({chunks} chunks each). The shipped\n\
+  image and the playtest server start the JVM at that ceiling unless the operator\n\
+  names one.\n\n\
 The compiler-emitted `#minecraft:load` bootstrap (`datapack/`) places each area's\n\
 prefab with `/place template` and summons NPCs; nothing is baked into region\n\
 bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
@@ -25482,8 +25505,16 @@ bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
             horizon_bullet,
             plan.seed,
             difficulty,
-            DELVE_VIEW_DISTANCE,
-            DELVE_SIMULATION_DISTANCE
+            vd = view_distance,
+            sd = DELVE_SIMULATION_DISTANCE,
+            how = if plan.campaign.world.content.view_distance.is_some() {
+                "declared in `world.view_distance`"
+            } else {
+                "the engine's floor, nothing declared"
+            },
+            heap = crate::compiler::served::heap_max_label(view_distance),
+            players = crate::compiler::served::PLAYERS,
+            chunks = crate::compiler::served::sent_chunks(view_distance),
         )
         .into_bytes(),
     );

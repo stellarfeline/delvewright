@@ -114,6 +114,19 @@ pub struct WorldContent {
     /// `{base, …params}`; see [`Horizon`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizon: Option<Horizon>,
+    /// **How far a player must be able to see**, in chunks (spec-0091): the
+    /// server's `view-distance`, declared by the campaign whose far views need
+    /// it. A thing farther from a body than the served radius is never sent to
+    /// that body's client, so a landmark meant to be seen from across the map
+    /// is a declaration here, not a hope. Absent = the engine's floor
+    /// ([`crate::viewdistance::FLOOR`], 10 chunks = 160 blocks), which every
+    /// proof in the engine is written against; declared in
+    /// `FLOOR..=CEILING` (vanilla serves at most 32). A camera, a sightline, a
+    /// view or a cutscene shot aimed past the served radius is refused
+    /// (`DW0956`); the build states the heap the declared distance costs the
+    /// host at the player cap, and the hosting side meets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view_distance: Option<u8>,
     /// **The skies a place can stand under** (spec-0080). Each one is declared
     /// once, here, beside `time`, `weather` and `horizon` — the other
     /// statements about the sky the party stands under — and ships as a

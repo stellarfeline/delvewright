@@ -56,6 +56,7 @@ pub mod siteplan;
 pub mod split;
 pub mod stages;
 pub mod validate;
+pub mod viewdistance;
 
 pub use canonical::to_canonical_string;
 pub use celestial::{Body, CelestialTime, Clock, MoonPhase, Position};

@@ -167,6 +167,7 @@ pub mod resourcepack;
 pub mod respawn;
 pub mod seating;
 pub mod seeding;
+pub mod served;
 pub mod snapshot;
 pub mod solver;
 pub mod stairs;
