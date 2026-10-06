@@ -1475,15 +1475,25 @@ async function tryWaysIn(
 test("a blocked walk in onto vesperhold's well tries the sill before the curb top it cannot climb", async () => {
   // The 1.8.0 release ladder: the walk in stopped on the cut's floor at
   // [30, 66, 79] (feet at y 66.5). Standing there, the curb top at y 69 —
-  // [33, 69, 77], [33, 69, 83], [32, 69, 79] — is nearer the well than the sill
-  // at [31, 68, 80], and the pathfinder reached none of the three: the body
+  // [33, 69, 77], [33, 69, 83], [32, 69, 79] first — is nearer the well than the
+  // sill at [31, 68, 80], and the pathfinder reached none of the three: the body
   // ended at y 67.5 each time. The sill is the way in the beta.2 ladder took.
+  // The cells are the 19 the live search returned on that build, read off the
+  // bot's own log, plus the floor west of the cut, which is no nearer.
   const feet: Vec3Tuple = [30, 66, 79];
-  const curbTop = ["33,69,77", "33,69,83", "32,69,79", "34,69,77", "34,69,83"];
-  const standable = new Set([...curbTop, "31,68,80", "29,68,80", "29,68,79"]);
+  const curbTop = [
+    "33,69,77", "33,69,83", "32,69,79", "32,69,81", "32,69,78", "32,69,82",
+    "34,69,76", "32,69,77", "32,69,83", "33,69,76", "31,70,81",
+  ];
+  const sillCourse = [
+    "31,68,80", "31,68,78", "31,68,82", "34,68,75", "32,68,76", "31,68,77", "31,68,83",
+    "33,68,75",
+  ];
+  const standable = new Set([...curbTop, ...sillCourse, "29,68,80", "29,68,79"]);
   const got = wayInCandidates(feet, UNDERTIDE, (c) => standable.has(c.join(",")));
   const at = (cell: string): number => got.findIndex((c) => c.join(",") === cell);
-  assert.ok(at("31,68,80") >= 0, `the sill is a candidate: ${JSON.stringify(got)}`);
+  assert.equal(got.length, 19, `the live search's 19 cells: ${JSON.stringify(got)}`);
+  assert.deepEqual(got[0], [31, 68, 80], "the sill first: two up, nearest the well of its course");
   for (const c of curbTop) {
     assert.ok(at("31,68,80") < at(c), `the sill (two up) is tried before ${c} (three up)`);
   }
