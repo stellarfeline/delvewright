@@ -713,7 +713,8 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
     // Serialised through the reader's own structs, so these keys are the
     // structs' and not this literal's.
     let sheet = camera::parse_sheet(
-        br#"{"campaign_id":"c","cameras":[{"answers":"concept/a","exposure":1.0,
+        br#"{"campaign_id":"c","cameras":[{"after":{"path":"branch/b","step":"obj/x"},
+            "answers":"concept/a","exposure":1.0,
             "fov":70.0,"height":900,"name":"one","pitch":0.0,"pos":[0.5,70.0,0.5],
             "sky":{"time":"dusk","weather":"rain"},
             "source":"estimated","spp":300,"width":1600,"yaw":0.0}]}"#,
@@ -729,14 +730,16 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
             .cloned()
             .collect::<Vec<String>>(),
     );
-    fields.extend(
-        value["cameras"][0]["sky"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect::<Vec<String>>(),
-    );
+    for nested in ["sky", "after"] {
+        fields.extend(
+            value["cameras"][0][nested]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<String>>(),
+        );
+    }
     fields.sort();
     fields.dedup();
 
@@ -791,6 +794,6 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
          mention(s) in the documented paragraph",
         fields.len()
     );
-    assert_eq!(fields.len(), 16, "the record's fields");
+    assert_eq!(fields.len(), 19, "the record's fields");
     assert!(named >= fields.len(), "every field named at least once");
 }
