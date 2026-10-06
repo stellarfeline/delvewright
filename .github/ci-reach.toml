@@ -112,7 +112,7 @@ inputs = [
 name = "tool-tests"
 inputs = [
   { glob = "tools/**", why = "every file this job runs tests a tool under `tools/`, with its fixtures under `tools/tests/`" },
-  { glob = "crates/**", why = "`test_check_dw_codes.py` and `test_check_source_dupes.py` scan the crate sources; `test_staging_gate.py`'s `Engine` reads every DW declaration and test; `test_block_appearance.py` reads crate data; the publish-gate tests copy the crate manifests the version-site rows name" },
+  { glob = "crates/**", why = "`test_check_dw_codes.py` and `test_check_source_dupes.py` scan the crate sources; `test_staging_gate.py`'s `Engine` reads every DW declaration and test; `test_block_appearance.py` reads crate data; `test_far_field.py` reads the far-field threshold in `compiler/loop.rs`; the publish-gate tests copy the crate manifests the version-site rows name" },
   { glob = "Cargo.toml", why = "the publish-gate tests copy the root manifest into their scratch tree" },
   { glob = "prefabs/**", why = "`test_check_generator_preservation.py`; `test_check_source_dupes.py`; `test_staging_gate.py` reads generator invariants as carriers" },
   { glob = "gallery/**", why = "the gallery tests (`test_gallery_coverage.py`, `test_gallery_domain.py`, `test_gallery_not_shippable.py`, `test_check_gallery_stageable.py`) read the gallery campaign" },

@@ -27,3 +27,7 @@ What a client **renders** between two frames is not measurable here. Spec-0086 Â
 - Edit `gen.py`, then `python3 gen.py`; it rewrites `dw-loop-spike/` wholesale.
 - `EULA=TRUE tools/spike-seamless-loop/run.sh [--out <path>]` re-measures (needs `harness/node_modules`; uses an ephemeral port, removes its container on exit).
 - After a run, `cargo run -q -p delvec --bin delvec -- fmt tools/spike-seamless-loop/observations.json` puts the readings in the repository's canonical JSON form (`tools/ci/check-json-canonical.py` refuses them otherwise).
+
+## The far-field threshold's second method
+
+`far_field.py` computes the reading spec-0090 calibrates its far-field threshold on: station 4 of the eldritch spike (`tools/spike-eldritch-visuals/gen.py` on branch `research/eldritch-visuals` at `2bbb1f28`), rebuilt from the spike's own constants, with this file's own block-light flood and voxel walk. For every cell past the slab that differs from its image, in block or in light with its lit area, it takes the largest shift the jump gives any of the cell's nine points on the screen of an eye that sees it. It shares no code with `delvec`, whose reading is `station_4_calibrates_the_far_field_threshold`; `tools/tests/test_far_field.py` holds the two together. `python3 tools/spike-seamless-loop/far_field.py [--ahead N] [--jump N] [--lit]` prints the largest shift, its cell, why it differs, and its eye.
