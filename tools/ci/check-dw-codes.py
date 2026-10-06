@@ -84,13 +84,27 @@ entry needs a one-line justification — keep this list minimal; prefer writing
 the test (CLAUDE.md debug doctrine: a red check is information, not an
 obstacle to route around).
 
+## The binary's registry (`--delvec <path>`)
+
+A code is declared by writing it inside `dw_code!`, which also registers it in
+the binary's registry; `delvec codes` prints that registry. Given a built
+`delvec`, this gate holds the registry equal to the declarations `CONST_RE`
+reads, in both directions, by `(code, constant name)` and by exit tier — so the
+source reading here, the doc catalog and the binary all agree. A declaration
+written outside `dw_code!` is in the source and absent from the registry, and
+reds. `crates/delvec/tests/codes.rs` runs this with the binary cargo built, so
+`cargo test --workspace` binds it; without `--delvec` the run prints that the
+registry was not compared.
+
 Deterministic, offline, no dependencies (Python 3 stdlib). Run from the repo root:
     python3 tools/ci/check-dw-codes.py
 Exit 0 = consistent + covered, 1 = mismatch/gap (see stderr), 2 = usage/IO error.
 """
 
+import json
 import pathlib
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -797,7 +811,57 @@ def codes_that_prescribe_a_move() -> dict[str, set[str]]:
     return found
 
 
-def main() -> int:
+def registry_rows(delvec: str) -> list[dict]:
+    """`delvec codes`, one JSON object per line. A run that does not answer is a
+    refusal, never an empty registry."""
+    proc = subprocess.run([delvec, "codes"], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise SystemExit(f"error: `{delvec} codes` exited {proc.returncode}: {proc.stderr.strip()}")
+    rows = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+    if not rows:
+        raise SystemExit(f"error: `{delvec} codes` listed no code")
+    return rows
+
+
+def registry_errors(
+    rows: list[dict],
+    constants: dict[str, set[tuple[str, str]]],
+    tiers: dict[str, str],
+) -> list[str]:
+    """The binary's registry against the declarations, in both directions."""
+    errors: list[str] = []
+    registered = {(r["code"], r["name"]) for r in rows}
+    declared = {(code, name) for code, owners in constants.items() for _crate, name in owners}
+    unregistered = sorted(declared - registered)
+    if unregistered:
+        errors.append(
+            "DW codes declared in source and ABSENT from `delvec codes` — declare "
+            "them inside `dw_code!`, which is what registers them: "
+            + ", ".join(f"{c} ({n})" for c, n in unregistered)
+        )
+    undeclared = sorted(registered - declared)
+    if undeclared:
+        errors.append(
+            "DW codes `delvec codes` lists that no source declaration spells the way "
+            "CONST_RE reads it: " + ", ".join(f"{c} ({n})" for c, n in undeclared)
+        )
+    for r in rows:
+        if r["code"] in tiers and r["tier"] != tiers[r["code"]]:
+            errors.append(
+                f"{r['code']} ({r['name']}) is tier {r['tier']} in `delvec codes` "
+                f"and {tiers[r['code']]} in source"
+            )
+    return errors
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    delvec = None
+    if argv[:1] == ["--delvec"] and len(argv) == 2:
+        delvec = argv[1]
+    elif argv:
+        print("usage: check-dw-codes.py [--delvec <path to a built delvec>]", file=sys.stderr)
+        return 2
     if not DOC_PATH.is_file():
         print(f"error: reference doc not found: {DOC_PATH}", file=sys.stderr)
         return 2
@@ -973,6 +1037,15 @@ def main() -> int:
             f"allowlist: {', '.join(allowlisted_but_tested)}"
         )
 
+    registry_note = (
+        "registry NOT compared (no --delvec; `cargo test` compares it through "
+        "crates/delvec/tests/codes.rs)"
+    )
+    if delvec is not None:
+        rows = registry_rows(delvec)
+        errors += registry_errors(rows, declared_constants(), tiers)
+        registry_note = f"registry: `delvec codes` lists {len(rows)} code(s)"
+
     if errors:
         print("DW-code consistency check FAILED:", file=sys.stderr)
         for e in errors:
@@ -988,7 +1061,7 @@ def main() -> int:
         f"{REMEDY_TEST.name}; "
         f"{len(tiers)} exit tiers declared, "
         f"{len([c for c, x in tiers.items() if x == 'Analysis'])} of them analysis "
-        f"tier, matching {tier_rows} documented row(s)."
+        f"tier, matching {tier_rows} documented row(s); {registry_note}."
     )
     return 0
 

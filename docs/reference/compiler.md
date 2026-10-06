@@ -16,7 +16,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   other subcommand `delvec --help` lists — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.8.0`, `dsl 0.35.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.8.0`, `dsl 0.35.1`, `mc 1.21.11`.
   The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
   every stage document, map-pipeline document and l10n sidecar declares it, and
   any other number is refused at the envelope with `DW0102`, which names it. The
@@ -157,6 +157,7 @@ delvec build    <dir> --perturb <knob> [--perturb-place <place>]
 delvec fmt      <path>… [--check]          # canonical form for authored JSON (§9)
 delvec schema   --stage <1..7|name|all>    # export JSON Schema (named documents: §2)
 delvec metrics  [--gym <dir>]              # export the metrics standard as JSON (§10)
+delvec codes                               # every DW code this binary declares, one JSON line each (§5)
 delvec prefab anchors [--pool <id>]        # which anchors does a pool guarantee (library only)
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (transcreation input)
 delvec l10n-apply <dir> --lang <c> --table <f>
@@ -4606,6 +4607,28 @@ world. Invariants:
 Every DW code in `crates/**/*.rs`. Grouped by range. `tools/ci/check-dw-codes.py`
 verifies this catalog is bidirectionally exact against source (CI docs job).
 
+**A code is declared inside `dw_code!`, and nowhere else.** The macro
+(`delvewright_dsl::dw_code!`) expands to the constant as written —
+`pub const NAME: DwCode = DwCode::new("DWxxxx", ExitTier::…);`, or
+`pub const NAME: &str = "DWxxxx";` for a code of a verb with its own exit table
+(`prefab`, `schem`, `render`, the view arms) — and registers it in
+`delvewright_dsl::diagnostic::DECLARED`, a link-time distributed slice. There is
+no list beside the declarations. `delvec codes` prints the registry, sorted by
+code, one JSON object per line:
+
+```
+{"code":"DW0944","tier":"Build","subject":"Campaign","name":"PERCEPTION_SIGHT_UNDER_A_CAMERA","module":"delvewright_dsl::diagnostic::codes"}
+{"code":"DW0721","tier":null,"subject":null,"name":"DW_INPUT","module":"delvec::compiler::view::diag"}
+```
+
+with the count on stderr and exit 0. It is what the binary can print, which a
+scan of the binary's bytes is not: a code raised at one inlined site is written
+by immediate stores and never spelled contiguously. `check-dw-codes.py --delvec
+<binary>` holds the registry equal to the declarations its `CONST_RE` reads, by
+`(code, constant)` in both directions and by exit tier, so a constant declared
+outside the macro reds; `crates/delvec/tests/codes.rs` runs it against the
+binary cargo built.
+
 **Test-coverage gated** (CLAUDE.md Conventions). The same
 script also fails CI if any documented, landed code has no test asserting it —
 either the literal code string or a symbolic diagnostic-code constant (e.g.
@@ -4727,7 +4750,7 @@ to a list of codes.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.35.0`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
+| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.35.1`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). **The message names the form of the type it rejected**, derived from that id type's own `PREFIX` — `` `dlg/<kebab>` `` for a dialogue node, `` `class/<kebab>` `` for a class — rather than restating the general rule beside three fixed examples. One macro in `dsl::validate::syntax` is the single path every id type's syntax refusal goes through, so the answer comes from the type at every site: `ids::syntax_form`. The per-section refusals that spell their own prefix by hand (`wave/`, `trigger/`, `trap/`, `shortcut/`, `ambush/`, `timed-gate/`, `loot/`) are the same fact copied, which is why the general path did not have it. |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |

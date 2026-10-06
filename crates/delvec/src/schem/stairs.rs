@@ -40,8 +40,10 @@
 
 use std::fmt;
 
-/// A stair whose `shape` disagrees with the shape vanilla derives at its cell.
-pub const DW_STAIR_SHAPE_DERIVED: &str = "DW0801";
+delvewright_dsl::dw_code! {
+    /// A stair whose `shape` disagrees with the shape vanilla derives at its cell.
+    pub const DW_STAIR_SHAPE_DERIVED: &str = "DW0801";
+}
 
 /// The four horizontal directions, in vanilla's own vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

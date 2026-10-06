@@ -52,37 +52,39 @@ use crate::compiler::failure::Failure;
 use crate::compiler::plan::{LethalVolumePlan, Plan};
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0511`: a **posted place** — somewhere the campaign requires the party or a
-/// declared body to BE — lies inside a lethal volume (spec-0031).
-///
-/// One rule, because it is one defect: *a body is put here by declaration, not by
-/// walking, so no route proof can see it.* Three families of site fall under it.
-///
-/// * **Respawn seats** — the campaign's entry spawn, a `set-checkpoint` cell, a
-///   `bonfire` cell. The death loop: the party dies on arrival and is re-seated to
-///   die again, forever. `/spawnpoint` is only a hint and the engine re-seats on
-///   the death edge, so nothing downstream can rescue it. The exact dual of
-///   `DW0315`/`DW0316` for the hazard the party respawns *into*.
-/// * **Posted bodies** — a stage-2 NPC's anchor, a per-quest `cast` placement, a
-///   stage-5 actor's anchor. A volume's entity sweep exempts the engine's own
-///   machinery types and deliberately NOT content bodies (a mob that walks into
-///   the lava dies, which is the mechanism working) — so an NPC posted inside one
-///   is deleted on the first tick, the delve loses its speaker, and every static
-///   proof stays green. Found while writing this feature's own CI fixture, which
-///   is exactly the shape the rule now refuses.
-/// * **Wave seats** — the cells `emit::plan_wave_spawns` stands a wave's mobs on.
-///   The same defect with a different author: the cell is chosen by the compiler
-///   rather than written by the campaign, so the message says a different thing
-///   about what to move ([`ChosenBy`]) and the rule is unchanged. It is not its
-///   own code, and that is a judgement worth recording rather than assuming: the
-///   seating is drawn from the footing a PLAYER can stand on, which now excludes
-///   every cell a player's own hitbox could meet a volume from, and that ring is
-///   the same ring for every body in the engine's dims table up to two blocks
-///   wide. What is left is a body more than two blocks TALL seated exactly one
-///   cell below where a player's head would already have been refused — a
-///   warden, an iron golem or a ravager under a volume that floats two courses
-///   above the floor. One rule, one code, and the prescription branches.
-pub const DW_LETHAL_RESPAWN_SEAT: DwCode = DwCode::new("DW0511", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0511`: a **posted place** — somewhere the campaign requires the party or a
+    /// declared body to BE — lies inside a lethal volume (spec-0031).
+    ///
+    /// One rule, because it is one defect: *a body is put here by declaration, not by
+    /// walking, so no route proof can see it.* Three families of site fall under it.
+    ///
+    /// * **Respawn seats** — the campaign's entry spawn, a `set-checkpoint` cell, a
+    ///   `bonfire` cell. The death loop: the party dies on arrival and is re-seated to
+    ///   die again, forever. `/spawnpoint` is only a hint and the engine re-seats on
+    ///   the death edge, so nothing downstream can rescue it. The exact dual of
+    ///   `DW0315`/`DW0316` for the hazard the party respawns *into*.
+    /// * **Posted bodies** — a stage-2 NPC's anchor, a per-quest `cast` placement, a
+    ///   stage-5 actor's anchor. A volume's entity sweep exempts the engine's own
+    ///   machinery types and deliberately NOT content bodies (a mob that walks into
+    ///   the lava dies, which is the mechanism working) — so an NPC posted inside one
+    ///   is deleted on the first tick, the delve loses its speaker, and every static
+    ///   proof stays green. Found while writing this feature's own CI fixture, which
+    ///   is exactly the shape the rule now refuses.
+    /// * **Wave seats** — the cells `emit::plan_wave_spawns` stands a wave's mobs on.
+    ///   The same defect with a different author: the cell is chosen by the compiler
+    ///   rather than written by the campaign, so the message says a different thing
+    ///   about what to move ([`ChosenBy`]) and the rule is unchanged. It is not its
+    ///   own code, and that is a judgement worth recording rather than assuming: the
+    ///   seating is drawn from the footing a PLAYER can stand on, which now excludes
+    ///   every cell a player's own hitbox could meet a volume from, and that ring is
+    ///   the same ring for every body in the engine's dims table up to two blocks
+    ///   wide. What is left is a body more than two blocks TALL seated exactly one
+    ///   cell below where a player's head would already have been refused — a
+    ///   warden, an iron golem or a ravager under a volume that floats two courses
+    ///   above the floor. One rule, one code, and the prescription branches.
+    pub const DW_LETHAL_RESPAWN_SEAT: DwCode = DwCode::new("DW0511", ExitTier::Build);
+}
 
 /// The binding ledger for the lethal-volume proofs.
 #[derive(Clone, Debug, Default)]
@@ -447,12 +449,14 @@ impl DangerVisibility {
     }
 }
 
-/// `DW0954`: **a staged volume the forced route never meets live**
-/// (spec-0088 §9). Advisory: a hazard the party need never arm is a design, but
-/// the ladder cannot exercise it, the bot's death loop will find it shut, and
-/// only its may-be-live configurations were judged for visibility — so the
-/// build says so.
-pub const DW_LETHAL_STAGE_UNMET: DwCode = DwCode::new("DW0954", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0954`: **a staged volume the forced route never meets live**
+    /// (spec-0088 §9). Advisory: a hazard the party need never arm is a design, but
+    /// the ladder cannot exercise it, the bot's death loop will find it shut, and
+    /// only its may-be-live configurations were judged for visibility — so the
+    /// build says so.
+    pub const DW_LETHAL_STAGE_UNMET: DwCode = DwCode::new("DW0954", ExitTier::Build);
+}
 
 /// Does the block under or in `cell` show one of `shown_by`?
 ///
@@ -1409,29 +1413,33 @@ pub fn gate(
 // A wave does not walk into a killing volume (DW0922, DW0923)
 // ---------------------------------------------------------------------------
 
-/// `DW0922`: **a seated wave whose members can reach a lethal volume.**
-///
-/// A volume's entity sweep kills every body that is not a player, wave members
-/// included — the mechanism working, when the party leads a mob there. The
-/// defect is a wave seated so that its own members get there unled: by the
-/// movement a mob has ([`crate::compiler::nav::World::mob_moves`] — walking, a
-/// step or jump onto a block at most one higher, a drop off any edge, sinking in
-/// water, and never a gap jump), within its follow range of its seat
-/// ([`crate::compiler::nav::World::reach_into_volumes`]). The wave thins itself
-/// before the party touches it, on every life, and anything a member drops lands
-/// inside the box.
-///
-/// Judged over the world as built, every fence gate shut — a mob cannot open
-/// one. The same reach through a barrier a player can open is `DW0923`.
-pub const DW_WAVE_REACHES_LETHAL: DwCode = DwCode::new("DW0922", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0922`: **a seated wave whose members can reach a lethal volume.**
+    ///
+    /// A volume's entity sweep kills every body that is not a player, wave members
+    /// included — the mechanism working, when the party leads a mob there. The
+    /// defect is a wave seated so that its own members get there unled: by the
+    /// movement a mob has ([`crate::compiler::nav::World::mob_moves`] — walking, a
+    /// step or jump onto a block at most one higher, a drop off any edge, sinking in
+    /// water, and never a gap jump), within its follow range of its seat
+    /// ([`crate::compiler::nav::World::reach_into_volumes`]). The wave thins itself
+    /// before the party touches it, on every life, and anything a member drops lands
+    /// inside the box.
+    ///
+    /// Judged over the world as built, every fence gate shut — a mob cannot open
+    /// one. The same reach through a barrier a player can open is `DW0923`.
+    pub const DW_WAVE_REACHES_LETHAL: DwCode = DwCode::new("DW0922", ExitTier::Build);
+}
 
-/// `DW0923`: **a seated wave that reaches a lethal volume through a barrier the
-/// party can leave open.** Every fence gate, door and trapdoor a player opens by
-/// hand ([`delvewright_dsl::blockshape::is_player_openable`]) is judged in its
-/// open state: a player who opens one may leave it open and die, and the wave
-/// re-seated after that death walks through it. Raised only where `DW0922` is
-/// not: the as-built reach is clear, and the opened one is not.
-pub const DW_WAVE_REACHES_LETHAL_OPENED: DwCode = DwCode::new("DW0923", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0923`: **a seated wave that reaches a lethal volume through a barrier the
+    /// party can leave open.** Every fence gate, door and trapdoor a player opens by
+    /// hand ([`delvewright_dsl::blockshape::is_player_openable`]) is judged in its
+    /// open state: a player who opens one may leave it open and die, and the wave
+    /// re-seated after that death walks through it. Raised only where `DW0922` is
+    /// not: the as-built reach is clear, and the opened one is not.
+    pub const DW_WAVE_REACHES_LETHAL_OPENED: DwCode = DwCode::new("DW0923", ExitTier::Build);
+}
 
 /// One way a wave member gets into a lethal volume.
 #[derive(Clone, Debug)]

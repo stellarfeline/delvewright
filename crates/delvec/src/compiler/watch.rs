@@ -84,12 +84,14 @@
 use delvewright_dsl::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// `DW0810`: the generated PackTest suite drives one declared object's own
-/// emitted body but not a sibling's, so the sibling ships with no runtime proof.
-///
-/// Warning tier. The suite still loads and every template in it still passes —
-/// that is the failure mode, not a mitigation.
-pub const DW_UNWATCHED_SIBLING: DwCode = DwCode::new("DW0810", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0810`: the generated PackTest suite drives one declared object's own
+    /// emitted body but not a sibling's, so the sibling ships with no runtime proof.
+    ///
+    /// Warning tier. The suite still loads and every template in it still passes —
+    /// that is the failure mode, not a mitigation.
+    pub const DW_UNWATCHED_SIBLING: DwCode = DwCode::new("DW0810", ExitTier::Build);
+}
 
 /// One declared object whose own body no template drives.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -451,11 +453,13 @@ pub fn finding(
 // set-equality that reds on the new row. What the claim buys is that the
 // mechanic which HAS been proven per object can never quietly stop being.
 
-/// `DW0811`: a suite emitter claimed per-object runtime proof over a declared
-/// list, and the shipped suite drives only some of the bodies it wrote for that
-/// list. Refusal tier — the emitter's own claim is the proof obligation, and a
-/// strict subset does not discharge it.
-pub const DW_CLAIM_NOT_DISCHARGED: DwCode = DwCode::new("DW0811", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0811`: a suite emitter claimed per-object runtime proof over a declared
+    /// list, and the shipped suite drives only some of the bodies it wrote for that
+    /// list. Refusal tier — the emitter's own claim is the proof obligation, and a
+    /// strict subset does not discharge it.
+    pub const DW_CLAIM_NOT_DISCHARGED: DwCode = DwCode::new("DW0811", ExitTier::Build);
+}
 
 /// One suite emitter's claim that it proves a declared list **per object**.
 ///

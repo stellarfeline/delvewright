@@ -79,17 +79,23 @@ use delvewright_dsl::{
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::{Plan, Step, safe_local};
 
-/// `DW0936`: an assembly's hitbox is out of vanilla's attack-detection bounds,
-/// does not meet the footprint of what spawns, or is absent where a
-/// `strike-assembly` needs it.
-pub const DW_ASSEMBLY_HITBOX: DwCode = DwCode::new("DW0936", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0936`: an assembly's hitbox is out of vanilla's attack-detection bounds,
+    /// does not meet the footprint of what spawns, or is absent where a
+    /// `strike-assembly` needs it.
+    pub const DW_ASSEMBLY_HITBOX: DwCode = DwCode::new("DW0936", ExitTier::Build);
+}
 
-/// `DW0937`: a `strike-assembly` the critical path performs has no cell of the
-/// party's population within a strike of the hitbox.
-pub const DW_ASSEMBLY_REACH: DwCode = DwCode::new("DW0937", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0937`: a `strike-assembly` the critical path performs has no cell of the
+    /// party's population within a strike of the hitbox.
+    pub const DW_ASSEMBLY_REACH: DwCode = DwCode::new("DW0937", ExitTier::Build);
+}
 
-/// `DW0938`: a blow lands where it was not announced, or where the limb is not.
-pub const DW_ASSEMBLY_STRIKE: DwCode = DwCode::new("DW0938", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0938`: a blow lands where it was not announced, or where the limb is not.
+    pub const DW_ASSEMBLY_STRIKE: DwCode = DwCode::new("DW0938", ExitTier::Build);
+}
 
 /// The widest hitbox vanilla detects an attack on across its whole face: an
 /// interaction registers attacks only within 3.3 blocks of its position toward

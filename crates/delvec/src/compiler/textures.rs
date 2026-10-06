@@ -38,12 +38,14 @@ use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, codes};
 use serde::Deserialize;
 use serde_json::Value;
 
-/// `DW0309`: an image a campaign declares has no file — a staged body's
-/// `skin.texture_id` with no `skins/<id>.png`, or a `world.textures[]` row with
-/// no `textures/<id>.png`. The message names the declaring object and the path.
-/// Build-tier (exit 3) where a skin is baked; validation-tier where a texture
-/// row is resolved.
-pub const DW_IMAGE_MISSING: DwCode = DwCode::new("DW0309", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0309`: an image a campaign declares has no file — a staged body's
+    /// `skin.texture_id` with no `skins/<id>.png`, or a `world.textures[]` row with
+    /// no `textures/<id>.png`. The message names the declaring object and the path.
+    /// Build-tier (exit 3) where a skin is baked; validation-tier where a texture
+    /// row is resolved.
+    pub const DW_IMAGE_MISSING: DwCode = DwCode::new("DW0309", ExitTier::Build);
+}
 
 /// The campaign-relative directory a row's image is read from.
 pub const TEXTURES_DIR: &str = "textures";

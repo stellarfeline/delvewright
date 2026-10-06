@@ -53,33 +53,53 @@ use delvewright_dsl::{
 use crate::compiler::continuity::{self, NpcWhere};
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// A live NPC is unaccounted for in a quest's `cast` ledger (proof 1).
-pub const DW_CAST_UNACCOUNTED: DwCode = DwCode::new("DW0460", ExitTier::Build);
-/// A declared `at` contradicts the position the effect history produces (proof 2).
-pub const DW_CAST_PLACEMENT: DwCode = DwCode::new("DW0461", ExitTier::Build);
-/// A branch-divergent NPC carries a single flat declaration (proof 4).
-pub const DW_CAST_BRANCH: DwCode = DwCode::new("DW0462", ExitTier::Build);
-/// A cast placement omits the forcing-function fields, or declares them for a
-/// body that is not in the world.
-pub const DW_CAST_INCOMPLETE: DwCode = DwCode::new("DW0463", ExitTier::Build);
-/// A cast entry names something that does not exist (unknown NPC, a dialogue root
-/// that is not a node of that NPC's tree, an empty bark pool).
-pub const DW_CAST_DANGLING: DwCode = DwCode::new("DW0464", ExitTier::Build);
-/// `"unchanged"` at an NPC's first appearance: nothing to carry forward.
-pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::new("DW0466", ExitTier::Build);
-/// An NPC's dialogue never changes across the whole story (warning).
-pub const DW_CAST_STALE: DwCode = DwCode::new("DW0467", ExitTier::Build);
-/// A `talk-to` objective whose NPC opens nothing that can complete it, at any
-/// scene the ledger can present while that objective is live (see
-/// [`check_talk_answerable`]).
-pub const DW_CAST_UNANSWERABLE: DwCode = DwCode::new("DW0858", ExitTier::Build);
-/// A cast row names an anchor that BOTH the beat's area and the NPC's own area
-/// answer to, so the name alone does not say which building the body is in.
-pub const DW_CAST_ANCHOR_SHARED: DwCode = DwCode::new("DW0884", ExitTier::Build);
-/// A cast clause no runtime state can select: at every state satisfying its own
-/// gate, a later clause of the same quest also passes and overrides it, so its
-/// scene is unreachable by construction (see [`check_clause_liveness`]).
-pub const DW_CAST_DEAD_CLAUSE: DwCode = DwCode::new("DW0846", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// A live NPC is unaccounted for in a quest's `cast` ledger (proof 1).
+    pub const DW_CAST_UNACCOUNTED: DwCode = DwCode::new("DW0460", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A declared `at` contradicts the position the effect history produces (proof 2).
+    pub const DW_CAST_PLACEMENT: DwCode = DwCode::new("DW0461", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A branch-divergent NPC carries a single flat declaration (proof 4).
+    pub const DW_CAST_BRANCH: DwCode = DwCode::new("DW0462", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A cast placement omits the forcing-function fields, or declares them for a
+    /// body that is not in the world.
+    pub const DW_CAST_INCOMPLETE: DwCode = DwCode::new("DW0463", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A cast entry names something that does not exist (unknown NPC, a dialogue root
+    /// that is not a node of that NPC's tree, an empty bark pool).
+    pub const DW_CAST_DANGLING: DwCode = DwCode::new("DW0464", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `"unchanged"` at an NPC's first appearance: nothing to carry forward.
+    pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::new("DW0466", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// An NPC's dialogue never changes across the whole story (warning).
+    pub const DW_CAST_STALE: DwCode = DwCode::new("DW0467", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A `talk-to` objective whose NPC opens nothing that can complete it, at any
+    /// scene the ledger can present while that objective is live (see
+    /// [`check_talk_answerable`]).
+    pub const DW_CAST_UNANSWERABLE: DwCode = DwCode::new("DW0858", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A cast row names an anchor that BOTH the beat's area and the NPC's own area
+    /// answer to, so the name alone does not say which building the body is in.
+    pub const DW_CAST_ANCHOR_SHARED: DwCode = DwCode::new("DW0884", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// A cast clause no runtime state can select: at every state satisfying its own
+    /// gate, a later clause of the same quest also passes and overrides it, so its
+    /// scene is unreachable by construction (see [`check_clause_liveness`]).
+    pub const DW_CAST_DEAD_CLAUSE: DwCode = DwCode::new("DW0846", ExitTier::Build);
+}
 
 /// What an NPC's right-click does during one scene.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -48,6 +48,7 @@ use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
 use delvewright_dsl::blocks::BlockRegistry;
+use delvewright_dsl::{DwCode, ExitTier};
 
 use crate::compiler::edit::{hash01, value_noise};
 use crate::compiler::solver::Splitmix64;
@@ -125,16 +126,17 @@ pub struct SurroundTile {
     pub size: [i32; 3],
 }
 
-/// `DW0854` (build, exit 3): the surround's inner slope has grown a standable
-/// staircase — a nav walk flood starting on the gap floor reached a column
-/// outward of the crest line, so the landform no longer bounds the map.
-///
-/// Proven over the assembled bytes rather than argued from the generator's own
-/// quantization, because everything between the two — gravity settling, a
-/// stage-7 edit script, a palette change — can put back the riser the generator
-/// never wrote.
-pub const DW_VALLEY_CLIMB: delvewright_dsl::DwCode =
-    delvewright_dsl::DwCode::new("DW0854", delvewright_dsl::ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0854` (build, exit 3): the surround's inner slope has grown a standable
+    /// staircase — a nav walk flood starting on the gap floor reached a column
+    /// outward of the crest line, so the landform no longer bounds the map.
+    ///
+    /// Proven over the assembled bytes rather than argued from the generator's own
+    /// quantization, because everything between the two — gravity settling, a
+    /// stage-7 edit script, a palette change — can put back the riser the generator
+    /// never wrote.
+    pub const DW_VALLEY_CLIMB: DwCode = DwCode::new("DW0854", ExitTier::Build);
+}
 
 /// A biome-paint rectangle for the bootstrap `/fillbiome` pass (vanilla-native
 /// tint/ambience channel; spec-0026 §1 layering paragraph).

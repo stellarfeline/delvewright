@@ -120,51 +120,57 @@ use crate::compiler::nav::World;
 use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0525`: a death region has **no walkable route back** — from some respawn
-/// seat, under some quest state, there is no reachable cell at all that a stake
-/// left for a death in that region could stand on.
-///
-/// This is spec-0032's acceptance criterion 8, and it is the failure a souls-shaped
-/// delve produces by accident: a one-way drop. You fall, you die, the engine leaves
-/// your purse at the bottom, and the way back does not exist. The message names the
-/// death region and the quest state, because those are the two things the author has
-/// to change.
-pub const DW_STAKE_NO_ROUTE_BACK: DwCode = DwCode::new("DW0525", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0525`: a death region has **no walkable route back** — from some respawn
+    /// seat, under some quest state, there is no reachable cell at all that a stake
+    /// left for a death in that region could stand on.
+    ///
+    /// This is spec-0032's acceptance criterion 8, and it is the failure a souls-shaped
+    /// delve produces by accident: a one-way drop. You fall, you die, the engine leaves
+    /// your purse at the bottom, and the way back does not exist. The message names the
+    /// death region and the quest state, because those are the two things the author has
+    /// to change.
+    pub const DW_STAKE_NO_ROUTE_BACK: DwCode = DwCode::new("DW0525", ExitTier::Build);
+}
 
-/// `DW0526`: every cell a stake could be projected onto for a death region sits on
-/// a block **runtime removes** — so the marker would be destroyed by the next ride,
-/// the next seal, or the next collapse.
-///
-/// Distinguished from [`DW_STAKE_NO_ROUTE_BACK`] because the prescription is
-/// opposite: there *is* a route back, and the ground it ends on is the problem.
-pub const DW_STAKE_UNSAFE_ANCHOR: DwCode = DwCode::new("DW0526", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0526`: every cell a stake could be projected onto for a death region sits on
+    /// a block **runtime removes** — so the marker would be destroyed by the next ride,
+    /// the next seal, or the next collapse.
+    ///
+    /// Distinguished from [`DW_STAKE_NO_ROUTE_BACK`] because the prescription is
+    /// opposite: there *is* a route back, and the ground it ends on is the problem.
+    pub const DW_STAKE_UNSAFE_ANCHOR: DwCode = DwCode::new("DW0526", ExitTier::Build);
+}
 
-/// `DW0880`: two stakes that can each leave a marker declare **different**
-/// `marker_item`s, so the place a death leaves would have to wear two faces.
-///
-/// A marker is a *place* — the spot a death left its wagers — and there is one
-/// marker at a place however many datums were forfeited there. That is forced
-/// rather than chosen: the placement table is keyed on (respawn seat, death
-/// region) and never on the stake, so every stake one death drops resolves to one
-/// anchor, and the rule's common branch leaves the stake at the death point, a
-/// position chosen at runtime that no compile-time separation can reach. One box
-/// per place is also what stops four coincident `1.0 × 2.0` interaction hitboxes
-/// being an exact ray-pick tie — the defect [`crate::eclipse::DW_AFFORDANCE_CONTEST`]
-/// refuses for authored affordances.
-///
-/// So the display standing at a place renders ONE item, and every stake that can
-/// leave a marker has to name that item. The alternative is the silent kind of
-/// wrong: whichever stake happened to fill the place first would decide its face,
-/// and the other declarations would be read, emitted nowhere, and disagree with
-/// what the player sees.
-///
-/// **Not restricted to stakes one death can drop together.** Two stakes whose
-/// `on_death` gates are mutually exclusive still land at the same places across
-/// different deaths, and a marker outlives the death that made it until somebody
-/// collects it — so a second death's drop finds the first's marker standing and
-/// reuses it. Co-droppability is not the question; sharing a place is, and every
-/// stake shares every place.
-pub const DW_STAKE_TWO_FACES: DwCode = DwCode::new("DW0880", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0880`: two stakes that can each leave a marker declare **different**
+    /// `marker_item`s, so the place a death leaves would have to wear two faces.
+    ///
+    /// A marker is a *place* — the spot a death left its wagers — and there is one
+    /// marker at a place however many datums were forfeited there. That is forced
+    /// rather than chosen: the placement table is keyed on (respawn seat, death
+    /// region) and never on the stake, so every stake one death drops resolves to one
+    /// anchor, and the rule's common branch leaves the stake at the death point, a
+    /// position chosen at runtime that no compile-time separation can reach. One box
+    /// per place is also what stops four coincident `1.0 × 2.0` interaction hitboxes
+    /// being an exact ray-pick tie — the defect [`crate::eclipse::DW_AFFORDANCE_CONTEST`]
+    /// refuses for authored affordances.
+    ///
+    /// So the display standing at a place renders ONE item, and every stake that can
+    /// leave a marker has to name that item. The alternative is the silent kind of
+    /// wrong: whichever stake happened to fill the place first would decide its face,
+    /// and the other declarations would be read, emitted nowhere, and disagree with
+    /// what the player sees.
+    ///
+    /// **Not restricted to stakes one death can drop together.** Two stakes whose
+    /// `on_death` gates are mutually exclusive still land at the same places across
+    /// different deaths, and a marker outlives the death that made it until somebody
+    /// collects it — so a second death's drop finds the first's marker standing and
+    /// reuses it. Co-droppability is not the question; sharing a place is, and every
+    /// stake shares every place.
+    pub const DW_STAKE_TWO_FACES: DwCode = DwCode::new("DW0880", ExitTier::Build);
+}
 
 /// The stakes that can actually leave a marker — every stake but the
 /// `max_live: 0` no-death-cost configuration, which places nothing and therefore

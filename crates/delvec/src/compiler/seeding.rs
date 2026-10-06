@@ -87,18 +87,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::compiler::failure::Failure;
 use crate::compiler::integrity::Tier;
 
-/// `DW0495`: an emitted score comparison reads an entry the emitted pack never
-/// creates, so its answer is decided by the absence rather than by play.
-///
-/// Build-tier (exit 3). The command compiles, the datapack loads, and the branch
-/// simply never takes — the failure shape that cost every campaign with a
-/// checkpoint its players' FIRST death.
-///
-/// Like `DW0497`, this rule judges the COMPILER's own output, never the
-/// campaign's documents: a campaign can neither cause nor fix an unbacked
-/// comparison — it cannot name the objective, cannot write it, and cannot see
-/// the command.
-pub const DW_UNSEEDED_SCORE_READ: DwCode = DwCode::new("DW0495", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0495`: an emitted score comparison reads an entry the emitted pack never
+    /// creates, so its answer is decided by the absence rather than by play.
+    ///
+    /// Build-tier (exit 3). The command compiles, the datapack loads, and the branch
+    /// simply never takes — the failure shape that cost every campaign with a
+    /// checkpoint its players' FIRST death.
+    ///
+    /// Like `DW0497`, this rule judges the COMPILER's own output, never the
+    /// campaign's documents: a campaign can neither cause nor fix an unbacked
+    /// comparison — it cannot name the objective, cannot write it, and cannot see
+    /// the command.
+    pub const DW_UNSEEDED_SCORE_READ: DwCode = DwCode::new("DW0495", ExitTier::Build);
+}
 
 // ---------------------------------------------------------------------------
 // ranges

@@ -64,58 +64,66 @@
 use delvewright_dsl::Verb;
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, Objective, QuestEffect};
 
-/// `DW0860`: a **failure clock** — a `begin-stealth` that answers exposure with
-/// an `on_caught` bundle — armed with no prompt before it, or with too little
-/// time between that prompt and the earliest moment it can punish the party.
-///
-/// Island round 12: the beat armed and the party was punished before the line
-/// telling them what the rules now were had been on screen long enough to read.
-/// The instance was repaired by widening that one beat's grace; the class is
-/// this.
-///
-/// The arithmetic is stated rather than tuned. `available` is the whole interval
-/// between the last prompt firing and the clock's first bite —
-/// `(arming offset − prompt offset) + grace_ticks`, in ticks, on the arming's own
-/// timeline. `needed` is [`READ_LEAD_TICKS`] plus [`READ_TICKS_PER_CHAR`] per
-/// character of that prompt.
-pub const DW_CLOCK_UNREAD: DwCode = DwCode::new("DW0860", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0860`: a **failure clock** — a `begin-stealth` that answers exposure with
+    /// an `on_caught` bundle — armed with no prompt before it, or with too little
+    /// time between that prompt and the earliest moment it can punish the party.
+    ///
+    /// Island round 12: the beat armed and the party was punished before the line
+    /// telling them what the rules now were had been on screen long enough to read.
+    /// The instance was repaired by widening that one beat's grace; the class is
+    /// this.
+    ///
+    /// The arithmetic is stated rather than tuned. `available` is the whole interval
+    /// between the last prompt firing and the clock's first bite —
+    /// `(arming offset − prompt offset) + grace_ticks`, in ticks, on the arming's own
+    /// timeline. `needed` is [`READ_LEAD_TICKS`] plus [`READ_TICKS_PER_CHAR`] per
+    /// character of that prompt.
+    pub const DW_CLOCK_UNREAD: DwCode = DwCode::new("DW0860", ExitTier::Build);
+}
 
-/// `DW0861`: a `collect` that **adopts a prefab container** and does not identify
-/// its target to the party — no `title`, so nothing is announced, or no
-/// `item_name`, so the box that is opened holds an anonymous vanilla stack.
-///
-/// Island round 16: four identical barrels, one of them the objective's, and
-/// nothing told the party which. Adoption is the act that creates the ambiguity:
-/// the compiler's own chest at `anchor` is a new object that appears the tick the
-/// objective activates, whereas an adopted container is — in
-/// [`Objective::Collect::container`]'s own words — *scenery the player has been
-/// walking past since minute one*.
-pub const DW_ADOPTED_CONTAINER_UNMARKED: DwCode = DwCode::new("DW0861", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0861`: a `collect` that **adopts a prefab container** and does not identify
+    /// its target to the party — no `title`, so nothing is announced, or no
+    /// `item_name`, so the box that is opened holds an anonymous vanilla stack.
+    ///
+    /// Island round 16: four identical barrels, one of them the objective's, and
+    /// nothing told the party which. Adoption is the act that creates the ambiguity:
+    /// the compiler's own chest at `anchor` is a new object that appears the tick the
+    /// objective activates, whereas an adopted container is — in
+    /// [`Objective::Collect::container`]'s own words — *scenery the player has been
+    /// walking past since minute one*.
+    pub const DW_ADOPTED_CONTAINER_UNMARKED: DwCode = DwCode::new("DW0861", ExitTier::Build);
+}
 
-/// `DW0862`: an objective authors a `hint` and no `title`, so the emitter shows
-/// **neither** and the prompt reaches no player.
-///
-/// The activation announcement is emitted only for a titled objective, and the
-/// hint's `tellraw` is nested inside that guard — so a hint without a title is
-/// prose that is inventoried for translation, rendered into every language
-/// sidecar, and never once put on a screen. Nothing else in the toolchain says
-/// so: it is not a warning, not a lint, and the l10n inventory counts it as a
-/// live string.
-pub const DW_PROMPT_UNSHOWN: DwCode = DwCode::new("DW0862", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0862`: an objective authors a `hint` and no `title`, so the emitter shows
+    /// **neither** and the prompt reaches no player.
+    ///
+    /// The activation announcement is emitted only for a titled objective, and the
+    /// hint's `tellraw` is nested inside that guard — so a hint without a title is
+    /// prose that is inventoried for translation, rendered into every language
+    /// sidecar, and never once put on a screen. Nothing else in the toolchain says
+    /// so: it is not a warning, not a lint, and the l10n inventory counts it as a
+    /// live string.
+    pub const DW_PROMPT_UNSHOWN: DwCode = DwCode::new("DW0862", ExitTier::Build);
+}
 
-/// `DW0863`: a `kill` objective with no `title`, or with no `hint`.
-///
-/// Bell round 6: a defence wave gave the party no guidance to where the attackers
-/// were, so the fight could not be found. A fight is the one objective kind the
-/// compiler gives the world **nothing** for. Measured against the emitter rather
-/// than assumed: `emit::activation_commands` returns an empty command list for
-/// `Objective::Kill`, `emit::completion_cleanup` likewise, and the render plan
-/// falls back to the literal phrase `the fight` because no name exists to use.
-/// Every other kind leaves something standing — a `reach-anchor` a glowing end
-/// rod, an `interact` a lantern or its authored prop, a `collect` a chest, a
-/// `talk-to` a named body. A wave is bodies that appear somewhere, and the
-/// objective's own two lines are the only thing that can say where.
-pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::new("DW0863", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0863`: a `kill` objective with no `title`, or with no `hint`.
+    ///
+    /// Bell round 6: a defence wave gave the party no guidance to where the attackers
+    /// were, so the fight could not be found. A fight is the one objective kind the
+    /// compiler gives the world **nothing** for. Measured against the emitter rather
+    /// than assumed: `emit::activation_commands` returns an empty command list for
+    /// `Objective::Kill`, `emit::completion_cleanup` likewise, and the render plan
+    /// falls back to the literal phrase `the fight` because no name exists to use.
+    /// Every other kind leaves something standing — a `reach-anchor` a glowing end
+    /// rod, an `interact` a lantern or its authored prop, a `collect` a chest, a
+    /// `talk-to` a named body. A wave is bodies that appear somewhere, and the
+    /// objective's own two lines are the only thing that can say where.
+    pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::new("DW0863", ExitTier::Build);
+}
 
 /// Ticks allowed for a line to appear and the eye to reach it, before any of it
 /// is read. One second at 20 tps.

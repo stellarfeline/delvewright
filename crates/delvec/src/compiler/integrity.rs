@@ -51,13 +51,15 @@ use crate::compiler::failure::Failure;
 use delvewright_dsl::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// `DW0497`: an emitted `function <ns>:<name>` call whose target function is not
-/// in the emitted tree.
-///
-/// Build-tier (exit 3). The call compiles, the datapack loads, and the verb
-/// simply never happens — the failure shape that cost the island round 21 two of
-/// its three storm waves.
-pub const DW_DANGLING_FUNCTION_CALL: DwCode = DwCode::new("DW0497", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0497`: an emitted `function <ns>:<name>` call whose target function is not
+    /// in the emitted tree.
+    ///
+    /// Build-tier (exit 3). The call compiles, the datapack loads, and the verb
+    /// simply never happens — the failure shape that cost the island round 21 two of
+    /// its three storm waves.
+    pub const DW_DANGLING_FUNCTION_CALL: DwCode = DwCode::new("DW0497", ExitTier::Build);
+}
 
 /// Which emitted datapack a function belongs to. Determines what it may call:
 /// the shipped pack ships alone, the overlays ship beside it.

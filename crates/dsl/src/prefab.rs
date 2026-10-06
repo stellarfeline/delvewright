@@ -73,6 +73,7 @@ use std::path::Path;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::diagnostic::{DwCode, ExitTier};
 use crate::registry::Lighting;
 use crate::split::TileSet;
 
@@ -316,8 +317,10 @@ pub struct SpatialContract {
     pub no_body_majority_ack: Option<String>,
 }
 
-/// `DW0848`: a piece's declared footprint class disagrees with its bytes.
-pub const DW_FOOTPRINT_CLASS: crate::DwCode = crate::DwCode::new("DW0848", crate::ExitTier::Build);
+crate::dw_code! {
+    /// `DW0848`: a piece's declared footprint class disagrees with its bytes.
+    pub const DW_FOOTPRINT_CLASS: DwCode = DwCode::new("DW0848", ExitTier::Build);
+}
 
 /// **Judge a piece's declared `footprint_class` against its own structure
 /// size.**

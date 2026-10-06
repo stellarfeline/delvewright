@@ -41,20 +41,26 @@ use delvewright_dsl::{
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-/// `DW0928`: an attribute line the pinned game does not accept here — an id it
-/// does not register, one the overworld day cycle overrides, a `gameplay/` id, a
-/// value not in the id's shape or outside its codec's range, a sound or particle
-/// the pinned registries lack; or a tint colour that is not `#rrggbb`.
-pub const DW_ATMOSPHERE_ATTRIBUTE: DwCode = DwCode::new("DW0928", ExitTier::Build);
-/// `DW0929`: a paint that reaches cells it may not — a `set-atmosphere` naming
-/// neither or both of `region` / `place`, a repaint volume outside the map's
-/// extent, or two carried places whose painted cells meet with different
-/// atmospheres.
-pub const DW_ATMOSPHERE_PAINT: DwCode = DwCode::new("DW0929", ExitTier::Build);
-/// `DW0930`: an atmosphere declared against itself or against nothing — one no
-/// place carries and no beat paints, a `climate` that contradicts its
-/// `precipitation`, or a duplicate id.
-pub const DW_ATMOSPHERE_DECL: DwCode = DwCode::new("DW0930", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0928`: an attribute line the pinned game does not accept here — an id it
+    /// does not register, one the overworld day cycle overrides, a `gameplay/` id, a
+    /// value not in the id's shape or outside its codec's range, a sound or particle
+    /// the pinned registries lack; or a tint colour that is not `#rrggbb`.
+    pub const DW_ATMOSPHERE_ATTRIBUTE: DwCode = DwCode::new("DW0928", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0929`: a paint that reaches cells it may not — a `set-atmosphere` naming
+    /// neither or both of `region` / `place`, a repaint volume outside the map's
+    /// extent, or two carried places whose painted cells meet with different
+    /// atmospheres.
+    pub const DW_ATMOSPHERE_PAINT: DwCode = DwCode::new("DW0929", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW0930`: an atmosphere declared against itself or against nothing — one no
+    /// place carries and no beat paints, a `climate` that contradicts its
+    /// `precipitation`, or a duplicate id.
+    pub const DW_ATMOSPHERE_DECL: DwCode = DwCode::new("DW0930", ExitTier::Build);
+}
 
 /// The path segment every atmosphere biome lives under in the delve's
 /// namespace: `<ns>:atmosphere/<kebab>`, emitted at

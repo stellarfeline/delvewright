@@ -1400,40 +1400,50 @@ pub fn seam_cells(seams: &[PlacedSeam]) -> BTreeSet<[i32; 3]> {
 // The stage-5 battery (spec-0049 §5.3) — the derivation's independent observer
 // ---------------------------------------------------------------------------
 
-/// `DW0836`: a built seam disagrees with its allocation.
-pub const DW_SEAM_BUILT: DwCode = DwCode::new("DW0836", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0836`: a built seam disagrees with its allocation.
+    pub const DW_SEAM_BUILT: DwCode = DwCode::new("DW0836", ExitTier::Build);
+}
 
-/// `DW0837`: a node's floor is unreached.
-pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0837", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0837`: a node's floor is unreached.
+    pub const DW_NODE_UNREACHED: DwCode = DwCode::new("DW0837", ExitTier::Build);
+}
 
-/// `DW0877`: a contact nothing can cross (spec-0053 §6).
-///
-/// The contact's measured crossing profile — the columns of its span a body
-/// crosses over the assembled bytes, under the compiler's own step rule — holds
-/// no run of body width. The author allocated a front and the massing walled it,
-/// so the graph declares a hand-off the world does not have.
-///
-/// It is the **contact's half of `DW0836`'s first claim**, and it is a different
-/// claim rather than the same one widened. A portal is a hole and *every* cell
-/// the plan allocated must be clear; a contact is continuous ground and the
-/// massing standing on part of it is content, not a defect — a rim with a boulder
-/// on it is still a rim. So what a contact owes is not "all of it" but "somewhere
-/// along it", and asking a portal's question of a front would refuse correct
-/// content, which is exactly the failure `DW0343` already carries as a lesson.
-///
-/// **Not a widening of the step rule**: the profile is read through
-/// `nav::World::neighbors`, the same rule every route proof in this compiler is
-/// taken under. A second step rule here would make this the one proof in the
-/// compiler taken under different physics.
-///
-/// Build tier (exit 3).
-pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::new("DW0877", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0877`: a contact nothing can cross (spec-0053 §6).
+    ///
+    /// The contact's measured crossing profile — the columns of its span a body
+    /// crosses over the assembled bytes, under the compiler's own step rule — holds
+    /// no run of body width. The author allocated a front and the massing walled it,
+    /// so the graph declares a hand-off the world does not have.
+    ///
+    /// It is the **contact's half of `DW0836`'s first claim**, and it is a different
+    /// claim rather than the same one widened. A portal is a hole and *every* cell
+    /// the plan allocated must be clear; a contact is continuous ground and the
+    /// massing standing on part of it is content, not a defect — a rim with a boulder
+    /// on it is still a rim. So what a contact owes is not "all of it" but "somewhere
+    /// along it", and asking a portal's question of a front would refuse correct
+    /// content, which is exactly the failure `DW0343` already carries as a lesson.
+    ///
+    /// **Not a widening of the step rule**: the profile is read through
+    /// `nav::World::neighbors`, the same rule every route proof in this compiler is
+    /// taken under. A second step rule here would make this the one proof in the
+    /// compiler taken under different physics.
+    ///
+    /// Build tier (exit 3).
+    pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::new("DW0877", ExitTier::Build);
+}
 
-/// `DW0838`: a connection nothing allocated.
-pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::new("DW0838", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0838`: a connection nothing allocated.
+    pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::new("DW0838", ExitTier::Build);
+}
 
-/// `DW0821`: a sightline is blocked. Warning in the slice — see [`sightlines`].
-pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::new("DW0821", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0821`: a sightline is blocked. Warning in the slice — see [`sightlines`].
+    pub const DW_SIGHTLINE_BLOCKED: DwCode = DwCode::new("DW0821", ExitTier::Build);
+}
 
 /// What the battery examined. Stated on every build, zero or not.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]

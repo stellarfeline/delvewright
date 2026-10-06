@@ -55,34 +55,38 @@ use crate::compiler::view::camera::Answers;
 use crate::compiler::light::reachable_clocks;
 use delvewright_dsl::{Clock, TimeSite};
 
-/// `DW0890`: **the approved design and the built world do not agree about the
-/// sky**, in one of three ways — a sky nobody approved a picture of, a row
-/// naming an image that is not there, or an approved image nobody recorded.
-///
-/// One code, because the three are one fact seen from three sides: the record
-/// and the world are not the same delve. Splitting them would give a creator
-/// three numbers to look up for one repair, and the repair is always the same
-/// pair of moves — change the world, or change the record.
-///
-/// Validation tier (exit 1). Its `ExitTier::Build` declaration is the ordinary
-/// one every validation diagnostic carries and says what it means: if this rule
-/// refuses with a build under way, it stops the build.
-pub const DW_DESIGN_SKY: DwCode = DwCode::new("DW0890", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0890`: **the approved design and the built world do not agree about the
+    /// sky**, in one of three ways — a sky nobody approved a picture of, a row
+    /// naming an image that is not there, or an approved image nobody recorded.
+    ///
+    /// One code, because the three are one fact seen from three sides: the record
+    /// and the world are not the same delve. Splitting them would give a creator
+    /// three numbers to look up for one repair, and the repair is always the same
+    /// pair of moves — change the world, or change the record.
+    ///
+    /// Validation tier (exit 1). Its `ExitTier::Build` declaration is the ordinary
+    /// one every validation diagnostic carries and says what it means: if this rule
+    /// refuses with a build under way, it stops the build.
+    pub const DW_DESIGN_SKY: DwCode = DwCode::new("DW0890", ExitTier::Build);
+}
 
-/// `DW0900`: **an approved picture has no showcase camera** — a row of
-/// `design.json` that no camera of `design/cameras.json` answers (spec-0070).
-///
-/// One code for one fact, separate from [`DW_DESIGN_SKY`] because its repair is
-/// unrelated: a creator writes a camera against the last built tree, where
-/// `DW0890`'s repair changes the hour or the record and `DW0721`'s fixes the
-/// record's own rules. A creator looks a code up to find its repair.
-///
-/// Build tier (exit 3), and `delvec cameras` raises the same code at its own
-/// exit 2 when it emits scenes — one code in two tiers, as `DW0721` already is.
-/// It refuses at the build rather than at validation because every view command
-/// validates first, so a validation-tier refusal would refuse `cameras
-/// --preview`, the instrument that completes the record (spec-0070 §3).
-pub const DW_DESIGN_ANSWERED: DwCode = DwCode::new("DW0900", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0900`: **an approved picture has no showcase camera** — a row of
+    /// `design.json` that no camera of `design/cameras.json` answers (spec-0070).
+    ///
+    /// One code for one fact, separate from [`DW_DESIGN_SKY`] because its repair is
+    /// unrelated: a creator writes a camera against the last built tree, where
+    /// `DW0890`'s repair changes the hour or the record and `DW0721`'s fixes the
+    /// record's own rules. A creator looks a code up to find its repair.
+    ///
+    /// Build tier (exit 3), and `delvec cameras` raises the same code at its own
+    /// exit 2 when it emits scenes — one code in two tiers, as `DW0721` already is.
+    /// It refuses at the build rather than at validation because every view command
+    /// validates first, so a validation-tier refusal would refuse `cameras
+    /// --preview`, the instrument that completes the record (spec-0070 §3).
+    pub const DW_DESIGN_ANSWERED: DwCode = DwCode::new("DW0900", ExitTier::Build);
+}
 
 /// One approved image found under `design/`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

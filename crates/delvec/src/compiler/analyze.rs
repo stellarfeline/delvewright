@@ -68,18 +68,26 @@ use crate::compiler::flow::Flow;
 pub mod codes {
     use delvewright_dsl::{DwCode, ExitTier};
 
-    /// Finale quest can never complete.
-    pub const FINALE_UNREACHABLE: DwCode = DwCode::new("DW0201", ExitTier::Analysis);
-    /// Quest can never be triggered.
-    pub const QUEST_UNREACHABLE: DwCode = DwCode::new("DW0202", ExitTier::Analysis);
-    /// Objective can never be completed (deadlock).
-    pub const OBJECTIVE_DEADLOCK: DwCode = DwCode::new("DW0203", ExitTier::Analysis);
+    delvewright_dsl::dw_code! {
+        /// Finale quest can never complete.
+        pub const FINALE_UNREACHABLE: DwCode = DwCode::new("DW0201", ExitTier::Analysis);
+    }
+    delvewright_dsl::dw_code! {
+        /// Quest can never be triggered.
+        pub const QUEST_UNREACHABLE: DwCode = DwCode::new("DW0202", ExitTier::Analysis);
+    }
+    delvewright_dsl::dw_code! {
+        /// Objective can never be completed (deadlock).
+        pub const OBJECTIVE_DEADLOCK: DwCode = DwCode::new("DW0203", ExitTier::Analysis);
+    }
     /// The exported critical path is not a walkable playthrough.
     pub const PATH_INCOHERENT: DwCode = crate::compiler::flow::DW_PATH_INCOHERENT;
     /// Optional participation can skip a load-bearing mainline beat.
     pub const OPTIONAL_GATES_MAINLINE: DwCode = crate::compiler::flow::DW_OPTIONAL_GATES_MAINLINE;
-    /// A declared `min_players: n` has no n-agent division of labour (spec-0018).
-    pub const PARTY_UNDIVIDABLE: DwCode = DwCode::new("DW0358", ExitTier::Build);
+    delvewright_dsl::dw_code! {
+        /// A declared `min_players: n` has no n-agent division of labour (spec-0018).
+        pub const PARTY_UNDIVIDABLE: DwCode = DwCode::new("DW0358", ExitTier::Build);
+    }
     // DW0210 (dark-area mitigation) moved to `crate::compiler::light` (spec-0010): it is now
     // measured over the assembled world, not a per-piece admission profile.
 }
