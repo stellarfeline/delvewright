@@ -8,7 +8,10 @@
 - [4. Expand, and let the machine judge](#4-expand-and-let-the-machine-judge)
 - [5. Look at it](#5-look-at-it)
 - [6. Admit it](#6-admit-it)
+- [A body has to be able to walk up it](#a-body-has-to-be-able-to-walk-up-it)
+- [Light inside a cave or a body](#light-inside-a-cave-or-a-body)
 - [What the grammar cannot express](#what-the-grammar-cannot-express)
+- [The form route: a body the grammar cannot state](#the-form-route-a-body-the-grammar-cannot-state)
 
 Follow `$DELVEWRIGHT_ENGINE/docs/reference/prefab-procedure.md` — it is the procedure, and these are
 its mandatory steps, in order. Do not improvise around them. All four binaries
@@ -376,11 +379,30 @@ still stands there. A region over air, or over blocks nobody could stand on, is
 `DW0888`; a route whose only way is over the table is `DW0510`, naming it —
 move the mark or open a way round, never drop the declaration.
 
+## Light inside a cave or a body
+
+Light the inside of a cave, a hollow or a body while you design the room, by
+these three rules, whichever route makes the piece:
+
+- **A natural source sits in the wall.** A glowing block the place could grow
+  (shroomlight, a vein of glowstone) is set flush into the rock or the flesh,
+  never stood on the floor and never paved across it.
+- **An artificial source is hidden.** A lantern, lamp or torch sits recessed
+  behind a partial block of the surface's own family (a slab, a stair, a
+  trapdoor), so the room glows and the fixture does not show.
+- **Place them staggered and irregular, in three dimensions**: on walls and on
+  the vault as well as near the floor, at uneven spacings and uneven heights.
+  Never a grid, and never one course at one height.
+
+A piece the `lighting` block calls dark is repaired by re-arranging these
+sources or adding more of them, never by another kind of light.
+
 ## What the grammar cannot express
 
 **What the grammar cannot express — escalate, do not work around**: block
 entities of any kind (chest loot, sign text, spawners — bind those in the
-campaign against an anchor the piece declares), **smooth** curves, diagonals, a
+campaign against an anchor the piece declares), **smooth** curves (a smooth
+body is the form route below, not an escalation), diagonals, a
 profile step that varies independently of the box, a vault bending on two axes at
 once, and terrain. **Neither a stepped arch nor a symmetric shape is on this
 list** — the first is idiom 3 (one recursion whose step is arithmetic on the
@@ -400,3 +422,44 @@ A piece that comes from **outside** — a community schematic — instead enters
 before `socket`. Never place an un-audited piece: `audit` is the licence and
 code-injection gate, and the `DW0733` check that the blocks in it exist at all.
 Flags in `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §2a and §3.
+
+## The form route: a body the grammar cannot state
+
+A smooth, organic body — a stranded creature, a hill-sized carcass — is not a
+grammar program. It is a **form**, sculpted by `delvec sculpt` (the
+`prefab-procedure.md` §0 row for smooth curves). These steps are mandatory, in
+order, and replace steps 3–4 above for that piece; steps 1, 2, 5 and 6 still apply.
+
+1. **Read the shape**: `delvec schema --stage sculpt-form`. Keep the form at
+   `forms/<id>.json` beside the campaign. Anchors are in the piece's frame;
+   solids and lights in the body's (`piece y = body y + ground.top + 1 − sink`).
+2. **Give it ground and an entry.** `ground {block, top}` fills the footprint;
+   one anchor carries `role: entry`, on the ground at grade. Bury the belly
+   (`sink`, or a body centred low) so the widest line sits a few courses above
+   grade: no overhang over walkable ground, and a flank a body cannot walk up.
+3. **Make the way up a `shelf`**, rising at most one block per block (half a
+   block per block walks as a stair), with `depth` reaching the ground so it
+   does not bridge over grade. It should be the only way onto the back: sculpt
+   once with the shelf removed and read that the `entry` line no longer reaches
+   the back's anchor. Where another part slopes onto the back (a tail, a limb),
+   tuck it under an overhang of the body — a straight `box` cut sawn across the
+   body to break the slope reads in game as a gap in the body.
+4. **Light the inside with `hull` entries**, never with lanterns stood on the
+   floor and never with a glowing palette block (refused, `DW0951`). A natural
+   source is `embedded` (a full cube, flush in the surface); an artificial one
+   is `recessed` behind a `cover` (a stair or slab of the surface's family).
+   Name `wall` and `vault` so the upper space is lit, give a `within` per room,
+   and state the density as `spacing`. A recessed 10-emitter lights about four
+   blocks out from its slot and an embedded one about six
+   (`$DELVEWRIGHT_ENGINE/docs/reference/interior-lighting.md` §7), so a room
+   wider than about twice that needs surface in its middle — a mass or column
+   of the body standing in it — and a dense band at floor height beside a
+   sparser entry over walls and vault. Read each entry's `lights[i] hull` line:
+   sources on the surfaces you named, and a room light above 0.
+5. **Sculpt and read back**: `delvec sculpt forms/<id>.json -o "$DELVEWRIGHT_PREFABS"`.
+   Read, every run: the gate lines (each `bound` non-zero), the `entry` line
+   (every standing anchor reached from grade), the `pockets:` line (`0 place(s)`,
+   or the run is refused `DW0952` naming each place and the way in), `walk_y`
+   (the ground's top + 1) and `shown_faces`. Fix the form, never the output.
+6. **Measure its light**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab lighting "$DELVEWRIGHT_PREFABS/<id>.nbt"`
+   — read the dark-cell distribution against the sky the campaign reaches.
