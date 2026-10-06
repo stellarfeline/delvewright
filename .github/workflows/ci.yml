@@ -193,6 +193,104 @@ jobs:
       - name: the dsl crate's number has moved if its bytes have
         run: bash tools/ci/crates-io-publish.sh --plan --only delvewright-dsl
 
+  # ONE `delvec` per run. Every job that runs the engine without compiling it for
+  # a reason of its own (mecha, zone programs, gallery, tier 2) takes this job's
+  # binary instead of building its own, and the steps that only ran the engine
+  # inside `rust` (the Linux determinism digest, the JSON canonical sweep) run
+  # here over it: before this, six jobs each compiled the same debug `delvec`
+  # from the same tree, one to five minutes apiece. The profile is the one those
+  # jobs built (`cargo build --locked -p delvec --bin delvec`, debug), so what
+  # they measure is the instrument they measured before.
+  #
+  # The sha256 travels as a job OUTPUT, not inside the artifact, and
+  # `.github/actions/delvec-binary` refuses a download that does not hash to it.
+  # A consumer has no fallback: if this job reds, every consumer is skipped and
+  # this job's red is what blocks the pull request — the same shape as
+  # `changes`. `tools/ci/check-delvec-built-once.py` refuses a job outside its
+  # declared list that compiles the root workspace, and `check-ci-reach.py`
+  # refuses a consumer whose filter groups this job's `if` does not also read.
+  delvec-binary:
+    name: delvec binary (one build per run)
+    needs: changes
+    # Every consumer's group, so it runs whenever any consumer does
+    # (`check-ci-reach.py` refuses a consumer this would not reach).
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.mecha-crosscheck == 'true' || needs.changes.outputs.zone-audit == 'true' || needs.changes.outputs.gallery == 'true' || needs.changes.outputs.tier2-validation == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { key: delvec-binary }
+      - name: build the engine under test
+        run: cargo build --locked -p delvec --bin delvec
+      - name: the binary's sha256
+        id: hash
+        run: |
+          set -euo pipefail
+          sum="$(sha256sum target/debug/delvec | cut -d' ' -f1)"
+          echo "sha256=$sum" >> "$GITHUB_OUTPUT"
+          echo "target/debug/delvec sha256 $sum — $(target/debug/delvec --version)"
+      # Consumed inside this run and nowhere else, so it is kept one day.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: delvec-binary
+          path: target/debug/delvec
+          if-no-files-found: error
+          retention-days: 1
+      # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
+      # -> byte-identical datapack and world", and until this step every gate
+      # holding it ran on one machine: the double-build gate inside `rust`'s
+      # `cargo test` builds twice on THIS runner, and the prefab-generator job
+      # runs each generator twice on THIS runner. Both catch an unseeded RNG or a
+      # hash-ordered iteration; neither can catch a libm difference, a
+      # float-formatting difference, or a directory-ordering difference between
+      # platforms, because there is only ever one platform in the comparison.
+      #
+      # A STEP here, not a job: every job name is a required status context, and
+      # the digest is a product of the binary this job just built, like its hash.
+      # The comparison is the `cross-OS determinism (macOS vs Linux bytes)` job,
+      # which builds the same subject on macOS and reads this artifact.
+      #
+      # The subject is `tools/ci/determinism-subject.sh`, invoked identically on
+      # both runners so the two sides cannot drift into building different
+      # things.
+      - name: ADR-0006 cross-OS — the Linux side's digest
+        run: |
+          bash tools/ci/determinism-subject.sh \
+            --delvec target/debug/delvec --out determinism-linux.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-digest-linux
+          path: determinism-linux.txt
+          if-no-files-found: error
+      # Authored JSON has ONE canonical form, so an insertion is a one-line
+      # diff instead of a whole-file rewrite
+      # — a three-key insertion into a non-canonical zh-cn sidecar once produced
+      # a 103-insertion/100-deletion diff. `delvec fmt --check` is the `cargo fmt
+      # --check` half of that; the formatter itself is what stops authors
+      # hand-sorting (docs/reference/compiler.md §9).
+      #
+      # A STEP, not a job: every job name here is a required status context, and
+      # a new one is advisory until branch protection is edited — which is the
+      # shape CLAUDE.md rejects. As a step it gates from the moment it merges. It
+      # is a step of THIS job because it runs the binary this job just built;
+      # without `--delvec` the script compiles one of its own.
+      #
+      # The swept set is DERIVED, never listed. This step used to name two roots
+      # by hand — `crates/dsl/fixtures` and `crates/delvec/tests/fixtures` —
+      # which is the enumeration-somebody-remembered shape this repository
+      # refuses elsewhere by name. It examined 240 of the 335 JSON files git
+      # tracks, and 50 of the 95 it never looked at were not canonical, including
+      # every one of `gallery/`'s — whose own spec asserts in writing that gallery
+      # JSON is inside this sweep. Nothing was red, because nothing looked.
+      # `tools/ci/check-json-canonical.py` takes its population from `git ls-files`
+      # instead, so a directory of authored JSON added next month is swept the
+      # moment it is committed with nothing here to edit, and it states its
+      # binding count against that population on every run.
+      - name: every JSON document this repository holds is canonical
+        run: python3 tools/ci/check-json-canonical.py --delvec target/debug/delvec
+
   rust:
     name: rust (fmt, clippy, test)
     needs: changes
@@ -228,32 +326,6 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
         run: cargo test --locked --workspace
-      # spec-0033 §4.7. `prefab-procedure.md` §3 sends an author to the corpus
-      # rather than to the schema, so an IR construct no example writes does not
-      # exist in practice — which was measured by hand once and would otherwise
-      # never be measured again.
-      #
-      # A STEP, not a job: every job name here is a required status context, and
-      # a new one is advisory until branch protection is edited. As a step it
-      # gates from the moment it merges.
-      #
-      # BINDING — the review question CLAUDE.md asks of every gate ("what calls
-      # this, and what happens if someone does the guarded thing without calling
-      # it?") has two answers here, and neither is a doc line:
-      #   * an IR change cannot COMPILE past it. The construct list is assigned
-      #     by exhaustive matches over `Node`/`Cond`/`Paint`
-      #     (`crates/delvec/src/grammar/coverage.rs`), so a new variant reds `cargo
-      #     build`, `clippy`, `test` and this step alike until it is classified,
-      #     and it then begins life at zero bindings.
-      #   * a CORPUS change cannot be pushed past it. The same assertion is a
-      #     `#[test]` in that module, so it runs inside `cargo test --workspace`
-      #     above as well as here. This step exists on top of the test because a
-      #     table is what a reader acts on and an assertion message is not.
-      # `if: always()` so the table reaches the log even when an unrelated test
-      # above went red.
-      - name: grammar demonstration coverage (no IR construct is undemonstrated)
-        if: always()
-        run: cargo run --locked -q -p delvec --bin delvec -- grammar coverage
 
       # The viewer's interactive layer is JavaScript, so `cargo test` cannot run
       # it — and for as long as that was the whole story the camera had NO
@@ -277,57 +349,6 @@ jobs:
       # the line above.
       - name: a label belongs to the model that drew it (node --test)
         run: node --test crates/delvec/tests/labels.test.mjs
-      # Authored JSON has ONE canonical form, so an insertion is a one-line
-      # diff instead of a whole-file rewrite
-      # — a three-key insertion into a non-canonical zh-cn sidecar once produced
-      # a 103-insertion/100-deletion diff. `delvec fmt --check` is the `cargo fmt
-      # --check` half of that; the formatter itself is what stops authors
-      # hand-sorting (docs/reference/compiler.md §9).
-      #
-      # A STEP, not a job: every job name here is a required status context, and
-      # a new one is advisory until branch protection is edited — which is the
-      # shape CLAUDE.md rejects. As a step it gates from the moment it merges.
-      #
-      # The swept set is DERIVED, never listed. This step used to name two roots
-      # by hand — `crates/dsl/fixtures` and `crates/delvec/tests/fixtures` —
-      # which is the enumeration-somebody-remembered shape this repository
-      # refuses elsewhere by name. It examined 240 of the 335 JSON files git
-      # tracks, and 50 of the 95 it never looked at were not canonical, including
-      # every one of `gallery/`'s — whose own spec asserts in writing that gallery
-      # JSON is inside this sweep. Nothing was red, because nothing looked.
-      # `tools/ci/check-json-canonical.py` takes its population from `git ls-files`
-      # instead, so a directory of authored JSON added next month is swept the
-      # moment it is committed with nothing here to edit, and it states its
-      # binding count against that population on every run.
-      - name: every JSON document this repository holds is canonical
-        run: python3 tools/ci/check-json-canonical.py
-      # ADR-0006's LINUX HALF. The determinism promise is "same DSL + same seed
-      # -> byte-identical datapack and world", and until this step every gate
-      # holding it ran on one machine: the double-build gate inside `cargo test`
-      # above builds twice on THIS runner, and the prefab-generator job runs each
-      # generator twice on THIS runner. Both catch an unseeded RNG or a
-      # hash-ordered iteration; neither can catch a libm difference, a
-      # float-formatting difference, or a directory-ordering difference between
-      # platforms, because there is only ever one platform in the comparison.
-      #
-      # A STEP here, not a job: every job name is a required status context, and
-      # the digest is cheap next to what this job already did. The comparison is
-      # the `cross-OS determinism (macOS vs Linux bytes)` job, which builds the
-      # same subject on macOS and reads this artifact.
-      #
-      # The subject is `tools/ci/determinism-subject.sh`, invoked identically on
-      # both runners so the two sides cannot drift into building different
-      # things.
-      - name: ADR-0006 cross-OS — the Linux side's digest
-        run: |
-          cargo build --locked -p delvec --bin delvec
-          bash tools/ci/determinism-subject.sh \
-            --delvec target/debug/delvec --out determinism-linux.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: determinism-digest-linux
-          path: determinism-linux.txt
-          if-no-files-found: error
 
   # What crates.io would receive, built the way a stranger's `cargo install`
   # builds it. Its own job rather than steps of `rust`: it shares no build with
@@ -377,11 +398,15 @@ jobs:
   # Linux/glibc, byte-identical over the gallery, the island and hollow-vigil —
   # and a measurement taken by hand once is a claim about a day, not a gate.
   #
-  # `needs: rust` because the Linux digest is that job's artifact. When `rust`
-  # reds this job is skipped, which is not a hole: the pull request is already
-  # red on `rust`, and there is no state in which this is the only thing between
-  # a divergence and `main`. It reads `rust`'s group for the same reason: it can
-  # only run when `rust` does, and everything it reads `rust` reads too.
+  # `needs: delvec-binary` because the Linux digest is that job's artifact. When
+  # it reds this job is skipped, which is not a hole: the pull request is already
+  # red on `delvec binary`, and there is no state in which this is the only thing
+  # between a divergence and `main`. It reads `rust`'s group, which the binary
+  # job's `if` also reads, so it can only run when the digest is made.
+  #
+  # It still COMPILES, and that is its purpose rather than a second copy of the
+  # build: the macOS half of the comparison is a binary built by macOS's
+  # toolchain against Apple's libm, which no Linux artifact can stand in for.
   #
   # macOS is the expensive runner, so it does exactly one thing: build `delvec`
   # and nothing else in the workspace, then build one small campaign that needs
@@ -391,7 +416,7 @@ jobs:
     # is a required status context in branch protection; renaming it deadlocks
     # every PR (see .github/required-status-checks.txt).
     name: cross-OS determinism (macOS vs Linux bytes)
-    needs: [changes, rust]
+    needs: [changes, delvec-binary]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
     steps:
@@ -626,14 +651,15 @@ jobs:
     # ADR-0011: mecha independently re-validates every emitted .mcfunction
     # against the 1.21.11 command tree. Disagreement with our vendored-tree
     # validator fails CI and is a bug in one of them.
-    needs: changes
+    needs: [changes, delvec-binary]
     if: github.event_name != 'pull_request' || needs.changes.outputs.mecha-crosscheck == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       # the build copies the prefab .nbt into the datapack — from the content repo
       - uses: ./.github/actions/checkout-content
-      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
       # A DIFFERENT interpreter line from the two tool suites above, and it is
       # entailed rather than chosen: mecha 0.104.1 declares Requires-Python
       # >=3.14, so the pinned validator cannot be installed on 3.12 at all.
@@ -646,7 +672,7 @@ jobs:
         run: pip install "mecha==0.104.1" "beet==0.116.0"
       - name: build the hello-world delve
         run: |
-          cargo run --locked -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/dsl/fixtures/valid/hello-world \
             -o out --prefabs campaigns/prefabs
       - name: mecha validates every emitted mcfunction
@@ -1024,11 +1050,20 @@ jobs:
       # the skip is a gate's business, not a convention's: `.github/ci-reach.toml`
       # is held to the jobs here. Refuses a job with no group, a group no job
       # reads, a glob matching no tracked file, an `if` that is not true on every
-      # event but `pull_request`, and an `[all]` set that does not reach the
-      # workflow and the filter. States its binding counts; refuses a zero.
-      # Deterministic, offline, stdlib-only python3.
+      # event but `pull_request`, an `[all]` set that does not reach the
+      # workflow and the filter, and a job that needs another job which would be
+      # skipped on a pull request reaching the first. States its binding counts;
+      # refuses a zero. Deterministic, offline, stdlib-only python3.
       - name: every job reads the group of paths it reads, and runs on every push
         run: python3 tools/ci/check-ci-reach.py
+      # One `delvec` per run: `delvec-binary` builds it, every job that only runs
+      # it takes that build through `.github/actions/delvec-binary` (sha256
+      # checked), and no job outside the checker's declared list compiles the
+      # root workspace — in its own `run:` text or in a script that text runs.
+      # States its binding counts and what it does not follow; refuses a zero.
+      # Deterministic, offline, stdlib-only python3.
+      - name: the engine is compiled once per run, and every job that runs it takes that build
+        run: python3 tools/ci/check-delvec-built-once.py
       # The same class one door further out, on the one path that can never be
       # undone. `crates-io` holds CARGO_REGISTRY_TOKEN and is supposed to hold a
       # run until a reviewer approves it; it carried `protection_rules: []`, so a
@@ -1234,18 +1269,18 @@ jobs:
         run: python3 tools/ci/check-skill-page.py --online --base origin/main
 
   # Every zone program in the rule library and the pinned campaigns still
-  # expands and judges green. Its own job because it builds the engine and the
-  # pin checks above do not. On every push as well as on a pull request that
-  # reaches it.
+  # expands and judges green, and every IR construct is demonstrated by the
+  # corpus. Its own job because it runs the engine and the pin checks above do
+  # not. On every push as well as on a pull request that reaches it.
   zone-audit:
     name: zone programs (expand + judge)
-    needs: changes
+    needs: [changes, delvec-binary]
     if: github.event_name != 'pull_request' || needs.changes.outputs.zone-audit == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-        with: { key: zone-audit }
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
       # The engine judges what it owns: the grammar RULE LIBRARY
       # (`library::PROGRAMS`), which lives in this tree, so the job needs no
       # content checkout. A content campaign's own zone programs are judged at
@@ -1258,9 +1293,37 @@ jobs:
       # red; see its header for why that is not a skip.
       - name: every rule-library program expands and judges green
         run: |
-          cargo run --locked -q -p delvec --bin delvec -- \
+          target/debug/delvec \
             grammar audit --library \
             --exclusions .github/zone-audit-exclusions.json
+      # spec-0033 §4.7. `prefab-procedure.md` §3 sends an author to the corpus
+      # rather than to the schema, so an IR construct no example writes does not
+      # exist in practice — which was measured by hand once and would otherwise
+      # never be measured again.
+      #
+      # A STEP, not a job: every job name here is a required status context, and
+      # a new one is advisory until branch protection is edited. As a step it
+      # gates from the moment it merges.
+      #
+      # BINDING — the review question CLAUDE.md asks of every gate ("what calls
+      # this, and what happens if someone does the guarded thing without calling
+      # it?") has two answers here, and neither is a doc line:
+      #   * an IR change cannot COMPILE past it. The construct list is assigned
+      #     by exhaustive matches over `Node`/`Cond`/`Paint`
+      #     (`crates/delvec/src/grammar/coverage.rs`), so a new variant reds `cargo
+      #     build`, `clippy`, `test` and this step alike until it is classified,
+      #     and it then begins life at zero bindings.
+      #   * a CORPUS change cannot be pushed past it. The same assertion is a
+      #     `#[test]` in that module, so it runs inside `rust`'s `cargo test
+      #     --workspace` as well as here. This step exists on top of the test
+      #     because a table is what a reader acts on and an assertion message is
+      #     not.
+      # It sits in this job because this job already runs the grammar through
+      # the run's one `delvec`. `if: always()` so the table reaches the log even
+      # when the audit above went red.
+      - name: grammar demonstration coverage (no IR construct is undemonstrated)
+        if: always()
+        run: target/debug/delvec grammar coverage
 
   # ----------------------------------------------------------------- gallery --
   # spec-0039: the engine's OWN campaign, and its only test surface. A released
@@ -1276,7 +1339,7 @@ jobs:
   # not a convenience.
   gallery:
     name: gallery (coverage + build + baseline)
-    needs: changes
+    needs: [changes, delvec-binary]
     if: github.event_name != 'pull_request' || needs.changes.outputs.gallery == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -1293,10 +1356,12 @@ jobs:
           # baseline — so this depth is load-bearing for a second gate now, not
           # only for the classifier.
           fetch-depth: 0
+      # The cache serves `prefabs/gallery-generator`, which `gallery-prefabs.py`
+      # compiles: a different workspace from the engine, built for its own sake.
       - uses: Swatinem/rust-cache@v2
         with: { key: gallery }
-      - name: build the engine under test
-        run: cargo build --locked -p delvec --bin delvec
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
       # The piece and the skins, generated — never committed (§6). Doing this
       # before anything else means a generator that stopped producing a piece
       # fails in a step named for the generator, not inside one named for a gate.
@@ -1449,7 +1514,7 @@ jobs:
   # Target < 10 min.
   tier2-validation:
     name: tier 2 (datapack load + PackTest)
-    needs: changes
+    needs: [changes, delvec-binary]
     if: github.event_name != 'pull_request' || needs.changes.outputs.tier2-validation == 'true'
     runs-on: ubuntu-latest
     env:
@@ -1485,16 +1550,15 @@ jobs:
       - name: bootstrap — one live Mojang fetch for the whole job
         run: bash validation/server-bootstrap-cache.sh
 
+      # The cache serves `prefabs/gallery-generator`, which the gallery pass
+      # compiles: a different workspace from the engine.
       - uses: Swatinem/rust-cache@v2
-      # Built ONCE and handed to the nine build steps below. Every one of those
-      # steps is named for a fixture, and a `cargo run` per step let any of them
-      # fail for a reason with
-      # nothing to do with its fixture: a TLS error from cargo's dependency
-      # resolution once reddened "build the hello-world delve output". Resolution is
-      # now one step that says it is the compiler build, and `--locked` forbids it
-      # from re-resolving (and so from reaching the network) at all.
-      - name: build the engine under test
-        run: cargo build --locked -p delvec --bin delvec
+      # The run's one `delvec`, handed to every build step below. Each of those
+      # steps is named for a fixture, and a compile per step let any of them fail
+      # for a reason with nothing to do with its fixture: a TLS error from cargo's
+      # dependency resolution once reddened "build the hello-world delve output".
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
       - name: build the hello-world delve output
         run: |
           target/debug/delvec \
@@ -1884,7 +1948,7 @@ jobs:
       # the passes above: one extra toolserver boot, no new pull, no new compile.
       - name: build the lift-stake delve output
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/delvec/tests/fixtures/lift-stake \
             -o validation/delve-output-lift-stake --prefabs campaigns/prefabs
 

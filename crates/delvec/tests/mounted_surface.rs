@@ -99,7 +99,7 @@ fn every_mounted_group_and_every_verb_under_it_answers_help() {
 #[test]
 fn every_arm_a_workflow_runs_parses_through_the_binary() {
     let runs: &[(&[&str], &[i32])] = &[
-        // ci.yml `rust` job: grammar demonstration coverage.
+        // ci.yml `zone-audit` job: grammar demonstration coverage.
         (&["grammar", "coverage"], &[0, 4]),
         (&["grammar", "coverage", "--json"], &[0, 4]),
         (&["grammar", "list"], &[0]),
