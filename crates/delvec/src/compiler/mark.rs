@@ -35,12 +35,14 @@ use delvewright_dsl::{
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::{BodyScope, Plan, body_station};
 
-/// `DW0897`: **a mark's offset leaves the piece its anchor belongs to.**
-///
-/// Build tier (exit 3), where the piece boxes are known. The message names the
-/// anchor, the offset, the cell it reaches and the box it left; the remedy is
-/// the offset.
-pub const DW_MARK_LEAVES_PIECE: DwCode = DwCode::new("DW0897", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0897`: **a mark's offset leaves the piece its anchor belongs to.**
+    ///
+    /// Build tier (exit 3), where the piece boxes are known. The message names the
+    /// anchor, the offset, the cell it reaches and the box it left; the remedy is
+    /// the offset.
+    pub const DW_MARK_LEAVES_PIECE: DwCode = DwCode::new("DW0897", ExitTier::Build);
+}
 
 /// What `DW0897` examined (CLAUDE.md's vacuity rule: every validation artifact
 /// states its binding count, with its denominator), printed on every build.

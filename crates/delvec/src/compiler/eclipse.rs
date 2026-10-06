@@ -108,77 +108,83 @@ use crate::compiler::nav::entity_dims;
 use crate::compiler::plan::Plan;
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
-/// (warning) an interaction affordance, so the player's crosshair reaches the
-/// body instead of the affordance.
-pub const DW_BODY_ECLIPSE: DwCode = DwCode::new("DW0359", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
+    /// (warning) an interaction affordance, so the player's crosshair reaches the
+    /// body instead of the affordance.
+    pub const DW_BODY_ECLIPSE: DwCode = DwCode::new("DW0359", ExitTier::Build);
+}
 
-/// `DW0422`: a **pressable body's hitbox** shares a cell with another
-/// compiler-owned interaction affordance (DSL v0.8; widened to the whole
-/// pressable class in v0.11).
-///
-/// A compiler-owned press body is one `minecraft:interaction` per clickable cell
-/// of the thing being pressed. Any other affordance whose own 1.0 × 2.0 box
-/// occupies one of those cells is in an exact ray-pick contest with it, and the
-/// client resolves such a contest by iteration order — so one of the two silently
-/// stops receiving clicks, which is precisely the defect (`DESIGN.md`, island
-/// round 13) that made a second hitbox on the boulder unshippable. Triggers
-/// anchored **on the body itself** are not a collision: they ride its hitboxes and
-/// summon nothing (`emit::env_trigger_setup`), the same merge
-/// `strike`-on-an-NPC's-anchor has used since round 6.
-///
-/// **Two things about the binding.** It walks [`pressable_bodies`] — seals *and*
-/// sealed shortcut doors — because a ray-pick contest is a property of having
-/// hitboxes, not of the verb that first had them; keyed to `close-gate` it
-/// examined zero objects on any campaign whose only pressable thing was a door.
-/// And the contest is tested against the **cell**, not the emitted `1.02f` box:
-/// the protrusion exists to beat the block the body stands in, and
-/// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
-/// into a neighbouring cell's affordances.
-pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::new("DW0422", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0422`: a **pressable body's hitbox** shares a cell with another
+    /// compiler-owned interaction affordance (DSL v0.8; widened to the whole
+    /// pressable class in v0.11).
+    ///
+    /// A compiler-owned press body is one `minecraft:interaction` per clickable cell
+    /// of the thing being pressed. Any other affordance whose own 1.0 × 2.0 box
+    /// occupies one of those cells is in an exact ray-pick contest with it, and the
+    /// client resolves such a contest by iteration order — so one of the two silently
+    /// stops receiving clicks, which is precisely the defect (`DESIGN.md`, island
+    /// round 13) that made a second hitbox on the boulder unshippable. Triggers
+    /// anchored **on the body itself** are not a collision: they ride its hitboxes and
+    /// summon nothing (`emit::env_trigger_setup`), the same merge
+    /// `strike`-on-an-NPC's-anchor has used since round 6.
+    ///
+    /// **Two things about the binding.** It walks [`pressable_bodies`] — seals *and*
+    /// sealed shortcut doors — because a ray-pick contest is a property of having
+    /// hitboxes, not of the verb that first had them; keyed to `close-gate` it
+    /// examined zero objects on any campaign whose only pressable thing was a door.
+    /// And the contest is tested against the **cell**, not the emitted `1.02f` box:
+    /// the protrusion exists to beat the block the body stands in, and
+    /// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
+    /// into a neighbouring cell's affordances.
+    pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::new("DW0422", ExitTier::Build);
+}
 
-/// `DW0878`: **two interaction affordances stand on one cell** — two
-/// `minecraft:interaction` boxes the party clicks, coincident, so the pick ray is
-/// an exact tie.
-///
-/// The pair `DW0359`, `DW0422` and `DW0489` between them do not reach. Each of
-/// the three names one side of its pair:
-///
-/// * `DW0359` needs one side to be a standing **body** (an NPC or actor at an
-///   anchor) — here neither side is a body;
-/// * `DW0422` needs one side to be a compiler-owned **pressable body** (a
-///   `close-gate` seal's shell, a sealed shortcut door) — here neither side is;
-/// * `DW0489` needs both sides to be **NPCs in the cast ledger**, and its whole
-///   model is that ledger: scenes, flag co-presence, and a tier read off the
-///   dialogue root a right-click opens. An affordance has no ledger entry and no
-///   dialogue root, so the rule cannot be stated over it.
-///
-/// So the pairing that was left unexamined is affordance-against-affordance, and
-/// it shipped: the gallery declares the `interact` objective `obj/press-the-case`
-/// and the `use` trigger `trigger/read-the-label` both on `anchor/pedestal`, two
-/// `1.0 × 2.0` boxes at the same cell. The build was green and the bot's
-/// crosshair could acquire neither.
-///
-/// **The predicate is exact coincidence, and deliberately nothing wider.** Every
-/// affordance box is `1.0 × 2.0` at a cell centre, so two of them are identical
-/// exactly when their cells are, and identical boxes are entered by any ray at
-/// the same distance — an exact tie the client resolves by entity iteration
-/// order, which is not decidable from the campaign at all. Boxes that merely
-/// overlap (two affordances one block apart vertically share a one-block band)
-/// are at different ray distances from every stance, and a player aims past them
-/// by moving the crosshair up or down; refusing those would be a false certainty,
-/// and this is the same line [`DW_SEAL_HITBOX_COLLISION`] draws when it tests the
-/// cell rather than the emitted box.
-///
-/// **The pair must be able to share a MOMENT, not only a cell** — see
-/// [`can_share_a_moment`], which is where the rule's quantifier actually lives.
-/// A box armed by a quest beat and killed on completion is not in a contest with
-/// one down another arm of the story.
-///
-/// **Boundary.** Affordance-against-affordance only. A body over an affordance is
-/// `DW0359`'s rule and an affordance in a pressable body's cells is `DW0422`'s;
-/// neither is re-litigated here (one code, one rule).
-pub const DW_AFFORDANCE_CONTEST: DwCode = DwCode::new("DW0878", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0878`: **two interaction affordances stand on one cell** — two
+    /// `minecraft:interaction` boxes the party clicks, coincident, so the pick ray is
+    /// an exact tie.
+    ///
+    /// The pair `DW0359`, `DW0422` and `DW0489` between them do not reach. Each of
+    /// the three names one side of its pair:
+    ///
+    /// * `DW0359` needs one side to be a standing **body** (an NPC or actor at an
+    ///   anchor) — here neither side is a body;
+    /// * `DW0422` needs one side to be a compiler-owned **pressable body** (a
+    ///   `close-gate` seal's shell, a sealed shortcut door) — here neither side is;
+    /// * `DW0489` needs both sides to be **NPCs in the cast ledger**, and its whole
+    ///   model is that ledger: scenes, flag co-presence, and a tier read off the
+    ///   dialogue root a right-click opens. An affordance has no ledger entry and no
+    ///   dialogue root, so the rule cannot be stated over it.
+    ///
+    /// So the pairing that was left unexamined is affordance-against-affordance, and
+    /// it shipped: the gallery declares the `interact` objective `obj/press-the-case`
+    /// and the `use` trigger `trigger/read-the-label` both on `anchor/pedestal`, two
+    /// `1.0 × 2.0` boxes at the same cell. The build was green and the bot's
+    /// crosshair could acquire neither.
+    ///
+    /// **The predicate is exact coincidence, and deliberately nothing wider.** Every
+    /// affordance box is `1.0 × 2.0` at a cell centre, so two of them are identical
+    /// exactly when their cells are, and identical boxes are entered by any ray at
+    /// the same distance — an exact tie the client resolves by entity iteration
+    /// order, which is not decidable from the campaign at all. Boxes that merely
+    /// overlap (two affordances one block apart vertically share a one-block band)
+    /// are at different ray distances from every stance, and a player aims past them
+    /// by moving the crosshair up or down; refusing those would be a false certainty,
+    /// and this is the same line [`DW_SEAL_HITBOX_COLLISION`] draws when it tests the
+    /// cell rather than the emitted box.
+    ///
+    /// **The pair must be able to share a MOMENT, not only a cell** — see
+    /// [`can_share_a_moment`], which is where the rule's quantifier actually lives.
+    /// A box armed by a quest beat and killed on completion is not in a contest with
+    /// one down another arm of the story.
+    ///
+    /// **Boundary.** Affordance-against-affordance only. A body over an affordance is
+    /// `DW0359`'s rule and an affordance in a pressable body's cells is `DW0422`'s;
+    /// neither is re-litigated here (one code, one rule).
+    pub const DW_AFFORDANCE_CONTEST: DwCode = DwCode::new("DW0878", ExitTier::Build);
+}
 
 /// Every affordance the compiler summons is `minecraft:interaction` with
 /// `width:1.0f` — exactly one cell across, centred on the cell.

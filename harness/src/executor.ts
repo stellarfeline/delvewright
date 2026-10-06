@@ -90,6 +90,7 @@ import {
   sinkBudgetMs,
   volumeReachesCell,
   wayInCandidates,
+  firstWayIn,
   inBox,
   dropOf,
   gateVerdict,
@@ -3563,19 +3564,15 @@ export class MineflayerExecutor implements StepExecutor {
     if (navFault === undefined && this.deathSeq === deathsBefore) {
       this.lethalExclusionSuspended = true;
       try {
-        let walkIn = await this.stepInto(volume.region, entryCell, trial);
+        const walkIn = await this.stepInto(volume.region, entryCell, trial);
         if (walkIn === "blocked" && this.deathSeq === deathsBefore) {
-          // The walk to the way in is an ordinary walk: the hazard is not in it.
-          this.lethalExclusionSuspended = false;
-          let from: Vec3Tuple | undefined;
-          try {
-            from = await this.jumpInApproach(volume.region, volume.id);
-          } finally {
-            this.lethalExclusionSuspended = true;
-          }
-          if (from !== undefined && this.deathSeq === deathsBefore) {
-            walkIn = await this.stepInto(volume.region, entryCell, trial);
-          }
+          // A death on the way to a way in ends the search: it is the trial's
+          // death to judge, and no further walk in follows it.
+          await this.jumpInApproach(volume.region, volume.id, () =>
+            this.deathSeq === deathsBefore
+              ? this.stepInto(volume.region, entryCell, trial)
+              : Promise.resolve("died" as const),
+          );
         }
       } catch (err) {
         if (!(err instanceof BotDeathError)) {
@@ -3957,7 +3954,8 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * **When walking straight in is blocked, get to a place a player jumps to.**
+   * **When walking straight in is blocked, get to a place a player jumps to,
+   * and walk in from there.**
    *
    * The placement table's lip is the reachable cell nearest the volume by
    * WALKING, and a hazard can be one a player reaches only with a jump:
@@ -3967,36 +3965,70 @@ export class MineflayerExecutor implements StepExecutor {
    * back out and jumps across; the pathfinder, which jumps gaps the way a
    * player does, is asked for that: the standable cells within a few blocks
    * that are nearer the volume than the body is, outside what the volume can
-   * reach, nearest the volume first, tried in turn. `undefined` when none can
-   * be reached.
+   * reach, smallest climb first ({@link wayInCandidates}), EVERY one tried in
+   * turn until the walk in from one is not blocked ({@link firstWayIn}). The
+   * walk to a candidate is an ordinary walk, with the hazard excluded; the walk
+   * in from it (`walkIn`) runs with the exclusion suspended, as the first did.
    */
-  private async jumpInApproach(box: Box, volume: string): Promise<Vec3Tuple | undefined> {
+  private async jumpInApproach(
+    box: Box,
+    volume: string,
+    walkIn: () => Promise<"entered" | "released" | "blocked" | "died">,
+  ): Promise<"entered" | "released" | "blocked" | "died"> {
     const bot = this.requireBot();
     const feet = this.feetCell();
-    if (!feet) return undefined;
+    if (!feet) return "blocked";
     const candidates = wayInCandidates(feet, box, (c) => {
       if (!this.bodyCanOccupy(c)) return false;
       const p = bot.entity.position;
       const below = bot.blockAt(p.offset(c[0] - p.x, c[1] - 1 - p.y, c[2] - p.z));
       return below !== null && below.boundingBox === "block";
     });
-    for (const c of candidates.slice(0, 3)) {
-      process.stderr.write(
-        `[death-loop] ${volume}: the walk in is blocked at [${feet.join(", ")}]; asking the ` +
-          `pathfinder for [${c.join(", ")}], nearer the volume\n`,
-      );
-      try {
-        await this.walkTo(c, 1, `death-loop way in to ${volume}`);
-        return c;
-      } catch (err) {
-        if (err instanceof BotDeathError) throw err;
+    process.stderr.write(
+      `[death-loop] ${volume}: the walk in is blocked at [${feet.join(", ")}]; ` +
+        `${candidates.length} way-in cell(s) nearer the volume, smallest climb first: ` +
+        `${candidates.map((c) => `[${c.join(", ")}]`).join(" ")}\n`,
+    );
+    const outcome = await firstWayIn(
+      candidates,
+      async (c) => {
         process.stderr.write(
-          `[death-loop] ${volume}: [${c.join(", ")}] could not be reached: ` +
-            `${err instanceof Error ? err.message : String(err)}\n`,
+          `[death-loop] ${volume}: asking the pathfinder for [${c.join(", ")}], ` +
+            `${c[1] - feet[1]} course(s) up\n`,
         );
-      }
-    }
-    return undefined;
+        this.lethalExclusionSuspended = false;
+        try {
+          await this.walkTo(c, 1, `death-loop way in to ${volume}`);
+          return true;
+        } catch (err) {
+          if (err instanceof BotDeathError) throw err;
+          process.stderr.write(
+            `[death-loop] ${volume}: [${c.join(", ")}] could not be reached: ` +
+              `${err instanceof Error ? err.message : String(err)}\n`,
+          );
+          return false;
+        } finally {
+          this.lethalExclusionSuspended = true;
+        }
+      },
+      async (c) => {
+        const r = await walkIn();
+        if (r === "blocked") {
+          process.stderr.write(
+            `[death-loop] ${volume}: the walk in from [${c.join(", ")}] is blocked too\n`,
+          );
+        }
+        return r;
+      },
+    );
+    process.stderr.write(
+      `[death-loop] ${volume}: way in ` +
+        (outcome.from
+          ? `[${outcome.from.join(", ")}] (${outcome.result})`
+          : `not found (${outcome.result})`) +
+        `; ${outcome.tried} of ${candidates.length} tried, ${outcome.reached} reached\n`,
+    );
+    return outcome.result;
   }
 
   /**
@@ -4331,6 +4363,32 @@ export class MineflayerExecutor implements StepExecutor {
    * sentence naming the volume, the position, and which of the two is wrong.
    */
   async reach(step: ReachStep): Promise<void> {
+    if (step.completedOnLanding) {
+      // The compiler says the previous step's carry put the party down inside
+      // this volume, so the objective completed on that landing. Nothing is
+      // walked; the marker is asserted, and its absence is the compiler's claim
+      // failing, never a reason to go looking for the volume.
+      const done = this.completedObjectives.get(step.objective);
+      if (done !== undefined) {
+        process.stderr.write(
+          `[reach] ${step.objective} completed on the landing (step ${done}), as the path says\n`,
+        );
+        return;
+      }
+      try {
+        await this.requireObjective(step.objective, `reach ${step.anchor} (on the landing)`);
+      } catch (err) {
+        if (err instanceof BotDeathError) throw err;
+        throw new Error(
+          `reach ${step.anchor}: the path says the previous carry's landing completes ` +
+            `${step.objective} (completed_on_landing), and no marker arrived — the bot is at ` +
+            `${fmt(this.requireBot().entity.position)}, volume ${JSON.stringify(step.completion)}. ` +
+            `The landing and the volume disagree with the compiler's reading of them. ` +
+            `Original: ${(err as Error).message}`,
+        );
+      }
+      return;
+    }
     const goal = reachGoal(step.completion);
     await this.walkTo(goal.pos, goal.range, `anchor ${step.anchor}`, step.sneak, {
       objective: step.objective,

@@ -78,20 +78,30 @@ use crate::compiler::solver::Rotation;
 /// The stage name every diagnostic here carries — the document being judged.
 const STAGE: &str = "detail-plan";
 
-/// `DW0841`: detail without a passed, fresh walk of this plan.
-pub const DW_UNWALKED: DwCode = DwCode::new("DW0841", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0841`: detail without a passed, fresh walk of this plan.
+    pub const DW_UNWALKED: DwCode = DwCode::new("DW0841", ExitTier::Build);
+}
 
-/// `DW0842`: the binding does not bind.
-pub const DW_BINDING: DwCode = DwCode::new("DW0842", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0842`: the binding does not bind.
+    pub const DW_BINDING: DwCode = DwCode::new("DW0842", ExitTier::Build);
+}
 
-/// `DW0843`: the piece is not the shape of its allocation.
-pub const DW_NOT_THE_FRAME: DwCode = DwCode::new("DW0843", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0843`: the piece is not the shape of its allocation.
+    pub const DW_NOT_THE_FRAME: DwCode = DwCode::new("DW0843", ExitTier::Build);
+}
 
-/// `DW0844`: the piece's openings are not the plan's seams.
-pub const DW_FACES: DwCode = DwCode::new("DW0844", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0844`: the piece's openings are not the plan's seams.
+    pub const DW_FACES: DwCode = DwCode::new("DW0844", ExitTier::Build);
+}
 
-/// `DW0845`: an owed anchor has no standing.
-pub const DW_ANCHOR_STANDING: DwCode = DwCode::new("DW0845", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0845`: an owed anchor has no standing.
+    pub const DW_ANCHOR_STANDING: DwCode = DwCode::new("DW0845", ExitTier::Build);
+}
 
 // ---------------------------------------------------------------------------
 // The instrument (spec-0050 §2)

@@ -1476,7 +1476,7 @@
           },
           {
             "after": [
-              "obj/climb-the-loft"
+              "obj/cross-the-strait"
             ],
             "anchor": "anchor/exit",
             "happening": {
@@ -1502,7 +1502,7 @@
           },
           {
             "after": [
-              "obj/reach-the-end"
+              "obj/climb-the-loft"
             ],
             "anchor": "anchor/ferry-deck",
             "happening": {
@@ -3559,6 +3559,33 @@
           "on": "strike-assembly"
         },
         "once": false
+      },
+      {
+        "at": "anchor/cabin-chest",
+        "effects": [
+          {
+            "from": {
+              "anchor": "anchor/ferry-landing",
+              "extent": [
+                1,
+                1,
+                1
+              ]
+            },
+            "to": {
+              "anchor": "anchor/exit"
+            },
+            "type": "teleport"
+          }
+        ],
+        "id": "trigger/cabin-tiller",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "requires_flags": [
+          "flag/boarded"
+        ]
       }
     ],
     "waves": [
@@ -3702,6 +3729,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.0",
+  "dsl_version": "0.35.1",
   "stage": "quests"
 }

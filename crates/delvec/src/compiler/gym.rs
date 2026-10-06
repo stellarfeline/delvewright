@@ -59,14 +59,16 @@ use delvewright_dsl::metrics::{
 use delvewright_dsl::{Diagnostic, DwCode, ExitTier};
 use serde_json::{Value, json};
 
-/// `DW0840`: the gym leaves a building metric unwalked.
-///
-/// A warning, and it names the denominator: the gym's argument is that a walk of
-/// it rules on the whole standard, so an entry no bay instantiates is a number
-/// the walk cannot settle however carefully it is walked. Zero unreached entries
-/// is the end state and the line does not print — which is a real end state and
-/// not a vacuity, because the count is taken against every entry in the table.
-pub const DW_GYM_UNWALKED: DwCode = DwCode::new("DW0840", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0840`: the gym leaves a building metric unwalked.
+    ///
+    /// A warning, and it names the denominator: the gym's argument is that a walk of
+    /// it rules on the whole standard, so an entry no bay instantiates is a number
+    /// the walk cannot settle however carefully it is walked. Zero unreached entries
+    /// is the end state and the line does not print — which is a real end state and
+    /// not a vacuity, because the count is taken against every entry in the table.
+    pub const DW_GYM_UNWALKED: DwCode = DwCode::new("DW0840", ExitTier::Build);
+}
 
 /// The plane the gym opens on.
 const GRADE_Y: i64 = 64;

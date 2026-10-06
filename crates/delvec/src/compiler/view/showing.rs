@@ -56,15 +56,19 @@ use crate::compiler::view::meta::PrefabMeta;
 use crate::compiler::view::nbt::Structure;
 use crate::schem::nav::{self, RefusedStep, StepRefusal, Voxels};
 
-/// **`DW0894`: the piece about to be shown carries no measurement of its own
-/// light.** An `unmeasured` profile — or no `lighting` block at all — is refused
-/// here, because the alternative is what happened: a person is handed a picture
-/// of a building nothing has ever measured, and pictures do not show darkness.
-pub const DW_UNMEASURED_LIGHT: &str = "DW0894";
+delvewright_dsl::dw_code! {
+    /// **`DW0894`: the piece about to be shown carries no measurement of its own
+    /// light.** An `unmeasured` profile — or no `lighting` block at all — is refused
+    /// here, because the alternative is what happened: a person is handed a picture
+    /// of a building nothing has ever measured, and pictures do not show darkness.
+    pub const DW_UNMEASURED_LIGHT: &str = "DW0894";
+}
 
-/// **`DW0895`: floor under a roof that no body can walk to, and the step the
-/// walk was turned back at.** A report, never a refusal — see the module note.
-pub const DW_ENCLOSED_UNREACHED: &str = "DW0895";
+delvewright_dsl::dw_code! {
+    /// **`DW0895`: floor under a roof that no body can walk to, and the step the
+    /// walk was turned back at.** A report, never a refusal — see the module note.
+    pub const DW_ENCLOSED_UNREACHED: &str = "DW0895";
+}
 
 // ---------------------------------------------------------------------------
 // The piece's own bytes, as a box a body meets

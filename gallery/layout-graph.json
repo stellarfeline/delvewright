@@ -87,7 +87,8 @@
       "node/loft",
       "node/far-hall",
       "node/exit",
-      "node/ferry-cabin"
+      "node/ferry-cabin",
+      "node/exit"
     ],
     "edges": [
       {
@@ -215,10 +216,22 @@
         "b": "node/long-gallery",
         "class": "stair",
         "id": "edge/long-gallery-stair"
+      },
+      {
+        "a": "node/ferry-cabin",
+        "b": "node/exit",
+        "class": "carry",
+        "gating": {
+          "flags": [
+            "flag/boarded"
+          ]
+        },
+        "id": "edge/ferry-back",
+        "one_way": "a-to-b"
       }
     ],
     "entry": "node/near-hall",
-    "goal": "node/ferry-cabin",
+    "goal": "node/exit",
     "nodes": [
       {
         "id": "node/near-hall",
@@ -258,6 +271,11 @@
             "anchor": "anchor/ferry-deck",
             "kind": "point",
             "note": "the ferry's deck: the link's volume"
+          },
+          {
+            "anchor": "anchor/exit",
+            "kind": "point",
+            "note": "where the cabin's tiller puts the party back down"
           }
         ]
       },
@@ -282,6 +300,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.0",
+  "dsl_version": "0.35.1",
   "stage": "layout-graph"
 }

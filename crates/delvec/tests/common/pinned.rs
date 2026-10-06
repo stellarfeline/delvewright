@@ -17,6 +17,17 @@
 //! every first use in a process, so a test that wrote into the shared copy reds
 //! instead of changing what the next test reads.
 //!
+//! **The manifest is the completion marker, never the directory.** A tree is
+//! staged beside the destination and renamed into place only once its manifest
+//! is written, under a lock file every test process takes, so no process ever
+//! sees a tree this module wrote without its manifest. A destination WITHOUT a
+//! manifest is therefore not one this module completed, and it is replaced
+//! rather than judged. That state is real: `Swatinem/rust-cache` caches
+//! `target/`, and before saving it deletes every file under a directory of
+//! `target/` that is not a cargo profile — `target/tmp/pinned-content/<sha>`
+//! included — keeping the directories. The next run restored an empty tree with
+//! no manifest, and every test that read it failed on the missing manifest.
+//!
 //! An absent content repository, a repository that does not carry the pinned
 //! commit, and an LFS object that is not in the local store are failures with
 //! the command that repairs them, never a skip and never a fall-back to the
@@ -72,7 +83,10 @@ pub fn sha() -> String {
 /// The root of the content repository's tree at the pin.
 pub fn root() -> PathBuf {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
-    ROOT.get_or_init(materialise).clone()
+    ROOT.get_or_init(|| {
+        materialise_into(&PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pinned-content"))
+    })
+    .clone()
 }
 
 /// The prefab library at the pin (`prefabs/`).
@@ -126,13 +140,26 @@ fn content_repo() -> PathBuf {
     canonical
 }
 
-fn materialise() -> PathBuf {
+/// Materialise the pinned tree under `cache` (once per pin) and return it,
+/// verified. Every step that decides what is on disk runs under
+/// `<cache>/<sha>.lock`, an exclusive file lock across processes.
+pub fn materialise_into(cache: &Path) -> PathBuf {
     let sha = sha();
-    let cache = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("pinned-content");
     let dest = cache.join(&sha);
-    if dest.is_dir() {
+    std::fs::create_dir_all(cache).unwrap();
+    let lock_path = cache.join(format!("{sha}.lock"));
+    let lock = std::fs::File::create(&lock_path)
+        .unwrap_or_else(|e| panic!("{}: {e}", lock_path.display()));
+    lock.lock()
+        .unwrap_or_else(|e| panic!("{}: {e}", lock_path.display()));
+    if dest.join(MANIFEST).is_file() {
+        drop(lock);
         verify(&dest, &sha);
         return dest;
+    }
+    if dest.exists() {
+        // Not a tree this module completed (see the module note): replace it.
+        std::fs::remove_dir_all(&dest).unwrap_or_else(|e| panic!("{}: {e}", dest.display()));
     }
     let repo = content_repo();
     let has = git(&repo, &["cat-file", "-e", &format!("{sha}^{{commit}}")]);
@@ -150,7 +177,6 @@ fn materialise() -> PathBuf {
     ))
     .join("lfs/objects");
 
-    std::fs::create_dir_all(&cache).unwrap();
     let staging = cache.join(format!(
         "{sha}.partial-{}-{:?}",
         std::process::id(),
@@ -229,11 +255,11 @@ fn materialise() -> PathBuf {
     }
     std::fs::write(staging.join(MANIFEST), text).unwrap();
 
-    if std::fs::rename(&staging, &dest).is_err() {
-        // Another process materialised the same pin first; its copy is checked
-        // like any other.
-        let _ = std::fs::remove_dir_all(&staging);
-    }
+    // Under the lock, nobody else can have put a tree here since the check
+    // above, so a failed rename is a failure and never "someone was first".
+    std::fs::rename(&staging, &dest)
+        .unwrap_or_else(|e| panic!("{} -> {}: {e}", staging.display(), dest.display()));
+    drop(lock);
     verify(&dest, &sha);
     dest
 }

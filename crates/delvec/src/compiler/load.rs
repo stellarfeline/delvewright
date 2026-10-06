@@ -6,26 +6,28 @@ use std::path::Path;
 
 use delvewright_dsl::{Diagnostic, DwCode, ExitTier, RawCampaign};
 
-/// `DW0874`: a campaign directory is present and does not hold all six stage
-/// documents.
-///
-/// **The state this names is the one the authoring skill tells an author to be
-/// in.** A campaign is written a document at a time, and until the sixth is
-/// written the directory is incomplete by construction. Every one of the four
-/// verbs that reads a campaign directory used to answer that with
-/// `internal error: cannot read campaign dir: npcs.json`, exit 10, and no code
-/// at all — the phrasing this compiler reserves for its own bugs, printed at the
-/// first thing it ever says to a new author, about the thing the page had just
-/// told them to do.
-///
-/// Being uncoded was the load-bearing half. Every other authoring mistake here
-/// is a `DW` code with a documented row, an exit of 1, and a sentence saying what
-/// to write; this one had none of the three, so nothing about it could be looked
-/// up, asserted by a test, or told apart from a crash.
-///
-/// Validation tier (exit 1), because that is what it is: the campaign is refused,
-/// the compiler is fine. Raised **before a campaign has parsed**.
-pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::new("DW0874", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0874`: a campaign directory is present and does not hold all six stage
+    /// documents.
+    ///
+    /// **The state this names is the one the authoring skill tells an author to be
+    /// in.** A campaign is written a document at a time, and until the sixth is
+    /// written the directory is incomplete by construction. Every one of the four
+    /// verbs that reads a campaign directory used to answer that with
+    /// `internal error: cannot read campaign dir: npcs.json`, exit 10, and no code
+    /// at all — the phrasing this compiler reserves for its own bugs, printed at the
+    /// first thing it ever says to a new author, about the thing the page had just
+    /// told them to do.
+    ///
+    /// Being uncoded was the load-bearing half. Every other authoring mistake here
+    /// is a `DW` code with a documented row, an exit of 1, and a sentence saying what
+    /// to write; this one had none of the three, so nothing about it could be looked
+    /// up, asserted by a test, or told apart from a crash.
+    ///
+    /// Validation tier (exit 1), because that is what it is: the campaign is refused,
+    /// the compiler is fine. Raised **before a campaign has parsed**.
+    pub const DW_STAGE_DOCUMENT_MISSING: DwCode = DwCode::new("DW0874", ExitTier::Build);
+}
 
 /// The six stage filenames a campaign directory must contain.
 pub const STAGE_FILES: [&str; 6] = [

@@ -91,9 +91,11 @@ use crate::compiler::nav::{Ambient, World};
 use crate::compiler::plan::Plan;
 use crate::compiler::registry::PrefabRegistry;
 
-/// `DW0885`: a placed piece's outward solid boundary stands in the air the party
-/// can be in, and neither the world nor the piece answers for it.
-pub const DW_PIECE_EXPOSED: DwCode = DwCode::new("DW0885", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0885`: a placed piece's outward solid boundary stands in the air the party
+    /// can be in, and neither the world nor the piece answers for it.
+    pub const DW_PIECE_EXPOSED: DwCode = DwCode::new("DW0885", ExitTier::Build);
+}
 
 /// How far outward of the content the party's air is followed before the flood
 /// is called an escape.

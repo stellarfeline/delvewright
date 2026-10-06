@@ -103,15 +103,17 @@ use crate::compiler::failure::Failure;
 use delvewright_dsl::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// `DW0807`: a generated PackTest template runs the campaign's real `tick` and
-/// asserts on an outcome whose gate reads `#party` state the template never
-/// writes.
-///
-/// Build-tier (exit 3). The suite still loads and the test still passes most of
-/// the time — that is the failure mode, not a mitigation. A template whose
-/// verdict depends on batch order is not a proof, and re-running it discards the
-/// finding.
-pub const DW_PACKTEST_UNOWNED_GATE: DwCode = DwCode::new("DW0807", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// `DW0807`: a generated PackTest template runs the campaign's real `tick` and
+    /// asserts on an outcome whose gate reads `#party` state the template never
+    /// writes.
+    ///
+    /// Build-tier (exit 3). The suite still loads and the test still passes most of
+    /// the time — that is the failure mode, not a mitigation. A template whose
+    /// verdict depends on batch order is not a proof, and re-running it discards the
+    /// finding.
+    pub const DW_PACKTEST_UNOWNED_GATE: DwCode = DwCode::new("DW0807", ExitTier::Build);
+}
 
 /// The batch-global progression holder every gate term is read from
 /// (spec-0018). Mirrors `plan::PARTY`; kept as its own constant so this module

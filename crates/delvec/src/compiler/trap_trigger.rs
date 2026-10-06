@@ -24,8 +24,10 @@ use crate::compiler::failure::Failure;
 use crate::compiler::plan::{ResolvedAnchor, TrapPlan};
 use delvewright_dsl::{DwCode, ExitTier};
 
-/// A trap's trigger cell does not hold the block its `trigger` kind names.
-pub const DW_TRAP_TRIGGER_MISSING: DwCode = DwCode::new("DW0917", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// A trap's trigger cell does not hold the block its `trigger` kind names.
+    pub const DW_TRAP_TRIGGER_MISSING: DwCode = DwCode::new("DW0917", ExitTier::Build);
+}
 
 /// Build-tier proof: every trap's trigger cell holds the block its trigger kind
 /// names. `anchors` is only read for the remedy: the anchors of this world

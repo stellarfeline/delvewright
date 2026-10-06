@@ -80,7 +80,9 @@ pub struct ReversedStair {
     pub piece: Option<String>,
 }
 
-const DW_STAIR_REVERSED: DwCode = DwCode::new("DW0430", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    const DW_STAIR_REVERSED: DwCode = DwCode::new("DW0430", ExitTier::Build);
+}
 
 /// Whether `name` is a stair block laid the normal way up. Upside-down stairs
 /// (`half=top`) present a flat full-height top face, so they carry no climb and

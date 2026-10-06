@@ -266,21 +266,7 @@ GENERATED_JSON_ROOTS: dict[str, str] = {
 # an entry is never a licence for the whole file. A statement the file no longer
 # contains is reported, which is how an entry keyed to a number is retired when
 # the number moves on.
-COUNTEREXAMPLES: dict[str, dict[str, object]] = {
-    "docs/specs/spec-0082-a-fixed-thing-that-can-be-hit-and-hits-back.md": {
-        "statements": ["`delvec 1.7.1, dsl {v}, mc 1.21.11`"],
-        "reason": (
-            "the spec's Ground quotes the `--version` line of the instrument it "
-            "measured with — a frozen measurement names its instrument by exact "
-            "revision — so a bump must not move it"
-        ),
-    },
-    "tools/spike-organic-stranded/observations.json": {
-        "statements": ['"engine": "delvec 1.7.1, dsl {v}, mc 1.21.11"'],
-        "reason": "a frozen measurement record: the `--version` line of the instrument the "
-        "spec-0087 rig was measured with, which names that build and must not move with a bump",
-    },
-}
+COUNTEREXAMPLES: dict[str, dict[str, object]] = {}
 
 
 def files_named() -> list[str]:
