@@ -2136,26 +2136,22 @@ pub fn build_with_warnings(
     );
 
     // ---- a watcher is out of play everywhere (spec-0077 §5, DW0926) ----
-    // A respawn wait holds one player in the observation state while the rest
-    // play on, so a watcher can stand anywhere. Every positional player selector
-    // in the shipped tree must exclude the observation tag or stand at a site
+    // A cutscene holds every player in the observation state, and a respawn wait
+    // holds one while the rest play on. Every positional player selector in the
+    // shipped tree must exclude the observation tag or stand at a site
     // `crate::compiler::observer::ALLOWED` names with its reason (an engine
-    // self-check: see `crate::compiler::observer::check`). Feature-blind and read
-    // off the shipped bytes. Only with a declared wait, so every other
-    // campaign's tree is untouched.
-    if respawn_wait(plan).is_some() {
-        let census =
-            crate::compiler::observer::check(&out).map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            })?;
-        eprintln!("{}", census.binding());
-        put_json(
-            &mut out,
-            "validation/observer-census.json",
-            &census.to_json(),
-        );
-    }
+    // self-check: see `crate::compiler::observer::check`). Feature-blind, read
+    // off the shipped bytes, and run on every build.
+    let census = crate::compiler::observer::check(&out).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+    eprintln!("{}", census.binding());
+    put_json(
+        &mut out,
+        "validation/observer-census.json",
+        &census.to_json(),
+    );
 
     // ---- the effect-root walk's own binding ledger ----
     // Every other proof in this compiler publishes its binding as a
@@ -7549,15 +7545,11 @@ fn wipes(plan: &Plan) -> bool {
 
 /// The selector argument that keeps a player who is only watching out of a
 /// positional or health rule ([`CUTSCENE_TAG`]'s staging invariant). Spliced
-/// into the selectors that do not already carry it when the campaign declares a
-/// respawn wait, the one state in which a watcher can stand anywhere outside a
-/// cutscene; empty otherwise, so such a campaign stays byte-identical.
-fn observer_guard(plan: &Plan) -> String {
-    if respawn_wait(plan).is_some() {
-        format!(",tag=!{CUTSCENE_TAG}")
-    } else {
-        String::new()
-    }
+/// into the selectors that do not already carry it. Unconditional: a cutscene
+/// viewer carries the tag in every campaign, and a declared respawn wait only
+/// adds a second state that does.
+fn observer_guard(_plan: &Plan) -> String {
+    format!(",tag=!{CUTSCENE_TAG}")
 }
 
 /// The selector of the living teammate in play a waiting player watches

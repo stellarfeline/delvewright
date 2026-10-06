@@ -185,7 +185,7 @@ fn lane_follow_range_equals_aggro_radius() {
     );
     let tick = fn_body(&out, "lane_tick_warband");
     assert!(
-        tick.contains("@a[distance=..16]"),
+        tick.contains("@a[distance=..16,tag=!dw_cutscene]"),
         "the release radius is the same 16: {tick}"
     );
 }
@@ -260,7 +260,7 @@ fn lane_tick_advances_releases_reasserts_and_self_terminates() {
         "a player inside the radius releases the mob to native AI: {tick}"
     );
     assert!(
-        tick.contains("unless entity @a[distance=..16] run data merge entity @s {Patrolling:1b,"),
+        tick.contains("unless entity @a[distance=..16,tag=!dw_cutscene] run data merge entity @s {Patrolling:1b,"),
         "a mob with nobody near is put back on the lane: {tick}"
     );
     assert!(

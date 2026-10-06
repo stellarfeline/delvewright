@@ -97,6 +97,13 @@ fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
     .unwrap()
 }
 
+fn text_lines(out: &BuildOutput) -> Vec<&str> {
+    out.iter()
+        .filter(|(p, _)| p.starts_with("datapack/") && p.ends_with(".mcfunction"))
+        .flat_map(|(_, b)| std::str::from_utf8(b).unwrap().lines())
+        .collect()
+}
+
 fn datapack_text(out: &BuildOutput) -> String {
     out.iter()
         .filter(|(p, _)| p.starts_with("datapack/"))
@@ -105,14 +112,13 @@ fn datapack_text(out: &BuildOutput) -> String {
         .join("\n")
 }
 
-/// Absent, nothing of the wait is emitted: no `rw_*` function, no clock, no
-/// census ledger, and the respawn edge fires `cp_respawn_fire` directly.
+/// Absent, nothing of the wait is emitted: no `rw_*` function, no clock, and the
+/// respawn edge fires `cp_respawn_fire` directly.
 #[test]
 fn absent_emits_nothing_of_the_wait() {
     let out = build(&fixture());
     assert!(!out.keys().any(|p| p.contains("/function/rw_")));
     assert!(!datapack_text(&out).contains("dw.rwait"));
-    assert!(!out.contains_key("validation/observer-census.json"));
     assert!(
         fn_body(&out, "cp_respawn_check").contains(&format!("run function {NS}:cp_respawn_fire"))
     );
@@ -523,4 +529,28 @@ fn the_answer_lock_check_finds_each_hole() {
     });
     assert_eq!(late.late_enables.len(), 1, "{late:?}");
     assert!(!late.holds());
+}
+
+/// A cutscene viewer is out of play whether or not the campaign declares a wait:
+/// every positional player selector excludes the tag (or stands at an allowed
+/// site), the census binds, and an approach trigger carries the exclusion.
+#[test]
+fn a_campaign_with_no_wait_guards_every_positional_selector() {
+    let out = build(&fixture());
+    let c = observer::census(&out);
+    assert!(c.selectors > 0 && c.guarded > 0, "{c:?}");
+    assert!(c.unguarded.is_empty(), "{:?}", c.unguarded);
+    let ledger = out
+        .get("validation/observer-census.json")
+        .expect("the census ledger ships with every build");
+    let ledger: serde_json::Value = serde_json::from_slice(ledger).unwrap();
+    assert_eq!(ledger["unguarded"], 0);
+    let approach: Vec<&str> = text_lines(&out)
+        .into_iter()
+        .filter(|l| l.contains("if entity @a[distance=..") && l.contains(":trig_"))
+        .collect();
+    assert!(!approach.is_empty(), "the fixture has no approach trigger");
+    for l in approach {
+        assert!(l.contains("tag=!dw_cutscene"), "{l}");
+    }
 }
