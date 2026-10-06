@@ -104,9 +104,9 @@
 #   - SessionStart hook, unconditional — fires on startup, resume, AND after
 #     every context compaction, which is exactly the moment the planner is a
 #     reconstruction of its former self and most likely to be missing state.
-#   - UserPromptSubmit hook with `--if-stale <hours>` — inside one long session
-#     the page refreshes with the next user message once the stamp is older
-#     than the window, and stays silent otherwise.
+#   - `--if-stale <hours>` for a manual run: prints only once the stamp is
+#     older than the window. It is not bound to UserPromptSubmit, because a
+#     full run outlasts a prompt hook's timeout.
 # The stamp lives in .git/ (never committed, per-checkout, survives nothing it
 # shouldn't).
 
