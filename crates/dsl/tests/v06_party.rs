@@ -60,6 +60,11 @@ fn quests_with_carrier(position: &str) -> String {
             r#"{{ "type": "move-npc", "npc": "npc/keeper", "to": {{ "anchor": "anchor/exit" }},
                    "on_arrive": [ {give} ] }}"#
         ),
+        // A timeline started from a scheduler-only bundle: nobody to carry.
+        "arrive-sequence" => format!(
+            r#"{{ "type": "move-npc", "npc": "npc/keeper", "to": {{ "anchor": "anchor/exit" }},
+                   "on_arrive": [ {{ "type": "sequence", "steps": [ {{ "at_ticks": 0, "effects": [ {give} ] }} ] }} ] }}"#
+        ),
         "respawn" => format!(
             r#"{{ "type": "set-checkpoint", "anchor": "anchor/exit",
                    "on_respawn": [ {give} ] }}"#
@@ -134,16 +139,32 @@ fn carrier_one_on_a_quest_beat_validates_clean() {
 }
 
 /// A scheduler-only bundle has no acting player, so `carrier: "one"` there has no
-/// recipient: `DW0357`, for both scheduler seams.
+/// recipient: `DW0357` — an `on_arrive`, and a timeline started from one.
 #[test]
 fn carrier_one_in_a_scheduled_bundle_is_dw0357() {
-    for position in ["sequence", "arrive"] {
+    for position in ["arrive", "arrive-sequence"] {
         let diags = check_campaign(&raw_with(None, None, Some(&quests_with_carrier(position))));
         assert!(
             diags.iter().any(|d| d.code == "DW0357"),
             "carrier: one inside a {position} bundle must be DW0357: {diags:#?}"
         );
     }
+}
+
+/// A timeline started from a beat a player completes carries that player
+/// through every step (spec-0085 §3.2), so `carrier: "one"` in a step keeps its
+/// recipient.
+#[test]
+fn carrier_one_in_a_timeline_a_player_started_validates_clean() {
+    let diags = check_campaign(&raw_with(
+        None,
+        None,
+        Some(&quests_with_carrier("sequence")),
+    ));
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0357"),
+        "the timeline carries its actor: {diags:#?}"
+    );
 }
 
 /// An `on_respawn` bundle IS dispatched per player, so `carrier: "one"` there

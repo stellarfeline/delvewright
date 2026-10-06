@@ -3132,6 +3132,8 @@ impl Ambush {
                 // ambush is one beat, and stamping the line on every generated
                 // effect would pad the chronicle and trip `DW0485`.
                 happening: if i == 0 { self.happening.clone() } else { None },
+                audience: None,
+                within: None,
                 verb: Verb::SpawnActor { actor: a.clone() },
             });
         }
@@ -5090,18 +5092,68 @@ pub struct QuestEffect {
     /// emission of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub happening: Option<Happening>,
+    /// **Who a player-facing effect addresses** (spec-0085 §3.2): `party` or
+    /// `actor`, the one player whose act fired the root. Absent = the root's own
+    /// answer — a quest completion addresses the party, a death, a respawn, a
+    /// purchase, a credited kill and a `presser` trigger address their actor, a
+    /// polled trigger, a trap and a shortcut address the party — so a campaign
+    /// that never writes the field emits exactly what it emitted before it
+    /// existed.
+    ///
+    /// A property of the envelope rather than of any verb: it reaches every
+    /// verb the emitter addresses to players ([`Verb::addresses_players`]), and
+    /// on any other verb it is refused (`DW0942`). `actor` where emission has no
+    /// acting player is `DW0503`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audience: Option<EffectAudience>,
+    /// **Narrows the audience to players inside an anchor-centred box**
+    /// (`anchor ± extent`, spec-0085 §3.2) at the moment the effect fires — the
+    /// same [`StealthZone`] a `begin-stealth` zone and a `lethal_volumes[]`
+    /// region take, resolved through the one `Plan::zone_box`. Composes with
+    /// [`Self::audience`]: `actor` + `in` is the actor, if they stand in the box.
+    ///
+    /// One field on the envelope, reaching every player-facing verb; refused on
+    /// any other (`DW0942`) — a box narrows an audience, and a world fact has
+    /// none.
+    #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
+    pub within: Option<StealthZone>,
     /// What the effect does.
     #[serde(flatten)]
     pub verb: Verb,
 }
 
+/// **Who a player-facing effect addresses** (spec-0085 §3.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum EffectAudience {
+    /// Every player — `@a`.
+    Party,
+    /// The one player whose act fired the root — the completing player, the
+    /// presser, the dying or respawning player, the buyer, the credited killer.
+    /// Emitted `@s`, so it exists only where emission has an acting player
+    /// (`DW0503`).
+    Actor,
+}
+
+impl EffectAudience {
+    /// The token the document spells.
+    pub fn token(self) -> &'static str {
+        match self {
+            EffectAudience::Party => "party",
+            EffectAudience::Actor => "actor",
+        }
+    }
+}
+
 impl From<Verb> for QuestEffect {
-    /// An unguarded effect with no story note — the shape a compiler-synthesized
-    /// beat and most tests want.
+    /// An unguarded effect with no story note and the root's own audience — the
+    /// shape a compiler-synthesized beat and most tests want.
     fn from(verb: Verb) -> Self {
         QuestEffect {
             when: None,
             happening: None,
+            audience: None,
+            within: None,
             verb,
         }
     }
@@ -5471,9 +5523,9 @@ pub enum Verb {
     /// acting player: at top level it damages every player once; inside a stealth
     /// `on_caught` it damages the caught player (the "caught → death → respawn at
     /// checkpoint" beat). `amount` is in **half-hearts** (1 HP each); an amount ≥ 40
-    /// is lethal through golden apples / absorption. `within` (JSON `in`) narrows to
-    /// acting players standing inside an anchor-centred box (the same box model as a
-    /// stealth zone), keeping the per-`@s` semantics. `damage_type` is the damage
+    /// is lethal through golden apples / absorption. The envelope's `in`
+    /// ([`QuestEffect::within`]) narrows to acting players standing inside an
+    /// anchor-centred box, keeping the per-`@s` semantics. `damage_type` is the damage
     /// type — a curated set of vanilla types that all respect `keepInventory` and do
     /// **not** bypass totems (no `out_of_world`/`generic_kill`); default `generic`.
     /// (The field is `damage_type`, not `type`, because the effect enum is
@@ -5481,10 +5533,6 @@ pub enum Verb {
     DamagePlayers {
         /// Damage dealt, in half-hearts (1 = 1 HP; ≥ 40 is effectively lethal).
         amount: u32,
-        /// Optional spatial filter: only damage an acting player inside this
-        /// anchor-centred box (`anchor ± extent`). Absent = every acting player.
-        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
-        within: Option<StealthZone>,
         /// The damage type (default [`DamageKind::Generic`]).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         damage_type: Option<DamageKind>,
@@ -5733,11 +5781,10 @@ pub enum Verb {
     /// the same hazard — pairing a grant with a `clear-effect` that removes it
     /// while it is still live — is `DW0540`.
     ///
-    /// `in` narrows to players inside an anchor-centred box, the same
-    /// [`StealthZone`] a `begin-stealth` zone, a `damage-players` filter and a
-    /// `lethal_volumes[]` region use, resolved through the one `Plan::zone_box`.
-    /// It is what makes "blind whoever is riding the car" expressible without
-    /// blinding the whole party.
+    /// The envelope's `in` ([`QuestEffect::within`]) narrows to players inside an
+    /// anchor-centred box. It is what makes "blind whoever is riding the car"
+    /// expressible without blinding the whole party. A blinding grant owes the
+    /// blind-reach proof wherever it is written (`DW0943`, spec-0085 §6).
     GiveEffect {
         /// Vanilla status-effect id (e.g. `minecraft:blindness`), validated
         /// against the pinned 1.21.11 registry (`DW0192`).
@@ -5753,11 +5800,6 @@ pub enum Verb {
         /// `false`, vanilla's own default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hide_particles: Option<bool>,
-        /// Optional spatial filter: only grant to a player inside this
-        /// anchor-centred box (`anchor ± extent`). Absent = every player the
-        /// effect's audience addresses.
-        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
-        within: Option<StealthZone>,
     },
     /// Removes a status effect (DSL v0.10, spec-0031) — vanilla's `effect clear`.
     ///
@@ -5772,10 +5814,6 @@ pub enum Verb {
         /// effect**, matching `effect clear <targets>` with no id.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         effect: Option<String>,
-        /// Optional spatial filter, identical in shape and meaning to
-        /// [`Verb::GiveEffect`]'s.
-        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
-        within: Option<StealthZone>,
     },
     /// Teleports **everything inside a declared volume** to an anchor (DSL v0.10,
     /// spec-0031).
@@ -5870,6 +5908,56 @@ pub enum Verb {
         #[schemars(length(min = 1, max = 7))]
         explosions: Vec<FireworkExplosion>,
     },
+    /// Spawns **particles** (spec-0085 §4.3) — the next one-shot point effect
+    /// after [`Verb::Firework`], at a mark or at each addressed player.
+    ///
+    /// `particle` is a vanilla particle type id validated against the pinned
+    /// registry `crates/dsl/data/particles-1.21.11.json`; an unknown id, or one
+    /// whose type **takes options** (`dust`, `block`, `item`, …), is `DW0941`.
+    ///
+    /// Emitted as one vanilla `particle` command, always in **`force`** mode,
+    /// whose viewers are the effect's audience: a particle a creator writes is
+    /// meant to be seen, and `force` is the mode the game sends 512 blocks out
+    /// and draws even at the client's Minimal particle setting. A
+    /// `minecraft:elder_guardian` at `players` is the full-screen face.
+    Particle {
+        /// The particle type id (`minecraft:` prefix optional).
+        particle: String,
+        /// Where the particles spawn: a [`Mark`], or `players` — at each
+        /// addressed player's own position.
+        at: ParticleAt,
+        /// How many (vanilla `<count>`, default 1). Zero is vanilla's spelling of
+        /// a different thing — one particle with a velocity — and is refused.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(range(min = 1))]
+        count: Option<u32>,
+        /// Standard deviations `[x, y, z]` of the spawn spread, in blocks
+        /// (vanilla `<delta>`, default `[0, 0, 0]`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spread: Option<[f64; 3]>,
+        /// Vanilla `<speed>` (default 0).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        speed: Option<f64>,
+    },
+}
+
+/// Where a [`Verb::Particle`] spawns (spec-0085 §4.3): a mark, or the literal
+/// `players`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ParticleAt {
+    /// `"players"` — at each addressed player's own position.
+    Players(PlayersKeyword),
+    /// A mark — the cell's centre at the mark's plane.
+    Mark(Mark),
+}
+
+/// The literal `players`, the one keyword [`ParticleAt`] admits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlayersKeyword {
+    /// At each addressed player.
+    Players,
 }
 
 /// Default `grace_ticks` for [`Verb::BeginStealth`] (spec-0014).
@@ -5922,8 +6010,17 @@ pub enum SoundAt {
         #[serde(default, skip_serializing_if = "is_zero3")]
         offset: [i32; 3],
     },
-    /// Play the sound at each player's own position (the default).
-    Players,
+    /// Play the sound at each player's own position (the default), or at
+    /// `offset` in **the listener's own frame** (spec-0085 §4.4): `+x` to the
+    /// listener's left, `+y` up, `+z` the way the listener faces, with the pitch
+    /// flattened so *behind* stays at ear height. `[0, 0, -3]` is three blocks
+    /// behind. Integer blocks, as a [`Mark`]'s offset is.
+    Players {
+        /// Integer `[x, y, z]` offset in the listener's local frame (default
+        /// `[0, 0, 0]`).
+        #[serde(default, skip_serializing_if = "is_zero3")]
+        offset: [i32; 3],
+    },
     /// Play the sound at a scripted actor's position (rejected — `DW0335`; no
     /// actor position resolves at emission).
     Actor {
@@ -6738,11 +6835,136 @@ impl Verb {
             Verb::SpawnAssembly { .. } => "spawn-assembly",
             Verb::DespawnAssembly { .. } => "despawn-assembly",
             Verb::PlayClip { .. } => "play-clip",
+            Verb::Particle { .. } => "particle",
+        }
+    }
+
+    /// **Whether the emitter addresses this verb to players** (spec-0085 §3.3) —
+    /// whether its emitted commands name the effect's audience selector at all.
+    ///
+    /// A verb that answers `false` is a **party fact**: it fires once for the
+    /// world (a flag, a gate, a block, a region, a wave, an actor, an NPC, a
+    /// camera, the time, a checkpoint, a stealth beat, a timeline, a teleported
+    /// volume, a rocket), so the envelope's `audience` and `in` have nothing to
+    /// narrow and are refused on it (`DW0942`). A `player`-scoped state write
+    /// answers `false` too: its holder is the acting player by declaration, never
+    /// the audience.
+    ///
+    /// Exhaustive, so a new verb cannot be added without answering it; and
+    /// `emit`'s own test binds this answer to the emitted bytes in both
+    /// directions — every verb is emitted under two audiences, and its commands
+    /// differ exactly when this says `true`.
+    pub fn addresses_players(&self) -> bool {
+        match self {
+            Verb::GiveItem { .. }
+            | Verb::Narrate { .. }
+            | Verb::PlaySound { .. }
+            | Verb::DamagePlayers { .. }
+            | Verb::GiveEffect { .. }
+            | Verb::ClearEffect { .. }
+            | Verb::Particle { .. } => true,
+            Verb::OpenGate { .. }
+            | Verb::CloseGate { .. }
+            | Verb::CampaignComplete { .. }
+            | Verb::SetFlag { .. }
+            | Verb::SetState { .. }
+            | Verb::AddState { .. }
+            | Verb::ClearState { .. }
+            | Verb::DropStake { .. }
+            | Verb::SpawnWave { .. }
+            | Verb::SetBlock { .. }
+            | Verb::FillRegion { .. }
+            | Verb::ClearRegion { .. }
+            | Verb::OpenWay { .. }
+            | Verb::DespawnNpc { .. }
+            | Verb::MoveNpc { .. }
+            | Verb::Cutscene { .. }
+            | Verb::SetTime { .. }
+            | Verb::SetWeather { .. }
+            | Verb::SetCheckpoint { .. }
+            | Verb::Bonfire { .. }
+            | Verb::BeginStealth { .. }
+            | Verb::EndStealth
+            | Verb::SpawnActor { .. }
+            | Verb::DespawnActor { .. }
+            | Verb::MoveActor { .. }
+            | Verb::UnleashActor { .. }
+            | Verb::SpawnNpc { .. }
+            | Verb::Sequence { .. }
+            | Verb::Volley { .. }
+            | Verb::Collapse { .. }
+            | Verb::Teleport { .. }
+            | Verb::Firework { .. }
+            // spec-0080: a biome repaint is a world fact (`fillbiome`).
+            | Verb::SetAtmosphere { .. }
+            // spec-0082: an assembly is a world object.
+            | Verb::SpawnAssembly { .. }
+            | Verb::DespawnAssembly { .. }
+            | Verb::PlayClip { .. } => false,
+        }
+    }
+}
+
+/// **How a nested effect list is dispatched, relative to the bundle it sits in**
+/// (spec-0085 §3.2) — the one statement of which command source each nesting
+/// site runs under, read by `DW0357`/`DW0503` and by the emitter's timeline
+/// keying alike.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NestedDispatch {
+    /// Under the parent's own source: a `sequence` step. A timeline started
+    /// where there is an acting player carries that player across its
+    /// `schedule`s by a compiler-owned tag, and a timeline started from the
+    /// server source has nobody to carry.
+    Inherit,
+    /// As one player, whatever the parent was: a `set-checkpoint`'s
+    /// `on_respawn` (the respawning player) and a `begin-stealth`'s `on_caught`
+    /// (the spotted player).
+    Player,
+    /// From the server command source, whatever the parent was: a
+    /// `move-npc`/`move-actor` `on_arrive` (the driver's scheduled tick) and a
+    /// `bonfire`'s `on_rest` (the party-wide rest, dispatched from the tick).
+    Server,
+}
+
+impl NestedDispatch {
+    /// Whether a list dispatched this way, inside a bundle that does (or does
+    /// not) have an acting player, has one.
+    pub fn has_actor(self, parent_has_actor: bool) -> bool {
+        match self {
+            NestedDispatch::Inherit => parent_has_actor,
+            NestedDispatch::Player => true,
+            NestedDispatch::Server => false,
         }
     }
 }
 
 impl QuestEffect {
+    /// Each nested effect list with how it is dispatched ([`NestedDispatch`]) —
+    /// the same lists, in the same order, as [`Self::nested_effect_lists`].
+    pub fn nested_effect_dispatch(&self) -> Vec<(&[QuestEffect], NestedDispatch)> {
+        match &self.verb {
+            Verb::Sequence { steps } => steps
+                .iter()
+                .map(|s| (s.effects.as_slice(), NestedDispatch::Inherit))
+                .collect(),
+            Verb::SetCheckpoint { on_respawn, .. } => {
+                vec![(on_respawn.as_slice(), NestedDispatch::Player)]
+            }
+            Verb::Bonfire { on_rest, .. } => vec![(on_rest.as_slice(), NestedDispatch::Server)],
+            Verb::BeginStealth { on_caught, .. } => {
+                vec![(on_caught.as_slice(), NestedDispatch::Player)]
+            }
+            Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
+                vec![(on_arrive.as_slice(), NestedDispatch::Server)]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Whether this effect addresses players at all — [`Verb::addresses_players`].
+    pub fn addresses_players(&self) -> bool {
+        self.verb.addresses_players()
+    }
     /// The gate anchor if this is `open-gate`.
     pub fn open_gate_anchor(&self) -> Option<&AnchorId> {
         match &self.verb {
@@ -6894,6 +7116,8 @@ impl QuestEffect {
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
             | Verb::PlayClip { .. }
+            // spec-0085's `particle`.
+            | Verb::Particle { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -7168,7 +7392,7 @@ impl QuestEffect {
     /// `damage-players` and for every other effect.
     pub fn damage_within(&self) -> Option<&StealthZone> {
         match &self.verb {
-            Verb::DamagePlayers { within, .. } => within.as_ref(),
+            Verb::DamagePlayers { .. } => self.within.as_ref(),
             _ => None,
         }
     }
@@ -7365,6 +7589,19 @@ impl QuestEffect {
     /// world than the campaign has refuses CONTENT, which is the lesson `DW0343`
     /// carries three files away.
     pub fn anchor_refs(&self) -> Vec<(String, &AnchorId, Option<StationKind>)> {
+        // The envelope's `in` box (spec-0085 §3.2) is one capability of every
+        // player-facing verb, so it registers once, here, before the verb's own.
+        let mut out: Vec<(String, &AnchorId, Option<StationKind>)> = Vec::new();
+        if let Some(zone) = &self.within {
+            out.push(("in/anchor".to_string(), &zone.anchor, None));
+        }
+        out.extend(self.verb_anchor_refs());
+        out
+    }
+
+    /// The anchors the VERB names at this node — [`Self::anchor_refs`] without the
+    /// envelope.
+    fn verb_anchor_refs(&self) -> Vec<(String, &AnchorId, Option<StationKind>)> {
         // Every camera field is a point: a shot flies through cells and looks at
         // one.
         /// `(suffix, anchor, kind)` for a shot's own anchor-bearing fields, under `base`.
@@ -7411,17 +7648,6 @@ impl QuestEffect {
                     Some(StationKind::Point),
                 )]
             }
-            // The `in` filter is one capability on three verbs, so it registers
-            // once: `damage-players` (v0.6) and the v0.10 status-effect pair.
-            Verb::DamagePlayers {
-                within: Some(zone), ..
-            }
-            | Verb::GiveEffect {
-                within: Some(zone), ..
-            }
-            | Verb::ClearEffect {
-                within: Some(zone), ..
-            } => vec![("in/anchor".to_string(), &zone.anchor, None)],
             // Both of a `teleport`'s anchors are load-bearing — the source volume
             // decides WHAT moves and the destination decides WHERE — so a typo in
             // either is a dangling reference (`DW0142`), never a silently
@@ -7446,6 +7672,12 @@ impl QuestEffect {
             // A firework is launched from a point and seats nothing, so it names
             // a location in the same shape `play-sound` does.
             Verb::Firework { at, .. } => vec![("at/anchor".to_string(), &at.anchor, None)],
+            // A particle at a mark names a location the same way; at `players`
+            // it names none.
+            Verb::Particle {
+                at: ParticleAt::Mark(m),
+                ..
+            } => vec![("at/anchor".to_string(), &m.anchor, None)],
             // spec-0022 trap-payload verbs. Both anchors of a `volley` are
             // load-bearing for the coverage proof, so both register here — a
             // typo'd `kill_zone` must be a dangling-reference error, never a
@@ -7773,14 +8005,13 @@ impl QuestEffect {
                 seconds,
                 amplifier,
                 hide_particles,
-                within,
                 ..
             } => Some((
                 effect.as_str(),
                 *seconds,
                 amplifier.unwrap_or(0),
                 hide_particles.unwrap_or(false),
-                within.as_ref(),
+                self.within.as_ref(),
             )),
             _ => None,
         }
@@ -7790,7 +8021,7 @@ impl QuestEffect {
     /// `None` for the clear-everything form, exactly as vanilla spells it.
     pub fn clear_effect(&self) -> Option<(Option<&str>, Option<&StealthZone>)> {
         match &self.verb {
-            Verb::ClearEffect { effect, within, .. } => Some((effect.as_deref(), within.as_ref())),
+            Verb::ClearEffect { effect, .. } => Some((effect.as_deref(), self.within.as_ref())),
             _ => None,
         }
     }
@@ -8773,6 +9004,11 @@ mod happening_subject_tests {
                 "play-clip",
                 serde_json::json!({"type":"play-clip","assembly":"assembly/limb","clip":"idle"}),
                 None,
+            ),
+            (
+                "particle",
+                serde_json::json!({"type":"particle","particle":"minecraft:soul","at":{"anchor":"anchor/well"}}),
+                Some("anchor/well"),
             ),
         ];
         // The binding: the table answers for every verb the schema declares, and

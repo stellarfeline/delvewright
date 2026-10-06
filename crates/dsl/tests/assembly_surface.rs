@@ -84,7 +84,9 @@ fn the_quests_stage_declares_assemblies() {
 fn the_effect_union_gains_three_verbs() {
     let s = quests();
     let verbs = tags(&s, "QuestEffect", "type");
-    assert_eq!(verbs.len(), 41, "{verbs:?}");
+    // The union's size is stated once, by `v29_firework`'s
+    // `the_effect_union_names_forty_three_verbs`; this test owns only that the
+    // three assembly verbs are in it.
     for v in ["spawn-assembly", "despawn-assembly", "play-clip"] {
         assert!(verbs.contains(&v.to_string()), "{v} missing: {verbs:?}");
     }

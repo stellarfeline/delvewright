@@ -1,0 +1,17 @@
+{
+  "code": "DW0941",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1press-the-case/-",
+      "value": {
+        "at": "players",
+        "particle": "minecraft:ghost_face",
+        "type": "particle"
+      }
+    }
+  ],
+  "units": [],
+  "why": "There is no particle type called `minecraft:ghost_face` in the pinned game: the registry `crates/dsl/data/particles-1.21.11.json`, derived from the server jar, holds 115 types and this is not one, so the `particle` command the emitter would write is one the game refuses to load. Validation names the id and the registry's size. It declares no unit: `particle`, both of its `at` forms, `count`, `spread` and `speed` are bound by the hall's case-opening timeline; what the engine refuses here is a name the game does not draw. An id whose type takes options (`minecraft:dust`) is refused by the same code, because the verb carries no options. The remedy is a registered id a bare name spawns — the full-screen face is `minecraft:elder_guardian`."
+}

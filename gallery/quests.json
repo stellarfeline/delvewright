@@ -805,6 +805,105 @@
                   }
                 ]
               }
+            },
+            {
+              "steps": [
+                {
+                  "at_ticks": 0,
+                  "effects": [
+                    {
+                      "at": "players",
+                      "audience": "actor",
+                      "in": {
+                        "anchor": "anchor/pedestal",
+                        "extent": [
+                          6,
+                          4,
+                          6
+                        ]
+                      },
+                      "particle": "minecraft:elder_guardian",
+                      "type": "particle"
+                    },
+                    {
+                      "audience": "actor",
+                      "effect": "minecraft:nausea",
+                      "hide_particles": true,
+                      "in": {
+                        "anchor": "anchor/pedestal",
+                        "extent": [
+                          6,
+                          4,
+                          6
+                        ]
+                      },
+                      "seconds": 3,
+                      "type": "give-effect"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 30,
+                  "effects": [
+                    {
+                      "at": {
+                        "anchor": "anchor/pedestal",
+                        "offset": [
+                          0,
+                          1,
+                          0
+                        ]
+                      },
+                      "audience": "party",
+                      "count": 24,
+                      "particle": "minecraft:soul",
+                      "speed": 0.02,
+                      "spread": [
+                        0.5,
+                        0.5,
+                        0.5
+                      ],
+                      "type": "particle"
+                    }
+                  ]
+                },
+                {
+                  "at_ticks": 60,
+                  "effects": [
+                    {
+                      "at": {
+                        "at": "players",
+                        "offset": [
+                          0,
+                          0,
+                          -3
+                        ]
+                      },
+                      "audience": "actor",
+                      "pitch": 0.5,
+                      "sound": "minecraft:entity.warden.nearby_closest",
+                      "type": "play-sound",
+                      "volume": 1.0
+                    }
+                  ]
+                }
+              ],
+              "type": "sequence",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             }
           ],
           "obj/reach-the-counter": [

@@ -14,6 +14,7 @@
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
 //! - [`atmosphere`]: a campaign's declared skies (spec-0080) — the attribute, paint and declaration refusals (`DW0928`–`DW0930`), the biome each atmosphere ships as, and the one writer of `fillbiome`.
 //! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
+//! - [`blind`]: a blinding beside a drop — the reach a `give-effect` of blindness or darkness owes the world it lands in (`DW0943`).
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
 //! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
 //! - [`blockstate`]: interned block states — the assembled world's block map holds one handle per cell, not one string.
@@ -100,6 +101,7 @@ pub mod assembly;
 pub mod atmos;
 pub mod atmosphere;
 pub mod batchstate;
+pub mod blind;
 pub mod blocking;
 pub mod blockout;
 pub mod blockstate;

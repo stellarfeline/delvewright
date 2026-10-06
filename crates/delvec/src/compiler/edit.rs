@@ -696,6 +696,14 @@ fn check_batch_invariants(
         )
         .1
         .map_err(ctx)?;
+        // `DW0943` after `DW0891`, at this door as at `emit::build`'s.
+        crate::compiler::blind::check(
+            plan,
+            &with_fixtures,
+            plan.campaign_start().map(|(_, pos)| pos),
+        )
+        .1
+        .map_err(ctx)?;
         crate::compiler::nav::check_critical_path(plan, &with_fixtures).map_err(ctx)?;
         crate::compiler::nav::check_checkpoints(plan, &with_fixtures).map_err(ctx)?;
     }

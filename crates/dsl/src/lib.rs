@@ -45,6 +45,7 @@ pub mod license;
 pub mod mclang;
 pub mod metrics;
 pub mod onkill;
+pub mod perception;
 pub mod placement;
 pub mod prefab;
 pub mod purchase;
@@ -121,20 +122,20 @@ pub use stages::{
     BodyTraversal, BonfireLabels, Boundary, BranchDecl, BranchPoint, CameraShot, CameraSubject,
     Carrier, CastAbsence, CastBarks, CastDialogue, CastDialogueKeyword, CastEntry, CastPlace,
     CastPlacement, Class, ClassesContent, Climate, CollectBy, CompareOp, DamageKind, DespawnStyle,
-    DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite, EnchantedItem,
-    EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Forfeit, Guard, Happening,
-    HappeningSubject, HappeningVerb, Horizon, HorizonBase, HorizonSpec, ItemDrop, KillFires,
-    KitItem, LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
+    DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectAudience, EffectSite,
+    EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Forfeit,
+    Guard, Happening, HappeningSubject, HappeningVerb, Horizon, HorizonBase, HorizonSpec, ItemDrop,
+    KillFires, KitItem, LethalVolume, Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER,
     MAX_POTION_DURATION_TICKS, Mark, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle,
-    Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, OnKill, Persona, Pieces,
-    PlannedQuest, PotionContents, PotionEffect, Precipitation, Prop, Quest, QuestEffect,
-    QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shop, ShopOffer, Shortcut,
-    ShotStyle, SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay,
-    StateScope, StateWrite, StealthZone, StrikeAim, StrikeStep, TextureOverride, TimeKeyword,
-    TimeSite, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger,
-    TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather, enchantment_component, is_potion_bearing_item,
-    offset_cell,
+    NestedDispatch, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, OnFull, OnKill, ParticleAt,
+    Persona, Pieces, PlannedQuest, PlayersKeyword, PotionContents, PotionEffect, Precipitation,
+    Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep,
+    Shop, ShopOffer, Shortcut, ShotStyle, SkinModel, SlotDrop, SoundAt, Stake, StateCompare,
+    StateDecl, StateDisplay, StateScope, StateWrite, StealthZone, StrikeAim, StrikeStep,
+    TextureOverride, TimeKeyword, TimeSite, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
+    TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon,
+    WorldContent, WorldDifficulty, WorldTime, WorldWeather, enchantment_component,
+    is_potion_bearing_item, offset_cell,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,
