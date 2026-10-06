@@ -26,6 +26,7 @@
 # failed `changes` skips all of them. That is why `changes` is required too, and
 # why `tools/ci/check-required-contexts.py` refuses it as advisory.
 changes (which jobs a pull request reaches)
+delvec binary (one build per run)
 rust (fmt, clippy, test)
 published crates (package + standalone build)
 engine binaries (cross-build shelf)
