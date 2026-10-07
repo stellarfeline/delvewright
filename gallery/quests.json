@@ -1234,16 +1234,16 @@
                           "anchor": "anchor/stall",
                           "offset": [
                             0,
-                            2,
-                            0
+                            14,
+                            -24
                           ]
                         },
                         {
                           "anchor": "anchor/stall",
                           "offset": [
-                            -1,
-                            2,
-                            0
+                            0,
+                            16,
+                            -24
                           ]
                         }
                       ],
@@ -3628,16 +3628,16 @@
               {
                 "anchor": "anchor/muster",
                 "offset": [
-                  1,
-                  1,
+                  -24,
+                  14,
                   0
                 ]
               },
               {
                 "anchor": "anchor/muster",
                 "offset": [
-                  1,
-                  2,
+                  -24,
+                  16,
                   0
                 ]
               }
