@@ -145,6 +145,8 @@ holding them at once.
 | `a-record-that-says-nobody-walked` | `DW0841` | `validate` | detailing against a fresh walk record whose verdict says nobody walked |
 | `a-rim-one-radius-out-of-reach` | `DW0850` | `build` | narrowing the well's completion radius to 2, so no walked cell on the rim reaches it |
 | `a-rocket-under-a-roof` | `DW0899` | `build` | firing a rocket at `anchor/exit`, under the hall's stone ceiling |
+| `a-bolt-beside-the-arrival` | `DW0958` | `build` | striking a lightning bolt two cells from `anchor/arrival`, where every player first stands |
+| `a-bolt-on-a-copper-tile` | `DW0959` | `build` | laying a waxed copper tile under the exit and striking a bolt on it, so the game would scrape copper along a random walk |
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
 | `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |
 | `a-sky-no-picture-shows` | `DW0890` | `validate` | moving the midnight row to `night`, leaving an hour the world reaches that no approved picture shows |
