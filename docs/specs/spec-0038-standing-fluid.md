@@ -25,8 +25,8 @@
   (`crates/delvec/tests/fixtures/standing-fluid-probes/`, run by hand with the
   commands inline, re-measured at engine
   revision `be8eab02` — the per-probe state is §4) or measured on the pinned
-  1.21.11 (`tools/spike-fluid-plane/`, raw data in `observations.json`,
-  re-runnable via `EULA=TRUE tools/spike-fluid-plane/run.sh`).
+  1.21.11 (`tools/spike-fluid-plane/ at 84f364997d24`, raw data in `observations.json`,
+  re-runnable via `EULA=TRUE tools/spike-fluid-plane/run.sh at 84f364997d24`).
 - **Non-goals**: §5. Deliberately refused, each with its disproof: a
   tide/water-named verb, a region-scoped water level, flow-and-settle
   emission, wading/swim traversal, a clocked plane driver, a second fluid,

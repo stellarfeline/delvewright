@@ -2,7 +2,7 @@
 
 - **Status**: Proposed (ADR-0020-map-design-pipeline; trial-0001 both runs are
   the motivating red; amended three
-  times against the `tools/spike-spatial-contract` prototype — build
+  times against the `tools/spike-spatial-contract at 9482efc31152` prototype — build
   `d3ce851`, its adversary scripts, and the round-3 cost measurement are the
   fixture seed; step 1, the declaration surface, is dispatched)
 - **ADRs**: 0020 (decision), 0004 (extended), 0006 (determinism), 0018 §7
@@ -229,7 +229,7 @@ Both invocations are bound to the events they guard.
 
 ## 4. Order of work
 
-1. **Prototype — done, three rounds** (`tools/spike-spatial-contract/`,
+1. **Prototype — done, three rounds** (`tools/spike-spatial-contract/ at 9482efc31152`,
    re-validated at `d3ce851`). Round 1: cost bounded; the level relation is
    load-bearing (three of Z7's four drifts red only through `rise`; the
    fourth refuses upstream, deliberately outside the checker — AC5);

@@ -24,7 +24,7 @@ fn hw(name: &str) -> Value {
         .unwrap()
 }
 
-/// The spike's station-2 block (`tools/spike-eldritch-visuals/` on
+/// The spike's station-2 block (`tools/spike-eldritch-visuals/ at 2bbb1f2830f7` on
 /// `research/eldritch-visuals`, `wrong_place.json`), its `attributes` verbatim.
 fn wrong_place_attributes() -> Value {
     json!({

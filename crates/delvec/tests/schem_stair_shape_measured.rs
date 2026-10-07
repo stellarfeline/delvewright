@@ -5,12 +5,13 @@
 //! not read out of anyone's memory of vanilla's source: a field of 758 random
 //! stairs — two stair blocks, both halves, all four facings, air holes — was
 //! placed, settled and read back cell by cell on the pinned 1.21.11 server
-//! (`tools/spike-block-settling/`), and this test replays every one of those
+//! (`tools/spike-block-settling/ at 84f364997d24`), and this test replays every one of those
 //! cells through the implementation.
 //!
 //! A disagreement here is the implementation being wrong about the game, which
-//! is the only way this gate can produce a false verdict. Re-measure with
-//! `EULA=TRUE tools/spike-block-settling/run.sh` after any change to the pin.
+//! is the only way this gate can produce a false verdict. The rig that took
+//! the field (`tools/spike-block-settling/run.sh at 84f364997d24`) is in git history only; a change to the
+//! pin re-measures with it from that revision.
 
 use std::collections::BTreeMap;
 
@@ -41,10 +42,10 @@ struct Cell {
 fn observations() -> Observations {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tools/spike-block-settling/observations.json"
+        "/tests/measured/block-settling.json"
     );
     let text =
-        std::fs::read_to_string(path).expect("the measured field is committed beside the spike");
+        std::fs::read_to_string(path).expect("the measured field is committed beside this test");
     serde_json::from_str(&text).expect("observations.json parses")
 }
 

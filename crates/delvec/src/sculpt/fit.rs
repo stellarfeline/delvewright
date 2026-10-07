@@ -1,5 +1,5 @@
 //! **From sub-voxels to blocks** — steps 2–7 of spec-0087 §3.3, a port of the
-//! organic-voxel research's back half (`tools/spike-organic-voxel/voxelize.py`,
+//! organic-voxel research's back half (`tools/spike-organic-voxel/voxelize.py at d67aec1e34d6`,
 //! `docs/reference/organic-structures.md` §3).
 //!
 //! 1. **Octant fit.** Each block is 2 × 2 × 2 octants; an octant's fraction is

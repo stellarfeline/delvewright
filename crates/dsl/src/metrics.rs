@@ -216,7 +216,7 @@ pub fn step_allowed(rise_16: i64, head_clear: impl FnOnce() -> bool) -> bool {
 /// or sprinting, the jump pressed on any tick — from a runway no longer than
 /// its own launch cell.
 ///
-/// Measured, not derived: `tools/spike-jump-arc/simulate.mjs` drives the
+/// Measured, not derived: `tools/spike-jump-arc/simulate.mjs at 84f364997d24` drives the
 /// pinned game's movement code (prismarine-physics, the stack the harness bot
 /// and the live jump spike both run) over the live spike's rig with the runway
 /// as a variable, takes the minimum over runways of 1, 2, 3, 4, 6 and 10
@@ -260,7 +260,7 @@ pub const JUMP_REACH: [(i64, u32); 24] = [
 /// cell is one a swimmer pressing into it gets onto; one higher is a wall.
 ///
 /// Measured with the same instrument as [`JUMP_REACH`]:
-/// `tools/spike-jump-arc/simulate.mjs --water` floats a body in a three-deep
+/// `tools/spike-jump-arc/simulate.mjs at 84f364997d24 --water` floats a body in a three-deep
 /// pool of source water beside a ledge and holds forward and jump, walking and
 /// sprinting. A ledge standing one cell over the top water cell (its top block
 /// flush with the water's) is climbed; two cells over is not. What lifts the
@@ -377,7 +377,7 @@ pub const TICKS_PER_SECOND: f64 = 20.0;
 /// The fastest horizontal displacement a body makes in one tick without an
 /// item, in blocks: sprint-jumping with the jump held (spec-0086 §2.1).
 ///
-/// Measured by `tools/spike-seamless-loop/` (the bot's own physics,
+/// Measured by `tools/spike-seamless-loop/ at 2278c55877e2` (the bot's own physics,
 /// prismarine-physics at the harness pin, on the pinned server): walking
 /// `0.2159`, sprinting `0.2806`, sprint-jumping `0.5878`. It is the bound a
 /// loop's horizontal slab is held to — a one-tick poll catches every crossing
@@ -389,7 +389,7 @@ pub const POLL_HORIZONTAL_BLOCKS_PER_TICK: f64 = 0.5878;
 /// `k = 0.980`, `g = 0.080`, fitted over 87 consecutive per-tick pairs of one
 /// 184-block drop.
 ///
-/// Measured by `tools/spike-seamless-loop/` with the same physics. It is the
+/// Measured by `tools/spike-seamless-loop/ at 2278c55877e2` with the same physics. It is the
 /// bound a loop's vertical slab is held to, the limit rather than the fastest
 /// tick one fall happened to reach (`3.333`): a one-cell slab caught 9 of 10
 /// drops and a three-cell slab 10 of 10.

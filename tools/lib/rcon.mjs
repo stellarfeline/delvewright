@@ -12,7 +12,7 @@
 // simply nowhere that a rejection could be seen.
 //
 // The rule was already written, correctly, INSIDE one spike
-// (`tools/spike-death-teleport/measure.mjs`'s `ok()`), which is exactly the shape
+// (`tools/spike-death-teleport/measure.mjs at 84f364997d24`'s `ok()`), which is exactly the shape
 // CLAUDE.md names: a general mechanism privately re-implemented inside one verb,
 // so the next caller has nothing to reuse and writes the unchecked version. It
 // now lives here, keyed to the object class — "a command issued to a live

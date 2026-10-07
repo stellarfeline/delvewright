@@ -3,7 +3,7 @@
 Reader: the agent planning engine work. This is the research record behind the
 question "how does the engine build a hill-sized creature skeleton that reads
 like its reference image", and the measured result of one spike
-([`tools/spike-organic-voxel/`](../../tools/spike-organic-voxel/README.md)).
+([`tools/spike-organic-voxel/ at d67aec1e34d6`]).
 Every claim is **cited** (a link) or **authored** (said so). Nothing here is a
 spec; the capability it sketches needs one before it is built.
 
@@ -121,7 +121,7 @@ is under half of that. Below about 220 blocks a 2.6-block rib cannot keep a
 - **What the instruments need (authored):** seed from the piece's declared entry anchor or socket when no side face carries grade. Then reachability, light, `walk_y` and enclosure measure the walk a body actually has.
 - **`DW0921`, `DW0322` and `DW0886` are correct, not defects.** A floating skeleton is a soft-lock and void-edge field. Two answers:
   - **Geometry:** catch surfaces and climbable routes, or move the bones.
-  - **The return mechanic** for falls into the void (see `tools/spike-death-teleport/`).
+  - **The return mechanic** for falls into the void (see `tools/spike-death-teleport/ at 84f364997d24`).
   - The owner's "danger is visible" ruling decides which falls are allowed.
 - **Cloud sea:** a cloud sea is a surround, not a prefab, and none exists.
   - The pinned Chunky core's `Sky` carries `cloudsEnabled`, `cloudSize` and `cloudOffset` (strings in `Sky.class`), so Minecraft-style block clouds can be rendered.

@@ -1118,7 +1118,7 @@ const TRANSPORT_JUMP_BLOCKS = 64;
 /**
  * spec-0086 §6: how close a forced move's delta must come to a loop's offset, on
  * every axis, to be that loop's move. The spike measured the delta exact on 10
- * of 10 moves (`tools/spike-seamless-loop/`), so this is a numeric tolerance,
+ * of 10 moves (`tools/spike-seamless-loop/ at 2278c55877e2`), so this is a numeric tolerance,
  * not a judgement.
  */
 const LOOP_DELTA_TOLERANCE = 1e-3;

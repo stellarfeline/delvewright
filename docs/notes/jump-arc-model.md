@@ -12,7 +12,7 @@ do on cue).
 
 ## 1. Method
 
-Scripts: `tools/spike-jump-arc/` (**spike tooling** — throwaway, never shipped,
+Scripts: `tools/spike-jump-arc/ at 84f364997d24` (**spike tooling** — throwaway, never shipped,
 not wired into CI). `run.sh` starts a disposable vanilla server from the exact
 pinned image digest (`versions.toml [images.base]`, MC 1.21.11), serialised via
 the shared `/private/tmp/delvewright-validation.lock.d` mkdir mutex and removed

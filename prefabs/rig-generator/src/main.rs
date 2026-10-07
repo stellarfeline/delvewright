@@ -15,7 +15,7 @@
 //!
 //! ## `rig/tentacle`
 //!
-//! The research spike's 34-segment tentacle (`tools/spike-display-assembly/gen.py`,
+//! The research spike's 34-segment tentacle (`tools/spike-display-assembly/gen.py at a7f43d0b7d50`,
 //! itself re-cut from `research/eldritch-visuals`): 34 `block_display`
 //! segments, sculk banded with crying obsidian, thick from the base to a club
 //! of 1.6 blocks and then tapering to a 0.32 tip over its last five, and five
@@ -293,7 +293,7 @@ fn tentacle() -> Rig {
             .collect(),
         clips,
         provenance: RigProvenance {
-            generator: "prefabs/rig-generator (after tools/spike-display-assembly/gen.py)"
+            generator: "prefabs/rig-generator (after tools/spike-display-assembly/gen.py at a7f43d0b7d50)"
                 .to_string(),
             source: "original".to_string(),
             spdx: "GPL-3.0-or-later".to_string(),
