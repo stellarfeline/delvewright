@@ -152,8 +152,10 @@ fn critical_path_has_sneak_and_cutscene_seconds() {
         "the critical path carries the one dsl_version"
     );
     assert!(cp.contains("\"sneak\": true"), "sneak hint on stealth leg");
+    // A 2 s shot's `cs_end` runs at tick 41 (40 ticks + the closing tick), so
+    // the hold the harness is handed covers 3 whole seconds (`compiler::hold`).
     assert!(
-        cp.contains("\"cutscene_seconds\": 2"),
+        cp.contains("\"cutscene_seconds\": 3"),
         "cutscene_seconds on step"
     );
 }

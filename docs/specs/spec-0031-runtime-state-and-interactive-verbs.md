@@ -364,7 +364,7 @@ Rulings on the cases:
 ## Settled by live measurement (pinned 1.21.11)
 
 Both questions are answered. Full data: `docs/notes/death-and-teleport-spike.md`,
-`tools/spike-death-teleport/observations.json` (4140 samples), re-runnable.
+`tools/spike-death-teleport/observations.json at 84f364997d24` (4140 samples), re-runnable.
 
 ### The death signal — and a wrong premise in this spec
 

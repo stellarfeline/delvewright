@@ -354,6 +354,9 @@ fn the_poll_bounds_are_the_rigs_readings() {
     ] {
         let at = src.find(&format!("pub const {name}")).unwrap();
         let doc = &src[src[..at].rfind("\n\n").unwrap()..at];
+        // The dsl crate is held byte-identical to its published release, whose
+        // doc names the rig by path; the revision it ran at is asserted on the
+        // measured record below.
         assert!(
             doc.contains("tools/spike-seamless-loop/"),
             "{name}'s doc names the rig as its instrument"
@@ -361,9 +364,16 @@ fn the_poll_bounds_are_the_rigs_readings() {
     }
     // The readings themselves, as the rig recorded them.
     let obs = std::fs::read_to_string(
-        common::repo_root().join("tools/spike-seamless-loop/observations.json"),
+        common::repo_root().join("crates/delvec/tests/measured/seamless-loop.json"),
     )
     .unwrap();
+    let rec: serde_json::Value = serde_json::from_str(&obs).unwrap();
+    assert!(
+        rec["instrument"]["rig"]
+            .as_str()
+            .is_some_and(|r| r.starts_with("tools/spike-seamless-loop/gen.py at 2278c55877e2 ")),
+        "the measured record names the rig at the revision it ran"
+    );
     assert!(
         obs.contains("0.5878") || obs.contains("0.587"),
         "the sprint-jump tick"

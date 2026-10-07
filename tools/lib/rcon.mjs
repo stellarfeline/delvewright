@@ -12,7 +12,7 @@
 // simply nowhere that a rejection could be seen.
 //
 // The rule was already written, correctly, INSIDE one spike
-// (`tools/spike-death-teleport/measure.mjs`'s `ok()`), which is exactly the shape
+// (`tools/spike-death-teleport/measure.mjs at 84f364997d24`'s `ok()`), which is exactly the shape
 // CLAUDE.md names: a general mechanism privately re-implemented inside one verb,
 // so the next caller has nothing to reuse and writes the unchecked version. It
 // now lives here, keyed to the object class — "a command issued to a live
@@ -74,17 +74,6 @@ export const REJECTION = new RegExp(
 /** True when `reply` is the server saying it refused or could not parse `cmd`. */
 export function isRejection(reply) {
   return REJECTION.test(String(reply).trim());
-}
-
-/**
- * True when `reply` is the server's own answer to `list` ("There are N of a max
- * of M players online"), which is the ONLY thing a readiness poll may wait on.
- * "Any bytes came back" is satisfied by the transport's own error text (`docker
- * exec` on a stopped container, `Failed to connect to RCON server`). Must stay
- * identical to `dw_rcon_is_list_answer` in rcon.sh.
- */
-export function isListAnswer(reply) {
-  return /^There are [0-9]+ of a max of [0-9]+ players online/.test(String(reply).trim());
 }
 
 /**
@@ -171,15 +160,6 @@ export function rconChannel(container) {
     async probe(cmd) {
       const { raw, reply } = await send(cmd);
       return refuseTruncated(cmd, raw, reply);
-    },
-    /** Resolves true only when the server answered `list` itself; never throws. */
-    async ready() {
-      try {
-        const { reply } = await send("list");
-        return isListAnswer(reply);
-      } catch {
-        return false;
-      }
     },
   };
 }

@@ -6,7 +6,7 @@ proved it. `crates/delvec/src/admit/gallery.rs` emitted four legacy camelCase ga
 and an out-of-range `text_opacity:255b`; 1.21.11 refused `admit:load` and
 `admit:finish` in their entirety, so the gallery world booted with no objectives,
 nothing forceloaded and nothing placed, and every test stayed green.
-`tools/spike-jump-arc/measure.mjs` set `gamerule fallDamage false` one line above
+`tools/spike-jump-arc/measure.mjs at 84f364997d24` set `gamerule fallDamage false` one line above
 a comment asserting the bot took no fall damage. `validation/warden-probe.sh`
 built its pad with `doMobSpawning` and `randomTickSpeed`. None of the three read
 a reply.
@@ -234,15 +234,17 @@ def check_rule_parity() -> tuple[list[str], int]:
 # A readiness poll waits on the server's own answer. `dw_rcon_probe` folds stderr
 # into its reply, so "the probe printed something" is satisfied by its own error
 # text (`Failed to connect to RCON server`) on the first attempt, always.
-# Two shapes are refused outside the shared rule: a NON-EMPTY test over a probe,
-# and a probe/`.probe` of `list` (the one command a poll asks).
+# Two shapes are refused: a NON-EMPTY test over a probe, and a probe/`.probe` of
+# `list` (the one command such a poll asks). A poll waits on an answer only the
+# server gives: the image's healthcheck (`condition: service_healthy`), the
+# server log's `Done (` line, or a probe compared against the one reply it is
+# waiting for.
 NONEMPTY_PROBE = re.compile(r'-n\s+"\$\(\s*dw_rcon_probe\b')
 PROBE_OF_LIST = re.compile(r'(?:dw_rcon_probe\s+\S+\s+"?list"?\s*[)|;\s]|\.probe\(\s*["\'`]list["\'`])')
-READY_CALL = re.compile(r"\bdw_rcon_ready\b|\.ready\(\)")
 
 
 def check_readiness(files: list[str]) -> tuple[list[str], int]:
-    """Every readiness poll goes through `dw_rcon_ready` / `.ready()`."""
+    """No readiness poll reads the probe's bytes. Returns (findings, files examined)."""
     findings: list[str] = []
     bound = 0
     for path in files:
@@ -251,19 +253,19 @@ def check_readiness(files: list[str]) -> tuple[list[str], int]:
             continue
         if allowed(path):
             continue
+        bound += 1
         text = (ROOT / path).read_text(errors="replace")
         for n, raw in enumerate(text.splitlines(), 1):
             line = strip_comment(raw, suffix)
-            if READY_CALL.search(line):
-                bound += 1
             if NONEMPTY_PROBE.search(line) or PROBE_OF_LIST.search(line):
                 findings.append(
                     f"{path}:{n}: a readiness poll that reads the probe's bytes, not the server's answer\n"
                     f"    {raw.strip()}\n"
                     f"    `dw_rcon_probe` folds stderr into its reply, so its own error text "
-                    f"satisfies a non-empty test on the first attempt. Wait with "
-                    f"`dw_rcon_ready <container>` (shell) or `rconChannel(c).ready()` (node), "
-                    f"which succeed only on the vanilla `list` answer."
+                    f"satisfies a non-empty test on the first attempt. Wait on an answer only "
+                    f"the server gives: the image's healthcheck (`condition: service_healthy`), "
+                    f"the server log's `Done (` line, or a probe compared against the one "
+                    f"reply the poll is waiting for."
                 )
     return findings, bound
 
@@ -289,7 +291,7 @@ def main() -> int:
         f"{gamerule_bound} `gamerule` line(s) checked against "
         f"{len(registry)} pinned identifiers; "
         f"{parity_bound} refusal shape(s) compared across the two rule halves; "
-        f"{ready_bound} readiness call site(s) on the shared rule"
+        f"{ready_bound} shell/node file(s) read for a poll on the probe's bytes"
     )
     for e in exemptions:
         print(f"check-live-commands: exempt — {e}")

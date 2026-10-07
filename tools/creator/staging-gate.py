@@ -196,6 +196,8 @@ measures* below. `<build>/staging-admission.json` is the one artifact that has
 to live there and `--admit` may not rename it; and every artifact this gate
 writes carries a marker, so no build-tree probe counts one wherever it sits or
 whatever it is called. The count skipped is stated on every report.
+The next `delvec build` into `--build` removes the token with the build it
+admitted (`delvec::outdir::DERIVED`), so a rebuilt tree is admitted afresh.
 
 Exit 0 = every class this build CONTAINS carries a live, binding check (plus
 any justified exemptions, and the counted classes it contains none of).

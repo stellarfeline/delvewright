@@ -1,8 +1,8 @@
 # Area-effect / non-block-breaking arrow — spike findings (Minecraft Java 1.21.11)
 
 Status: **spike note**, measured 2026-08-11. Nothing here is implemented; no
-engine, DSL, campaign or CI file changed. Rig: `tools/spike-area-effect-arrow/`
-(`EULA=TRUE tools/spike-area-effect-arrow/run.sh`), raw observations committed
+engine, DSL, campaign or CI file changed. Rig: `tools/spike-area-effect-arrow/ at 84f364997d24`
+(`EULA=TRUE tools/spike-area-effect-arrow/run.sh at 84f364997d24`), raw observations committed
 beside it as `observations.json`, and the pinned build's own registry dump as
 `registries-1.21.11.json`.
 

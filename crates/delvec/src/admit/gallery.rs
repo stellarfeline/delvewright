@@ -272,6 +272,17 @@ Set EULA=TRUE in the environment (or eula.txt) before running a server here.\n"
             .to_vec(),
     );
 
+    // The ownership record a browse-world directory carries, exactly as a
+    // build tree does (`crate::outdir`): a second `--out` into the same
+    // directory removes what this tree wrote and the next one does not.
+    let manifest = serde_json::json!({
+        "delvec_version": crate::compiler::DELVEC_VERSION,
+        "gallery_id": gallery_id,
+        "mc_version": crate::compiler::MC_VERSION,
+        "outputs": crate::outdir::outputs_index(&out),
+    });
+    put_json(&mut out, crate::outdir::MANIFEST, &manifest);
+
     out
 }
 

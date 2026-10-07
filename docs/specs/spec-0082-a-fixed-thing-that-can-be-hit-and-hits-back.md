@@ -20,7 +20,7 @@
   table — no story is repeated here); the research spike
   `research/eldritch-visuals` at `2bbb1f28` (`tools/spike-eldritch-visuals/`,
   a 34-segment tentacle of 68 block displays over 96 keyframes); and this
-  spec's own rig, `tools/spike-display-assembly/`, run on the pinned server
+  spec's own rig, `tools/spike-display-assembly/ at a7f43d0b7d50`, run on the pinned server
   (§8, every number with its instrument).
 - **What it is for**: a thing that stands in the world, is built of display
   entities, moves through authored clips, can be struck by a player until it
@@ -496,7 +496,7 @@ What step 1 leaves open so step 2 is an addition and not a rewrite:
 
 ## 8. Measured on the pinned server
 
-**Cited — `tools/spike-display-assembly/` on `itzg/minecraft-server@sha256:3e7db256…`
+**Cited — `tools/spike-display-assembly/ at a7f43d0b7d50` on `itzg/minecraft-server@sha256:3e7db256…`
 (`versions.toml [images.base]`), vanilla 1.21.11, flat world, adventure,
 `view-distance=12`, `simulation-distance=10`,
 `entity-broadcast-range-percentage=100`; bot mineflayer 4.37.1 (harness pin);
@@ -514,7 +514,7 @@ raw readings in `observations.json`, coordinates in `site.json` written by
 | 7 | **Tick cost** (`tick query`, 100-tick samples after a 6 s window, this workstation, keyframes as one `data merge` per part per frame). | 1 assembly @5 ticks: **6.9 ms** avg (P95 10.8); 1 @1: 8.6 (12.8); 4 @1: 15.3 (20.2); 4 @5: 6.2 (13.4); 10 @5: **9.9** (17.4); 10 @1: 15.7 (24.2); 10 with the animation stopped: 6.8 (9.4). Against the stopped control the ten assemblies cost about **0.3 ms per assembly per tick at a 5-tick cadence and 0.9 ms at every tick**; the server's own idle on this machine is the 6.8. |
 | 8 | **Tracking distance.** One assembly left standing; the bot teleported east along a forceloaded lane and its entity list read after 3 s at each stop; `view-distance=12` (192 blocks) so a cutoff under that is the tracker's. | Seen whole (34 parts, hitbox, root) at 40, 56, 64, 72, 80, 96, 112, 128, 144 and **160** blocks; nothing at **176** and 192. The server stops tracking display and interaction entities for a client between 160 and 176 blocks (10 chunks); the client's own `view_range` cull (§9) is inside that. |
 | 9 | **Stop.** `kill @e[tag=dwa]`, the lane unloaded. | 0 tagged entities on the server; the bot's list held 0 block displays. |
-| 10 | **Aim** (`tools/spike-display-assembly/measure-aim.sh`, its readings in `aim-observations.txt`). A root `item_display` with three riding `block_display`s; a keyframe started (`start_interpolation:0`, `interpolation_duration:10`), then in the next command `execute as <root> at @s run tp @s ~ ~ ~ 90 0`; read at once and 60 ticks later. Then the root turned to face an armour stand 12 blocks south, then 12 east, with `execute as <root> at @s facing entity <stand> feet run tp @s ~ ~ ~ ~ 0`; `rotate <root> -45 0`; `-7 /= 2`, `-7 %= 8`; `data get … Rotation[0] 8` at yaw −100.7. | After the turn every part reads yaw 90, `Pos` unchanged, still riding (3 passengers), `transformation` and `interpolation_duration` the keyframe's own; the same 60 ticks later. Facing the stand: yaw −0.0000076 (south) and −90 (east), every part with it. `rotate`: the root −45, every part still −90. `-7 /= 2` is −4 and `-7 %= 8` is 1 (floor division, non-negative remainder). Yaw −100.7 scaled by 8 reads −806 (the floor). |
+| 10 | **Aim** (`tools/spike-display-assembly/measure-aim.sh at a7f43d0b7d50`, its readings in `aim-observations.txt`). A root `item_display` with three riding `block_display`s; a keyframe started (`start_interpolation:0`, `interpolation_duration:10`), then in the next command `execute as <root> at @s run tp @s ~ ~ ~ 90 0`; read at once and 60 ticks later. Then the root turned to face an armour stand 12 blocks south, then 12 east, with `execute as <root> at @s facing entity <stand> feet run tp @s ~ ~ ~ ~ 0`; `rotate <root> -45 0`; `-7 /= 2`, `-7 %= 8`; `data get … Rotation[0] 8` at yaw −100.7. | After the turn every part reads yaw 90, `Pos` unchanged, still riding (3 passengers), `transformation` and `interpolation_duration` the keyframe's own; the same 60 ticks later. Facing the stand: yaw −0.0000076 (south) and −90 (east), every part with it. `rotate`: the root −45, every part still −90. `-7 /= 2` is −4 and `-7 %= 8` is 1 (floor division, non-negative remainder). Yaw −100.7 scaled by 8 reads −806 (the floor). |
 
 ## 9. Research record
 
@@ -705,7 +705,7 @@ tree's own build; the gallery builds from `prefabs/gallery-generator`.
     `check-demo-levels.py` green; the demo row below is queued with this spec.
     *Met for the demo row and the spike paragraph by this spec's own pull
     request; the rest is due with the code.*
-13. **The spike is reproducible.** `EULA=TRUE tools/spike-display-assembly/run.sh`
+13. **The spike is reproducible.** `EULA=TRUE tools/spike-display-assembly/run.sh at a7f43d0b7d50`
     rewrites `observations.json` with every row of §8 present and no row
     carrying a rejection text where a reading belongs. *Met — this spec's
     pull request commits the run.*

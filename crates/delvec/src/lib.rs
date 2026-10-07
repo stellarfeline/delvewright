@@ -14,6 +14,7 @@ pub mod admit;
 pub mod compiler;
 pub mod grammar;
 pub mod orchestrator;
+pub mod outdir;
 pub mod par;
 pub mod render;
 pub mod schem;

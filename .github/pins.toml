@@ -289,16 +289,6 @@ value = "sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de
 sites = [
     ".github/workflows/infra-images.yml",
     "docs/experiments/m2-jigsaw-seed-stability/Dockerfile",
-    "tools/spike-area-effect-arrow/run.sh",
-    "tools/spike-block-settling/run.sh",
-    "tools/spike-celestial-time/run.sh",
-    "tools/spike-death-teleport/run.sh",
-    "tools/spike-display-assembly/measure-aim.sh",
-    "tools/spike-display-assembly/run.sh",
-    "tools/spike-fluid-plane/run.sh",
-    "tools/spike-jump-arc/run.sh",
-    "tools/spike-seamless-loop/run.sh",
-    "tools/spike-staged-lethal/run.sh",
     "validation/Dockerfile.delve",
     "validation/Dockerfile.toolserver",
     "versions.toml",
@@ -983,7 +973,6 @@ compose `pack` service and `playtest-server.sh` to it.
 id = "client-jar"
 value = "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd"
 sites = [
-    "tools/spike-texture-overrides/measure.py",
     "versions.toml",
 ]
 policy = "immutable"
@@ -993,18 +982,4 @@ textures_sha256). `tools/maintenance/derive-client-textures.py` refuses any
 other jar, the texture census a `world.textures[]` row is judged against
 states it in its header, and the spec-0084 rig refused any other jar when it
 measured. It moves only with ADR-0009's Minecraft pin.
-"""
-
-[[pin]]
-id = "organic-spike-whale-mesh"
-value = "57657cfb04e7ce01ade43af9be36e76bb665012b6cc83b8a85d1091ac77dcc71"
-sites = ["tools/spike-organic-voxel/fetch-mesh.sh"]
-policy = "immutable"
-why = """
-SHA-256 of the STL inside the CC0 Cetotherium riabinini skeleton reconstruction
-(figshare doi:10.6084/m9.figshare.29644028, file 58189099), the source mesh of
-the organic-voxel research spike. A figshare file id names fixed bytes, and the
-zip is also held to figshare's own MD5; the spike's readings are hashes of what
-this mesh voxelises to, so the mesh must not move. Spike tooling only: nothing
-fetched here ships in a delve.
 """
