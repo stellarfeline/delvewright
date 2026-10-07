@@ -1,7 +1,7 @@
 # The shield, and one body against a five-mob wave
 
 Measured on the pinned Minecraft Java 1.21.11 server (`versions.toml`
-`[images.base]` `mirror_of`) by `tools/spike-guard-fight/run.sh`, at engine
+`[images.base]` `mirror_of`) by `tools/spike-guard-fight/run.sh at 28aaeb892386`, at engine
 revision `37cf4b4f`. **That rig no longer exists.** It drove the harness's own
 melee — `fightWave` under `withAssist`, a raised shield, charged swings — and
 that machinery was removed when the ladder stopped fighting: a combat step now

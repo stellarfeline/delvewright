@@ -355,13 +355,13 @@ fn the_poll_bounds_are_the_rigs_readings() {
         let at = src.find(&format!("pub const {name}")).unwrap();
         let doc = &src[src[..at].rfind("\n\n").unwrap()..at];
         assert!(
-            doc.contains("tools/spike-seamless-loop/"),
+            doc.contains("tools/spike-seamless-loop/ at 2278c55877e2"),
             "{name}'s doc names the rig as its instrument"
         );
     }
     // The readings themselves, as the rig recorded them.
     let obs = std::fs::read_to_string(
-        common::repo_root().join("tools/spike-seamless-loop/observations.json"),
+        common::repo_root().join("crates/delvec/tests/measured/seamless-loop.json"),
     )
     .unwrap();
     assert!(

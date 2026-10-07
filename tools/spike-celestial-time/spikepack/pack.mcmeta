@@ -1,7 +1,0 @@
-{
-  "pack": {
-    "description": "Delvewright celestial-time spike probes (measurement only)",
-    "min_format": [94, 1],
-    "max_format": [94, 1]
-  }
-}

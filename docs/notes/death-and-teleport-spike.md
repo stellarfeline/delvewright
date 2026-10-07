@@ -1,8 +1,8 @@
 # Death edge + mid-fall teleport — spike findings (Minecraft Java 1.21.11)
 
 Status: **spike note**, measured 2026-08-09. Nothing here is implemented; no
-engine, DSL or campaign file changed. Rig: `tools/spike-death-teleport/`
-(`EULA=TRUE tools/spike-death-teleport/run.sh`), raw per-sample observations
+engine, DSL or campaign file changed. Rig: `tools/spike-death-teleport/ at 84f364997d24`
+(`EULA=TRUE tools/spike-death-teleport/run.sh at 84f364997d24`), raw per-sample observations
 committed beside it as `observations.json` (4140 kept samples), the gamerule
 identifier dump as `gamerules-1.21.11.txt`.
 
@@ -197,7 +197,7 @@ emit the old ones and neither can notice:**
   `doDaylightCycle`, `doWeatherCycle`, `doMobSpawning`, `doImmediateRespawn`.
   All four are rejected at run time, so a gallery world cycles day and weather,
   spawns mobs, and does not immediate-respawn.
-- `tools/spike-jump-arc/measure.mjs:186` — `gamerule fallDamage false`, whose
+- `tools/spike-jump-arc/measure.mjs at 84f364997d24:186` — `gamerule fallDamage false`, whose
   comment states the bot takes no fall damage during the jump trials. It does.
 
 Both are **live**, not historical. Neither reads the command's response, which is
@@ -306,7 +306,7 @@ to ±1 tick.
 
 ```bash
 cd <repo>/harness && npm ci          # once; the rig uses the harness's mineflayer
-EULA=TRUE tools/spike-death-teleport/run.sh [--out <path>]
+EULA=TRUE tools/spike-death-teleport/run.sh at 84f364997d24 [--out <path>]
 ```
 
 Boots its own throwaway container from the pinned digest on an **ephemeral**

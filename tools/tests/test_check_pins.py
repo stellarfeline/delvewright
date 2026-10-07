@@ -1558,3 +1558,22 @@ def test_an_unborn_tag_of_a_line_no_tree_states_in_advance_is_a_finding(repo: Pa
     r = run(repo, "--online", "--checkout", f"skill-page-engine={repo}")
     assert r.returncode == 1
     assert "no tree states a delvewright version in advance" in r.stderr
+
+
+def test_a_research_spike_on_main_is_a_finding(repo: Path) -> None:
+    """Red -> green: a tracked `tools/spike-*` path reds; removing it greens.
+
+    A perturbation only this rule can catch: the spike carries no pin and no
+    fetch verb, so every other check of this gate stays green.
+    """
+    write_registry(repo, COMPLETE)
+    assert run(repo).returncode == 0
+    add_file(repo, "tools/spike-whatever/measure.mjs", "// a throwaway rig\n")
+    r = run(repo)
+    assert r.returncode == 1, r.stdout
+    assert "tools/spike-whatever/measure.mjs" in r.stderr
+    assert "research spikes do not live on main" in r.stderr
+    git("-C", str(repo), "rm", "-rqf", "tools/spike-whatever")
+    r = run(repo)
+    assert r.returncode == 0, r.stderr
+    assert "0 tracked path(s) under `tools/spike-*`" in r.stdout

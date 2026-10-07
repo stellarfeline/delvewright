@@ -33,7 +33,7 @@
 //!
 //! [`derive_shape`] is replayed cell for cell against a field of stairs placed,
 //! settled and read back on the pinned 1.21.11 server
-//! (`tools/spike-block-settling/`, its `observations.json`, and the test that
+//! (`tools/spike-block-settling/ at 84f364997d24`, its `observations.json`, and the test that
 //! replays it). A reading of vanilla's source that nothing re-checks is exactly
 //! the kind of second-hand fact this project has been bitten by; the game's own
 //! answers are in the repository instead.

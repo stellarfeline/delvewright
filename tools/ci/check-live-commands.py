@@ -6,7 +6,7 @@ proved it. `crates/delvec/src/admit/gallery.rs` emitted four legacy camelCase ga
 and an out-of-range `text_opacity:255b`; 1.21.11 refused `admit:load` and
 `admit:finish` in their entirety, so the gallery world booted with no objectives,
 nothing forceloaded and nothing placed, and every test stayed green.
-`tools/spike-jump-arc/measure.mjs` set `gamerule fallDamage false` one line above
+`tools/spike-jump-arc/measure.mjs at 84f364997d24` set `gamerule fallDamage false` one line above
 a comment asserting the bot took no fall damage. `validation/warden-probe.sh`
 built its pad with `doMobSpawning` and `randomTickSpeed`. None of the three read
 a reply.

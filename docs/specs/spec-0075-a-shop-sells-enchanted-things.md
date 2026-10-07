@@ -17,7 +17,7 @@
   enchanted books", and says the stored ones are the ones an anvil adds to an
   enchantable item. **Cited.** Both component types are in the pinned 1.21.11
   `data_component_type` registry
-  (`tools/spike-area-effect-arrow/registries-1.21.11.json`). **Measured.** That
+  (`tools/spike-area-effect-arrow/registries-1.21.11.json at 84f364997d24`). **Measured.** That
   the game picks the component by whether the item is an enchanted book
   (`EnchantmentHelper.getComponentType`) is from memory of the game's code and
   was not re-read for this spec: **unsupported**, and it decides nothing beyond

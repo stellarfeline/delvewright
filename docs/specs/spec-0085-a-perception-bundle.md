@@ -17,7 +17,7 @@
   `sequence` once in `gallery/quests.json`), the harness (`harness/src`, 30
   files, 0 of them naming blindness, darkness or nausea) — and against the
   eldritch spike, branch `research/eldritch-visuals` at `2bbb1f28`,
-  `tools/spike-eldritch-visuals/` (README, `gen.py`, `observations.json`),
+  `tools/spike-eldritch-visuals/ at 2bbb1f2830f7` (README, `gen.py`, `observations.json`),
   whose station 3 is the thing this spec makes authorable. Nothing here was
   measured on a server by this spec; the spike's readings are cited as the
   spike's, and the demo level (§9) is where the rest is looked at.
