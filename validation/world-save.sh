@@ -15,7 +15,9 @@
 # So this boots the delve ONCE, waits for the datapack to say it has finished
 # placing, stops it, and copies the world save into `<build-dir>/world/`. That is
 # the path `validation/render-shots.sh` points every scene at, and the path it
-# REFUSES to emit a scene set without.
+# REFUSES to emit a scene set without. It is a derived artifact of the build in
+# that directory (`delvec::outdir::DERIVED`): the next `delvec build` into the
+# directory removes it, because it is the previous build's geometry.
 #
 # It boots the SAME image the bot ladder and the owner's play session boot
 # (`compose.yaml`'s `server` service, `Dockerfile.delve`), in its own compose
@@ -64,6 +66,7 @@ usage: EULA=TRUE validation/world-save.sh <build-dir> --project <compose-project
   --timeout    how long to wait for the datapack to finish placing (default 600).
 
 Writes <build-dir>/world/ (level.dat + region/), replacing whatever was there.
+The next `delvec build` into <build-dir> removes it (it is this build's world).
 USAGE
   exit 2
 }

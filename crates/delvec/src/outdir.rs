@@ -27,9 +27,11 @@ use delvewright_dsl::diagnostic::{DwCode, ExitTier};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path};
 
-/// An output directory holds files no `delvec` tree wrote, or is not a
-/// directory: refused before anything in it is touched.
-pub const DW_OUTPUT_NOT_OWNED: DwCode = DwCode::new("DW0967", ExitTier::Build);
+delvewright_dsl::dw_code! {
+    /// An output directory holds files no `delvec` tree wrote, or is not a
+    /// directory: refused before anything in it is touched.
+    pub const DW_OUTPUT_NOT_OWNED: DwCode = DwCode::new("DW0967", ExitTier::Build);
+}
 
 /// The ownership record at the root of every tree this module writes.
 pub const MANIFEST: &str = "manifest.json";

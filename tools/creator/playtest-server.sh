@@ -532,7 +532,9 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
   [ -n "$LANG_ARG" ]    && BUILD_ARGS+=(--lang "$LANG_ARG")
   [ -n "$PREFABS_ARG" ] && BUILD_ARGS+=(--prefabs "$PREFABS_ARG")
   echo "delvec ${BUILD_ARGS[*]}"
-  "$DELVEC" "${BUILD_ARGS[@]}" || die "build failed — fix the campaign before serving it"
+  # A caller-supplied `--out` that holds anything delvec did not write is
+  # refused by the build itself (DW0967) and never cleared here.
+  "$DELVEC" "${BUILD_ARGS[@]}" || die "build refused — the diagnostic above names the cause: the campaign, or (DW0967) an --out directory holding files no build wrote"
 
   # ---- the staging gate ------------------------------------------------------
   # A build compiling is not a build she should see. Every past finding's general
@@ -570,7 +572,7 @@ else
   # there is no second staging path to keep in step with the first.
   GALLERY_ARGS=(prefab gallery "$CAMPAIGN" --out "$OUT_DIR")
   echo "delvec ${GALLERY_ARGS[*]}"
-  "$DELVEC" "${GALLERY_ARGS[@]}" || die "could not build a browse world from $CAMPAIGN"
+  "$DELVEC" "${GALLERY_ARGS[@]}" || die "could not build a browse world from $CAMPAIGN (the diagnostic above names the cause; DW0967 is an --out directory holding files no build wrote)"
 
   # Said out loud on every run, because a gate that does not run and is not
   # mentioned is indistinguishable from one that ran green. The reasoning is in

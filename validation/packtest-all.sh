@@ -96,8 +96,11 @@ while IFS= read -r row <&3; do
     mkdir -p "$repo/${prefabs}"
     ( cd "$repo" && cargo run --quiet --manifest-path "$generator" -- "$prefabs" --skins "$skins" --design "$repo/gallery/design" --textures "$repo/gallery/textures" >/dev/null </dev/null )
   fi
-  rm -rf "${repo:?}/validation/${tree}"
-  if ! ( cd "$repo" && "$delvec" build "$campaign" -o "validation/${tree}" --prefabs "$prefabs" >/dev/null 2>&1 </dev/null ); then
+  # No `rm -rf` first: `delvec build` replaces a tree it wrote and refuses
+  # (`DW0967`) a directory holding anything it did not, so the refusal is
+  # printed rather than a directory deleted.
+  if ! build_log="$( cd "$repo" && "$delvec" build "$campaign" -o "validation/${tree}" --prefabs "$prefabs" 2>&1 </dev/null )"; then
+    printf '%s\n' "$build_log" | tail -n 20 >&2
     echo "::error::${project}: delvec build failed for ${campaign}"
     failed="${failed} ${project}(build)"
     failures=$((failures + 1))
