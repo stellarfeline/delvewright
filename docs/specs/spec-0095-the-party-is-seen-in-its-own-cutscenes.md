@@ -4,7 +4,7 @@
 - **Ground**: written against engine `5726e7f6a` (`feat/the-thing-beyond-the-fog`), read only: `emit::cutscene_fns` (the cutscene bracket), `emit::removal_lines` (the engine's one removal of a body it placed), `compiler::affordance::check_fixtures` (the two summon classes), and the pinned 1.21.11 game itself: `net.minecraft.world.entity.decoration.Mannequin`, `net.minecraft.world.item.component.ResolvableProfile` and `net.minecraft.world.level.storage.loot.functions.FillPlayerHead`, disassembled with `javap` from the pinned client jar and named through Mojang's official 1.21.11 client mappings; every command below was then run on the pinned 1.21.11 dedicated server.
 - **What it is for**: a cutscene that can show the party. Today a cutscene puts every player in spectator riding a dolly camera, so their bodies leave the world for its length. A wide shot of the boat the party is standing in shows an empty boat. The first scene to ask is the owner's re-shot reveal on the demo level **The Thing Beyond the Fog**: the camera pulls back from the figure in the sea until the boat, with the party in it, and the figure share the frame.
 - **Research**: every game fact is read from the pinned bytes or measured on the pinned server, and is marked **cited** with how it was read; the rules built on them are **authored**.
-- **Numbers**: `spec-0095`; **one DW code**, `DW0971` (§5); `DW0972` and `DW0973` were handed and are not consumed. **`dsl_version` stays 0.36.0**, the shared unreleased minor: the cutscene gains a field.
+- **Numbers**: `spec-0095`; **one DW code**, `DW0971` (§5); `DW0972` and `DW0973` were handed and are not consumed. The cutscene gains a field inside the unpublished `dsl_version` the unreleased format changes share; this spec states no version literal.
 - **Non-goals**: a stand-in that moves or acts (it is a body standing where a player stood, nothing more); a seated or crouching stand-in (§2.4); a cutscene's own cast of actors, which `actor`s already are.
 
 ## 1. The defect
@@ -71,7 +71,7 @@
 
 `delvec` is this tree's binary, built from the crate manifests this tree carries.
 
-1. **The surface.** `delvec schema --stage all` exports `cutscene.party` with the two values `present` and `absent`, at `dsl_version` 0.36.0.
+1. **The surface.** `delvec schema --stage all` exports `cutscene.party` with the two values `present` and `absent`.
 2. **The default.** A cutscene with no `party` emits, in its start and before `gamemode spectator @a`, the `cs_standin` call over `@a[tag=!dw_cutscene,gamemode=!spectator]`, and in its end the unseen removal of `dw_standin_<bare>`; `party: present` is byte-identical to leaving it out. *`crates/delvec/tests/v36_standin.rs`.*
 3. **The opt-out.** `party: absent` emits `cs_<bare>_absent` with no stand-in line, and a campaign whose only cutscene is absent ships no `cs_standin`, no `standin_profile` loot table and no `standin` PackTest. *`crates/delvec/tests/v36_standin.rs`.*
 4. **The refusal.** Each shape of §5 is `DW0971`. *`compiler::standin::tests`.*
