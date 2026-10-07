@@ -25312,6 +25312,43 @@ fn quart_sample(cells: ([i32; 3], [i32; 3])) -> [i32; 3] {
 /// of the six faces whose column a placed piece covers (world setup
 /// force-loads every piece's columns). `None` when no face has one.
 fn quart_outside(plan: &Plan, cells: ([i32; 3], [i32; 3]), inside: [i32; 3]) -> Option<[i32; 3]> {
+    quart_outside_candidates(plan, cells, inside)
+        .into_iter()
+        .next()
+}
+
+/// The cell `atmosphere_places` reads outside carried place `i`: the first of
+/// [`quart_outside_candidates`] that no OTHER carried place under the same
+/// biome paints. Two neighbouring places under one sky paint over each other's
+/// edges, so a reading taken in the neighbour's paint finds the very biome it
+/// asserts is absent — a deterministic false red, found on The Thing Beyond the
+/// Fog's jetty and slip. `None` when every candidate is such a cell: then no
+/// reading outside can tell the two apart, and none is made.
+fn place_outside(
+    plan: &Plan,
+    places: &[&crate::compiler::horizon::Paint],
+    i: usize,
+) -> Option<[i32; 3]> {
+    let p = places[i];
+    let painted_alike = |c: [i32; 3]| {
+        places.iter().enumerate().any(|(j, o)| {
+            j != i
+                && o.biome == p.biome
+                && (0..3).all(|k| o.cells.0[k] <= c[k] && c[k] <= o.cells.1[k])
+        })
+    };
+    quart_outside_candidates(plan, p.cells, quart_sample(p.cells))
+        .into_iter()
+        .find(|c| !painted_alike(*c))
+}
+
+/// Every candidate cell just outside `cells`, in the order [`quart_outside`]
+/// tries them, that stands in a loaded column.
+fn quart_outside_candidates(
+    plan: &Plan,
+    cells: ([i32; 3], [i32; 3]),
+    inside: [i32; 3],
+) -> Vec<[i32; 3]> {
     let loaded = |c: [i32; 3]| {
         (crate::compiler::horizon::BUILD_MIN_Y..=crate::compiler::horizon::BUILD_MAX_Y)
             .contains(&c[1])
@@ -25338,7 +25375,8 @@ fn quart_outside(plan: &Plan, cells: ([i32; 3], [i32; 3]), inside: [i32; 3]) -> 
         };
         c
     })
-    .find(|&c| loaded(c))
+    .filter(|&c| loaded(c))
+    .collect()
 }
 
 /// One `execute if|unless biome` reading bridged onto a score the template
@@ -25389,8 +25427,8 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
         // volume that holds a place's outside cell: 21 of 21 required tests
         // green on one run, `#atm_out0` red on the next).
         let ground = map.ground.id.clone();
-        for p in &places {
-            if let Some(outside) = quart_outside(plan, p.cells, quart_sample(p.cells)) {
+        for i in 0..places.len() {
+            if let Some(outside) = place_outside(plan, &places, i) {
                 let q = outside.map(|v| v.div_euclid(4) * 4);
                 b.extend(crate::compiler::atmosphere::fillbiome_lines(
                     q,
@@ -25407,7 +25445,7 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
             let inside = quart_sample(p.cells);
             b.push(format!("# {place}: {}", p.biome));
             biome_assert(&format!("#atm_in{i}"), inside, &p.biome, true, &mut b);
-            if let Some(outside) = quart_outside(plan, p.cells, inside) {
+            if let Some(outside) = place_outside(plan, &places, i) {
                 biome_assert(&format!("#atm_out{i}"), outside, &p.biome, false, &mut b);
             }
         }
