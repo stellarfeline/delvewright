@@ -41,7 +41,7 @@ an answer**:
 |---|---|---|
 | **Init I5** the client jar | the two ways it can reach the machine, download named as the default | which one — or the directory to copy from |
 | **§4** the design gate | the design walkthrough — every scene, near view and far | an explicit yes |
-| **§9** the walk | a running server, the connect line, and what to look for item by item | what they saw |
+| **§13** the walk | a running server on the detailed build, the connect line, and what to look for item by item | what they saw |
 
 Stopping means: say what you have done, hand over the thing, say what you need
 back, and **end your turn there**. Do not proceed on silence, do not substitute
@@ -69,7 +69,7 @@ it; the forbidden zones apply in full. That file names its own other half,
 `CLAUDE.local.md`, and tells whoever lacks it to say so and ask "before
 improvising anything about dispatch, review, merge or staging". **You will not
 have it** — it is gitignored on the operator's machine, so no clone can produce
-it — **and this page improvises none of those four.** It stops at §4 and §9 and
+it — **and this page improvises none of those four.** It stops at §4 and §13 and
 hands those to the user; §14 hands over and ends. So record the absence in one
 line and carry on with the run: the answer is the same every time, and the turn
 spent asking comes out of the user's.
@@ -126,11 +126,11 @@ Decide          areas[] or a site plan — one campaign, one    ── §Which p
  7  analyze     analyze the quest graph
  8  build       build the datapack and the world
  8b cameras     one showcase camera per approved image
- 9  the walk    STOP — the user walks the blockout, you wait
-10  ladder      PackTest · bot · branch runs
+ 9  detail      site-plan campaigns only; nothing waits on a walk
+10  ladder      PackTest · bot · branch runs, on the detailed build
 11  chronicle   only when the plan declares branch_points
 12  visual      the POV sequence, then the renders
-13  detail      site-plan campaigns only, and only after the walk
+13  the walk    STOP — the user walks the detailed world, you wait
 14  hand over   storybook, staging gate, play commands
 ```
 
@@ -228,7 +228,7 @@ delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar expand --program idiom-shape \
     --region 15x9x3 --seed 1 -o .out/probe
 delvec --prefabs "$DELVEWRIGHT_PREFABS" palette .out/probe/idiom-shape.nbt \
     -o .out/palette.json                 # the client jar
-docker info                              # the daemon: step 9's play server
+docker info                              # the daemon: step 13's play server
 docker compose version                   # the plugin: all of step 10's ladder
 ```
 
@@ -257,7 +257,7 @@ describes a place with a shape, when the party has to walk somewhere and the
 walking is the content, when there is no prefab that is the building the story
 is about.
 
-The two branches differ only at step 2 and step 13. Everything else — quests,
+The two branches differ only at step 2 and step 9. Everything else — quests,
 NPCs, dialogue, gates, shortcuts, the whole ladder — is identical and does not
 know the difference.
 
@@ -351,19 +351,20 @@ wide — is `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4; placing 
 by hand, in the running game, is
 `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §4a.
 
-## 9. The walk — STOP, this one is the user's
+## 9. Detail — site-plan campaigns only, before the walk
 
-**Needs**: step 8. **Hands over**: a running server, the connect line, and what
-to look for item by item — naming per item every finding still open that they
-must *not* test. **Waits for**: what they saw. Do not run the ladder, start step
-12 or write `walk-record.json` before they answer. **Read**:
-`references/walk.md`, and `references/playtest-rounds.md` from round 2 on.
+Optional, and nothing about it waits on a walk: the user walks the world that
+ships, with its real buildings and materials, so detail comes first. **Needs**:
+step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
+`references/detail.md`; a piece the library does not have is
+`references/new-pieces.md`.
 
 ## 10. The machine ladder
 
-**Needs**: the walk answered. **Produces**: PackTest and bot runs at exit 0, plus
-a branch run per branch whenever the build emitted `validation/branch-plan.json`.
-**Read**: `references/ladder.md`; on a red, `references/when-red.md`.
+**Needs**: step 9 done, or skipped. **Produces**: PackTest and bot runs at exit
+0, plus a branch run per branch whenever the build emitted
+`validation/branch-plan.json` — on the build the user will walk. **Read**:
+`references/ladder.md`; on a red, `references/when-red.md`.
 
 ## 11. The branch chronicle — only when the plan declares `branch_points`
 
@@ -382,17 +383,21 @@ first command. **A POV frame that is the wrong picture** is a camera question,
 not a render one: place that one by hand in the running game
 (`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 
-## 13. Detail — site-plan campaigns only, and only after the walk
+## 13. The walk — STOP, this one is the user's
 
-Optional, and impossible until `walk-record.json` records a **passed** walk
-(`DW0841`) — a record saying nobody walked is a legal record and refuses too.
-**Produces**: `detail-plan.json`, one place at a time. **Read**:
-`references/detail.md`; a piece the library does not have is
-`references/new-pieces.md`.
+**Needs**: steps 9-12. **Hands over**: a running server on the detailed build,
+the connect line, and what to look for item by item — naming per item every
+finding still open that they must *not* test. **Waits for**: what they saw. Do
+not hand over, release, or write `walk-record.json` before they answer.
+**The trade-off**: a route problem found here is repaired after detail, so it
+costs a detail rework as well as the plan or graph edit, and another walk.
+**Read**: `references/walk.md`, and `references/playtest-rounds.md` from round 2
+on.
 
 ## 14. Hand it over
 
-**Needs**: everything above. **Produces**: `campaigns/<id>/README.md` — the
+**Needs**: everything above — on a site-plan campaign, a `walk-record.json` of
+this build whose verdict is `passed`. **Produces**: `campaigns/<id>/README.md` — the
 storybook — its localized editions, and the report that ends the run. Nothing
 comes back. **Read**: `references/hand-over.md`. **When the exterior or
 starting-scene shot is not the one to ship**, place that camera by hand in the
@@ -428,14 +433,14 @@ reference means the file listed here.
 | `references/npc-skins.md` | the skin toolchain, when a design calls for a face; a vanilla texture the delve replaces | step 5 |
 | `references/other-languages.md` | the localization stage | step 5 |
 | `references/build.md` | `fmt`, `analyze`, `build`, and what the build writes | steps 6-8 |
-| `references/walk.md` | bringing the server up, and what to hand the user | step 9 |
+| `references/walk.md` | bringing the server up, what to hand the user, and the walk record | step 13 |
 | `references/ladder.md` | PackTest, the bot, branch runs, and how to triage a red | step 10 |
 | `references/chronicle.md` | reading a branch's chronicle against the design | step 11 |
 | `references/visual-review.md` | the POV sequence, Chunky, and what the set costs | step 12 |
-| `references/detail.md` | `detail-plan.json`, one place at a time | step 13 |
-| `references/new-pieces.md` | making a piece the library does not have | steps 2, 13 |
+| `references/detail.md` | `detail-plan.json`, one place at a time | step 9 |
+| `references/new-pieces.md` | making a piece the library does not have | steps 2, 9 |
 | `references/hand-over.md` | the storybook, its marker, and the play commands | step 14 |
-| `references/playtest-rounds.md` | every round after the first | steps 9, 14 |
+| `references/playtest-rounds.md` | every round after the first | steps 13, 14 |
 | `references/when-red.md` | the symptoms most likely to stop you | any red |
 | `references/tools-by-symptom.md` | the tool inventory, by the symptom that wants it | any step |
 | `references/pitfalls.md` | difficulty, combat, bonfires, waves, staging | steps 3, 5 |

@@ -39,7 +39,7 @@ The full inventory — every binary, script and flag that exists today — is
   `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §4.
 - **A render camera nobody is satisfied with**: stop estimating and let the
   user stand where the shot is. Five steps, in this order. **(1)** The server
-  they are in already has the overlay — it is step 9's command, and when it is not up,
+  they are in already has the overlay — it is step 13's command, and when it is not up,
   that command again; `owner-play.yaml` publishes `localhost:25565` and nothing
   else does. **(2)** Tell them the two triggers: `/trigger dw.free` to fly and to
   come back, and `/trigger dw.cam set <n>` when the frame is right, `<n>` the
@@ -94,6 +94,6 @@ The full inventory — every binary, script and flag that exists today — is
 - **Cleaning up a ladder or a play session by hand**: `$DELVEWRIGHT_ENGINE/validation/fresh-volumes.sh
   --project <id>`. `--project` is required everywhere and there is no daemon-wide
   mode. It reclaims what the project owns — containers, volumes and networks —
-  and proves it. The `--profile play` stack from step 9 pins a fixed container
+  and proves it. The `--profile play` stack from step 13 pins a fixed container
   name, so tear that one down with `docker compose … down -v` or
   `$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh down` rather than with `fresh-volumes.sh`.

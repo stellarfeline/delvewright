@@ -519,7 +519,6 @@ fn detail_needs_no_walk_record() {
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");
-    assert!(!t.contains("DW0841"), "{t}");
     assert!(
         prefabs.join("blockout-exit.json").exists(),
         "the piece was written"

@@ -476,7 +476,6 @@ fn a_place_is_detailed_before_any_walk() {
         Some(0),
         "the build is the one the walk needs: {err}"
     );
-    assert!(!err.contains("DW0841"), "{err}");
 }
 
 /// **The handing needs no walk either.** `delvec allocation` on a campaign

@@ -43,7 +43,7 @@ silence. So: no campaign-version stamp, and the host command names `:latest` —
 that IS the storybook's claim — with one sentence sending a reader who wants an
 exact version to the release page, where the tag is machine-written.
 
-**That includes the connect line, which is where it bites.** Step 9's wording
+**That includes the connect line, which is where it bites.** Step 13's wording
 names the game version because it is going into a chat message; written into the
 storybook it is a second version literal and the check refuses it by name. Point
 at the marker instead — it already carries the number, and it is the one copy
@@ -94,6 +94,6 @@ EULA=TRUE CREATOR_NAME=<mc name> docker compose -f "$DELVEWRIGHT_ENGINE/validati
 ```
 
 `owner-play.yaml` is what publishes `localhost:25565`; the base compose file
-publishes nothing. Both paths run the staging gate first — see step 9.
+publishes nothing. Both paths run the staging gate first — see step 13.
 
 ---

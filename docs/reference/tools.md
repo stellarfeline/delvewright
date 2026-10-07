@@ -152,17 +152,8 @@ every validation (`DW0842`–`DW0845`) and over the built bytes at every build
 (`DW0836`–`DW0838`). It exists for the authoring loop, on the creator's own
 machine.
 
-It prints the campaign's three hashes on stderr before it asks anything, so a
-refusal here hands over the numbers a re-record needs; stdout stays the
-machine-readable document. It **refuses without a passed, fresh walk record**
-(`DW0841`), and it asks that of
-a campaign that has no `detail-plan` yet as readily as of one that has — which is
-exactly the campaign asking for its first allocation, and exactly the moment the
-ordering has to hold. A campaign with a passed, fresh record and no detail plan is
-handed its frame and exits zero: the first allocation is what the author asks for
-before there is anything to bind. Obtaining an allocation, detailing a place and
-compiling a binding are the three events that begin detail work; all three are
-bound by the same gate, and no other verb reads a detail plan.
+It asks for no walk record: the walk is taken on the detailed world, after
+detail, so the first allocation is handed to a campaign nobody has walked.
 
 ```
 delvec allocation <campaign-dir> node/near-hall   # one place
@@ -172,7 +163,7 @@ delvec allocation <campaign-dir> --all            # every place, in plan order
 **`delvec detail <campaign-dir> <place>` / `--all` is the one verb of stage 6**
 (spec-0058). Its inputs are the campaign and the place; everything the chain used
 to have typed is derived. It computes the allocation from the site plan (the same
-function `allocation` prints from, behind the same `DW0841`), binds it into the
+function `allocation` prints from), binds it into the
 place's program — `programs/<place stem>.json` inside the campaign — under the
 `handed/` parameter prefix (`handed/datum-y`; per seam
 `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`, keyed by the layout-graph

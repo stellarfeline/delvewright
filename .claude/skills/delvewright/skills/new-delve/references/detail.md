@@ -1,4 +1,4 @@
-# Step 13 — detail
+# Step 9 — detail
 
 
 Optional. A blockout is walkable and legible and made of concrete; detailing
@@ -25,38 +25,18 @@ and a `piece` is all a row can say:
 Where the piece goes is computed from the site plan's own box: the play space
 plus the one floor course under it. The piece must be **exactly** that shape —
 undersize is refused the same way oversize is (`DW0843`), because the box is the
-footprint and a smaller building means a smaller box, which is a site-plan edit
-and another walk.
+footprint and a smaller building means a smaller box, which is a site-plan edit.
 
-1. **Record the walk the user did at step 9.** The `verdict` is theirs, not
-   yours. Write `walk-record.json` beside the
-   documents — `delvec schema --stage walk-record` is its shape. It is a
-   campaign artifact rather than a stage document, so it carries no
-   `dsl_version`, no `campaign_id` and no `stage`. Fill it with the three hashes
-   every site-plan build prints (`site_plan_sha256`, `layout_graph_sha256`,
-   `blockout_sha256`), the engine revision printed beside them, the verdict, and
-   whatever the walk noted. **Copy all four out of the build output rather than
-   computing them.** Nothing about detail compiles without it (`DW0841`),
-   including asking for an allocation. **The first two hashes are
-   the record's freshness key**: the whole a walk judges is derived from the
-   plan AND the graph, so editing either one — even an edit that moves no block,
-   such as which side a barred way opens from — re-opens this gate and asks for
-   another walk.
+**Nothing here waits on a walk.** The user walks the detailed world at step 13,
+so detail comes first and needs no walk record. A walk record written before
+detail would name the blockout, which is not the build that ships.
 
-   **`verdict` is one of three and you transcribe it, you never choose it.**
-   `passed` — they walked it and it is fit to detail; the only value that opens
-   this step. `findings` — they walked it and something must change first.
-   `unwalked` — **nobody walked it**: abandoned, cut short, or a build stood up
-   and taken down. Reach for `unwalked` for every one of those; it is the only
-   value that does not assert a walk, and `DW0841` refuses on the field, so the
-   truth stops detail by itself. Putting it in `findings[]` instead does not:
-   that list is prose, and no check reads prose.
-2. **Read the allocation**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
+1. **Read the allocation**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
    <campaign-dir> <place>`. It is what the whole hands the place — the frame's
    extents, the datum, every seam with its cells and the face class that answers
    it, the owed anchor names, the palette. **Read it; type nothing from it
    anywhere.** It is an input to nothing; ask again whenever you want it.
-3. **Write the program** at `programs/<place stem>.json` inside the campaign.
+2. **Write the program** at `programs/<place stem>.json` inside the campaign.
    Declare the handed values you use as parameters under the `handed/` prefix,
    with the allocation's values as their defaults (`handed/datum-y`;
    `handed/seam/<edge stem>/x0` … `rise`); answer each seam with an opening at
@@ -68,7 +48,7 @@ and another walk.
    library already has, or one admitted through `delvec prefab` instead of
    written as a program, is *Reference: when the prefab library has no piece you
    need*.
-4. **Run one verb**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
+3. **Run one verb**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail
    <campaign-dir> <place>`. It binds the handing, expands, runs every gate,
    writes the piece into the prefab directory and the row into
    `detail-plan.json`, and builds the whole to prove the map still walks. Read
@@ -78,7 +58,8 @@ and another walk.
    working, because those names were bound to places before any detail existed
    and detailing must never force a quest edit — and a way the plan did not
    allocate is refused in both directions (`DW0844`).
-5. **After any plan edit and re-walk**: `delvec --prefabs "$DELVEWRIGHT_PREFABS"
+4. **After any plan or graph edit** — including one that answers a walk
+   finding at step 13: `delvec --prefabs "$DELVEWRIGHT_PREFABS"
    detail <campaign-dir> --all`. Every program-detailed place is re-made; one
    that no longer fits is refused by name.
 

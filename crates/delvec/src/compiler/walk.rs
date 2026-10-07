@@ -37,9 +37,9 @@
 //! survive the edit that made it a record of some other build — a layout-graph
 //! edit, a moved box, a re-made place, or detail added to the blockout it was
 //! taken on. The `verdict` is not read by any refusal here: a `findings` or
-//! `unwalked` record of this build is a true statement about it, and what reads
-//! the verdict is the release, which ships only a build whose record is
-//! `passed`.
+//! `unwalked` record of this build is a true statement about it. The binding
+//! line names the verdict it read; `/new-delve`'s hand-over ships a build only
+//! beside a `passed` record of it.
 
 use std::path::Path;
 
@@ -480,7 +480,7 @@ impl Hashes {
 /// only go into `findings[]`, which is free prose nothing reads. `Unwalked` is
 /// the value that lets the document state its own subject.
 ///
-/// Only [`Verdict::Passed`] lets the build ship, and nothing here decides
+/// Only [`Verdict::Passed`] is a walk the build may ship on, and nothing here decides
 /// whether a body was in the world: that a human walked is this document's
 /// author's assertion, held by operating practice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -648,7 +648,7 @@ document must never be made to do; `findings[]` is free prose and nothing \
 reads it, so a truth put only there changes nothing. `DW0974` refuses every \
 build while this file is unparseable or names a build other than the one \
 beside it, and it names which hash moved. Only a `passed` record of the build \
-being shipped lets it ship.";
+being shipped is a walk it may ship on.";
 
 /// What the walk check examined, with its denominator.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -769,8 +769,8 @@ pub fn check(
     };
     let remedy = "A record describes the one build that was walked, and this build is not \
                   that one. Walk this build and re-record from its output, or remove the record: \
-                  it is a record of a build that no longer exists, and nothing is shipped without \
-                  a `passed` record of the build being shipped.";
+                  it is a record of a build that no longer exists, and a build ships only beside \
+                  a `passed` record of itself.";
     binding.compared = 1;
     if rec.site_plan_sha256 != now.site_plan {
         return (

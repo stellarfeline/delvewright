@@ -10,8 +10,8 @@ The line runs in seven phases. The first five run on the creator's own machine, 
 flowchart LR
     S["1 · Setup<br/>the plugin and its toolchain"] --> D["2 · Design<br/>placement, story,<br/>the design gate 🖐"]
     D --> B["3 · Content and build<br/>quests, dialogue,<br/>delvec build"]
-    B --> V["4 · Walk and ladder<br/>the walk 🖐, PackTest,<br/>the bot ladder"]
-    V --> R["5 · Review and hand-over<br/>Chunky renders, detail,<br/>the storybook"]
+    B --> V["4 · Detail and ladder<br/>delvec detail, PackTest,<br/>the bot ladder"]
+    V --> R["5 · Review, the walk and hand-over<br/>Chunky renders, the walk 🖐,<br/>the storybook"]
     R --> P["6 · Release<br/>GitHub Actions, GHCR"]
     P --> H["7 · Host<br/>the production host"]
     E["The engine's own line<br/>CI, releases"] -.->|"delvec, the plugin, the images"| S
@@ -109,18 +109,16 @@ flowchart TD
 
 The build tree holds no world save and no server jar ([ADR-0010](adr/0010-oci-packaging.md)). The server is vanilla on a void world; the datapack places every prefab template on first boot ([ADR-0004](adr/0004-prefab-jigsaw.md)). A piece the library does not have is written by the box-split grammar from a rule program (`delvec grammar`), and every piece enters the library through `delvec prefab` admission. Every diagnostic the compiler can print is in [`compiler.md`](reference/compiler.md).
 
-## 4 · Walk and ladder — the human first, then the machines
+## 4 · Detail and ladder — the machines first
 
-The human walks the blockout before any machine plays it: scale, route and silhouette are cheapest to fix now. The ladder then plays the delve on a real server, in the same Docker Compose rig CI and releases use ([ADR-0005](adr/0005-two-layer-validation.md)).
+On a site-plan campaign the derived blockout is detailed first, one place at a time, so that everything after it — the machines and the human — judges the world that ships. The ladder then plays the delve on a real server, in the same Docker Compose rig CI and releases use ([ADR-0005](adr/0005-two-layer-validation.md)).
 
 ```mermaid
 flowchart TD
-    T(["the build tree"]) --> SG["the staging gate<br/>tools/creator/staging-gate.py reads every class in<br/>docs/playtest-findings.json and mints an admission token<br/>for this exact tree"]
-    SG --> UP["tools/creator/playtest-server.sh up<br/>build · gate · a throwaway itzg container on localhost:25565<br/>the datapack's load verified over rcon"]
-    UP --> WALK{{"🖐 9 · the walk<br/>you play the blockout in a Minecraft 1.21.11 client<br/>and say what you saw"}}:::human
-    WALK -.->|"scale, route or silhouette wrong"| BACK(["back to the site plan or the documents"])
-    WALK -->|"it reads"| WR["walk-record.json"]
-    WR --> PT
+    T(["the build tree"]) --> SPQ{"a site-plan campaign?"}
+    SPQ -->|"yes"| DET["9 · detail, one place at a time<br/>delvec allocation · delvec detail<br/>a grammar program inside the box the plan handed it,<br/>gated, frozen into the prefab library"]
+    SPQ -->|"no"| PT
+    DET --> PT
 
     subgraph LADDER ["10 · the machine ladder · validation/compose.yaml"]
         direction TB
@@ -132,17 +130,17 @@ flowchart TD
     PT -.->|"red"| TRI{"triage"}
     BOT -.->|"red"| TRI
     BR -.->|"red"| TRI
-    TRI -.->|"content bug"| BACK
+    TRI -.->|"content bug"| BACK(["back to the documents"])
     TRI -.->|"toolchain bug"| ESC(["stop and report it — never work around it"])
     BR --> CH["11 · the branch chronicle<br/>the compiler renders each branch back into prose;<br/>the agent reads it against DESIGN.md"]
     CH -.->|"a branch does not read"| BACK
-
-    classDef human fill:#ffd76e,stroke:#a9761a,color:#241a00
 ```
 
-The staging gate holds the only key to the play port: `validation/owner-play.yaml` is the one file that publishes 25565, and it refuses a tree with no token minted for it. A red gate lists the defect classes the walker is not yet protected from, item by item, so the walk is never spent on one. The bot's `die-retry` stage dies on purpose at every fight and walks back from the checkpoint; `death-loop` walks into every killing volume the build declares. Neither fights for real: whether a fight can be won is a question for a human.
+The bot's `die-retry` stage dies on purpose at every fight and walks back from the checkpoint; `death-loop` walks into every killing volume the build declares. Neither fights for real: whether a fight can be won is a question for a human.
 
-## 5 · Review and hand-over
+## 5 · Review, the walk and hand-over
+
+The human walks the detailed world last, after every machine has played it: a blockout somebody stood in tells them almost nothing. The cost is stated: a route problem found at the walk is repaired after detail, so it costs a detail rework as well as the plan or graph edit.
 
 ```mermaid
 flowchart TD
@@ -151,16 +149,20 @@ flowchart TD
     RS --> CK["validation/chunky-install.sh · validation/chunky.sh<br/>Chunky renders, pinned core"]
     CK --> VR["12 · visual review<br/>the player's-eye frames in route order,<br/>each against design/concept/ and its expect line"]
     VR -.->|"finding"| BACK(["back to the documents"])
-    VR --> SPQ{"a site-plan campaign,<br/>after a passed walk?"}
-    SPQ -->|"yes"| DET["13 · detail, one place at a time<br/>delvec allocation · delvec detail<br/>a grammar program inside the box the plan handed it,<br/>gated, frozen into the prefab library"]
-    SPQ -->|"no"| HO
-    DET --> HO["14 · the storybook<br/>campaigns/‹id›/README.md, spoiler-free, with its art<br/>tools/creator/check-storybook-version.py"]
+    VR --> SG["the staging gate<br/>tools/creator/staging-gate.py reads every class in<br/>docs/playtest-findings.json and mints an admission token<br/>for this exact tree"]
+    SG --> UP["tools/creator/playtest-server.sh up<br/>build · gate · a throwaway itzg container on localhost:25565<br/>the datapack's load verified over rcon"]
+    UP --> WALK{{"🖐 13 · the walk<br/>you play the detailed world in a Minecraft 1.21.11 client<br/>and say what you saw"}}:::human
+    WALK -.->|"scale, route or silhouette wrong"| REDO(["back to the site plan, the graph or a place's program,<br/>then detail, the ladder and the walk again"])
+    WALK -->|"it reads"| WR["walk-record.json<br/>names this build: grid, ways, detail;<br/>every build after an edit refuses it"]
+    WR --> HO["14 · the storybook<br/>campaigns/‹id›/README.md, spoiler-free, with its art<br/>tools/creator/check-storybook-version.py"]
     HO --> OUT(["the hand-over<br/>the documents, the storybook,<br/>one command that builds, checks and serves"])
     OUT -.-> PLAY{{"🖐 optional playtest<br/>the playtest profile, /trigger dw.note in game<br/>→ delvec harvest → playtest-report.json"}}:::human
     PLAY -.->|"findings"| BACK
 
     classDef human fill:#ffd76e,stroke:#a9761a,color:#241a00
 ```
+
+The staging gate holds the only key to the play port: `validation/owner-play.yaml` is the one file that publishes 25565, and it refuses a tree with no token minted for it. A red gate lists the defect classes the walker is not yet protected from, item by item, so the walk is never spent on one.
 
 Drafts come from the CPU renderers (`delvec snapshot`, `delvec viewer`, `delvec contact-sheet`) and the GPU arm (`delvec render`); every picture that has to look like Minecraft is a Chunky render. The documents are the artifact of record: the finished delve rebuilds byte-identically from them, with no model in the loop.
 
@@ -243,13 +245,13 @@ flowchart TD
 | [Claude Code](https://claude.com/claude-code) | the agent runtime | every phase on the creator's machine | the agent |
 | [`/new-delve`](../.claude/skills/delvewright/skills/new-delve/SKILL.md) | the skill page: Init and fourteen steps, with a reference file per step | 1–5 | the agent |
 | staged JSON documents | `world` · `npcs` · `classes` · `quest-plan` · `quests` · `dialogue`, plus `geometry-brief` · `layout-graph` · `site-plan` · `detail-plan` · `design` · `walk-record` | 2–5 | the agent writes them |
-| `delvec` | the Rust engine, one binary: `schema` · `validate` · `analyze` · `build` · `fmt` · `metrics` · `allocation` · `detail` · `l10n-inventory` · `l10n-apply` | 2, 3, 5 | the agent |
+| `delvec` | the Rust engine, one binary: `schema` · `validate` · `analyze` · `build` · `fmt` · `metrics` · `allocation` · `detail` · `l10n-inventory` · `l10n-apply` | 2–4 | the agent |
 | `delvec` render surface | `snapshot` · `blocking-chart` · `viewer` · `palette` · `scene` · `panorama` · `cameras` · `place-camera` · `contact-sheet` · `index` (CPU), `render` (GPU, through Nucleation and wgpu) | 3, 5 | the agent |
-| `delvec` pieces | `grammar` (the box-split grammar) · `prefab` (admission, jigsaw sockets, anchors, lighting) · `schem` (outside schematics) | 2, 5 | the agent |
+| `delvec` pieces | `grammar` (the box-split grammar) · `prefab` (admission, jigsaw sockets, anchors, lighting) · `schem` (outside schematics) | 2, 4 | the agent |
 | `delvec harvest` · `calibrate` | in-game notes and hand-placed shots, turned back into reports and patches | 5 | the agent, after a human plays |
 | `tools/creator/refimg.py` | concept art from a configured image provider | 2 | the agent; the human judges it |
-| `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | the gate on the findings ledger; the only key to the play port | 4 | the agent |
-| `tools/creator/playtest-server.sh` | a throwaway local itzg server on `localhost:25565` | 4, 5 | the agent starts it; the human walks |
+| `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | the gate on the findings ledger; the only key to the play port | 5 | the agent |
+| `tools/creator/playtest-server.sh` | a throwaway local itzg server on `localhost:25565` | 5 | the agent starts it; the human walks |
 | `tools/creator/skin`, `i18n-translate.py`, `block-appearance.py`, `refscore.py` | NPC faces, translation, block choice by appearance, candidate scoring | 3, 5 | the agent |
 | `tools/creator/check-storybook-version.py` | the storybook's engine-version marker | 5, 6 | the agent and the campaign's release |
 | `validation/` Docker Compose rig | `compose.yaml` with the `play`, `playtest`, `validate` and `packtest` profiles; `owner-play.yaml` | 4–6 | the agent and CI |
