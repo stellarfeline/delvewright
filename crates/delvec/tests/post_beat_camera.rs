@@ -908,3 +908,51 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     assert_eq!(code, 0, "{said}");
     assert!(said.contains("gravity: 1 differing cell(s)"), "{said}");
 }
+
+/// spec-0089 meets spec-0092 and spec-0080's repaints on one beat: a camera
+/// after a step that repaints a volume and strikes a bolt states what its
+/// world does not carry. The bolt writes no block (its fire is the game's,
+/// not the configuration's), so the moved cells are the door's six alone;
+/// the repaint is spec-0089's recorded debt (its §6.3, decision 7) — the
+/// written world takes the biome map at load — and the line says so rather
+/// than picturing a sky the beat changed as unchanged without a word.
+#[test]
+fn a_camera_after_a_repaint_and_a_strike_names_the_biomes_it_does_not_lay() {
+    let camp = hello("c-repaint", &[("door", Some("obj/talk"))]);
+    common::patch_file(&camp.join("world.json"), |w| {
+        w["content"]["atmospheres"] = serde_json::json!([{
+            "id": "atmosphere/hush", "precipitation": "none",
+            "attributes": { "visual/fog_end_distance": 26.0, "visual/sky_color": "#3b4a1e" }
+        }]);
+    });
+    common::patch_file(&camp.join("quests.json"), |q| {
+        let beat = q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap();
+        beat.push(serde_json::json!({
+            "type": "set-atmosphere", "atmosphere": "atmosphere/hush",
+            "region": { "anchor": "anchor/door", "extent": [2, 2, 2] },
+            "happening": { "verb": "opens", "text": "the air at the door goes still" }
+        }));
+        beat.push(serde_json::json!({
+            "type": "lightning", "at": { "anchor": "anchor/exit" },
+            "happening": { "verb": "survives", "text": "a bolt strikes the road outside" }
+        }));
+    });
+    let out = built("c-repaint", &camp);
+    let scenes = tmp("c-repaint-scenes");
+    let (code, log) = cameras(&out, &camp, &scenes, &[]);
+    assert_eq!(code, 0, "{log}");
+    let line = log
+        .lines()
+        .find(|l| l.starts_with("after: door after obj/talk"))
+        .unwrap_or_else(|| panic!("{log}"));
+    assert!(
+        line.contains(": 6 cells moved from load, 0 unforced write(s) not laid,"),
+        "the bolt writes no block: {line}"
+    );
+    assert!(
+        line.contains("; biomes: at load;"),
+        "the repaint is not laid, and the line says so: {line}"
+    );
+}

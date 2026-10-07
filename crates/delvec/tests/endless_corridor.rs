@@ -1709,3 +1709,54 @@ fn a_figure_in_the_end_room_is_admitted_and_one_down_the_hall_is_dw0947() {
     let line = near.refused("DW0947");
     assert!(line.contains("npc `npc/watcher`"), "{line}");
 }
+
+/// spec-0090's loop meets spec-0092 §10's boundary. Under a boundary that
+/// returns, the loop is still exercised on the route and the clock runs
+/// beside its poll; under one that does not (`returns: false`), `DW0960`
+/// walks the corridor the loop folds — every reachable cell inside the
+/// region, so the build is green — and the loop binding is unchanged. The
+/// boundary's places are the critical path's and the links' and gathers'
+/// landings: a loop's landing is held to its anchor's piece (`DW0897`), and
+/// the region contains every piece.
+#[test]
+fn the_loop_holds_under_a_boundary_that_returns_and_one_that_does_not() {
+    for (who, returns) in [("bounded-returns", true), ("bounded-sealed", false)] {
+        let dir = campaign_with(
+            who,
+            |_| {},
+            |d| {
+                common::patch_file(&d.join("world.json"), |w| {
+                    w["content"]["boundary"] = json!({ "margin": 4, "returns": returns });
+                })
+            },
+        );
+        let run = build(&dir);
+        run.green();
+        let step = loop_step(&run.json("critical-path.json")).expect("the loop is exercised");
+        assert_eq!(step["loop"], "loop/gallery", "{who}");
+        let b = run.binding();
+        assert!(
+            b.contains("forced route meets 1 of 1 holding"),
+            "{who}: {b}"
+        );
+        let line = run
+            .stderr
+            .lines()
+            .find(|l| l.starts_with("boundary binding:"))
+            .unwrap_or_else(|| panic!("{who}: no boundary binding:\n{}", run.stderr));
+        assert!(line.ends_with("0 refused"), "{who}: {line}");
+        if returns {
+            assert!(line.contains("the region returns"), "{line}");
+            let tick = run.text("datapack/data/long-gallery/function/boundary_tick.mcfunction");
+            assert!(tick.contains("@a[tag=!dw_cutscene,tag=!dw_free]"), "{tick}");
+        } else {
+            assert!(line.contains("the region does not return"), "{line}");
+            let reached: usize = line
+                .split("; ")
+                .find_map(|p| p.strip_suffix(" reachable cell(s) examined for a way out"))
+                .and_then(|n| n.parse().ok())
+                .unwrap_or_else(|| panic!("{line}"));
+            assert!(reached > 0, "the sealed judge walks the corridor: {line}");
+        }
+    }
+}
