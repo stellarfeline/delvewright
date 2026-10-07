@@ -4,7 +4,7 @@
 - **Ground**: written against engine `51dfc4773` (`origin/main`), read only — the stage-5 effect vocabulary (`Verb`, 43 variants, `crates/dsl/src/stages.rs`), `emit::emit_firework` and its proof `compiler::firework`, `compiler::lethal::posted_places`, the setup gamerules in `emit.rs`, and the pinned 1.21.11 game itself: `net.minecraft.world.entity.LightningBolt`, `Entity.thunderHit`, `ServerLevel.canSpreadFireAround` and `ChunkMap.anyPlayerCloseEnoughTo`, disassembled with `javap` from the pinned client jar and named through Mojang's official 1.21.11 client mappings. The dedicated server's own `LightningBolt` class (`META-INF/versions/1.21.11/server-1.21.11.jar` inside the pinned server jar) is byte-identical to the client's (SHA-256 `c96d262fe294ef4e…` for both), so every fact below is the server's.
 - **What it is for**: a storm that strikes where the story says. A thunderstorm is already a world state (`set-weather thunder`), but the bolt a scene needs — the strike that lights a colossal thing for one heartbeat, the bolt that splits the tree the party sheltered under — falls where the game rolls it, or nowhere. The first scene to ask is the owner's cutscene on the demo level **The Thing Beyond the Fog**: the camera stops, a bolt strikes beside the figure in the sea, and in that same tick the fog is torn away.
 - **Research**: every game fact is read from the pinned bytes and is marked **cited** with the method it was read by; the rules built on them are **authored**.
-- **Numbers**: `spec-0092` is the only number taken here. **Three DW codes**: `DW0958` and `DW0959` (§5), and `DW0960` (§10). **`dsl_version` moves to 0.36.0**: the effect vocabulary gains a verb.
+- **Numbers**: `spec-0092` is the only number taken here. **Three DW codes**: `DW0958` and `DW0959` (§5), and `DW0960` (§10). **`dsl_version` moves a minor**: the effect vocabulary gains a verb, inside the unpublished minor other unreleased format changes share; this spec states no version literal.
 - **Non-goals**: a bolt that is only a picture (the game's `visualOnly` flag is not stored by the entity's save data, so no `summon` can set it — §2); a bolt aimed at a body; natural lightning (a `thunder` world rolls its own and this spec does not touch it); fire (the engine's sealed gamerule already prevents any, §2.3); a storm of many bolts as one verb — that is a `sequence` of strikes, which the vocabulary already writes.
 
 ## 1. The defect
@@ -83,7 +83,7 @@ A bolt aimed at a moving body, a charged-creeper trap, and a lightning rod as a 
 
 `delvec` is this tree's binary, built from the crate manifests this tree carries.
 
-1. **The surface.** `delvec schema --stage all` exports `QuestEffect::lightning` with `at` a `Mark` and nothing else, at `dsl_version` 0.36.0; the effect union names 44 verbs.
+1. **The surface.** `delvec schema --stage all` exports `QuestEffect::lightning` with `at` a `Mark` and nothing else, at the unpublished `dsl_version` minor (the authority, `crates/dsl/Cargo.toml`); the effect union names 44 verbs.
 2. **The emission.** A campaign declaring one strike emits exactly one `summon minecraft:lightning_bolt` line at the mark's cell centre and plane, walked against the pinned command tree; two builds are byte-identical.
 3. **The reach.** A player's body posted one cell inside each face of §5's box is `DW0958` naming the post; one cell outside each face is green; the keeper of the hello-world hall, a villager, refuses a strike on his stand end to end; the posts are `DW0511`'s own enumeration.
 4. **The struck block.** A strike over a waxed copper block or a lightning rod is `DW0959`; the same strike over stone is green.
@@ -100,7 +100,7 @@ A bolt aimed at a moving body, a charged-creeper trap, and a lightning rod as a 
 - A strike is **one effect, `lightning`, at a mark**, and a real bolt: it lights the sky on every client, it thunders, and it can hurt what stands within three blocks — the alternative, a harmless bolt, does not exist in the pinned game's `summon`.
 - A strike **beside a posted body, or onto a block it would rewrite, is refused** (two new codes) — the alternative is an advisory, which would ship a villager that turns into a witch on the beat.
 - Players near a strike are **not proved safe**, as for `firework`, and the record says so.
-- **`dsl_version` moves to 0.36.0**; no ADR.
+- **`dsl_version` moves a minor**; no ADR.
 
 ## 10. What the owner's walk found: the carry, the bound and the free camera
 
