@@ -1,7 +1,23 @@
 {
   "added": [],
-  "base_commit": "51dfc4773631096332a206d919a9664fe6b45df0",
-  "changed": [],
-  "classes": {},
+  "base_commit": "11cd7c8a73b4b3b9c2383e67310ba6d49fc19903",
+  "changed": [
+    "easy.en:datapack/data/gallery/function/press_shortcut_door_barred.mcfunction",
+    "easy.en:packtest-datapack/data/gallery/test/env_trigger_shortcut_door_barred.mcfunction",
+    "hard.en:datapack/data/gallery/function/press_shortcut_door_barred.mcfunction",
+    "hard.en:packtest-datapack/data/gallery/test/env_trigger_shortcut_door_barred.mcfunction",
+    "ocean-horizon.en:datapack/data/gallery/function/press_shortcut_door_barred.mcfunction",
+    "ocean-horizon.en:packtest-datapack/data/gallery/test/env_trigger_shortcut_door_barred.mcfunction",
+    "primary.en:datapack/data/gallery/function/press_shortcut_door_barred.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/env_trigger_shortcut_door_barred.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/press_shortcut_door_barred.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/env_trigger_shortcut_door_barred.mcfunction",
+    "void-horizon.en:datapack/data/gallery/function/press_shortcut_door_barred.mcfunction",
+    "void-horizon.en:packtest-datapack/data/gallery/test/env_trigger_shortcut_door_barred.mcfunction"
+  ],
+  "classes": {
+    "PackTest": 6,
+    "datapack function": 6
+  },
   "removed": []
 }
