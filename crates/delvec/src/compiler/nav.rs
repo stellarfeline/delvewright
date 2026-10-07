@@ -7159,10 +7159,42 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
     verify_checkpoints(
         world,
         &cps,
+        &fixed_checkpoint_fires(plan),
         &critical_positions(plan),
         &plan.region_events,
         &ancestor,
     )
+}
+
+/// The critical-path steps at which a checkpoint is set **once, by a beat** — a
+/// plain `set-checkpoint` no trigger sets. A bonfire moves only when the party
+/// rests and a trigger's checkpoint whenever its trigger is pressed, so neither
+/// is known to have replaced an earlier seat at any step; only these are.
+/// One answer for the no-stranding proof (`DW0315`) and the stake proof
+/// (`DW0525`), which both ask when a seat stops being in force.
+pub(crate) fn fixed_checkpoint_fires(plan: &Plan) -> Vec<usize> {
+    plan.checkpoints
+        .iter()
+        .filter(|c| c.trigger.is_none() && !c.rest)
+        .map(|c| c.fire_step)
+        .collect()
+}
+
+/// Every critical-path position as `(src_step, cell, carried_in)`, where
+/// `carried_in` marks a position the party is put down at by an inter-area
+/// crossing (not a link, not a loop). For the stake proof, which asks which
+/// areas the party can stand in while a seat is in force.
+pub(crate) fn route_positions(plan: &Plan) -> Vec<(usize, [i32; 3], bool)> {
+    critical_positions(plan)
+        .into_iter()
+        .map(|p| {
+            (
+                p.src_step,
+                p.pos,
+                p.transport_before && !p.by_link && !p.by_loop,
+            )
+        })
+        .collect()
 }
 
 /// One quest configuration as the trigger-root derivation reads it: the world
@@ -7340,6 +7372,7 @@ fn earliest_reaching_config(
 fn verify_checkpoints(
     world: &World,
     checkpoints: &[(String, [i32; 3], usize)],
+    fixed_fires: &[usize],
     positions: &[VisitedPos],
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
@@ -7365,6 +7398,17 @@ fn verify_checkpoints(
         else {
             continue; // nothing left to walk to (checkpoint at/near the finale)
         };
+        // Replaced before that leg is walked: a checkpoint a beat sets
+        // ([`fixed_checkpoint_fires`]) fires after this one and before the
+        // target, so a death on the leg respawns there, not here. This is how a
+        // route that crosses into another area (a one-way carry) and sets a
+        // checkpoint on arrival owes nothing to the seat it left behind.
+        if fixed_fires
+            .iter()
+            .any(|f| *f > *fire_step && *f < target.src_step)
+        {
+            continue;
+        }
         // Seal any gate closed by the time the party reaches the target (the same
         // per-leg gate state DW0311 routes under), so a checkpoint whose forward
         // path is walled off by a `close-gate` strands the party (DSL v0.6).
@@ -16017,13 +16061,22 @@ mod tests {
         let positions = vec![at_step([4, 65, 0], 1)];
         // Open gate → reachable.
         assert!(
-            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear).is_ok()
+            verify_checkpoints(
+                &world,
+                &cps,
+                &[],
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
         );
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = verify_checkpoints(
             &world,
             &cps,
+            &[],
             &positions,
             &RegionEvents::from(vec![close.clone()]),
             &linear,
@@ -16039,9 +16092,51 @@ mod tests {
         let world = split_world(65);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        let err = verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear)
-            .unwrap_err();
+        let err = verify_checkpoints(
+            &world,
+            &cps,
+            &[],
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
+    }
+
+    /// A checkpoint a beat sets after this one, and before the next leg is
+    /// walked, replaces it: a party carried across to the far patch and given
+    /// a checkpoint there does not owe the far patch's anchor from the near
+    /// checkpoint it left. A replacement that fires only AT the target step is
+    /// not before the leg, and the near checkpoint still owes it.
+    #[test]
+    fn a_checkpoint_replaced_before_the_next_leg_owes_it_nothing() {
+        let world = split_world(65);
+        let cps = vec![
+            ("cp/near".to_string(), [0, 65, 1], 0usize),
+            ("cp/far".to_string(), [3, 65, 1], 1usize),
+        ];
+        let positions = vec![at_step([4, 65, 1], 2)];
+        verify_checkpoints(
+            &world,
+            &cps,
+            &[1],
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .expect("the near checkpoint is replaced at step 1, before the leg to step 2");
+        let err = verify_checkpoints(
+            &world,
+            &cps,
+            &[2],
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_STRANDED);
+        assert!(err.message.contains("cp/near"), "{}", err.message);
     }
 
     /// A checkpoint a trigger sets is rooted where the party can first reach the
@@ -16071,6 +16166,7 @@ mod tests {
         let err = verify_checkpoints(
             &world,
             &early,
+            &[],
             &positions,
             &RegionEvents::default(),
             &linear,
@@ -16082,6 +16178,7 @@ mod tests {
             verify_checkpoints(
                 &world,
                 &rooted,
+                &[],
                 &positions,
                 &RegionEvents::default(),
                 &linear
@@ -16097,8 +16194,15 @@ mod tests {
             near_first.saturating_sub(1),
         )];
         assert!(
-            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear)
-                .is_err()
+            verify_checkpoints(
+                &world,
+                &cps,
+                &[],
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_err()
         );
     }
 
@@ -16109,7 +16213,15 @@ mod tests {
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
         assert!(
-            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear).is_ok()
+            verify_checkpoints(
+                &world,
+                &cps,
+                &[],
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
         );
     }
 
@@ -16118,8 +16230,8 @@ mod tests {
         // The checkpoint cell has no standable floor within snap radius.
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
-        let err =
-            verify_checkpoints(&world, &cps, &[], &RegionEvents::default(), &linear).unwrap_err();
+        let err = verify_checkpoints(&world, &cps, &[], &[], &RegionEvents::default(), &linear)
+            .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
     }
 
