@@ -25053,8 +25053,16 @@ fn quart_sample(cells: ([i32; 3], [i32; 3])) -> [i32; 3] {
 
 /// A loaded block just outside `cells`, at 2 mod 4, beside `inside`: the first
 /// of the six faces whose column a placed piece covers (world setup
-/// force-loads every piece's columns). `None` when no face has one.
-fn quart_outside(plan: &Plan, cells: ([i32; 3], [i32; 3]), inside: [i32; 3]) -> Option<[i32; 3]> {
+/// force-loads every piece's columns) and that no box of `avoid` holds. The
+/// faces are tried at the cell's own distance first, then one 4-cell further out
+/// at a time, so a neighbour's paint on the near cell moves the reading rather
+/// than dropping it. `None` when nothing qualifies.
+fn quart_outside(
+    plan: &Plan,
+    cells: ([i32; 3], [i32; 3]),
+    inside: [i32; 3],
+    avoid: &[([i32; 3], [i32; 3])],
+) -> Option<[i32; 3]> {
     let loaded = |c: [i32; 3]| {
         (crate::compiler::horizon::BUILD_MIN_Y..=crate::compiler::horizon::BUILD_MAX_Y)
             .contains(&c[1])
@@ -25063,25 +25071,45 @@ fn quart_outside(plan: &Plan, cells: ([i32; 3], [i32; 3]), inside: [i32; 3]) -> 
                 lo[0] <= c[0] && c[0] <= hi[0] && lo[2] <= c[2] && c[2] <= hi[2]
             })
     };
-    [
-        (0, true),
-        (0, false),
-        (2, true),
-        (2, false),
-        (1, true),
-        (1, false),
-    ]
-    .into_iter()
-    .map(|(axis, up)| {
-        let mut c = inside;
-        c[axis] = if up {
-            cells.1[axis] + 3
-        } else {
-            cells.0[axis] - 2
-        };
-        c
+    let held = |c: [i32; 3]| {
+        avoid
+            .iter()
+            .any(|b| (0..3).all(|k| b.0[k] <= c[k] && c[k] <= b.1[k]))
+    };
+    [0, 4, 8, 16, 32].into_iter().find_map(|reach| {
+        [
+            (0, true),
+            (0, false),
+            (2, true),
+            (2, false),
+            (1, true),
+            (1, false),
+        ]
+        .into_iter()
+        .map(|(axis, up)| {
+            let mut c = inside;
+            c[axis] = if up {
+                cells.1[axis] + 3 + reach
+            } else {
+                cells.0[axis] - 2 - reach
+            };
+            c
+        })
+        .find(|&c| loaded(c) && !held(c))
     })
-    .find(|&c| loaded(c))
+}
+
+/// The lines that put the ground biome back under every repaint volume of the
+/// build: the first tick, before the carried places are painted over it again.
+/// Every atmosphere template starts from it, so none reads a cell a sibling's
+/// paint is standing on.
+fn restore_first_tick(volumes: &[(usize, ([i32; 3], [i32; 3]))], ground: &str) -> Vec<String> {
+    volumes
+        .iter()
+        .flat_map(|(_, (min, max))| {
+            crate::compiler::atmosphere::fillbiome_lines(*min, *max, ground)
+        })
+        .collect()
 }
 
 /// One `execute if|unless biome` reading bridged onto a score the template
@@ -25117,12 +25145,30 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
     };
     let places: Vec<&crate::compiler::horizon::Paint> = map.places().collect();
+    let ground = map.ground.id.clone();
+    // Every volume a repaint of this build paints, the writers any test can
+    // meet: the repaint templates' own, and the volumes the triggers that run
+    // the same beat leave painted. Keyed by the repaint's index.
+    let volumes: Vec<(usize, ([i32; 3], [i32; 3]))> =
+        crate::compiler::atmosphere::set_atmospheres(c)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(n, (_, _, eff))| {
+                let (min, max) = crate::compiler::horizon::repaint_volume(plan, eff)?;
+                Some((n, (min, max)))
+            })
+            .collect();
     if !places.is_empty() {
         let mut b = packtest_header(&format!(
             "{}: every carried place stands in its atmosphere from the first tick",
             artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
+        // The first tick, re-established before anything is read: a sibling
+        // template — a repaint's, or a trigger's that runs a beat which paints —
+        // may have left its own biome in any repaint volume, and the templates
+        // of one build run in an order this one does not choose.
+        b.extend(restore_first_tick(&volumes, &ground));
         b.push(format!("function {ns}:{ATMOSPHERE_BOOTSTRAP_FN}"));
         for (i, p) in places.iter().enumerate() {
             let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
@@ -25131,13 +25177,29 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
             let inside = quart_sample(p.cells);
             b.push(format!("# {place}: {}", p.biome));
             biome_assert(&format!("#atm_in{i}"), inside, &p.biome, true, &mut b);
-            if let Some(outside) = quart_outside(plan, p.cells, inside) {
+            // Outside the place: in no repaint volume (a beat's paint may stand
+            // there) and in no other place's paint under the same sky (the
+            // neighbour's paint is that very biome).
+            let mut avoid: Vec<([i32; 3], [i32; 3])> = volumes.iter().map(|(_, v)| *v).collect();
+            avoid.extend(
+                places
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, o)| *j != i && o.biome == p.biome)
+                    .map(|(_, o)| o.cells),
+            );
+            if let Some(outside) = quart_outside(plan, p.cells, inside, &avoid) {
                 biome_assert(&format!("#atm_out{i}"), outside, &p.biome, false, &mut b);
+            } else {
+                b.push(format!(
+                    "# {place}: no cell outside it stands clear of every repaint and of its \
+                     neighbours under {}: no reading outside is made",
+                    p.biome
+                ));
             }
         }
         write("atmosphere_places", b);
     }
-    let ground = map.ground.id.clone();
     for (n, (_, path, eff)) in crate::compiler::atmosphere::set_atmospheres(c)
         .into_iter()
         .enumerate()
@@ -25158,7 +25220,7 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push(format!("function {ns}:setup"));
         // The first tick, re-established: the ground under the volume, then
         // every carried place — a sibling template may have left its own paint.
-        let restore: Vec<String> = crate::compiler::atmosphere::fillbiome_lines(min, max, &ground)
+        let restore: Vec<String> = restore_first_tick(&volumes, &ground)
             .into_iter()
             .chain((!places.is_empty()).then(|| format!("function {ns}:{ATMOSPHERE_BOOTSTRAP_FN}")))
             .collect();
@@ -25177,7 +25239,22 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
         // delve's own), so there the reading is that the new biome did not
         // arrive — and when the new biome IS the ground, nothing outside can
         // tell the two apart and no reading is made.
-        if let Some(outside) = quart_outside(plan, cells, inside) {
+        // The cell read stands in no OTHER repaint's volume: a template that
+        // runs a beat leaves its paint standing, and this reading would meet it.
+        let others: Vec<([i32; 3], [i32; 3])> = volumes
+            .iter()
+            .filter(|(m, _)| *m != n)
+            .map(|(_, (lo, hi))| crate::compiler::atmosphere::painted_box(*lo, *hi))
+            .collect();
+        let outside = quart_outside(plan, cells, inside, &others);
+        if outside.is_none() {
+            b.push(
+                "# no cell outside this volume stands clear of every other repaint's: no \
+                 reading outside is made"
+                    .to_string(),
+            );
+        }
+        if let Some(outside) = outside {
             let carried = map
                 .places()
                 .filter(|p| {
