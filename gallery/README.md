@@ -114,8 +114,8 @@ holding them at once.
 | `a-piece-the-library-does-not-hold` | `DW0856` | `validate` | binding the hall to a piece whose name is one letter wrong |
 | `a-gate-two-areas-provide` | `DW0857` | `validate` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
 | `a-question-nobody-answers` | `DW0858` | `validate` | asking the party to talk to somebody the same quest declares silent |
-| `a-walk-of-a-different-whole` | `DW0841` | `validate` | detailing against a walk record of some other map |
-| `detail-without-a-walk` | `DW0841` | `validate` | detailing a place before the whole has been walked |
+| `a-walk-of-a-different-whole` | `DW0974` | `validate` | standing a walk record of some other map beside this one |
+| `a-walk-of-the-blockout` | `DW0974` | `validate` | standing a record of a walk of the blockout beside the detailed build |
 | `a-piece-that-is-not-its-frame` | `DW0843` | `validate` | seating a piece that does not fill the box the map gave it |
 | `a-horizon-with-no-map` | `DW0855` | `validate` | declaring a horizon with nothing for it to ring |
 | `a-clock-nobody-explained` | `DW0860` | `validate` | arming a stealth clock that bites before its own instruction can be read |
@@ -142,7 +142,6 @@ holding them at once.
 | `a-program-that-marks-no-place-to-stand` | `DW0845` | `detail` | removing the program's one `mark`, so nothing answers the anchor the quests bound to the place |
 | `a-program-whose-arch-misses-its-seam` | `DW0844` | `detail` | carving the annex arch one cell along the wall from the seam the plan handed it |
 | `a-reach-that-completes-from-the-floor-below` | `DW0881` | `build` | widening the loft's completion radius to 2, so it completes from the hall floor three courses below |
-| `a-record-that-says-nobody-walked` | `DW0841` | `validate` | detailing against a fresh walk record whose verdict says nobody walked |
 | `a-rim-one-radius-out-of-reach` | `DW0850` | `build` | narrowing the well's completion radius to 2, so no walked cell on the rim reaches it |
 | `a-rocket-under-a-roof` | `DW0899` | `build` | firing a rocket at `anchor/exit`, under the hall's stone ceiling |
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
