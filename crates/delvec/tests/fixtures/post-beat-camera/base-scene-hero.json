@@ -1,51 +1,51 @@
 {
-  "sdfVersion": 9,
-  "name": "hello-world_camera_hero",
-  "width": 160,
-  "height": 90,
-  "yClipMin": 56,
-  "yClipMax": 85,
-  "exposure": 1.0,
-  "postprocess": "GAMMA",
-  "outputMode": "PNG",
-  "renderTime": 0,
-  "spp": 0,
-  "sppTarget": 16,
-  "rayDepth": 5,
-  "pathTrace": true,
-  "dumpFrequency": 500,
-  "saveSnapshots": false,
-  "emittersEnabled": true,
-  "emitterIntensity": 13.0,
-  "sunEnabled": true,
-  "stillWater": false,
-  "sun": {
-    "altitude": 1.570796,
-    "azimuth": 0.0
-  },
-  "world": {
-    "path": "<masked: the world path is the one key a scene may move>",
-    "dimension": 0
-  },
   "camera": {
+    "fov": 70.0,
     "name": "camera 1",
+    "orientation": {
+      "pitch": -1.396263,
+      "roll": 0.0,
+      "yaw": 6.283185
+    },
     "position": {
       "x": 5.5,
       "y": 66.62,
       "z": 2.5
     },
-    "orientation": {
-      "roll": 0.0,
-      "pitch": -1.396263,
-      "yaw": 6.283185
-    },
-    "projectionMode": "PINHOLE",
-    "fov": 70.0
+    "projectionMode": "PINHOLE"
   },
   "chunkList": [
     [
       0,
       0
     ]
-  ]
+  ],
+  "dumpFrequency": 500,
+  "emitterIntensity": 13.0,
+  "emittersEnabled": true,
+  "exposure": 1.0,
+  "height": 90,
+  "name": "hello-world_camera_hero",
+  "outputMode": "PNG",
+  "pathTrace": true,
+  "postprocess": "GAMMA",
+  "rayDepth": 5,
+  "renderTime": 0,
+  "saveSnapshots": false,
+  "sdfVersion": 9,
+  "spp": 0,
+  "sppTarget": 16,
+  "stillWater": false,
+  "sun": {
+    "altitude": 1.570796,
+    "azimuth": 0.0
+  },
+  "sunEnabled": true,
+  "width": 160,
+  "world": {
+    "dimension": 0,
+    "path": "<masked: the world path is the one key a scene may move>"
+  },
+  "yClipMax": 85,
+  "yClipMin": 56
 }

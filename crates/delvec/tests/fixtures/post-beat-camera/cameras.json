@@ -1,5 +1,4 @@
 {
-  "campaign_id": "hello-world",
   "cameras": [
     {
       "answers": "concept/keep",
@@ -18,5 +17,6 @@
       "width": 160,
       "yaw": 90.0
     }
-  ]
+  ],
+  "campaign_id": "hello-world"
 }
