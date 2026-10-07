@@ -165,10 +165,9 @@ mod tests {
     /// `sent_chunks[].chunks` of each cell with the bots declaring 32).
     #[test]
     fn sent_chunks_is_the_rigs_count() {
-        let record: serde_json::Value = serde_json::from_slice(include_bytes!(
-            "../../tests/measured/view-distance.json"
-        ))
-        .unwrap();
+        let record: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../../tests/measured/view-distance.json"))
+                .unwrap();
         let mut judged = 0;
         for cell in record["cells"].as_array().unwrap() {
             if cell["client_view_distance"].as_u64() != Some(32) {
