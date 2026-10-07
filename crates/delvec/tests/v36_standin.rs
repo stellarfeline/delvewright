@@ -213,3 +213,30 @@ fn present_is_the_default_spelled() {
     };
     assert_eq!(datapack(&a), datapack(&b));
 }
+
+/// A stand-in is engine state, not a body: it carries the fixture class, so
+/// every box-narrowed entity selector excludes it — a teleport volume does not
+/// carry it and a loop's slab neither moves it nor counts it as a crossing —
+/// and `DW0545`'s census counts its summon as a fixture. (Every player selector
+/// already cannot read it: a stand-in is a mannequin, never a player.)
+#[test]
+fn a_stand_in_is_a_fixture_no_box_selector_reaches() {
+    let out = build(&format!(r#"{{ "type": "cutscene", {SHOT} }}"#));
+    let body = function(&out, "cs_standin").expect("the stand-in function");
+    let summon = body
+        .lines()
+        .find(|l| l.starts_with("summon minecraft:mannequin"))
+        .unwrap_or_else(|| panic!("{body}"));
+    assert!(summon.contains("\"dw_fixture\""), "{summon}");
+    let present = delvec::compiler::affordance::check_fixtures(&out)
+        .unwrap_or_else(|e| panic!("DW0545 holds over the stand-in build: {e:?}"));
+    let absent = delvec::compiler::affordance::check_fixtures(&build(&format!(
+        r#"{{ "type": "cutscene", "party": "absent", {SHOT} }}"#
+    )))
+    .unwrap();
+    assert_eq!(
+        present.fixtures,
+        absent.fixtures + 1,
+        "the stand-in summon is one more fixture in the census"
+    );
+}

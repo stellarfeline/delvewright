@@ -108,11 +108,17 @@ pub fn start_lines(ns: &str, bare: &str, cutscene_tag: &str) -> Vec<String> {
 }
 
 /// The body of [`STANDIN_FN`]: run as a player, at the player.
+///
+/// The stand-in carries the fixture class ([`crate::compiler::affordance::FIXTURE_TAG`],
+/// `DW0545`): every box-narrowed entity selector excludes it, so a teleport
+/// volume does not carry it and a loop's slab neither moves it nor counts it as
+/// a crossing.
 pub fn standin_fn_body(ns: &str) -> Vec<String> {
+    const FIXTURE: &str = crate::compiler::affordance::FIXTURE_TAG;
     let me = this_sel();
     let mut out = vec![
         format!(
-            "summon {STANDIN_ENTITY} ~ ~ ~ {{Tags:[\"{STANDIN_TAG}\",\"{NEW_TAG}\",\"{THIS_TAG}\"],pose:\"standing\",immovable:1b,NoGravity:1b,Invulnerable:1b,Silent:1b,hide_description:1b}}"
+            "summon {STANDIN_ENTITY} ~ ~ ~ {{Tags:[\"{FIXTURE}\",\"{STANDIN_TAG}\",\"{NEW_TAG}\",\"{THIS_TAG}\"],pose:\"standing\",immovable:1b,NoGravity:1b,Invulnerable:1b,Silent:1b,hide_description:1b}}"
         ),
         // Facing: the player's yaw, level head.
         format!("tp {me} ~ ~ ~ ~ 0"),

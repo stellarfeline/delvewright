@@ -396,6 +396,15 @@ fn summoned_class_subject(line: &str) -> Option<&'static str> {
         "minecraft:item_display" if mentions_tag_in_nbt(line, "dw_marker") => {
             Some("affordance hardware")
         }
+        // A cutscene's stand-in (spec-0095) stands where its player stood for
+        // the cutscene's length: its position is engine state, not a body a
+        // region verb moves or a loop counts. An NPC's skinned body is a
+        // mannequin too, and is not one, so the class is read off the tag.
+        "minecraft:mannequin"
+            if mentions_tag_in_nbt(line, crate::compiler::standin::STANDIN_TAG) =>
+        {
+            Some("a cutscene stand-in")
+        }
         _ => None,
     }
 }
