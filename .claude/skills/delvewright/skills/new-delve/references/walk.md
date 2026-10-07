@@ -87,7 +87,10 @@ Then hand the user, in one message:
   question, the route, each silhouette you are unsure of, and — per item — every
   finding still open from an earlier round that they must **not** test (see
   *Playtest rounds*, rule 2). Anything the staging gate reported red goes in this
-  list by class;
+  list by class. Every `world.textures[]` row is its own item, named as the
+  player sees it (*the red moon*, *the drowned on the shore*), with the sheet
+  `delvec textures` wrote beside it — no machine can confirm a replaced texture;
+  and tell them to **accept the resource-pack prompt** when they join;
 - **how to tell you they are done.**
 
 For a site-plan campaign **this walk is the campaign's first real gate**: scale,

@@ -3,6 +3,7 @@
 - [Dress the character; do not hope the palette does it](#dress-the-character-do-not-hope-the-palette-does-it)
 - [The face is the composer's, not yours](#the-face-is-the-composers-not-yours)
 - [What the model cannot wear](#what-the-model-cannot-wear)
+- [Replacing a vanilla texture](#replacing-a-vanilla-texture)
 
 **Every named character gets a face**, so this page is the ordinary path and not
 an exception: the default body is a player model wearing that character's own
@@ -107,3 +108,44 @@ because the texture will not say it.
 
 **Look at the previews** before accepting a skin, and always set `model`
 (`wide`/`slim`) — an omitted model renders slim and distorts a wide skin.
+
+## Replacing a vanilla texture
+
+When the design wants something vanilla draws to look different for the whole
+delve — the moon at the phase the story states, the drowned on the shore, the
+stone of a hall — the campaign replaces that texture through the pack it already
+ships. Every step is mandatory once a design calls for one:
+
+1. **Name the texture from the census.** `world.json` `content.textures[]` takes
+   one row per texture: `id` (a kebab token), `replaces` (a `minecraft:` path as
+   vanilla's models spell it — `minecraft:environment/celestial/moon/full_moon`,
+   `minecraft:entity/zombie/drowned` — never with `textures/` or `.png`), and
+   `license`. A path the pinned client does not ship is `DW0939`, and the
+   refusal prints the nearest real paths; read them, do not guess a spelling.
+2. **Draw the image, from nothing.** `textures/<id>.png` in the campaign
+   directory, at vanilla's size or a whole multiple of it (`DW0940` names the
+   size if it is wrong). A recoloured vanilla texture is not original and may
+   not ship; draw it new, or take one under an allowlisted licence. An
+   animation is a strip of whole frames with `textures/<id>.png.mcmeta` beside
+   it holding vanilla's `animation` object.
+3. **Record the licence.** `{"spdx": "original", "source": "original"}` for
+   your own drawing; anything else needs `url`, and CC BY also `attribution`
+   (`DW0741`).
+4. **Look at it.** `delvec --prefabs "$DELVEWRIGHT_PREFABS" textures campaigns/<id>` writes one sheet per row to
+   `review/textures/` — vanilla beside yours. That sheet is the only place a
+   mob's skin or the moon can be seen before the walk: no render this engine
+   makes draws either. A block texture also shows in the build's own pack:
+   `delvec --prefabs "$DELVEWRIGHT_PREFABS" viewer --pack <out>/resourcepack.zip …` and Chunky through
+   `validation/chunky.sh --pack <out>/resourcepack.zip …`.
+5. **Say it in the walk.** Each row is one *what to look for* item, in the
+   player's words — *the moon tonight*, *the drowned on the shore*. A server
+   never reads a resource pack, so only a person looking can confirm it.
+
+The pack is **served by the server, never installed** into the player's own
+folder: it applies while they are connected and is gone when they leave.
+**A player who declines the pack sees vanilla's textures** (and reads English),
+exactly as they would if the delve replaced nothing — so nothing a player must
+see to finish the delve may live only in a replaced texture. If the design
+genuinely needs every player to accept it, `world.json` `content.require_resource_pack:
+true` makes the server disconnect anyone who declines; say so to the user before
+choosing it.

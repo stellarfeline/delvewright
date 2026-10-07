@@ -170,8 +170,9 @@
   (`{"moon": "just-risen", "phase": "new-moon"}`), and check the world's `clock:`
   line names the phase the brief asked for.
 - **A phase where nobody can see the moon is refused, and one the party can see is
-  owed**, both at `delvec validate`. Under a high sun, a sun just risen, or a moon below or just
-  set, drop `phase`; under any other position on `world.time`, state it.
+  owed**, both at `delvec validate` (`DW0931`). Under a high sun, a sun just
+  risen, or a moon below or just set, drop `phase`; under any other position on
+  `world.time`, state it.
 - **A cut keeps the moon.** A `set-time` with no `phase` — a keyword included —
   stays on the world's day, so a new-moon delve that cuts to `noon` emits
   `time set 102000`, not `time set noon`. A design row that states a keyword is

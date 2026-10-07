@@ -165,6 +165,9 @@ They hold at every step by their nature, and nothing below repeats them.
   of a document or sidecar is `delvec fmt <campaign-dir>`; CI runs
   `delvec fmt --check`. A diff that rewrites a file nobody edited is the defect
   this closes.
+- **Design for what the player experiences, never for the host.** A far view,
+  a large map or a crowd is not cut to fit a server's memory or CPU; the
+  hosting side is sized to the delve.
 - Homages: original text only. Cultural reference, never asset ingestion.
 - If a mechanic the brief wants has no DSL verb, do NOT fake it with adjacent
   verbs silently — say what is missing and offer the closest authorable
@@ -308,7 +311,8 @@ and `design.json`. **Read**: `references/design-gate.md`.
 first campaign state where `validate` clean is reachable. **Read**:
 `references/content.md`, plus `references/quest-capabilities.md` for what the
 DSL can express and `references/writing-craft.md` for how the prose has to be
-written — both before writing, not after a refusal. A custom face is
+written — both before writing, not after a refusal. A custom face, or a
+vanilla texture the delve replaces (the moon, a mob's skin, a block), is
 `references/npc-skins.md`. Other languages are a final document stage:
 `references/other-languages.md`.
 
@@ -421,7 +425,7 @@ reference means the file listed here.
 | `references/content.md` | quests and dialogue, and the codes that clear here | step 5 |
 | `references/quest-capabilities.md` | every verb, effect and field a quest can use | step 5 |
 | `references/writing-craft.md` | the prose checklist, run over every line | step 5 |
-| `references/npc-skins.md` | the skin toolchain, when a design calls for a face | step 5 |
+| `references/npc-skins.md` | the skin toolchain, when a design calls for a face; a vanilla texture the delve replaces | step 5 |
 | `references/other-languages.md` | the localization stage | step 5 |
 | `references/build.md` | `fmt`, `analyze`, `build`, and what the build writes | steps 6-8 |
 | `references/walk.md` | bringing the server up, and what to hand the user | step 9 |

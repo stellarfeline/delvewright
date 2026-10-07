@@ -276,7 +276,8 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   makes a fallen player in a party watch a teammate as a spectator for `n`
   seconds (1–120) after *Respawn* before rejoining, and count as down while
   they wait — see *Reference: authoring pitfalls* for what a party feels. The
-  build refuses it without a `set-checkpoint` or `bonfire` to come back to, so
+  build refuses it without a `set-checkpoint` or `bonfire` to come back to
+  (`DW0925`, as it does `seconds` outside 1–120), so
   decide it with the quest plan's checkpoints in front of you. `alone: true`
   makes a party of one wait too.
 - **`horizon`.** Absent = `void`, and that is the right answer unless the

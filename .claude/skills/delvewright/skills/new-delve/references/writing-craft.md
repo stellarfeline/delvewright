@@ -6,12 +6,14 @@
 - [C. HARD RULE — dialogue options are labels, not sentences](#c-hard-rule--dialogue-options-are-labels-not-sentences)
 - [D. HARD RULE — a name spelled the same way IS the same name](#d-hard-rule--a-name-spelled-the-same-way-is-the-same-name)
 - [E. Plain-prose baseline (Strunk 1918, public domain)](#e-plain-prose-baseline-strunk-1918-public-domain)
+- [F. HARD RULE — each kind of text has its job](#f-hard-rule--each-kind-of-text-has-its-job)
 
 # Reference: writing craft
 
 Everything a player reads is prose: dialogue, objective titles and hints,
 narration beats, item and area names, the storybook. This is the craft checklist
-for all of it, and section A is run over every line before step 5 is called done.
+for all of it, and sections A and F are run over every line before step 5 is
+called done.
 
 These are **pattern warnings, not technique bans.** They govern *automatic*
 writing — the phrasing that arrives before you have decided anything, the hand
@@ -201,3 +203,25 @@ Two rules carry most of the load for text rendered into a chat line:
   out of every sentence in which it occurs."*
 
 Concision is not the same as flatness. Cut the padding, keep the beat.
+
+## F. HARD RULE — each kind of text has its job
+
+The rules are `$DELVEWRIGHT_ENGINE/docs/reference/game-writing.md` §1–§3; read
+them before writing step 5 and apply them as each line is written, not as a
+pass afterwards. Which rules bind which line:
+
+- **Functional text** — objective titles and hints, `missing_item_hint`,
+  `sealed_hint`, bonfire prompts and labels, dialogue option labels and
+  tooltips, shop labels and tooltips, item names, class blurbs: F1–F6. It says
+  the action, the object and the place, the place by a landmark the player can
+  see and a position relative to it, never by a compass point; a refusal says what is wrong and what
+  fixes it; an item tooltip says what the item does first.
+- **Story text** — dialogue, barks, narration: S1–S5. State the fact; end on
+  information; a joke carries the function too.
+- **Every name, everywhere**: N1–N5. The first time a name reaches the player in
+  play order it is a body or item carrying it, or a sentence saying what it is;
+  one thing has one name. §D above is the spelling half of N4.
+
+Write each line knowing it will be transcreated: the English is the fact source
+another language is rewritten from, so a fact the English only implies is a fact
+the other language loses.
