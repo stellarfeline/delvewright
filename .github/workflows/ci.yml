@@ -1440,6 +1440,18 @@ jobs:
             --prefabs gallery-prefabs \
             --work whole-map-render
 
+      # spec-0089 §9: the gallery's showcase cameras stand where its record
+      # says — the one taken after `obj/clear-the-muster` in that step's
+      # configuration, two worlds written, and each perturbation of its `after`
+      # moving the world its scene loads. A step of this job: it needs the
+      # gallery's build and pieces, which a cargo test cannot make.
+      - name: the gallery's cameras stand where the record says
+        if: '!cancelled()'
+        run: |
+          python3 tools/ci/check-gallery-post-beat.py \
+            --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --build-out gallery-out-en --work gallery-post-beat
+
       - name: emission baseline + expected-warnings ledger
         if: '!cancelled()'
         run: |
@@ -1817,6 +1829,23 @@ jobs:
         run: |
           bash validation/packtest-run.sh --project dw-ci-gallery \
             --output ./delve-output-gallery
+
+      # spec-0089 §5.4 (`DW0955`): the world `delvec cameras` writes is the world
+      # the pinned server builds. The two share no configuration — one is the
+      # compiler's model, the other the game executing the compiler's datapack —
+      # so the save is booted once from the gallery build above, seeded from this
+      # job's one verified fetch, and the written load world is compared with it
+      # cell by cell inside the layout box. A step of this job, which already
+      # boots servers and builds the gallery; no new status context.
+      - name: the world the engine writes is the world the server builds (gallery)
+        run: |
+          set -euo pipefail
+          bash validation/world-save.sh validation/delve-output-gallery \
+            --project dw-ci-gallery-world --seed validation/server-cache
+          target/debug/delvec --prefabs gallery-prefabs cameras \
+            validation/delve-output-gallery --campaign gallery -o written-world
+          python3 tools/ci/check-written-world.py validation/delve-output-gallery \
+            written-world/worlds/at-load validation/delve-output-gallery/world
 
       - name: build the keep-trial delve output (held-item interact)
         run: |

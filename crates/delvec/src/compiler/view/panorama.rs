@@ -626,6 +626,7 @@ pub fn panorama_from_plan(
         subject,
         span,
         record: camera::Camera {
+            after: None,
             answers: String::new(),
             exposure: 1.0,
             fov: cam.fov_deg,

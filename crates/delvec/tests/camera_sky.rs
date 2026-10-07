@@ -19,6 +19,19 @@ const OCEAN: &[u8] = include_bytes!("fixtures/view/render-plan-ocean.json");
 /// The mini fixture played at `dusk` in the `clear`.
 const MINI: &[u8] = include_bytes!("fixtures/view/render-plan-mini.json");
 
+/// Every camera of `sheet` standing in one stub world: these tests are about
+/// the scene's sky, not the world it loads.
+fn stood(sheet: &CameraSheet) -> EmitOptions {
+    EmitOptions {
+        world_paths: sheet
+            .cameras
+            .iter()
+            .map(|c| (c.name.clone(), "/abs/world".to_string()))
+            .collect(),
+        ..EmitOptions::default()
+    }
+}
+
 fn tmp(tag: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("camera-sky-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
@@ -37,6 +50,7 @@ fn log(o: &Output) -> String {
 
 fn cam(name: &str, answers: &str, sky: Option<CameraSky>) -> Camera {
     Camera {
+        after: None,
         answers: answers.into(),
         exposure: 1.0,
         fov: 60.0,
@@ -65,7 +79,7 @@ fn scene_of(plan: &[u8], c: Camera, rows: &[ApprovedRow]) -> serde_json::Value {
         campaign_id: camera::plan_campaign_id(plan).unwrap(),
         cameras: vec![c],
     };
-    let e = camera::emit(plan, &sheet, rows, &EmitOptions::default()).unwrap();
+    let e = camera::emit(plan, &sheet, rows, &stood(&sheet)).unwrap();
     serde_json::from_slice(&e.scenes[0].1).unwrap()
 }
 
@@ -374,7 +388,7 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     }))
     .unwrap();
 
-    let emission = camera::emit(&plan, &sheet, &rows, &EmitOptions::default()).unwrap();
+    let emission = camera::emit(&plan, &sheet, &rows, &stood(&sheet)).unwrap();
     assert_eq!(emission.scenes.len(), sheet.cameras.len());
     let mut weathers = std::collections::BTreeMap::<&str, usize>::new();
     let mut classes = std::collections::BTreeMap::<&str, usize>::new();
@@ -427,7 +441,7 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     let i = sheet.cameras.iter().position(|c| c.sky.is_some()).unwrap();
     let mut moved = sheet.clone();
     moved.cameras[i].sky.as_mut().unwrap().weather = WorldWeather::Rain;
-    let after = camera::emit(&plan, &moved, &rows, &EmitOptions::default()).unwrap();
+    let after = camera::emit(&plan, &moved, &rows, &stood(&moved)).unwrap();
     assert_ne!(
         after.scenes[i], emission.scenes[i],
         "the stated sky reaches a byte"
@@ -445,7 +459,7 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     } else {
         WorldWeather::Clear
     };
-    let after = camera::emit(&plan, &sheet, &rows2, &EmitOptions::default()).unwrap();
+    let after = camera::emit(&plan, &sheet, &rows2, &stood(&sheet)).unwrap();
     assert_ne!(
         after.scenes[j], emission.scenes[j],
         "the row's sky reaches a byte"

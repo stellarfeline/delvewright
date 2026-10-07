@@ -1325,7 +1325,7 @@ Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit.rs`.
 | `on_death` (spec-0031) | The campaign-wide death beat — **effect root R7**, at `/content/on_death`, one bundle per campaign. It rides the SAME detector `set-checkpoint` arms and adds no second one: `dw.deaths` (`deathCount`) is the only thing in the delve that notices a death, `cp_respawn_check` is the only function that reads it, and one `tick` line runs it per player. What it adds is a second **acknowledgement** of that one counter. `dw.death_ack` is deliberately withheld while a player is dead (the whole edge is held until they are alive again, so an unspent edge stays armed instead of burning on the corpse), which is exactly the window this beat wants, so the corpse side gets its own ack `dw.death_seen`: `execute if data entity @s {Health:0.0f} if score @s dw.deaths > @s dw.death_seen run function <ns>:on_death_fire`, then the matching `= @s dw.deaths` so it fires once per death rather than every tick of the death screen. The corpse side is emitted FIRST, in the order the player lives the two moments. `on_death_fire` is the bundle under **`Audience::Solo`** — the dying player's own, like `on_respawn` and `on_caught`; broadcasting one death to the party would duplicate their narration and their kit. A campaign declaring no death beat emits none of it (no branch, no function, no `dw.death_seen`) and a campaign with a death beat and no checkpoint arms `dw.deaths` and this branch alone — no `#cp` marker, no re-seat, no `dw.death_ack`. **The death POSITION needs no capture**: `emit::death_position_capture` is a named, deliberately empty seam ahead of the dispatch, because the corpse stands on the death position for every cause measured — void, fall, drowning, lava, a mob kill (`docs/notes/death-and-teleport-spike.md`) — so `execute at @s` inside the bundle is the death point. Tests: `v10_on_death.rs`. |
 | `set-atmosphere` | spec-0080: `fillbiome <lo> <hi> <biome>` over `Plan::zone_box(region)` or the `place`'s paint (`horizon::place_paint`: an area's placed bounds or a site-plan box's play space, grown by the blend reach — the cells the place's own `atmosphere` paints; a `region` is painted exactly as sized), with `<ns>:atmosphere/<kebab>`, or the ground biome for `atmosphere: null`. Exactly one of `region` / `place` (`DW0929`). Lines come from `atmosphere::fillbiome_lines`, the one writer of `fillbiome` under `crates/delvec/src/` (the surround's bands and the bootstrap paint use it too), which splits the box at 4-cell boundaries so no command exceeds the default `max_block_modifications` (32768, measured the way `FillBiomeCommand.fill` measures: the spans of the box its corners quantize to) — a repaint fires mid-play, where raising a gamerule around it would be a second world-wide write. `fillbiome` paints every 4×4×4 cell the range touches, so the painted volume is the enclosing 4-aligned box. A hard cut: the client re-reads fog and sky every frame and re-meshes grass, foliage and water (`chunk_biomes`, no chunk reload — the spike's measurement, re-asserted by the bot tier). Fires from every quest-effect root and depth; a dialogue option reaches it through a flag a trigger reads, since `DialogueEffect` is its own closed vocabulary. Generated PackTest `atmosphere_repaint_<n>`, one per repaint with a resolvable volume: re-establish the first tick (the ground over every repaint volume of the build, then the carried places), read the first-tick biome inside (`execute if biome`), run exactly the lines the verb emits, read the new biome inside and the unchanged one just outside — a cell no OTHER repaint's volume holds, so a sibling that runs a beat and leaves its paint standing cannot be read (no such cell: no reading, a comment says so) — restore. |
 | `set-time` / `set-weather` | `time set <kw|ticks>` / `weather <kw>` (dimension-global, no selector) inline in the effect/dialogue-option function, the time through `WorldTime::token` of its clock (a keyword on day 0 verbatim, any other clock the integer `day × 24000 + daytime`); instantaneous cut, persists (cycle frozen). |
-| relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. **What decides whether a fixture can be sited is its ATTACHMENT SURFACE, not its clearance**, and the four differ widely: `torch` takes an off-path air cell over a solid floor OR against any solid horizontal face (`wall_torch`), and `shroomlight` REPLACES a solid block that borders air, so those two site almost anywhere geometry exists at all; `lantern` needs a solid block ABOVE it (hanging), falling back to a floor only on a cell outside the reachable set; `campfire` needs a solid floor with air above AND is barred from every required-path cell, from all four of its horizontal neighbours, and from the reachable set, because it is a damage source — which makes it the narrowest of the four. `DW0211`'s remedy hint names this order, so a creator refused on one fixture is sent to the one the geometry can actually take. |
+| relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. **What decides whether a fixture can be sited is its ATTACHMENT SURFACE, not its clearance**, and the four differ widely: `torch` takes an off-path air cell over a solid floor OR against any solid horizontal face (`wall_torch`), and `shroomlight` REPLACES a solid block that borders air, so those two site almost anywhere geometry exists at all; `lantern` needs a solid block ABOVE it (hanging), falling back to a floor only on a cell outside the reachable set; `campfire` needs a solid floor with air above AND is barred from every required-path cell, from all four of its horizontal neighbours, and from the reachable set, because it is a damage source — which makes it the narrowest of the four. **Leaves hold no fixture**: a mount — the floor under a torch, campfire or floor lantern, the face behind a wall torch, the ceiling over a hanging lantern — is a solid block that is not `*_leaves`, because the pinned server drops a fixture hung from leaves on the first block update (measured: every lantern the pass hung under `oak_leaves` in the gallery's save was gone, `tools/ci/check-written-world.py`), so light the proof would count is light the game never shows. `DW0211`'s remedy hint names this order, so a creator refused on one fixture is sent to the one the geometry can actually take. |
 | `mitigation: "night-vision"` | `night_vision_tick`: one `effect give @a[x=…,dx=…,y=…,dy=…,z=…,dz=…] minecraft:night_vision <lease> 0 true` per declaring area — written since v0.10 by `emit::effect_give_command`, the same formatter the author-facing `give-effect` verb uses, so the engine's own grant is one configured use of the general verb's emission rather than a private copy of it (byte-identical: the line was already the full five-token form) (the lease is `max(12, longest camera + 11)` s — the camera-coverage guarantee, see §"world") (selector = the area's final placed bounds, compile-time literals), then `schedule function <ns>:night_vision_tick 20t` (vanilla replace-mode, so the clock can never double up). `setup_finish` arms it once. A generated `v06_night_vision` PackTest teleports a dummy into the declared bounds, runs one clock tick and asserts it holds the effect — then teleports it 1000 blocks out and asserts it does not. |
 | `set-checkpoint` | Inline: `spawnpoint @a <x y z>` + `data modify storage dw:cp pos set value [x,y,z]` (the readable "last checkpoint" mirror) + `#cp dw.sys = <index>` (the active-checkpoint marker; emitted for **every** campaign that declares a checkpoint). `setup_finish` seeds `dw:cp` to the spawn cell. Any checkpoint arms the respawn machinery: a `deathCount` objective (`dw.deaths`) + per-player ack, and a `tick` line running `cp_respawn_check`. **`cp_respawn_check` seeds every score it compares first** (`scoreboard players add @s <obj> 0`, idempotent, and on a `deathCount` objective it does not disturb the criterion): a player who has never died has an entry in none of the three, and a comparison against a missing entry is FALSE on the pinned server — so before this the whole edge was dead on a player's FIRST death and worked only from the second onward. `DW0495` is the standing proof that no emitter can ship that shape again. **The re-seat.** `spawnpoint` is a *hint*, not a promise: vanilla re-validates the recorded cell at respawn time and, whenever that cell or the cell above it is solid or liquid, silently discards it and respawns the player at the **world spawn** — the campaign entrance. Measured live on pinned 1.21.11: a spawnpoint on a dry cell respawns at `cell + (0.5, 0.1, 0.5)`; the same spawnpoint on a water cell respawns at `setworldspawn`. Past a one-way transport that is not a lost checkpoint but an unrecoverable softlock (the owner's tide-mill playtest). So the delve stops delegating its own promise: `cp_respawn_fire` dispatches `cp_seat_<index>` (a bare `tp @s <cell centre>`, coordinates compiled in — no macro, no storage read) for the active checkpoint **before** any authored `on_respawn` beat. When vanilla honoured the spawnpoint the player is already there and the teleport is invisible; when vanilla dropped it, this is the only thing that puts them back. It is edge-triggered, never a leash. **Edge timing**: `deathCount` ticks up on the DEATH, while the player is still a corpse on the death screen, so `cp_respawn_check` holds *both* the fire and the acknowledgement behind `execute unless data entity @s {Health:0.0f}` — the whole bundle lands on a player who has actually come back, and an unspent edge stays armed. Generated PackTests: `v06_checkpoint_respawn` (the record) and `v06_checkpoint_reseat` (the landing — drive a real `deathCount` edge from the campaign entrance, assert the player ends on the checkpoint cell centre, assert the ack, then assert no second re-seat without a second death). |
 | `timed-gate` (spec-0016 §4) | `setup_finish` starts the clock: `function <ns>:tgate_open_<id>` at `phase: 0`, else `schedule … <phase>t`. `tgate_open_<id>` = `fill … minecraft:air replace <block>` + `schedule function <ns>:tgate_close_<id> <open_ticks>t`; `tgate_close_<id>` = (when `crush: true`) `execute as @a[<gate region>,tag=!dw_cutscene] run damage @s 1000 minecraft:generic`, then `fill … <block>` + `schedule function <ns>:tgate_open_<id> <closed_ticks>t`. The judgement precedes the `fill` deliberately — after the seal the victim is already encased and vanilla suffocation, not the portcullis, would be what kills them. `/damage` takes ONE entity, so the party form re-binds via `execute as` rather than widening the target. Both halves are pure world edits naming no player, so the server command source they are re-entered under is irrelevant (§4). Generated PackTest `souls_timed_gate_<id>`, **one per declared gate**: re-seal, assert sealed, drive the real open, assert air, drive the real close, assert sealed again. Every scratch score carries the gate id too, because the suite is one batch on one server with no ordering between templates. With `crush: true`, one more for that gate — `souls_timed_gate_crush_<id>`: the emitted region selector holds the dummy standing in the gate and releases it two blocks clear. It asserts **scoping, not death**, because **PackTest fake players are immune to `/damage`** (measured on the pinned toolserver 2026-08-03: a `# @dummy` reports `playerGameType: 0` yet `damage @s 1000 minecraft:generic` leaves `Health` at 20.0, and an explicit `gamemode survival @s` first changes nothing — the same limitation that already put the `damage-players` PackTest on a zombie dummy, which cannot stand in here since the crush selects `@a`). Lethality and ordering are pinned by compiler unit tests, and the end-to-end death was verified against a real mineflayer client on pinned 1.21.11 (parked 2 blocks clear a player survives 30 s of repeated closing ticks at full health; one closing tick standing inside kills them). The test binds `@s`, never `@a`: PackTest runs the whole suite in ONE shared world, so a sibling template's dummy in the same fixture cell would otherwise be counted.  With a `disarm` every line of `tgate_close_<id>` — the judgement, the `fill` and the next hop — plus the open half's `schedule` is prefixed `execute unless score #tgdis_<id> dw.sys matches 1`; the open's own `fill` is deliberately NOT guarded, because a jam landing while the gate is shut leaves one already-scheduled open in flight and that open is what parks the portcullis in its resting position. `setup_finish` summons the jam affordance (interaction hitbox + `dw_hw_…` item_display, `DW0420`), the tick carries the same one-shot `#tgdis_<id>` poll a shortcut unlock uses, and `tgate_disarm_<id>` is four commands whose ORDER is the semantics: latch the sentinel, raise `sets_flag` party-wide, `fill … minecraft:air replace <block>` once, `kill` the hardware (the one function `DW0421` allows to). There is deliberately no `schedule clear`: a close already in flight fires into the guard and does nothing — including not scheduling the next open — so the ping-pong dies of its own accord within one hop. Generated PackTest `souls_timed_gate_disarm_<id>`: prove the clock really seals while armed, pull the real lever, then drive `tgate_close_<id>`/`tgate_open_<id>` across three former cycle boundaries and assert the span is air at each. |
@@ -3217,6 +3217,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   first-person `fov` (~70°), and an `expect` whose first entry is a one-sentence
   machine description composed from campaign data (area name + objective/anchor/NPC
   names + objective hint) — the (image ↔ expect) pair a vision model reviews.
+  **Each POV shot states the configuration its leg is walked in** (spec-0089
+  §8): `after: {step, cells_moved}` — `cells_moved` the cells whose block the
+  configuration the leg arrives under (`path_configurations`' `per_step`) holds
+  differently from the load world, over the world as shipped
+  (`view::beat::picture_base`), and `step` the latest step of `plan.critical_path`
+  before the leg's that carries an id (`null` when none does). A review frame
+  still renders the server save at load, and `delvec scene` says so on every run:
+  `review frames render the world at load; <k> of <m> POV shots stand in a
+  configuration other than load` (`k` counts the POV shots with `cells_moved`
+  above 0). `delvec snapshot --shot` reads one shot's camera and writes no plan,
+  so its in-memory plan carries no `after`.
   Deterministic (route order → waypoint order; no RNG/clock) and appended after the
   overhead kinds. Emitted only when a
   walked critical leg exists.
@@ -4313,7 +4324,10 @@ zero contact face.
 **Binding ledger — `validation/gate-seal.json`.** Every gate the layout resolved,
 sealed or not: `gates_examined`, `sealed_at_world_load`, `modelled_as_sealed`, a
 per-gate row (`area`, `anchor`, region, `cells`, `blocked_at_world_load`,
-`foreign_blocks`), and `unbound` when the model treats none of them as shut. A
+`foreign_blocks`, `sealed`, and `clocked` — whether a timed gate's clock owns the
+region, so its blocks at any instant are the clock's phase, which
+`tools/ci/check-written-world.py` counts as such), and `unbound` when the model
+treats none of them as shut. A
 campaign whose layout resolves no gate anchor emits no file at all, so a file that
 exists and reports zero is a finding rather than an absence — `nobodys-cave-island`
 is exactly that case, its one gate anchor being the boulder the campaign
@@ -5561,6 +5575,7 @@ exit 3).
 | `DW0921` | **A place a body can get into and not out of.** From the critical path's route cells, a body moving the way a player does reaches a cell from which no movement sequence leads back to the route — a garden bed ringed by a hedge it jumped onto and dropped off, a pool whose rim stands two over the water. The player is soft-locked there. The movement is `World::body_moves`, over the assembled (edited) model, cardinal, player footprint: the walk step every route proof takes; a **fall** off an edge to the first standable floor no deeper than the fall an unarmoured body survives (`dsl::metrics::unarmoured_survivable_fall_blocks`, 22), or into water at any depth; a **jump** across a gap of air columns inside `dsl::metrics::JUMP_REACH` for its rise (launch column clear three cells up, every gap column clear from the lower of the two feet to that top); and, for a body **afloat** at the top of water (a water cell with open air over it; lava excluded, `Occupancy::lava`), a swim to the next surface cell, a climb out onto ground no more than `dsl::metrics::WATER_CLIMB_OUT_RISE` (1) cell above the water's top, or a step over a lower rim. Both constants are measured, not derived: `tools/spike-jump-arc/simulate.mjs at 84f364997d24` (the harness's own physics over the jump spike's rig, the jump pressed on any tick, minimum over runways 1–10; `--check` reproduces all 14 verdicts of the live spike; `--water` for the climb-out). No route proof uses these moves: a route is what the bot walks on cue, this is where a body can end up. Judged once per distinct quest configuration the critical path passes through (`region_state_at` of each leg's arrival), with that configuration's gates as they stand and **its own** route cells as the place to get back to — so a room the story shuts the party into holds the objective the story waits on, and is not refused; no declaration exists or is needed for it. Two further ways out: a cell outside the playable region (`boundary`, spec-0013), whose clock returns the body to the last checkpoint; and a shortcut lever a pocket's own reach stands a body at, opened in rounds (the completability model holds every shortcut shut). Not moves, and named in the message: diagonal jumps, climbing (ladders, vines), standing on a fence or wall top, diving — a place reached only that way is not seen, a place left only that way reads as a trap. `compiler::nav::check_bodies_can_leave`, called from `emit::build` right after `DW0315`/`DW0316`, build-tier (exit 3); it prints `DW0921 binding: …` whichever way it goes and writes `validation/leave-proof.json` when it holds. **A link is a third way out** (spec-0083 §3.9): a reached cell that is a stand cell of a link live at a step arriving under the configuration — a body there performs the trigger and is put down on a route cell, and the link is repeatable by construction. The binding line ends `N link stand cell(s) served as a way out`, counting stand cells the same closure judged with no link would trap. The message names each pocket (up to six, then a count): its size, a cell, the configuration, and the movement that got a body in. A configuration names every loop's slab as it has it (`with the slab of loop `…` holding` / `clear`, spec-0086 §5.3): a holding slab is solid in that configuration's world, and a body inside the span while the loop holds is not in a pocket, because the slab returns it to the approach. Measured cost on vesperhold (release, one machine): six configurations, 316,733 cells reached in all, 22.7 s and 28.4 s over two runs. Prescription: reshape the place — lower the wall, add a step, open a side, take away what the body jumped in from; never an invisible barrier over walkable-looking ground.  Each configuration's words name every staged lethal volume's state there (`may be live` / `dead`, spec-0088), so a pocket that exists only while a volume is dead says so. |
 | `DW0951` | `delvec sculpt` | **The sculpt form is refused where it is read** (spec-0087; `sculpt::form`, exit 1, before anything is fitted, so no output directory is written). Shapes: a form that does not parse or declares a `form_version` this engine does not read; an `id` that is not `prefab/<kebab>`; an empty `box`; `sub` other than 2 or 4; **no `ground`** (a body with nothing under it is follow-up A of spec-0087); `ground.top` leaving no two clear courses; `sink` deeper than the ground; **no anchor with `role: entry`**; an anchor not named `anchor/<stem>`, with a facing that is not cardinal, or outside the box; **a block the pinned registry lacks** — palette full block, ground, family stair or slab, shelf material, light — refused by the grammar's own `blocks-exist` gate run over the declared states, its message the registry's (with suggestions); a family without both `<family>_stairs` and `<family>_slab`; a full or ground block that assembles its shape from neighbours or is not a full cube; **a palette, ground or shelf-material block that emits light**, read from `light::emission` (the relight pass's table) and nothing else; a `lights[]` block that emits none, or lies outside the box; a light with both or neither of `at` and `hull`; a `hull` whose `spacing` is under 2, whose `on` is empty or repeats, whose `within` is outside the box or inverted, that is `embedded` with a `cover` or with a block that is not a full cube, or `recessed` with no `cover` or onto a `floor`; a `cover` that is not a bare `<family>_stairs` / `<family>_slab` id or that emits light; a solid with non-finite or non-positive dimensions; **a `shelf` whose knots rise more than one block per block of path** (its fit is a wall; climbing is follow-up B). Remedy: the field named. |
 | `DW0952` | `delvec sculpt` | **The sculpted body is refused** (spec-0087; `sculpt`, exit 3, after the fit, before any file is written). Shapes: an anchor (furniture excepted) whose cell is not standable after the fit, with what the cell holds named; an `entry` anchor the walk from grade (`schem::nav::ground_entry` → `reachable_from`) does not reach; **a pocket** — from every anchor, the leave relation `DW0921` floods (`World::trapped_places` over `World::body_moves`, one function shared with `DW0921`) reaches a place from which no walk, fall, jump or swim gets back to the ground at the box's vertical faces, the box's outside counting as gone. The run prints `pockets: P place(s), C cell(s), of R cell(s) a body can reach from E anchor(s)` whatever the verdict, and refuses on `P > 0`, naming up to six places with the way in. **A hull light**: an entry that placed no source (its candidate count named), or a source whose room cell the light model measures at 0. Remedy, in the form: a `shelf` out of the pocket, a `cut` that opens it, more `sink`, a different profile; for an anchor, move it onto the body or the ground; for a hull light, widen `within`, name another surface, or thicken the body round the room. |
+| `DW0955` | `tools/ci/check-written-world.py` | **The world the engine writes is not the world the pinned server builds** (spec-0089 §5.4; declared as `compiler::view::world::DW_CAMERA_STEP_WORLD`, raised by the gate, exit 1). The written load world (`delvec cameras … -o <out>` → `<out>/worlds/at-load`) and a `validation/world-save.sh` save of the same build are read through the one reader, `tools/lib/anvil.py`, and compared cell by cell inside `render-plan.json`'s `layout_aabb`; a differing cell reds unless it falls in a named class, each a measured count printed with its cells, never an allowlist of cells — **gravity** (a gravity block on either side: the server settled it), **fluid** (water or lava on either side: the server flowed it), **re-derived** (the same block, differing only in a property the server re-derives on a block update: a fence, wall, bar or pane's sides and `up`, a stair's `shape`, leaves' `distance`), **clock** (a cell inside a gate region a clock owns, `clocked` in `validation/gate-seal.json`: the clock's phase at the instant the save was copied). Every run prints the box, the non-air counts of both worlds, the cells compared and each class's count with its cells; a non-zero class is a finding about the model, reported, not refused. It runs in tier 2, after the gallery's PackTest pass boots its world once (`world-save.sh --seed`, the job's one verified fetch). Remedy: the model is wrong at the cells named — fix the model, never the comparison. |
 ### DW045x — body clearance and body traversal (`compiler::clearance` + `compiler::traversal` + `dsl::validate`; error + advisory)
 
 An entity is a box with a real size, and so is a block. These prove the two
@@ -7230,7 +7245,7 @@ rule, and the rule's domain is the more useful thing for the number to say.
 | `DW0702` | `delvec schem` | Source `DataVersion` ≠ pinned MC 1.21.11. |
 | `DW0710` | `delvec schem` | Input unreadable / not a Sponge schematic. |
 | `DW0720` | `delvec render` | Missing-texture (magenta) placeholder detected (fidelity gate; exit 4). |
-| `DW0721` | `delvec render` | Input (`.nbt`/metadata/`render-plan.json`/`design/cameras.json`) unreadable, a `cameras` record that breaks its rules (§7, `delvec cameras`; the same refusal stops `delvec build`, exit 3, since the build reads the record — **including a camera whose `answers` names no row of `design.json`** (spec-0070), and **a camera whose stated `sky` is the sky of the row it answers** (spec-0079 §3.3; remedy: remove the field), refused through the record's one reader, with that reader's own sentence, before anything is placed; a half-stated `sky` or a keyword outside the hour and weather enums is refused naming the camera and its row), a `place-camera` write the record refuses (an estimate over a `hand` row, a new hand row without `--answers`, another row's `answers`, a slot the report does not hold, a `--sky` that does not parse as `<time>,<weather>` or restates the row's sky), a `render-plan.json` whose `sky` states no `weather` (written by an older engine; `scene::plan_sky`), a `panorama --subject` anchor the build did not resolve, a `scene`/`panorama`/`cameras` world save that is not there (no `level.dat` or no region file in `--world`, default `<build-dir>/world`; Chunky would render it as an empty frame at exit 0), or a `--view` that cannot be rendered as asked (exit 2). A declared view is refused **before any frame**: a malformed spec, a bearing given twice or not at all, a subject the piece does not declare (the message lists the anchors it does), or a name a planned shot already holds — which would overwrite that shot's image and quietly regress a review set. A view is never dropped or silently re-aimed: a set missing the one camera the reviewer asked for still looks complete in a directory listing. |
+| `DW0721` | `delvec render` | Input (`.nbt`/metadata/`render-plan.json`/`design/cameras.json`) unreadable, a `cameras` record that breaks its rules (§7, `delvec cameras`; the same refusal stops `delvec build`, exit 3, since the build reads the record — **including a camera whose `answers` names no row of `design.json`** (spec-0070), and **a camera whose stated `sky` is the sky of the row it answers** (spec-0079 §3.3; remedy: remove the field), **a camera whose `after` names a step the path does not carry, a step it carries more than once, a path the build does not declare or no world plays, or a step after which the map equals load** (spec-0089 §6; remedies: a step the path carries, listed; a declared branch, listed; remove the field or name the first step after which a block moves), refused through the record's one reader, with that reader's own sentence, before anything is placed; a half-stated `sky` or a keyword outside the hour and weather enums is refused naming the camera and its row), a `place-camera` write the record refuses (an estimate over a `hand` row, a new hand row without `--answers`, another row's `answers`, a slot the report does not hold, a `--sky` that does not parse as `<time>,<weather>` or restates the row's sky, an `--after` that does not parse as `<step>[@<branch>]` or that the `after` rules refuse), a `render-plan.json` whose `sky` states no `weather` (written by an older engine; `scene::plan_sky`), a `panorama --subject` anchor the build did not resolve, a `scene`/`panorama` world save that is not there (no `level.dat` or no region file in `--world`, default `<build-dir>/world`; Chunky would render it as an empty frame at exit 0), or a `--view` that cannot be rendered as asked (exit 2). A declared view is refused **before any frame**: a malformed spec, a bearing given twice or not at all, a subject the piece does not declare (the message lists the anchors it does), or a name a planned shot already holds — which would overwrite that shot's image and quietly regress a review set. A view is never dropped or silently re-aimed: a set missing the one camera the reviewer asked for still looks complete in a directory listing. |
 | `DW0722` | `delvec render` | Output file could not be written (exit 3). |
 | `DW0723` | `delvec render` | GPU renderer failed / textures absent (exit 5). |
 | `DW0724` | `delvec` (visual tier) | **A render-plan camera's eye cell is occupied** (solid/water) in the FINAL assembled world — the frame would render the inside of a block, and a picture of the inside of a block is indistinguishable from a picture of a featureless room. `compiler::nav::verify_camera_eyes`, over **every** shot the plan holds: `spawn`, `interior`, `seam`, `npc`, `interact`, `gate` and `pov`. It is bound at the derivation, not at a call site — `render_plan::render_plan` is the only constructor of a plan document and it takes the world, and every kind enters the shot list through one `push` that records the eye from the same position it writes into the camera, so a kind added later is covered without anyone remembering. Two verdicts, decided by the object rather than by the author. **`pov`** is the player's own eye, 1.62 above a DW0314-proven-standable waypoint, so it is clear by construction and is never moved: a violation there is the derivation changing (or a later pass mutating the cell) and fails the build (exit 3) — fix the derivation, never the waypoint or the geometry. **Every other kind** states a fixed stand-off from a subject it frames, which is a preference and not a position: a camera whose own cell holds a block stands instead at the furthest clear point on its own sight line (`compiler::camera::stand_in_open_air`) and records `camera.requested_pos` + `camera.standoff` on its shot, because a displaced camera is invisible in its own frame. It yields to that one fact and nothing else — an interior shot's dollhouse eye is deliberately above the piece and is not pulled through the roof it looks past. The error survives for those kinds too: it fires when even the subject's own cell is buried, so there is no vantage on the sight line at all. Every plan states the proof's binding counts (`camera_eye_proof`: `cameras` examined, `pulled_in`), and a plan holding zero cameras is a warning under the same code rather than a silent pass. **Second shape — every showcase camera of `design/cameras.json`** (spec-0069): its lens cell is clear, its lens is inside the build height, and its view ray meets the scene's loaded extent; a showcase camera is never moved, so each violation refuses (exit 3) naming the row, with `camera_eye_proof.showcase` its count. Numbered in the `DW072x` visual/render range. |
@@ -8020,9 +8035,9 @@ whole campaign's four slices, including the nav model and critical-path routing.
 ### `delvec cameras` — the showcase camera record
 
 ```
-delvec cameras <build-dir> --campaign <campaign-dir> -o <dir>
-    [--world <build-dir>/world] [--only <name>]...
-    [--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=] [--draft | --preview]
+delvec cameras <build-dir> --campaign <campaign-dir> -o <dir> [--prefabs <dir>]
+    [--only <name>]... [--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=]
+    [--draft | --preview]
 ```
 
 `<campaign-dir>/design/cameras.json` is the one record of a campaign's showcase
@@ -8031,11 +8046,15 @@ required: `campaign_id` — the campaign the record belongs to, held equal to th
 build's, so a record cannot silently place cameras in another world — and
 `cameras`. Per camera: `name`, `answers` (a `design.json` row), `pos` (the lens,
 world blocks), `yaw`/`pitch` in the `--camera` convention above, vertical `fov`,
-`exposure`, `width`, `height`, `source` (`estimated` or `hand`), `spp`, and the
-one optional field, `sky` — an object of `time` and `weather`, both required
+`exposure`, `width`, `height`, `source` (`estimated` or `hand`), `spp`, and two
+optional fields: `sky` — an object of `time` and `weather`, both required
 when the object is present, typed by the hour and weather enums `world.json` uses — the
 sky the picture is taken under when it is not the sky of the row the camera
-answers. **Every other field is required**: the reader denies unknown fields and
+answers; and `after` — an object of `step`, required, and `path`, optional — the
+step of an exported path the picture is taken after (spec-0089): `step` an
+objective id (`obj/<id>`) or a trigger id (`trigger/<id>`), never an index, and
+`path` a branch id `validation/branch-plan.json` declares, absent for the
+critical path. **Every other field is required**: the reader denies unknown fields and
 serde refuses a missing one, both as `DW0721`, naming the camera and the row it
 answers. Keys are alphabetical, so the
 record a tool writes is already canonical. This list is not hand-kept:
@@ -8049,6 +8068,74 @@ every row is answered (`DW0900`) — so the only bytes of the build it moves are
 and `validation/design-record.json`'s three camera keys. `delvec schema --stage
 cameras` exports the record's JSON Schema (`camera::record_schema`), naming the
 file it lives at under `x-delvewright-file`; it is not part of `--stage all`.
+
+**The configuration a camera stands in** (spec-0089 §4). A camera with no
+`after` stands at load: the critical path's configuration on arrival at its
+first step, every world-load seal in place, no beat fired. A camera after step
+`X` of path `P` (index `i`) stands in `P`'s configuration on arrival at `i + 1`
+(`nav::configuration_at` — `World::region_state_at` over `P`'s own region
+writes under `P`'s own ancestry; the critical path's is `Plan::gate_fired_before`,
+a branch's `Plan::branch_gate_model`), the state the proofs route the leg leaving
+`X` under; after the last step it is the end state. Its bytes are
+`Configuration::blocks` — `RegionState::blocks_over`, the one derivation of a
+configuration's block map, which `DW0891` reads too — laid over **the world as
+shipped** (`view::beat::picture_base`): the assembly, every gate the placed
+world authors shut written back with its anchor's block (the assembly clears a
+gate's region; the datapack's setup holds it), the relight fixtures last as
+`setup_finish` sets them (`assembled::shipped_blocks`, which the loop's tiling
+reads too), and every gated trap's trigger removed whose gate is shut at load (a
+`requires_flags`, or a `requires_state` term its datum's `initial` fails). An
+unforced write is not laid. The path is the one the build's proofs read, with
+the links the route proof takes spliced in (`nav::with_links_taken`), so a step
+index counts `plan.critical_path` — the region model's step space, not
+`critical-path.json`'s rows, which splice witness, rest and completion steps
+into the export. The `after` rules are the record's, refused `DW0721` by
+`delvec cameras`, `delvec place-camera` and `delvec build` alike through
+`view::beat::stand`: a step no step of the path carries (the path's steps
+listed), a step the path carries more than once (a candidate, not a match — the
+steps carried once listed), a path the build does not declare (the declared
+branches listed) or declares and no world plays, and a step after which the map
+equals load byte for byte (the remedy is to remove the field or name the first
+step after which a block moves that the path carries once; or the line says the
+path moves none).
+
+**The world the engine writes** (spec-0089 §5; `compiler::view::world`). One
+world per distinct configuration a framed camera stands in, under
+`<out>/worlds/<key>/` — `at-load`, or `after-<step>` (`/` as `-`) with
+`-on-<branch slug>` for a branch — named in each scene by absolute path, since
+Chunky resolves it against the rendering process's working directory. It holds
+`level.dat` (gzip, mtime 0: `Data{DataVersion, LevelName, SpawnX/Y/Z,
+version}`, the spawn the campaign's start cell) and `region/r.<x>.<z>.mca`,
+nothing else: per chunk holding a cell, `DataVersion` (the pin's, 4671),
+`xPos`, `zPos`, `yPos` (−4), `Status: minecraft:full`, and a section for each
+section holding a cell — `Y` a byte, as the game writes it and the pinned core
+reads it (an int `Y` loads as an empty chunk) — with `block_states{palette,
+data}` and `biomes{palette, data}`, palettes in first-seen order over the
+section's own index order, every state completed with the pinned defaults of
+the properties it leaves out (what the game resolves them to on load), indices
+packed at `max(4, ⌈log2 n⌉)` bits for blocks and `max(1, ⌈log2 n⌉)` for biomes,
+never across a long, `data` absent for a one-entry palette. Biomes are the
+build's biome map (`horizon::biome_map`) sampled at each 4-cell's centre. Every
+region timestamp is zero, zlib at level 6, chunks in index order, sectors
+contiguous; two writes of one map are byte-identical, and each world's sha-256
+over its region files in name order is printed. No light arrays, heightmaps,
+entities, block entities or ticks. **`--world` is gone**: a showcase frame has
+one world source. The server save (`validation/world-save.sh`) is the
+instrument that checks the writer (`DW0955`, `tools/ci/check-written-world.py`),
+and stays the world source of `delvec scene` and `delvec panorama`.
+
+**What a frame does not show, by name** (spec-0089 §6): entities (the pinned
+core draws none of the kinds the engine summons, from any world); block-entity
+content — a sign's text, a banner's pattern, a head's profile, a lectern's book,
+counted on the binding line from the blocks of those kinds the world holds; a
+`set-atmosphere` repaint by a beat (the biomes are the map at load, and the line
+says `biomes: at load`); the configuration's clock (the frame's sky is the
+picture's, spec-0079); a fluid's spread past the cells a `Flood` write lays; a
+write only an unforced root lays; **a `collapse`** — a collapse reaches the
+route proofs as `DW0445`'s settled debris, not as a region write, so no
+configuration lays its debris or its `then_floor` and a frame after a collapse
+beat shows the ceiling standing; and a gated trap's trigger re-armed by a later
+beat (it is drawn as at load).
 
 Emission writes one Chunky scene per camera (`<campaign>_camera_<name>.json`)
 against a build's `render-plan.json`: the camera verbatim, rounded to six
@@ -8064,7 +8151,9 @@ a non-positive exposure, a pitch outside −90..90, a field of view outside
 campaign than the build, an `--only` name the record lacks, a `sky` with a
 member missing or a keyword outside the enums, **a stated `sky` equal to the
 answered row's** (a derivation typed where a judgement belongs; the remedy is to
-remove the field), and a plan whose `sky` states no `weather`. **Scene emission is
+remove the field), an `after` its rules refuse (above), and a plan whose `sky`
+states no `weather`. A campaign that does not plan is refused with its own
+build code (exit 3), because the world is assembled from it. **Scene emission is
 also held to `DW0900`** (exit 2): a record leaving any approved image unanswered
 emits no scene, `--only` included, because the record is what is judged and a
 set with a hole in it is not a set. Every run prints how many approved images
@@ -8090,16 +8179,25 @@ renderer's own clear sky | overcast cell <class>×<weather>: skyLight …,
 apparentSkyLight …, sun …, fog …>` — and `skies: D derived, S stated, over C
 camera(s)[ (R refused)]; weathers emitted: {…}`, whose set names the non-clear
 weathers (a clear scene emits no sky block). A record stating no sky prints `0
-stated`; a rain delve rendering clear prints the empty set.
+stated`; a rain delve rendering clear prints the empty set. Beside them, per
+framed camera, `after: <name> at load` or `after: <name> after <step> (step <i>
+of <n> on <the critical path | branch `<id>`'s path>): <c> cells moved from load,
+<u> unforced write(s) not laid, <b> block entit(ies) omitted; biomes: at load;
+clock: as the picture` — `<c>` the cells whose block differs from the load
+world's (`Configuration::moved_from`); per written world, `world: <key> <chunks>
+chunk(s), <cells> cell(s), sha256 <hash> -> <dir>`; and `configurations: <k>
+written for <c> camera(s), <a> after a step, <l> at load`. A record with no
+`after` prints `0 after a step` and one world, `at-load`.
 
 `--bracket` appends, after each camera, the camera moved one field by one step
 each way (`dolly` along the heading, `truck` to the frame's right, `rise` up),
 skipping any candidate outside the legal ranges, and writes every emitted camera
 to `candidates.json` in the record format; a moved candidate is `estimated`
 whatever its camera was. `--draft` divides the frame by 4 and
-caps samples at 128 under `<stem>_draft`. `--preview` writes no scene: it
+caps samples at 128 under `<stem>_draft`. A candidate carries its camera's
+`after`, so it stands in its camera's world. `--preview` writes no scene: it
 assembles the world as `snapshot` does (it reads `--prefabs`) and rasterises each
-camera at half its frame as `<stem>_preview.png`, byte-identical to `snapshot
+camera, in the configuration it stands in, at half its frame as `<stem>_preview.png`, byte-identical to `snapshot
 --camera` with the same numbers, and names each camera whose lens is inside or
 within `LENS_CLEARANCE` (0.25 block) of a placed block, with a `lens:` binding
 line — a report, since the grid counts every block as a full cube. The material
@@ -8115,7 +8213,7 @@ plan and options give the same scene, candidate and preview bytes.
 
 ```
 delvec place-camera <campaign-dir> --name <row> [--answers <design.json row>]
-    [--sky <time>,<weather>]
+    [--sky <time>,<weather>] [--after <step>[@<branch>]]
     (--report <camera-report.json> --slot <n> --fov <degrees>
      | --candidates <record-format file> --pick <camera>
      | --delete)
@@ -8138,8 +8236,15 @@ count moves under the creator's hand. `--sky <time>,<weather>` (`noon,clear`, in
 the two enums' keywords) writes the row's `sky`; without it a new row states
 none, a replaced hand row keeps the sky it had, and `--candidates` copies the
 candidate's verbatim. A `--sky` that does not parse, or that equals the answered
-row's sky, is refused; a written row prints its `sky:` line. Refusals are
-`DW0721` (exit 2) and write nothing.
+row's sky, is refused; a written row prints its `sky:` line. `--after
+<step>[@<branch>]` writes the row's `after` (the step, and the branch whose path
+it is on); without it a hand row keeps the step it had and `--candidates` copies
+the candidate's verbatim — a pose stamped in the running game never carries one,
+since the overlay cannot read the quest state. A row stating an `after` is held
+to the campaign's planned path (the campaign is assembled from `--prefabs`), so
+an `--after` that does not parse, or one the `after` rules refuse, writes
+nothing; a written row prints its `after:` line. Refusals are `DW0721` (exit 2)
+and write nothing.
 
 ### `delvec edit apply` / `delvec edit preview` (spec-0017)
 

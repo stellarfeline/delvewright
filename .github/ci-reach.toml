@@ -57,6 +57,8 @@ inputs = [
   { glob = "tools/tests/fixtures/i18n-sidecar/**", why = "`crates/delvec/tests/i18n_sidecar.rs` runs `write_sidecar.py`" },
   { glob = "tools/maintenance/probe-drowned-engagement.py", why = "`crates/delvec/src/compiler/engage.rs`'s `the_probe_measures_this_table` reads it" },
   { glob = "docs/reference/compiler.md", why = "`crates/delvec/tests/hand_camera.rs` reads the walk-record field paragraph" },
+  { glob = "tools/ci/check-written-world.py", why = "`crates/delvec/tests/post_beat_camera.rs` runs it against perturbed written worlds (`DW0955`)" },
+  { glob = "tools/lib/anvil.py", why = "`crates/delvec/tests/post_beat_camera.rs` reads every written world back through it" },
   { glob = "**/*.json", why = "`tools/ci/check-json-canonical.py` judges every tracked JSON document, and `crates/delvec/tests/fmt.rs` formats every one `git ls-files '*.json'` lists" },
 ]
 
@@ -195,6 +197,9 @@ inputs = [
   { glob = "validation/**", why = "`server-bootstrap-cache.sh`, `Dockerfile.delve`, `compose.yaml`, `packtest-run.sh`, `packtest-matrix.py`, the world-settings entrypoint" },
   { glob = "harness/**", why = "`validation/compose.yaml` builds its bot service from `../harness`" },
   { glob = "packtest/**", why = "the PackTest template directory" },
+  { glob = "tools/ci/check-written-world.py", why = "the gallery's written-world cross-check (`DW0955`) runs after its world save" },
+  { glob = "tools/lib/anvil.py", why = "`check-written-world.py` reads both worlds through it" },
+  { glob = "tools/lib/rcon.sh", why = "`validation/world-save.sh` polls the placement sentinel through it" },
 ]
 
 [[group]]

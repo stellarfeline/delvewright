@@ -572,6 +572,53 @@ fn main() -> ExitCode {
             bracket.as_ref(),
             cli.json,
         ),
+        Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
+            build_dir,
+            campaign,
+            out,
+            only,
+            bracket,
+            draft,
+            preview: false,
+        }) => delvec::compiler::view::cli::run_cameras(
+            build_dir,
+            campaign,
+            out,
+            cli.json,
+            delvec::compiler::view::camera::EmitOptions {
+                world_paths: Default::default(),
+                only: only.clone(),
+                bracket: *bracket,
+                draft: *draft,
+            },
+            &mut |cams| camera_stands(campaign, &cli.prefabs, cli.json, cams),
+        ),
+        Command::View(delvec::compiler::view::cli::ViewCommand::PlaceCamera {
+            campaign,
+            name,
+            answers,
+            report,
+            slot,
+            fov,
+            candidates,
+            pick,
+            sky,
+            after,
+            delete,
+        }) => delvec::compiler::view::cli::run_place_camera(
+            campaign,
+            name,
+            answers.as_deref(),
+            sky.as_deref(),
+            after.as_deref(),
+            delvec::compiler::view::cli::PlaceFrom {
+                report: report.as_deref().zip(*slot).zip(*fov),
+                candidates: candidates.as_deref().zip(pick.as_deref()),
+                delete: *delete,
+            },
+            cli.json,
+            &mut |cams| camera_stands(campaign, &cli.prefabs, cli.json, cams),
+        ),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
         Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
@@ -1939,6 +1986,88 @@ fn run_snapshot(
     ExitCode::SUCCESS
 }
 
+/// **Where each camera stands** (spec-0089 §4): the campaign assembled as
+/// `delvec cameras --preview` assembles it, the world given the premises the
+/// build's proofs carry, and every camera's configuration asked of
+/// [`delvec::compiler::view::beat::stands`] — the record's `after` rules
+/// refused under `DW0721` (exit 2). A campaign that does not plan has its
+/// own refusal printed here, and the caller is told only the code.
+fn camera_stands(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+    cameras: &[delvec::compiler::view::camera::Camera],
+) -> Result<
+    delvec::compiler::view::beat::Stood,
+    (Option<delvec::compiler::view::diag::Diagnostic>, u8),
+> {
+    let (campaign, prefabs) =
+        load_for_view(campaign_dir, prefabs_dir, json).map_err(|c| (None, c))?;
+    let plan = match Plan::build(&campaign, &prefabs) {
+        Ok(p) => p,
+        Err(e) => {
+            print_diags(&e.warnings, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
+            return Err((None, 3));
+        }
+    };
+    let structures = read_structures(&plan, &prefabs, prefabs_dir, json).map_err(|c| (None, c))?;
+    let assembled = edited_assembled(&plan, &prefabs, &structures, json).map_err(|c| (None, c))?;
+    let world = camera_world(&plan, &assembled);
+    // The path the build's proofs read: the links the route proof takes
+    // spliced in (spec-0083), so a step is the step `critical-path.json` names.
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            print_build_error(f.code, &f.message, json);
+            return Err((None, 3));
+        }
+    };
+    let plan = relinked.as_ref().unwrap_or(&plan);
+    let base = camera_base(plan, &assembled);
+    let stands =
+        delvec::compiler::view::beat::stands(plan, &world, &base, cameras).map_err(|why| {
+            (
+                Some(delvec::compiler::view::diag::Diagnostic::error(
+                    delvec::compiler::view::camera::DW_RECORD_AT_BUILD.id(),
+                    why,
+                )),
+                2,
+            )
+        })?;
+    let biomes = delvec::compiler::horizon::biome_map(plan);
+    Ok(delvec::compiler::view::beat::Stood {
+        stands,
+        biome: Box::new(move |c| biomes.at(c).0.to_string()),
+        spawn: plan.campaign_start().map_or([0, 64, 0], |(_, p)| p),
+    })
+}
+
+/// The world a camera's configuration is asked of: the assembled occupancy
+/// under the premises the build's proofs carry — the measured world-load
+/// seals among them, which is what makes a gate the prefab built shut a
+/// step-0 write (`nav::Premises::of_plan`).
+fn camera_world(
+    plan: &Plan,
+    assembled: &delvec::compiler::assembled::Assembled,
+) -> delvec::compiler::nav::World {
+    delvec::compiler::nav::World::from_occupancy(
+        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
+        delvec::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
+    )
+}
+
+/// The bytes a camera's world starts from
+/// ([`delvec::compiler::view::beat::picture_base`]): the relight pass is run
+/// as the build runs it, so a fixture the datapack sets is in the picture.
+fn camera_base(
+    plan: &Plan,
+    assembled: &delvec::compiler::assembled::Assembled,
+) -> delvec::compiler::blockstate::BlockMap {
+    let relight = delvec::compiler::light::relight_over(plan, assembled);
+    delvec::compiler::view::beat::picture_base(plan, assembled, &relight.placements)
+}
+
 /// `delvec cameras --preview`: every stated camera of `design/cameras.json` (and
 /// its bracket candidates) drawn by the snapshot rasteriser over the assembled
 /// world — the same world, the same Minecraft camera convention, flat-lit and in
@@ -2013,14 +2142,47 @@ fn run_cameras_preview(
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
-    let grid = snapshot::VoxelGrid::build(&assembled.blocks);
-    snapshot::report_unpainted(&grid);
+    // Each camera is drawn in the configuration it stands in (spec-0089 §4):
+    // one grid per distinct world, the record's `after` rules refused here as
+    // `delvec cameras` refuses them.
+    let world = camera_world(&plan, &assembled);
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            print_build_error(f.code, &f.message, json);
+            return ExitCode::from(3);
+        }
+    };
+    let plan = relinked.as_ref().unwrap_or(&plan);
+    let base = camera_base(plan, &assembled);
+    let stood = match delvec::compiler::view::beat::stands(plan, &world, &base, &cameras) {
+        Ok(s) => s,
+        Err(why) => {
+            return delvec::compiler::view::cli::fail(
+                Diagnostic::error(camera::DW_RECORD_AT_BUILD.id(), why),
+                json,
+                2,
+            );
+        }
+    };
+    let grids: BTreeMap<String, snapshot::VoxelGrid> = stood
+        .worlds
+        .iter()
+        .map(|(k, b)| (k.clone(), snapshot::VoxelGrid::build(b)))
+        .collect();
+    for g in grids.values() {
+        snapshot::report_unpainted(g);
+    }
+    for s in &stood.stands {
+        eprintln!("{}", s.line(0));
+    }
     if let Err(e) = std::fs::create_dir_all(out) {
         eprintln!("internal error: mkdir {}: {e}", out.display());
         return ExitCode::from(EXIT_INTERNAL);
     }
     let mut obstructed = 0usize;
-    for cam in &cameras {
+    for (cam, st) in cameras.iter().zip(&stood.stands) {
+        let grid = &grids[&st.key];
         if let Some(cell) = camera::lens_obstruction(cam.pos, |c| grid.solid(c)) {
             obstructed += 1;
             eprintln!(
@@ -2034,7 +2196,7 @@ fn run_cameras_preview(
             );
         }
         let frame = snapshot::render_frame(
-            &grid,
+            grid,
             &snapshot::Camera {
                 pos: cam.pos,
                 yaw: cam.yaw,
@@ -2384,7 +2546,7 @@ fn camera_from_shot(
     // so the camera this returns is the camera the plan states: a shot pulled in
     // out of the rock is pulled in by the same walk here, and a `DW0724` refusal
     // here is one `delvec build` would raise too.
-    let doc = render_plan::render_plan(plan, prefabs, &pov, world)
+    let doc = render_plan::render_plan(plan, prefabs, &pov, world, None)
         .map_err(|e| format!("{}: {}", e.code, e.message))?
         .0;
     let shots = doc["shots"].as_array().cloned().unwrap_or_default();

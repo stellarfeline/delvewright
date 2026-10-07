@@ -614,12 +614,6 @@ fn a_hand_row_builds_byte_identically() {
     let mut stated = camera_row("stormy", "estimated", eye, 90.0, 10.0);
     stated["sky"] = serde_json::json!({"time": "dusk", "weather": "thunder"});
     let rows = serde_json::json!([camera_row("hero", "hand", eye, 0.0, 10.0), stated]);
-    // `delvec cameras` refuses a world save that is not there; the scene bytes
-    // name the save by path and depend on nothing it holds.
-    let world = tmp("world");
-    std::fs::create_dir_all(world.join("region")).unwrap();
-    std::fs::write(world.join("level.dat"), b"x").unwrap();
-    std::fs::write(world.join("region/r.0.0.mca"), b"x").unwrap();
     let mut outs = Vec::new();
     for run in ["a", "b"] {
         let camp = hello_with(&format!("twice-{run}"), Some(rows.clone()));
@@ -641,8 +635,8 @@ fn a_hand_row_builds_byte_identically() {
             camp.to_str().unwrap(),
             "-o",
             scenes.to_str().unwrap(),
-            "--world",
-            world.to_str().unwrap(),
+            "--prefabs",
+            common::prefabs_dir().to_str().unwrap(),
         ]);
         assert!(r.status.success(), "{}", log(&r));
         let said = log(&r);
@@ -666,11 +660,28 @@ fn a_hand_row_builds_byte_identically() {
             std::fs::read(scenes.join("hello-world_camera_hero.json")).unwrap(),
             std::fs::read(&index).unwrap(),
             std::fs::read(scenes.join("hello-world_camera_stormy.json")).unwrap(),
+            std::fs::read(scenes.join("worlds/at-load/region/r.0.0.mca")).unwrap(),
         ));
     }
     assert_eq!(outs[0].0, outs[1].0, "render-plan.json");
-    assert_eq!(outs[0].2, outs[1].2, "the hand row's scene");
-    assert_eq!(outs[0].4, outs[1].4, "the stated-overcast scene");
+    // Each run writes its world under its own `-o`, so the scenes differ in
+    // `world.path` alone; the worlds themselves are byte-identical.
+    let masked = |b: &[u8]| {
+        let mut v: serde_json::Value = serde_json::from_slice(b).unwrap();
+        v["world"]["path"] = serde_json::json!("<masked>");
+        v
+    };
+    assert_eq!(
+        masked(&outs[0].2),
+        masked(&outs[1].2),
+        "the hand row's scene"
+    );
+    assert_eq!(
+        masked(&outs[0].4),
+        masked(&outs[1].4),
+        "the stated-overcast scene"
+    );
+    assert_eq!(outs[0].5, outs[1].5, "the written world");
     for (what, bytes) in [("derived", &outs[0].2), ("stated", &outs[0].4)] {
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
         assert_eq!(v["sky"]["mode"], "SOLID_COLOR", "{what}: {v}");
@@ -702,7 +713,8 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
     // Serialised through the reader's own structs, so these keys are the
     // structs' and not this literal's.
     let sheet = camera::parse_sheet(
-        br#"{"campaign_id":"c","cameras":[{"answers":"concept/a","exposure":1.0,
+        br#"{"campaign_id":"c","cameras":[{"after":{"path":"branch/b","step":"obj/x"},
+            "answers":"concept/a","exposure":1.0,
             "fov":70.0,"height":900,"name":"one","pitch":0.0,"pos":[0.5,70.0,0.5],
             "sky":{"time":"dusk","weather":"rain"},
             "source":"estimated","spp":300,"width":1600,"yaw":0.0}]}"#,
@@ -718,14 +730,16 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
             .cloned()
             .collect::<Vec<String>>(),
     );
-    fields.extend(
-        value["cameras"][0]["sky"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect::<Vec<String>>(),
-    );
+    for nested in ["sky", "after"] {
+        fields.extend(
+            value["cameras"][0][nested]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<String>>(),
+        );
+    }
     fields.sort();
     fields.dedup();
 
@@ -780,6 +794,6 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
          mention(s) in the documented paragraph",
         fields.len()
     );
-    assert_eq!(fields.len(), 16, "the record's fields");
+    assert_eq!(fields.len(), 19, "the record's fields");
     assert!(named >= fields.len(), "every field named at least once");
 }

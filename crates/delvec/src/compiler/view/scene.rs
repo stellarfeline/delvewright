@@ -1643,6 +1643,7 @@ mod tests {
                 let sheet = camera::CameraSheet {
                     campaign_id: "c".into(),
                     cameras: vec![camera::Camera {
+                        after: None,
                         answers: "concept/x".into(),
                         exposure: 1.0,
                         fov: 60.0,
@@ -1662,8 +1663,16 @@ mod tests {
                     shows: String::new(),
                     sky: Some(camera::CameraSky { time, weather }),
                 }];
-                let cam =
-                    camera::emit(&plan, &sheet, &rows, &camera::EmitOptions::default()).unwrap();
+                let cam = camera::emit(
+                    &plan,
+                    &sheet,
+                    &rows,
+                    &camera::EmitOptions {
+                        world_paths: [("x".to_string(), "/abs/world".to_string())].into(),
+                        ..camera::EmitOptions::default()
+                    },
+                )
+                .unwrap();
                 let class = daylight_class(&sun_at(time.daytime_ticks()));
                 for (kind, bytes) in [
                     ("review", &review[0].1),
@@ -1758,6 +1767,7 @@ mod tests {
         let sheet = camera::CameraSheet {
             campaign_id: "isle".into(),
             cameras: vec![camera::Camera {
+                after: None,
                 answers: "concept/quay".into(),
                 exposure: 2.0,
                 fov: 50.0,
@@ -1785,7 +1795,11 @@ mod tests {
             &sheet,
             &rows,
             &camera::EmitOptions {
-                world_path: "/abs/world".into(),
+                world_paths: sheet
+                    .cameras
+                    .iter()
+                    .map(|c| (c.name.clone(), "/abs/world".to_string()))
+                    .collect(),
                 ..Default::default()
             },
         )

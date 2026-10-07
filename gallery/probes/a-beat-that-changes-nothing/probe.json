@@ -1,0 +1,13 @@
+{
+  "code": "DW0721",
+  "patch": [
+    {
+      "doc": "design/cameras.json",
+      "op": "replace",
+      "path": "/cameras/7/after/step",
+      "value": "obj/hear-the-curator"
+    }
+  ],
+  "units": [],
+  "why": "The eighth camera is moved from `obj/clear-the-muster` to `obj/hear-the-curator`, the first objective of the critical path. No beat at or before that step lays a block the region model credits, so the world after it is the world at load block for block. Nothing else moves — the step is on the path, carried once, the camera still answers its row. A picture of nothing different is a derivation typed where a judgement belongs, and goes stale the moment a beat is added: `DW0721` refuses it, naming the camera and the first step after which a block moves that a camera can name, `obj/press-the-case` — `trigger/strike-the-sentinel` moves blocks earlier and the path carries it three times, so it is never the remedy (its own refusal is `a-step-the-path-carries-three-times`). It declares no unit: `CameraAfter.step` is bound by the primary."
+}

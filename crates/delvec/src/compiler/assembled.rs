@@ -956,6 +956,63 @@ pub struct Assembled {
     pub gate_seals: Vec<GateSeal>,
 }
 
+/// **The world as shipped, before any runtime write**: the assembled blocks,
+/// every gate the placed world authors shut, and the relight fixtures the
+/// datapack sets at setup — the assembly clears a gate's region (the route model
+/// reads the gate through its seal), and the datapack's setup writes the gate's
+/// block back. Clipped to `clip` when one is given (inclusive), so a caller
+/// asking about one box does not copy the map.
+///
+/// The one derivation of those bytes: the loop's tiling (spec-0086) and a
+/// camera's world (spec-0089) both read it.
+pub fn shipped_blocks(
+    plan: &Plan,
+    blocks: &BlockMap,
+    placements: &[crate::compiler::light::Placement],
+    seals: &[GateSeal],
+    clip: Option<([i32; 3], [i32; 3])>,
+) -> BlockMap {
+    let inside = |c: [i32; 3]| {
+        clip.is_none_or(|(lo, hi)| {
+            (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i]))
+        })
+    };
+    let mut m: BlockMap = match clip {
+        Some((lo, hi)) => blocks
+            .range(lo..=hi)
+            .filter(|(c, _)| inside(**c))
+            .map(|(c, b)| (*c, *b))
+            .collect(),
+        None => blocks.clone(),
+    };
+    for s in seals.iter().filter(|s| s.sealed()) {
+        if let Some((from, to, block)) =
+            crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
+        {
+            let state = BlockState::new(&block);
+            for c in region_cells(from, to) {
+                if !inside(c) {
+                    continue;
+                }
+                if is_air(&block) {
+                    m.remove(&c);
+                } else {
+                    m.insert(c, state);
+                }
+            }
+        }
+    }
+    // The fixtures last: the datapack sets them in `setup_finish`, after the
+    // world-load seals stand, so a fixture inside a gate's region is what the
+    // server holds there (measured by `tools/ci/check-written-world.py`).
+    for p in placements {
+        if inside(p.pos) {
+            m.insert(p.pos, BlockState::new(&p.block));
+        }
+    }
+    m
+}
+
 /// Assemble the world: placed structures + solver seals + gate clears, then
 /// gravity-settle, returning both the settled map and the per-falling-block
 /// outcomes. Shared root for [`assembled_blocks`] and the gravity-despawn check.

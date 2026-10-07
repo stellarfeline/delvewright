@@ -2187,6 +2187,148 @@ fn dw0721_removing_a_restated_sky_builds() {
 }
 
 // ---------------------------------------------------------------------------
+// DW0721 — a camera's `after` that names nothing to picture (spec-0089 §6)
+// ---------------------------------------------------------------------------
+
+/// **Each remedy the `after` rules name, taken**: a step no path carries
+/// moves to one of the steps the refusal lists; a path the build does not
+/// declare moves to the critical path (the field dropped); a step after which
+/// nothing moves moves to the first step the refusal names. Each red is the
+/// build's, each move builds — and `delvec place-camera` refuses the same
+/// shapes, plus an `--after` that does not parse, before it writes a row.
+#[test]
+fn dw0721_an_after_that_names_nothing_moves_to_the_step_it_names() {
+    let dir = common::prefabs_dir();
+    let eye = proven_eye("after-eye");
+    let rows = [("concept/shore-far", "noon", "clear")];
+    let with_after = |tag: &str, after: serde_json::Value, look: bool| {
+        let camp = design_campaign(tag, "noon", &["concept/shore-far.png"], &rows);
+        design_cameras(&camp, eye, &[("shore", "concept/shore-far")]);
+        common::patch_file(&camp.join("design/cameras.json"), |v| {
+            v["cameras"][0]["after"] = after.clone();
+        });
+        if look {
+            // A step between the keeper and the exit that opens the door, so
+            // the keeper's own step is one after which no beat has fired.
+            common::patch_file(&camp.join("quests.json"), |v| {
+                let q = &mut v["content"]["quests"][0];
+                let objs = q["objectives"].as_array_mut().unwrap();
+                objs.insert(
+                    1,
+                    serde_json::json!({
+                        "type": "reach-anchor", "id": "obj/look",
+                        "anchor": "anchor/keeper-stand", "radius": 2,
+                        "after": ["obj/talk"],
+                        "happening": {"text": "the party looks", "verb": "arrives"}
+                    }),
+                );
+                objs[2]["after"] = serde_json::json!(["obj/look"]);
+                let bundle = q["on_objective_complete"]["obj/talk"].take();
+                q["on_objective_complete"] = serde_json::json!({ "obj/look": bundle });
+            });
+        }
+        camp
+    };
+    for (tag, red, move_to, look, says) in [
+        (
+            "after-nowhere",
+            serde_json::json!({"step": "obj/nowhere"}),
+            serde_json::json!({"step": "obj/talk"}),
+            false,
+            "Steps: obj/talk, obj/exit",
+        ),
+        (
+            "after-no-path",
+            serde_json::json!({"step": "obj/talk", "path": "branch/none"}),
+            serde_json::json!({"step": "obj/talk"}),
+            false,
+            "Branches (validation/branch-plan.json): none",
+        ),
+        (
+            "after-still",
+            serde_json::json!({"step": "obj/talk"}),
+            serde_json::json!({"step": "obj/look"}),
+            true,
+            "the first on the critical path is `obj/look`",
+        ),
+    ] {
+        let camp = with_after(&format!("{tag}-red"), red.clone(), look);
+        let (code, before) = build(&format!("{tag}-red"), &camp, &dir);
+        assert_eq!(code, 3, "{tag} refused:\n{before}");
+        assert!(
+            before.contains("DW0721") && before.contains(says) && before.contains("camera `shore`"),
+            "{tag}: the camera, the rule and the remedy are named:\n{before}"
+        );
+        // place-camera refuses the same row before writing it.
+        let cands = tmp(&format!("{tag}-cands"));
+        std::fs::write(
+            cands.join("candidates.json"),
+            std::fs::read(camp.join("design/cameras.json")).unwrap(),
+        )
+        .unwrap();
+        std::fs::remove_file(camp.join("design/cameras.json")).unwrap();
+        let r = delvec(&[
+            "--prefabs",
+            dir.to_str().unwrap(),
+            "place-camera",
+            camp.to_str().unwrap(),
+            "--name",
+            "shore",
+            "--candidates",
+            cands.join("candidates.json").to_str().unwrap(),
+            "--pick",
+            "shore",
+        ]);
+        assert_eq!(
+            r.status.code(),
+            Some(2),
+            "{tag}: place-camera refuses:\n{}",
+            log(&r)
+        );
+        assert!(
+            log(&r).contains("DW0721") && log(&r).contains(says),
+            "{tag}:\n{}",
+            log(&r)
+        );
+        assert!(
+            !camp.join("design/cameras.json").exists(),
+            "{tag}: no row written"
+        );
+
+        // The move the message names.
+        let camp = with_after(&format!("{tag}-green"), move_to.clone(), look);
+        let (code, after) = build(&format!("{tag}-green"), &camp, &dir);
+        assert_eq!(code, 0, "{tag}: the named move builds:\n{after}");
+    }
+    // An `--after` that does not parse is refused by place-camera by name.
+    let camp = with_after(
+        "after-parse",
+        serde_json::json!({"step": "obj/talk"}),
+        false,
+    );
+    let r = delvec(&[
+        "--prefabs",
+        dir.to_str().unwrap(),
+        "place-camera",
+        camp.to_str().unwrap(),
+        "--name",
+        "shore",
+        "--candidates",
+        camp.join("design/cameras.json").to_str().unwrap(),
+        "--pick",
+        "shore",
+        "--after",
+        "talk",
+    ]);
+    assert_eq!(r.status.code(), Some(2), "{}", log(&r));
+    assert!(
+        log(&r).contains("DW0721") && log(&r).contains("<step>[@<path>]"),
+        "{}",
+        log(&r)
+    );
+}
+
+// ---------------------------------------------------------------------------
 // spec-0080: the atmosphere refusals, each move taken
 // ---------------------------------------------------------------------------
 
