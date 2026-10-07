@@ -1223,6 +1223,36 @@
                   ]
                 },
                 {
+                  "at_ticks": 10,
+                  "effects": [
+                    {
+                      "look_at": {
+                        "anchor": "anchor/stall"
+                      },
+                      "path": [
+                        {
+                          "anchor": "anchor/stall",
+                          "offset": [
+                            0,
+                            2,
+                            0
+                          ]
+                        },
+                        {
+                          "anchor": "anchor/stall",
+                          "offset": [
+                            -1,
+                            2,
+                            0
+                          ]
+                        }
+                      ],
+                      "seconds": 6,
+                      "type": "cutscene"
+                    }
+                  ]
+                },
+                {
                   "at_ticks": 20,
                   "effects": [
                     {
@@ -1294,36 +1324,6 @@
                         "verb": "arrives"
                       },
                       "type": "spawn-actor"
-                    }
-                  ]
-                },
-                {
-                  "at_ticks": 60,
-                  "effects": [
-                    {
-                      "look_at": {
-                        "anchor": "anchor/exit"
-                      },
-                      "path": [
-                        {
-                          "anchor": "anchor/muster",
-                          "offset": [
-                            0,
-                            2,
-                            0
-                          ]
-                        },
-                        {
-                          "anchor": "anchor/vantage",
-                          "offset": [
-                            0,
-                            2,
-                            0
-                          ]
-                        }
-                      ],
-                      "seconds": 5,
-                      "type": "cutscene"
                     }
                   ]
                 }
@@ -3618,7 +3618,7 @@
         ]
       },
       {
-        "at": "anchor/shortcut-door",
+        "at": "anchor/muster",
         "effects": [
           {
             "look_at": {
@@ -3626,30 +3626,30 @@
             },
             "path": [
               {
-                "anchor": "anchor/vantage",
+                "anchor": "anchor/muster",
                 "offset": [
-                  0,
-                  2,
+                  1,
+                  1,
                   0
                 ]
               },
               {
                 "anchor": "anchor/muster",
                 "offset": [
-                  0,
+                  1,
                   2,
                   0
                 ]
               }
             ],
-            "seconds": 6,
+            "seconds": 10,
             "type": "cutscene"
           }
         ],
-        "id": "trigger/glimpse-the-muster",
+        "id": "trigger/glimpse-the-marshal",
         "on": {
           "on": "approach",
-          "range": 3
+          "range": 6
         }
       }
     ],
