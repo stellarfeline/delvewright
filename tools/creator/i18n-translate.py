@@ -1135,6 +1135,30 @@ def delvec_command(explicit: str | None) -> list[str]:
     )
 
 
+class NoPrefabs(RuntimeError):
+    """No prefab library was named, or the one named is not a directory."""
+
+
+def prefabs_root(explicit: Path | None) -> Path:
+    """The prefab library every `delvec` call of the run reads: `--prefabs`, then
+    `$DELVEWRIGHT_PREFABS`. Never a guessed path — `delvec`'s own default,
+    `campaigns/prefabs`, resolves only where the engine tree carries the `campaigns/`
+    symlink, which a creator's content clone does not."""
+    named = explicit if explicit is not None else (os.environ.get("DELVEWRIGHT_PREFABS") or None)
+    if named is None:
+        raise NoPrefabs(
+            "no prefab library named — pass --prefabs <dir> or source ~/.delvewright/env.sh "
+            "(it exports DELVEWRIGHT_PREFABS)"
+        )
+    path = Path(named)
+    if not path.is_dir():
+        raise NoPrefabs(
+            f"the prefab library {path} is not a directory — fix --prefabs, or "
+            "DELVEWRIGHT_PREFABS in ~/.delvewright/env.sh"
+        )
+    return path
+
+
 def run_delvec(args: Sequence[str], delvec: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [*delvec, *args], cwd=REPO_ROOT, capture_output=True, text=True, check=False
@@ -1279,6 +1303,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--lang", required=True, help="target language code, e.g. zh-cn")
     p.add_argument("--config", type=Path, default=None, help="config file (default: delvewright.toml + .local)")
     p.add_argument("--delvec", default=None, help="delvec invocation (default: $DELVEC, then the pinned-version delvec on PATH)")
+    p.add_argument("--prefabs", type=Path, default=None, help="the prefab library the campaign builds from (default: $DELVEWRIGHT_PREFABS, which ~/.delvewright/env.sh exports)")
     p.add_argument("--batch-size", type=int, default=None, help="override [i18n] batch_size")
     p.add_argument("--dry-run", action="store_true", help="print prompts and keys; make no API call")
     p.add_argument(
@@ -1327,7 +1352,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         delvec = delvec_command(args.delvec)
-    except NoDelvec as exc:
+        delvec = [*delvec, "--prefabs", str(prefabs_root(args.prefabs))]
+    except (NoDelvec, NoPrefabs) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     try:
