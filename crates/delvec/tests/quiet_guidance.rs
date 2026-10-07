@@ -443,7 +443,7 @@ fn the_completing_button_carries_its_objectives_pending_guard() {
     );
 }
 
-/// spec-0093's button guard beside #943's one trigger-guard authority, in one
+/// spec-0093's button guard beside the one trigger-guard authority, in one
 /// build: the keeper's `Lead on.` completes under its objective's
 /// `pending_guard`, and a presser `use` trigger gated on the same flag answers
 /// through `trigger_poll_guards`. The two gates are different rules (an

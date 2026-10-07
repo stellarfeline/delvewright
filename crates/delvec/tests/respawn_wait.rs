@@ -554,3 +554,63 @@ fn a_campaign_with_no_wait_guards_every_positional_selector() {
         assert!(l.contains("tag=!dw_cutscene"), "{l}");
     }
 }
+
+/// spec-0085's `in` box meets the unconditional census (`DW0926`): a boxed
+/// message, sound or item is addressed to the bodies standing in the box, so
+/// its selector excludes a cutscene watcher, while a boxed status effect stays
+/// at the allowed `status effect` site. Without the exclusion every build that
+/// narrates into a box fails the engine's own self-check.
+#[test]
+fn a_boxed_audience_excludes_the_watcher_but_a_boxed_status_effect_is_allowed() {
+    use delvewright_dsl::{StealthZone, Verb};
+    let mut c = fixture();
+    let zone: StealthZone =
+        serde_json::from_value(serde_json::json!({ "anchor": "anchor/gate", "extent": [2, 1, 2] }))
+            .unwrap();
+    let beat = c.quests.content.quests[0]
+        .on_objective_complete
+        .values_mut()
+        .next()
+        .unwrap();
+    let mut boxed = 0;
+    for e in beat.iter_mut() {
+        if matches!(e.verb, Verb::Narrate { .. } | Verb::GiveItem { .. }) {
+            e.within = Some(zone.clone());
+            boxed += 1;
+        }
+    }
+    assert_eq!(boxed, 2, "the fixture's beat narrates and gives an item");
+    let mut blind: delvewright_dsl::QuestEffect = serde_json::from_value(serde_json::json!({
+        "type": "give-effect", "effect": "minecraft:slowness", "seconds": 3,
+        "in": { "anchor": "anchor/gate", "extent": [2, 1, 2] }
+    }))
+    .unwrap();
+    blind.within = Some(zone);
+    beat.push(blind);
+    let out = build(&c);
+    let census = observer::census(&out);
+    assert!(census.unguarded.is_empty(), "{:?}", census.unguarded);
+    let lines = text_lines(&out);
+    let subtitle = lines
+        .iter()
+        .find(|l| l.contains(" subtitle ") && l.contains("dx="))
+        .unwrap_or_else(|| panic!("the boxed narrate"));
+    assert!(subtitle.contains(",tag=!dw_cutscene]"), "{subtitle}");
+    let give = lines
+        .iter()
+        .find(|l| l.starts_with("give @a[") && l.contains("dx="))
+        .unwrap_or_else(|| panic!("the boxed give-item"));
+    assert!(give.contains(",tag=!dw_cutscene]"), "{give}");
+    let effect = lines
+        .iter()
+        .find(|l| l.contains("effect give @a[") && l.contains("minecraft:slowness"))
+        .unwrap_or_else(|| panic!("the boxed status effect"));
+    assert!(
+        !effect.contains("dw_cutscene"),
+        "the allowed site: {effect}"
+    );
+    assert!(
+        census.allowed.get("status effect").copied().unwrap_or(0) > 0,
+        "{census:?}"
+    );
+}

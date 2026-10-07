@@ -6981,6 +6981,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             // An unresolved box is `DW0142` at validation; emitting a selector with
             // a blank box would be an invalid command rather than a diagnosis.
             match effect_selector(plan, aud.selector(), Some(zone)) {
+                // A box is the bodies standing in it. A player watching a
+                // cutscene is a spectator whose camera may stand anywhere, so the
+                // box excludes the observation tag (`DW0926`) — save for a status
+                // effect, which `observer::ALLOWED` names as asking nothing of a
+                // watcher.
+                Some(sel)
+                    if !matches!(eff.verb, Verb::GiveEffect { .. } | Verb::ClearEffect { .. }) =>
+                {
+                    unwatched(sel)
+                }
                 Some(sel) => sel,
                 None => return,
             }
@@ -7411,6 +7421,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 body.push(format!("function {ns}:{}", teleport_fn(eff)));
             }
         }
+    }
+}
+
+/// `sel` (a player selector ending in its argument list's `]`) with the
+/// observation tag excluded: the one spelling for a box that means the bodies
+/// in it.
+fn unwatched(sel: String) -> String {
+    match sel.strip_suffix(']') {
+        Some(head) => format!("{head},tag=!{CUTSCENE_TAG}]"),
+        None => format!("{sel}[tag=!{CUTSCENE_TAG}]"),
     }
 }
 
