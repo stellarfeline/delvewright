@@ -345,3 +345,8 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   `DW0320`** — an infinite swimmable sea, or a walkable gap floor, with no return
   rule — so those two are written together or neither is written. `void` is the
   one base that cannot need it, because there is nothing out there to stand on.
+  The clock never moves a player watching a cutscene, or a creator flying with
+  the free camera. `"returns": false` keeps the region and drops the clock — for
+  a world nobody can leave, so a creator flying out to look at a far view is
+  never pulled back; the build refuses it while any body can walk out of the
+  region or into the open sea, and names where.

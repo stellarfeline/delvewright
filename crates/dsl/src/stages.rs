@@ -894,6 +894,20 @@ pub struct Boundary {
     /// translated like every other player-facing string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// **Whether the boundary returns a player who leaves it** (spec-0092 §10).
+    /// Default `true`: the per-second clock returns any player outside the region
+    /// to the last checkpoint. `false` keeps the region — every proof that reads
+    /// it reads the same box — and emits no clock: the creator's switch for a
+    /// world nobody can leave, where a return only fights a creator flying out
+    /// to look at a far view. Legal only where the build proves no body can walk
+    /// or swim out of the region (`DW0960`).
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub returns: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's `skip_serializing_if` hands a reference
+fn is_true(b: &bool) -> bool {
+    *b
 }
 
 /// A supplemental-lighting fixture the relight pass may place (DSL v0.5,

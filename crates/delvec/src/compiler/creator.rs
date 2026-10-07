@@ -267,8 +267,9 @@ const FREE_ID: &str = "dw.fid";
 const FREE_MODE: &str = "dw.fmode";
 /// `1` on a marker whose chunk this overlay force-loaded, so only that is undone.
 const FREE_LOADED: &str = "dw.fload";
-/// Tag on a player who is out of their body.
-const FREE_TAG: &str = "dw_free";
+/// Tag on a player who is out of their body. The boundary clock reads it: a
+/// creator flying out of the body is never returned (spec-0092 §10).
+pub const FREE_TAG: &str = "dw_free";
 /// Tag on the marker holding a player's place.
 const FREE_HOME: &str = "dw_free_home";
 /// Tag on the one marker a handler is working with.

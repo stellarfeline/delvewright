@@ -1,0 +1,13 @@
+{
+  "code": "DW0932",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/6/effects/0/steps/0/at_ticks",
+      "value": 0
+    }
+  ],
+  "units": [],
+  "why": "The ferry's cutscene moved to tick 0, before the carry at tick 22. A cutscene's end puts every player on the cell the presser stood on, so after it the carry takes everyone or no one — and the tiller stands on the open hall floor, where a body can pull it from cells outside the deck's volume. Pulled from there, the whole party is put down on the hall floor and nobody crosses. The build names the link, the cutscene and the cells the press reaches from outside the volume. It declares no unit: the link and the cutscene are bound by the primary, which plays the cutscene after the carry. The remedy is a volume over every cell the press reaches from, or a tiller reached only from inside it."
+}

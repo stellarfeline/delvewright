@@ -106,7 +106,8 @@
     ],
     "boundary": {
       "margin": 16,
-      "message": "The hall ends here."
+      "message": "The hall ends here.",
+      "returns": false
     },
     "difficulty": "normal",
     "horizon": "void",

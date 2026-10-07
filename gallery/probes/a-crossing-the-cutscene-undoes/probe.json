@@ -5,9 +5,9 @@
       "doc": "quests.json",
       "op": "replace",
       "path": "/content/triggers/6/effects/0/steps/1/at_ticks",
-      "value": 0
+      "value": 30
     }
   ],
   "units": [],
-  "why": "The ferry's teleport moved to tick 0 of its own sequence, the tick the crossing's cutscene starts. The cutscene's end puts every player back on the marker it saved when it started, so a carry made while the camera is out is undone the moment it returns — the party watches the shore recede and is standing on the deck again. It declares no unit: `at_ticks` is bound by the primary. The refusal names the tick the cutscene ends at and the first tick that holds, which is where the primary puts the teleport."
+  "why": "The ferry's teleport moved to tick 30 of its own sequence, inside the cutscene the crossing plays at the landing from tick 23. The cutscene's end puts every player back on the marker it saved when it started, so a carry made while the camera is out is undone the moment it returns. It declares no unit: `at_ticks` is bound by the primary. The refusal names the tick the cutscene ends at and the first tick that holds."
 }

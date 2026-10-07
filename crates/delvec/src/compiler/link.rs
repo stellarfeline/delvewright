@@ -104,6 +104,11 @@ pub struct LinkPlan {
     pub when_forbids: Vec<String>,
     /// Every `fill-region`/`clear-region` the same root performs, with its tick.
     pub writes: Vec<RootWrite>,
+    /// The pointer of a `cutscene` the same root plays and ends before the
+    /// teleport fires (spec-0092 §10): its `cs_end` puts every player on the cell
+    /// the presser stood on, so the carry takes everyone or no one. `None` when the
+    /// root plays none before the teleport.
+    pub gathered_by: Option<String>,
 }
 
 impl LinkPlan {
@@ -330,6 +335,12 @@ pub fn collect(campaign: &Campaign, anchors: &AnchorTable) -> (Vec<LinkPlan>, Ve
                     })
                 })
                 .collect();
+            // The cutscenes this timeline plays, each with the tick its `cs_end`
+            // runs at — the same sum `DW0933` reads.
+            let scenes: Vec<(&Timed<'_>, u32)> = line
+                .iter()
+                .filter_map(|t| cutscene_end_offset(t.eff).map(|off| (t, t.tick + off)))
+                .collect();
             for t in line {
                 let Some((from, to)) = t.eff.teleport() else {
                     continue;
@@ -403,6 +414,10 @@ pub fn collect(campaign: &Campaign, anchors: &AnchorTable) -> (Vec<LinkPlan>, Ve
                     when_requires,
                     when_forbids,
                     writes: writes.clone(),
+                    gathered_by: scenes
+                        .iter()
+                        .find(|(s, end)| s.tick <= t.tick && *end < t.tick)
+                        .map(|(s, _)| s.path.clone()),
                 });
             }
         }

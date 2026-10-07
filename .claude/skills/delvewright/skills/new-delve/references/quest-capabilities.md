@@ -313,6 +313,13 @@ this section is what they are *for* and the traps in each.
   twenty, and that is a hazard they can see coming — judge it in playtest. A
   display of many rockets is a `sequence` of `firework` effects, not one
   overloaded rocket.
+- **A carry after a cutscene takes everyone or no one.** When a beat plays a
+  `cutscene` and then a repeatable trigger's `teleport` carries the party, the
+  camera's return puts every player on the cell the presser stood on. So every
+  cell a body can pull the trigger from must lie inside the carry's volume —
+  the whole well of a boat, not its stern — and the trigger itself must stand
+  where nobody can stand: on a rail post, over water. The build refuses a
+  trigger that can be pulled from outside the volume and names the cells.
 - **A lightning bolt is one effect at a mark.** `lightning {at {anchor,
   offset?}}` strikes a real bolt where the story says — beside the thing the
   storm reveals, on the tree the party sheltered under. Every client draws the
