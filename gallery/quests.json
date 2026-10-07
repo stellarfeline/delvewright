@@ -3615,7 +3615,10 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "prop": {
+          "block": "minecraft:oak_sign[rotation=8]"
+        }
       },
       {
         "at": "anchor/hearth-stone",
@@ -3648,6 +3651,9 @@
         "id": "trigger/strike-the-hearth",
         "on": {
           "on": "strike"
+        },
+        "prop": {
+          "block": "minecraft:smooth_stone_slab[type=bottom]"
         },
         "requires_state": [
           {
@@ -3845,6 +3851,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
         "requires_flags": [
           "flag/boarded"
         ]
@@ -3917,6 +3926,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
         "requires_flags": [
           "flag/boarded"
         ]

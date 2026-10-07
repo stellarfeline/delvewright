@@ -2050,6 +2050,20 @@ pub fn build_with_warnings(
             });
         }
     }
+    // DW0963 (spec-0093 §7): an unmarked `interact` with no `prop` stands on a
+    // block the piece authored, or the party is asked to press empty space.
+    // Read over the settled bytes, which only an assembled world has.
+    if assembles_world(plan) {
+        let (pressables, verdict) =
+            crate::compiler::promise::check_pressables_visible(plan, &assembled.blocks);
+        eprintln!("{}", pressables.line());
+        if let Err(f) = verdict {
+            return Err(BuildFailure::Diagnostic {
+                code: f.code,
+                message: f.message,
+            });
+        }
+    }
 
     // ---- datapack ----
     put_json(
@@ -11490,27 +11504,38 @@ fn npc_summon_commands(
 fn first_strike_trigger_on_npc<'a>(
     plan: &'a Plan,
 ) -> Option<(&'a delvewright_dsl::EnvTrigger, String, String)> {
+    plan.campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .find_map(|t| npc_ridden_by(plan, t).map(|n| (t, n.npc_id.clone(), n.tag.clone())))
+}
+
+/// The planned NPC whose own interaction hitbox carries the left-click trigger
+/// `t` — the one rule, read by the emitter (which then summons no standalone
+/// hitbox) and by the visibility proof (`DW0963`: the NPC's body is the visible
+/// thing the strike sits on). `None` when `t` rides no NPC.
+pub(crate) fn npc_ridden_by<'a>(
+    plan: &'a Plan,
+    t: &delvewright_dsl::EnvTrigger,
+) -> Option<&'a crate::compiler::plan::NpcPlan> {
     let c = plan.campaign;
-    for t in &c.quests.content.triggers {
-        for n in &plan.npcs {
-            let decl = c
-                .npcs
-                .content
-                .npcs
-                .iter()
-                .find(|d| d.id.as_str() == n.npc_id);
-            // A body at an offset does not stand on its anchor's cell, so a
-            // `strike` at that anchor is not on its hitbox (spec-0066).
-            let anchor = decl
-                .filter(|d| d.offset == [0, 0, 0])
-                .map(|d| d.anchor.as_str())
-                .unwrap_or("");
-            if trigger_rides_npc(t, anchor, &n.npc_id) {
-                return Some((t, n.npc_id.clone(), n.tag.clone()));
-            }
-        }
-    }
-    None
+    plan.npcs.iter().find(|n| {
+        let decl = c
+            .npcs
+            .content
+            .npcs
+            .iter()
+            .find(|d| d.id.as_str() == n.npc_id);
+        // A body at an offset does not stand on its anchor's cell, so a
+        // `strike` at that anchor is not on its hitbox (spec-0066).
+        let anchor = decl
+            .filter(|d| d.offset == [0, 0, 0])
+            .map(|d| d.anchor.as_str())
+            .unwrap_or("");
+        trigger_rides_npc(t, anchor, &n.npc_id)
+    })
 }
 
 /// Whether `t` is a left-click trigger carried by the interaction hitbox of the
@@ -13419,13 +13444,24 @@ fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<Strin
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
+        // spec-0093 §6.5: the trigger's `prop` is placed at its cell — a lever
+        // or a button is then the whole body (vanilla reports its press, so
+        // nothing is summoned); any other block stands under the hitbox.
+        if let (Some(prop), Some(cell)) = (&t.prop, plan.point_any(at)) {
+            out.push(format!(
+                "setblock {} {} {} {}",
+                cell[0], cell[1], cell[2], prop.block
+            ));
+        }
         // Same rule, one layer out: a click trigger anchored on a gate
         // the campaign SEALS rides that seal's own hitboxes — `seal_arm_<safe>`
         // summons them wearing this trigger's tag. A second entity here would be
         // exactly co-located with them, and the ray-pick tie is what killed the
         // island's boulder hint (`DESIGN.md` round 13). One cell, one hitbox.
         let tag = format!("dw_trig_{}", plan::safe_local(t.id.as_str()));
-        match crate::compiler::pressable::body_at(plan, at) {
+        match crate::compiler::pressable::trigger_body(plan, t) {
+            // The block is the body; vanilla reports its press.
+            crate::compiler::pressable::Body::Block { .. } => {}
             // An existing set covers this anchor; `seal_fns` / `ws_arm_fns` put
             // this trigger's tag on those entities. One cell, one hitbox.
             crate::compiler::pressable::Body::Rides { .. } => {}
@@ -13514,7 +13550,7 @@ fn check_trigger_bodies(
             );
             continue;
         }
-        let body = crate::compiler::pressable::body_at(plan, at);
+        let body = crate::compiler::pressable::trigger_body(plan, t);
         if body != crate::compiler::pressable::Body::Nothing {
             ledger.push(
                 t.id.as_str(),
@@ -13605,6 +13641,45 @@ fn trigger_poll_guards(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String,
 /// gated) the party holds the flags; the clear removes the record. The
 /// carrier is the trigger's own tag, or — for a `strike-assembly` — the
 /// assembly's hitbox (spec-0082 §4.3).
+/// Whether a trigger's body is a block a hand presses (spec-0093 §6.5) — read
+/// from the one authority, [`crate::compiler::pressable::trigger_body`].
+fn trigger_is_block_bound(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> bool {
+    matches!(
+        crate::compiler::pressable::trigger_body(plan, t),
+        crate::compiler::pressable::Body::Block { .. }
+    )
+}
+
+/// The `minecraft:default_block_use` criterion for a press of `block` at `cell`
+/// (spec-0093 §6.5): vanilla's own report that a player used a block with its
+/// default interaction — a lever flipped, a button pressed — held to the block's
+/// id and its exact position, so a lever elsewhere fires nothing here. The
+/// `location` conditions are loot-table predicates, as the pinned format spells
+/// them.
+fn block_use_criterion(block: &str, cell: [i32; 3]) -> serde_json::Value {
+    let id = crate::compiler::pressable::block_id(block);
+    // The criterion hands its predicates the block's CENTRE (`x + 0.5`), so the
+    // range is the whole cell `[x, x + 1]`, which the centre is inside and the
+    // neighbouring cells' centres are not.
+    let cell_span = |v: i32| json!({ "min": v, "max": v + 1 });
+    json!({
+        "trigger": "minecraft:default_block_use",
+        "conditions": {
+            "location": [{
+                "condition": "minecraft:location_check",
+                "predicate": {
+                    "block": { "blocks": [id] },
+                    "position": {
+                        "x": cell_span(cell[0]),
+                        "y": cell_span(cell[1]),
+                        "z": cell_span(cell[2])
+                    }
+                }
+            }]
+        }
+    })
+}
+
 fn click_trigger_poll(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, String) {
     let ns = &plan.namespace;
     let id = plan::safe_local(t.id.as_str());
@@ -13664,6 +13739,11 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
             continue;
         }
         if t.addresses_presser() {
+            continue;
+        }
+        // spec-0093 §6.5: a block a hand presses is dispatched by its
+        // `default_block_use` advancement, not read off a record on the tick.
+        if trigger_is_block_bound(plan, t) {
             continue;
         }
         let id = plan::safe_local(t.id.as_str());
@@ -13821,7 +13901,7 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
         let id = plan::safe_local(t.id.as_str());
         if matches!(t.on, delvewright_dsl::TriggerOn::Step) {
             out.push(step_dispatch_fn(plan, t, &id));
-        } else if t.addresses_presser() {
+        } else if t.addresses_presser() || trigger_is_block_bound(plan, t) {
             out.push(press_dispatch_fn(plan, t, &id));
         }
         let mut body: Vec<String> = Vec::new();
@@ -15241,6 +15321,16 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
         }
         Objective::Interact { id, anchor, .. } => {
             if let Some(pos) = plan.point(area, anchor.as_str()) {
+                // spec-0093 §6.5: a prop a hand presses IS the thing. The block
+                // is placed and nothing else: no hitbox, no marker — vanilla's
+                // `default_block_use` at this cell completes the objective.
+                if let Some(block) = crate::compiler::pressable::interact_block(o) {
+                    cmds.push(format!(
+                        "setblock {} {} {} {}",
+                        pos[0], pos[1], pos[2], block
+                    ));
+                    return cmds;
+                }
                 let e = ent_xyz(pos);
                 cmds.push(format!(
                     "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{}\"]}}",
@@ -16216,25 +16306,35 @@ fn emit_advancements(
     // advancement needs to know nothing about seals, doors, or any future
     // pressable object class.
     for t in &plan.emitted_triggers(chrome) {
-        // A presser `step` is dispatched from the tick (`step_trigger_poll`).
-        if !t.addresses_presser() || !t.on.is_click() {
+        // spec-0093 §6.5: a trigger whose prop a hand presses is dispatched by
+        // vanilla's `default_block_use` at the block's cell, whoever it
+        // addresses — the block is the body and nothing is polled. A presser
+        // `step` is dispatched from the tick (`step_trigger_poll`), and is no
+        // click.
+        let block = match crate::compiler::pressable::trigger_body(plan, t) {
+            crate::compiler::pressable::Body::Block { cell, block } => Some((block, cell)),
+            _ => None,
+        };
+        if block.is_none() && (!t.addresses_presser() || !t.on.is_click()) {
             continue;
         }
         let id = plan::safe_local(t.id.as_str());
+        let criterion = match block {
+            Some((block, cell)) => block_use_criterion(&block, cell),
+            None => json!({
+                "trigger": "minecraft:player_interacted_with_entity",
+                "conditions": {
+                    "entity": {
+                        "type": "minecraft:interaction",
+                        "nbt": format!("{{Tags:[\"dw_trig_{id}\"]}}")
+                    }
+                }
+            }),
+        };
         advs.push((
             format!("press_{id}"),
             json!({
-                "criteria": {
-                    "interact": {
-                        "trigger": "minecraft:player_interacted_with_entity",
-                        "conditions": {
-                            "entity": {
-                                "type": "minecraft:interaction",
-                                "nbt": format!("{{Tags:[\"dw_trig_{id}\"]}}")
-                            }
-                        }
-                    }
-                },
+                "criteria": { "interact": criterion },
                 "rewards": { "function": format!("{ns}:press_{id}") }
             }),
         ));
@@ -16272,22 +16372,30 @@ fn emit_advancements(
     for q in &c.quests.content.quests {
         for o in &q.objectives {
             match o {
-                Objective::Interact { id, .. } => {
+                Objective::Interact { id, anchor, .. } => {
                     let tag = interact_entity_tag(id.as_str());
+                    // spec-0093 §6.5: a block a hand presses is reported by
+                    // vanilla's own `default_block_use` at the block's cell, as
+                    // the player who pressed; everything else rides the hitbox.
+                    let cell = plan
+                        .quest_area(q.id.as_str())
+                        .and_then(|a| plan.point(a, anchor.as_str()));
+                    let criterion = match crate::compiler::pressable::interact_block(o).zip(cell) {
+                        Some((block, cell)) => block_use_criterion(block, cell),
+                        None => json!({
+                            "trigger": "minecraft:player_interacted_with_entity",
+                            "conditions": {
+                                "entity": {
+                                    "type": "minecraft:interaction",
+                                    "nbt": format!("{{Tags:[\"{tag}\"]}}")
+                                }
+                            }
+                        }),
+                    };
                     advs.push((
                         format!("i_{}", plan::safe_local(id.as_str())),
                         json!({
-                            "criteria": {
-                                "interact": {
-                                    "trigger": "minecraft:player_interacted_with_entity",
-                                    "conditions": {
-                                        "entity": {
-                                            "type": "minecraft:interaction",
-                                            "nbt": format!("{{Tags:[\"{tag}\"]}}")
-                                        }
-                                    }
-                                }
-                            },
+                            "criteria": { "interact": criterion },
                             "rewards": { "function": format!("{ns}:i_reward_{}", plan::safe_local(id.as_str())) }
                         }),
                     ));
@@ -21160,6 +21268,9 @@ enum ActivationFixture {
     /// The objective's stack in a container slot: the collect path summons
     /// nothing and fills a block instead.
     ContainerSlot { pos: [i32; 3], item: String },
+    /// The objective's prop block alone (spec-0093 §6.5): a block vanilla
+    /// reports the use of summons nothing — the block is the whole affordance.
+    Block { pos: [i32; 3], block: String },
 }
 
 fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
@@ -21181,6 +21292,19 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
             tag,
             count: summons,
         });
+    }
+    // `setblock <x> <y> <z> <block>` and nothing else: a block-bound interact.
+    if let [one] = cmds
+        && let Some(rest) = one.strip_prefix("setblock ")
+    {
+        let f: Vec<&str> = rest.splitn(4, ' ').collect();
+        if let [x, y, z, block] = f.as_slice() {
+            let pos = [x.parse().ok()?, y.parse().ok()?, z.parse().ok()?];
+            return Some(ActivationFixture::Block {
+                pos,
+                block: crate::compiler::pressable::block_id(block).to_string(),
+            });
+        }
     }
     // `item replace block <x> <y> <z> container.<n> with <item>[…] <count>`
     let fill = cmds.iter().find(|c| c.starts_with("item replace block "))?;
@@ -21268,6 +21392,22 @@ fn emit_objective_activation_packtests(plan: &Plan, out: &mut BuildOutput) {
                     b.push(format!(
                         "execute store success score #fx1_{safe} dw.sys if items block {x} {y} {z} \
                          container.0 {item}"
+                    ));
+                    b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
+                }
+                ActivationFixture::Block { pos, block } => {
+                    let (x, y, z) = (pos[0], pos[1], pos[2]);
+                    // Clear the cell first, so the after-read is a fact about this
+                    // activation; the activation puts the block back, which is
+                    // also the cleanup.
+                    b.push(format!("setblock {x} {y} {z} minecraft:air"));
+                    b.push(format!(
+                        "execute store success score #fx0_{safe} dw.sys if block {x} {y} {z} {block}"
+                    ));
+                    b.push(format!("assert score #fx0_{safe} dw.sys matches 0"));
+                    b.push(format!("function {ns}:activate_o_{safe}"));
+                    b.push(format!(
+                        "execute store success score #fx1_{safe} dw.sys if block {x} {y} {z} {block}"
                     ));
                     b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
                 }
@@ -21542,7 +21682,10 @@ fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
     // asks which triggers exist and of what kind, and never reads what they say.
     for t in plan.emitted_triggers_unlocalized() {
         let id = plan::safe_local(t.id.as_str());
-        let presser = t.addresses_presser();
+        // A block-bound trigger (spec-0093 §6.5) is dispatched through its
+        // `press_<id>` advancement exactly as a presser is, so its dispatch half
+        // is driven the same way; the bundle half keeps its own audience.
+        let presser = t.addresses_presser() || trigger_is_block_bound(plan, &t);
         let step = matches!(t.on, delvewright_dsl::TriggerOn::Step);
         let (pin, sel) = pin_dummy(&format!("dw_t_trg_{id}"));
         let mut b = packtest_header(&format!(
@@ -21568,7 +21711,7 @@ fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.extend(packtest_gate_drive(plan, t.gate(), true));
         // 1. The BUNDLE's own body. This is the object's own code — its own
         //    effects, its own gate — and nothing else in the suite runs it.
-        b.push(if presser {
+        b.push(if t.addresses_presser() {
             format!("execute as {sel} run function {ns}:trig_{id}")
         } else {
             format!("function {ns}:trig_{id}")
@@ -24086,8 +24229,12 @@ fn emit_v04_packtests(
     'cleanup: for q in &c.quests.content.quests {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         for o in &q.objectives {
+            // A prop vanilla reports the use of summons no hitbox (spec-0093
+            // §6.5), so there is nothing of it to clean; the template is about
+            // the hitbox-carrying kind.
             if let Objective::Interact { id, anchor, .. } = o
                 && plan.point(area, anchor.as_str()).is_some()
+                && crate::compiler::pressable::interact_block(o).is_none()
             {
                 let tag = interact_entity_tag(id.as_str());
                 let (pin, sel) = pin_dummy("dw_t_iclr");
@@ -25439,10 +25586,20 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         b.extend(packtest_preamble(plan, qid, o, true, &sel));
-        b.push(format!(
-            "scoreboard players set {sel} {} 1",
-            plan::interact_trigger(id.as_str())
-        ));
+        // spec-0093 §6.5: a block a hand presses has no hitbox and no chat
+        // command; its press is the advancement, so the test GRANTS it — which
+        // runs the reward as the dummy — and the reward is what sets the score.
+        if crate::compiler::pressable::interact_block(o).is_some() {
+            b.push(format!(
+                "advancement grant {sel} only {ns}:i_{}",
+                plan::safe_local(id.as_str())
+            ));
+        } else {
+            b.push(format!(
+                "scoreboard players set {sel} {} 1",
+                plan::interact_trigger(id.as_str())
+            ));
+        }
         b.push(format!("function {ns}:tick"));
         b.push(format!(
             "assert score {} {} matches 1",
@@ -26829,15 +26986,16 @@ fn critical_path_json(
                     }
                     v
                 }
-                Step::Interact { objective_id, anchor_id, pos, command, requires_item } => json!({
+                Step::Interact { objective_id, anchor_id, pos, command, requires_item, block } => json!({
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
-                    "pos": pos, "command": command, "requires_item": requires_item
+                    "pos": pos, "command": command, "requires_item": requires_item,
+                    "block": block
                 }),
                 // A path act that proves no objective: it passes on the trigger's
                 // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
                 // broadcast from its bundle), never on the click landing. `anchor`
                 // / `npc` / `range` are present exactly when the kind has one.
-                Step::Trigger { trigger_id, on, anchor_id, npc_id, assembly_id, pos, range, stand } => {
+                Step::Trigger { trigger_id, on, anchor_id, npc_id, assembly_id, pos, range, stand, block } => {
                     let mut v = json!({
                         "action": "trigger", "trigger": trigger_id, "on": on, "pos": pos
                     });
@@ -26859,6 +27017,9 @@ fn critical_path_json(
                         }
                         if let Some(r) = range {
                             obj.insert("range".to_string(), json!(r));
+                        }
+                        if let Some(b) = block {
+                            obj.insert("block".to_string(), json!(b));
                         }
                     }
                     v

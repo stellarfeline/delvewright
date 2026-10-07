@@ -256,6 +256,44 @@ fn a_marker_beside_a_prop_is_dw0962() {
     assert!(!codes(&campaign(bare, DONE)).iter().any(|c| c == "DW0962"));
 }
 
+/// A `prop` is the visible object a click acts on; on an `approach` nothing reads
+/// the block it would place. The same prop on a `use` or a `strike` is the
+/// ordinary carrier.
+#[test]
+fn a_prop_on_a_trigger_with_no_cell_of_its_own_is_dw0964() {
+    let triggers = |on: &str| {
+        format!(
+            r#""triggers": [ {{ "id": "trigger/the-bell", "at": "anchor/exit", "on": {on},
+                 "prop": {{ "block": "minecraft:bell[attachment=floor,facing=north]" }},
+                 "effects": [ {{ "type": "set-flag", "flag": "flag/rung" }} ] }} ],"#
+        )
+    };
+    let approach = campaign_under(
+        &triggers(r#"{ "on": "approach", "range": 3 }"#),
+        CLEAN_REACH,
+        DONE,
+    );
+    let d = promise::check(&approach)
+        .0
+        .into_iter()
+        .find(|d| d.code == promise::DW_TRIGGER_PROP_INERT)
+        .expect("a prop on an approach is DW0964");
+    assert!(
+        d.message.contains("trigger/the-bell") && d.message.contains("approach"),
+        "{}",
+        d.message
+    );
+    assert!(d.path.ends_with("/prop"), "{}", d.path);
+    for on in [r#"{ "on": "use" }"#, r#"{ "on": "strike" }"#] {
+        let clicked = campaign_under(&triggers(on), CLEAN_REACH, DONE);
+        assert!(
+            !codes(&clicked).iter().any(|c| c == "DW0964"),
+            "{on}: {:?}",
+            codes(&clicked)
+        );
+    }
+}
+
 // --- DW0861: an adopted container nothing distinguishes --------------------
 
 /// Adoption is what creates the ambiguity, so the rule keys off `container`.

@@ -13,6 +13,7 @@
 //! | [`DW_PROMPT_UNSHOWN`] | an on-screen prompt told the party to return to one place while the objective it described completed somewhere else |
 //! | [`DW_FIGHT_UNSIGNED`] | a defence wave gave the party no guidance to where the attackers were, so the fight could not be found |
 //! | [`DW_ANNOUNCEMENT_EMPTY`] / [`DW_MARKER_INERT`] | a declaration that asks for guidance nothing can give — the vacuous shape, refused rather than ignored (spec-0093 §7) |
+//! | [`DW_PRESSABLE_UNSEEN`] | a quiet delve's slate was an invisible hitbox on an empty cell, and the party could not find the thing to press (spec-0093 §7) |
 //!
 //! # Why these live together and not next to the verbs they judge
 //!
@@ -216,8 +217,40 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, PromiseBinding) {
     let mut d = Vec::new();
     let mut b = PromiseBinding::default();
     check_objective_prompts(c, &mut d, &mut b);
+    check_trigger_props(c, &mut d);
     check_failure_clocks(c, &mut d, &mut b);
     (d, b)
+}
+
+/// `DW0964` — a `prop` on a trigger that is not a `use`.
+fn check_trigger_props(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        let Some(prop) = &t.prop else {
+            continue;
+        };
+        if matches!(
+            t.on,
+            delvewright_dsl::TriggerOn::Use | delvewright_dsl::TriggerOn::Strike
+        ) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            DW_TRIGGER_PROP_INERT,
+            "quests",
+            format!("/content/triggers/{ti}/prop"),
+            format!(
+                "trigger `{}` is a `{}` and declares `prop` `{}`. A prop is the visible object a \
+                 click acts on — the block a `use` or a `strike` sits on at its own cell — and \
+                 this event has no cell of its own to place a block in: an approach is a body's \
+                 position, a `strike-npc` is a character and a `strike-assembly` is an assembly. \
+                 The block would be placed and nothing would read it. Remove `prop`, or make the \
+                 trigger a `use` or a `strike`.",
+                t.id.as_str(),
+                t.on.kind(),
+                prop.block
+            ),
+        ));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +381,255 @@ fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut Promis
             }
         }
     }
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW0963`: **a thing to act on that nothing shows** (spec-0093 §7). An
+    /// `interact` that is not marked — its resolved `marker` is `hidden` — with no
+    /// `prop`, or a `use`/`strike` trigger with no `prop` whose anchor is a point
+    /// in open air, whose hitbox cells hold air in the assembled world: the
+    /// player is asked to act on a point in empty space.
+    ///
+    /// The hitbox a player presses is a `minecraft:interaction`, which is
+    /// invisible, and is never the object. A quiet act sits on a **visible,
+    /// authored object at its cell** — a block the `prop` places or the piece
+    /// authored, a lever or a bell or a lamp or a winch, anything that reads as
+    /// the thing. Where vanilla reports the object's use — a lever flipped, a
+    /// button pressed, a bell rung — that report is the detection and no hitbox
+    /// exists; where it does not, the hitbox is fitted over the visible object
+    /// as its hit area. A trigger that rides a seal's or a shortcut's own
+    /// bodies, or arms a gate region's shell, sits on that structure. Build
+    /// tier, over the settled bytes, beside `DW0863`.
+    pub const DW_PRESSABLE_UNSEEN: DwCode = DwCode::new("DW0963", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW0964`: a `prop` on a trigger whose event is not a `use` (spec-0093 §7).
+    /// A prop is the object a right-click acts on; a strike is a left-click
+    /// vanilla reports no block for, and an approach, a `strike-npc` and a
+    /// `strike-assembly` have no cell of their own to place a block in. The
+    /// field would place a block nothing reads, which is refused rather than
+    /// ignored.
+    pub const DW_TRIGGER_PROP_INERT: DwCode = DwCode::new("DW0964", ExitTier::Build);
+}
+
+/// What [`check_pressables_visible`] examined, stated whichever way it went.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PressableBinding {
+    /// `interact` objectives examined, over every quest.
+    pub interacts: usize,
+    /// Click triggers (`use` / `strike`) examined.
+    pub triggers: usize,
+    /// Of both, bound to a vanilla block a hand presses — no hitbox at all.
+    pub block_bound: usize,
+    /// Of the interacts, marked — the lantern shows them.
+    pub marked: usize,
+    /// Of both, carrying a `prop` vanilla does not report the use of — the block
+    /// is placed and the hitbox stands in it.
+    pub with_prop: usize,
+    /// Of the triggers, standing on a seal's, a shortcut's or a gate region's
+    /// own structure.
+    pub on_a_structure: usize,
+    /// Strikes carried by an NPC's own hitbox, the NPC being the visible thing.
+    pub on_an_npc: usize,
+    /// Of the rest, standing in a cell the assembled world fills with a block.
+    pub on_a_block: usize,
+    /// Of the rest, whose anchor resolves to no cell (another rule's refusal).
+    pub unplaced: usize,
+}
+
+impl PressableBinding {
+    /// The one line a build prints about this rule.
+    pub fn line(&self) -> String {
+        format!(
+            "DW0963 binding: {} `interact` objective(s) and {} click trigger(s); {} bound to a \
+             block a hand presses, {} marked, {} with a prop vanilla does not report, {} on a \
+             seal, shortcut or gate shell, {} on an NPC's own hitbox, {} on an authored block, \
+             {} unplaced",
+            self.interacts,
+            self.triggers,
+            self.block_bound,
+            self.marked,
+            self.with_prop,
+            self.on_a_structure,
+            self.on_an_npc,
+            self.on_a_block,
+            self.unplaced
+        )
+    }
+}
+
+/// **A pressable thing stands on something the player can see** (`DW0963`):
+/// every `interact` that is not marked and every `use`/`strike` trigger is a
+/// vanilla block a hand presses, or stands on a structure the compiler arms, or
+/// stands in a cell the piece filled. Reads the settled block map for the last
+/// arm: the feet cell and the head cell the hitbox occupies at the anchor,
+/// either holding a non-air block, is the thing the player presses; both air
+/// is a point in space.
+pub fn check_pressables_visible(
+    plan: &crate::compiler::plan::Plan,
+    blocks: &crate::compiler::blockstate::BlockMap,
+) -> (
+    PressableBinding,
+    Result<(), crate::compiler::failure::Failure>,
+) {
+    use crate::compiler::pressable::Body;
+    let c = plan.campaign;
+    let guidance = &c.quests.content.guidance;
+    let mut b = PressableBinding::default();
+    let mut verdict: Result<(), crate::compiler::failure::Failure> = Ok(());
+    let cells_hold_a_block = |pos: [i32; 3]| {
+        [pos, [pos[0], pos[1] + 1, pos[2]]]
+            .iter()
+            .filter_map(|cell| blocks.get(cell).map(|s| s.as_str()))
+            .any(|name| !delvewright_dsl::blockshape::is_air(name))
+    };
+    let refuse = |verdict: &mut Result<(), crate::compiler::failure::Failure>,
+                  what: String,
+                  how: &str,
+                  anchor: &str,
+                  pos: [i32; 3],
+                  remedy: &str| {
+        if verdict.is_ok() {
+            *verdict = Err(crate::compiler::failure::Failure {
+                code: DW_PRESSABLE_UNSEEN,
+                message: format!(
+                    "{what} asks the party to press a point in empty space: {how}, and the \
+                     cells its hitbox occupies at `{anchor}` ({pos:?} and the cell above) hold \
+                     air in the assembled world. The hitbox is a `minecraft:interaction`, which \
+                     nobody can see. {remedy} Do NOT move the anchor into a wall to satisfy \
+                     this: the cell a body stands in to press is the cell this reads."
+                ),
+            });
+        }
+    };
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            let Objective::Interact {
+                id, anchor, prop, ..
+            } = o
+            else {
+                continue;
+            };
+            b.interacts += 1;
+            if crate::compiler::pressable::interact_block(o).is_some() {
+                b.block_bound += 1;
+                continue;
+            }
+            if prop.is_some() {
+                b.with_prop += 1;
+                continue;
+            }
+            if o.marker_shown(guidance) {
+                b.marked += 1;
+                continue;
+            }
+            let area = plan.quest_area(q.id.as_str());
+            let Some(pos) = area
+                .and_then(|a| plan.point(a, anchor.as_str()))
+                .or_else(|| plan.point_any(anchor.as_str()))
+            else {
+                b.unplaced += 1;
+                continue;
+            };
+            if cells_hold_a_block(pos) {
+                b.on_a_block += 1;
+                continue;
+            }
+            let how = if o.marker().is_some() {
+                "its marker is hidden by its own `marker: hidden` and it declares no `prop`"
+            } else {
+                "its marker is hidden by the campaign's `guidance.markers: hidden` and it \
+                 declares no `prop`"
+            };
+            refuse(
+                &mut verdict,
+                format!(
+                    "`interact` objective `{}` (quest {qi}, objective {oi})",
+                    id.as_str()
+                ),
+                how,
+                anchor.as_str(),
+                pos,
+                &format!(
+                    "Give `{}` a `prop` — any block that reads as the thing (a lever, a bell, a \
+                     lamp, a winch); a lever, a button or a bell is also its own detector, since \
+                     vanilla reports its use — or author a block at `{}` in the piece, or show \
+                     its marker. If the object does not explain itself, the objective's `hint` \
+                     names it.",
+                    id.as_str(),
+                    anchor.as_str()
+                ),
+            );
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        use delvewright_dsl::TriggerOn;
+        if !matches!(t.on, TriggerOn::Use | TriggerOn::Strike) {
+            continue;
+        }
+        b.triggers += 1;
+        match crate::compiler::pressable::trigger_body(plan, t) {
+            Body::Block { .. } => {
+                b.block_bound += 1;
+                continue;
+            }
+            Body::Rides { .. } | Body::Region(_) => {
+                b.on_a_structure += 1;
+                continue;
+            }
+            Body::Nothing => {
+                b.unplaced += 1; // `DW0426`'s refusal
+                continue;
+            }
+            Body::Point(pos) => {
+                if t.prop.is_some() {
+                    b.with_prop += 1;
+                    continue;
+                }
+                // A strike at an NPC's own stand rides the NPC's hitbox: the
+                // body is the visible thing (the emitter's one rule).
+                if crate::compiler::emit::npc_ridden_by(plan, t).is_some() {
+                    b.on_an_npc += 1;
+                    continue;
+                }
+                if cells_hold_a_block(pos) {
+                    b.on_a_block += 1;
+                    continue;
+                }
+                let Some(at) = t.at_anchor() else {
+                    continue;
+                };
+                let remedy = match t.on {
+                    TriggerOn::Use => format!(
+                        "Give `{}` a `prop` — any block that reads as the thing; a lever, a \
+                         button or a bell is also its own detector, since vanilla reports its \
+                         use — or author a block at `{at}` in the piece.",
+                        t.id.as_str()
+                    ),
+                    _ => format!(
+                        "A strike has no vanilla block signal, so the hit area stays fitted over \
+                         the object: author the thing to strike at `{at}` in the piece, or make \
+                         `{}` a `use` with a `prop`.",
+                        t.id.as_str()
+                    ),
+                };
+                refuse(
+                    &mut verdict,
+                    format!(
+                        "`{}` trigger `{}` (trigger {ti})",
+                        t.on.kind(),
+                        t.id.as_str()
+                    ),
+                    "it declares no `prop` and its anchor is a point in open air",
+                    at,
+                    pos,
+                    &remedy,
+                );
+            }
+        }
+    }
+    (b, verdict)
 }
 
 // ---------------------------------------------------------------------------

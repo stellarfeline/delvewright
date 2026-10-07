@@ -1,0 +1,18 @@
+{
+  "code": "DW0963",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/0/objectives/1/prop"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/objectives/1/marker",
+      "value": "hidden"
+    }
+  ],
+  "units": [],
+  "why": "The case's interact with its stone button taken away and its marker hidden: the thing the party acts on is then a `minecraft:interaction`, which nobody can see, at the pedestal's cell, which the hall leaves as air above the plinth. The lantern was what showed the thing was there and the button was what it became; with neither, the objective asks the party to act on a point in empty space - which is how a quiet delve's first gate was lost on a real walk. A quiet act sits on a visible, authored object: a block the prop places (a lever or a bell, whose use vanilla reports, or a lamp with the hit area fitted over it) or one the piece authored. It declares no unit: `marker: hidden` is bound on the reach at the end of the hall and the gallery's props are bound where they stand; what must not compile is an unmarked act on air."
+}

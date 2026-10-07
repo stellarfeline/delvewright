@@ -441,18 +441,20 @@ fn completed_objectives_despawn_their_summoned_markers() {
         "talk-to completion emits no marker cleanup: {talk}"
     );
 
-    // Regression PackTest: after activate + complete, the interaction count is 0.
-    let pt = std::str::from_utf8(
-        &out["packtest-datapack/data/v04-showcase/test/v04_interact_cleanup.mcfunction"],
-    )
-    .unwrap();
+    // The door's lever is a block vanilla reports the use of (spec-0093 §6.5):
+    // no hitbox is ever summoned for it, so there is none to clean and the
+    // interact-cleanup PackTest — which asserts a hitbox exists, then is gone —
+    // is not written for this campaign.
     assert!(
-        pt.contains("assert score #before_iclr dw.sys matches 1..")
-            && pt.contains(
-                "execute as @a[tag=dw_t_iclr,limit=1] run function v04-showcase:complete_o_door"
-            )
-            && pt.contains("assert score #after_iclr dw.sys matches 0"),
-        "interact-cleanup PackTest asserts hitbox exists then is gone: {pt}"
+        !out.contains_key(
+            "packtest-datapack/data/v04-showcase/test/v04_interact_cleanup.mcfunction"
+        ),
+        "a block-bound interact owes no hitbox-cleanup PackTest"
+    );
+    let activate = fn_body(&out, "activate_o_door");
+    assert!(
+        activate.contains("setblock") && !activate.contains("summon minecraft:interaction"),
+        "the lever is placed and no hitbox stands in it: {activate}"
     );
 }
 

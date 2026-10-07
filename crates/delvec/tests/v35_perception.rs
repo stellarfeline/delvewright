@@ -140,6 +140,7 @@ fn with_trigger(on: Value, audience: Option<&str>, effects: Vec<Value>) -> Campa
             "id": "trigger/by-the-door",
             "at": "anchor/exit",
             "on": on,
+            "prop": { "block": "minecraft:oak_sign[rotation=0]" },
             "effects": effects,
         });
         if let Some(a) = audience {

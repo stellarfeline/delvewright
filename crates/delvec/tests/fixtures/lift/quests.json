@@ -195,6 +195,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:oak_sign[rotation=0]"
+        },
         "requires_state": [
           {
             "op": "not-equals",
