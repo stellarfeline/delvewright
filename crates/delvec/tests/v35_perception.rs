@@ -492,6 +492,10 @@ fn samples() -> Vec<(&'static str, Value)> {
             json!({"type":"play-clip","assembly":"assembly/limb","clip":"idle"}),
         ),
         (
+            "arm-strikes",
+            json!({"type":"arm-strikes","assembly":"assembly/limb"}),
+        ),
+        (
             "particle",
             json!({"type":"particle","particle":"minecraft:soul","at":"players"}),
         ),
