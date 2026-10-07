@@ -310,7 +310,8 @@ fn multi_shot_chains_two_dollies_in_one_bracket() {
 }
 
 /// The harness hint is the WHOLE cinematic's duration, so a bot waits out every
-/// shot (2 s + 1 s = 3 s), not just the first.
+/// shot, not just the first: shots of 2 s and 1 s end at tick 41 + 21 = 62,
+/// when `cs_end` runs, which is 4 whole seconds (`compiler::hold`).
 #[test]
 fn critical_path_cutscene_seconds_is_the_total() {
     let (_, out) = build(
@@ -323,7 +324,7 @@ fn critical_path_cutscene_seconds_is_the_total() {
     );
     let cp = String::from_utf8(out["critical-path.json"].clone()).unwrap();
     assert!(
-        cp.contains("\"cutscene_seconds\": 3"),
+        cp.contains("\"cutscene_seconds\": 4"),
         "total cutscene duration must reach the harness:\n{cp}"
     );
 }

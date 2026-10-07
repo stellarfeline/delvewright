@@ -2073,7 +2073,12 @@ pub fn build_with_warnings(
     emit_server(plan, &mut out);
 
     // ---- critical path ----
-    let mut cp = emit_critical_path(plan, &moves, &actor_moves);
+    let exported_routes: &[crate::compiler::nav::LegRoute] = path_legs
+        .iter()
+        .find(|(slug, _, _)| slug == "critical-path")
+        .map(|(_, _, r)| r.as_slice())
+        .unwrap_or(&[]);
+    let mut cp = emit_critical_path(plan, &moves, &actor_moves, exported_routes);
     if let Some(mut b) = assembly_binding {
         if let Some(steps) = cp.get_mut("steps").and_then(Value::as_array_mut) {
             b.witnessed = crate::compiler::assembly::with_witness_steps(
@@ -2354,7 +2359,7 @@ pub fn build_with_warnings(
     // A branch's scripted dialogue choices ride inside its own `talk-to` steps
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
-    for (slug, path) in branch_paths(plan, &moves, &actor_moves, &branch_takes)? {
+    for (slug, path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
         put_json(
             &mut out,
             &format!("validation/branch-path-{slug}.json"),
@@ -25535,13 +25540,21 @@ fn with_bonfire_rest_steps(plan: &Plan, walked: &[plan::Step], steps: Vec<Value>
             .bonfires()
             .filter(|b| rest_step_index(plan, walked, b.fire_step) == Some(i))
         {
-            out.push(json!({
+            let mut rest = json!({
                 "action": "rest",
                 "bonfire": bf.index,
                 "anchor": bf.anchor,
                 "pos": bf.pos,
                 "command": "/trigger dw.rest set 2"
-            }));
+            });
+            // A rest plays the bonfire's `on_rest`: every cutscene on its
+            // timeline is waited out after the rest (`compiler::hold`).
+            if let Some(secs) = crate::compiler::hold::rest_hold(&bf.on_respawn)
+                && secs > 0
+            {
+                rest["cutscene_seconds"] = json!(secs);
+            }
+            out.push(rest);
         }
     }
     out
@@ -25668,6 +25681,7 @@ fn branch_paths(
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
     takes: &BTreeMap<String, plan::LinkTakes>,
+    legs: &[(String, Vec<plan::Step>, Vec<crate::compiler::nav::LegRoute>)],
 ) -> Result<Vec<(String, Value)>, BuildFailure> {
     let branches = crate::compiler::branch::realize(plan.campaign);
     if branches.is_empty() {
@@ -25688,6 +25702,12 @@ fn branch_paths(
                 code: e.failure.code,
                 message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
             })?;
+        let routes = legs
+            .iter()
+            .find(|(slug, _, _)| *slug == r.branch.slug)
+            .map(|(_, _, routes)| routes.as_slice())
+            .unwrap_or(&[]);
+        let en_route = crate::compiler::hold::en_route_holds(plan, &cp.steps, routes);
         out.push((
             r.branch.slug.clone(),
             critical_path_json(
@@ -25695,7 +25715,10 @@ fn branch_paths(
                 &cp.steps,
                 &cp.transport_by_step,
                 &cp.sneak_by_step,
-                &cp.cutscene_by_step,
+                CutsceneHolds {
+                    after: &cp.cutscene_by_step,
+                    en_route: &en_route,
+                },
                 moves,
                 actor_moves,
             ),
@@ -25708,13 +25731,18 @@ fn emit_critical_path(
     plan: &Plan,
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
+    routes: &[crate::compiler::nav::LegRoute],
 ) -> Value {
+    let en_route = crate::compiler::hold::en_route_holds(plan, &plan.critical_path, routes);
     critical_path_json(
         plan,
         &plan.critical_path,
         &plan.critical_path_transport,
         &plan.critical_path_sneak,
-        &plan.critical_path_cutscene,
+        CutsceneHolds {
+            after: &plan.critical_path_cutscene,
+            en_route: &en_route,
+        },
         moves,
         actor_moves,
     )
@@ -25725,12 +25753,21 @@ fn emit_critical_path(
 /// One serializer for the exported path and for every spec-0025 per-branch path:
 /// a branch run must consume a contract the harness already parses, so the branch
 /// tier cannot drift into a second, less-tested shape.
+/// The two per-step cutscene numbers a path exports (`compiler::hold`):
+/// `cutscene_seconds` and `en_route_cutscene_seconds`, each aligned 1:1 with
+/// the path's steps.
+#[derive(Clone, Copy)]
+struct CutsceneHolds<'a> {
+    after: &'a [Option<u32>],
+    en_route: &'a [Option<u32>],
+}
+
 fn critical_path_json(
     plan: &Plan,
     walked: &[plan::Step],
     transports: &[Option<[i32; 3]>],
     sneak: &[bool],
-    cutscene: &[Option<u32>],
+    holds: CutsceneHolds<'_>,
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
 ) -> Value {
@@ -25866,11 +25903,20 @@ fn critical_path_json(
             {
                 obj.insert("sneak".to_string(), json!(true));
             }
-            if let Some(secs) = cutscene[i]
+            if let Some(secs) = holds.after[i]
                 && secs > 0
                 && let Some(obj) = step.as_object_mut()
             {
                 obj.insert("cutscene_seconds".to_string(), json!(secs));
+            }
+            // The longest a cutscene fired by something this step's walk passes
+            // can hold the party (`compiler::hold::en_route_holds`); present only
+            // when one can.
+            if let Some(secs) = holds.en_route.get(i).copied().flatten()
+                && secs > 0
+                && let Some(obj) = step.as_object_mut()
+            {
+                obj.insert("en_route_cutscene_seconds".to_string(), json!(secs));
             }
             step
         })

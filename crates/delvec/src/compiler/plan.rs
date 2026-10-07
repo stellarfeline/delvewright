@@ -45,7 +45,6 @@ use delvewright_dsl::{
     Objective, Quest, QuestEffect, Trap, TrapReset, TrapTrigger, Trigger,
 };
 
-use crate::compiler::flow::objectives_in_order;
 use crate::compiler::reach::{ReachCompletion, reach_completion};
 /// The anchor-role vocabulary, re-exported where the resolution lives: a
 /// consumer asking this module for an entry point should not have to know that
@@ -1163,9 +1162,10 @@ pub struct Plan<'a> {
     /// Per-step stealth hint (DSL v0.4), aligned 1:1 with `critical_path`: `true`
     /// when the step's objective is `stealth`-marked → emitted as `sneak: true`.
     pub critical_path_sneak: Vec<bool>,
-    /// Per-step cutscene duration (DSL v0.4), aligned 1:1 with `critical_path`:
-    /// `Some(seconds)` when completing that step's objective triggers a
-    /// `Verb::Cutscene` → emitted as `cutscene_seconds`.
+    /// Per-step cutscene hold, aligned 1:1 with `critical_path`: seconds from
+    /// the step's completion to the end of the last cutscene the bundles it
+    /// fires schedule, at any depth ([`crate::compiler::hold::after_holds`]) →
+    /// emitted as `cutscene_seconds`.
     pub critical_path_cutscene: Vec<Option<u32>>,
     /// **The approved reference images the campaign directory holds**
     /// (spec-0061), so emission can write `validation/design-record.json` — the
@@ -5466,26 +5466,12 @@ fn build_critical_path(
         from = Some((area.as_str(), Some((id.as_str(), *idx))));
     }
 
-    // DSL v0.4 per-step harness hints: `sneak` (a stealth objective) and
-    // `cutscene_seconds` (a step whose completion fires a `Cutscene` effect).
+    // DSL v0.4 per-step harness hint `sneak` (a stealth objective). The
+    // cutscene hold is read off the finished step list ([`hold::after_holds`]).
     let mut sneak_by_step = vec![false; steps.len()];
-    let mut cutscene_by_step: Vec<Option<u32>> = vec![None; steps.len()];
     for (obj_id, _, step_idx) in &obj_areas {
-        if let Some((qid, obj)) = objective_quest(campaign, obj_id) {
+        if let Some((_, obj)) = objective_quest(campaign, obj_id) {
             sneak_by_step[*step_idx] = obj.stealth();
-            let mut secs = cutscene_seconds_in(objective_effects(campaign, obj_id).into_iter());
-            if secs.is_none()
-                && is_last_objective_of_quest(campaign, qid, obj_id)
-                && let Some(q) = campaign
-                    .quests
-                    .content
-                    .quests
-                    .iter()
-                    .find(|q| q.id.as_str() == qid)
-            {
-                secs = cutscene_seconds_in(q.on_complete.iter());
-            }
-            cutscene_by_step[*step_idx] = secs;
         }
     }
 
@@ -5562,7 +5548,6 @@ fn build_critical_path(
         let mut new_steps = Vec::with_capacity(n);
         let mut new_transport = Vec::with_capacity(n);
         let mut new_sneak = Vec::with_capacity(n);
-        let mut new_cutscene = Vec::with_capacity(n);
         let mut new_live = Vec::with_capacity(n);
         let mut moved: Vec<usize> = Vec::with_capacity(n);
         let mut spliced_at: Vec<(String, usize)> = Vec::new();
@@ -5582,14 +5567,12 @@ fn build_critical_path(
                 });
                 new_transport.push(Some(l.to));
                 new_sneak.push(false);
-                new_cutscene.push(None);
                 new_live.push(live_links_by_step[k].clone());
             }
             moved.push(new_steps.len());
             new_steps.push(step);
             new_transport.push(transport_by_step[k]);
             new_sneak.push(sneak_by_step[k]);
-            new_cutscene.push(cutscene_by_step[k]);
             new_live.push(std::mem::take(&mut live_links_by_step[k]));
         }
         for idx in obj_step.values_mut() {
@@ -5612,10 +5595,12 @@ fn build_critical_path(
         steps = new_steps;
         transport_by_step = new_transport;
         sneak_by_step = new_sneak;
-        cutscene_by_step = new_cutscene;
         live_links_by_step = new_live;
     }
 
+    // Every cutscene a step's completion schedules, at any depth of its
+    // bundles, read off the step list as it is exported (links spliced).
+    let cutscene_by_step = crate::compiler::hold::after_holds(campaign, &steps);
     Ok(CriticalPath {
         steps,
         live_links_by_step,
@@ -7978,31 +7963,6 @@ impl V06Collector<'_> {
             }
         }
     }
-}
-
-/// The total duration of the first `Cutscene` effect in `effects`, if any — the
-/// sum over its shots, which is how long the harness must wait out the whole
-/// cinematic (a multi-shot cutscene plays back-to-back in one bracket).
-fn cutscene_seconds_in<'a>(effects: impl Iterator<Item = &'a QuestEffect>) -> Option<u32> {
-    for e in effects {
-        if let Some(shots) = e.cutscene_shots() {
-            return Some(shots.iter().map(|s| s.resolved_seconds()).sum());
-        }
-    }
-    None
-}
-
-/// Whether `obj_id` is the last objective (in `after`-DAG order) of `quest_id`,
-/// i.e. its completion is what fires the quest's `on_complete` effects.
-fn is_last_objective_of_quest(campaign: &Campaign, quest_id: &str, obj_id: &str) -> bool {
-    campaign
-        .quests
-        .content
-        .quests
-        .iter()
-        .find(|q| q.id.as_str() == quest_id)
-        .and_then(|q| objectives_in_order(&q.objectives).last().copied())
-        .is_some_and(|last| last.id().as_str() == obj_id)
 }
 
 fn point_of(

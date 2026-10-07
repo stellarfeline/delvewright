@@ -1223,6 +1223,36 @@
                   ]
                 },
                 {
+                  "at_ticks": 10,
+                  "effects": [
+                    {
+                      "look_at": {
+                        "anchor": "anchor/stall"
+                      },
+                      "path": [
+                        {
+                          "anchor": "anchor/stall",
+                          "offset": [
+                            0,
+                            14,
+                            -24
+                          ]
+                        },
+                        {
+                          "anchor": "anchor/stall",
+                          "offset": [
+                            0,
+                            16,
+                            -24
+                          ]
+                        }
+                      ],
+                      "seconds": 6,
+                      "type": "cutscene"
+                    }
+                  ]
+                },
+                {
                   "at_ticks": 20,
                   "effects": [
                     {
@@ -3586,6 +3616,41 @@
         "requires_flags": [
           "flag/boarded"
         ]
+      },
+      {
+        "at": "anchor/muster",
+        "effects": [
+          {
+            "look_at": {
+              "anchor": "anchor/muster"
+            },
+            "path": [
+              {
+                "anchor": "anchor/muster",
+                "offset": [
+                  -24,
+                  14,
+                  0
+                ]
+              },
+              {
+                "anchor": "anchor/muster",
+                "offset": [
+                  -24,
+                  16,
+                  0
+                ]
+              }
+            ],
+            "seconds": 10,
+            "type": "cutscene"
+          }
+        ],
+        "id": "trigger/glimpse-the-marshal",
+        "on": {
+          "on": "approach",
+          "range": 6
+        }
       }
     ],
     "waves": [

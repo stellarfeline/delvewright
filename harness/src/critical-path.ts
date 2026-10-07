@@ -100,12 +100,19 @@ export type Transport = Vec3Tuple | undefined;
  * Both are additive and default off, so a v0.2/v0.3 path is byte-identical:
  *   - `sneak` — walk this leg crouched, sprint disabled (stealth envelope).
  *   - `cutsceneSeconds` — after this step completes, the bot may be forced into
- *     spectator and flown ~n seconds; the harness waits for control to return.
+ *     spectator and flown up to n seconds (every cutscene its completion
+ *     schedules, at any depth); the harness waits for control to return.
+ *   - `enRouteCutsceneSeconds` — while this step is under way, something the
+ *     route passes (an `approach` trigger, a trap, a loop crossing, a body set
+ *     moving earlier arriving) may take control for up to n seconds; the harness
+ *     waits it out where it happens and resumes the walk. Control taken during a
+ *     step that declares neither number is refused, naming the step.
  * `false`/absent `sneak` is normalized to the key being absent.
  */
 export interface PresentationMarkers {
   readonly sneak?: boolean;
   readonly cutsceneSeconds?: number;
+  readonly enRouteCutsceneSeconds?: number;
 }
 
 /** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
@@ -257,7 +264,7 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[number];
  * fired marker, never on the click landing. A hit count is N such steps, each
  * owed its own marker.
  */
-export interface TriggerStep {
+export interface TriggerStep extends PresentationMarkers {
   readonly action: "trigger";
   /** The `trigger/<id>` performed — also the marker token the step passes on. */
   readonly trigger: string;
@@ -330,7 +337,7 @@ export interface WitnessStrikeStep {
  * every crossing puts a body down on. A path EXPORT step, like `trigger`: it
  * proves no objective.
  */
-export interface LoopStep {
+export interface LoopStep extends PresentationMarkers {
   readonly action: "loop";
   /** The `loop/<id>` exercised. */
   readonly loop: string;
@@ -641,8 +648,8 @@ function transportFields(
 function presentationFields(
   obj: Record<string, unknown>,
   pointer: string,
-): { sneak?: boolean; cutsceneSeconds?: number } {
-  const out: { sneak?: boolean; cutsceneSeconds?: number } = {};
+): { sneak?: boolean; cutsceneSeconds?: number; enRouteCutsceneSeconds?: number } {
+  const out: { sneak?: boolean; cutsceneSeconds?: number; enRouteCutsceneSeconds?: number } = {};
   const sneak = obj["sneak"];
   if (sneak !== undefined) {
     if (typeof sneak !== "boolean") {
@@ -659,6 +666,16 @@ function presentationFields(
       );
     }
     out.cutsceneSeconds = cutscene;
+  }
+  const enRoute = obj["en_route_cutscene_seconds"];
+  if (enRoute !== undefined) {
+    if (typeof enRoute !== "number" || !Number.isInteger(enRoute) || enRoute <= 0) {
+      fail(
+        `${pointer}/en_route_cutscene_seconds`,
+        `must be a positive integer, got ${describe(enRoute)}`,
+      );
+    }
+    out.enRouteCutsceneSeconds = enRoute;
   }
   return out;
 }
@@ -727,7 +744,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "talk-to": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds"],
+        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
         pointer,
       );
       return {
@@ -754,6 +771,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "completed_on_landing",
           "sneak",
           "cutscene_seconds",
+          "en_route_cutscene_seconds",
         ],
         pointer,
       );
@@ -786,7 +804,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "kill": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds"],
+        ["action", "objective", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
         pointer,
       );
       return {
@@ -813,6 +831,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "transport",
           "sneak",
           "cutscene_seconds",
+          "en_route_cutscene_seconds",
         ],
         pointer,
       );
@@ -844,6 +863,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "transport",
           "sneak",
           "cutscene_seconds",
+          "en_route_cutscene_seconds",
         ],
         pointer,
       );
@@ -865,7 +885,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "rest": {
       rejectUnknownKeys(
         obj,
-        ["action", "bonfire", "anchor", "pos", "command", "sneak", "cutscene_seconds"],
+        ["action", "bonfire", "anchor", "pos", "command", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
         pointer,
       );
       const bonfire = obj["bonfire"];
@@ -884,7 +904,20 @@ function parseStep(value: unknown, pointer: string): Step {
     case "trigger": {
       rejectUnknownKeys(
         obj,
-        ["action", "trigger", "on", "anchor", "npc", "assembly", "pos", "range", "stand", "transport"],
+        [
+          "action",
+          "trigger",
+          "on",
+          "anchor",
+          "npc",
+          "assembly",
+          "pos",
+          "range",
+          "stand",
+          "transport",
+          "cutscene_seconds",
+          "en_route_cutscene_seconds",
+        ],
         pointer,
       );
       const trigger = requireString(obj, "trigger", pointer);
@@ -971,6 +1004,7 @@ function parseStep(value: unknown, pointer: string): Step {
         ...(kind === "approach" ? { range: range as number } : {}),
         ...(stand === undefined ? {} : { stand }),
         ...carried,
+        ...presentationFields(obj, pointer),
       };
     }
     case "witness-strike": {
@@ -1020,7 +1054,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "loop": {
       rejectUnknownKeys(
         obj,
-        ["action", "loop", "pos", "cross", "offset", "times", "transport"],
+        ["action", "loop", "pos", "cross", "offset", "times", "transport", "cutscene_seconds", "en_route_cutscene_seconds"],
         pointer,
       );
       const loop = requireString(obj, "loop", pointer);
@@ -1058,6 +1092,7 @@ function parseStep(value: unknown, pointer: string): Step {
         offset,
         times: times as number,
         transport,
+        ...presentationFields(obj, pointer),
       };
     }
     case "assert-complete": {
