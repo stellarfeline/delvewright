@@ -24,7 +24,10 @@ this section is what they are *for* and the traps in each.
   location or direction guidance ("Past the entrance hall, take the left passage
   to the barred door"). The compiler surfaces them in-game when the objective
   activates, in chat and with a sound; without them the player gets no guidance
-  and cannot find interact/collect/reach targets. For `talk-to` they are
+  and cannot find interact/collect/reach targets. `title` and `hint` are the journal's restatement of what the story
+  has already told the player (`game-writing.md` L1), not a substitute for a
+  level that reads as what it is; they never name what the player has not been
+  told. For `talk-to` they are
   **required whenever the target NPC is not already visible from where the
   previous objective completed** — a different room, down a corridor, across an
   area. Read the "may omit" allowance narrowly: an off-screen NPC 60 blocks away

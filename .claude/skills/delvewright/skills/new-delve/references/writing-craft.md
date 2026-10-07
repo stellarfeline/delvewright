@@ -206,7 +206,7 @@ Concision is not the same as flatness. Cut the padding, keep the beat.
 
 ## F. HARD RULE — each kind of text has its job
 
-The rules are `$DELVEWRIGHT_ENGINE/docs/reference/game-writing.md` §1–§3; read
+The rules are `$DELVEWRIGHT_ENGINE/docs/reference/game-writing.md` §1–§3 and §8; read
 them before writing step 5 and apply them as each line is written, not as a
 pass afterwards. Which rules bind which line:
 
@@ -218,6 +218,12 @@ pass afterwards. Which rules bind which line:
   fixes it; an item tooltip says what the item does first.
 - **Story text** — dialogue, barks, narration: S1–S5. State the fact; end on
   information; a joke carries the function too.
+- **Where the player reads at all**: L1 (`game-writing.md` §8). Before a line
+  or an object exists to tell the player what to do, check that the level does
+  not already say it.
+- **Every line**: L2 (`game-writing.md` §8). Mystery comes from who speaks and
+  what happens, never from wording the player must decode; nothing the text
+  says of the world contradicts what the level shows.
 - **Every name, everywhere**: N1–N5. The first time a name reaches the player in
   play order it is a body or item carrying it, or a sentence saying what it is;
   one thing has one name. §D above is the spelling half of N4.
