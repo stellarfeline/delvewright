@@ -2106,7 +2106,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   before), then calls `atmosphere_bootstrap`, which paints each carried place's
   paint (*The blend*, below) through `fillbiome_lines`. Generated PackTest `atmosphere_places` reads
   each carried place inside (`execute if biome`) and just outside (`execute
-  unless biome`). Every build prints `atmosphere binding: A declared; P of N
+  unless biome`), after re-establishing the ground under every 4-cell it reads
+  outside a place: the templates of one batch run in an order none of them
+  chooses, and a sibling template — a repaint's, or a trigger's that runs a
+  beat which paints — may have left its own biome there. Every build prints `atmosphere binding: A declared; P of N
   place(s) carry one; R repaint effect(s) over V volume(s); Q quart cells
   painted at bootstrap of M paint(s) in the map; B biome file(s) emitted` —
   hello-world prints a measured zero.

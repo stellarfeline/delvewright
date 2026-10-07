@@ -25235,6 +25235,25 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
             artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
+        // The first tick, re-established under every cell the template reads
+        // outside a place, before the bootstrap paints the places: a sibling
+        // template — a repaint's, or a trigger's that runs a beat which paints —
+        // may have left its own biome there, and the templates of one batch run
+        // in an order this one does not choose. Without it the outside reading is
+        // a race (found on The Thing Beyond the Fog, whose tiller repaints a
+        // volume that holds a place's outside cell: 21 of 21 required tests
+        // green on one run, `#atm_out0` red on the next).
+        let ground = map.ground.id.clone();
+        for p in &places {
+            if let Some(outside) = quart_outside(plan, p.cells, quart_sample(p.cells)) {
+                let q = outside.map(|v| v.div_euclid(4) * 4);
+                b.extend(crate::compiler::atmosphere::fillbiome_lines(
+                    q,
+                    [q[0] + 3, q[1] + 3, q[2] + 3],
+                    &ground,
+                ));
+            }
+        }
         b.push(format!("function {ns}:{ATMOSPHERE_BOOTSTRAP_FN}"));
         for (i, p) in places.iter().enumerate() {
             let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
