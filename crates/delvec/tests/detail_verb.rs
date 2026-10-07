@@ -333,13 +333,13 @@ fn write_program(campaign: &Path, node: &str, program: &Value) {
     .unwrap();
 }
 
-/// The blockout fixture, walked, with generated programs for `nodes`.
+/// The blockout fixture, with generated programs for `nodes` — and no walk
+/// record: the walk is taken on the detailed world, after detail.
 fn fixture(root: &Path, nodes: &[&str]) -> (PathBuf, PathBuf) {
     let campaign = root.join("campaign");
     let prefabs = root.join("prefabs");
     std::fs::create_dir_all(&prefabs).unwrap();
     common::copy_dir_all(&blockout_dir(), &campaign);
-    common::record_walk(&campaign);
     let c = common::campaign_at(&campaign);
     for node in nodes {
         let a = detail::allocation(&c, &NodeId((*node).to_string())).unwrap();
@@ -501,27 +501,50 @@ fn refused(campaign: &Path, prefabs: &Path, args: &[&str]) -> String {
     text(&out)
 }
 
+/// **Detail asks for no walk.** The walk is taken on the detailed world, after
+/// detail, so the verb details a campaign nobody has walked — and the build it
+/// ends with exits zero. Red on the old order, which refused here, before the
+/// program was opened.
 #[test]
-fn detail_refuses_without_a_walk_before_opening_the_program() {
-    let tmp = tempdir("dw0841");
+fn detail_needs_no_walk_record() {
+    let tmp = tempdir("no-walk");
     let (campaign, prefabs) = fixture(&tmp, &["node/exit"]);
-    std::fs::remove_file(campaign.join("walk-record.json")).unwrap();
-    let t = refused(
-        &campaign,
-        &prefabs,
-        &[
-            "--prefabs",
-            prefabs.to_str().unwrap(),
-            "detail",
-            campaign.to_str().unwrap(),
-            "node/exit",
-        ],
-    );
-    assert!(t.contains("DW0841"), "{t}");
+    assert!(!campaign.join("walk-record.json").exists());
+    let out = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        campaign.to_str().unwrap(),
+        "node/exit",
+    ]);
+    let t = text(&out);
+    assert_eq!(code(&out), 0, "{t}");
+    assert!(!t.contains("DW0841"), "{t}");
     assert!(
-        !t.contains("programs/exit.json"),
-        "the program was opened: {t}"
+        prefabs.join("blockout-exit.json").exists(),
+        "the piece was written"
     );
+}
+
+/// **A walk taken before detail is spent by detailing.** Its record names the
+/// blockout, the detailed build is a different build, and the build the verb
+/// ends with refuses the record (`DW0974`) — a route problem found at the walk
+/// is cheap only while the walk is the last thing that happened.
+#[test]
+fn detailing_after_a_walk_leaves_a_record_of_another_build() {
+    let tmp = tempdir("walk-then-detail");
+    let (campaign, prefabs) = fixture(&tmp, &["node/exit"]);
+    common::record_walk(&campaign, &prefabs);
+    let out = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        campaign.to_str().unwrap(),
+        "node/exit",
+    ]);
+    let t = text(&out);
+    assert_ne!(code(&out), 0, "{t}");
+    assert!(t.contains("DW0974") && t.contains("BLOCKOUT"), "{t}");
 }
 
 #[test]
@@ -682,13 +705,12 @@ fn after_a_plan_edit_detail_all_refits_the_piece_from_its_program() {
     assert_eq!(first["structure"]["size"], json!([8, 5, 8]));
 
     // The exit box shrinks inside its size class, keeping its one seam on the
-    // face; the whole is re-walked; the same program re-fits the new frame.
+    // face; the same program re-fits the new frame.
     common::patch_file(&campaign.join("site-plan.json"), |v| {
         let boxes = v["content"]["boxes"].as_array_mut().unwrap();
         let b = boxes.iter_mut().find(|b| b["node"] == "node/exit").unwrap();
         b["extent"] = json!([8, 4]);
     });
-    common::record_walk(&campaign);
     let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
     assert_eq!(code(&out), 0, "{}", text(&out));
     let second: Value =
@@ -711,7 +733,7 @@ fn after_a_graph_edit_a_program_that_no_longer_fits_is_refused_by_name() {
     let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
     assert_eq!(code(&out), 0, "{}", text(&out));
 
-    // The connection is renamed in the graph and the plan, the whole re-walked:
+    // The connection is renamed in the graph and the plan:
     // the program's handed names now name a seam this place no longer has.
     for doc in [
         "layout-graph.json",
@@ -723,7 +745,6 @@ fn after_a_graph_edit_a_program_that_no_longer_fits_is_refused_by_name() {
         let t = std::fs::read_to_string(&p).unwrap();
         std::fs::write(&p, t.replace("edge/cell-exit", "edge/cell-gate")).unwrap();
     }
-    common::record_walk(&campaign);
     let t = refused(
         &campaign,
         &prefabs,
@@ -748,7 +769,6 @@ fn the_gym_is_detailed_by_one_command() {
     let ps = prefabs.to_str().unwrap();
     let generated = delvec(&["metrics", "--gym", cs]);
     assert_eq!(code(&generated), 0, "{}", text(&generated));
-    common::record_walk(&campaign);
     let c = common::campaign_at(&campaign);
     let mut places = Vec::new();
     let allocations = detail::allocations(&c);

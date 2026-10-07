@@ -183,6 +183,7 @@ pub mod timeline;
 pub mod trap_trigger;
 pub mod traversal;
 pub mod view;
+pub mod walk;
 pub mod watch;
 pub mod waypoints;
 pub mod ways;

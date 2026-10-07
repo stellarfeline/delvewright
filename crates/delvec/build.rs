@@ -1,12 +1,12 @@
 //! Stamps the engine revision into the binary at compile time.
 //!
-//! `detail::engine_revision()` reads `DELVEC_ENGINE_REVISION` through
+//! `walk::engine_revision()` reads `DELVEC_ENGINE_REVISION` through
 //! `option_env!` and honestly answers `unstamped` when nobody supplied it.
 //! Nobody did: the variable had no writer anywhere in the repository, so the
 //! release recipe, CI and a source build all printed `unstamped` — and
 //! `unstamped` is exactly the field `walk-record.json` asks a campaign author
 //! to copy out of the build output. A field that always holds one constant is
-//! not a measurement, and the `DW0842` drift advisory that reads it could only
+//! not a measurement, and the `DW0974` drift advisory that reads it could only
 //! ever say the record was taken on engine `unstamped` and the current engine
 //! is `unstamped` too.
 //!

@@ -13,7 +13,7 @@
 //! with the bar by its edge's `class`, and a sky-open box takes its headroom
 //! from its node's `size_class`. The walk record's freshness key is therefore in
 //! two halves, the derived grid and the ways a body moves by
-//! (`detail::walked_grid`, `detail::walked_ways`), and every consequence either
+//! (`walk::walked_grid`, `walk::walked_ways`), and every consequence either
 //! document has on the bytes below lands in one of them; a key over the plan
 //! alone let a graph-only edit move the walked massing under a record that went
 //! on reading as fresh.
@@ -573,8 +573,8 @@ pub fn derive_with(
 /// of is **the site plan, the layout graph, the metrics table and the engine** —
 /// the graph included, because a seam is air or bar by its edge's `class` and a
 /// sky-open box takes its headroom from its node's `size_class`. Everything this
-/// function reads out of those two documents is in `DW0841`'s freshness key
-/// (`detail::walked_grid`, `detail::walked_ways`), which is what leaves
+/// function reads out of those two documents is in `DW0974`'s key
+/// (`walk::walked_grid`, `walk::walked_ways`), which is what leaves
 /// *toolchain movement* as the only thing spec-0050 §2's drift advisory can be
 /// reporting.
 #[must_use]

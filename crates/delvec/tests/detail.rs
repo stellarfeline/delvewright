@@ -31,6 +31,7 @@ use delvec::compiler::blockout::{self, Perturb};
 use delvec::compiler::detail::{self, Allocation};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
+use delvec::compiler::walk;
 use delvewright_dsl::{Campaign, DSL_VERSION, NodeId, Severity};
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,13 @@ fn walk_record_at(dir: &Path) -> Option<String> {
     delvec::compiler::load::load_campaign_dir(dir)
         .expect("the campaign is readable")
         .walk_record
+}
+
+/// Every hash a walk record names, of the campaign at `dir` over the pieces in
+/// `prefabs`.
+fn hashes_at(dir: &Path, prefabs: &Path) -> walk::Hashes {
+    let reg = PrefabRegistry::load_dir(prefabs).expect("the piece library loads");
+    walk::Hashes::of(&campaign_at(dir), &reg, prefabs).expect("a site-plan campaign hashes")
 }
 
 /// The whole map's massing as a cell map, replayed in write order exactly as the
@@ -244,7 +252,7 @@ struct Detailed {
 }
 
 /// Materialise the blockout fixture with `nodes` bound to pieces cut from its own
-/// massing, and a fresh passed walk record.
+/// massing.
 fn detailed(root: &Path, nodes: &[&str]) -> Detailed {
     let campaign = root.join("campaign");
     let prefabs = root.join("prefabs");
@@ -273,8 +281,15 @@ fn detailed(root: &Path, nodes: &[&str]) -> Detailed {
         }));
     }
     write_detail_plan(&campaign, &details);
-    rerecord_walk(&campaign);
     Detailed { campaign, prefabs }
+}
+
+/// [`detailed`], then walked: the record a passed walk of THIS detailed build
+/// produces — the walk comes after detail.
+fn walked(root: &Path, nodes: &[&str]) -> Detailed {
+    let d = detailed(root, nodes);
+    common::record_walk(&d.campaign, &d.prefabs);
+    d
 }
 
 fn write_detail_plan(dir: &Path, details: &[serde_json::Value]) {
@@ -294,17 +309,28 @@ fn write_detail_plan(dir: &Path, details: &[serde_json::Value]) {
     .unwrap();
 }
 
-/// Write the record a passed walk of THIS plan would have produced.
-fn rerecord_walk(dir: &Path) {
-    common::record_walk(dir);
-}
-
 /// Run the validation-tier detail checks over a materialised campaign.
 fn check_at(d: &Detailed) -> (Vec<delvewright_dsl::Diagnostic>, detail::DetailBinding) {
     let c = campaign_at(&d.campaign);
     let reg = PrefabRegistry::load_dir(&d.prefabs).expect("the piece library loads");
+    detail::check(&c, &reg)
+}
+
+/// Run the walk check (`DW0974`) over a materialised campaign and the record
+/// beside it.
+fn walk_at(d: &Detailed) -> (Vec<delvewright_dsl::Diagnostic>, walk::WalkBinding) {
+    let c = campaign_at(&d.campaign);
+    let reg = PrefabRegistry::load_dir(&d.prefabs).expect("the piece library loads");
     let record = walk_record_at(&d.campaign);
-    detail::check(&c, &reg, record.as_deref())
+    walk::check(&c, &reg, &d.prefabs, record.as_deref())
+}
+
+/// The walk's drift advisory over a materialised campaign.
+fn drift_at(d: &Detailed) -> Option<delvewright_dsl::Diagnostic> {
+    let c = campaign_at(&d.campaign);
+    let reg = PrefabRegistry::load_dir(&d.prefabs).expect("the piece library loads");
+    let record = walk_record_at(&d.campaign);
+    walk::drift(&c, &reg, &d.prefabs, record.as_deref())
 }
 
 fn codes(d: &[delvewright_dsl::Diagnostic]) -> Vec<String> {
@@ -350,7 +376,7 @@ fn every_place() -> Vec<String> {
 #[test]
 fn a_bound_place_validates_and_states_its_binding() {
     let tmp = tempdir("green");
-    let d = detailed(&tmp, &["node/exit"]);
+    let d = walked(&tmp, &["node/exit"]);
     let (diags, binding) = check_at(&d);
     assert!(
         errors(&diags).is_empty(),
@@ -360,12 +386,6 @@ fn a_bound_place_validates_and_states_its_binding() {
     assert_eq!(binding.rows, 1, "one row read");
     assert_eq!(binding.bound, 1, "and it bound a place");
     assert_eq!(binding.boxes, 7, "against the plan's seven boxes");
-    assert_eq!(binding.records, 1, "over one walk record");
-    assert_eq!(
-        binding.compared, 2,
-        "whose plan hash AND layout-graph hash were both compared — the whole a walk \
-         judges is derived from both documents"
-    );
     assert_eq!(binding.measured, 1, "one piece measured against its frame");
     assert_eq!(binding.seams_required, 1, "`node/exit` has one seam");
     assert_eq!(binding.faces_examined, 1, "and the piece declares one face");
@@ -377,14 +397,16 @@ fn a_bound_place_validates_and_states_its_binding() {
         "the count states its denominator: {}",
         binding.line()
     );
+    let (wd, walked) = walk_at(&d);
+    assert!(wd.is_empty(), "{:?}", codes(&wd));
     assert!(
-        binding
+        walked
             .line()
-            .contains("walk gate: 1 record(s) read, 2 of 2 freshness hash(es) compared"),
-        "and the walk gate states its own count WITH its denominator, rather than being \
-         a check that reports nothing — or a number about a smaller population than the \
-         one it covers: {}",
-        binding.line()
+            .contains("1 walk record(s) read, 3 of 3 key hash(es) compared (grid, ways, detail)"),
+        "and the walk check states its own count WITH its denominator, rather than \
+         being a check that reports nothing — or a number about a smaller build than \
+         the one it covers: {}",
+        walked.line()
     );
 }
 
@@ -394,10 +416,9 @@ fn a_bound_place_validates_and_states_its_binding() {
 fn a_campaign_with_no_detail_plan_binds_zero_and_states_it() {
     let c = campaign_at(&blockout_dir());
     let reg = PrefabRegistry::load_dir(&common::shown_prefabs_dir("detail")).unwrap();
-    let (diags, binding) = detail::check(&c, &reg, None);
+    let (diags, binding) = detail::check(&c, &reg);
     assert!(diags.is_empty(), "{:?}", codes(&diags));
     assert_eq!(binding.rows, 0);
-    assert_eq!(binding.records, 0, "and no walk record was asked for");
     assert!(
         binding
             .line()
@@ -408,135 +429,250 @@ fn a_campaign_with_no_detail_plan_binds_zero_and_states_it() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0841 — the walk gate, at both entry points
+// Detail is not held behind a walk — the walk comes after it
 // ---------------------------------------------------------------------------
 
+/// **A place is detailed with no walk record at all.** The walk is taken on the
+/// detailed world, after detail, so nothing about detail asks for one: a
+/// campaign that has never been walked details, validates and builds.
+///
+/// Red on the old order, where detail work was refused until a `passed` record
+/// of the blockout existed.
 #[test]
-fn dw0841_refuses_a_detail_plan_with_no_walk_record() {
-    let tmp = tempdir("dw0841-missing");
+fn a_place_is_detailed_before_any_walk() {
+    let tmp = tempdir("detail-before-walk");
     let d = detailed(&tmp, &["node/exit"]);
-    std::fs::remove_file(d.campaign.join("walk-record.json")).unwrap();
-    let (diags, _) = check_at(&d);
+    assert!(!d.campaign.join("walk-record.json").exists());
+    let (diags, binding) = check_at(&d);
+    assert!(errors(&diags).is_empty(), "{:?}", codes(&diags));
+    assert_eq!(binding.bound, 1, "and the place is bound");
+    let (wd, walked) = walk_at(&d);
+    assert!(wd.is_empty(), "no record refuses nothing: {:?}", codes(&wd));
+    assert!(
+        walked
+            .line()
+            .contains("0 walk record(s) read, 0 of 3 key hash(es) compared"),
+        "and the walk check says it read nothing, with its denominator: {}",
+        walked.line()
+    );
+    assert!(
+        walked.line().contains("this build has not been walked"),
+        "and what that zero means: {}",
+        walked.line()
+    );
+
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "build",
+        d.campaign.to_str().unwrap(),
+        "--out",
+        tmp.join("out").to_str().unwrap(),
+    ]);
+    let err =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the build is the one the walk needs: {err}"
+    );
+    assert!(!err.contains("DW0841"), "{err}");
+}
+
+/// **The handing needs no walk either.** `delvec allocation` on a campaign
+/// nobody has walked and nothing has detailed exits zero with the frame on
+/// stdout — over the real binary, because the claim is about the command a
+/// creator types.
+#[test]
+fn the_allocation_is_handed_out_before_any_walk() {
+    let tmp = tempdir("allocation-before-walk");
+    let campaign = tmp.join("campaign");
+    common::copy_dir_all(&blockout_dir(), &campaign);
+    assert!(!campaign.join("walk-record.json").exists());
+    assert!(!campaign.join("detail-plan.json").exists());
+    let out = delvec(&["allocation", campaign.to_str().unwrap(), "node/exit"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{err}");
+    let a: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .expect("stdout carries the allocation and nothing else");
+    assert_eq!(a["place"], "node/exit");
+}
+
+// ---------------------------------------------------------------------------
+// DW0974 — a walk record that does not describe this build
+// ---------------------------------------------------------------------------
+
+/// **A walk of the blockout is not a walk of the detailed build.** The owner
+/// walks the world that ships, with its real buildings; a record taken on the
+/// blockout and left beside a detailed build would let the build ship on a walk
+/// of something else. The detail half of the key is what refuses it, and the
+/// refusal says it is a blockout walk.
+#[test]
+fn dw0974_refuses_a_blockout_walk_beside_a_detailed_build() {
+    let tmp = tempdir("dw0974-blockout-walk");
+    let d = walked(&tmp, &["node/exit"]);
+    // The record a walk of the BLOCKOUT produced: the same campaign with the
+    // detail plan taken away.
+    let plan = d.campaign.join("detail-plan.json");
+    let held = std::fs::read(&plan).unwrap();
+    std::fs::remove_file(&plan).unwrap();
+    common::record_walk(&d.campaign, &d.prefabs);
+    std::fs::write(&plan, held).unwrap();
+
+    let (diags, binding) = walk_at(&d);
     let e = errors(&diags);
     assert_eq!(e.len(), 1, "{:?}", codes(&diags));
-    assert_eq!(e[0].code, "DW0841");
+    assert_eq!(e[0].code, "DW0974");
     assert!(
-        e[0].message.contains("ZERO records read"),
-        "the zero is stated: {}",
+        e[0].message.contains("BLOCKOUT"),
+        "it says the walk was of the blockout: {}",
+        e[0].message
+    );
+    assert_eq!(
+        binding.compared, 3,
+        "the grid and the ways compared equal, so the detail half is what refused"
+    );
+    assert_eq!(binding.verdict, None, "and no verdict is reported for it");
+}
+
+/// **Re-making a place after the walk makes the record a record of another
+/// build** — the piece's bytes are in the key, not only its name.
+#[test]
+fn dw0974_refuses_a_place_remade_after_the_walk() {
+    let tmp = tempdir("dw0974-remade");
+    let d = walked(&tmp, &["node/exit"]);
+    let before = hashes_at(&d.campaign, &d.prefabs);
+    // The same piece name, different bytes: one cell of the frame changed.
+    let nbt = d.prefabs.join("exit.nbt");
+    let mut bytes = std::fs::read(&nbt).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0x01;
+    std::fs::write(&nbt, bytes).unwrap();
+    let after = hashes_at(&d.campaign, &d.prefabs);
+    assert_eq!(after.site_plan, before.site_plan);
+    assert_eq!(after.layout_graph, before.layout_graph);
+    assert_ne!(
+        after.detail, before.detail,
+        "the piece's bytes moved the detail half"
+    );
+
+    let (diags, _) = walk_at(&d);
+    let e = errors(&diags);
+    assert_eq!(e.len(), 1, "{:?}", codes(&diags));
+    assert_eq!(e[0].code, "DW0974");
+    assert!(
+        e[0].message.contains("DIFFERENT DETAIL")
+            && e[0].message.contains(&before.detail)
+            && e[0].message.contains(&after.detail),
+        "names the half and both hashes: {}",
         e[0].message
     );
 }
 
+/// The detail half does not see the order of the rows, nor the palette, which is
+/// handed to a program and never placed.
 #[test]
-fn dw0841_refuses_a_record_of_a_different_plan_and_prints_both_hashes() {
-    let tmp = tempdir("dw0841-stale");
-    let d = detailed(&tmp, &["node/exit"]);
-    let before = detail::site_plan_sha256(&campaign_at(&d.campaign)).unwrap();
-    // Move the PLAN — the one edit that is supposed to re-open this gate.
+fn the_detail_half_sees_what_stands_and_nothing_else() {
+    let tmp = tempdir("detail-half");
+    let d = walked(&tmp, &["node/exit", "node/cell"]);
+    let before = hashes_at(&d.campaign, &d.prefabs);
+    patch_detail_plan(&d, |v| {
+        v["content"]["details"].as_array_mut().unwrap().reverse();
+        v["content"]["palette"] = serde_json::json!({ "role/wall": "minecraft:deepslate" });
+    });
+    assert_eq!(hashes_at(&d.campaign, &d.prefabs), before);
+    // And unbinding a place is a different detail.
+    patch_detail_plan(&d, |v| {
+        v["content"]["details"].as_array_mut().unwrap().pop();
+    });
+    assert_ne!(hashes_at(&d.campaign, &d.prefabs).detail, before.detail);
+}
+
+#[test]
+fn dw0974_refuses_a_record_of_a_different_plan_and_prints_both_hashes() {
+    let tmp = tempdir("dw0974-stale");
+    let d = walked(&tmp, &["node/exit"]);
+    let before = walk::site_plan_sha256(&campaign_at(&d.campaign)).unwrap();
     common::patch_file(&d.campaign.join("site-plan.json"), |v| {
         v["content"]["boxes"][0]["min"] = serde_json::json!([5, 8]);
     });
-    let after = detail::site_plan_sha256(&campaign_at(&d.campaign)).unwrap();
+    let after = walk::site_plan_sha256(&campaign_at(&d.campaign)).unwrap();
     assert_ne!(before, after, "a plan edit moves the plan hash");
-    let (diags, _) = check_at(&d);
-    let e: Vec<_> = diags
-        .iter()
-        .filter(|x| x.code == "DW0841" && x.severity == Severity::Error)
+    let (diags, _) = walk_at(&d);
+    let e: Vec<_> = errors(&diags)
+        .into_iter()
+        .filter(|x| x.code == "DW0974")
         .collect();
     assert_eq!(e.len(), 1, "{:?}", codes(&diags));
+    assert!(e[0].message.contains("DIFFERENT GRID"), "{}", e[0].message);
     assert!(e[0].message.contains(&before), "names the recorded hash");
     assert!(e[0].message.contains(&after), "and the current one");
 }
 
-/// **A `dsl_version` bump is not a re-walk**, and it is the case this key was
-/// moved to answer.
-///
-/// The old key was `sha256(to_canonical_string(document))`, and the canonical
-/// writer STAMPS the engine's own format number into every document it writes
-/// (`delvewright_dsl::fmt`, so that `delvec fmt --check` reds a stale one). The
-/// key was therefore a function of a value no campaign controls: the week the
-/// format went 0.19 to 0.20 to 0.21, `DW0841` re-opened on every walked campaign
-/// at once, with no box, seam or edge moved, and demanded the one repair nobody
-/// can honestly make — walk the whole again for a change that cannot have
-/// changed the walk. What happened instead was the record edited by hand, twice,
-/// which is the gate discharged rather than passed.
-///
-/// It cannot be reproduced by bumping a document, because the writer normalises
-/// that away; it took the ENGINE moving. So what is asserted is the property
-/// that makes the engine's number unable to reach the key at all: the canonical
-/// bytes carry it and the key's own text does not mention it anywhere. A
-/// substitution of a value a string does not contain cannot change that string.
+/// **A `dsl_version` bump is not a different build.** The canonical writer
+/// stamps the engine's own format number into every document it writes, so a key
+/// over document bytes would go stale on every format bump with no box, seam or
+/// edge moved — and demand a walk nobody can honestly take. The key's own text
+/// never mentions the number.
 #[test]
-fn dw0841_survives_a_dsl_version_bump() {
-    let tmp = tempdir("dw0841-version");
-    let d = detailed(&tmp, &["node/exit"]);
+fn dw0974_survives_a_dsl_version_bump() {
+    let tmp = tempdir("dw0974-version");
+    let d = walked(&tmp, &["node/exit"]);
     let version = delvewright_dsl::DSL_VERSION;
 
     let mut carried = 0usize;
-    for doc in ["site-plan.json", "layout-graph.json"] {
+    for doc in ["site-plan.json", "layout-graph.json", "detail-plan.json"] {
         assert!(
             canonical_of(&d.campaign, doc).contains(version),
-            "`{doc}`'s canonical bytes carry the engine's format number `{version}` — \
-             which is what the old key hashed, and why an engine bump re-opened this gate"
+            "`{doc}`'s canonical bytes carry the engine's format number `{version}`"
         );
         carried += 1;
     }
-    assert_eq!(carried, 2, "both keyed documents were examined");
+    assert_eq!(carried, 3, "every keyed document was examined");
 
     let c = campaign_at(&d.campaign);
-    let grid = detail::walked_grid(&c).expect("a site-plan campaign has a grid");
-    let ways = detail::walked_ways(&c).expect("and ways");
-    for (half, text) in [("grid", &grid), ("ways", &ways)] {
+    let reg = PrefabRegistry::load_dir(&d.prefabs).unwrap();
+    let grid = walk::walked_grid(&c).expect("a site-plan campaign has a grid");
+    let ways = walk::walked_ways(&c).expect("and ways");
+    let detail_text = walk::walked_detail(&c, &reg, &d.prefabs);
+    for (half, text) in [("grid", &grid), ("ways", &ways), ("detail", &detail_text)] {
         assert!(
-            !text.contains(version),
+            !text.contains(version) && !text.contains("dsl_version"),
             "the {half} half's text must not mention the format number: {text}"
         );
-        assert!(
-            !text.contains("dsl_version"),
-            "nor the envelope field that carries it: {text}"
-        );
-        assert!(
-            !text.is_empty(),
-            "and it is not empty, which is the way this assertion would pass vacuously"
-        );
+        assert!(!text.is_empty(), "and it is not empty");
     }
 
-    // The document bump itself, for completeness: the writer normalises it, so
-    // it moves neither the bytes nor the key.
     common::patch_file(&d.campaign.join("site-plan.json"), |v| {
         v["dsl_version"] = serde_json::json!("99.0.0");
     });
-    let (diags, binding) = check_at(&d);
-    assert!(
-        errors(&diags).is_empty(),
-        "the walk still stands and no re-walk is demanded: {:?}",
-        codes(&diags)
-    );
-    assert_eq!(binding.compared, 2, "both halves of the key were compared");
+    let (diags, binding) = walk_at(&d);
+    assert!(errors(&diags).is_empty(), "{:?}", codes(&diags));
+    assert_eq!(binding.compared, 3, "every half of the key was compared");
 }
 
-/// A reformat is not a re-walk either.
+/// A reformat of any keyed document is not a different build.
 #[test]
-fn dw0841_survives_a_reformat_of_the_plan() {
-    let tmp = tempdir("dw0841-reformat");
-    let d = detailed(&tmp, &["node/exit"]);
-    let path = d.campaign.join("site-plan.json");
-    let text = std::fs::read_to_string(&path).unwrap();
-    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-    // Serde's own pretty form, which is NOT canonical form: keys in declaration
-    // order rather than sorted.
-    std::fs::write(&path, serde_json::to_string(&value).unwrap()).unwrap();
-    assert_ne!(
-        std::fs::read_to_string(&path).unwrap(),
-        text,
-        "the bytes on disk moved"
-    );
-    let (diags, _) = check_at(&d);
-    assert!(
-        errors(&diags).is_empty(),
-        "and the walk still stands: {:?}",
-        codes(&diags)
-    );
+fn dw0974_survives_a_reformat() {
+    for doc in ["site-plan.json", "layout-graph.json", "detail-plan.json"] {
+        let tmp = tempdir(&format!("dw0974-reformat-{doc}"));
+        let d = walked(&tmp, &["node/exit"]);
+        let path = d.campaign.join(doc);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        std::fs::write(&path, serde_json::to_string(&value).unwrap()).unwrap();
+        assert_ne!(
+            std::fs::read_to_string(&path).unwrap(),
+            text,
+            "the bytes moved"
+        );
+        let (diags, _) = walk_at(&d);
+        assert!(
+            errors(&diags).is_empty(),
+            "`{doc}` reformatted, and the walk still stands: {:?}",
+            codes(&diags)
+        );
+    }
 }
 
 /// Reach one edge of the fixture's graph BY ID — never by index, so a fixture
@@ -554,19 +690,14 @@ fn patch_edge(dir: &Path, id: &str, f: impl FnOnce(&mut serde_json::Value)) {
     });
 }
 
-/// **The whole a walk judges is derived from TWO authored documents**, and this
-/// is the escape that proves it, in the form that moves real placed bytes.
-///
-/// `edge/cell-exit` goes from an open archway to a quest-locked bar — a
-/// `layout-graph.json` edit and nothing else. The derivation writes
-/// `palette::BAR` where it wrote air, so the map a body walks is a different
-/// map. The site plan is untouched, so a freshness key over the plan alone reads
-/// as fresh and the human walk this record exists to gate is escaped.
+/// **A layout-graph edit after the walk invalidates the record**, in the form
+/// that moves real placed bytes: an open archway turned into a quest-locked bar.
+/// The site plan is untouched, so a key over the plan alone would read as fresh.
 #[test]
-fn dw0841_refuses_a_graph_edit_that_moves_the_walked_massing() {
-    let tmp = tempdir("dw0841-graph-bytes");
-    let d = detailed(&tmp, &["node/exit"]);
-    let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+fn dw0974_refuses_a_graph_edit_that_moves_the_walked_massing() {
+    let tmp = tempdir("dw0974-graph-bytes");
+    let d = walked(&tmp, &["node/exit"]);
+    let before = hashes_at(&d.campaign, &d.prefabs);
 
     patch_edge(&d.campaign, "edge/cell-exit", |e| {
         assert_eq!(e["class"], serde_json::json!("walk"), "the way was open");
@@ -575,66 +706,54 @@ fn dw0841_refuses_a_graph_edit_that_moves_the_walked_massing() {
         e["gating"] = serde_json::json!({ "flags": ["flag/keeper-yields"] });
     });
 
-    let after = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    let after = hashes_at(&d.campaign, &d.prefabs);
     assert_eq!(
         after.site_plan, before.site_plan,
-        "the site plan was never touched, which is the whole point"
+        "the site plan was never touched"
     );
     assert_ne!(
         after.blockout, before.blockout,
-        "and the walked massing MOVED: bar stands where air stood"
+        "and the walked massing MOVED"
     );
     assert_ne!(
         after.layout_graph, before.layout_graph,
-        "so the half of the key that sees it moved too"
+        "so the ways half moved too"
     );
 
-    let (diags, binding) = check_at(&d);
+    let (diags, binding) = walk_at(&d);
     let e: Vec<_> = errors(&diags)
         .into_iter()
-        .filter(|x| x.code == "DW0841")
+        .filter(|x| x.code == "DW0974")
         .collect();
     assert_eq!(e.len(), 1, "exactly one walk refusal: {:?}", codes(&diags));
     assert!(
         e[0].message.contains(&before.layout_graph),
-        "naming the graph the walk was recorded against: {}",
+        "{}",
         e[0].message
     );
     assert!(
         e[0].message.contains(&after.layout_graph),
-        "and the graph this campaign now has: {}",
+        "{}",
         e[0].message
     );
-    assert_eq!(binding.compared, 2, "both halves of the key were compared");
+    assert_eq!(binding.compared, 2, "it stopped at the half that moved");
 
-    // **And the drift advisory stays silent underneath it.** Its text says what
-    // has moved is the TOOLCHAIN. A campaign edit reaching it would make that
-    // sentence a lie — which is exactly what this escape used to do, and it is
-    // the worse half of the defect, because a warning that denies the state it
-    // is reporting trains its reader to wave the state through.
-    let c = campaign_at(&d.campaign);
-    let rec = walk_record_at(&d.campaign);
+    // The drift advisory stays silent underneath it: its text says the
+    // TOOLCHAIN moved, and a campaign edit reaching it would make that a lie.
     assert!(
-        detail::blockout_drift(&c, rec.as_deref()).is_none(),
+        drift_at(&d).is_none(),
         "a campaign edit never reaches the advisory that says the toolchain moved"
     );
 }
 
-/// **The same escape with no signal of any kind**, and it is the one a
-/// derived-geometry key could never have caught.
-///
-/// `edge/hall-cell` is a one-side-openable door; flipping `opens_from` moves the
-/// side its `anchor/unlock-…` stands on, so the door the walk was judged with now
-/// opens from the other side. It moves neither the grid nor a single placed byte
-/// — which is why the ways half is not a hash over cells: an edge is carried
-/// whole, so `opens_from`, `gating`, `one_way` and `falls` are in the key even
-/// where the massing cannot show them.
+/// **The same edit with no signal of any kind.** Flipping a door's `opens_from`
+/// moves neither the grid nor a single placed byte; an edge is carried whole in
+/// the ways half, so it is in the key anyway.
 #[test]
-fn dw0841_refuses_a_graph_edit_that_moves_no_byte_at_all() {
-    let tmp = tempdir("dw0841-graph-silent");
-    let d = detailed(&tmp, &["node/exit"]);
-    let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
-
+fn dw0974_refuses_a_graph_edit_that_moves_no_byte_at_all() {
+    let tmp = tempdir("dw0974-graph-silent");
+    let d = walked(&tmp, &["node/exit"]);
+    let before = hashes_at(&d.campaign, &d.prefabs);
     patch_edge(&d.campaign, "edge/hall-cell", |e| {
         assert_eq!(
             e["opens_from"],
@@ -643,98 +762,50 @@ fn dw0841_refuses_a_graph_edit_that_moves_no_byte_at_all() {
         );
         e["opens_from"] = serde_json::json!("b");
     });
+    let after = hashes_at(&d.campaign, &d.prefabs);
+    assert_eq!(after.site_plan, before.site_plan);
+    assert_eq!(after.blockout, before.blockout, "not one placed byte moved");
+    assert_ne!(after.layout_graph, before.layout_graph);
 
-    let after = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
-    assert_eq!(after.site_plan, before.site_plan, "the plan did not move");
-    assert_eq!(
-        after.blockout, before.blockout,
-        "and not one placed byte moved either — this edit is invisible to every \
-         hash taken over geometry"
-    );
-    assert_ne!(
-        after.layout_graph, before.layout_graph,
-        "the graph's own bytes are the only thing that saw it"
-    );
-
-    let (diags, binding) = check_at(&d);
+    let (diags, _) = walk_at(&d);
     let e: Vec<_> = errors(&diags)
         .into_iter()
-        .filter(|x| x.code == "DW0841")
+        .filter(|x| x.code == "DW0974")
         .collect();
-    assert_eq!(e.len(), 1, "exactly one walk refusal: {:?}", codes(&diags));
-    assert!(
-        e[0].message.contains("DIFFERENT WAYS"),
-        "and it says which half went stale, because the grid and the ways are \
-         different edits with different repairs: {}",
-        e[0].message
-    );
-    assert_eq!(binding.compared, 2);
-}
-
-/// A reformat is not a re-walk on the graph either — the same rule the plan's
-/// half already holds, because the hash is over the document's CANONICAL bytes,
-/// written by the writer `delvec fmt --check` accepts.
-#[test]
-fn dw0841_survives_a_reformat_of_the_layout_graph() {
-    let tmp = tempdir("dw0841-graph-reformat");
-    let d = detailed(&tmp, &["node/exit"]);
-    let path = d.campaign.join("layout-graph.json");
-    let text = std::fs::read_to_string(&path).unwrap();
-    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-    std::fs::write(&path, serde_json::to_string(&value).unwrap()).unwrap();
-    assert_ne!(
-        std::fs::read_to_string(&path).unwrap(),
-        text,
-        "the bytes on disk moved"
-    );
-    let (diags, _) = check_at(&d);
-    assert!(
-        errors(&diags).is_empty(),
-        "and the walk still stands: {:?}",
-        codes(&diags)
-    );
-}
-
-/// A record that names only the plan is **not a walk record**, and it is refused
-/// as one rather than passing on the half it does name.
-///
-/// This is the hatch question asked of the record's own form: the escape hatch a
-/// missing field would open — *a record written before the key was whole is
-/// judged by the half of the key it happens to carry* — is precisely what an
-/// author with a stale graph would produce, so the field is required and its
-/// absence is a refusal that names the form.
-#[test]
-fn dw0841_refuses_a_record_that_names_no_layout_graph() {
-    let tmp = tempdir("dw0841-half-record");
-    let d = detailed(&tmp, &["node/exit"]);
-    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
-        v.as_object_mut().unwrap().remove("layout_graph_sha256");
-    });
-    let (diags, binding) = check_at(&d);
-    let e = errors(&diags);
     assert_eq!(e.len(), 1, "{:?}", codes(&diags));
-    assert_eq!(e[0].code, "DW0841");
-    assert!(
-        e[0].message.contains("layout_graph_sha256"),
-        "the refusal names the field the form requires: {}",
-        e[0].message
-    );
-    assert_eq!(binding.records, 1, "the record was read");
-    assert_eq!(
-        binding.compared, 0,
-        "and nothing was compared against it, which is the honest count"
-    );
+    assert!(e[0].message.contains("DIFFERENT WAYS"), "{}", e[0].message);
 }
 
-/// **A record that does not parse is told every verdict the type admits.**
-///
-/// The set is enumerated by an exhaustive match over the type here, so a
-/// variant added to [`detail::Verdict`] fails to compile this test until it is
-/// listed — and the refusal must then name it, because the message reads the
-/// set off the type rather than off a literal.
+/// **A record that names fewer than the three halves is not a walk record**, and
+/// it is refused as one rather than passing on the halves it does name. A
+/// record written before the detail half existed is exactly this shape.
 #[test]
-fn dw0841_parse_refusal_names_every_verdict_the_type_admits() {
-    use detail::Verdict;
+fn dw0974_refuses_a_record_that_names_fewer_halves() {
+    for field in ["layout_graph_sha256", "detail_sha256"] {
+        let tmp = tempdir(&format!("dw0974-half-{field}"));
+        let d = walked(&tmp, &["node/exit"]);
+        common::patch_file(&d.campaign.join("walk-record.json"), |v| {
+            v.as_object_mut().unwrap().remove(field);
+        });
+        let (diags, binding) = walk_at(&d);
+        let e = errors(&diags);
+        assert_eq!(e.len(), 1, "{:?}", codes(&diags));
+        assert_eq!(e[0].code, "DW0974");
+        assert!(
+            e[0].message.contains(field),
+            "names `{field}`: {}",
+            e[0].message
+        );
+        assert_eq!(binding.records, 1, "the record was read");
+        assert_eq!(binding.compared, 0, "and nothing was compared against it");
+    }
+}
+
+/// **A record that does not parse is told every verdict the type admits**, read
+/// off the type rather than a literal.
+#[test]
+fn dw0974_parse_refusal_names_every_verdict_the_type_admits() {
+    use walk::Verdict;
     fn every(v: Verdict) -> Verdict {
         match v {
             Verdict::Passed | Verdict::Findings | Verdict::Unwalked => v,
@@ -743,132 +814,87 @@ fn dw0841_parse_refusal_names_every_verdict_the_type_admits() {
     let all: Vec<String> = [Verdict::Passed, Verdict::Findings, Verdict::Unwalked]
         .into_iter()
         .map(|v| {
-            serde_json::to_value(every(v))
-                .expect("a verdict serializes")
-                .as_str()
-                .expect("as a string")
-                .to_string()
+            let t = serde_json::to_value(every(v)).unwrap();
+            assert_eq!(
+                t.as_str(),
+                Some(v.token()),
+                "`token` spells the value as serde does"
+            );
+            t.as_str().unwrap().to_string()
         })
         .collect();
     assert_eq!(Verdict::tokens(), all, "the tokens are the type's own");
 
-    let tmp = tempdir("dw0841-bad-verdict");
-    let d = detailed(&tmp, &["node/exit"]);
+    let tmp = tempdir("dw0974-bad-verdict");
+    let d = walked(&tmp, &["node/exit"]);
     common::patch_file(&d.campaign.join("walk-record.json"), |v| {
         v["verdict"] = serde_json::json!("walked-ish");
     });
-    let (diags, binding) = check_at(&d);
+    let (diags, binding) = walk_at(&d);
     let e = errors(&diags);
     assert_eq!(e.len(), 1, "{:?}", codes(&diags));
-    assert_eq!(e[0].code, "DW0841");
-    assert!(
-        e[0].message.contains("is not a walk record"),
-        "the parse refusal: {}",
-        e[0].message
-    );
-    // Read past the parser's own error, which quotes serde's variant list:
-    // the engine's hint is the half this test holds to the type.
+    assert_eq!(e[0].code, "DW0974");
     let hint = e[0]
         .message
         .split_once("Its form is fixed")
         .map(|(_, h)| h)
         .expect("the refusal states the form");
     for t in &all {
-        assert!(
-            hint.contains(&format!("`{t}`")),
-            "the form the refusal states names `{t}`: {hint}"
-        );
+        assert!(hint.contains(&format!("`{t}`")), "names `{t}`: {hint}");
     }
     assert_eq!(binding.compared, 0);
 }
 
+/// **The verdict is a statement about this build, not a refusal of it.** A
+/// `findings` or `unwalked` record that names this build is true, and every
+/// build carries on; the binding line says which verdict it read, because the
+/// verdict is what the release reads.
 #[test]
-fn dw0841_refuses_a_record_whose_verdict_is_findings() {
-    let tmp = tempdir("dw0841-findings");
-    let d = detailed(&tmp, &["node/exit"]);
-    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
-        v["verdict"] = serde_json::json!("findings");
-        v["findings"] = serde_json::json!([
-            { "subject": "node/hall", "note": "the hub reads as a corridor" }
-        ]);
-    });
-    let (diags, _) = check_at(&d);
-    let e = errors(&diags);
-    assert_eq!(e.len(), 1, "{:?}", codes(&diags));
-    assert_eq!(e[0].code, "DW0841");
-    assert!(
-        e[0].message.contains("the hub reads as a corridor"),
-        "the walker's own words travel to the refusal: {}",
-        e[0].message
-    );
+fn a_record_of_this_build_is_never_refused_for_its_verdict() {
+    for verdict in ["findings", "unwalked", "passed"] {
+        let tmp = tempdir(&format!("dw0974-verdict-{verdict}"));
+        let d = walked(&tmp, &["node/exit"]);
+        common::patch_file(&d.campaign.join("walk-record.json"), |v| {
+            v["verdict"] = serde_json::json!(verdict);
+            v["findings"] = serde_json::json!([
+                { "subject": "node/hall", "note": "the hub reads as a corridor" }
+            ]);
+        });
+        let (diags, binding) = walk_at(&d);
+        assert!(diags.is_empty(), "`{verdict}`: {:?}", codes(&diags));
+        assert_eq!(binding.compared, 3);
+        assert!(
+            binding
+                .line()
+                .contains(&format!("a record of THIS build, verdict `{verdict}`")),
+            "{}",
+            binding.line()
+        );
+    }
 }
 
-/// **The record can say that nobody walked, and the gate refuses on the FIELD.**
-///
-/// The closed set held two values and both opened *"the whole was walked"*, so
-/// every legal record asserted a walk. A build stood up and taken down, a walk
-/// abandoned, a walk cut short — none of those had a legal spelling, and the
-/// truth could only go into `findings[]`, which is free prose no check reads.
-/// Measured before the third value existed: a record whose first finding read
-/// `THIS IS NOT A WALK RECORD — NO HUMAN WALKED THIS BUILD` was quoted back
-/// verbatim by the refusal and refused on `verdict: "findings"`; the same file
-/// with `verdict: "passed"` — the value `references/detail.md` taught — was
-/// admitted, and detail work would have begun on a whole nobody had stood in,
-/// carrying that sentence along unread.
-///
-/// So the assertion below is not that the message is nice. It is that the fact
-/// *nobody walked this* now lives in a FIELD, and that the field is what the
-/// gate reads: the prose here says nothing of the kind, and the refusal still
-/// names the absence.
+/// **A record beside a campaign with no site plan names no build** and is
+/// refused, rather than ignored.
 #[test]
-fn dw0841_refuses_a_record_that_says_nobody_walked() {
-    let tmp = tempdir("dw0841-unwalked");
-    let d = detailed(&tmp, &["node/exit"]);
-    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
-        v["verdict"] = serde_json::json!("unwalked");
-        v["findings"] = serde_json::json!([
-            { "subject": "node/hall", "note": "the hub reads as a corridor" }
-        ]);
-    });
-    let (diags, _) = check_at(&d);
+fn dw0974_refuses_a_record_with_no_build_to_describe() {
+    let tmp = tempdir("dw0974-no-plan");
+    let d = walked(&tmp, &["node/exit"]);
+    std::fs::remove_file(d.campaign.join("site-plan.json")).unwrap();
+    let c = campaign_at(&d.campaign);
+    let reg = PrefabRegistry::load_dir(&d.prefabs).unwrap();
+    let record = walk_record_at(&d.campaign);
+    let (diags, binding) = walk::check(&c, &reg, &d.prefabs, record.as_deref());
     let e = errors(&diags);
     assert_eq!(e.len(), 1, "{:?}", codes(&diags));
-    assert_eq!(
-        e[0].code, "DW0841",
-        "one class — detail work is not unlocked by a passed walk of this whole \
-         — and a code per enum value would be a code per value"
-    );
-    assert!(
-        e[0].message.contains("unwalked") && e[0].message.contains("Nobody has walked"),
-        "the refusal names the value it read and what that value means: {}",
-        e[0].message
-    );
-    assert!(
-        !e[0].message.contains("Answer the findings"),
-        "and it does NOT prescribe the `findings` remedy, which would send an \
-         author to repair a whole nobody has judged: {}",
-        e[0].message
-    );
-
-    // The perturbation only this repair can survive: the same file, the same
-    // prose, the one value moved to the one that admits detail.
-    common::patch_file(&d.campaign.join("walk-record.json"), |v| {
-        v["verdict"] = serde_json::json!("passed");
-    });
-    let (diags, _) = check_at(&d);
-    assert!(
-        !codes(&diags).iter().any(|c| c == "DW0841"),
-        "and only `passed` opens it, so the verdict is doing the work: {:?}",
-        codes(&diags)
-    );
+    assert_eq!(e[0].code, "DW0974");
+    assert!(e[0].message.contains("site-plan.json"), "{}", e[0].message);
+    assert_eq!((binding.records, binding.compared), (1, 0));
 }
 
-/// **The exported schema offers the third value.** `delvec schema --stage
-/// walk-record` is what the authoring step opens, so a value the type has and
-/// the schema does not is a value nobody can find.
+/// **The exported schema offers the third value and the detail half.**
 #[test]
 fn the_walk_record_schema_offers_unwalked() {
-    let s = serde_json::to_string(&detail::walk_record_schema()).expect("schema");
+    let s = serde_json::to_string(&walk::walk_record_schema()).expect("schema");
     let v: serde_json::Value = serde_json::from_str(&s).expect("json");
     let en = v["$defs"]["Verdict"]["oneOf"]
         .as_array()
@@ -877,219 +903,55 @@ fn the_walk_record_schema_offers_unwalked() {
         .iter()
         .filter_map(|b| b["const"].as_str().map(str::to_string))
         .collect();
-    assert_eq!(
-        values,
-        vec!["passed", "findings", "unwalked"],
-        "the closed set the author chooses from"
-    );
+    assert_eq!(values, vec!["passed", "findings", "unwalked"]);
+    assert!(s.contains("NOBODY WALKED IT"));
     assert!(
-        s.contains("NOBODY WALKED IT"),
-        "and the schema's own description says which one to reach for when no \
-         walk happened"
+        s.contains("after detail"),
+        "and the schema says the walk is taken on the detailed world"
     );
 }
 
-/// **The committed probe refuses on its VERDICT, not on a stale key.**
-///
-/// `gallery/probes/a-record-that-says-nobody-walked` is the gallery's
-/// demonstration that `DW0841` reads the `verdict` field. `DW0841` has a second
-/// arm — the freshness key, which refuses a record taken over a whole that has
-/// since moved — and it refuses with *the same code*. So a probe whose hashes
-/// have gone stale still exits non-zero, still names `DW0841`, and demonstrates
-/// the wrong rule; the coverage gate, which asks only whether the named code
-/// appears, cannot tell the two apart. The probe's own manifest says this is
-/// what it depends on.
-///
-/// That makes the key a standing obligation on every engine change that can
-/// reach the derived grid or the ways — a class this probe cannot survive
-/// silently and this test can. The assertion is therefore not that a refusal
-/// happened: it is that BOTH halves of the key compared equal, so the verdict is
-/// the only thing left that can be doing the refusing.
+/// The drift advisory: the same build, different massing. Reachable only by
+/// toolchain movement, because everything the massing reads out of the
+/// campaign is in the key and the whole key compared equal.
 #[test]
-fn the_committed_unwalked_probe_refuses_on_the_verdict_and_not_on_a_stale_key() {
-    let gallery = common::repo_root().join("gallery");
-    let probe = gallery.join("probes/a-record-that-says-nobody-walked");
-    let camp = tempdir("probe-unwalked");
-
-    // The materialisation `tools/ci/gallery_domain.py` performs for a point: the
-    // primary's stage documents, then the point's own laid over them. This probe
-    // declares no `patch`, so everything but its own documents is the primary.
-    for src in [gallery.clone(), probe.clone()] {
-        for entry in std::fs::read_dir(&src).expect("the point is readable") {
-            let path = entry.unwrap().path();
-            let name = path.file_name().unwrap().to_string_lossy().to_string();
-            if path.is_dir() {
-                if name == "l10n" {
-                    common::copy_dir_all(&path, &camp.join("l10n"));
-                }
-                continue;
-            }
-            if name.ends_with(".json") && name != "probe.json" {
-                std::fs::copy(&path, camp.join(&name)).unwrap();
-            }
-        }
-    }
-
-    // The code asserted below is READ from the probe, so this test cannot drift
-    // from the object it is about.
-    let manifest: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(probe.join("probe.json")).unwrap()).unwrap();
-    let declared = manifest["code"].as_str().expect("the probe names its code");
-
-    let c = campaign_at(&camp);
-    let record = walk_record_at(&camp).expect("the probe ships a walk record");
-    let (diags, binding) = detail::check_walk(&c, Some(&record));
-
-    let e = errors(&diags);
-    assert_eq!(e.len(), 1, "one refusal, not a pile: {:?}", codes(&diags));
-    assert_eq!(e[0].code, declared, "the code the probe's manifest names");
-    assert!(
-        e[0].message.contains("unwalked") && e[0].message.contains("Nobody has walked"),
-        "and it is the VERDICT arm that refused: {}",
-        e[0].message
-    );
-    assert!(
-        !e[0].message.contains("DIFFERENT GRID") && !e[0].message.contains("different whole"),
-        "not the freshness arm, which would be the same code demonstrating \
-         another rule: {}",
-        e[0].message
-    );
-    assert_eq!(
-        (binding.records, binding.compared, binding.rows),
-        (1, detail::WalkBinding::KEYED_HALVES, 1),
-        "and both halves of the key were compared and found equal — an engine \
-         change that moves the derived grid or the ways reds HERE, where the \
-         cause is named, rather than leaving the probe a demonstration of \
-         staleness that still exits non-zero: {}",
-        binding.line()
-    );
-}
-
-/// **Both entry points, demonstrated.** The handing refuses on the same rule and
-/// the same code, and it asks the question of a campaign that has no
-/// `detail-plan` yet — which is exactly the campaign asking for its first
-/// allocation, and the one `check_walk` lets through.
-///
-/// The absent detail plan is the STATE the record is demanded in, never itself a
-/// refusal: the third assertion is the one that says so, and it is the half a
-/// reader of the prose has twice taken the other way round.
-#[test]
-fn dw0841_guards_the_handing_too() {
-    let c = campaign_at(&blockout_dir());
-    let d = detail::allocation_walk_gate(&c, None).expect("no record, no allocation");
-    assert_eq!(d.code, "DW0841");
-    assert!(
-        c.detail_plan.is_none(),
-        "and the campaign it refused has no detail plan at all — the gate fires \
-         BEFORE the work it guards, not after"
-    );
-    assert!(
-        detail::check_walk(&c, None).0.is_empty(),
-        "which is exactly what the OTHER door does not do: with no detail plan \
-         there is nothing for validation to gate, so the two doors are not one \
-         function called twice"
-    );
-
-    let tmp = tempdir("dw0841-handing");
-    let dd = detailed(&tmp, &["node/exit"]);
-    let c = campaign_at(&dd.campaign);
-    let rec = walk_record_at(&dd.campaign);
-    assert!(
-        detail::allocation_walk_gate(&c, rec.as_deref()).is_none(),
-        "and a fresh passed record opens it"
-    );
-}
-
-/// **A campaign with a passed, fresh record and NO detail plan is handed its
-/// allocation** — the state `tools.md` described as a refusal until it was
-/// measured, and the state the whole verb exists for: an author asks for a frame
-/// so they can build the piece that a `details[]` row will later bind.
-///
-/// Over the real binary, because the claim the record made was about the command
-/// a creator types, and `allocation_walk_gate` returning `None` is not the same
-/// fact as `delvec allocation` exiting zero with a frame on stdout.
-#[test]
-fn the_first_allocation_is_handed_out_before_any_detail_plan_exists() {
-    let tmp = tempdir("first-allocation");
-    let campaign = tmp.join("campaign");
-    common::copy_dir_all(&blockout_dir(), &campaign);
-    rerecord_walk(&campaign);
-    assert!(
-        !campaign.join("detail-plan.json").exists(),
-        "the state under test is a campaign with no detail plan"
-    );
-
-    let out = delvec(&["allocation", campaign.to_str().unwrap(), "node/exit"]);
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(0), "{err}");
-    let a: serde_json::Value = serde_json::from_slice(&out.stdout)
-        .expect("stdout carries the allocation and nothing else");
-    assert_eq!(a["place"], "node/exit");
-    assert!(
-        a["extent"].is_array() && a["world_min"].is_array(),
-        "and it is the frame that was handed: {a}"
-    );
-}
-
-/// The blockout-drift advisory: the same two authored documents, different
-/// massing. Reachable only by toolchain movement — because BOTH documents the
-/// derivation reads are in the freshness key and have been compared equal by the
-/// time it runs — so it is provoked by re-recording a blockout hash no campaign
-/// edit could have produced. The sibling test above holds the other direction:
-/// a campaign edit that does move the massing refuses at `DW0841` and never
-/// reaches this warning.
-#[test]
-fn a_blockout_that_moved_under_an_unchanged_plan_is_a_warning_not_a_refusal() {
+fn a_blockout_that_moved_under_an_unchanged_build_is_a_warning_not_a_refusal() {
     let tmp = tempdir("drift");
-    let d = detailed(&tmp, &["node/exit"]);
+    let d = walked(&tmp, &["node/exit"]);
     common::patch_file(&d.campaign.join("walk-record.json"), |v| {
         v["blockout_sha256"] = serde_json::json!("0".repeat(64));
         v["engine_revision"] = serde_json::json!("aaaaaaa");
     });
-    let c = campaign_at(&d.campaign);
-    let rec = walk_record_at(&d.campaign);
-    let w = detail::blockout_drift(&c, rec.as_deref()).expect("the drift is reported");
-    assert_eq!(w.code, "DW0841");
+    let w = drift_at(&d).expect("the drift is reported");
+    assert_eq!(w.code, "DW0974");
     assert_eq!(w.severity, Severity::Warning, "and refuses nothing");
     assert!(
         w.message.contains("aaaaaaa"),
         "names both engines: {}",
         w.message
     );
-    let (diags, _) = check_at(&d);
-    assert!(
-        errors(&diags).is_empty(),
-        "the refusing half stays green: {:?}",
-        codes(&diags)
-    );
+    let (diags, _) = walk_at(&d);
+    assert!(errors(&diags).is_empty(), "{:?}", codes(&diags));
 }
 
-/// **An ABSENT graph is not an unchanged one.** The advisory's whole text is the
-/// claim that both authored documents were compared and found equal, and the
-/// clause enforcing that read the graph's hash through an `if let Some` — so a
-/// campaign with no `layout-graph.json` at all fell straight past it and printed
-/// "under an unchanged site plan and an unchanged layout graph" beside a binding
-/// line reading `1 of 2 freshness hash(es) compared`. That is the laundering
-/// channel the clause exists to close, reached by the arm it did not cover.
-/// `DW0824` is the finding in that state.
+/// **An ABSENT graph is not an unchanged one.** The advisory's text claims the
+/// whole key compared equal; a campaign with no layout graph has no ways half to
+/// compare, so it never reaches the advisory.
 #[test]
 fn the_drift_advisory_never_calls_an_absent_graph_unchanged() {
     let tmp = tempdir("drift-nograph");
-    let d = detailed(&tmp, &["node/exit"]);
+    let d = walked(&tmp, &["node/exit"]);
     common::patch_file(&d.campaign.join("walk-record.json"), |v| {
         v["blockout_sha256"] = serde_json::json!("0".repeat(64));
     });
-    let rec = walk_record_at(&d.campaign);
-    // With the graph present this is exactly the sibling above: the advisory
-    // stands, because both documents really did compare equal.
     assert!(
-        detail::blockout_drift(&campaign_at(&d.campaign), rec.as_deref()).is_some(),
+        drift_at(&d).is_some(),
         "the perturbation reaches the advisory at all"
     );
     std::fs::remove_file(d.campaign.join("layout-graph.json")).unwrap();
     assert!(
-        detail::blockout_drift(&campaign_at(&d.campaign), rec.as_deref()).is_none(),
-        "and a document that is not there is never reported as unchanged"
+        drift_at(&d).is_none(),
+        "and a missing document is never reported unchanged"
     );
 }
 
@@ -2084,30 +1946,7 @@ fn the_allocation_verb_hands_out_the_frame_the_seams_and_the_owed_names() {
     );
 }
 
-/// **The second entry point, at process level.** The handing refuses on the same
-/// rule and the same code as validation.
-#[test]
-fn the_allocation_verb_refuses_without_a_passed_fresh_record() {
-    let tmp = tempdir("allocation-refuse");
-    let d = detailed(&tmp, &[]);
-    std::fs::remove_file(d.campaign.join("walk-record.json")).unwrap();
-    let out = delvec(&[
-        "--prefabs",
-        d.prefabs.to_str().unwrap(),
-        "allocation",
-        d.campaign.to_str().unwrap(),
-        "node/exit",
-    ]);
-    assert_eq!(out.status.code(), Some(1));
-    let s = String::from_utf8_lossy(&out.stdout) + String::from_utf8_lossy(&out.stderr);
-    assert!(s.contains("DW0841"), "{s}");
-    assert!(
-        out.stdout.is_empty() || !s.contains("\"extent\""),
-        "and prints no numbers: {s}"
-    );
-}
-
-/// Every build of a site-plan campaign prints all three hashes and names the
+/// Every build of a site-plan campaign prints every hash and names the
 /// engine by its revision — which is what lets a walk record name its subject
 /// and its instrument literally.
 #[test]
@@ -2124,16 +1963,19 @@ fn a_detailed_build_exits_zero_and_prints_every_hash() {
     ]);
     let err = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(0), "{err}");
-    let c = campaign_at(&d.campaign);
-    let h = detail::Hashes::of(&c).unwrap();
+    let h = hashes_at(&d.campaign, &d.prefabs);
     assert!(err.contains(&h.site_plan), "the plan hash: {err}");
     assert!(
         err.contains(&h.layout_graph),
         "the layout-graph hash, which is the other half of the record's key: {err}"
     );
+    assert!(
+        err.contains(&h.detail),
+        "the detail hash, which names what stands in the whole: {err}"
+    );
     assert!(err.contains(&h.blockout), "the blockout hash: {err}");
     assert!(
-        err.contains(detail::engine_revision()),
+        err.contains(walk::engine_revision()),
         "and the engine's revision"
     );
     assert!(
@@ -2142,7 +1984,7 @@ fn a_detailed_build_exits_zero_and_prints_every_hash() {
     );
 }
 
-/// **The remedy `DW0841` prescribes is reachable from the state that needs it.**
+/// **The remedy `DW0974` prescribes is reachable from the state that needs it.**
 ///
 /// `CLAUDE.md`: *a gate that names a remedy owes a check that the remedy is
 /// reachable*, and this pair failed it. The refusal says to copy the hashes out
@@ -2158,9 +2000,8 @@ fn a_detailed_build_exits_zero_and_prints_every_hash() {
 #[test]
 fn a_refused_build_still_prints_the_hashes_its_refusal_asks_for() {
     let tmp = tempdir("refused-build-hashes");
-    let d = detailed(&tmp, &["node/exit"]);
-    let c = campaign_at(&d.campaign);
-    let h = detail::Hashes::of(&c).unwrap();
+    let d = walked(&tmp, &["node/exit"]);
+    let h = hashes_at(&d.campaign, &d.prefabs);
     // Stale in BOTH halves at once: the record of some other whole entirely.
     common::patch_file(&d.campaign.join("walk-record.json"), |v| {
         v["site_plan_sha256"] = serde_json::json!("1".repeat(64));
@@ -2181,10 +2022,11 @@ fn a_refused_build_still_prints_the_hashes_its_refusal_asks_for() {
     let err =
         String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "the build refuses: {err}");
-    assert!(err.contains("DW0841"), "at the walk gate: {err}");
+    assert!(err.contains("DW0974"), "at the walk check: {err}");
     for (what, hash) in [
         ("grid", &h.site_plan),
         ("ways", &h.layout_graph),
+        ("detail", &h.detail),
         ("blockout", &h.blockout),
     ] {
         assert!(
@@ -2193,46 +2035,8 @@ fn a_refused_build_still_prints_the_hashes_its_refusal_asks_for() {
         );
     }
     assert!(
-        err.contains(detail::engine_revision()),
+        err.contains(walk::engine_revision()),
         "and the engine's revision, which the record also names: {err}"
-    );
-}
-
-/// **The second door owes the same.** `delvec allocation` parses rather than
-/// validating — its stdout is a machine-readable document an authoring loop
-/// reads — so it does not pass through the funnel that prints the hashes, and a
-/// refusal there would hand over nothing to re-record from. It prints them on
-/// stderr itself, and stdout stays the document.
-#[test]
-fn a_refused_allocation_still_prints_the_hashes_its_refusal_asks_for() {
-    let tmp = tempdir("refused-allocation-hashes");
-    let d = detailed(&tmp, &[]);
-    let c = campaign_at(&d.campaign);
-    let h = detail::Hashes::of(&c).unwrap();
-    std::fs::remove_file(d.campaign.join("walk-record.json")).unwrap();
-
-    let out = delvec(&[
-        "--prefabs",
-        d.prefabs.to_str().unwrap(),
-        "allocation",
-        d.campaign.to_str().unwrap(),
-        "node/exit",
-    ]);
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(1), "{err}");
-    for (what, hash) in [
-        ("grid", &h.site_plan),
-        ("ways", &h.layout_graph),
-        ("blockout", &h.blockout),
-    ] {
-        assert!(
-            err.contains(hash.as_str()),
-            "the refused handing states the {what} hash: {err}"
-        );
-    }
-    assert!(
-        !String::from_utf8_lossy(&out.stdout).contains(&h.blockout),
-        "and stdout is still the machine-readable document, unpolluted"
     );
 }
 
@@ -2255,13 +2059,13 @@ fn a_refused_allocation_still_prints_the_hashes_its_refusal_asks_for() {
 fn the_key_is_the_walked_whole_and_the_key_is_closed() {
     let tmp = tempdir("hashes");
     let d = detailed(&tmp, &["node/exit"]);
-    let before = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    let before = hashes_at(&d.campaign, &d.prefabs);
 
     // An edit outside BOTH keyed documents: the campaign's own stage 1.
     common::patch_file(&d.campaign.join("world.json"), |v| {
         v["content"]["seed"] = serde_json::json!(4242);
     });
-    let after = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    let after = hashes_at(&d.campaign, &d.prefabs);
     assert_eq!(
         before, after,
         "no hash sees anything but the plan, the graph, the table and the engine"
@@ -2283,7 +2087,7 @@ fn the_key_is_the_walked_whole_and_the_key_is_closed() {
         graph_bytes_before,
         "the document's canonical bytes moved, which is what the old key hashed"
     );
-    let prose = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    let prose = hashes_at(&d.campaign, &d.prefabs);
     assert_eq!(
         prose, before,
         "and not one of the three hashes saw it: a note edit and a renamed intent \
@@ -2301,7 +2105,7 @@ fn the_key_is_the_walked_whole_and_the_key_is_closed() {
         "the plan's canonical bytes moved"
     );
     assert_eq!(
-        detail::Hashes::of(&campaign_at(&d.campaign)).unwrap(),
+        hashes_at(&d.campaign, &d.prefabs),
         before,
         "and the key did not"
     );
@@ -2311,7 +2115,7 @@ fn the_key_is_the_walked_whole_and_the_key_is_closed() {
     patch_edge(&d.campaign, "edge/hall-cell", |e| {
         e["opens_from"] = serde_json::json!("b");
     });
-    let ways_moved = detail::Hashes::of(&campaign_at(&d.campaign)).unwrap();
+    let ways_moved = hashes_at(&d.campaign, &d.prefabs);
     assert_ne!(
         ways_moved.layout_graph, before.layout_graph,
         "a traversal edit moves the ways half"
@@ -2331,13 +2135,13 @@ fn the_key_is_the_walked_whole_and_the_key_is_closed() {
     // this equal and this assertion is what reds.
     let dd = tempdir("hashes-extent");
     let e = detailed(&dd, &["node/exit"]);
-    let base = detail::Hashes::of(&campaign_at(&e.campaign)).unwrap();
+    let base = hashes_at(&e.campaign, &e.prefabs);
     common::patch_file(&e.campaign.join("site-plan.json"), |v| {
         let min = v["content"]["boxes"][0]["min"].clone();
         let x = min[0].as_i64().expect("a box's pinned corner is a number");
         v["content"]["boxes"][0]["min"][0] = serde_json::json!(x + 1);
     });
-    let moved = detail::Hashes::of(&campaign_at(&e.campaign)).unwrap();
+    let moved = hashes_at(&e.campaign, &e.prefabs);
     assert_ne!(
         moved.site_plan, base.site_plan,
         "one block is a different grid, and a key that cannot see one block is a \
@@ -2367,8 +2171,8 @@ fn the_key_is_the_walked_whole_and_the_key_is_closed() {
 #[test]
 fn every_element_of_the_key_is_named_in_its_own_text() {
     let c = campaign_at(&blockout_dir());
-    let grid = detail::walked_grid(&c).expect("a site-plan campaign has a grid");
-    let ways = detail::walked_ways(&c).expect("and ways");
+    let grid = walk::walked_grid(&c).expect("a site-plan campaign has a grid");
+    let ways = walk::walked_ways(&c).expect("and ways");
     let mut reads = delvewright_dsl::metrics::Reads::new();
     let boxes = delvewright_dsl::siteplan::placed_boxes(&c, &mut reads);
     let seams = delvewright_dsl::siteplan::placed_seams(&c, &boxes, &mut reads);
@@ -2552,10 +2356,9 @@ fn every_input_the_derivation_reads_is_in_one_half_of_the_key() {
         let tmp = tempdir("key-input");
         let campaign = tmp.join("campaign");
         common::copy_dir_all(&blockout_dir(), &campaign);
-        let before = detail::Hashes::of(&campaign_at(&campaign)).unwrap();
+        let before = hashes_at(&campaign, &tmp);
         edit(&campaign);
-        let after = detail::Hashes::of(&campaign_at(&campaign))
-            .unwrap_or_else(|| panic!("`{what}` left a campaign with no hashes at all"));
+        let after = hashes_at(&campaign, &tmp);
         assert_ne!(
             after, before,
             "`{what}` is read by the derivation and must move the key"
@@ -3030,7 +2833,7 @@ fn the_detailed_build_runs_the_unperturbed_derivation() {
 // ---------------------------------------------------------------------------
 
 /// **`walk-record.json` is schema-exportable like every other document a person
-/// writes.** `SKILL.md` instructs an author to write this file and `DW0841`
+/// writes.** `SKILL.md` instructs an author to write this file and `DW0974`
 /// refuses it when it is wrong, so its form being prose-only was the gap: every
 /// other document in the pipeline answers to `delvec schema`.
 ///
@@ -3039,7 +2842,7 @@ fn the_detailed_build_runs_the_unperturbed_derivation() {
 /// struct correct and the document unwritable.
 #[test]
 fn the_walk_record_schema_names_every_field_the_gate_reads() {
-    let schema = detail::walk_record_schema();
+    let schema = walk::walk_record_schema();
 
     let required: Vec<&str> = schema["required"]
         .as_array()
@@ -3050,10 +2853,11 @@ fn the_walk_record_schema_names_every_field_the_gate_reads() {
 
     // Exactly the fields `WalkRecord` parses, minus the one with a default.
     // `findings` is deliberately optional: a walker may note something without
-    // it blocking detail.
+    // it holding the build back.
     let expected = [
         "site_plan_sha256",
         "layout_graph_sha256",
+        "detail_sha256",
         "blockout_sha256",
         "engine_revision",
         "verdict",
@@ -3062,7 +2866,7 @@ fn the_walk_record_schema_names_every_field_the_gate_reads() {
         assert!(
             required.contains(&field),
             "the walk-record schema must require `{field}`, or an author writes a \
-             record `DW0841` then refuses: required = {required:?}"
+             record `DW0974` then refuses: required = {required:?}"
         );
     }
     assert_eq!(
@@ -3094,7 +2898,7 @@ fn the_walk_record_schema_names_every_field_the_gate_reads() {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    for needle in ["NOT A STAGE DOCUMENT", "dsl_version", "DW0841"] {
+    for needle in ["NOT A STAGE DOCUMENT", "dsl_version", "DW0974"] {
         assert!(
             described.contains(needle),
             "the schema description must say `{needle}`; it says:\n{described}"
@@ -3128,7 +2932,7 @@ fn a_source_build_names_the_revision_it_was_built_from() {
         return;
     }
 
-    let rev = detail::engine_revision();
+    let rev = walk::engine_revision();
     assert_ne!(
         rev,
         "unstamped",
@@ -3149,7 +2953,7 @@ fn a_source_build_names_the_revision_it_was_built_from() {
 
     // And the engine names itself with the revision, keeping the version beside
     // it as context rather than as the name.
-    let named = detail::engine_name();
+    let named = walk::engine_name();
     assert!(
         named.starts_with(rev),
         "`engine_name()` leads with the revision; got `{named}`"

@@ -18,57 +18,40 @@
 //! **Frame equality is exact, and undersize refuses exactly as oversize does**
 //! (`DW0843`). A part that under-fills its allocation renegotiates the whole as
 //! much as one that overflows it: the box is the footprint, so a smaller
-//! building means a smaller box, which is a site-plan edit and a re-walk, taken
-//! visibly.
+//! building means a smaller box, which is a site-plan edit, taken visibly.
+//!
+//! # Detail is not held behind a walk
+//!
+//! The walk is taken on the detailed world, after this stage, so nothing here
+//! asks for a walk record. What the record is bound to, and what it holds, is
+//! [`crate::compiler::walk`]'s.
 //!
 //! # What invokes each check, and what happens without it
 //!
 //! | check | event it is bound to |
 //! |---|---|
-//! | `DW0841`–`DW0845` ([`check`]) | `validate_loaded` in `delvec`'s `main` — the one funnel every subcommand's validation goes through, `build` included |
-//! | `DW0841` again ([`check_walk`]) | `delvec allocation`, before it prints a single number |
+//! | `DW0842`–`DW0845` ([`check`]) | `validate_loaded` in `delvec`'s `main` — the one funnel every subcommand's validation goes through, `build` included |
 //! | `DW0848` | `delvec prefab audit`, and [`check`] wherever a row consumes the piece |
 //! | the frame, and the piece's bytes | [`place`], inside `Plan::build` |
-//! | the hash line, and the blockout-drift advisory | `emit::build_with_warnings`, the one function that turns a `Plan` into a datapack |
 //!
-//! There is no flag, no subcommand and no checklist line. The two events that
-//! begin detail work — obtaining an allocation, compiling a binding — are both
-//! bound, and there is no third, because no other verb reads a `detail-plan`.
+//! There is no flag, no subcommand and no checklist line.
 //!
 //! # The hatch question, answered
 //!
 //! This module creates **no** opt-out. A place is bound or unbound, and the kind
 //! is determined by whether a `details[]` row exists rather than chosen among
 //! demands; there is no acknowledgement field, no exemption list and no severity
-//! an author selects. The two soft edges are each secured by a property the
-//! defect cannot supply:
-//!
-//! * the walk record's freshness hashes — the defect `DW0841` catches is
-//!   *detailing a whole the walk never passed*, and the whole that was walked
-//!   has **two** halves: the derived grid and the ways a body moves by, each a
-//!   function of both authored documents. Both halves are in the key, so the
-//!   defect moves one of them, which is the one thing a fabricated-but-fresh
-//!   record cannot survive an edit to either with. The key is over what the
-//!   engine DERIVES rather than over document bytes, so the change that cannot
-//!   have moved the walk — a `dsl_version` bump, a reformat, a reworded note —
-//!   cannot re-open the gate either, which is what stops the remedy being
-//!   unperformable and the gate being discharged by hand;
-//! * the blockout-drift advisory — reachable only by toolchain movement, because
-//!   [`crate::compiler::blockout::walked_massing`] hashes the derivation as a pure function
-//!   of the site plan, the layout graph, the metrics table and the engine, and
-//!   the first two are compared and found equal before the advisory is reached.
+//! an author selects.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use serde::Serialize;
 
 use delvewright_dsl::detailplan::Frame;
-use delvewright_dsl::layout::{Direction, Edge, LayoutGraphContent, Node, Station};
+use delvewright_dsl::layout::{Direction, Edge};
 use delvewright_dsl::metrics::Reads;
 use delvewright_dsl::prefab::ContractFace;
-use delvewright_dsl::siteplan::{PlacedBox, PlacedSeam, SitePlanContent};
+use delvewright_dsl::siteplan::{PlacedBox, PlacedSeam};
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
 
 use crate::compiler::plan::PiecePlacement;
@@ -77,11 +60,6 @@ use crate::compiler::solver::Rotation;
 
 /// The stage name every diagnostic here carries — the document being judged.
 const STAGE: &str = "detail-plan";
-
-delvewright_dsl::dw_code! {
-    /// `DW0841`: detail without a passed, fresh walk of this plan.
-    pub const DW_UNWALKED: DwCode = DwCode::new("DW0841", ExitTier::Build);
-}
 
 delvewright_dsl::dw_code! {
     /// `DW0842`: the binding does not bind.
@@ -101,865 +79,6 @@ delvewright_dsl::dw_code! {
 delvewright_dsl::dw_code! {
     /// `DW0845`: an owed anchor has no standing.
     pub const DW_ANCHOR_STANDING: DwCode = DwCode::new("DW0845", ExitTier::Build);
-}
-
-// ---------------------------------------------------------------------------
-// The instrument (spec-0050 §2)
-// ---------------------------------------------------------------------------
-
-/// **The engine revision, named literally.**
-///
-/// `CLAUDE.md`'s rule that a frozen measurement names its instrument by
-/// revision, never by a version string, is the reason this is not
-/// `DELVEC_VERSION`: two engines 136 commits apart report the same version.
-///
-/// Stamped at COMPILE time, by `crates/delvec/build.rs` (spec-0050 §2). A
-/// source build reads the revision out of the checkout it is being built from,
-/// suffixed `-dirty` when that tree carries uncommitted changes; a release
-/// recipe or container build that has the revision and no `.git` passes
-/// `DELVEC_ENGINE_REVISION` in the environment and that wins unchanged.
-///
-/// `unstamped` is what is left when neither can be established — a source
-/// tarball such as crates.io serves, with no `.git` to read. What the engine
-/// must never do is *claim* a revision it does not have, and `unstamped` is
-/// that claim withheld. It is the fallback, not the normal answer: a campaign
-/// author copies this field into `walk-record.json`, and a field that always
-/// holds one constant is not a measurement.
-#[must_use]
-pub fn engine_revision() -> &'static str {
-    option_env!("DELVEC_ENGINE_REVISION").unwrap_or("unstamped")
-}
-
-/// How the engine names itself in a record or a refusal: the revision, and the
-/// version beside it as context rather than as the name.
-#[must_use]
-pub fn engine_name() -> String {
-    format!(
-        "{rev} (delvec {ver})",
-        rev = engine_revision(),
-        ver = crate::compiler::DELVEC_VERSION
-    )
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(bytes);
-    let mut s = String::with_capacity(64);
-    for b in h.finalize() {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
-}
-
-/// **The derived grid, canonically** — the text [`site_plan_sha256`] is taken
-/// over, one line per object in derivation order.
-///
-/// Public because a digest is one-way. A creator whose gate re-opened diffs two
-/// builds' grids to find what moved, and every test that says what this key does
-/// and does not see reads the text rather than the hash.
-///
-/// **Every derived object is destructured exhaustively, with no `..`.** That is
-/// the closure property this key has instead of whole-document bytes: a field
-/// added to [`PlacedBox`] or [`PlacedSeam`] stops this crate compiling until
-/// somebody decides which half of the key it belongs in. A projection nobody is
-/// forced to extend is the defect the document-bytes key existed to avoid, and
-/// the compiler is a stronger reminder than a comment.
-///
-/// What is deliberately NOT here, each because the walked whole cannot see it:
-/// `datums[]` (a datum's `y` arrives as a box's `floor` and a datum nothing
-/// names has no consequence), `identities[]` and `lighting` (they configure what
-/// the engine CHECKS about the whole — `DW0871` and `DW0210` are their gates —
-/// they do not build it), `sightlines[]` and `views[]` (a claimed line of sight
-/// and a render viewpoint; neither is massing), and every `note`. A seam's
-/// `class` is not here either: it is authored in the graph and it is the
-/// [`walked_ways`] half that carries it, so a way that turns from arch to bar
-/// re-opens the gate naming the document that was edited.
-#[must_use]
-pub fn walked_grid(c: &Campaign) -> Option<String> {
-    let plan = c.site_plan.as_ref()?;
-    let mut reads = Reads::new();
-    let boxes = delvewright_dsl::siteplan::placed_boxes(c, &mut reads);
-    let seams = delvewright_dsl::siteplan::placed_seams(c, &boxes, &mut reads);
-    let SitePlanContent {
-        region,
-        datums: _,
-        boxes: _,
-        seams: _,
-        volumes,
-        identities: _,
-        sightlines: _,
-        views: _,
-        lighting: _,
-    } = &plan.content;
-
-    let mut t = format!(
-        "grid {b} box(es) {s} seam(s) {v} volume(s)\n",
-        b = boxes.len(),
-        s = seams.len(),
-        v = volumes.len(),
-    );
-    t.push_str(&format!("region {region:?}\n"));
-    for b in &boxes {
-        let PlacedBox {
-            node,
-            foot,
-            floor,
-            clearance,
-            open,
-        } = b;
-        t.push_str(&format!(
-            "box {n} foot {foot:?} floor {floor} clearance {clearance} open {open}\n",
-            n = node.0,
-        ));
-    }
-    for s in &seams {
-        // `class` goes to the ways half — see this function's own note.
-        let PlacedSeam {
-            edge,
-            class: _,
-            a,
-            b,
-            face,
-            normal_axis,
-            plane,
-            opening,
-            shared,
-            crossing,
-            rise,
-            stair_in,
-        } = s;
-        t.push_str(&format!(
-            "seam {e} {a} {b} face {face:?} axis {normal_axis} plane {plane} opening {opening:?} \
-             shared {shared:?} crossing {crossing:?} rise {rise} stair_in {stair_in:?}\n",
-            e = edge.0,
-            a = a.0,
-            b = b.0,
-        ));
-    }
-    for v in volumes {
-        t.push_str(&format!(
-            "volume {id} {role:?} {region:?}\n",
-            id = v.id.0,
-            role = v.role,
-            region = v.region,
-        ));
-    }
-    Some(t)
-}
-
-/// **The ways a body moves by, canonically** — the text [`layout_graph_sha256`]
-/// is taken over.
-///
-/// The grid says where the space is; this says what a body may do in it, and
-/// none of it is written in the plan. An [`Edge`] is printed whole, by `Debug`,
-/// because **every field an edge has is a traversal fact** — its class is the
-/// variant name, and `one_way`, `falls`, `shortcut`, `gating` and `opens_from`
-/// are the rest of it. There is no prose on an edge, so a field added to one
-/// belongs in this key by default and lands in it without anybody remembering.
-///
-/// A node is destructured exhaustively instead, because a node does carry prose.
-/// `intent` and `note` are the two fields the DSL itself documents as *no check
-/// keys on this*; `size_class` and `way_class` are left out because their whole
-/// consequence is the box's footprint and headroom, which [`walked_grid`]
-/// already holds — counting them twice would move both halves of the key on one
-/// edit and send the reader to the wrong repair. `stations` stay: a station is a
-/// named place realized in the massing, and a `gate` station writes a bar.
-#[must_use]
-pub fn walked_ways(c: &Campaign) -> Option<String> {
-    let graph = c.layout_graph.as_ref()?;
-    let LayoutGraphContent {
-        nodes,
-        edges,
-        entry,
-        goal,
-        critical_path,
-        beats,
-    } = &graph.content;
-
-    let mut t = format!(
-        "ways {e} edge(s) {n} node(s) {b} beat(s)\n",
-        e = edges.len(),
-        n = nodes.len(),
-        b = beats.len(),
-    );
-    t.push_str(&format!("entry {}\ngoal {}\n", entry.0, goal.0));
-    t.push_str(&format!(
-        "critical-path {}\n",
-        critical_path
-            .iter()
-            .map(|n| n.0.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    ));
-    for e in edges {
-        t.push_str(&format!("edge {e:?}\n"));
-    }
-    for n in nodes {
-        let Node {
-            id,
-            intent: _,
-            size_class: _,
-            way_class: _,
-            note: _,
-            stations,
-        } = n;
-        for st in stations {
-            let Station {
-                anchor,
-                kind,
-                note: _,
-            } = st;
-            t.push_str(&format!(
-                "station {node} {a} {kind:?}\n",
-                node = id.0,
-                a = anchor.as_str(),
-            ));
-        }
-    }
-    for b in beats {
-        t.push_str(&format!(
-            "beat {q} {o} {n}\n",
-            q = b.quest.0,
-            o = b.objective.0,
-            n = b.node.0,
-        ));
-    }
-    Some(t)
-}
-
-/// **The grid half of the freshness key**: sha256 over [`walked_grid`].
-///
-/// Over the DERIVED GRID, not over `site-plan.json`'s bytes. The gate asks
-/// whether the whole a walker walked is the whole this campaign now builds, and
-/// a document's bytes answer a narrower question that happens to correlate: they
-/// move for a `dsl_version` bump, a reworded `note`, a renamed intent and a
-/// re-serialization, none of which a body can feel. A key that re-opens on those
-/// demands the one repair nobody can honestly perform — walk the whole again for
-/// a change that cannot have changed the walk — and a gate whose remedy is
-/// unperformable is discharged by hand, which is what happened to it.
-///
-/// So the key is the grid: every box's corner, extent, floor and headroom, and
-/// every seam's cells, crossing and rise, with the whole's own volumes and the
-/// region they stand in. Moving one extent by one block moves it.
-#[must_use]
-pub fn site_plan_sha256(c: &Campaign) -> Option<String> {
-    Some(sha256_hex(walked_grid(c)?.as_bytes()))
-}
-
-/// **The ways half of the freshness key**: sha256 over [`walked_ways`].
-///
-/// Not a refinement of the first half: **the whole that is walked is derived
-/// from two authored documents**, and only one of them is the plan. A box's
-/// headroom comes from its node's `size_class`; a seam's opening is cut to air
-/// or filled with the bar according to its edge's `class`; the side an
-/// `anchor/unlock-…` stands on is the edge's `opens_from`; what a body must hold
-/// to pass is its `gating`; and which way a fall goes is its `falls`. None of
-/// that is stated anywhere in the plan, and the second and third of them move no
-/// byte the grid can see.
-#[must_use]
-pub fn layout_graph_sha256(c: &Campaign) -> Option<String> {
-    Some(sha256_hex(walked_ways(c)?.as_bytes()))
-}
-
-/// **The blockout's hash**: sha256 over the derived massing the WALK judged.
-///
-/// Taken over [`crate::compiler::blockout::walked_massing`] — the derivation with nothing
-/// bound — for the reason that function's own note gives.
-#[must_use]
-pub fn blockout_sha256(c: &Campaign) -> Option<String> {
-    let mut reads = Reads::new();
-    let fills = crate::compiler::blockout::walked_massing(c, &mut reads)?;
-    let mut text = String::new();
-    for f in &fills {
-        text.push_str(&format!(
-            "{} {} {} {} {} {} {}\n",
-            f.from[0], f.from[1], f.from[2], f.to[0], f.to[1], f.to[2], f.block
-        ));
-    }
-    Some(sha256_hex(text.as_bytes()))
-}
-
-/// The three hashes and the engine that produced them, printed on every build of
-/// a site-plan campaign so a walk record can name its subject and its
-/// instrument.
-///
-/// Two of them are the **key** — the two halves of the whole a walker walked,
-/// the grid and the ways — and the third is the derived massing, which is what
-/// the drift advisory reads. None of the three is over a document's bytes: a
-/// hash a creator could compute from `site-plan.json` with `sha256sum` would
-/// move on a `dsl_version` bump and a reformat, which is a gate demanding a walk
-/// for a change no body can feel.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Hashes {
-    /// Over the derived grid ([`walked_grid`]).
-    pub site_plan: String,
-    /// Over the ways a body moves by ([`walked_ways`]).
-    pub layout_graph: String,
-    /// Over the massing a walker walked.
-    pub blockout: String,
-}
-
-impl Hashes {
-    /// The three hashes of `c`, or `None` for a campaign with no site plan or no
-    /// layout graph — a whole with either missing is not a whole anything walked.
-    #[must_use]
-    pub fn of(c: &Campaign) -> Option<Hashes> {
-        Some(Hashes {
-            site_plan: site_plan_sha256(c)?,
-            layout_graph: layout_graph_sha256(c)?,
-            blockout: blockout_sha256(c)?,
-        })
-    }
-
-    /// One line, for stderr and for whoever is writing the walk record.
-    #[must_use]
-    pub fn line(&self) -> String {
-        format!(
-            "site plan sha256:    {sp}\nlayout graph sha256: {lg}\nblockout sha256:     {bo}\n\
-             engine revision:     {rev}",
-            sp = self.site_plan,
-            lg = self.layout_graph,
-            bo = self.blockout,
-            rev = engine_name(),
-        )
-    }
-}
-
-// ---------------------------------------------------------------------------
-// The walk record (spec-0049 §5.4, gated here)
-// ---------------------------------------------------------------------------
-
-/// What this record says happened.
-///
-/// **Two of these three describe a walk; the third says there was none.** The
-/// closed set used to hold only the first two, and both of them opened *"the
-/// whole was walked"* — so every legal record asserted a walk, and the states
-/// this pipeline actually produces before one has happened (a build stood up
-/// and taken down, a walk abandoned, a walk cut short) had no legal spelling.
-/// The author writing the file was left choosing which of two false sentences
-/// to sign, and the truth could only go into `findings[]`, which is free prose
-/// no gate reads. `Unwalked` is the value that lets the document state its own
-/// subject; the gate below then refuses on the FIELD rather than on prose.
-///
-/// Only [`Verdict::Passed`] admits detail work, and nothing here decides
-/// whether a body was in the world: that a human walked is this document's
-/// author's assertion, held by operating practice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum Verdict {
-    /// The whole was walked and is fit to detail.
-    Passed,
-    /// The whole was walked and something must change first.
-    Findings,
-    /// **Nobody walked this whole.** The record exists to say so — a build
-    /// stood up and taken down, a walk abandoned, a walk cut short. It is
-    /// never written in place of a walk that happened, and it never becomes
-    /// `passed` by anything but a walk.
-    Unwalked,
-}
-
-impl Verdict {
-    /// **Every spelling this closed set admits**, read off the type's own
-    /// schema — the one `delvec schema --stage walk-record` exports — so a
-    /// message that lists the set cannot fall behind a variant added to it.
-    #[must_use]
-    pub fn tokens() -> Vec<String> {
-        let v = serde_json::to_value(schemars::schema_for!(Verdict))
-            .expect("the verdict schema serializes to JSON");
-        let from_one_of = v["oneOf"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|b| b["const"].as_str());
-        let from_enum = v["enum"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(serde_json::Value::as_str);
-        from_one_of.chain(from_enum).map(str::to_string).collect()
-    }
-}
-
-/// One thing a walk found.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct WalkFinding {
-    /// What it is about — a place, a seam, a view.
-    pub subject: String,
-    /// What was wrong, in the walker's words.
-    pub note: String,
-}
-
-/// **`walk-record.json`** — the record of a human walking one derived blockout.
-///
-/// The form is spec-0049 §5.4's, unchanged. It is not a stage document and
-/// carries no `dsl_version`: it is not authored against a schema version, it is
-/// the record of an event.
-///
-/// The machine half of the gate below is **freshness and an explicit verdict**,
-/// stated plainly rather than implied. That a human actually walked is this
-/// document's author's assertion, held by operating practice; no engine check
-/// can prove a walk happened and nothing here pretends one can.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct WalkRecord {
-    /// The **grid** that was walked, by [`site_plan_sha256`] — the derived space
-    /// the site plan resolves to, never that document's bytes. Named for the
-    /// document a creator goes to when it moves.
-    pub site_plan_sha256: String,
-    /// The **ways** that were walked, by [`layout_graph_sha256`]. **The other
-    /// half of the key**: the grid states where the boxes stand and where the
-    /// seams' cells are cut, the layout graph states what those seams ARE — walk,
-    /// stair, drop or bar, which side opens it, what a body must hold to pass —
-    /// so a record naming only the grid is a record of half the whole.
-    pub layout_graph_sha256: String,
-    /// The massing that was walked, by its hash.
-    pub blockout_sha256: String,
-    /// The engine that built it — the revision, never a version string.
-    pub engine_revision: String,
-    /// What this record says happened — and `unwalked` is one of the three,
-    /// so a record is never forced to assert a walk in order to exist.
-    pub verdict: Verdict,
-    /// What was found. Present and non-empty is compatible with `passed`: a
-    /// walker may note something without it blocking detail.
-    #[serde(default)]
-    pub findings: Vec<WalkFinding>,
-}
-
-impl WalkRecord {
-    /// Parse a record, or say why it is not one.
-    pub fn parse(src: &str) -> Result<WalkRecord, String> {
-        serde_json::from_str(src).map_err(|e| e.to_string())
-    }
-}
-
-/// The JSON Schema for `walk-record.json`, exported by
-/// `delvec schema --stage walk-record`.
-///
-/// **Why this document has a schema even though it is not a stage document.**
-/// `walk-record.json` is a campaign artifact, not a stage document: it records
-/// an event rather than being authored against a schema version, which is why
-/// it carries no `dsl_version`, no `campaign_id` and no `stage`. None of that
-/// is a reason to leave the person who has to WRITE it reading prose. It is
-/// hand-authored, it is refused when it is wrong (`DW0841`), and every other
-/// document the author writes is `delvec schema`-exportable — so the one that
-/// is not is the one they get wrong. The schema is derived from
-/// [`WalkRecord`] exactly as every stage schema is derived from its type, so
-/// there is one authority for the form and no hand-written copy to disagree
-/// with it.
-#[must_use]
-pub fn walk_record_schema() -> serde_json::Value {
-    let mut v = serde_json::to_value(schemars::schema_for!(WalkRecord))
-        .expect("the walk-record schema serializes to JSON");
-    if let Some(obj) = v.as_object_mut() {
-        obj.insert(
-            "title".into(),
-            serde_json::Value::String("walk-record.json".into()),
-        );
-        obj.insert(
-            "description".into(),
-            serde_json::Value::String(WALK_RECORD_SCHEMA_DESCRIPTION.into()),
-        );
-    }
-    v
-}
-
-/// What the exported schema tells its reader the document IS — stated on the
-/// schema rather than only in a reference document, because the schema is what
-/// the authoring step actually opens.
-const WALK_RECORD_SCHEMA_DESCRIPTION: &str = "\
-The record of a human walking one derived blockout, written by hand beside the \
-stage documents once the walk is done.
-
-A CAMPAIGN ARTIFACT, NOT A STAGE DOCUMENT. It records an event rather than \
-being authored against a schema version, so it carries no `dsl_version`, no \
-`campaign_id` and no `stage` — the three fields every stage document must \
-have. It is not a build input either: re-recording a walk moves no emitted \
-byte.
-
-Every field but `findings` is required. The three hashes and the engine \
-revision are all printed by `delvec build` on a site-plan campaign — copy \
-them from that output, which is the only place they exist: NONE of the three \
-is a hash of a document, so `sha256sum site-plan.json` does not produce one. \
-`site_plan_sha256` and `layout_graph_sha256` are the freshness key, and each \
-is over what the engine DERIVES: the grid (every box's corner, extent, floor \
-and headroom, every seam's cells, crossing and rise, the whole's volumes and \
-region) and the ways a body moves by (every edge whole, the entry, the goal, \
-the critical path, the beats, the stations). Moving a box one block re-opens \
-the gate; a `dsl_version` bump, a reformat, a reworded note or a renamed \
-intent does not.
-
-`verdict` is one of THREE values and the third is the one to reach for when \
-no walk happened. `passed` — the whole was walked and is fit to detail. \
-`findings` — the whole was walked and something must change first. \
-`unwalked` — NOBODY WALKED IT: a build stood up and taken down, a walk \
-abandoned, a walk cut short. Write `unwalked` for every one of those. It is \
-the only value that does not assert a walk, and asserting one that did not \
-happen is the thing this document must never be made to do; `findings[]` is \
-free prose and no check reads it, so a truth put only there changes nothing. \
-`DW0841` refuses detail work — including `delvec allocation` — when this file \
-is missing, unparseable, stale in either hash, or carries any verdict but \
-`passed`, and it names which of those it is.";
-
-/// What the walk gate examined, with its denominator.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct WalkBinding {
-    /// Records read — 0 or 1, and 0 with a detail plan present is the refusal.
-    pub records: usize,
-    /// Freshness hash comparisons made, out of [`Self::KEYED_HALVES`]. The
-    /// denominator is stated with the count on purpose: a gate that compared one
-    /// of the two halves the walked whole is made of is green about a smaller
-    /// world than the one it claims to cover, which is exactly the escape this
-    /// key was widened to close.
-    pub compared: usize,
-    /// `details[]` rows the gate stood in front of.
-    pub rows: usize,
-}
-
-impl WalkBinding {
-    /// The halves the walked whole is made of, and therefore the denominator of
-    /// [`Self::compared`]: the derived grid, and the ways a body moves by.
-    pub const KEYED_HALVES: usize = 2;
-
-    /// One line, stated whether or not it is zero.
-    #[must_use]
-    pub fn line(&self) -> String {
-        format!(
-            "detail walk gate binding: {r} walk record(s) read, {c} of {d} freshness hash(es) \
-             compared (grid, ways), standing in front of {n} `details[]` row(s).",
-            r = self.records,
-            c = self.compared,
-            d = Self::KEYED_HALVES,
-            n = self.rows,
-        )
-    }
-}
-
-/// **`DW0841`: detail without a passed walk of this plan** — at the *compiling
-/// a binding* event.
-///
-/// Bound at the two events that begin detail work, and there is no third
-/// because no other verb reads a `detail-plan`: this one is validation, and
-/// therefore every build; [`allocation_walk_gate`] is `delvec allocation`.
-///
-/// Missing, `"findings"` and stale are each named — stale in the plan and stale
-/// in the layout graph separately, because they are different edits with
-/// different repairs — and a stale record's refusal prints both sides of the
-/// hash that moved. A campaign with no detail plan binds zero of this and says
-/// so.
-#[must_use]
-pub fn check_walk(c: &Campaign, record: Option<&str>) -> (Vec<Diagnostic>, WalkBinding) {
-    let mut binding = WalkBinding::default();
-    let Some(plan) = c.detail_plan.as_ref() else {
-        return (Vec::new(), binding); // nothing to gate.
-    };
-    binding.rows = plan.content.details.len();
-    let (d, b) = walk_gate(c, record, binding.rows);
-    binding.records = b.records;
-    binding.compared = b.compared;
-    (d.into_iter().collect(), binding)
-}
-
-/// **`DW0841`** — at the *obtaining an allocation* event.
-///
-/// The same rule and the same code as [`check_walk`], with one difference that is
-/// the whole reason this door exists: [`check_walk`] returns nothing when there is
-/// no `detail-plan`, and this one asks anyway. A campaign with no detail plan is
-/// exactly the campaign asking for its first allocation, and exactly the moment
-/// the ordering has to hold; a gate that only fired once a detail plan existed
-/// would fire after the work it guards had begun.
-///
-/// The absent detail plan is therefore not itself a refusal — it is the state the
-/// walk record is demanded IN. A campaign with a passed, fresh record and no
-/// detail plan is handed its allocation and exits zero.
-#[must_use]
-pub fn allocation_walk_gate(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> {
-    walk_gate(
-        c,
-        record,
-        c.detail_plan
-            .as_ref()
-            .map_or(0, |e| e.content.details.len()),
-    )
-    .0
-}
-
-/// The one implementation both doors ask.
-fn walk_gate(c: &Campaign, record: Option<&str>, rows: usize) -> (Option<Diagnostic>, WalkBinding) {
-    let mut d: Option<Diagnostic> = None;
-    let mut binding = WalkBinding {
-        rows,
-        ..WalkBinding::default()
-    };
-    let Some(current) = site_plan_sha256(c) else {
-        // A detail plan in a campaign with no site plan. `DW0842`'s limiting
-        // case names that, and answering it twice would be two diagnostics for
-        // one defect.
-        return (d, binding);
-    };
-    let Some(src) = record else {
-        d = Some(Diagnostic::error(
-            DW_UNWALKED,
-            STAGE,
-            "/content/details",
-            format!(
-                "this campaign has no `walk-record.json`. The whole map \
-                 is walked before any part of it is detailed: detailing is where a map's cost \
-                 stops being cheap to change, so the whole is judged first, in game, and the \
-                 record of that judgement is what unlocks the parts. Write \
-                 `walk-record.json` beside the stage documents, with \
-                 `site_plan_sha256` set to `{current}`, `blockout_sha256` set to the hash the \
-                 build printed beside it, `engine_revision` set to the revision that built it \
-                 (this one is `{rev}`), `verdict` set to `passed`, and a `findings` list of \
-                 whatever the walk noted{graph}. Every build of this campaign prints all three \
-                 hashes. Copy them from that output rather than computing them: the two key \
-                 hashes are over the WHOLE THIS ENGINE DERIVES, not over the documents' bytes, \
-                 so nothing outside `delvec` can produce them. Binding: {n} `details[]` row(s) \
-                 stood in front of, ZERO records read.",
-                rev = engine_revision(),
-                graph = match layout_graph_sha256(c) {
-                    Some(g) => format!(
-                        ". `layout_graph_sha256` goes beside the plan's and is `{g}` — the first \
-                         is the derived GRID, every box's corner, extent, floor and headroom and \
-                         every seam's cells, and the second is the WAYS a body moves by, what \
-                         each of those seams is and what it demands, so a record naming only the \
-                         first is a record of half the whole"
-                    ),
-                    None => String::new(),
-                },
-                n = binding.rows,
-            ),
-        ));
-        return (d, binding);
-    };
-    binding.records = 1;
-    let rec = match WalkRecord::parse(src) {
-        Ok(r) => r,
-        Err(e) => {
-            d = Some(Diagnostic::error(
-                DW_UNWALKED,
-                STAGE,
-                "/content/details",
-                format!(
-                    "`walk-record.json` is not a walk record: {e}. Its form is fixed — \
-                     `site_plan_sha256`, `layout_graph_sha256`, `blockout_sha256`, \
-                     `engine_revision`, `verdict` (one of {verdicts}), and `findings[]` of \
-                     `{{subject, note}}`. A record that does not parse is a record nothing can be \
-                     judged against, so it is a refusal rather than an absence. Binding: {n} \
-                     `details[]` row(s) stood in front of, 1 record read.",
-                    verdicts = Verdict::tokens()
-                        .iter()
-                        .map(|t| format!("`{t}`"))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    n = binding.rows,
-                ),
-            ));
-            return (d, binding);
-        }
-    };
-    binding.compared = 1;
-    if rec.site_plan_sha256 != current {
-        d = Some(Diagnostic::error(
-            DW_UNWALKED,
-            STAGE,
-            "/content/details",
-            format!(
-                "`walk-record.json` records a walk of a DIFFERENT GRID, so the space this \
-                 campaign now builds has not been walked. The record names `{recorded}`; this \
-                 campaign's grid hashes to `{current}`. The hash is over the grid the engine \
-                 DERIVES — every box's corner, extent, floor and headroom, every seam's cells, \
-                 crossing and rise, the whole's own volumes and the region they stand in — so a \
-                 reformat, a `dsl_version` bump, a reworded note or a renamed intent is not a \
-                 re-walk, and a box that moved one block is. That is the escalation path \
-                 working, not a nuisance: a part that wants different space revises the SITE \
-                 PLAN (or the `size_class` in the graph that gives it its headroom), which moves \
-                 a cell, which moves this hash, which re-opens this gate, which re-runs the \
-                 whole's walk. Rebuild and compare the `site-plan binding` and `site-plan \
-                 placing` lines against the ones the walk was recorded from to see what moved. \
-                 Walk the current blockout and re-record. Binding: {n} `details[]` row(s) stood \
-                 in front of, 1 of {d} freshness hash(es) compared.",
-                recorded = rec.site_plan_sha256,
-                n = binding.rows,
-                d = WalkBinding::KEYED_HALVES,
-            ),
-        ));
-        return (d, binding);
-    }
-    // **The other half of the key.** The grid states where the boxes are and
-    // where each seam's cells are cut; the ways state what those seams ARE —
-    // walk, stair, drop or bar, which side opens the bar, what a body must hold
-    // to pass — and where a body starts, which route it is meant to take and
-    // which places its beats happen in. All of it reaches the whole a walker
-    // judged, none of it is visible in the grid, so a key over the grid alone
-    // leaves a campaign free to move the walked bytes and the walked
-    // connectivity under a record that still reads as fresh.
-    if let Some(graph_now) = layout_graph_sha256(c) {
-        binding.compared = 2;
-        if rec.layout_graph_sha256 != graph_now {
-            d = Some(Diagnostic::error(
-                DW_UNWALKED,
-                STAGE,
-                "/content/details",
-                format!(
-                    "`walk-record.json` records a walk of DIFFERENT WAYS, so this whole has \
-                     not been walked. The record names `{recorded}`; this campaign's ways hash \
-                     to `{graph_now}`. The grid is unchanged, and that is not enough: the whole \
-                     a walker walked is the space AND the rules a body moves through it by, so a \
-                     seam that was an open archway and is now a quest-locked bar, a door that \
-                     now opens from the other side, a fall that now falls the other way, a way \
-                     that gained a flag to pass, a station that moved place or a beat that moved \
-                     node is a different whole standing on the same grid. The hash is over the \
-                     LAYOUT GRAPH's traversal content — every edge whole, the entry, the goal, \
-                     the critical path, the beats and every station — and never over its bytes, \
-                     so a reformat, a `dsl_version` bump, a reworded note or a renamed intent is \
-                     not a re-walk. Walk the current blockout and re-record. Binding: {n} \
-                     `details[]` row(s) stood in front of, {d} of {d} freshness hash(es) \
-                     compared.",
-                    recorded = rec.layout_graph_sha256,
-                    n = binding.rows,
-                    d = WalkBinding::KEYED_HALVES,
-                ),
-            ));
-            return (d, binding);
-        }
-    }
-    // The refusal is on the FIELD, and the two non-passing values are not one
-    // fact. `findings` is a walk that happened and concluded something must
-    // change; `unwalked` is a record whose subject is that nobody walked. The
-    // remedies differ — answer the findings, against go and hold the walk — so
-    // the message does, while the code stays one: this is one class, *detail
-    // work has not been unlocked by a passed walk of this whole*, and a code
-    // per enum value would be a code per value rather than per class.
-    if rec.verdict != Verdict::Passed {
-        // An empty `findings[]` means different things under the two values,
-        // and saying the `findings` sentence over an `unwalked` record would
-        // send its author looking for a defect nobody has seen.
-        let list = if rec.findings.is_empty() {
-            match rec.verdict {
-                Verdict::Unwalked => {
-                    "and names no findings, which is what a record of no walk has to report"
-                }
-                _ => {
-                    "and names no findings, which is a record that says the walk did not pass \
-                      and does not say why"
-                }
-            }
-            .to_string()
-        } else {
-            format!(
-                "and names {} finding(s): {}",
-                rec.findings.len(),
-                rec.findings
-                    .iter()
-                    .map(|f| format!("`{}` — {}", f.subject, f.note))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )
-        };
-        let body = match rec.verdict {
-            Verdict::Unwalked => format!(
-                "`walk-record.json` records `verdict: \"unwalked\"` {list}. **Nobody has walked \
-                 this whole**, and that is what this record is for: it states the absence rather \
-                 than dressing it as a verdict. Detail work does not begin on a whole nobody has \
-                 stood in — that is the ordering this pipeline exists to make structural, and it \
-                 holds here on the field rather than on prose no check reads. Stand the build up \
-                 and hold the walk, then re-record from what the walk concluded — `passed` if it \
-                 is fit to detail, `findings` if something must change first. Neither value is \
-                 written for a walk that did not happen."
-            ),
-            _ => format!(
-                "`walk-record.json` records `verdict: \"findings\"` {list}. Detail work does not \
-                 begin on a whole that has not passed its walk — that is the ordering this \
-                 pipeline exists to make structural. Answer the findings in the graph or the \
-                 plan, rebuild, walk again, and re-record with `verdict: \"passed\"`."
-            ),
-        };
-        d = Some(Diagnostic::error(
-            DW_UNWALKED,
-            STAGE,
-            "/content/details",
-            format!(
-                "{body} Binding: {n} `details[]` row(s) stood in front of, {c} of {d} freshness \
-                 hash(es) compared.",
-                n = binding.rows,
-                c = binding.compared,
-                d = WalkBinding::KEYED_HALVES,
-            ),
-        ));
-    }
-    (d, binding)
-}
-
-/// **The blockout-drift advisory** (spec-0050 §2): the same walked whole,
-/// different massing bytes.
-///
-/// A warning naming both hashes and both engine revisions, and never a refusal.
-/// The hatch question, answered — and the answer is a property of the KEY rather
-/// than of the derivation. The derivation is a pure function of the site plan,
-/// the layout graph, the metrics table and the engine, and **everything it reads
-/// out of the two documents is in `DW0841`'s key**, enumerated rather than
-/// asserted: the placed boxes and the placed seams and the plan's own volumes
-/// and region ([`walked_grid`]); the entry, every edge whole — so every barred
-/// way's `opens_from` — and every node's stations ([`walked_ways`]). Both halves
-/// have been compared and found equal by the time this runs, so what is left to
-/// have moved is the toolchain, and this path is a re-walk *decision* for the
-/// round summary rather than a defect anyone could launder through it. That
-/// enumeration is held by a test rather than by this paragraph: see
-/// `crates/delvec/tests/detail.rs`, which perturbs each class in turn and
-/// requires the key to move.
-///
-/// **The ways clause below is load-bearing, not a duplicate-diagnostic
-/// nicety.** Without it, a graph-only edit — an open archway turned into a
-/// quest-locked bar — moves the massing under an unmoved grid hash and lands
-/// here, under a message asserting that no campaign edit can. A warning that
-/// denies the state it is reporting trains its reader to wave that state
-/// through, so the suppression is what makes this text true and deleting it
-/// re-opens a laundering channel rather than a duplicate diagnostic.
-#[must_use]
-pub fn blockout_drift(c: &Campaign, record: Option<&str>) -> Option<Diagnostic> {
-    c.detail_plan.as_ref()?;
-    let rec = WalkRecord::parse(record?).ok()?;
-    let current = blockout_sha256(c)?;
-    if rec.blockout_sha256 == current {
-        return None;
-    }
-    // A record of a different GRID or of different WAYS is `DW0841`'s refusal.
-    // Both clauses are here for the same two reasons: saying it twice would be
-    // two diagnostics for one defect, and a campaign edit that reaches this
-    // warning would make its text a lie.
-    if site_plan_sha256(c).as_deref() != Some(rec.site_plan_sha256.as_str()) {
-        return None;
-    }
-    // An ABSENT graph is not an unchanged one. `DW0824` refuses the campaign for
-    // it, and reaching the text below through that hole makes the warning assert
-    // equality about a document that is not there — the same lie the clause
-    // exists to prevent, arriving by the arm that had no clause at all. Measured
-    // on the gallery's site-plan point with `layout-graph.json` removed: this
-    // printed "under an unchanged site plan and an unchanged layout graph"
-    // beside a binding line reading `1 of 2 freshness hash(es) compared`.
-    if layout_graph_sha256(c).as_deref() != Some(rec.layout_graph_sha256.as_str()) {
-        return None;
-    }
-    Some(Diagnostic::warning(
-        DW_UNWALKED,
-        STAGE,
-        "/content/details",
-        format!(
-            "the walked massing has MOVED under an unchanged grid and unchanged ways. The \
-             record was taken on engine `{was_rev}` and names blockout `{was}`; engine \
-             `{now_rev}` derives `{now}` from the same whole. This refuses nothing. What is \
-             left to have moved is the TOOLCHAIN — the engine or the metrics table — because \
-             the derivation is a pure function of the site plan, the layout graph, the metrics \
-             table and the engine, and everything it reads out of those two documents is in the \
-             two hashes `DW0841` has just compared and found equal. Whether the whole is walked \
-             again is a decision for the round summary rather than a defect to repair.",
-            was = rec.blockout_sha256,
-            was_rev = rec.engine_revision,
-            now = current,
-            now_rev = engine_name(),
-        ),
-    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1262,27 +381,19 @@ pub struct DetailBinding {
     pub owed: usize,
     /// Bound pieces declaring a `footprint_class` — `DW0848`.
     pub classed: usize,
-    /// Walk records read — `DW0841`. Zero with a detail plan present is the
-    /// refusal; zero without one is a campaign that details nothing.
-    pub records: usize,
-    /// Freshness hash comparisons made — `DW0841` — out of the
-    /// [`WalkBinding::KEYED_HALVES`] the derived whole is a function of.
-    pub compared: usize,
 }
 
 impl DetailBinding {
-    /// One line, stated whether or not any of it is zero — and the walk gate's
-    /// own counts are in it, because a check that reports no binding is a check
-    /// nobody can tell apart from one that never ran.
+    /// One line, stated whether or not any of it is zero, because a check that
+    /// reports no binding is a check nobody can tell apart from one that never
+    /// ran.
     #[must_use]
     pub fn line(&self) -> String {
         format!(
             "detail binding: {bd} of {b} place(s) bound over {r} `details[]` row(s), {m} \
              piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
              declared face(s) examined, {o} owed anchor name(s) checked, {cl} piece(s) \
-             declaring a footprint class; walk gate: {rec} record(s) read, {cmp} of {kd} \
-             freshness hash(es) compared.",
-            kd = WalkBinding::KEYED_HALVES,
+             declaring a footprint class.",
             bd = self.bound,
             b = self.boxes,
             r = self.rows,
@@ -1291,8 +402,6 @@ impl DetailBinding {
             fe = self.faces_examined,
             o = self.owed,
             cl = self.classed,
-            rec = self.records,
-            cmp = self.compared,
         )
     }
 }
@@ -1478,7 +587,7 @@ fn check_class(
     }
 }
 
-/// **`DW0841`–`DW0845` and `DW0848`'s consumer door, over a whole campaign.**
+/// **`DW0842`–`DW0845` and `DW0848`'s consumer door, over a whole campaign.**
 ///
 /// Validation tier: a diagnostic here is exit 1, before any byte is written.
 /// Bound in `validate_loaded`, which every `delvec` subcommand's validation goes
@@ -1486,17 +595,9 @@ fn check_class(
 /// `delvec validate`.
 ///
 /// A campaign with no detail plan runs every check zero times and says so.
-pub fn check(
-    c: &Campaign,
-    prefabs: &PrefabRegistry,
-    walk_record: Option<&str>,
-) -> (Vec<Diagnostic>, DetailBinding) {
-    let (mut d, walk) = check_walk(c, walk_record);
-    let mut binding = DetailBinding {
-        records: walk.records,
-        compared: walk.compared,
-        ..DetailBinding::default()
-    };
+pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, DetailBinding) {
+    let mut d: Vec<Diagnostic> = Vec::new();
+    let mut binding = DetailBinding::default();
     let Some(doc) = c.detail_plan.as_ref().map(|e| &e.content) else {
         return (d, binding);
     };
@@ -1605,7 +706,7 @@ pub fn check(
                     "`{place}` is not a place this map has. A `details[]` row fills the box the \
                      site plan gave a layout-graph node, and the plan resolves {b} box(es): {known}. \
                      Either name one of those, or add the place to the layout graph and the site \
-                     plan first — which is a plan edit, and re-opens the walk gate.",
+                     plan first — which is a plan edit.",
                     place = row.place,
                     b = boxes.len(),
                     known = if known.is_empty() {
@@ -1668,9 +769,8 @@ pub fn check(
                      {gx}x{gy}x{gz}; the frame is {wx}x{wy}x{wz} — {over}. The frame is the play \
                      space plus the one floor course under it, and equality is EXACT: undersize \
                      refuses exactly as oversize does, because the box is the footprint and a \
-                     smaller building means a smaller box. That is a site-plan edit and a \
-                     re-walk, taken visibly, and it is the only way a part changes what the whole \
-                     gave it. Run `delvec allocation {place}` for the frame, the datum and every \
+                     smaller building means a smaller box. That is a site-plan edit, taken \
+                     visibly, and it is the only way a part changes what the whole gave it. Run `delvec allocation {place}` for the frame, the datum and every \
                      seam this box must answer.{upstream}",
                     piece = row.piece,
                     place = row.place,
@@ -1781,7 +881,7 @@ pub fn check(
                              detailed inside the box the whole gave it, and the ways out of that \
                              box are the whole's: a piece that does not answer one seals a \
                              connection the map is built on. Answer it with {want}, or revise the \
-                             SITE PLAN — which moves the plan hash and re-runs the whole's walk.",
+                             SITE PLAN.",
                             piece = row.piece,
                             edge = s.edge,
                             class = s.class,
@@ -1822,8 +922,7 @@ pub fn check(
                      the exact failure the allocation exists to end — and a body that takes it \
                      leaves the map's own graph. `{place}` is allocated {n} seam(s): {list}. \
                      Either seal this face in the piece, or allocate the connection in the layout \
-                     graph and the site plan — which is a plan edit, and re-runs the whole's \
-                     walk.{upstream}",
+                     graph and the site plan — which is a plan edit.{upstream}",
                     upstream = delvewright_dsl::refused_upstream(c, &row.place, &seams, &mut reads),
                     piece = row.piece,
                     class = f.class,
