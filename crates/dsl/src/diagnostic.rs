@@ -1262,6 +1262,21 @@ pub mod codes {
         pub const RESPAWN_WAIT_INVALID: DwCode = DwCode::new("DW0925", ExitTier::Build);
     }
     crate::dw_code! {
+        /// (spec-0091) **A view aimed past the served view distance.** What a
+        /// body is farther from than the served radius is never sent to its
+        /// client, so a far view is a declaration (`world.view_distance`), and a
+        /// thing aimed past it cannot render. Five shapes of one rule: a declared
+        /// `view_distance` outside `FLOOR..=CEILING` (validation tier, exit 1,
+        /// on `/content/view_distance`); a site-plan sightline or view longer
+        /// than the served radius (validation tier, `crate::viewdistance`); a
+        /// showcase camera whose subject — the first solid cell on its central
+        /// ray, else where that ray enters the loaded scene — is beyond it, and
+        /// a cutscene keyframe farther from its aim than it (both build tier,
+        /// exit 3, against the assembled world). Prescription, in every shape:
+        /// the fewest chunks that serve the distance, or the two ends nearer.
+        pub const VIEW_BEYOND_SERVED: DwCode = DwCode::new("DW0956", ExitTier::Build);
+    }
+    crate::dw_code! {
         /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is
         /// only ever reached from the **scheduler** (`move-npc`/`move-actor`
         /// `on_arrive`, a `sequence` step). `carrier: "one"` means "hand this single

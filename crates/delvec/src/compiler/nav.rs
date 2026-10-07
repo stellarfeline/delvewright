@@ -4593,13 +4593,15 @@ pub fn check_cutscenes(
     world: &World,
     moves: &[MovePlan],
     actor_moves: &[ActorMovePlan],
-) -> Result<(), Failure> {
+) -> Result<usize, Failure> {
+    let mut judged = 0usize;
     for (eff, ctx) in crate::compiler::camera::cutscene_units(plan.campaign) {
         let Some(shots) = eff.cutscene_shots() else {
             continue;
         };
         let mut offset: i32 = 0;
         for (si, shot) in shots.iter().enumerate() {
+            judged += 1;
             let ex =
                 crate::compiler::camera::expand_shot(plan, moves, actor_moves, shot, &ctx, offset);
             offset += ex.ticks + 1;
@@ -4633,6 +4635,46 @@ pub fn check_cutscenes(
                     ),
                 });
             }
+            // spec-0091 (`DW0956`): what the shot looks at is served to the
+            // player watching it. Every keyframe is a body's eye for a tick, and
+            // the aim at that tick is what the picture is of.
+            let radius = delvewright_dsl::viewdistance::served_radius_blocks(
+                delvewright_dsl::viewdistance::chunks(plan.campaign),
+            );
+            let mut farthest: Option<(f64, [f64; 3], [f64; 3], i32)> = None;
+            for f in &frames.frames {
+                let aim = match &ex.aim {
+                    crate::compiler::camera::AimTrack::Travel => continue,
+                    crate::compiler::camera::AimTrack::Static(p) => *p,
+                    crate::compiler::camera::AimTrack::Moving(track) => {
+                        let i = (f.tick.max(0) as usize).min(track.len().saturating_sub(1));
+                        track[i]
+                    }
+                };
+                let d = [aim[0] - f.pos[0], aim[1] - f.pos[1], aim[2] - f.pos[2]];
+                let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                if farthest.is_none_or(|(l, ..)| len > l) {
+                    farthest = Some((len, f.pos, aim, f.tick));
+                }
+            }
+            if let Some((len, pos, aim, tick)) = farthest
+                && len > radius
+            {
+                return Err(Failure {
+                    code: delvewright_dsl::codes::VIEW_BEYOND_SERVED,
+                    message: format!(
+                        "cutscene: shot {si} at tick {tick} stands at {:?} looking at {:?}, \
+                         {len:.1} blocks away, and the served view distance reaches {radius:.0} \
+                         blocks ({} chunks): what the shot looks at is never sent to the player \
+                         watching it. Declare `world.view_distance: {}` (the fewest chunks that \
+                         serve it), or bring the camera path nearer its `look_at`/subject",
+                        round3(pos),
+                        round3(aim),
+                        delvewright_dsl::viewdistance::chunks_for(radius),
+                        delvewright_dsl::viewdistance::chunks_for(len),
+                    ),
+                });
+            }
             let rate = ex.max_aim_deg_per_tick();
             if rate > crate::compiler::camera::MAX_AIM_DEG_PER_TICK {
                 return Err(Failure {
@@ -4649,7 +4691,7 @@ pub fn check_cutscenes(
             }
         }
     }
-    Ok(())
+    Ok(judged)
 }
 
 /// The first `(segment index, block cell)` where a camera dolly polyline passes

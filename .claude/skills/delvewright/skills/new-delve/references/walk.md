@@ -42,8 +42,9 @@ mutex and holds it until `down`, so no automation can bind the port under the
 user's feet. Its staging-gate report goes to `<out>.gate/staging-gate.md`,
 beside the build tree, and it prints that path.
 
-**A large campaign can need more than the server's default heap.** `up`
-gives the server the engine's default heap ceiling (`versions.toml`
+**A large campaign can need more than the heap the build states.** `up`
+gives the server the ceiling the build computed for its declared view distance
+(`server/resources.properties` `heap-max`, never below `versions.toml`
 `[server].heap_max`, printed as `container heap:`) unless you pass
 `--memory SIZE`; a build with many prefab tiles can still exhaust that (`docker logs` shows
 `java.lang.OutOfMemoryError` and the readiness probe says so rather than

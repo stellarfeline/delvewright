@@ -3421,6 +3421,10 @@ fn texture_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// (spec-0018), the declared difficulty and the declared textures (spec-0084).
 fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     texture_checks(c, d);
+    // spec-0091: the declared view distance's range, and every site-plan line
+    // of sight judged against the radius it serves. The binding it states is
+    // printed by the CLI, which asks for it again without the diagnostics.
+    crate::viewdistance::checks(c, d);
     // spec-0018: a delve is played by ONE party of 1–4, so a declared
     // mandatory size outside that range can never be honoured.
     if let Some(n) = c.world.content.min_players

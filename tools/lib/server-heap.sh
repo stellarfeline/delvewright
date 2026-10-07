@@ -16,22 +16,34 @@
 
 DW_SERVER_HEAP_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# dw_server_heap_max -> the pinned heap ceiling (e.g. `4G`).
+# dw_server_heap_max [build-dir] -> the heap ceiling (e.g. `4G`): what the
+# build states in <build-dir>/server/resources.properties (`heap-max`, computed
+# by the compiler for the delve's declared view distance at the player cap,
+# spec-0091), or, with no build in hand, the pinned floor every bare server gets.
 dw_server_heap_max() {
+  local stated
+  if [ -n "${1:-}" ] && [ -f "$1/server/resources.properties" ]; then
+    stated="$(sed -n '/^heap-max=/{s///;p;q;}' "$1/server/resources.properties")"
+    if [ -n "$stated" ]; then
+      printf '%s\n' "$stated"
+      return 0
+    fi
+  fi
   python3 "$DW_SERVER_HEAP_REPO_ROOT/tools/lib/versions.py" server.heap_max
 }
 
-# dw_server_heap_env [override] -> the one `-e` value for itzg's heap.
+# dw_server_heap_env [override] [build-dir] -> the one `-e` value for itzg's heap.
 # With an override (an operator's `--memory`), `MEMORY=<override>`: initial and
 # ceiling both, exactly as `-e MEMORY=...` on the delve image. Without one,
-# `MAX_MEMORY=<pin>`: the ceiling, leaving the initial heap at itzg's own 1G —
-# the same default the delve entrypoint applies.
+# `MAX_MEMORY=<ceiling>`: the build's stated ceiling when a build directory is
+# given, else the pin, leaving the initial heap at itzg's own 1G — the same
+# default the delve entrypoint applies.
 dw_server_heap_env() {
   if [ -n "${1:-}" ]; then
     printf 'MEMORY=%s\n' "$1"
   else
     local max
-    max="$(dw_server_heap_max)" || return 1
+    max="$(dw_server_heap_max "${2:-}")" || return 1
     printf 'MAX_MEMORY=%s\n' "$max"
   fi
 }
@@ -61,7 +73,7 @@ dw_server_log_file_shows_oom() {
 dw_server_oom_advice() {
   local max
   max="$(dw_server_heap_max 2>/dev/null || echo '?')"
-  printf '%s\n' "the server ran out of Java heap ($DW_SERVER_OOM_MARKER). The default ceiling is versions.toml [server].heap_max = $max; a delve that needs more is run with -e MEMORY=<size> (tools/creator/playtest-server.sh: --memory <size>), and a default too small for a campaign the engine builds is raised in versions.toml. This is an infrastructure failure, not a verdict on the delve."
+  printf '%s\n' "the server ran out of Java heap ($DW_SERVER_OOM_MARKER). The ceiling is the build's server/resources.properties heap-max (the compiler's statement for the declared view distance), never below versions.toml [server].heap_max = $max; a delve that needs more is run with -e MEMORY=<size> (tools/creator/playtest-server.sh: --memory <size>), and a statement too small for a campaign the engine builds is a defect of the compiler's cost model (crates/delvec/src/compiler/served.rs). This is an infrastructure failure, not a verdict on the delve."
 }
 
 # dw_server_watch <pid> <log-file> <timeout-seconds> [poll-seconds]

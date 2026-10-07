@@ -280,6 +280,17 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   (`DW0925`, as it does `seconds` outside 1–120), so
   decide it with the quest plan's checkpoints in front of you. `alone: true`
   makes a party of one wait too.
+- **`view_distance`.** Absent = 10 chunks (160 blocks), the engine's floor.
+  Declare it — in chunks, `10..=32` — when a thing is meant to be seen from
+  farther than that: a tower across the water, a hill-sized body on the
+  skyline, a cutscene whose subject is across the map. What a body is farther
+  from than the served radius is never sent to its client, so a far view is a
+  declaration, not a hope, and the build refuses a `views[]`/`sightlines[]`
+  entry, a showcase camera or a cutscene shot aimed past it, naming the fewest
+  chunks that would serve it. The build states the cost (`server/
+  resources.properties` `heap-max`, the host's to meet) and the storybook owes
+  the player the render-distance line (step 14): a client set below the
+  declared number is served less, and nothing on the server can raise it.
 - **`horizon`.** Absent = `void`, and that is the right answer unless the
   ground around the map is part of the design. `void` keeps the area datum where
   every piece was authored for it and puts nothing outside them.

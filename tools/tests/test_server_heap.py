@@ -115,6 +115,55 @@ def test_the_entrypoint_defaults_the_ceiling_to_the_pin(tmp_path):
     assert f"MAX_MEMORY={pin()}" in out and "[init] Java heap:" in out, out
 
 
+def test_the_entrypoint_takes_the_builds_stated_ceiling(tmp_path):
+    """spec-0091: the compiler states `heap-max` in server/resources.properties
+    for the declared view distance, and the entrypoint boots at it."""
+    resources = tmp_path / "resources.properties"
+    resources.write_text("# what this delve asks of its host\nheap-max=7G\nplayers=4\n")
+    seen, out = run_entrypoint(tmp_path, {"DELVE_RESOURCES_PROPERTIES": str(resources)})
+    assert seen["MAX_MEMORY"] == "7G", out
+    assert "heap-max=7G" in out, out
+    # Unnamed, the file is read from beside the properties file — wherever a
+    # service mounted the build's server/ directory (the PackTest runner names
+    # the properties file through DELVE_SERVER_PROPERTIES under /packs/server).
+    beside = tmp_path / "resources.properties"
+    beside.write_text("heap-max=6G\nplayers=4\n")
+    seen, out = run_entrypoint(tmp_path, {})
+    assert seen["MAX_MEMORY"] == "6G", out
+    beside.unlink()
+    # An operator's own figure still wins over the build's statement.
+    seen, out = run_entrypoint(
+        tmp_path, {"DELVE_RESOURCES_PROPERTIES": str(resources), "MAX_MEMORY": "9G"}
+    )
+    assert seen["MAX_MEMORY"] == "9G", out
+
+
+def test_the_compilers_heap_floor_is_the_pin():
+    """`crates/delvec/src/compiler/served.rs` never states a ceiling below the
+    pin; the two numbers are one fact held in lockstep here, since the compiler
+    cannot read versions.toml."""
+    src = (ROOT / "crates/delvec/src/compiler/served.rs").read_text()
+    m = re.search(r"pub const HEAP_FLOOR_GIB: u32 = (\d+);", src)
+    assert m, "served.rs no longer declares HEAP_FLOOR_GIB"
+    assert f"{m.group(1)}G" == pin(), (m.group(1), pin())
+
+
+def test_the_shell_rule_takes_the_builds_statement(tmp_path):
+    """`dw_server_heap_max <build-dir>` prints the build's `heap-max`, and with
+    no build (or a build that states none) the pin."""
+    build = tmp_path / "build"
+    (build / "server").mkdir(parents=True)
+    (build / "server" / "resources.properties").write_text("heap-max=6G\nplayers=4\n")
+    code = (
+        f'. "{HEAP_LIB}"; dw_server_heap_max "{build}"; dw_server_heap_max; '
+        f'dw_server_heap_env "" "{build}"; dw_server_heap_env 2G "{build}"'
+    )
+    env = {"PATH": f"{pathlib.Path(sys.executable).parent}:/usr/bin:/bin"}
+    res = subprocess.run(["bash", "-c", code], env=env, capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.splitlines() == ["6G", pin(), "MAX_MEMORY=6G", "MEMORY=2G"], res.stdout
+
+
 @pytest.mark.parametrize(
     "given",
     [{"MEMORY": "2G"}, {"MAX_MEMORY": "8G"}, {"INIT_MEMORY": "512M"}],
