@@ -68,12 +68,13 @@
 //! region `teleport` never carries an assembly away (and never unseats a part,
 //! which a teleported passenger would be — spec-0082 §8 row 3).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::metrics::{Body, keep_out_box};
 use delvewright_dsl::rig::{self, Rig, Transform};
 use delvewright_dsl::{
-    Assembly, AssemblyHitbox, DwCode, ExitTier, Facing, QuestEffect, StealthZone, TriggerOn, Verb,
+    Assembly, AssemblyHitbox, DwCode, ExitTier, Facing, LockPick, QuestEffect, StealthZone,
+    TriggerOn, Verb,
 };
 
 use crate::compiler::failure::Failure;
@@ -95,6 +96,14 @@ delvewright_dsl::dw_code! {
 delvewright_dsl::dw_code! {
     /// `DW0938`: a blow lands where it was not announced, or where the limb is not.
     pub const DW_ASSEMBLY_STRIKE: DwCode = DwCode::new("DW0938", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW0968` (spec-0094 §5.1): a locked strike can lock onto a cell it cannot
+    /// strike — a standable cell of its lock region no strike clip comes down
+    /// on at the turn that faces it with its whole blow inside `while_in` — or
+    /// its lock region reaches outside `while_in`, or holds no standable cell.
+    pub const DW_ASSEMBLY_LOCK: DwCode = DwCode::new("DW0968", ExitTier::Build);
 }
 
 /// The widest hitbox vanilla detects an attack on across its whole face: an
@@ -212,33 +221,69 @@ impl Placed<'_> {
     }
 }
 
-/// Where a strike step that sets its own pace (`ticks_per_frame`) plays its
-/// clips: two emitted clips after the rig's own, its wind-up then its strike,
-/// in step order, counting only steps whose clips the rig holds. `None` for a
-/// step at the clips' own pace.
+/// The clips a strike step plays, by role: its wind-up (role 0), its strike
+/// (role 1), and each of its lock's `reaches` (roles 2 and on, spec-0094).
+pub fn step_clips(step: &delvewright_dsl::StrikeStep) -> Vec<&str> {
+    let mut out = vec![step.windup.as_str(), step.strike.as_str()];
+    if let Some(l) = &step.lock {
+        out.extend(l.reaches.iter().map(String::as_str));
+    }
+    out
+}
+
+/// **Every clip play emitted after the rig's own**: per strike step that sets
+/// its own pace (`ticks_per_frame`), each of its clips ([`step_clips`]) the
+/// rig holds, as `(step, role, clip)` in step order then role order. The one
+/// enumeration both the emitter's play list and [`play_index`] read.
+pub fn paced_slots<'s>(
+    rig: &Rig,
+    pattern: &'s [delvewright_dsl::StrikeStep],
+) -> Vec<(usize, usize, &'s str)> {
+    let mut out = Vec::new();
+    for (j, step) in pattern.iter().enumerate() {
+        if step.ticks_per_frame.is_none() {
+            continue;
+        }
+        for (role, clip) in step_clips(step).into_iter().enumerate() {
+            if rig.clips.contains_key(clip) {
+                out.push((j, role, clip));
+            }
+        }
+    }
+    out
+}
+
+/// Where step `j` plays its clip of role `role` ([`step_clips`]): its paced
+/// slot after the rig's own clips when the step sets its own pace, else the
+/// rig's own clip. `None` when the rig lacks the clip.
+pub fn play_index(
+    rig: &Rig,
+    pattern: &[delvewright_dsl::StrikeStep],
+    j: usize,
+    role: usize,
+) -> Option<usize> {
+    let step = pattern.get(j)?;
+    let clip = *step_clips(step).get(role)?;
+    if step.ticks_per_frame.is_some() {
+        paced_slots(rig, pattern)
+            .iter()
+            .position(|&(sj, sr, _)| sj == j && sr == role)
+            .map(|k| rig.clips.len() + k)
+    } else {
+        rig.clip_index(clip)
+    }
+}
+
+/// Where a strike step that sets its own pace plays its wind-up and its
+/// strike ([`play_index`] at roles 0 and 1). `None` for a step at the clips'
+/// own pace.
 pub fn paced_index(
     rig: &Rig,
     pattern: &[delvewright_dsl::StrikeStep],
     j: usize,
 ) -> Option<(usize, usize)> {
-    let mut next = rig.clips.len();
-    for (i, step) in pattern.iter().enumerate() {
-        if step.ticks_per_frame.is_none() {
-            continue;
-        }
-        let w = rig.clips.contains_key(&step.windup).then(|| {
-            next += 1;
-            next - 1
-        });
-        let m = rig.clips.contains_key(&step.strike).then(|| {
-            next += 1;
-            next - 1
-        });
-        if i == j {
-            return w.zip(m);
-        }
-    }
-    None
+    pattern.get(j)?.ticks_per_frame?;
+    play_index(rig, pattern, j, 0).zip(play_index(rig, pattern, j, 1))
 }
 
 /// The drawn facing a run-time pick `k` resolves to: `k` itself when it is
@@ -324,6 +369,21 @@ pub struct StepSubject<'a> {
     pub ticks_per_frame: Option<u32>,
     /// The landings in its `on_land`.
     pub landings: Vec<Landing>,
+    /// Its lock (spec-0094), when it declares one.
+    pub lock: Option<LockSubject<'a>>,
+}
+
+/// A locked step's lock, as the judgement reads it (spec-0094).
+#[derive(Clone, Debug)]
+pub struct LockSubject<'a> {
+    /// The lock region, resolved; `None` when its anchor does not resolve
+    /// (that is `DW0360`'s, and nothing is judged here).
+    pub within: Option<CellBox>,
+    /// Who it locks onto.
+    pub pick: LockPick,
+    /// The clips it chooses among, in order: the step's `strike`, then its
+    /// `reaches`.
+    pub candidates: Vec<&'a str>,
 }
 
 /// An inclusive box of cells, `(lo, hi)`.
@@ -663,6 +723,201 @@ pub fn correspondence(
     }
 }
 
+// ---------------------------------------------------------------------------
+// The lock (spec-0094)
+// ---------------------------------------------------------------------------
+
+/// **Where a strike clip's blow points**, as a bearing in the rig's own frame
+/// (a turn about `+y` from `+z`): the horizontal centroid of the cells its
+/// last frame stands in and its first frame does not — where the limb came
+/// down — from the mark cell's centre. `0` (straight ahead) when that centroid
+/// is within half a cell of the mark, or the clip moves onto no new cell.
+pub fn aim_bearing(clip: &rig::Clip) -> f64 {
+    let (Some(first), Some(last)) = (clip.frames.first(), clip.frames.last()) else {
+        return 0.0;
+    };
+    let before = rig::frame_footprint_turned(first, 0.0);
+    let after = rig::frame_footprint_turned(last, 0.0);
+    let new: Vec<&[i32; 3]> = after.difference(&before).collect();
+    if new.is_empty() {
+        return 0.0;
+    }
+    let n = new.len() as f64;
+    let dx = new.iter().map(|c| f64::from(c[0])).sum::<f64>() / n;
+    let dz = new.iter().map(|c| f64::from(c[2])).sum::<f64>() / n;
+    if dx.hypot(dz) < 0.5 {
+        0.0
+    } else {
+        bearing(dx, dz)
+    }
+}
+
+/// The root yaw, in Minecraft degrees in `(-180, 180]`, that draws the rig's
+/// frames turned `turn` radians when the declared facing is `base`: the root
+/// stands at yaw 0 for the declared facing (the frames carry it), and a turn
+/// of `+a` about `+y` is a yaw of `-a`.
+pub fn yaw_for_turn(turn: f64, base: f64) -> f64 {
+    let y = -wrap(turn - base).to_degrees();
+    let y = if y <= -180.0 { y + 360.0 } else { y };
+    if y.abs() < 1e-9 { 0.0 } else { y }
+}
+
+/// One cell a locked step can lock onto, proved (spec-0094 §4.2).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LockedCell {
+    /// The standable cell a body's feet stand in.
+    pub cell: [i32; 3],
+    /// The turn, in radians about `+y`, applied to the rig's own frames.
+    pub turn: f64,
+    /// The root yaw that draws it ([`yaw_for_turn`]).
+    pub yaw: f64,
+    /// Which candidate clip strikes it: an index into the lock's candidates.
+    pub candidate: usize,
+    /// The standable cells its blow lands on: every cell the clip's last frame
+    /// comes down on at that turn and its first frame did not stand on.
+    pub region: BTreeSet<[i32; 3]>,
+    /// The standable cells a body can be caught from by that region.
+    pub caught: BTreeSet<[i32; 3]>,
+}
+
+/// **A locked step's plan** (spec-0094 §4.2): every cell it can lock onto,
+/// proved, and the cell each cell of the lock region resolves to at run time.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LockPlan {
+    /// The lock region.
+    pub within: Option<CellBox>,
+    /// Who it locks onto.
+    pub pick: Option<LockPick>,
+    /// The candidate clips, in order.
+    pub candidates: Vec<String>,
+    /// Every standable cell of the region, proved, in cell order.
+    pub cells: Vec<LockedCell>,
+    /// Per cell of the lock region, in [`cells_of`] order: the index into
+    /// `cells` a body whose feet the server reads there is struck as. A
+    /// standable cell resolves to itself; any other cell to the proved cell
+    /// in its own column below it (a body in the air over its floor), else to
+    /// the nearest proved cell. Empty when nothing is proved.
+    pub resolve: Vec<usize>,
+    /// Standable cells of the region no candidate strikes, with why.
+    pub unproved: Vec<([i32; 3], String)>,
+    /// Cells of the region a body can be caught from outside `while_in`.
+    pub outside: Vec<[i32; 3]>,
+}
+
+/// Plan one locked step: per standable cell of `within`, the first candidate
+/// whose last frame, turned so its blow ([`aim_bearing`]) points at the cell,
+/// comes down on it with every cell it comes down on caught only from inside
+/// `arming` (the shape-1 rule of spec-0082 §5.4).
+pub fn lock_plan(
+    mark: [i32; 3],
+    base: f64,
+    rig: &Rig,
+    lock: &LockSubject<'_>,
+    arming: CellBox,
+    population: &dyn Fn([i32; 3]) -> bool,
+) -> LockPlan {
+    let mut out = LockPlan {
+        within: lock.within,
+        pick: Some(lock.pick),
+        candidates: lock.candidates.iter().map(|c| c.to_string()).collect(),
+        ..LockPlan::default()
+    };
+    let Some(within) = lock.within else {
+        return out;
+    };
+    let body = Body::PLAYER;
+    let arm_keep = keep_out_box(body, arming.0, arming.1);
+    let inside = |c: [i32; 3]| {
+        let k = keep_out_box(body, c, c);
+        in_box(k.0, arm_keep) && in_box(k.1, arm_keep)
+    };
+    out.outside = cells_of(within)
+        .into_iter()
+        .filter(|c| !inside(*c))
+        .collect();
+    let m = [f64::from(mark[0]) + 0.5, f64::from(mark[2]) + 0.5];
+    for c in cells_of(within) {
+        if !population(c) {
+            continue;
+        }
+        let at = bearing(f64::from(c[0]) + 0.5 - m[0], f64::from(c[2]) + 0.5 - m[1]);
+        let mut why: Vec<String> = Vec::new();
+        let mut chosen = None;
+        for (ci, name) in lock.candidates.iter().enumerate() {
+            let Some(clip) = rig.clips.get(*name) else {
+                continue;
+            };
+            let turn = at - aim_bearing(clip);
+            let lands = |f: Option<&Vec<Transform>>| {
+                f.map(|f| struck_cells(f, turn, mark, population))
+                    .unwrap_or_default()
+            };
+            let first = lands(clip.frames.first());
+            let last = lands(clip.frames.last());
+            let region: BTreeSet<[i32; 3]> = last.difference(&first).copied().collect();
+            if !region.contains(&c) {
+                why.push(format!("`{name}` does not come down on it"));
+                continue;
+            }
+            let beyond: Vec<[i32; 3]> = region.iter().copied().filter(|x| !inside(*x)).collect();
+            if !beyond.is_empty() {
+                why.push(format!(
+                    "`{name}` comes down on it and also on {} cell(s) caught from outside \
+                     `while_in` ({})",
+                    beyond.len(),
+                    cells_named(&beyond)
+                ));
+                continue;
+            }
+            let caught = caught_cells(&region, population);
+            chosen = Some(LockedCell {
+                cell: c,
+                turn,
+                yaw: yaw_for_turn(turn, base),
+                candidate: ci,
+                region,
+                caught,
+            });
+            break;
+        }
+        match chosen {
+            Some(l) => out.cells.push(l),
+            None => out.unproved.push((c, why.join("; "))),
+        }
+    }
+    if out.cells.is_empty() {
+        return out;
+    }
+    let proved: Vec<[i32; 3]> = out.cells.iter().map(|l| l.cell).collect();
+    out.resolve = cells_of(within)
+        .into_iter()
+        .map(|b| {
+            let column = proved
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p[0] == b[0] && p[2] == b[2] && p[1] <= b[1])
+                .max_by_key(|(_, p)| p[1])
+                .map(|(i, _)| i);
+            column.unwrap_or_else(|| {
+                proved
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, p)| {
+                        let (dx, dy, dz) = (p[0] - b[0], p[1] - b[1], p[2] - b[2]);
+                        (dx * dx + dz * dz, dy.abs(), **p)
+                    })
+                    .map(|(i, _)| i)
+                    .unwrap_or(0)
+            })
+        })
+        .collect();
+    out
+}
+
+/// Every locked step's plan in a build, by `(assembly index, step index)`:
+/// what the judgement proved and what the emitter writes, one value.
+pub type Locks = BTreeMap<(usize, usize), LockPlan>;
+
 /// One step's record, for the staging artifact.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StepRecord {
@@ -681,10 +936,14 @@ pub struct StepRecord {
     pub amounts: Vec<u32>,
     /// Every caught cell of every landing box at every facing, in the world.
     pub caught: Vec<[i32; 3]>,
-    /// How many facings the pattern is spaced over (1 when not aimed).
+    /// How many facings the pattern is spaced over (1 when not aimed); for a
+    /// locked step, how many cells it can lock onto.
     pub facing_count: u32,
-    /// Per facing a blow can take.
+    /// Per facing a blow can take; for a locked step, per cell it can lock
+    /// onto, `k` indexing the cell.
     pub facings: Vec<FacingRecord>,
+    /// Whether the step locks (spec-0094): its `facings` are locked cells.
+    pub locked: bool,
 }
 
 /// One facing of one step, for the staging artifact and the bot.
@@ -700,8 +959,10 @@ pub struct FacingRecord {
     pub comes_down: Vec<[i32; 3]>,
     /// A cell of the landing, inside the arming region and under the limb,
     /// from which a body draws this facing: where the bot stands to take the
-    /// blow. `None` when there is none.
+    /// blow. `None` when there is none. For a locked cell, the cell itself.
     pub stand: Option<[i32; 3]>,
+    /// For a locked cell: the clip that strikes it.
+    pub clip: Option<String>,
 }
 
 /// What one [`judge`] examined.
@@ -713,8 +974,12 @@ pub struct Judged {
     pub steps: usize,
     /// Facings judged across those steps.
     pub facings: usize,
+    /// Cells locked steps can lock onto, proved.
+    pub locks: usize,
     /// Per-step records.
     pub records: Vec<StepRecord>,
+    /// Every locked step's plan, by step index.
+    pub plans: Vec<(usize, LockPlan)>,
 }
 
 /// **Judge one assembly** (`DW0936`, `DW0937`, `DW0938`, spec-0082 §5.3–§5.4).
@@ -731,6 +996,19 @@ pub fn judge(
 ) -> (Judged, Vec<Failure>) {
     let mut j = Judged::default();
     let mut out: Vec<Failure> = Vec::new();
+    // spec-0094: every locked step's plan, first — the hitbox is owed at every
+    // turn a lock can take, and the strike rules read the same plan.
+    if let Some((arming, steps)) = &s.strikes {
+        let base = rig::facing_angle(s.facing);
+        for st in steps {
+            if let Some(l) = &st.lock {
+                j.plans.push((
+                    st.index,
+                    lock_plan(s.mark, base, s.rig, l, *arming, population),
+                ));
+            }
+        }
+    }
 
     // ---- DW0936: the hitbox ----
     match s.hitbox {
@@ -836,6 +1114,39 @@ pub fn judge(
                     ));
                 }
             }
+            // And at every turn a locked step can take: it goes back to its
+            // clip turned to the cell it struck.
+            let mut missed: Vec<&LockedCell> = Vec::new();
+            for (_, plan) in &j.plans {
+                for l in &plan.cells {
+                    let seen = offset_all(&rig::frame_footprint_turned(&pose, l.turn), s.mark);
+                    if !seen.iter().any(|c| cell_meets(*c, lo, hi)) {
+                        missed.push(l);
+                    }
+                }
+            }
+            if let Some(first) = missed.first() {
+                out.push(Failure::new(
+                    DW_ASSEMBLY_HITBOX,
+                    format!(
+                        "assembly `{}`'s hitbox ({}/hitbox) spans {lo:?}..{hi:?}, and at {} of the \
+                         turns its locked strikes take it meets none of the cells its parts stand \
+                         in when it returns to {} — first, turned to strike {:?} (root yaw {}). \
+                         The hitbox does not turn with the thing; the player strikes what the \
+                         player sees. Centre the hitbox on the mark (the turn's axis) and size it \
+                         to the parts, or narrow the lock region",
+                        s.id,
+                        s.path,
+                        missed.len(),
+                        match s.initial {
+                            Some(c) => format!("the first frame of `{c}`"),
+                            None => "the rest pose".to_string(),
+                        },
+                        first.cell,
+                        yaw_token(first.yaw)
+                    ),
+                ));
+            }
         }
     }
 
@@ -876,7 +1187,49 @@ pub fn judge(
             caught: Vec::new(),
             facing_count: n,
             facings: Vec::new(),
+            locked: false,
         };
+        // ---- DW0968: a locked step (spec-0094 §5.1) ----
+        if let Some(lock) = &step.lock {
+            let plan = j
+                .plans
+                .iter()
+                .find(|(i, _)| *i == step.index)
+                .map(|(_, p)| p.clone())
+                .unwrap_or_default();
+            judge_lock(s, step, lock, &plan, &mut out);
+            // The longest strike any locked cell plays, for the record's cycle.
+            record.strike_ticks = lock
+                .candidates
+                .iter()
+                .filter_map(|c| s.rig.clips.get(*c))
+                .map(|c| paced(c, step.ticks_per_frame).1)
+                .max()
+                .unwrap_or(record.strike_ticks);
+            record.locked = true;
+            record.facing_count = plan.cells.len() as u32;
+            let mut caught: BTreeSet<[i32; 3]> = BTreeSet::new();
+            record.facings = plan
+                .cells
+                .iter()
+                .enumerate()
+                .map(|(k, l)| {
+                    caught.extend(l.caught.iter().copied());
+                    FacingRecord {
+                        k: k as u32,
+                        yaw: l.yaw,
+                        caught: l.caught.iter().copied().collect(),
+                        comes_down: l.region.iter().copied().collect(),
+                        stand: Some(l.cell),
+                        clip: lock.candidates.get(l.candidate).map(|c| c.to_string()),
+                    }
+                })
+                .collect();
+            record.caught = caught.into_iter().collect();
+            j.locks += plan.cells.len();
+            j.records.push(record);
+            continue;
+        }
         // What the limb lands on at each facing: the pose the strike began
         // from, and its last frame.
         let limb_at = |k: u32| -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
@@ -898,6 +1251,7 @@ pub fn judge(
                 caught: Vec::new(),
                 comes_down: Vec::new(),
                 stand: None,
+                clip: None,
             })
             .collect();
         for l in &step.landings {
@@ -1073,6 +1427,82 @@ pub fn judge(
     (j, out)
 }
 
+/// The refusals of one locked step (`DW0968`, spec-0094 §5.1), from its plan.
+fn judge_lock(
+    s: &Subject<'_>,
+    step: &StepSubject<'_>,
+    lock: &LockSubject<'_>,
+    plan: &LockPlan,
+    out: &mut Vec<Failure>,
+) {
+    let Some(within) = lock.within else {
+        return;
+    };
+    let at = format!("{}/strikes/pattern/{}/lock", s.path, step.index);
+    if !plan.outside.is_empty() {
+        out.push(Failure::new(
+            DW_ASSEMBLY_LOCK,
+            format!(
+                "assembly `{}`'s strike step {} locks onto a player in {within:?} ({at}/within), \
+                 and a body is caught from {} of its cells outside the arming region \
+                 `while_in`: {}. A player who never entered the arming region would be locked \
+                 onto and struck by a blow that was never wound up for them. Shrink or move the \
+                 lock region inside `while_in`, or widen `while_in` to cover it",
+                s.id,
+                step.index,
+                plan.outside.len(),
+                cells_named(&plan.outside)
+            ),
+        ));
+        return;
+    }
+    if plan.cells.is_empty() && plan.unproved.is_empty() {
+        out.push(Failure::new(
+            DW_ASSEMBLY_LOCK,
+            format!(
+                "assembly `{}`'s strike step {} locks onto a player in {within:?} ({at}/within), \
+                 and no body can stand there: the region holds no standable cell of the walked \
+                 population, so the step can never wind up. Move the lock region onto a floor \
+                 the party walks",
+                s.id, step.index
+            ),
+        ));
+        return;
+    }
+    if !plan.unproved.is_empty() {
+        let cells: Vec<[i32; 3]> = plan.unproved.iter().map(|(c, _)| *c).collect();
+        let why: Vec<String> = plan
+            .unproved
+            .iter()
+            .take(3)
+            .map(|(c, w)| format!("[{}, {}, {}]: {w}", c[0], c[1], c[2]))
+            .collect();
+        out.push(Failure::new(
+            DW_ASSEMBLY_LOCK,
+            format!(
+                "assembly `{}`'s strike step {} can lock onto {} standable cell(s) of its lock \
+                 region ({at}/within) that none of its strike clips ({}) comes down on, turned to \
+                 face the cell, with its whole blow inside `while_in`: {}. A display entity does \
+                 not bend to a point; the lock turns the thing and chooses a pose the rig \
+                 holds, so a cell no pose reaches is a cell a locked player is never struck on. \
+                 Why, for the first: {}. Add a clip to `lock.reaches` that comes down there \
+                 (`delvec rig describe` prints every clip's footprint), shrink the lock region to \
+                 the cells the clips reach, or widen `while_in`",
+                s.id,
+                step.index,
+                cells.len(),
+                lock.candidates
+                    .iter()
+                    .map(|c| format!("`{c}`"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                cells_named(&cells),
+                why.join(" · ")
+            ),
+        ));
+    }
+}
+
 /// A clip's run at a pace: ticks from the switch to its last frame applied,
 /// and to that frame drawn whole — [`rig::Clip::length_ticks`] and
 /// [`rig::Clip::landing_ticks`] at `tpf` ticks per frame, or the clip's own.
@@ -1197,6 +1627,13 @@ pub fn subject<'a>(plan: &'a Plan<'a>, p: &Placed<'a>) -> Subject<'a> {
                     strike: step.strike.as_str(),
                     ticks_per_frame: step.ticks_per_frame,
                     landings: ls,
+                    lock: step.lock.as_ref().map(|l| LockSubject {
+                        within: plan.zone_box(&l.within),
+                        pick: l.pick,
+                        candidates: std::iter::once(step.strike.as_str())
+                            .chain(l.reaches.iter().map(String::as_str))
+                            .collect(),
+                    }),
                 }
             })
             .collect();
@@ -1263,6 +1700,10 @@ pub struct AssemblyBinding {
     /// Facings judged across those steps (one per landing per facing a blow
     /// can take).
     pub facings: usize,
+    /// Cells locked steps can lock onto, each proved (spec-0094).
+    pub locks: usize,
+    /// Every locked step's plan — what the emitter writes is what was proved.
+    pub plans: Locks,
     /// Refusals.
     pub refused: usize,
     /// The keyframe writes per tick the declared cadences add up to, at worst:
@@ -1285,13 +1726,15 @@ impl AssemblyBinding {
     pub fn line(&self) -> String {
         format!(
             "assembly binding: {} assembl(ies) declared, {} part(s), {} clip(s), {} hitbox(es) \
-             examined, {} strike step(s) checked over {} facing(s), {} refused",
+             examined, {} strike step(s) checked over {} facing(s) and {} locked cell(s), {} \
+             refused",
             self.declared,
             self.parts,
             self.clips,
             self.hitboxes,
             self.steps,
             self.facings,
+            self.locks,
             self.refused
         )
     }
@@ -1310,13 +1753,14 @@ impl AssemblyBinding {
     /// The staging record, `validation/assembly.json`.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "codes": ["DW0936", "DW0937", "DW0938"],
+            "codes": ["DW0936", "DW0937", "DW0938", "DW0968"],
             "declared": self.declared,
             "parts": self.parts,
             "clips": self.clips,
             "hitboxes": self.hitboxes,
             "steps": self.steps,
             "facings": self.facings,
+            "locks": self.locks,
             "refused": self.refused,
             "writes_per_tick": self.writes_per_tick,
             "strike_steps": self.records.iter().map(|r| serde_json::json!({
@@ -1328,13 +1772,20 @@ impl AssemblyBinding {
                 "amounts": r.amounts,
                 "caught": r.caught,
                 "facing_count": r.facing_count,
-                "facings": r.facings.iter().map(|f| serde_json::json!({
-                    "k": f.k,
-                    "yaw": f.yaw,
-                    "caught": f.caught,
-                    "comes_down": f.comes_down,
-                    "stand": f.stand,
-                })).collect::<Vec<_>>(),
+                "locked": r.locked,
+                "facings": r.facings.iter().map(|f| {
+                    let mut o = serde_json::json!({
+                        "k": f.k,
+                        "yaw": f.yaw,
+                        "caught": f.caught,
+                        "comes_down": f.comes_down,
+                        "stand": f.stand,
+                    });
+                    if let Some(c) = &f.clip {
+                        o["clip"] = serde_json::json!(c);
+                    }
+                    o
+                }).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
             "spared": self.spared.iter().map(|(a, c)| serde_json::json!({
                 "assembly": a,
@@ -1375,7 +1826,11 @@ pub fn check(
         b.hitboxes += j.hitboxes;
         b.steps += j.steps;
         b.facings += j.facings;
+        b.locks += j.locks;
         b.records.extend(j.records);
+        for (step, plan) in j.plans {
+            b.plans.insert((p.index, step), plan);
+        }
         if let Some((arming, _)) = &s.strikes {
             b.spared
                 .push((s.id.to_string(), spared_cell(population, *arming)));
@@ -1431,33 +1886,57 @@ pub fn witness_steps(b: &AssemblyBinding) -> Vec<(String, Vec<serde_json::Value>
         let Some(face) = first.facings.iter().find(|f| f.stand.is_some()) else {
             continue;
         };
-        let (Some(stand), Some(spared)) = (face.stand, spared) else {
+        let Some(spared) = spared else {
             continue;
         };
-        out.push((
-            id.clone(),
-            vec![
-                serde_json::json!({
+        // A locked first step is witnessed twice (spec-0094 §6): on the cell
+        // nearest straight ahead, then on the one turned furthest from it, so
+        // the blow is seen to follow the body that moved.
+        let faces: Vec<&FacingRecord> = if first.locked {
+            let ahead = first
+                .facings
+                .iter()
+                .filter(|f| f.stand.is_some())
+                .min_by(|a, b| a.yaw.abs().total_cmp(&b.yaw.abs()).then(a.k.cmp(&b.k)));
+            let Some(ahead) = ahead else { continue };
+            let turned = first
+                .facings
+                .iter()
+                .filter(|f| f.stand.is_some())
+                .max_by(|a, b| {
+                    let d = |f: &FacingRecord| wrap((f.yaw - ahead.yaw).to_radians()).abs();
+                    d(a).total_cmp(&d(b)).then(b.k.cmp(&a.k))
+                })
+                .filter(|t| t.k != ahead.k);
+            std::iter::once(ahead).chain(turned).collect()
+        } else {
+            vec![face]
+        };
+        let mut ws: Vec<serde_json::Value> = faces
+            .iter()
+            .filter_map(|f| {
+                Some(serde_json::json!({
                     "action": "witness-strike",
                     "assembly": id,
                     "expect": "struck",
-                    "pos": stand,
+                    "pos": f.stand?,
                     "step": first.step,
-                    "facing": face.k,
+                    "facing": f.k,
                     "facing_count": first.facing_count,
-                    "yaw": face.yaw,
+                    "yaw": f.yaw,
                     "amount": first.amounts.first().copied().unwrap_or(0),
                     "window_ticks": window,
-                }),
-                serde_json::json!({
-                    "action": "witness-strike",
-                    "assembly": id,
-                    "expect": "spared",
-                    "pos": spared,
-                    "window_ticks": window,
-                }),
-            ],
-        ));
+                }))
+            })
+            .collect();
+        ws.push(serde_json::json!({
+            "action": "witness-strike",
+            "assembly": id,
+            "expect": "spared",
+            "pos": spared,
+            "window_ticks": window,
+        }));
+        out.push((id.clone(), ws));
     }
     out
 }
@@ -1592,9 +2071,9 @@ pub fn tick_lines(plan: &Plan<'_>) -> Vec<String> {
 pub fn verb_lines(plan: &Plan<'_>, verb: &Verb) -> Option<Vec<String>> {
     let ns = &plan.namespace;
     let (id, clip) = match verb {
-        Verb::SpawnAssembly { assembly } | Verb::DespawnAssembly { assembly } => {
-            (assembly.as_str(), None)
-        }
+        Verb::SpawnAssembly { assembly }
+        | Verb::DespawnAssembly { assembly }
+        | Verb::ArmStrikes { assembly } => (assembly.as_str(), None),
         Verb::PlayClip { assembly, clip } => (assembly.as_str(), Some(clip.as_str())),
         _ => return None,
     };
@@ -1606,12 +2085,60 @@ pub fn verb_lines(plan: &Plan<'_>, verb: &Verb) -> Option<Vec<String>> {
         (Verb::DespawnAssembly { .. }, _) => {
             vec![format!("function {ns}:{}", despawn_fn(&p.safe))]
         }
+        (Verb::ArmStrikes { .. }, _) => vec![format!("function {ns}:{}", arm_fn(&p.safe))],
         (_, Some(c)) => match p.rig.clip_index(c) {
             Some(k) => vec![format!("function {ns}:{}", cue_fn(&p.safe, k))],
             None => Vec::new(),
         },
         _ => Vec::new(),
     })
+}
+
+/// The function an `arm-strikes` calls (spec-0094 §3.3).
+pub fn arm_fn(safe: &str) -> String {
+    format!("asm_rearm_{safe}")
+}
+
+/// The tag the player a strike turns to, or locks onto, carries for the
+/// length of one wind-up's choice.
+pub fn target_tag(safe: &str) -> String {
+    format!("dw_asm_{safe}_target")
+}
+
+/// The function a locked step `j` calls at its wind-up (spec-0094 §4.2).
+pub fn lock_fn(safe: &str, j: usize) -> String {
+    format!("asm_lock_{safe}_{j}")
+}
+
+/// The function a locked step `j` dispatches to for the lock-region cell at
+/// `(ix, iy, iz)` from the region's low corner.
+pub fn lock_cell_fn(safe: &str, j: usize, i: [i32; 3]) -> String {
+    format!("asm_lockc_{safe}_{j}_{}_{}_{}", i[0], i[1], i[2])
+}
+
+/// **Choosing a target** (spec-0094 §4.1): every player in `bx` not in a
+/// cutscene is a candidate, and the one `pick` names — measured from the mark,
+/// which is why the box and the order are two selectors: a selector's own
+/// `x`/`y`/`z` are the origin its `sort` measures from (vanilla 1.21.11,
+/// `EntitySelectorParser`), so `@a[x=…,dx=…,sort=nearest]` would choose the
+/// player nearest the box's low corner — leaves the target tag on it.
+pub fn target_lines(safe: &str, mark: [i32; 3], bx: CellBox, pick: LockPick) -> Vec<String> {
+    let t = target_tag(safe);
+    let c = format!("{t}_c");
+    vec![
+        format!("tag @a[tag={t}] remove {t}"),
+        format!(
+            "tag @a[{},tag=!{}] add {c}",
+            crate::compiler::emit::box_selector_args(bx.0, bx.1),
+            crate::compiler::emit::CUTSCENE_TAG
+        ),
+        format!(
+            "execute positioned {} run tag @a[tag={c},sort={},limit=1] add {t}",
+            pos(mark),
+            pick.sort()
+        ),
+        format!("tag @a[tag={c}] remove {c}"),
+    ]
 }
 
 /// The function an aimed wind-up calls to turn the root to facing `k`.
@@ -1665,6 +2192,93 @@ pub fn region_damage_lines(
     out
 }
 
+/// **A locked step's functions** (spec-0094 §4.2): the choice, the read of
+/// the target's feet cell into the lock region's frame (clamped to it), the
+/// macro dispatch on that cell, and one function per cell of the region — the
+/// turn to the proved cell it resolves to, and which pose and landing that
+/// cell takes. Nothing here is computed at run time but which cell a body is
+/// in: every turn, pose and blow is one the compiler proved.
+fn lock_functions(
+    p: &Placed<'_>,
+    pattern: &[delvewright_dsl::StrikeStep],
+    j: usize,
+    pick: LockPick,
+    lp: &LockPlan,
+    ns: &str,
+) -> Vec<(String, String)> {
+    let s = &p.safe;
+    let h = |w: &str| holder(s, w);
+    let join = |v: Vec<String>| {
+        let mut t = v.join("\n");
+        t.push('\n');
+        t
+    };
+    let Some(within) = lp.within else {
+        return Vec::new();
+    };
+    let t = target_tag(s);
+    let mut choose = target_lines(s, p.mark, within, pick);
+    for (a, axis) in ["l0", "l1", "l2"].iter().enumerate() {
+        choose.push(format!(
+            "execute store result score {} dw.sys run data get entity @a[tag={t},limit=1] Pos[{a}]",
+            h(axis)
+        ));
+        for (op, c) in [
+            ("-=", within.0[a]),
+            (">", 0),
+            ("<", within.1[a] - within.0[a]),
+        ] {
+            choose.push(format!("scoreboard players set {} dw.sys {c}", h("c")));
+            choose.push(format!(
+                "scoreboard players operation {} dw.sys {op} {} dw.sys",
+                h(axis),
+                h("c")
+            ));
+        }
+        choose.push(format!(
+            "execute store result storage {STORAGE} {s}.{axis} int 1 run scoreboard players get {} dw.sys",
+            h(axis)
+        ));
+    }
+    choose.push(format!(
+        "function {ns}:asm_lockat_{s}_{j} with storage {STORAGE} {s}"
+    ));
+    choose.push(format!("tag @a[tag={t}] remove {t}"));
+    let mut out = vec![
+        (lock_fn(s, j), join(choose)),
+        (
+            format!("asm_lockat_{s}_{j}"),
+            join(vec![format!(
+                "$function {ns}:asm_lockc_{s}_{j}_$(l0)_$(l1)_$(l2)"
+            )]),
+        ),
+    ];
+    let root = format!("@e[tag={},limit=1]", root_tag(s));
+    for (b, &q) in cells_of(within).iter().zip(&lp.resolve) {
+        let Some(cell) = lp.cells.get(q) else {
+            continue;
+        };
+        let role = if cell.candidate == 0 {
+            1
+        } else {
+            cell.candidate + 1
+        };
+        let Some(play) = play_index(p.rig, pattern, j, role) else {
+            continue;
+        };
+        let i = [b[0] - within.0[0], b[1] - within.0[1], b[2] - within.0[2]];
+        out.push((
+            lock_cell_fn(s, j, i),
+            join(vec![
+                format!("tp {root} {} {} 0", pos(p.mark), yaw_token(cell.yaw)),
+                format!("data modify storage {STORAGE} {s}.r set value {play}"),
+                format!("data modify storage {STORAGE} {s}.q set value {q}"),
+            ]),
+        ));
+    }
+    out
+}
+
 /// Wraps lines lowered for an effect in that effect's own `when`.
 pub type Guard<'g> = dyn Fn(&QuestEffect, Vec<String>, &mut Vec<String>) + 'g;
 
@@ -1674,6 +2288,7 @@ pub type Guard<'g> = dyn Fn(&QuestEffect, Vec<String>, &mut Vec<String>) + 'g;
 /// `when`, as `land` would have.
 pub fn assembly_functions(
     plan: &Plan<'_>,
+    locks: &Locks,
     land: &dyn Fn(&QuestEffect, &mut Vec<String>),
     guard: &Guard<'_>,
 ) -> Vec<(String, String)> {
@@ -1690,18 +2305,15 @@ pub fn assembly_functions(
         let h = |w: &str| holder(s, w);
         let clips: Vec<(&String, &rig::Clip)> = p.rig.clips.iter().collect();
         // Every clip as it is played: the rig's own at their cadence, then one
-        // per strike step that sets its own pace, for its wind-up and its
-        // strike (`paced_index`).
+        // per clip of each strike step that sets its own pace — its wind-up,
+        // its strike and its lock's reaches (`paced_slots`, `play_index`).
         let mut plays: Vec<(&rig::Clip, u32)> =
             clips.iter().map(|(_, c)| (*c, c.ticks_per_frame)).collect();
         if let Some(st) = &p.decl.strikes {
-            for step in &st.pattern {
-                if let Some(tpf) = step.ticks_per_frame {
-                    for name in [&step.windup, &step.strike] {
-                        if let Some(c) = p.rig.clips.get(name) {
-                            plays.push((c, tpf));
-                        }
-                    }
+            for (j, _, name) in paced_slots(p.rig, &st.pattern) {
+                if let (Some(c), Some(tpf)) = (p.rig.clips.get(name), st.pattern[j].ticks_per_frame)
+                {
+                    plays.push((c, tpf));
                 }
             }
         }
@@ -1757,6 +2369,7 @@ pub fn assembly_functions(
         summon.push(format!("scoreboard players set {} dw.sys 0", h("sm")));
         summon.push(format!("scoreboard players set {} dw.sys 0", h("step")));
         summon.push(format!("scoreboard players set {} dw.sys 0", h("aim")));
+        summon.push(format!("scoreboard players set {} dw.sys 1", h("armed")));
         summon.push(format!(
             "scoreboard players set {} dw.sys {}",
             h("base"),
@@ -1805,6 +2418,9 @@ pub fn assembly_functions(
                 cue_fn(s, k),
                 join(vec![
                     format!("scoreboard players set {} dw.sys {k}", h("base")),
+                    // The story speaks: the pattern stands down, so the clip
+                    // completes and holds until an `arm-strikes` (spec-0094).
+                    format!("scoreboard players set {} dw.sys 0", h("armed")),
                     format!(
                         "execute if score {} dw.sys matches 1 if score {} dw.sys matches 0 run function {ns}:asm_play_{s}_{k}",
                         h("live"),
@@ -1847,6 +2463,13 @@ pub fn assembly_functions(
             h("base")
         ));
         out.push((format!("asm_resume_{s}"), join(resume)));
+        out.push((
+            arm_fn(s),
+            join(vec![
+                format!("scoreboard players set {} dw.sys 1", h("armed")),
+                format!("scoreboard players set {} dw.sys 0", h("step")),
+            ]),
+        ));
 
         // ---- the frame driver ----
         let mut adv = vec![
@@ -1915,10 +2538,38 @@ pub fn assembly_functions(
                 h("sm"),
                 h("step")
             ));
-            tick.push(format!(
-                "execute if score {} dw.sys matches 0 if entity {sel} run function {ns}:asm_begin_{s}",
-                h("sm")
-            ));
+            // A wind-up begins only while the pattern is armed (a `play-clip`
+            // stands it down, an `arm-strikes` re-arms it — spec-0094), and a
+            // locked step only while someone is in its own lock region.
+            let locked: Vec<Option<CellBox>> = st
+                .pattern
+                .iter()
+                .map(|step| step.lock.as_ref().and_then(|l| plan.zone_box(&l.within)))
+                .collect();
+            if locked.iter().all(Option::is_none) {
+                tick.push(format!(
+                    "execute if score {} dw.sys matches 0 if score {} dw.sys matches 1 if entity {sel} run function {ns}:asm_begin_{s}",
+                    h("sm"),
+                    h("armed")
+                ));
+            } else {
+                for (j, l) in locked.iter().enumerate() {
+                    let who = match l {
+                        Some(bx) => format!(
+                            "@a[{},tag=!{}]",
+                            crate::compiler::emit::box_selector_args(bx.0, bx.1),
+                            crate::compiler::emit::CUTSCENE_TAG
+                        ),
+                        None => sel.clone(),
+                    };
+                    tick.push(format!(
+                        "execute if score {} dw.sys matches 0 if score {} dw.sys matches 1 if score {} dw.sys matches {j} if entity {who} run function {ns}:asm_begin_{s}",
+                        h("sm"),
+                        h("armed"),
+                        h("step")
+                    ));
+                }
+            }
             tick.push(format!(
                 "execute if score {} dw.sys matches 2 run scoreboard players add {} dw.sys 1",
                 h("sm"),
@@ -1956,16 +2607,14 @@ pub fn assembly_functions(
             };
             if st.aim.is_some() {
                 let root = format!("@e[tag={},limit=1]", root_tag(s));
-                let target = format!(
-                    "@a[{},tag=!{},sort=nearest,limit=1]",
-                    crate::compiler::emit::box_selector_args(arming.0, arming.1),
-                    crate::compiler::emit::CUTSCENE_TAG
-                );
+                let target = format!("@a[tag={},limit=1]", target_tag(s));
                 let base_deg = rig::facing_angle(facing).to_degrees().round() as i64;
                 let n64 = i64::from(n);
+                begin.extend(target_lines(s, p.mark, arming, LockPick::Nearest));
                 begin.push(format!(
                     "execute as {root} at @s facing entity {target} feet run tp @s ~ ~ ~ ~ 0"
                 ));
+                begin.push(format!("tag {target} remove {}", target_tag(s)));
                 begin.push(format!(
                     "execute store result score {} dw.sys run data get entity {root} Rotation[0] {n}",
                     h("yaw")
@@ -2012,6 +2661,21 @@ pub fn assembly_functions(
             let mut landing = Vec::new();
             for (j, step) in st.pattern.iter().enumerate() {
                 let paced = paced_index(p.rig, &st.pattern, j);
+                // spec-0094: a locked step chooses its target, turns to it and
+                // picks its pose before the wind-up plays.
+                let lockplan = step
+                    .lock
+                    .as_ref()
+                    .zip(locks.get(&(p.index, j)))
+                    .filter(|(_, lp)| !lp.cells.is_empty() && lp.within.is_some());
+                if let Some((l, lp)) = lockplan {
+                    begin.push(format!(
+                        "execute if score {} dw.sys matches {j} run function {ns}:{}",
+                        h("step"),
+                        lock_fn(s, j)
+                    ));
+                    out.extend(lock_functions(&p, &st.pattern, j, l.pick, lp, ns));
+                }
                 if let Some(k) = paced.map(|(w, _)| w).or_else(|| idx(&step.windup)) {
                     begin.push(format!(
                         "execute if score {} dw.sys matches {j} run function {ns}:asm_play_{s}_{k}",
@@ -2024,13 +2688,52 @@ pub fn assembly_functions(
                     h("holdn"),
                     step.hold
                 ));
-                if let Some(k) = paced.map(|(_, m)| m).or_else(|| idx(&step.strike)) {
+                if lockplan.is_some() {
+                    // The pose the lock chose for the cell (`asm_lockc_*`).
+                    swing.push(format!(
+                        "execute if score {} dw.sys matches {j} run function {ns}:asm_swingat_{s} with storage {STORAGE} {s}",
+                        h("step")
+                    ));
+                } else if let Some(k) = paced.map(|(_, m)| m).or_else(|| idx(&step.strike)) {
                     swing.push(format!(
                         "execute if score {} dw.sys matches {j} run function {ns}:asm_play_{s}_{k}",
                         h("step")
                     ));
                 }
-                if !step.on_land.is_empty() && st.aim.is_none() {
+                if let Some((_, lp)) = lockplan {
+                    if !step.on_land.is_empty() {
+                        landing.push(format!(
+                            "execute if score {} dw.sys matches {j} run function {ns}:asm_landat_{s}_{j} with storage {STORAGE} {s}",
+                            h("step")
+                        ));
+                        out.push((
+                            format!("asm_landat_{s}_{j}"),
+                            join(vec![format!("$function {ns}:asm_land_{s}_{j}_$(q)")]),
+                        ));
+                        for (q, cell) in lp.cells.iter().enumerate() {
+                            let mut body = Vec::new();
+                            for e in &step.on_land {
+                                match &e.verb {
+                                    Verb::DamagePlayers {
+                                        amount,
+                                        damage_type,
+                                    } if e.damage_within().is_none() => {
+                                        let kind = damage_type
+                                            .unwrap_or(delvewright_dsl::DamageKind::Generic)
+                                            .id();
+                                        guard(
+                                            e,
+                                            region_damage_lines(s, &cell.region, *amount, kind),
+                                            &mut body,
+                                        );
+                                    }
+                                    _ => land(e, &mut body),
+                                }
+                            }
+                            out.push((format!("asm_land_{s}_{j}_{q}"), join(body)));
+                        }
+                    }
+                } else if !step.on_land.is_empty() && st.aim.is_none() {
                     landing.push(format!(
                         "execute if score {} dw.sys matches {j} run function {ns}:asm_land_{s}_{j}",
                         h("step")
@@ -2092,6 +2795,12 @@ pub fn assembly_functions(
             ));
             landing.push(format!("scoreboard players set {} dw.sys 0", h("sm")));
             landing.push(format!("function {ns}:asm_resume_{s}"));
+            if locks.keys().any(|(a, _)| *a == p.index) {
+                out.push((
+                    format!("asm_swingat_{s}"),
+                    join(vec![format!("$function {ns}:asm_play_{s}_$(r)")]),
+                ));
+            }
             out.push((format!("asm_begin_{s}"), join(begin)));
             out.push((format!("asm_hold_{s}"), join(hold)));
             out.push((format!("asm_swing_{s}"), join(swing)));
@@ -2199,6 +2908,7 @@ mod tests {
                         amount: 6,
                         nested: false,
                     }],
+                    lock: None,
                 }],
             )),
             struck_by: vec![],
@@ -2567,6 +3277,255 @@ mod tests {
         s.struck_by = vec!["trigger/hit"];
         let (_, f) = judge(&s, &|_| true, &near);
         assert_eq!(codes(&f), vec!["DW0936"]);
+    }
+
+    // ---- the lock (spec-0094) ----
+
+    /// A one-part rig whose `near` lays a one-wide slab one to four cells in
+    /// front of the mark and whose `far` lays one three to seven in front.
+    fn reaching_rig() -> Rig {
+        let mut r = rig();
+        let laid = |from: f64, to: f64| block([-0.5, 0.0, from], [1.0, 0.3, to - from]);
+        for (name, slab) in [("near", laid(1.0, 4.0)), ("far", laid(3.0, 7.0))] {
+            r.clips.insert(
+                name.to_string(),
+                Clip {
+                    ticks_per_frame: 2,
+                    looping: false,
+                    frames: vec![vec![cube([-0.5, 1.0, -0.5])], vec![slab]],
+                },
+            );
+        }
+        r
+    }
+
+    /// The subject: the mark at [10, 1, 10] facing south, the arming region
+    /// `while_in`, one step locking onto `within` with `candidates`.
+    fn locking<'a>(
+        r: &'a Rig,
+        arming: CellBox,
+        within: CellBox,
+        candidates: Vec<&'a str>,
+    ) -> Subject<'a> {
+        let mut s = subject(r, None, None);
+        s.initial = Some("idle");
+        if let Some((a, steps)) = &mut s.strikes {
+            *a = arming;
+            steps[0].strike = candidates[0];
+            steps[0].landings[0].within = None;
+            steps[0].landings[0].declares_in = false;
+            steps[0].lock = Some(LockSubject {
+                within: Some(within),
+                pick: LockPick::Nearest,
+                candidates,
+            });
+        }
+        s
+    }
+
+    const ARMING: CellBox = ([4, 1, 4], [16, 3, 20]);
+    const WITHIN: CellBox = ([9, 1, 12], [11, 1, 16]);
+
+    /// Every standable cell of the lock region is planned with the first
+    /// candidate that comes down on it, turned to face it: the near slab for
+    /// the cells it reaches, the far one past them; each cell's blow holds
+    /// the cell, lies inside `while_in`, and is the area the limb comes down
+    /// on, both ways.
+    #[test]
+    fn a_lock_is_proved_per_cell() {
+        let r = reaching_rig();
+        let s = locking(&r, ARMING, WITHIN, vec!["near", "far"]);
+        let (j, f) = judge(&s, &floor, &near);
+        assert!(
+            f.is_empty(),
+            "{:?}",
+            f.iter().map(|x| &x.message).collect::<Vec<_>>()
+        );
+        assert_eq!(j.locks, 15);
+        let (_, plan) = &j.plans[0];
+        assert_eq!(plan.cells.len(), 15);
+        let at = |c: [i32; 3]| plan.cells.iter().find(|l| l.cell == c).unwrap();
+        assert_eq!(at([10, 1, 12]).candidate, 0, "near reaches two in front");
+        assert_eq!(
+            at([10, 1, 16]).candidate,
+            1,
+            "only far reaches six in front"
+        );
+        assert_eq!(at([10, 1, 12]).yaw, 0.0, "straight ahead");
+        assert!(at([11, 1, 12]).yaw < 0.0, "east of ahead turns toward east");
+        assert!(at([9, 1, 12]).yaw > 0.0, "west of ahead turns toward west");
+        for l in &plan.cells {
+            assert!(l.region.contains(&l.cell), "{l:?}");
+            assert!(l.region.iter().all(|c| in_box(*c, ARMING)), "{l:?}");
+            let r0 = &r.clips[&s.strikes.as_ref().unwrap().1[0]
+                .lock
+                .as_ref()
+                .unwrap()
+                .candidates[l.candidate]
+                .to_string()];
+            let lands = |f: &Vec<Transform>| struck_cells(f, l.turn, s.mark, &floor);
+            let c = correspondence(
+                &l.region,
+                &lands(&r0.frames[0]),
+                &lands(r0.frames.last().unwrap()),
+                &floor,
+            );
+            assert!(c.holds(), "{l:?}: {c:?}");
+        }
+        let record = &j.records[0];
+        assert!(record.locked);
+        assert_eq!(record.facing_count, 15);
+        assert_eq!(record.facings[0].clip.as_deref(), Some("near"));
+    }
+
+    /// The far cells only `far` reaches are refused, named, once `far` is
+    /// dropped; a lock region one cell past `while_in` is refused; a region on
+    /// no floor is refused.
+    #[test]
+    fn a_lock_that_cannot_strike_where_it_locks_is_refused() {
+        let r = reaching_rig();
+        let s = locking(&r, ARMING, WITHIN, vec!["near"]);
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0968"]);
+        assert!(f[0].message.contains("[10, 1, 16]"), "{}", f[0].message);
+        assert!(!f[0].message.contains("[10, 1, 12]"), "{}", f[0].message);
+        assert!(
+            f[0].message.contains("`near` does not come down on it"),
+            "{}",
+            f[0].message
+        );
+        // `while_in` ends at z 15, one short of the region's last row.
+        let tight = ([4, 1, 4], [16, 3, 15]);
+        let s = locking(&r, tight, WITHIN, vec!["near", "far"]);
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0968"]);
+        assert!(
+            f[0].message.contains("outside the arming"),
+            "{}",
+            f[0].message
+        );
+        let s = locking(&r, ARMING, WITHIN, vec!["near", "far"]);
+        let (_, f) = judge(&s, &|c| c[1] == 5, &near);
+        assert_eq!(codes(&f), vec!["DW0968"]);
+        assert!(
+            f[0].message.contains("no body can stand"),
+            "{}",
+            f[0].message
+        );
+    }
+
+    /// A pose that comes down on the cell and past `while_in` is not taken:
+    /// with the arming region ending one short of the far slab's end, the
+    /// cell only `far` reaches is refused for the cell it would also hit.
+    #[test]
+    fn a_pose_whose_blow_leaves_while_in_is_not_taken() {
+        let r = reaching_rig();
+        let short = ([4, 1, 4], [16, 3, 15]);
+        let within = ([10, 1, 12], [10, 1, 15]);
+        let s = locking(&r, short, within, vec!["near", "far"]);
+        let (_, f) = judge(&s, &floor, &near);
+        assert_eq!(codes(&f), vec!["DW0968"]);
+        assert!(
+            f[0].message.contains("caught from outside `while_in`"),
+            "{}",
+            f[0].message
+        );
+    }
+
+    /// Where a blow points: straight ahead for a slab laid along `+z`, a
+    /// quarter turn for one laid along `+x`, nowhere for one round the mark.
+    #[test]
+    fn a_clips_blow_has_a_bearing() {
+        let r = reaching_rig();
+        assert_eq!(aim_bearing(&r.clips["near"]), 0.0);
+        let sideways = Clip {
+            ticks_per_frame: 1,
+            looping: false,
+            frames: vec![
+                vec![cube([-0.5, 1.0, -0.5])],
+                vec![block([1.0, 0.0, -0.5], [3.0, 0.3, 1.0])],
+            ],
+        };
+        assert!((aim_bearing(&sideways) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        assert_eq!(aim_bearing(&r.clips["strike"]), 0.0);
+        assert_eq!(yaw_for_turn(0.0, 0.0), 0.0);
+        assert_eq!(yaw_for_turn(std::f64::consts::FRAC_PI_2, 0.0), -90.0);
+        assert_eq!(yaw_for_turn(std::f64::consts::PI, 0.0), 180.0);
+    }
+
+    /// A body whose feet the server reads above its floor is struck as the
+    /// floor cell under it; one outside the proved set as the nearest.
+    #[test]
+    fn every_cell_of_the_region_resolves_to_a_proved_cell() {
+        let r = reaching_rig();
+        let tall = ([9, 1, 12], [11, 2, 16]);
+        let s = locking(&r, ARMING, tall, vec!["near", "far"]);
+        let (_, f) = judge(&s, &floor, &near);
+        assert!(f.is_empty(), "{:?}", codes(&f));
+        let (_, plan) = &s
+            .strikes
+            .as_ref()
+            .map(|(a, st)| {
+                (
+                    0,
+                    lock_plan(s.mark, 0.0, &r, st[0].lock.as_ref().unwrap(), *a, &floor),
+                )
+            })
+            .unwrap();
+        assert_eq!(plan.resolve.len(), cells_of(tall).len());
+        for (b, &q) in cells_of(tall).iter().zip(&plan.resolve) {
+            assert_eq!(plan.cells[q].cell, [b[0], 1, b[2]], "{b:?}");
+        }
+    }
+
+    /// A locked first step is witnessed on two cells a turn apart, then
+    /// spared.
+    #[test]
+    fn a_locked_strike_is_witnessed_twice() {
+        let r = reaching_rig();
+        let s = locking(&r, ARMING, WITHIN, vec!["near", "far"]);
+        let (j, _) = judge(&s, &floor, &near);
+        let b = AssemblyBinding {
+            records: j.records,
+            spared: vec![("assembly/limb".into(), Some([0, 1, 0]))],
+            ..AssemblyBinding::default()
+        };
+        let w = witness_steps(&b);
+        let steps = &w[0].1;
+        assert_eq!(steps.len(), 3, "{steps:?}");
+        assert_eq!(steps[0]["expect"], "struck");
+        assert_eq!(steps[1]["expect"], "struck");
+        assert_eq!(steps[2]["expect"], "spared");
+        assert_eq!(steps[0]["yaw"], 0.0);
+        assert_ne!(steps[0]["pos"], steps[1]["pos"]);
+        assert_ne!(steps[1]["yaw"], 0.0);
+    }
+
+    /// The target is chosen in two selectors: the box tags, the order is
+    /// measured from the mark (a box selector's own `x`/`y`/`z` would be the
+    /// origin its `sort` measures from).
+    #[test]
+    fn a_target_is_chosen_from_the_mark() {
+        let lines = target_lines(
+            "limb",
+            [10, 1, 10],
+            ([9, 1, 12], [11, 1, 16]),
+            LockPick::Furthest,
+        );
+        assert_eq!(
+            lines,
+            vec![
+                "tag @a[tag=dw_asm_limb_target] remove dw_asm_limb_target",
+                "tag @a[x=9,dx=2,y=1,dy=0,z=12,dz=4,tag=!dw_cutscene] add dw_asm_limb_target_c",
+                "execute positioned 10.5 1 10.5 run tag @a[tag=dw_asm_limb_target_c,sort=furthest,limit=1] add dw_asm_limb_target",
+                "tag @a[tag=dw_asm_limb_target_c] remove dw_asm_limb_target_c",
+            ]
+        );
+        assert!(
+            lines
+                .iter()
+                .all(|l| !(l.contains("x=") && l.contains("sort=")))
+        );
     }
 
     #[test]

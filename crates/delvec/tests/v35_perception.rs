@@ -186,7 +186,7 @@ fn the_surface_is_exported() {
     assert_eq!(audience, ["party", "actor"]);
     let branches = q["oneOf"].as_array().unwrap();
     // The union's size is stated once, by `v29_firework`'s
-    // `the_effect_union_names_forty_three_verbs`.
+    // `the_effect_union_names_forty_four_verbs`.
     let branch = |t: &str| {
         branches
             .iter()

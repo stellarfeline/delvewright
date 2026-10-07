@@ -5976,6 +5976,15 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                         format!("{at}/strikes/pattern/{j}/strike"),
                         "strike step's `strike`",
                     );
+                    if let Some(lock) = &step.lock {
+                        for (k, reach) in lock.reaches.iter().enumerate() {
+                            need(
+                                reach,
+                                format!("{at}/strikes/pattern/{j}/lock/reaches/{k}"),
+                                "locked strike step's `reaches`",
+                            );
+                        }
+                    }
                     if let Some(t) = step.ticks_per_frame
                         && !(crate::rig::MIN_TICKS_PER_FRAME..=crate::rig::MAX_TICKS_PER_FRAME)
                             .contains(&t)
@@ -6023,6 +6032,29 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                 ),
             ));
         }
+        if let Some(s) = &a.strikes {
+            lock_shape_checks(a, i, s, d);
+            for (j, step) in s.pattern.iter().enumerate() {
+                let Some(lock) = &step.lock else { continue };
+                if providers.resolvable(lock.within.anchor.as_str()) {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("{at}/strikes/pattern/{j}/lock/within/anchor"),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player in a region centred \
+                         on anchor `{}`, which no area's prefab provides — {}",
+                        a.id,
+                        lock.within.anchor,
+                        providers.anchor_remedy(
+                            "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                        ),
+                    ),
+                ));
+            }
+        }
         if let Some(s) = &a.strikes
             && !providers.resolvable(s.while_in.anchor.as_str())
         {
@@ -6042,11 +6074,29 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
             ));
         }
     }
+    // Which declared assemblies strike, for `arm-strikes` (`DW0970`).
+    let strikes: BTreeMap<&str, bool> = quests
+        .assemblies
+        .iter()
+        .map(|a| (a.id.as_str(), a.strikes.is_some()))
+        .collect();
     // Every verb that names an assembly, at every depth of every root.
     crate::stages::for_each_campaign_effect(c, &mut |path, _site, e| {
         let Some((assembly, clip)) = assembly_verb(e) else {
             return;
         };
+        if matches!(e.verb, Verb::ArmStrikes { .. }) && strikes.get(assembly) == Some(&false) {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_ARM_NOTHING,
+                "quests",
+                format!("{path}/assembly"),
+                format!(
+                    "`arm-strikes` re-arms assembly `{assembly}`'s strike pattern, and the \
+                     assembly declares no `strikes` — there is no pattern to re-arm, so the beat \
+                     does nothing. Give the assembly a `strikes` pattern, or drop the effect"
+                ),
+            ));
+        }
         let Some(resolved) = rigs.get(assembly) else {
             d.push(Diagnostic::error(
                 codes::DANGLING_REF,
@@ -6100,7 +6150,91 @@ fn assembly_verb(e: &QuestEffect) -> Option<(&str, Option<&str>)> {
             Some((assembly.as_str(), None))
         }
         Verb::PlayClip { assembly, clip } => Some((assembly.as_str(), Some(clip.as_str()))),
+        Verb::ArmStrikes { assembly } => Some((assembly.as_str(), None)),
         _ => None,
+    }
+}
+
+/// spec-0094 §5.2 (`DW0969`): **a locked step's blow is the lock's to place.**
+/// A locked step lands on the cells its chosen clip comes down on at the turn
+/// it locked to, so a box an author writes cannot be where the blow lands: a
+/// top-level `damage-players` in its `on_land` declares no `in`, no
+/// `damage-players` stands inside another effect's list there, and a pattern
+/// that turns by `aim` has no locked step.
+fn lock_shape_checks(
+    a: &crate::stages::Assembly,
+    i: usize,
+    s: &crate::stages::AssemblyStrikes,
+    d: &mut Vec<Diagnostic>,
+) {
+    fn nested_damage(effs: &[QuestEffect], path: &str, out: &mut Vec<String>) {
+        for (k, e) in effs.iter().enumerate() {
+            let here = format!("{path}/{k}");
+            if matches!(e.verb, Verb::DamagePlayers { .. }) {
+                out.push(here.clone());
+            }
+            for (seg, _, list) in e.nested_effect_lists_labeled() {
+                nested_damage(list, &format!("{here}/{seg}"), out);
+            }
+        }
+    }
+    let at = format!("/content/assemblies/{i}/strikes");
+    for (j, step) in s.pattern.iter().enumerate() {
+        if step.lock.is_none() {
+            continue;
+        }
+        let here = format!("{at}/pattern/{j}");
+        if s.aim.is_some() {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_LOCK_SHAPE,
+                "quests",
+                format!("{here}/lock"),
+                format!(
+                    "assembly `{}`'s strike pattern turns by `aim`, and its step {j} declares a \
+                     `lock` — two rules choosing the one turn the assembly strikes from. A locked \
+                     step turns to the cell it locks onto; an aimed pattern turns to one of its \
+                     facings. Drop `aim` from the pattern, or drop `lock` from the step",
+                    a.id
+                ),
+            ));
+        }
+        for (k, e) in step.on_land.iter().enumerate() {
+            let p = format!("{here}/on_land/{k}");
+            if matches!(e.verb, Verb::DamagePlayers { .. }) && e.damage_within().is_some() {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_LOCK_SHAPE,
+                    "quests",
+                    format!("{p}/in"),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player, and its \
+                         `damage-players` ({p}) declares an `in` box. A locked blow lands on the \
+                         cells its clip comes down on at the turn it locked to — the compiler \
+                         derives that area for every cell it can lock, so a written box is a \
+                         second, fixed answer that is wrong at every other cell. Drop the `in`",
+                        a.id
+                    ),
+                ));
+            }
+            let mut deep = Vec::new();
+            for (seg, _, list) in e.nested_effect_lists_labeled() {
+                nested_damage(list, &format!("{p}/{seg}"), &mut deep);
+            }
+            for q in deep {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_LOCK_SHAPE,
+                    "quests",
+                    q.clone(),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player, and a \
+                         `damage-players` ({q}) stands inside another effect's list. Only a blow \
+                         at the top of a locked step's `on_land` is moved to the cells the clip \
+                         comes down on; this one would land nowhere the lock chose. Move it to the \
+                         top of `on_land` (a `when` on it is kept)",
+                        a.id
+                    ),
+                ));
+            }
+        }
     }
 }
 

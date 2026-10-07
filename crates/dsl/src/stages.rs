@@ -4872,11 +4872,70 @@ pub struct StrikeStep {
     /// `hold`; the blow lands one cadence after the strike's last frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ticks_per_frame: Option<u32>,
+    /// A lock (spec-0094): at the start of the wind-up the step picks one
+    /// player in `lock.within` by `lock.pick`, reads the cell their feet stand
+    /// in, turns the assembly to it and strikes it with whichever of `strike`
+    /// and `lock.reaches` the compiler proved comes down there. The blow's area
+    /// is then the cells that clip comes down on, derived by the compiler: a
+    /// `damage-players` in a locked step declares no `in` (`DW0969`). Absent:
+    /// the blow lands where its `on_land` boxes say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock: Option<StrikeLock>,
     /// Effects run, with no acting player, on the tick a client has drawn the
     /// strike clip's last frame whole (one cadence after it is applied). A step
     /// with none is a feint.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_land: Vec<QuestEffect>,
+}
+
+/// A strike step's lock (spec-0094 §3.1): the step strikes where one player
+/// stands, chosen when its wind-up begins.
+///
+/// A display entity cannot bend live to a point: its pose is a keyframe a rig
+/// precomputed. So a lock is two run-time choices among things the compiler
+/// proved — a **turn** of the whole assembly about its mark (any yaw: a `tp` of
+/// the root turns every riding part with it), and a **pose**, the first of
+/// `strike` then `reaches` whose last frame, at that turn, comes down on the
+/// locked cell with its whole blow inside `while_in`. Every standable cell of
+/// `within` owes such a pose, or the build refuses naming the cells (`DW0968`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StrikeLock {
+    /// The region a target is chosen in: an anchor-centred box. The step winds
+    /// up only while some player's body is in it, and every blow it can deal
+    /// lies inside `while_in` (`DW0968`).
+    pub within: StealthZone,
+    /// Which player in `within` the step locks onto.
+    pub pick: LockPick,
+    /// Further strike clips, beyond the step's `strike`, the lock may choose
+    /// among — a limb's blows at other reaches. Tried after `strike`, in the
+    /// order written; the first that comes down on the locked cell is played.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reaches: Vec<String>,
+}
+
+/// Which player a locked strike chooses (spec-0094 §3.1): vanilla's own
+/// selector orders, measured from the assembly's mark.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum LockPick {
+    /// The player nearest the mark (`sort=nearest`).
+    Nearest,
+    /// The player furthest from the mark (`sort=furthest`).
+    Furthest,
+    /// A player chosen at random (`sort=random`).
+    Random,
+}
+
+impl LockPick {
+    /// The `sort=` value of the selector that makes the choice.
+    pub fn sort(self) -> &'static str {
+        match self {
+            LockPick::Nearest => "nearest",
+            LockPick::Furthest => "furthest",
+            LockPick::Random => "random",
+        }
+    }
 }
 
 /// One step of a [`Verb::Sequence`] (DSL v0.6): a group of effects fired at
@@ -5725,6 +5784,16 @@ pub enum Verb {
         assembly: AssemblyId,
         /// A clip the assembly's rig declares.
         clip: String,
+    },
+    /// Re-arms an assembly's strike pattern (spec-0094 §3.3). A `play-clip`
+    /// stands the pattern down: the clip it plays completes and holds (or
+    /// loops) whoever stands in `while_in`, and no wind-up begins again until
+    /// this verb runs. The pattern resumes from its first step on the next tick
+    /// some player is in its arming region. Naming an assembly that declares
+    /// no `strikes` is `DW0970`.
+    ArmStrikes {
+        /// The assembly (stage-5 `assemblies` ref) whose pattern is re-armed.
+        assembly: AssemblyId,
     },
     /// A deterministic timeline (DSL v0.6): one schedule chain firing effect groups
     /// at exact tick offsets. Effects are any in the stage-5 set except a nested
@@ -6955,6 +7024,7 @@ impl Verb {
             Verb::SpawnAssembly { .. } => "spawn-assembly",
             Verb::DespawnAssembly { .. } => "despawn-assembly",
             Verb::PlayClip { .. } => "play-clip",
+            Verb::ArmStrikes { .. } => "arm-strikes",
             Verb::Particle { .. } => "particle",
         }
     }
@@ -7020,7 +7090,8 @@ impl Verb {
             // spec-0082: an assembly is a world object.
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
-            | Verb::PlayClip { .. } => false,
+            | Verb::PlayClip { .. }
+            | Verb::ArmStrikes { .. } => false,
         }
     }
 }
@@ -7236,6 +7307,8 @@ impl QuestEffect {
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
             | Verb::PlayClip { .. }
+            // spec-0094's `arm-strikes`.
+            | Verb::ArmStrikes { .. }
             // spec-0085's `particle`.
             | Verb::Particle { .. }
             | Verb::DropStake { .. } => None,
@@ -9137,6 +9210,11 @@ mod happening_subject_tests {
             (
                 "play-clip",
                 serde_json::json!({"type":"play-clip","assembly":"assembly/limb","clip":"idle"}),
+                None,
+            ),
+            (
+                "arm-strikes",
+                serde_json::json!({"type":"arm-strikes","assembly":"assembly/limb"}),
                 None,
             ),
             (

@@ -65,7 +65,14 @@ fn the_quests_stage_declares_assemblies() {
     assert_eq!(props(&s, "StrikeAim"), ["facings"]);
     assert_eq!(
         props(&s, "StrikeStep"),
-        ["hold", "on_land", "strike", "ticks_per_frame", "windup"]
+        [
+            "hold",
+            "lock",
+            "on_land",
+            "strike",
+            "ticks_per_frame",
+            "windup"
+        ]
     );
     // `at` is a Mark, `while_in` the anchor-centred box `StealthZone` is.
     let at = &s["$defs"]["Assembly"]["properties"]["at"];
@@ -85,7 +92,7 @@ fn the_effect_union_gains_three_verbs() {
     let s = quests();
     let verbs = tags(&s, "QuestEffect", "type");
     // The union's size is stated once, by `v29_firework`'s
-    // `the_effect_union_names_forty_three_verbs`; this test owns only that the
+    // `the_effect_union_names_forty_four_verbs`; this test owns only that the
     // three assembly verbs are in it.
     for v in ["spawn-assembly", "despawn-assembly", "play-clip"] {
         assert!(verbs.contains(&v.to_string()), "{v} missing: {verbs:?}");
@@ -100,6 +107,43 @@ fn the_effect_union_gains_three_verbs() {
         .collect();
     fields.sort();
     assert!(fields.starts_with(&["assembly", "clip"]), "{fields:?}");
+}
+
+/// spec-0094 §3: a strike step may lock onto a player — a region, vanilla's
+/// three selector orders and further reaches — and `arm-strikes` re-arms a
+/// pattern a `play-clip` stood down. The wind-up's length needs no new field:
+/// `hold` is an unbounded tick count and `ticks_per_frame` the step's pace.
+#[test]
+fn a_strike_step_can_lock_and_a_pattern_can_be_rearmed() {
+    let s = quests();
+    assert_eq!(props(&s, "StrikeLock"), ["pick", "reaches", "within"]);
+    let within = &s["$defs"]["StrikeLock"]["properties"]["within"];
+    assert!(
+        within.to_string().contains("#/$defs/StealthZone"),
+        "{within}"
+    );
+    let picks: Vec<String> = s["$defs"]["LockPick"]["oneOf"]
+        .as_array()
+        .expect("LockPick is a documented unit enum")
+        .iter()
+        .map(|b| b["const"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(picks, ["nearest", "furthest", "random"]);
+    let verbs = tags(&s, "QuestEffect", "type");
+    assert!(verbs.contains(&"arm-strikes".to_string()), "{verbs:?}");
+    let arm = branch(&s, "QuestEffect", "type", "arm-strikes");
+    let mut fields: Vec<&str> = arm["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .filter(|k| *k != "type")
+        .collect();
+    fields.sort();
+    assert!(fields.starts_with(&["assembly"]), "{fields:?}");
+    let hold = &s["$defs"]["StrikeStep"]["properties"]["hold"];
+    assert_eq!(hold["type"], "integer", "{hold}");
+    assert!(hold.get("maximum").is_none(), "{hold}");
 }
 
 #[test]

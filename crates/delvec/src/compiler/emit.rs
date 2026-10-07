@@ -1948,6 +1948,12 @@ pub fn build_with_warnings(
     let chrome =
         delvewright_dsl::Chrome::for_build(plan.campaign.world.campaign_id.as_str(), language);
 
+    // spec-0094: what the assembly judgement proved about each locked strike
+    // is what the emitter writes — the plans travel, they are never re-derived.
+    let asm_locks = assembly_binding
+        .as_ref()
+        .map(|b| b.plans.clone())
+        .unwrap_or_default();
     let functions = emit_functions(
         plan,
         &chrome,
@@ -1965,6 +1971,7 @@ pub fn build_with_warnings(
         &payload_plans,
         &branch_transport,
         stake_table.as_ref(),
+        &asm_locks,
     );
     // `DW0852` over the FINAL function list — after every emitter has had its say,
     // so a later pass that rewrote a judge cannot slip past a check that ran
@@ -2059,6 +2066,7 @@ pub fn build_with_warnings(
             rings: &wave_rings,
         },
         &payload_plans,
+        &asm_locks,
     );
 
     // ---- creator overlay (playtest-only; spec-0006) ----
@@ -3605,6 +3613,7 @@ fn emit_functions(
     payloads: &PayloadPlans,
     branch_transport: &BranchTransportOverlay,
     stake_table: Option<&crate::compiler::stake::StakeTable>,
+    asm_locks: &crate::compiler::assembly::Locks,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -4694,6 +4703,7 @@ fn emit_functions(
     // is an ordinary effect bundle, lowered here under its root's audience.
     fns.extend(crate::compiler::assembly::assembly_functions(
         plan,
+        asm_locks,
         &|e, body| {
             emit_gated_effect(
                 plan,
@@ -6276,6 +6286,15 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
                 "assembly",
                 st.while_in.anchor.as_str().to_string(),
             ));
+            for (j, step) in st.pattern.iter().enumerate() {
+                if let Some(l) = &step.lock {
+                    refs.push((
+                        format!("/content/assemblies/{i}/strikes/pattern/{j}/lock/within/anchor"),
+                        "assembly",
+                        l.within.anchor.as_str().to_string(),
+                    ));
+                }
+            }
         }
     }
     for (path, verb, anchor) in refs {
@@ -7069,7 +7088,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         }
         // --- spec-0082 assembly verbs: a call into the assembly's own
         // functions (`compiler::assembly`). ---
-        Verb::SpawnAssembly { .. } | Verb::DespawnAssembly { .. } | Verb::PlayClip { .. } => {
+        Verb::SpawnAssembly { .. }
+        | Verb::DespawnAssembly { .. }
+        | Verb::PlayClip { .. }
+        | Verb::ArmStrikes { .. } => {
             body.extend(crate::compiler::assembly::verb_lines(plan, &eff.verb).unwrap_or_default());
         }
         // --- DSL v0.10 status effects (spec-0031) -----------------------------
@@ -15881,6 +15903,7 @@ fn emit_packtest(
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
     waves: &WaveGeometry<'_>,
     payloads: &PayloadPlans,
+    asm_locks: &crate::compiler::assembly::Locks,
 ) {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -16152,7 +16175,7 @@ fn emit_packtest(
 
     // spec-0082: per assembly, the body it spawns, every hit counter that rides
     // its hitbox, and its landing. Emits nothing for a campaign with none.
-    emit_assembly_packtests(plan, out);
+    emit_assembly_packtests(plan, asm_locks, out);
 
     // v0.3: one focused mechanism test per gameplay verb present in the campaign,
     // plus a flag-gate test. Each drives the compiler-generated mechanic functions
@@ -19711,7 +19734,11 @@ fn emit_kill_reward_packtests(
 /// A PackTest dummy is permanently undamageable (see `lethal_<id>`'s own
 /// note), so what a landing does to a player's health is the bot tier's to
 /// witness; this suite proves the machine that delivers it.
-fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
+fn emit_assembly_packtests(
+    plan: &Plan,
+    locks: &crate::compiler::assembly::Locks,
+    out: &mut BuildOutput,
+) {
     use crate::compiler::assembly as asm;
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
@@ -19926,6 +19953,135 @@ fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
         write(&format!("asm_land_{s}"), b, out);
+
+        // --- asm_hold_<s> (spec-0094 §3.3) ---
+        // A clip the story plays stands the pattern down: with a body in the
+        // region that arms step 0, the real tick begins no wind-up over it;
+        // the real `arm-strikes` re-arms, and the next tick begins one.
+        let Some(arming) = plan.zone_box(&st.while_in) else {
+            continue;
+        };
+        let region = st.pattern[0]
+            .lock
+            .as_ref()
+            .and_then(|l| plan.zone_box(&l.within))
+            .unwrap_or(arming);
+        let Some(cue) = p
+            .decl
+            .initial
+            .as_deref()
+            .and_then(|c| p.rig.clip_index(c))
+            .or_else(|| (!p.rig.clips.is_empty()).then_some(0))
+        else {
+            continue;
+        };
+        let (pin, me) = pin_dummy(&format!("dw_asm_hold_{s}"));
+        let mut b = packtest_header(&format!(
+            "{title}: a clip the story plays on assembly `{id}` holds while a body stands in \
+             its arming region, and only `arm-strikes` begins the next wind-up (spec-0094)"
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.extend(reset.iter().cloned());
+        b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+        b.push(format!(
+            "tp {me} {} {} {}",
+            f64::from(region.0[0] + region.1[0]) / 2.0 + 0.5,
+            region.0[1],
+            f64::from(region.0[2] + region.1[2]) / 2.0 + 0.5
+        ));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            asm::holder(&s, "step")
+        ));
+        b.push(format!("function {ns}:{}", asm::cue_fn(&s, cue)));
+        b.push(format!("function {ns}:{}", asm::tick_fn(&s)));
+        b.push(format!(
+            "assert score {} dw.sys matches 0",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!(
+            "assert score {} dw.sys matches {cue}",
+            asm::holder(&s, "clip")
+        ));
+        b.push(format!("function {ns}:{}", asm::arm_fn(&s)));
+        b.push(format!("function {ns}:{}", asm::tick_fn(&s)));
+        b.push(format!(
+            "assert score {} dw.sys matches 1",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+        b.push(format!("tag {me} remove dw_asm_hold_{s}"));
+        write(&format!("asm_hold_{s}"), b, out);
+
+        // --- asm_lock_<s>_<j> (spec-0094 §4.2) ---
+        // The lock's dispatch, driven with the cells the plan proved: the
+        // feet cell of the first and of the most turned proved cell, written
+        // where the choice writes it, resolve to that cell — the root turned to
+        // its yaw, the pose and the landing it was proved with.
+        for (j, _) in st.pattern.iter().enumerate() {
+            let Some(lp) = locks.get(&(p.index, j)) else {
+                continue;
+            };
+            let Some(within) = lp.within else { continue };
+            if lp.cells.is_empty() {
+                continue;
+            }
+            let far = (0..lp.cells.len())
+                .max_by(|a, b| {
+                    lp.cells[*a]
+                        .yaw
+                        .abs()
+                        .total_cmp(&lp.cells[*b].yaw.abs())
+                        .then(b.cmp(a))
+                })
+                .unwrap_or(0);
+            let mut b = packtest_header(&format!(
+                "{title}: assembly `{id}`'s strike step {j} turns to the cell it locks onto and \
+                 takes the pose it was proved with there (spec-0094)"
+            ));
+            b.push(format!("function {ns}:setup"));
+            b.extend(reset.iter().cloned());
+            b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+            let qs = if far == 0 { vec![0] } else { vec![0, far] };
+            for q in qs {
+                let cell = &lp.cells[q];
+                for (a, axis) in ["l0", "l1", "l2"].iter().enumerate() {
+                    b.push(format!(
+                        "data modify storage {} {s}.{axis} set value {}",
+                        asm::STORAGE,
+                        cell.cell[a] - within.0[a]
+                    ));
+                }
+                b.push(format!(
+                    "function {ns}:asm_lockat_{s}_{j} with storage {} {s}",
+                    asm::STORAGE
+                ));
+                let got = format!("#asmq_{s}");
+                b.push(format!(
+                    "execute store result score {got} dw.sys run data get storage {} {s}.q",
+                    asm::STORAGE
+                ));
+                b.push(format!("assert score {got} dw.sys matches {q}"));
+                let yaw = format!("#asmy_{s}");
+                b.push(format!(
+                    "execute store result score {yaw} dw.sys run data get entity @e[tag={},limit=1] Rotation[0] 10",
+                    asm::root_tag(&s)
+                ));
+                let want = (cell.yaw * 10.0).floor() as i64;
+                b.push(format!(
+                    "assert score {yaw} dw.sys matches {}..{}",
+                    want - 1,
+                    want + 1
+                ));
+            }
+            b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+            write(&format!("asm_lock_{s}_{j}"), b, out);
+        }
     }
 }
 
