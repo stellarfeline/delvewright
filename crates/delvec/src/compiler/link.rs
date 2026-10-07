@@ -644,6 +644,39 @@ pub fn check_carry_realised(campaign: &Campaign) -> Vec<Diagnostic> {
             ));
         }
     }
+    // A crossing carries too. Two places whose beats belong to quests booked in
+    // different areas are joined by nothing a body can walk — areas stand
+    // `plan::AREA_SPACING` apart over void — so the only carry between them is
+    // the compiler's own crossing (`Plan::transport`), fired when the route's
+    // next objective is in the other area. That is the realisation a `carry`
+    // edge between them claims, and the route proofs judge it.
+    let area_of_quest: BTreeMap<&str, &str> = campaign
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .collect();
+    let mut node_areas: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for b in &graph.beats {
+        if let Some(a) = area_of_quest.get(b.quest.as_str()) {
+            node_areas.entry(b.node.0.as_str()).or_default().insert(a);
+        }
+    }
+    // …in the direction the route crosses: the graph's critical path steps from
+    // the one place to the other, so the crossing fires that way and no other.
+    let stepped: BTreeSet<(&str, &str)> = graph
+        .critical_path
+        .windows(2)
+        .map(|w| (w[0].0.as_str(), w[1].0.as_str()))
+        .collect();
+    let crossed = |x: &str, y: &str| {
+        stepped.contains(&(x, y))
+            && match (node_areas.get(x), node_areas.get(y)) {
+                (Some(ax), Some(ay)) => ax.is_disjoint(ay),
+                _ => false,
+            }
+    };
     for (i, e) in carries {
         let (ea, eb) = (e.a().0.clone(), e.b().0.clone());
         let mut owed = Vec::new();
@@ -654,7 +687,7 @@ pub fn check_carry_realised(campaign: &Campaign) -> Vec<Diagnostic> {
             owed.push((eb.clone(), ea.clone()));
         }
         for (x, y) in owed {
-            if !realised.contains(&(x.clone(), y.clone())) {
+            if !realised.contains(&(x.clone(), y.clone())) && !crossed(&x, &y) {
                 d.push(Diagnostic::error(
                     DW_TELEPORT_CARRY_UNREALISED,
                     "layout-graph",
@@ -663,8 +696,10 @@ pub fn check_carry_realised(campaign: &Campaign) -> Vec<Diagnostic> {
                         "carry connection `{}` says a body is carried from `{x}` to `{y}`, and no \
                          link realises that direction — no `triggers[]` entry declared \
                          `once: false` hosts a `teleport` from a station of `{x}` to a mark in \
-                         `{y}`. A carry nothing performs is a way the graph claims and the delve \
-                         does not have. Remedy: host a teleport from a station of `{x}` to a mark in `{y}` \
+                         `{y}`, and the two places' beats are not booked in two different \
+                         areas, where the compiler's crossing would carry the party. A carry \
+                         nothing performs is a way the graph claims and the delve does not \
+                         have. Remedy: host a teleport from a station of `{x}` to a mark in `{y}` \
                          on a repeatable trigger, or make the edge one-way (or remove it) if \
                          that direction is not a way.",
                         e.id()

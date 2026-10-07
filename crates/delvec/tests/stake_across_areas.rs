@@ -155,3 +155,61 @@ fn a_seat_set_after_a_crossing_is_judged_over_the_area_it_holds_in() {
     assert_eq!(gate["stranded_cells"], 0, "{gate}");
     assert!(gate["rows_proved"].as_u64().unwrap() >= 2, "{gate}");
 }
+
+/// The layout graph says how the places connect, and the route's crossing is a
+/// way the party is carried: a `carry` edge from the keep to the landing, which
+/// the graph's critical path steps over and whose places are booked in two
+/// areas, is realised by the compiler's crossing (`DW0934` asks for no link).
+/// A carry back from the landing — a direction the route never crosses — is
+/// realised by nothing and stays `DW0934`.
+#[test]
+fn a_carry_between_two_areas_is_realised_by_the_crossing_the_route_takes() {
+    let graph = |edges: Value| {
+        json!({
+            "campaign_id": "branch-transport", "dsl_version": delvewright_dsl::DSL_VERSION,
+            "stage": "layout-graph",
+            "content": {
+                "nodes": [
+                    { "id": "node/keep", "intent": "hub", "size_class": "room" },
+                    { "id": "node/landing", "intent": "landing", "size_class": "room" }
+                ],
+                "edges": edges,
+                "entry": "node/keep", "goal": "node/landing",
+                "critical_path": ["node/keep", "node/landing"],
+                "beats": [
+                    { "quest": "quest/decide", "objective": "obj/decide", "node": "node/keep" },
+                    { "quest": "quest/away", "objective": "obj/arrive", "node": "node/landing" },
+                    { "quest": "quest/away", "objective": "obj/away", "node": "node/landing" }
+                ]
+            }
+        })
+    };
+    let codes = |tag: &str, edges: Value| -> Vec<String> {
+        let dir = campaign(tag, false);
+        std::fs::write(
+            dir.join("layout-graph.json"),
+            serde_json::to_string_pretty(&graph(edges)).unwrap(),
+        )
+        .unwrap();
+        let loaded = load_campaign_dir(&dir).unwrap();
+        let campaign = parse_campaign(&loaded.raw).expect("the campaign parses");
+        delvec::compiler::link::check_carry_realised(&campaign)
+            .into_iter()
+            .map(|d| format!("{} {}", d.code, d.message))
+            .collect()
+    };
+    let across = json!({ "class": "carry", "id": "edge/across", "a": "node/keep",
+                         "b": "node/landing", "one_way": "a-to-b",
+                         "gating": { "quest": "quest/decide" } });
+    assert!(codes("graph-across", json!([across])).is_empty());
+    let back = json!({ "class": "carry", "id": "edge/back", "a": "node/landing",
+                       "b": "node/keep", "one_way": "a-to-b",
+                       "gating": { "quest": "quest/decide" } });
+    let refused = codes("graph-back", json!([across, back]));
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert!(
+        refused[0].starts_with("DW0934")
+            && refused[0].contains("from `node/landing` to `node/keep`"),
+        "{refused:?}"
+    );
+}
