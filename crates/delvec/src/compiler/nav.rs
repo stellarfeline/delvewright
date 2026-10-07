@@ -6053,8 +6053,8 @@ fn stand_cells(w: &World, l: &crate::compiler::link::LinkPlan) -> Vec<[i32; 3]> 
 /// **The cells outside `l`'s volume a body can perform its trigger from**
 /// (spec-0092 §10): standable, in the walk region `reachable`, outside `from`,
 /// and reaching the trigger by the same rule [`stand_cells`] reads — an eye
-/// within a strike of the body's box for a click, the trigger's range for an
-/// `approach` — in cell order. Searched within five cells of each body cell,
+/// within a strike of the body's box for a click, and in sight of it
+/// ([`sees_body`]), the trigger's range for an `approach` — in cell order. Searched within five cells of each body cell,
 /// which holds every cell a strike or an approach of five reaches from.
 pub fn press_cells_outside(
     w: &World,
@@ -6078,7 +6078,10 @@ pub fn press_cells_outside(
                             let dz = f64::from(c[2]) + 0.5 - f64::from(b[2]);
                             (dx * dx + dy * dy + dz * dz).sqrt() <= f64::from(r)
                         }
-                        None => crate::compiler::strand::strikes(w, c, *b, 1.0, 1.0),
+                        None => {
+                            crate::compiler::strand::strikes(w, c, *b, 1.0, 1.0)
+                                && sees_body(w, c, *b)
+                        }
                     };
                     if presses {
                         out.insert(c);
@@ -6088,6 +6091,43 @@ pub fn press_cells_outside(
         }
     }
     out.into_iter().collect()
+}
+
+/// Whether an eye standing in `p` sees some point of a click body standing on
+/// `m` (its `1 x 2` box) past every solid cell — the box's centre or one of its
+/// eight corners pulled a tenth of a block inward, each sought along the line
+/// from the eye in tenth-of-a-block steps. A press through a wall is no press:
+/// the client's pick stops at the first block it meets.
+fn sees_body(w: &World, p: [i32; 3], m: [i32; 3]) -> bool {
+    use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
+    let eye = [
+        f64::from(p[0]) + 0.5,
+        w.feet_y(p) + PLAYER_EYE_HEIGHT,
+        f64::from(p[2]) + 0.5,
+    ];
+    let (x0, y0, z0) = (f64::from(m[0]), f64::from(m[1]), f64::from(m[2]));
+    let mut targets = vec![[x0 + 0.5, y0 + 1.0, z0 + 0.5]];
+    for dx in [0.1, 0.9] {
+        for dy in [0.1, 1.9] {
+            for dz in [0.1, 0.9] {
+                targets.push([x0 + dx, y0 + dy, z0 + dz]);
+            }
+        }
+    }
+    targets.iter().any(|t| {
+        let d = [t[0] - eye[0], t[1] - eye[1], t[2] - eye[2]];
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        let steps = (len / 0.1).ceil().max(1.0) as i32;
+        (1..steps).all(|i| {
+            let f = f64::from(i) / f64::from(steps);
+            let c = [
+                (eye[0] + d[0] * f).floor() as i32,
+                (eye[1] + d[1] * f).floor() as i32,
+                (eye[2] + d[2] * f).floor() as i32,
+            ];
+            c == p || c == m || c == [m[0], m[1] + 1, m[2]] || !w.solid.contains(&c)
+        })
+    })
 }
 
 /// Whether `l`'s `to` is a cell a body stands on in the world as the link's own
