@@ -182,7 +182,7 @@ in it: a campaign is judged at its own release, by the engine it pins.
 
 [[pin]]
 id = "skill-page-engine"
-value = "delvec--v1.8.1"
+value = "delvec--v1.8.2"
 sites = [
     ".claude-plugin/marketplace.json",
     ".claude/skills/delvewright/skills/new-delve/versions.toml",
