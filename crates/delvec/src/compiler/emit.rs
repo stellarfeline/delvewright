@@ -13134,10 +13134,18 @@ fn check_trigger_bodies(
     Ok(ledger)
 }
 
-/// The three gate fragments a polled trigger's tick clause carries: its
+/// The three gate fragments a trigger's dispatch clause carries: its
 /// at-most-once guard, its forbidden flags and its required flags and state.
-/// One authority for [`env_trigger_tick`] and the assembly PackTest that runs
-/// the very clause a blow on a hitbox meets (spec-0082).
+/// One authority for [`env_trigger_tick`], the assembly PackTest that runs the
+/// very clause a blow on a hitbox meets (spec-0082), and [`press_dispatch_fn`],
+/// which re-states the gate for a presser trigger.
+///
+/// **Every fragment is space-TERMINATED** (`unless score … matches 1 `) or
+/// empty, so a caller concatenates them straight in front of the next clause
+/// or `run`. The required half is assembled from [`party_flag_gate`] and
+/// [`state_cond`], which are space-PREFIXED, and re-spaced here once: a caller
+/// that spliced the prefixed form in front of `run` shipped `… matches 1run`
+/// (and `execute  if …`), which 1.21.11 refuses.
 fn trigger_poll_guards(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, String, String) {
     let id = plan::safe_local(t.id.as_str());
     let once_guard = if t.once {
@@ -13148,13 +13156,18 @@ fn trigger_poll_guards(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String,
     // Flags are party state (spec-0018): the gate is a single `#party` read,
     // positive and negative alike. `unless … matches 1` is unset-safe (an
     // uninitialized flag score counts as "not set").
-    let flag_guard = format!(
+    let required = format!(
         "{}{}",
         party_flag_gate(&t.requires_flags),
         // DSL v0.10 (spec-0031). A trigger's arming gate is a party predicate
         // (`DW0503` keeps `player`-scoped data out of it).
         state_cond(plan, &t.requires_state, false)
     );
+    let flag_guard = if required.is_empty() {
+        required
+    } else {
+        format!("{} ", required.trim_start())
+    };
     let forbid_guard: String = t
         .forbids_flags
         .iter()
@@ -13186,15 +13199,10 @@ fn click_trigger_poll(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, 
     let id = plan::safe_local(t.id.as_str());
     let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
     let rec = trigger_record(t);
-    let flag_cond = if flag_guard.is_empty() {
-        String::new()
-    } else {
-        format!("{} ", flag_guard.trim_start())
-    };
     let carrier = trigger_carrier_tag(t);
     (
         format!(
-            "execute {once_guard}{forbid_guard}if entity @e[tag={carrier},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
+            "execute {once_guard}{forbid_guard}if entity @e[tag={carrier},nbt={{{rec}:{{}}}}] {flag_guard}run function {ns}:trig_{id}"
         ),
         format!("execute as @e[tag={carrier}] run data remove entity @s {rec}"),
     )
@@ -13263,8 +13271,8 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
                     // party member walked in); the flag gate is a party read
                     // alongside it, no longer merged into the selector.
                     out.push(format!(
-                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}{}]{} run function {ns}:trig_{id}",
-                        p[0], p[1], p[2], observer_guard(plan), flag_guard
+                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}{}] {flag_guard}run function {ns}:trig_{id}",
+                        p[0], p[1], p[2], observer_guard(plan)
                     ));
                 }
             }
@@ -13378,31 +13386,12 @@ fn trigger_audience(t: &delvewright_dsl::EnvTrigger) -> Audience {
 /// first — a wall is not consumed by being asked — and `once`, the flag gate and
 /// the state gate are re-stated here because for a presser trigger this function
 /// takes the place of the tick clause that would otherwise have carried them.
-/// They are the trigger's own, spelled exactly as `env_trigger_tick` spells them,
-/// so the two dispatch routes gate identically.
+/// They are the trigger's own, read from [`trigger_poll_guards`] — the one
+/// authority `env_trigger_tick` reads — so the two dispatch routes gate
+/// identically.
 fn press_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> (String, String) {
     let ns = &plan.namespace;
-    let once_guard = if t.once {
-        format!("unless score #trig_{id} dw.sys matches 1 ")
-    } else {
-        String::new()
-    };
-    let forbid_guard: String = t
-        .forbids_flags
-        .iter()
-        .map(|f| {
-            format!(
-                "unless score {} {} matches 1 ",
-                plan::PARTY,
-                plan::flag_score(f.as_str())
-            )
-        })
-        .collect();
-    let flag_guard = format!(
-        "{}{}",
-        party_flag_gate(&t.requires_flags),
-        state_cond(plan, &t.requires_state, false)
-    );
+    let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
     // An ungated press answer — which is every one the compiler synthesizes —
     // calls its bundle outright. `execute run function …` is legal and would
     // work, but a conditionless `execute` in shipped output reads as a guard

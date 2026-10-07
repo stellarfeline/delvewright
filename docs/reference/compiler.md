@@ -91,7 +91,16 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   `argument` nodes consume a fixed per-parser token count (`vec3`/`block_pos` 3,
   `vec2`/`column_pos`/`rotation` 2, `message` and greedy `string` the rest, else
   one balanced token). Tokenizing is brace/bracket/quote-aware, so an NBT
-  compound, a block-state suffix and a selector are each one token. Matching
+  compound, a block-state suffix and a selector are each one token. **The
+  separator between two tokens is exactly one space**, read the way the server
+  reads it: 1.21.11 trims the line and skips one `' '` between nodes, so a
+  second space or a tab before a literal or inside a fixed-arity argument is a
+  refusal naming the token it stands before, while whitespace inside a balanced
+  or quoted span, or anywhere in a greedy tail (`say  hello`), is the span's own.
+  Measured on the pinned server from one probe datapack: `execute  if …`,
+  `… matches 1 run  say …`, `tp @s 0  64 0` and a tab after `execute` fail to
+  load ("Incorrect argument for command"); `say  hello`, `say hello  world`, a
+  doubled space inside a JSON string and inside a selector load. Matching
   **backtracks** across ambiguous argument branches and follows `redirect`s
   (`… matches N` → `execute`, `run <cmd>` → the tree root); a line is valid iff
   every token is consumed ending on an `executable` node. What it therefore
@@ -3847,7 +3856,14 @@ carries for it is the **channel** (`actionbar`) and the **addressee**
 **The dispatch, which is what `presser` means.** `press_<trigger>` is rewarded by
 a `player_interacted_with_entity` advancement keyed on the trigger's own
 `dw_trig_<id>` tag; it revokes the grant (a wall is not consumed by being asked)
-and calls `trig_<trigger>`, whose bundle is emitted under `Audience::Solo`. That
+and calls `trig_<trigger>`, whose bundle is emitted under `Audience::Solo`. A
+gated trigger's call carries the trigger's own `once`, `forbids_flags` and
+`requires_flags`/`requires_state` guard, read from `trigger_poll_guards` — the
+one authority the tick clauses read, every fragment space-terminated — so a
+press answer gates exactly as a polled trigger does
+(`execute unless score #party dw.f_hall_sealed matches 1 if score #party dw.f_hall_open matches 1 run function <ns>:trig_<id>`;
+the gallery's barred side door is the instance). An ungated answer calls its
+bundle outright. That
 criterion is the one vanilla primitive that runs a function **as the player who
 right-clicked** — the same one every NPC dialogue, `interact` objective, bonfire
 rest and shop button already runs on — and it is chosen over polling the entity's

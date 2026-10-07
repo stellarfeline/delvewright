@@ -18,6 +18,9 @@
 //!   consumes exactly one (brace/bracket/quote-balanced) token.
 //! - `redirect`s are followed (e.g. `if score … matches N` → back to `execute`),
 //!   and the `execute … run <cmd>` tail is re-validated from the tree root.
+//! - The separator between two tokens is exactly one space outside a greedy
+//!   tail, as the server reads it; a doubled space or a tab is a refusal
+//!   (see [`tokenize`]).
 //! - A line is valid iff all tokens are consumed and the final node is
 //!   `executable`.
 //!
@@ -145,7 +148,7 @@ impl CommandTree {
         let trimmed = trimmed.strip_prefix('$').unwrap_or(trimmed);
         // mcfunction lines carry no leading slash; tolerate one anyway.
         let body = trimmed.strip_prefix('/').unwrap_or(trimmed);
-        let tokens = tokenize(body).map_err(|reason| CommandError {
+        let (tokens, loose) = tokenize(body).map_err(|reason| CommandError {
             line: line.to_string(),
             reason,
         })?;
@@ -162,8 +165,17 @@ impl CommandTree {
             });
         }
         let mut too_long = None;
-        if self.matches(&self.root, &tokens, 0, &mut too_long) {
+        if self.matches(&self.root, &tokens, &loose, 0, &mut too_long) {
             Ok(())
+        } else if let Some(k) = loose.iter().position(|&l| l)
+            && self.matches(&self.root, &tokens, &vec![false; loose.len()], 0, &mut None)
+        {
+            Err(format!(
+                "the separator before `{}` is not exactly one space: 1.21.11 parses one \
+                 ' ' between arguments, and any other separator (a second space, a tab) \
+                 refuses the whole function (\"Incorrect argument for command\")",
+                tokens[k]
+            ))
         } else if let Some(chars) = too_long {
             Err(format!(
                 "a chat message of {chars} characters: the 1.21.11 message argument takes at \
@@ -194,10 +206,17 @@ impl CommandTree {
     /// literal first, then each argument branch (order-independent), succeeding
     /// on any complete parse. Handles ambiguity like `teleport @s 5 65 2`
     /// (targets+location) vs `teleport <destination>`.
+    ///
+    /// `loose[k]` says the separator before `tokens[k]` was not exactly one
+    /// space (see [`tokenize`]). Brigadier skips one `' '` between nodes and
+    /// nothing else, so a loose separator may stand before no literal and
+    /// inside no fixed-arity argument — only within a greedy tail, which reads
+    /// the rest of the line verbatim.
     fn matches(
         &self,
         node: &Node,
         tokens: &[String],
+        loose: &[bool],
         i: usize,
         too_long: &mut Option<usize>,
     ) -> bool {
@@ -209,7 +228,8 @@ impl CommandTree {
         // 1) exact literal.
         if let Some(child) = kids.get(tok)
             && child.node_type == "literal"
-            && self.matches(child, tokens, i + 1, too_long)
+            && !loose[i]
+            && self.matches(child, tokens, loose, i + 1, too_long)
         {
             return true;
         }
@@ -243,7 +263,10 @@ impl CommandTree {
                     }
                 }
                 Arity::Fixed(n) => {
-                    if i + n <= tokens.len() && self.matches(child, tokens, i + n, too_long) {
+                    if i + n <= tokens.len()
+                        && !loose[i..i + n].iter().any(|&l| l)
+                        && self.matches(child, tokens, loose, i + n, too_long)
+                    {
                         return true;
                     }
                 }
@@ -589,8 +612,19 @@ fn arity(node: &Node) -> Arity {
 
 /// Split a command line into tokens, keeping brace/bracket-balanced and quoted
 /// spans together (so `{…}`, `[…]`, and `"…"`/`'…'` count as single tokens).
-fn tokenize(s: &str) -> Result<Vec<String>, String> {
+///
+/// Returns the tokens and, per token, whether the separator before it was
+/// anything other than exactly one `' '` — a second space or a tab. The server
+/// trims the line and then skips ONE space between nodes, so a loose separator
+/// outside a greedy tail is a refused function (live on the pinned 1.21.11:
+/// `execute  if …`, `… matches 1 run  say …`, `tp @s 0  64 0` and a tab after
+/// `execute` each fail to load, while `say  hello` and `say hello  world` load).
+/// Whitespace inside a balanced or quoted span is the span's own business.
+fn tokenize(s: &str) -> Result<(Vec<String>, Vec<bool>), String> {
     let mut tokens = Vec::new();
+    let mut loose = Vec::new();
+    // The whitespace run since the last token ended (`None` before the first).
+    let mut sep: Option<String> = None;
     let mut cur = String::new();
     let mut depth: i32 = 0;
     let mut quote: Option<char> = None;
@@ -626,9 +660,19 @@ fn tokenize(s: &str) -> Result<Vec<String>, String> {
             c if c.is_whitespace() && depth == 0 => {
                 if !cur.is_empty() {
                     tokens.push(std::mem::take(&mut cur));
+                    sep = Some(String::new());
                 }
+                if let Some(run) = sep.as_mut() {
+                    run.push(c);
+                }
+                continue;
             }
             c => cur.push(c),
+        }
+        // A character joined a token: if it started one, record the separator
+        // that stood before it.
+        if cur.chars().count() == 1 {
+            loose.push(sep.as_deref().is_some_and(|run| run != " "));
         }
     }
     if quote.is_some() {
@@ -640,7 +684,8 @@ fn tokenize(s: &str) -> Result<Vec<String>, String> {
     if !cur.is_empty() {
         tokens.push(cur);
     }
-    Ok(tokens)
+    debug_assert_eq!(tokens.len(), loose.len());
+    Ok((tokens, loose))
 }
 
 #[cfg(test)]
@@ -676,6 +721,48 @@ mod tests {
             "",
         ] {
             assert!(t.validate_line(line).is_ok(), "should accept: {line}");
+        }
+    }
+
+    /// The separator between two nodes is exactly one space, and the walk reads
+    /// it the way the server does. Every line here was loaded by the pinned
+    /// 1.21.11 server from one probe datapack: the refused ones are its
+    /// `Failed to load function` lines (`execute  if …` answered "Incorrect
+    /// argument for command at position 8"), the accepted ones answered
+    /// `Running function`. The first refused line is the one a gated press
+    /// answer shipped.
+    #[test]
+    fn a_separator_is_exactly_one_space_outside_a_greedy_tail() {
+        let t = tree();
+        for line in [
+            "execute  if score #party dw.f_x matches 1 run function g:trig_x",
+            "execute if score #x dw.sys  matches 1 run say ok",
+            "execute if score #x dw.sys matches 1 run  say ok",
+            "execute\tif score #x dw.sys matches 1 run say ok",
+            "tp @s 0  64 0",
+            "execute if score #x dw.sys matches 1run say ok",
+        ] {
+            assert!(
+                t.validate_line(line).is_err(),
+                "the server refuses: {line:?}"
+            );
+        }
+        let e = t
+            .validate_line("execute  if score #party dw.f_x matches 1 run function g:trig_x")
+            .unwrap_err();
+        assert!(
+            e.reason.contains("not exactly one space") && e.reason.contains("`if`"),
+            "the refusal names the separator: {}",
+            e.reason
+        );
+        for line in [
+            "execute if score #x dw.sys matches 1 run say ok",
+            "say  hello",
+            "say hello  world",
+            "tellraw @a {\"text\":\"a  b\"}",
+            "execute as @a[tag=a,  tag=!b] run say ok",
+        ] {
+            assert!(t.validate_line(line).is_ok(), "the server loads: {line:?}");
         }
     }
 
@@ -797,8 +884,9 @@ mod tests {
 
     #[test]
     fn tokenize_keeps_braces_and_quotes() {
-        let toks =
-            tokenize("give @s minecraft:iron_sword[custom_name={\"text\":\"A B\"}] 1").unwrap();
+        let toks = tokenize("give @s minecraft:iron_sword[custom_name={\"text\":\"A B\"}] 1")
+            .unwrap()
+            .0;
         assert_eq!(toks.len(), 4);
         assert_eq!(toks[3], "1");
     }
