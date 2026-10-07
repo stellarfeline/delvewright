@@ -13638,7 +13638,7 @@ fn step_trigger_poll(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Vec<String
     vec![
         format!(
             "execute {once_guard}{forbid_guard}unless score #stp_{id} dw.sys matches 1 if entity \
-             @a[{sel}]{flag_guard} run function {ns}:step_{id}"
+             @a[{sel}] {flag_guard}run function {ns}:step_{id}"
         ),
         format!("execute unless entity @a[{sel}] run scoreboard players set #stp_{id} dw.sys 0"),
     ]

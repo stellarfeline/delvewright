@@ -447,3 +447,29 @@ fn a_checkpoint_a_plate_sets_is_rooted_at_the_plates_firing_cells() {
         "rooted at the plate's own firing cells: {line}"
     );
 }
+
+/// A gated party step dispatches through the one guard authority
+/// (`trigger_poll_guards`, whose fragments are space-terminated): the
+/// required-flag read sits after the cell's selector with one space either
+/// side, as the server parses it, and the build's command-tree check passes
+/// the line. Spliced in the space-prefixed form a step poll wrote before the
+/// guard authority moved, the line reads `…]if score … matches 1  run`, which
+/// the pinned server refuses with the whole tick function.
+#[test]
+fn a_gated_party_step_dispatches_through_the_one_guard_authority() {
+    let (out, c) = build(
+        "step-gated",
+        step_trigger(serde_json::json!({ "requires_flags": ["flag/spoken"] })),
+        Some("minecraft:stone_pressure_plate"),
+    );
+    let out = out.expect("a gated step builds: every tick line walks the pinned command tree");
+    let tick = fn_body(&out, "tick");
+    let sel = format!("@a[{},tag=!dw_cutscene]", cell_box(c));
+    assert!(
+        tick.contains(&format!(
+            "execute unless score #stp_doormat dw.sys matches 1 if entity {sel} if score #party \
+             dw.f_spoken matches 1 run function {NS}:step_doormat"
+        )),
+        "{tick}"
+    );
+}

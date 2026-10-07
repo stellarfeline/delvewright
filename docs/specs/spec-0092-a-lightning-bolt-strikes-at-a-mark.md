@@ -83,7 +83,7 @@ A bolt aimed at a moving body, a charged-creeper trap, and a lightning rod as a 
 
 `delvec` is this tree's binary, built from the crate manifests this tree carries.
 
-1. **The surface.** `delvec schema --stage all` exports `QuestEffect::lightning` with `at` a `Mark` and nothing else, at the unpublished `dsl_version` minor (the authority, `crates/dsl/Cargo.toml`); the effect union names 44 verbs.
+1. **The surface.** `delvec schema --stage all` exports `QuestEffect::lightning` with `at` a `Mark` and nothing else, at the unpublished `dsl_version` minor (the authority, `crates/dsl/Cargo.toml`); the effect union names 45 verbs (44 with this spec's verb, and spec-0094's `arm-strikes`, assembled in the same release, makes 45).
 2. **The emission.** A campaign declaring one strike emits exactly one `summon minecraft:lightning_bolt` line at the mark's cell centre and plane, walked against the pinned command tree; two builds are byte-identical.
 3. **The reach.** A player's body posted one cell inside each face of §5's box is `DW0958` naming the post; one cell outside each face is green; the keeper of the hello-world hall, a villager, refuses a strike on his stand end to end; the posts are `DW0511`'s own enumeration.
 4. **The struck block.** A strike over a waxed copper block or a lightning rod is `DW0959`; the same strike over stone is green.
