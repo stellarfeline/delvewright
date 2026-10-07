@@ -729,6 +729,10 @@ fn the_button_guard_and_a_gated_press_answer_each_read_their_one_authority() {
                 "id": "trigger/bell",
                 "at": "anchor/exit",
                 "on": { "on": "use" },
+                // A lamp: a visible object vanilla reports no use of, so the
+                // press is the interaction hitbox fitted over it (DW0963 refuses
+                // a press on air), the presser path this pair is about.
+                "prop": { "block": "minecraft:redstone_lamp" },
                 "audience": "presser",
                 "requires_flags": ["flag/ashore"],
                 "effects": [{ "type": "narrate", "text": "The bell answers you alone.", "audience": "actor" }]
@@ -954,4 +958,47 @@ fn a_checkpoint_set_by_an_approach_trigger_builds_and_names_its_trigger() {
         &skins,
     )
     .unwrap_or_else(|e| panic!("a trigger-set checkpoint at the shrine builds: {e:?}"));
+}
+
+/// spec-0093 §6.5's block-bound press meets spec-0095's stand-ins: a bell rung
+/// with `use` plays a cutscene that shows the party. The bell's press stays
+/// vanilla's `default_block_use` (a player's act, which a stand-in cannot
+/// make); the stand-ins are placed from the players in play and are fixtures
+/// no box reaches; and the build's self-checks — the observer census
+/// (`DW0926`), the fixture census (`DW0545`), the stand-in lifetime (`DW0971`)
+/// and the command tree — all pass over the one datapack.
+#[test]
+fn a_bell_that_plays_a_cutscene_is_rung_by_a_player_and_shows_the_party() {
+    let mut q = guided_quests(None, json!({}), json!({}));
+    q["content"]["triggers"] = json!([{
+        "id": "trigger/the-bell", "at": "anchor/exit", "on": { "on": "use" },
+        "prop": { "block": "minecraft:bell[attachment=floor,facing=north]" },
+        "effects": [{
+            "type": "cutscene", "seconds": 2,
+            "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
+                      { "anchor": "anchor/exit", "offset": [2, 2, 0] } ]
+        }]
+    }]);
+    let out = build_dir(&variant(
+        "bell-cutscene-standin",
+        q,
+        dialogue_completing("obj/talk"),
+    ));
+    let adv = std::str::from_utf8(
+        out.get(&format!(
+            "datapack/data/{NS}/advancement/press_the_bell.json"
+        ))
+        .expect("the bell's press advancement"),
+    )
+    .unwrap();
+    assert!(
+        adv.contains("minecraft:default_block_use")
+            && !adv.contains("player_interacted_with_entity"),
+        "{adv}"
+    );
+    let standin = fn_body(&out, "cs_standin").expect("the cutscene shows the party");
+    assert!(standin.contains("\"dw_fixture\""), "{standin}");
+    let census = delvec::compiler::observer::census(&out);
+    assert!(census.unguarded.is_empty(), "{:?}", census.unguarded);
+    delvec::compiler::affordance::check_fixtures(&out).expect("DW0545 holds");
 }
