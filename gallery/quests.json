@@ -1554,7 +1554,9 @@
         "id": "quest/far-hall",
         "objectives": [
           {
-            "after": [],
+            "after": [
+              "obj/back-in-the-hall"
+            ],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1572,7 +1574,9 @@
             "type": "talk-to"
           },
           {
-            "after": [],
+            "after": [
+              "obj/back-in-the-hall"
+            ],
             "announcement": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
@@ -1740,6 +1744,16 @@
             "stealth": false,
             "title": "Walk the long gallery",
             "type": "reach-anchor"
+          },
+          {
+            "anchor": "anchor/arrival",
+            "happening": {
+              "text": "the party is set back down in the gallery hall",
+              "verb": "arrives"
+            },
+            "id": "obj/back-in-the-hall",
+            "radius": 2,
+            "type": "reach-anchor"
           }
         ],
         "on_complete": [
@@ -1805,6 +1819,16 @@
           }
         ],
         "on_objective_complete": {
+          "obj/back-in-the-hall": [
+            {
+              "anchor": "anchor/hearth",
+              "happening": {
+                "text": "the hearth is where the party comes back to again",
+                "verb": "arrives"
+              },
+              "type": "set-checkpoint"
+            }
+          ],
           "obj/board-the-ferry": [
             {
               "flag": "flag/boarded",
@@ -2875,7 +2899,7 @@
           ]
         },
         "trigger": {
-          "quest": "quest/near-hall",
+          "quest": "quest/long-hall",
           "type": "quest-complete"
         }
       },
@@ -2885,6 +2909,11 @@
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
             "doing": "still at the case, not watching the shaft"
+          },
+          "npc/factor": {
+            "at": "anchor/stall",
+            "dialogue": "unchanged",
+            "doing": "minding the counter"
           },
           "npc/marshal": [
             {
@@ -2991,6 +3020,113 @@
                   "flag/hall-sealed"
                 ]
               }
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/near-hall",
+          "type": "quest-complete"
+        }
+      },
+      {
+        "cast": {
+          "npc/curator": {
+            "at": "anchor/pedestal",
+            "dialogue": "unchanged",
+            "doing": "waiting by the open case for the party to come back"
+          },
+          "npc/factor": {
+            "at": "anchor/stall",
+            "dialogue": "unchanged",
+            "doing": "minding the counter while the party is away"
+          },
+          "npc/marshal": [
+            {
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
+              "dialogue": "dlg/marshal-read",
+              "doing": "calling the muster to a party that read the label",
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/read-the-label"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/labels-read",
+                  "value": 0
+                }
+              ]
+            },
+            {
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
+              "dialogue": "dlg/marshal-skipped",
+              "doing": "calling the muster to a party that walked straight past",
+              "requires_flags": [
+                "flag/skipped-the-label"
+              ]
+            }
+          ],
+          "npc/warden": {
+            "at": "dead"
+          }
+        },
+        "happening": {
+          "text": "the party learns the hall runs on",
+          "verb": "learns"
+        },
+        "id": "quest/long-hall",
+        "objectives": [
+          {
+            "anchor": "anchor/long-hall-porch",
+            "happening": {
+              "text": "the party arrives on the long hall's porch",
+              "verb": "arrives"
+            },
+            "id": "obj/arrive-at-the-porch",
+            "radius": 2,
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/arrive-at-the-porch"
+            ],
+            "anchor": "anchor/long-hall-end",
+            "happening": {
+              "text": "the party reaches the lit end of the long hall",
+              "verb": "arrives"
+            },
+            "id": "obj/reach-the-hall-end",
+            "radius": 2,
+            "title": "Reach the light",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/arrive-at-the-porch": [
+            {
+              "anchor": "anchor/long-hall-porch",
+              "happening": {
+                "text": "the porch is where the party comes back to",
+                "verb": "arrives"
+              },
+              "type": "set-checkpoint"
             }
           ]
         },

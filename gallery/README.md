@@ -562,9 +562,20 @@ bay and sees no far field; this hall is where the far field binds. Past the near
 field of a 6-block jump (10.6 blocks), its cells may differ from their images,
 and the build measures how far the jump moves each one on screen against the
 1.2852° threshold. The binding line states the count of far differences admitted
-and the largest shift (0.7574°). No route enters the area, so the route proof
-reports the loop as one the forced route never meets (`DW0950`, an advisory),
-and its world proofs run like every loop's.
+and the largest shift (0.7574°).
+
+The route runs through it. `quest/long-hall` plays between the near hall and the
+far one: completing the counter in the annex carries the party across to the
+hall's porch (a crossing, one-way by construction), the porch sets the
+checkpoint on arrival (`obj/arrive-at-the-porch`), the party runs the hall
+until the loop has turned it back twice and reaches the lit room
+(`obj/reach-the-hall-end`), and completing that carries it back to the gallery
+hall's arrival, where `obj/back-in-the-hall` sets the hearth again. The layout graph draws both crossings as `carry` edges (`edge/long-hall-in`, `edge/long-hall-out`), which the crossing realises (`DW0934`). The loop is
+exercised on the route, so its binding counts an exercise step. Each seat is
+judged over the area the party can stand in while that seat holds: the stake
+proof (`DW0525`) judges the porch over the hall and the hearth over the gallery
+hall, and the no-stranding proof (`DW0315`) does not ask the hearth to reach the
+hall the porch has already replaced it in.
 
 Two probes show what the far field refuses: `an-exit-too-near-to-hide` (a wall
 across the hall 36 blocks past the slab, so the hall ends in view too near for a
