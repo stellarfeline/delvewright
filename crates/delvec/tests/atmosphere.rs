@@ -755,7 +755,9 @@ fn nums(s: &[&str]) -> [i32; 3] {
 /// The cells a generated atmosphere test writes (its `fillbiome` boxes, as the
 /// 4-cells they touch) and the `unless biome` / `if biome` cells it reads
 /// outside its own writes.
-fn paints_and_outside_reads(body: &str) -> (Vec<([i32; 3], [i32; 3])>, Vec<([i32; 3], String)>) {
+type Box3 = ([i32; 3], [i32; 3]);
+
+fn paints_and_outside_reads(body: &str) -> (Vec<Box3>, Vec<([i32; 3], String)>) {
     let mut paints = Vec::new();
     let mut reads = Vec::new();
     for l in body.lines() {
@@ -813,7 +815,7 @@ fn no_atmosphere_test_reads_a_cell_another_repaint_paints() {
         tests.iter().map(|t| &t.0).collect::<Vec<_>>()
     );
     // Every repaint volume of the build: the writers any test can meet.
-    let volumes: Vec<(&str, Vec<([i32; 3], [i32; 3])>)> = repaints
+    let volumes: Vec<(&str, Vec<Box3>)> = repaints
         .iter()
         .map(|(p, b)| (p.as_str(), paints_and_outside_reads(b).0))
         .collect();

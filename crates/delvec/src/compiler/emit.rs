@@ -25099,11 +25099,14 @@ fn quart_outside(
     })
 }
 
+/// A box of cells, corner to corner, inclusive.
+type CellBox = ([i32; 3], [i32; 3]);
+
 /// The lines that put the ground biome back under every repaint volume of the
 /// build: the first tick, before the carried places are painted over it again.
 /// Every atmosphere template starts from it, so none reads a cell a sibling's
 /// paint is standing on.
-fn restore_first_tick(volumes: &[(usize, ([i32; 3], [i32; 3]))], ground: &str) -> Vec<String> {
+fn restore_first_tick(volumes: &[(usize, CellBox)], ground: &str) -> Vec<String> {
     volumes
         .iter()
         .flat_map(|(_, (min, max))| {
@@ -25149,15 +25152,14 @@ fn emit_atmosphere_packtests(plan: &Plan, out: &mut BuildOutput) {
     // Every volume a repaint of this build paints, the writers any test can
     // meet: the repaint templates' own, and the volumes the triggers that run
     // the same beat leave painted. Keyed by the repaint's index.
-    let volumes: Vec<(usize, ([i32; 3], [i32; 3]))> =
-        crate::compiler::atmosphere::set_atmospheres(c)
-            .into_iter()
-            .enumerate()
-            .filter_map(|(n, (_, _, eff))| {
-                let (min, max) = crate::compiler::horizon::repaint_volume(plan, eff)?;
-                Some((n, (min, max)))
-            })
-            .collect();
+    let volumes: Vec<(usize, CellBox)> = crate::compiler::atmosphere::set_atmospheres(c)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(n, (_, _, eff))| {
+            let (min, max) = crate::compiler::horizon::repaint_volume(plan, eff)?;
+            Some((n, (min, max)))
+        })
+        .collect();
     if !places.is_empty() {
         let mut b = packtest_header(&format!(
             "{}: every carried place stands in its atmosphere from the first tick",
