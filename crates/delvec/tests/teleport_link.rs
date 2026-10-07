@@ -412,6 +412,42 @@ fn a_teleport_under_its_roots_cutscene_is_dw0933_at_the_emitted_tick() {
     assert!(line.contains("one flat bundle"), "{line}");
 }
 
+/// The carrying step's `cutscene_seconds` covers the cutscene its `sequence`
+/// plays, read against the tick the emitted driver calls `cs_end` at: a
+/// cutscene on the sequence's first step, and one on a later step that starts
+/// `at_ticks` after the trigger fires. A step that exported no hold, or one
+/// shorter than the emitted bracket, leaves the bot walking in spectator,
+/// stranded at the camera (`compiler::hold`). A `sequence` inside a `sequence`
+/// is refused (`DW0329`), so one level is every depth a timeline has.
+#[test]
+fn the_carrying_step_waits_out_a_cutscene_its_sequence_plays() {
+    let flat = |q: &mut Value| cutscene_then_teleport(q, 22);
+    let later = |q: &mut Value| {
+        trigger_mut(q)["effects"] = json!([{"type": "sequence", "steps": [
+            {"at_ticks": 0, "effects": [{"type": "narrate", "text": "The tiller creaks."}]},
+            {"at_ticks": 30, "effects": [cutscene()]},
+            {"at_ticks": 52, "effects": [teleport()]}
+        ]}]);
+    };
+    let cases: [(&str, u32, &dyn Fn(&mut Value)); 2] =
+        [("cs-hold-first", 0, &flat), ("cs-hold-later", 30, &later)];
+    for (who, start, patch) in cases {
+        let run = build(&campaign(who, patch));
+        run.green();
+        let end = start + emitted_cs_end_tick(&run.out);
+        let path = run.json("critical-path.json");
+        let step = carrying_step(&path).expect("a trigger step carries the party");
+        let secs = step["cutscene_seconds"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{who}: the carrying step owes no cutscene hold: {step}"));
+        assert_eq!(
+            secs,
+            u64::from(end.div_ceil(20)),
+            "{who}: `cs_end` runs at tick {end} after the trigger fires"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Criterion 11 — the binding line and the ledger.
 // ---------------------------------------------------------------------------
