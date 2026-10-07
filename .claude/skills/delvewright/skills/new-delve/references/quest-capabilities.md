@@ -313,6 +313,28 @@ this section is what they are *for* and the traps in each.
   twenty, and that is a hazard they can see coming — judge it in playtest. A
   display of many rockets is a `sequence` of `firework` effects, not one
   overloaded rocket.
+- **A carry after a cutscene takes everyone or no one.** When a beat plays a
+  `cutscene` and then a repeatable trigger's `teleport` carries the party, the
+  camera's return puts every player on the cell the presser stood on. So every
+  cell a body can pull the trigger from must lie inside the carry's volume —
+  the whole well of a boat, not its stern — and the trigger itself must stand
+  where nobody can stand: on a rail post, over water. The build refuses a
+  trigger that can be pulled from outside the volume and names the cells.
+- **A lightning bolt is one effect at a mark.** `lightning {at {anchor,
+  offset?}}` strikes a real bolt where the story says — beside the thing the
+  storm reveals, on the tree the party sheltered under. Every client draws the
+  bolt and the sky flash and hears the thunder; the bolt strikes the block under
+  the mark. It hurts what stands within three blocks of it (three below, nine
+  above): five HP and eight seconds alight, and a villager becomes a witch, so
+  the build refuses a strike in reach of a place the campaign posts a body, and
+  one whose struck block the game would rewrite — a lightning rod, or copper.
+  It lights no fire. **Players are not posted, and are not proved safe**: a
+  player beside a strike takes at most 13 HP, a hazard in plain sight of the
+  beat — or strike it inside a `cutscene`, where every player is a spectator
+  and cannot be hit. A storm is a `sequence` of strikes. To tear fog open with
+  the strike, repaint the camera's place to a clearer atmosphere with the same
+  `precipitation` in the same `sequence` step, and back a few ticks later: on
+  the client a repaint is a cut, taken in one tick, not a fade.
 - **Who sees, hears or receives an effect is the effect's own `audience` and
   `in`.** Any effect a player sees, hears or receives — `narrate`, `play-sound`,
   `particle`, `give-effect`, `clear-effect`, `damage-players`, `give-item` —

@@ -42,6 +42,7 @@ pub mod ids;
 pub mod l10n;
 pub mod layout;
 pub mod license;
+pub mod lightning;
 pub mod mclang;
 pub mod metrics;
 pub mod onkill;

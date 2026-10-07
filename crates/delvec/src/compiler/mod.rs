@@ -18,6 +18,7 @@
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
 //! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
 //! - [`blockstate`]: interned block states — the assembled world's block map holds one handle per cell, not one string.
+//! - [`bound`]: `DW0960` — the boundary and the world agree: every place a body is put lies inside a region that returns, and a region that does not return encloses a world nobody can leave (spec-0092 §10).
 //! - [`branch`]: branch-complete narrative verification (`DW0480`–`DW0485`).
 //! - [`burial`]: is a placed piece's outward solid boundary buried, or declared (`DW0885`)?
 //! - [`calibrate`]: `delvec calibrate` — a harvested rehearsal report turned back into anchor + offset patches.
@@ -54,6 +55,7 @@
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
 //! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.
 //! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
+//! - [`lightning`]: `DW0958`/`DW0959` — a bolt strikes clear of every posted body and every block the game would rewrite (spec-0092).
 //! - [`link`]: a teleport the route proof takes as a link — the one enumeration of links and gathers, and the cutscene and carry-edge checks (`DW0932`/`DW0933`/`DW0934`).
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
 //! - [`r#loop`]: an endless corridor (spec-0086) — the slab, the closed view, identical blocks and light, and the loop's seal and exercise (`DW0945`–`DW0950`).
@@ -109,6 +111,7 @@ pub mod blind;
 pub mod blocking;
 pub mod blockout;
 pub mod blockstate;
+pub mod bound;
 pub mod branch;
 pub mod burial;
 pub mod calibrate;
@@ -145,6 +148,7 @@ pub mod horizon;
 pub mod integrity;
 pub mod lethal;
 pub mod light;
+pub mod lightning;
 pub mod link;
 pub mod load;
 pub mod r#loop;

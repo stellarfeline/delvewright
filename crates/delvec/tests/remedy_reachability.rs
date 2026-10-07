@@ -2721,8 +2721,11 @@ fn dw0933_putting_the_teleport_at_the_named_tick_builds() {
             {"at_ticks": 0, "effects": [{"type": "cutscene", "seconds": 1, "path": [
                 {"anchor": "anchor/boat", "offset": [0, 2, 1]},
                 {"anchor": "anchor/boat", "offset": [2, 2, 1]}]}]},
+            // The whole west room's floor: after a cutscene the carry takes
+            // everyone or no one (`DW0932`), so the volume holds every cell the
+            // tiller, hung on the wall, is pulled from.
             {"at_ticks": tick, "effects": [{"type": "teleport",
-                "from": {"anchor": "anchor/boat", "extent": [1, 1, 1]},
+                "from": {"anchor": "anchor/boat", "extent": [4, 0, 3]},
                 "to": {"anchor": "anchor/far-landing"}}]}
         ]}]);
     };

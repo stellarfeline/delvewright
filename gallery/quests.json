@@ -3653,7 +3653,7 @@
           {
             "steps": [
               {
-                "at_ticks": 0,
+                "at_ticks": 23,
                 "effects": [
                   {
                     "path": [

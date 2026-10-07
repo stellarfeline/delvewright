@@ -115,33 +115,6 @@
           {
             "steps": [
               {
-                "at_ticks": 0,
-                "effects": [
-                  {
-                    "path": [
-                      {
-                        "anchor": "anchor/node-near",
-                        "offset": [
-                          0,
-                          3,
-                          -3
-                        ]
-                      },
-                      {
-                        "anchor": "anchor/node-near",
-                        "offset": [
-                          0,
-                          3,
-                          3
-                        ]
-                      }
-                    ],
-                    "seconds": 2,
-                    "type": "cutscene"
-                  }
-                ]
-              },
-              {
                 "at_ticks": 42,
                 "effects": [
                   {
@@ -178,33 +151,6 @@
         "effects": [
           {
             "steps": [
-              {
-                "at_ticks": 0,
-                "effects": [
-                  {
-                    "path": [
-                      {
-                        "anchor": "anchor/node-far",
-                        "offset": [
-                          0,
-                          3,
-                          -3
-                        ]
-                      },
-                      {
-                        "anchor": "anchor/node-far",
-                        "offset": [
-                          0,
-                          3,
-                          3
-                        ]
-                      }
-                    ],
-                    "seconds": 2,
-                    "type": "cutscene"
-                  }
-                ]
-              },
               {
                 "at_ticks": 42,
                 "effects": [

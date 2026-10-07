@@ -116,6 +116,21 @@
             "type": "firework"
           },
           {
+            "at": {
+              "anchor": "anchor/bank-court",
+              "offset": [
+                0,
+                0,
+                6
+              ]
+            },
+            "happening": {
+              "text": "a bolt strikes the far end of the court",
+              "verb": "survives"
+            },
+            "type": "lightning"
+          },
+          {
             "happening": {
               "text": "the delve is complete",
               "verb": "survives"

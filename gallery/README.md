@@ -145,6 +145,9 @@ holding them at once.
 | `a-record-that-says-nobody-walked` | `DW0841` | `validate` | detailing against a fresh walk record whose verdict says nobody walked |
 | `a-rim-one-radius-out-of-reach` | `DW0850` | `build` | narrowing the well's completion radius to 2, so no walked cell on the rim reaches it |
 | `a-rocket-under-a-roof` | `DW0899` | `build` | firing a rocket at `anchor/exit`, under the hall's stone ceiling |
+| `a-tiller-pulled-from-the-hall-floor` | `DW0932` | `build` | playing the ferry's cutscene before its carry, so a pull from the open hall floor puts the whole party down there and nobody crosses |
+| `a-bolt-beside-the-arrival` | `DW0958` | `build` | striking a lightning bolt two cells from `anchor/arrival`, where every player first stands |
+| `a-bolt-on-a-copper-tile` | `DW0959` | `build` | laying a waxed copper tile under the exit and striking a bolt on it, so the game would scrape copper along a random walk |
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
 | `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |
 | `a-sky-no-picture-shows` | `DW0890` | `validate` | moving the midnight row to `night`, leaving an hour the world reaches that no approved picture shows |
@@ -476,7 +479,7 @@ way in is the ferry. The party boards the deck
 { "id": "trigger/ferry-tiller", "at": "anchor/ferry-tiller", "on": { "on": "use" },
   "once": false, "requires_flags": ["flag/boarded"],
   "effects": [{ "type": "sequence", "steps": [
-    { "at_ticks": 0,  "effects": [{ "type": "cutscene", "seconds": 1, "path": [ … ] }] },
+    { "at_ticks": 23, "effects": [{ "type": "cutscene", "seconds": 1, "path": [ … ] }] },
     { "at_ticks": 22, "effects": [{ "type": "teleport",
         "from": { "anchor": "anchor/ferry-deck", "extent": [1, 1, 1] },
         "to": { "anchor": "anchor/ferry-landing" } }] } ] }] }
@@ -491,9 +494,12 @@ the `DW0311 binding:` line counts the leg as carried by a link. The hall's
 other teleport, on `obj/take-the-bone`'s completion, is a **gather**: whoever is
 in the march's box travels, once, and no proof leans on it.
 
-The cutscene plays first and the teleport fires one tick after it ends: a
-cutscene's end puts every player back where it started, so a carry under the
-open bracket is undone. The layout graph draws the crossing as a `carry` edge
+The teleport fires first and the cutscene plays at the landing one tick
+later. A cutscene's end puts every player on the cell the presser stood on, so
+a carry under the open bracket is undone (`a-crossing-the-cutscene-undoes`),
+and a carry after it takes everyone or no one — which is refused wherever the
+trigger can be pulled from outside the volume, as this tiller can from the open
+hall floor (`a-tiller-pulled-from-the-hall-floor`). The layout graph draws the crossing as a `carry` edge
 from `node/exit` (the deck is its station) to `node/ferry-cabin` (the landing
 is its station), gated on the same flag, and nothing else joins the two.
 
@@ -514,12 +520,14 @@ too, so the final step of the path is a reach a landing completes — the shape
 whose campaign marker is due at the carrying step. `validation/teleport-gate.json`
 reads two links and one gather.
 
-Four probes show what the engine refuses about it:
+Five probes show what the engine refuses about it:
 `a-way-onward-that-fires-once` (the teleport on the cabin beat's own completion
 — a gather, `DW0311` naming it and prescribing the link), `a-lever-outside-its-own-boat`
 (the deck shrunk so no cell inside it reaches the tiller, `DW0932`),
-`a-crossing-the-cutscene-undoes` (the teleport at tick 0, `DW0933`) and
-`a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
+`a-tiller-pulled-from-the-hall-floor` (the cutscene moved before the carry, so the
+carry takes everyone or no one and the tiller can be pulled from the open floor,
+`DW0932`), `a-crossing-the-cutscene-undoes` (the teleport inside the cutscene,
+`DW0933`) and `a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
 
 ## The long gallery
 

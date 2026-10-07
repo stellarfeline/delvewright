@@ -907,6 +907,20 @@ pub struct Boundary {
     /// translated like every other player-facing string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// **Whether the boundary returns a player who leaves it** (spec-0092 §10).
+    /// Default `true`: the per-second clock returns any player outside the region
+    /// to the last checkpoint. `false` keeps the region — every proof that reads
+    /// it reads the same box — and emits no clock: the creator's switch for a
+    /// world nobody can leave, where a return only fights a creator flying out
+    /// to look at a far view. Legal only where the build proves no body can walk
+    /// or swim out of the region (`DW0960`).
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub returns: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's `skip_serializing_if` hands a reference
+fn is_true(b: &bool) -> bool {
+    *b
 }
 
 /// A supplemental-lighting fixture the relight pass may place (DSL v0.5,
@@ -6282,6 +6296,29 @@ pub enum Verb {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
     },
+    /// Strikes a **lightning bolt** at a mark (DSL v0.36, spec-0092) — the
+    /// one-shot point effect beside [`Verb::Firework`] and [`Verb::Particle`].
+    ///
+    /// A real `minecraft:lightning_bolt`: every client in range draws the bolt
+    /// and the sky flash and hears the thunder. It stands at the mark's cell
+    /// centre on the mark's plane, so it strikes the block under the mark. A
+    /// storm of strikes is a [`Verb::Sequence`] of these.
+    ///
+    /// # A bolt hurts, so the compiler asks where it lands
+    ///
+    /// The bolt hits every living body within the reach
+    /// [`crate::lightning::REACH_HORIZONTAL`] / [`crate::lightning::REACH_BELOW`]
+    /// / [`crate::lightning::REACH_ABOVE`] states, and turns a villager into a
+    /// witch; a build refuses a strike in reach of a place the campaign posts a
+    /// body (`DW0958`), and one whose struck block the game would rewrite — a
+    /// lightning rod or weathering copper (`DW0959`). Players are **not**
+    /// posted: a player in reach takes at most
+    /// [`crate::lightning::worst_damage_hp`] HP. It lights no fire: every delve
+    /// seals `fire_spread_radius_around_player` at 0 (spec-0092 §2.3).
+    Lightning {
+        /// The mark the bolt strikes — the cell's centre, at the mark's plane.
+        at: Mark,
+    },
 }
 
 /// Where a [`Verb::Particle`] spawns (spec-0085 §4.3): a mark, or the literal
@@ -7259,6 +7296,7 @@ impl Verb {
             Verb::PlayClip { .. } => "play-clip",
             Verb::ArmStrikes { .. } => "arm-strikes",
             Verb::Particle { .. } => "particle",
+            Verb::Lightning { .. } => "lightning",
         }
     }
 
@@ -7318,6 +7356,8 @@ impl Verb {
             | Verb::Collapse { .. }
             | Verb::Teleport { .. }
             | Verb::Firework { .. }
+            // spec-0092: the thunder is the game's to send; the bolt is a world fact.
+            | Verb::Lightning { .. }
             // spec-0080: a biome repaint is a world fact (`fillbiome`).
             | Verb::SetAtmosphere { .. }
             // spec-0082: an assembly is a world object.
@@ -7544,6 +7584,8 @@ impl QuestEffect {
             | Verb::ArmStrikes { .. }
             // spec-0085's `particle`.
             | Verb::Particle { .. }
+            // spec-0092's `lightning`.
+            | Verb::Lightning { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -8102,6 +8144,8 @@ impl QuestEffect {
             // A firework is launched from a point and seats nothing, so it names
             // a location in the same shape `play-sound` does.
             Verb::Firework { at, .. } => vec![("at/anchor".to_string(), &at.anchor, None)],
+            // A bolt strikes a point and seats nothing, the same shape.
+            Verb::Lightning { at } => vec![("at/anchor".to_string(), &at.anchor, None)],
             // A particle at a mark names a location the same way; at `players`
             // it names none.
             Verb::Particle {
@@ -9454,6 +9498,11 @@ mod happening_subject_tests {
                 "particle",
                 serde_json::json!({"type":"particle","particle":"minecraft:soul","at":{"anchor":"anchor/well"}}),
                 Some("anchor/well"),
+            ),
+            (
+                "lightning",
+                serde_json::json!({"type":"lightning","at":{"anchor":"anchor/court"}}),
+                Some("anchor/court"),
             ),
         ];
         // The binding: the table answers for every verb the schema declares, and

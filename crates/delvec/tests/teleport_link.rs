@@ -356,10 +356,22 @@ fn teleport() -> Value {
     })
 }
 
+/// The carry over the whole west room's floor (x 1..=7, z 1..=7, y 3): after a
+/// cutscene the carry takes everyone or no one, so every cell the tiller —
+/// hung on the wall at y 4, where nobody stands — is pulled from must lie
+/// inside the volume (spec-0092 §10, `DW0932`).
+fn teleport_whole_room() -> Value {
+    json!({
+        "type": "teleport",
+        "from": {"anchor": "anchor/boat", "extent": [4, 0, 3]},
+        "to": {"anchor": "anchor/far-landing"}
+    })
+}
+
 fn cutscene_then_teleport(q: &mut Value, tick: u32) {
     trigger_mut(q)["effects"] = json!([{"type": "sequence", "steps": [
         {"at_ticks": 0, "effects": [cutscene()]},
-        {"at_ticks": tick, "effects": [teleport()]}
+        {"at_ticks": tick, "effects": [teleport_whole_room()]}
     ]}]);
 }
 

@@ -908,6 +908,10 @@ pub fn build_with_warnings(
     // spec-0091: how many cutscene shots were judged against the served view
     // distance, for the binding line printed beside the render plan.
     let mut cutscene_shots_judged = 0usize;
+    // The strike proofs' binding ledger (`compiler::lightning`, spec-0092 §5),
+    // filled beside the firework's: `None` for a campaign that declares no
+    // strike, so nobody who has not opted in moves a byte.
+    let mut lightning_gate: Option<crate::compiler::lightning::LightningGate> = None;
     // The recovery stake's compile-time placement table (`compiler::stake`), and
     // the ledger of what its proofs looked at. `None` for a campaign that declares
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
@@ -1274,6 +1278,99 @@ pub fn build_with_warnings(
                 message: e.message,
             })?;
 
+            // spec-0092 §10: the boundary and the world agree (`DW0960`) — every
+            // place a body is put stands inside a region that returns, and a
+            // region that does not return encloses a world nobody can leave. The
+            // walk region is computed only for the second shape, which reads it.
+            {
+                let region = playable_region_box(plan);
+                let returns = boundary_returns(plan);
+                let starts = crate::compiler::edit::anchor_starts(plan);
+                let (reachable, sea_entry) = if region.is_some() && !returns {
+                    (
+                        world.reachable_walkable_rooted(&starts),
+                        crate::compiler::nav::open_sea_entry(&world, &starts),
+                    )
+                } else {
+                    (BTreeSet::new(), None)
+                };
+                let (gate, findings) = crate::compiler::bound::judge(
+                    &crate::compiler::bound::places(plan),
+                    region,
+                    returns,
+                    &reachable,
+                    sea_entry,
+                );
+                eprintln!("{}", gate.line());
+                if let Some(first) = findings.first() {
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
+
+            // spec-0092 §10: a link whose root plays a cutscene before the carry
+            // takes everyone or no one — `cs_end` puts every player on the cell the
+            // presser stood on — so a press from a cell outside its volume strands
+            // the whole party (`DW0932`, the fault "pressed from outside its
+            // volume"). The route proof stands one chosen cell inside the volume;
+            // this asks every cell a press reaches from.
+            {
+                let gathered: Vec<&crate::compiler::link::LinkPlan> = plan
+                    .links
+                    .iter()
+                    .filter(|l| l.gathered_by.is_some())
+                    .collect();
+                let reachable = if gathered.is_empty() {
+                    BTreeSet::new()
+                } else {
+                    world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
+                };
+                let mut outside_cells = 0usize;
+                for l in &gathered {
+                    let cells = crate::compiler::nav::press_cells_outside(&world, l, &reachable);
+                    outside_cells += cells.len();
+                    if let Some(first) = cells.first() {
+                        let listed = cells
+                            .iter()
+                            .take(6)
+                            .map(|c| format!("{c:?}"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(BuildFailure::Diagnostic {
+                            code: crate::compiler::plan::DW_TELEPORT_LINK,
+                            message: format!(
+                                "the link `{t}` (`{p}`) carries {b} after the cutscene at `{cs}` \
+                                 ends, and `cs_end` puts every player on the cell the presser \
+                                 stood on — so the carry takes everyone or no one. {n} cell(s) a \
+                                 body can walk to perform the trigger from outside its volume: \
+                                 {listed}{more}. Pressed from {first:?}, the whole party is put \
+                                 down there and nobody is carried. Fault: pressed from outside its \
+                                 volume. Remedy: widen the volume over every cell the press \
+                                 reaches from, or move the trigger's body where it can be reached \
+                                 only from inside the volume — its own cell included, which the \
+                                 volume may not cover (`DW0542`), so the body stands where no \
+                                 body can stand: over a rail, a post or open water.",
+                                t = l.trigger_id,
+                                p = l.path,
+                                b = l.box_words(),
+                                cs = l.gathered_by.as_deref().unwrap_or(""),
+                                n = cells.len(),
+                                more = if cells.len() > 6 { ", …" } else { "" },
+                            ),
+                        });
+                    }
+                }
+                eprintln!(
+                    "link gathering binding: {} link(s) carried after their root's cutscene, {} \
+                     press cell(s) outside their volumes over {} walk cell(s)",
+                    gathered.len(),
+                    outside_cells,
+                    reachable.len()
+                );
+            }
+
             // Seat each wave mob on a validated standable cell near its anchor, in
             // room only (DW0312 if the room lacks the footing) — or, for a
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
@@ -1303,6 +1400,26 @@ pub fn build_with_warnings(
                     crate::compiler::firework::check(plan, blocks, campaign_spawn(plan), &waves);
                 eprintln!("{}", binding.line());
                 firework_gate = Some(binding);
+                if let Some((first, rest)) = findings.split_first() {
+                    for extra in rest {
+                        eprintln!("{} [error] build: {}", extra.code, extra.message);
+                    }
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
+            // **spec-0092: a lightning bolt strikes clear of every posted body and
+            // every block it would rewrite** (`DW0958`, `DW0959`). Asked where the
+            // firework is, for the firework's reason: its reach rule reads
+            // `DW0511`'s enumeration, which is complete only once the seating has
+            // run. The line prints before the verdict, zeroes included.
+            {
+                let (binding, findings) =
+                    crate::compiler::lightning::check(plan, blocks, campaign_spawn(plan), &waves);
+                eprintln!("{}", binding.line());
+                lightning_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
                     for extra in rest {
                         eprintln!("{} [error] build: {}", extra.code, extra.message);
@@ -2554,6 +2671,9 @@ pub fn build_with_warnings(
     }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
+    }
+    if let Some(gate) = lightning_gate.as_ref().filter(|g| g.declared > 0) {
+        put_json(&mut out, "validation/lightning-gate.json", &gate.to_json());
     }
     // The recovery stake's binding ledger (`compiler::stake`, spec-0032 AC10): how
     // many stakes were declared, how many respawn seats and death regions the
@@ -4007,6 +4127,16 @@ fn emit_functions(
             min[0], min[2], max[0], max[2],
         ));
     }
+    // spec-0092: the chunk each lightning strike lands in, held for the session
+    // like an area's claim. A `summon` into a chunk nothing loads is refused by
+    // the server and the beat ships with no bolt, every proof green — the same
+    // silent no-op `DW0929` refuses for a repaint. Empty for a campaign that
+    // declares no strike → setup byte-identical.
+    for cell in crate::compiler::lightning::strike_cells(plan) {
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            cell[0], cell[2], cell[0], cell[2],
+        ));
+    }
     setup.push("scoreboard players set #placed dw.sys 0".to_string());
 
     // The edit-script chunk ledger (map-editor audit, findings 2 + 6): which
@@ -4299,7 +4429,11 @@ fn emit_functions(
             "data modify storage dw:region bounds set value {}",
             region.bounds_snbt()
         ));
-        setup.push(format!("schedule function {ns}:boundary_tick 20t"));
+        // spec-0092 §10: a boundary that does not return keeps its region and
+        // starts no clock.
+        if boundary_returns(plan) {
+            setup.push(format!("schedule function {ns}:boundary_tick 20t"));
+        }
     }
     // v0.6 night-vision mitigation: start the per-second `effect give` clock for the
     // areas that declare it. Empty otherwise → byte-identical.
@@ -6260,6 +6394,9 @@ fn assembles_world(plan: &Plan) -> bool {
         // assembles it — otherwise `DW0899` would be declared, compiled and
         // never asked of exactly the campaign that needs it most.
         || crate::compiler::firework::declares_one(plan)
+        // spec-0092: the struck block and the reach are questions about the
+        // assembled world, for the firework's reason.
+        || crate::compiler::lightning::declares_one(plan)
 }
 
 /// Fail the build if any campaign effect — at **every effect root**, at **any
@@ -7118,6 +7255,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         } => {
             emit_firework(plan, at, *flight, explosions, body);
         }
+        // --- spec-0092: a lightning bolt strikes at a mark ---
+        Verb::Lightning { at } => {
+            emit_lightning(plan, at, body);
+        }
         // --- spec-0085: a particle is an effect ---
         Verb::Particle {
             particle,
@@ -7542,6 +7683,25 @@ fn emit_firework(
         item_id = firework::ROCKET_ITEM,
         component = firework::FIREWORKS_COMPONENT,
         bursts = bursts.join(","),
+    ));
+}
+
+/// Emit a `lightning` effect (DSL v0.36, spec-0092): one `summon` of a
+/// `minecraft:lightning_bolt` at the mark's cell centre, on the mark's plane, so
+/// the block it strikes is the block under the mark — the cell
+/// `compiler::lightning` reads for `DW0959`. Absolute coordinates, like every
+/// point effect: the mark is a cell at build time.
+fn emit_lightning(plan: &Plan, at: &delvewright_dsl::Mark, body: &mut Vec<String>) {
+    let Some(anchor) = anchor_point_any(plan, at.anchor.as_str()) else {
+        return; // unresolved anchor (`DW0360` owns it)
+    };
+    let v = ent_xyz(at.cell(anchor));
+    body.push(format!(
+        "summon {entity} {x} {y} {z}",
+        entity = delvewright_dsl::lightning::BOLT_ENTITY,
+        x = v[0],
+        y = v[1],
+        z = v[2],
     ));
 }
 
@@ -14502,6 +14662,23 @@ impl PlayableRegion {
     }
 }
 
+/// Whether the declared boundary returns a player who leaves it (spec-0092 §10):
+/// `boundary.returns`, default `true`; `false` when no boundary is declared.
+fn boundary_returns(plan: &Plan) -> bool {
+    plan.campaign
+        .world
+        .content
+        .boundary
+        .as_ref()
+        .is_some_and(|b| b.returns)
+}
+
+/// The playable region's inclusive corners, for a proof outside this module —
+/// `None` when no `boundary` is declared.
+pub fn playable_region_box(plan: &Plan) -> Option<([i32; 3], [i32; 3])> {
+    playable_region(plan).map(|r| (r.min, r.max))
+}
+
 /// Derive the playable region, or `None` when no `boundary` is declared (the whole
 /// feature is then off and output stays byte-identical).
 fn playable_region(plan: &Plan) -> Option<PlayableRegion> {
@@ -14710,7 +14887,7 @@ fn has_night_vision_areas(plan: &Plan) -> bool {
 /// return teleports via `dw:cp` (the last checkpoint), so wanderers always land on
 /// the current respawn anchor rather than a fixed point.
 fn boundary_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
-    let Some(region) = playable_region(plan) else {
+    let Some(region) = playable_region(plan).filter(|_| boundary_returns(plan)) else {
         return Vec::new();
     };
     let ns = &plan.namespace;
@@ -14725,7 +14902,8 @@ fn boundary_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, S
         "data modify storage dw:region cp.y set from storage dw:cp pos[1]".to_string(),
         "data modify storage dw:region cp.z set from storage dw:cp pos[2]".to_string(),
         format!(
-            "execute as @a unless entity @s{sel} run function {ns}:boundary_return with storage dw:region cp"
+            "execute as @a[tag=!dw_cutscene,tag=!{free}] unless entity @s{sel} run function {ns}:boundary_return with storage dw:region cp",
+            free = crate::compiler::creator::FREE_TAG,
         ),
         format!("schedule function {ns}:boundary_tick 20t"),
     ];
@@ -16441,6 +16619,7 @@ fn emit_packtest(
     // a boundary.
     emit_boundary_packtest(plan, out);
     emit_night_vision_packtest(plan, out);
+    emit_lightning_packtests(plan, out);
 
     // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
     // spec-0014). Emits nothing when the campaign uses neither.
@@ -18175,6 +18354,54 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
+/// spec-0092 PackTests: every declared strike, by its own emitted line, puts a
+/// `minecraft:lightning_bolt` at its mark on the tick it runs. The line is the
+/// one `emit_lightning` writes into the beat — never a restatement — and the
+/// chunk is the one setup holds loaded for it. Emits nothing for a campaign
+/// that declares no strike.
+fn emit_lightning_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for (n, (path, at)) in crate::compiler::lightning::declared(plan)
+        .into_iter()
+        .enumerate()
+    {
+        let mut line = Vec::new();
+        emit_lightning(plan, at, &mut line);
+        let Some(summon) = line.first() else {
+            continue; // unresolved mark (`DW0360` owns it)
+        };
+        let Some(anchor) = anchor_point_any(plan, at.anchor.as_str()) else {
+            continue;
+        };
+        let v = ent_xyz(at.cell(anchor));
+        let score = format!("#lb{n}");
+        let mut b = packtest_header(&format!(
+            "{title}: the lightning at {path} strikes {}",
+            at.display()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("scoreboard players set {score} dw.sys 0"));
+        b.push(summon.clone());
+        let near = format!(
+            "@e[type={},x={},y={},z={},distance=..1]",
+            delvewright_dsl::lightning::BOLT_ENTITY,
+            v[0],
+            v[1],
+            v[2]
+        );
+        b.push(format!(
+            "execute if entity {near} run scoreboard players set {score} dw.sys 1"
+        ));
+        b.push(format!("assert score {score} dw.sys matches 1"));
+        b.push(format!("kill {near}"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/lightning_{n}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
 /// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to
 /// the last checkpoint; a player inside is never moved. Drives the real
 /// `boundary_tick` on a dummy — its direct call IS the 1s clock's body, so no
@@ -18323,7 +18550,7 @@ fn emit_class_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
 }
 
 fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
-    let Some(region) = playable_region(plan) else {
+    let Some(region) = playable_region(plan).filter(|_| boundary_returns(plan)) else {
         return;
     };
     let Some(spawn) = campaign_spawn(plan) else {
@@ -18361,7 +18588,7 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
     let mut b = packtest_header(&format!(
         "{title}: a player inside the playable region is never moved"
     ));
-    b.push(seed_cp);
+    b.push(seed_cp.clone());
     b.push(format!("tp @s {in_x} {} {}", spawn[1], spawn[2]));
     // Precondition: the interior cell really is inside the region (else the geometry
     // is too small — fail informatively rather than silently pass).
@@ -18381,6 +18608,36 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/v06_boundary_inside.mcfunction"),
         lines(&b).into_bytes(),
     );
+
+    // Exempt (spec-0092 §10): a player outside the region who is watching a
+    // cutscene (`dw_cutscene`) or flying out of the body with the creator's free
+    // camera (`dw_free`) is never moved — the camera is not the party, and a
+    // creator tool is not fought by the player bound. Each tag is asserted on
+    // its own, so a selector that forgot either reds here.
+    for (n, tag) in ["dw_cutscene", crate::compiler::creator::FREE_TAG]
+        .iter()
+        .enumerate()
+    {
+        let mut b = packtest_header(&format!(
+            "{title}: a player outside the region carrying `{tag}` is never returned"
+        ));
+        b.push(seed_cp.clone());
+        b.push(format!("tp @s {out_x} {} {}", spawn[1], spawn[2]));
+        b.push(format!("tag @s add {tag}"));
+        b.push(format!("function {ns}:boundary_tick"));
+        b.push(format!("tag @s remove {tag}"));
+        b.push(format!(
+            "execute store result score #bx_bex{n} dw.sys run data get entity @s Pos[0] 1"
+        ));
+        b.push(format!("assert score #bx_bex{n} dw.sys matches {out_x}"));
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/boundary_exempt_{}.mcfunction",
+                tag.trim_start_matches("dw_")
+            ),
+            lines(&b).into_bytes(),
+        );
+    }
 }
 
 /// spec-0016 §1 bonfire PackTests. A fake player cannot die and respawn inside a

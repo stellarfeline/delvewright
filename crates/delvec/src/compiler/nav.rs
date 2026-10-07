@@ -6122,6 +6122,86 @@ fn stand_cells(w: &World, l: &crate::compiler::link::LinkPlan) -> Vec<[i32; 3]> 
     out
 }
 
+/// **The cells outside `l`'s volume a body can perform its trigger from**
+/// (spec-0092 §10): standable, in the walk region `reachable`, outside `from`,
+/// and reaching the trigger by the same rule [`stand_cells`] reads — an eye
+/// within a strike of the body's box for a click, and in sight of it
+/// ([`sees_body`]), the trigger's range for an `approach` — in cell order. Searched within five cells of each body cell,
+/// which holds every cell a strike or an approach of five reaches from.
+pub fn press_cells_outside(
+    w: &World,
+    l: &crate::compiler::link::LinkPlan,
+    reachable: &BTreeSet<[i32; 3]>,
+) -> Vec<[i32; 3]> {
+    let reach = 5 + l.range.map_or(0, |r| r as i32);
+    let mut out: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for b in &l.body {
+        for x in b[0] - reach..=b[0] + reach {
+            for y in b[1] - reach..=b[1] + reach {
+                for z in b[2] - reach..=b[2] + reach {
+                    let c = [x, y, z];
+                    if l.contains(c) || !reachable.contains(&c) || !w.is_standable(c) {
+                        continue;
+                    }
+                    let presses = match l.range {
+                        Some(r) => {
+                            let dx = f64::from(c[0]) + 0.5 - f64::from(b[0]);
+                            let dy = w.feet_y(c) - f64::from(b[1]);
+                            let dz = f64::from(c[2]) + 0.5 - f64::from(b[2]);
+                            (dx * dx + dy * dy + dz * dz).sqrt() <= f64::from(r)
+                        }
+                        None => {
+                            crate::compiler::strand::strikes(w, c, *b, 1.0, 1.0)
+                                && sees_body(w, c, *b)
+                        }
+                    };
+                    if presses {
+                        out.insert(c);
+                    }
+                }
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// Whether an eye standing in `p` sees some point of a click body standing on
+/// `m` (its `1 x 2` box) past every solid cell — the box's centre or one of its
+/// eight corners pulled a tenth of a block inward, each sought along the line
+/// from the eye in tenth-of-a-block steps. A press through a wall is no press:
+/// the client's pick stops at the first block it meets.
+fn sees_body(w: &World, p: [i32; 3], m: [i32; 3]) -> bool {
+    use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
+    let eye = [
+        f64::from(p[0]) + 0.5,
+        w.feet_y(p) + PLAYER_EYE_HEIGHT,
+        f64::from(p[2]) + 0.5,
+    ];
+    let (x0, y0, z0) = (f64::from(m[0]), f64::from(m[1]), f64::from(m[2]));
+    let mut targets = vec![[x0 + 0.5, y0 + 1.0, z0 + 0.5]];
+    for dx in [0.1, 0.9] {
+        for dy in [0.1, 1.9] {
+            for dz in [0.1, 0.9] {
+                targets.push([x0 + dx, y0 + dy, z0 + dz]);
+            }
+        }
+    }
+    targets.iter().any(|t| {
+        let d = [t[0] - eye[0], t[1] - eye[1], t[2] - eye[2]];
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        let steps = (len / 0.1).ceil().max(1.0) as i32;
+        (1..steps).all(|i| {
+            let f = f64::from(i) / f64::from(steps);
+            let c = [
+                (eye[0] + d[0] * f).floor() as i32,
+                (eye[1] + d[1] * f).floor() as i32,
+                (eye[2] + d[2] * f).floor() as i32,
+            ];
+            c == p || c == m || c == [m[0], m[1] + 1, m[2]] || !w.solid.contains(&c)
+        })
+    })
+}
+
 /// Whether `l`'s `to` is a cell a body stands on in the world as the link's own
 /// root leaves it at the teleport's tick (spec-0083 §3.6): `st` (the leg's
 /// region state), with the root's writes at an earlier tick applied — forced,
@@ -11084,12 +11164,13 @@ struct SeaBody {
     size: usize,
 }
 
-/// Boundary safety under [`Ambient::Ocean`]: the stranding invariant. See
-/// [`verify_boundary_safety`] for the model this implements.
-fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Result<(), Failure> {
+/// The sea-surface bodies of an ocean world, labelled, with where the walk region
+/// `reachable` enters each and climbs out of it — the one labelling
+/// [`boundary_ocean`] judges stranding over and [`open_sea_entry`] reads.
+fn sea_bodies(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Vec<SeaBody> {
     let level = sea.level;
     let Some(([min_x, min_z], [max_x, max_z])) = ocean_window(world) else {
-        return Ok(()); // nothing placed: open sea everywhere, nothing to strand
+        return Vec::new(); // nothing placed: open sea everywhere, nothing to strand
     };
     let w = (max_x - min_x + 1) as usize;
     let d = (max_z - min_z + 1) as usize;
@@ -11138,7 +11219,7 @@ fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> R
         }
     }
     if bodies.is_empty() {
-        return Ok(());
+        return bodies;
     }
 
     // --- where the walk region touches the water ----------------------------
@@ -11171,6 +11252,35 @@ fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> R
             }
             bodies[id as usize].entries.insert(cell);
         }
+    }
+
+    bodies
+}
+
+/// **Where a body can walk into the open sea** (spec-0092 §10): the first
+/// reachable walkable cell, in cell order, from which a body enters a sea body
+/// that reaches the search window's edge — `None` under a void horizon, or when
+/// every water body the walk region enters is enclosed. Read by `DW0960`: a
+/// boundary that does not return is legal only where this is `None`.
+pub fn open_sea_entry(world: &World, starts: &[AnchorRoot]) -> Option<[i32; 3]> {
+    let Ambient::Ocean(sea) = &world.ambient else {
+        return None;
+    };
+    let reachable = world.reachable_walkable_rooted(starts);
+    sea_bodies(world, &reachable, sea)
+        .iter()
+        .filter(|b| b.open)
+        .flat_map(|b| b.entries.iter().copied())
+        .min()
+}
+
+/// Boundary safety under [`Ambient::Ocean`]: the stranding invariant. See
+/// [`verify_boundary_safety`] for the model this implements.
+fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Result<(), Failure> {
+    let level = sea.level;
+    let bodies = sea_bodies(world, reachable, sea);
+    if bodies.is_empty() {
+        return Ok(());
     }
 
     // Every body that reaches the window edge is the same open sea: one climb-out
@@ -12553,6 +12663,68 @@ mod tests {
     // DW0318 — fluid that leaves the built world
     // -----------------------------------------------------------------------
 
+    /// **A press from outside the volume is found** (spec-0092 §10,
+    /// `DW0932`'s "pressed from outside its volume"): a floor of stone, a lever
+    /// body at x 3, a volume over x 0..=2. Every standable cell in the walk region
+    /// within a strike of the body and outside the volume is a press cell; a cell
+    /// out of the walk region, or beyond a strike, is not.
+    #[test]
+    fn a_press_from_outside_the_volume_is_found() {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..12 {
+            blocks.insert([x, 63, 0], "minecraft:stone".to_string());
+        }
+        let occ = crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new());
+        let w = World::from_occupancy(occ, Premises::geometry_only());
+        let mut link = crate::compiler::link::LinkPlan {
+            trigger_id: "trigger/t".to_string(),
+            on: "use",
+            anchor_id: Some("anchor/a".to_string()),
+            npc_id: None,
+            assembly_id: None,
+            range: None,
+            body: vec![[3, 64, 0]],
+            path: "/content/triggers/0/effects/0".to_string(),
+            from_anchor: "anchor/deck".to_string(),
+            from: ([0, 64, 0], [2, 65, 0]),
+            from_area: "area/a".to_string(),
+            to_anchor: "anchor/landing".to_string(),
+            to_area: "area/a".to_string(),
+            to: [10, 64, 0],
+            tick: 0,
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
+            when_requires: Vec::new(),
+            when_forbids: Vec::new(),
+            writes: Vec::new(),
+            gathered_by: Some("/content/triggers/0/effects/0/steps/0/effects/0".to_string()),
+        };
+        let all: BTreeSet<[i32; 3]> = (0..12).map(|x| [x, 64, 0]).collect();
+        let cells = press_cells_outside(&w, &link, &all);
+        assert!(
+            cells.contains(&[4, 64, 0]),
+            "beside the body, outside the volume: {cells:?}"
+        );
+        assert!(
+            !cells.iter().any(|c| link.contains(*c)),
+            "never a cell inside the volume"
+        );
+        assert!(
+            !cells.contains(&[11, 64, 0]),
+            "eight cells off is beyond a strike"
+        );
+        let only_inside: BTreeSet<[i32; 3]> = (0..3).map(|x| [x, 64, 0]).collect();
+        assert!(
+            press_cells_outside(&w, &link, &only_inside).is_empty(),
+            "a cell the walk does not reach is no press cell"
+        );
+        // Widened over every cell the press reaches from, the volume leaves none.
+        link.from = ([0, 64, 0], [7, 65, 0]);
+        let wide = press_cells_outside(&w, &link, &all);
+        assert!(wide.iter().all(|c| c[0] > 7), "{wide:?}");
+    }
+
     /// A 3x3 solid plate at y=63 with a water source standing on its `+x` edge
     /// column, and a built volume covering exactly the plate. Vanilla runs that
     /// source off the plate and down: the shape of every shoreline piece placed
@@ -12593,6 +12765,7 @@ mod tests {
             when_requires: Vec::new(),
             when_forbids: Vec::new(),
             writes: Vec::new(),
+            gathered_by: None,
         };
         let dead = RegionState::default();
         assert!(
