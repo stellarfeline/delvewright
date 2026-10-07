@@ -77,17 +77,6 @@ export function isRejection(reply) {
 }
 
 /**
- * True when `reply` is the server's own answer to `list` ("There are N of a max
- * of M players online"), which is the ONLY thing a readiness poll may wait on.
- * "Any bytes came back" is satisfied by the transport's own error text (`docker
- * exec` on a stopped container, `Failed to connect to RCON server`). Must stay
- * identical to `dw_rcon_is_list_answer` in rcon.sh.
- */
-export function isListAnswer(reply) {
-  return /^There are [0-9]+ of a max of [0-9]+ players online/.test(String(reply).trim());
-}
-
-/**
  * The ceiling an rcon reply arrives under, in bytes.
  *
  * A reply comes back in ONE packet and `rcon-cli` reads one, so a longer answer
@@ -171,15 +160,6 @@ export function rconChannel(container) {
     async probe(cmd) {
       const { raw, reply } = await send(cmd);
       return refuseTruncated(cmd, raw, reply);
-    },
-    /** Resolves true only when the server answered `list` itself; never throws. */
-    async ready() {
-      try {
-        const { reply } = await send("list");
-        return isListAnswer(reply);
-      } catch {
-        return false;
-      }
     },
   };
 }
