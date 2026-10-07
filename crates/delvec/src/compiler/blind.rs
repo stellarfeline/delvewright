@@ -492,9 +492,15 @@ pub fn judge(
             )
         })
         .collect();
-    let inside = |c: [i32; 3], (lo, hi): ([i32; 3], [i32; 3])| {
-        (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i])
-    };
+    // A body in `c` is caught by a volume by its feet where the model puts
+    // them, so one standing on a partial block meets a volume in the course it
+    // stands on. `keep_outs` stays the box the refusal names.
+    let fp = crate::compiler::nav::Footprint::player();
+    let regions: Vec<(&str, Box3)> = plan
+        .lethal_volumes
+        .iter()
+        .map(|v| (v.id.as_str(), v.region))
+        .collect();
     let mut verdict: Option<Failure> = None;
     for f in &found {
         let Some((effect, seconds, _, _, _)) = f.eff.give_effect() else {
@@ -514,7 +520,12 @@ pub fn judge(
         let mut caught: Vec<[i32; 3]> = Vec::new();
         let mut caught_by: Option<String> = None;
         for &c in reach.keys() {
-            if let Some((id, k)) = keep_outs.iter().find(|(_, k)| inside(c, *k)) {
+            if let Some((id, k)) = regions
+                .iter()
+                .zip(&keep_outs)
+                .find(|((_, r), _)| open.body_can_meet_volume(c, &fp, r.0, r.1))
+                .map(|(_, (id, k))| (id, k))
+            {
                 caught.push(c);
                 caught_by.get_or_insert_with(|| {
                     format!(

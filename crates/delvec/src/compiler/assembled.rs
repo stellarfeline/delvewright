@@ -1006,7 +1006,9 @@ const WATER_FLOW_RANGE: u8 = 7;
 /// ([`is_waterlogged`]), and partial floor heights for slabs / snow layers /
 /// paths ([`collision_top_16`]). **Modelled conservatively** (treated as a full
 /// solid cube — may over-block a route, never over-prove one): stairs, doors,
-/// trapdoors, and every other partial-collision block.
+/// trapdoors, and every other partial-collision block whose pinned collision box
+/// is not a floor at a measured height ([`collision_top_16`] reads the rest from
+/// the jar's own table).
 pub struct Occupancy {
     /// Full-cube solid cells: block passage AND are valid floor.
     pub solid: BTreeSet<[i32; 3]>,
@@ -2390,7 +2392,9 @@ mod tests {
             assert_eq!(collision_top_16(id), 0, "{id} must have no collision");
             assert!(is_thin_decoration(id), "{id} is walked through");
         }
-        // The lookalikes that DO collide stay conservative full cubes.
+        // The lookalikes that DO collide keep a collision box a body cannot
+        // walk through: a full cube, or the jar's own floor height (a cactus
+        // at 15, an upward dripstone tip at 11).
         for id in [
             "minecraft:azalea",
             "minecraft:big_dripleaf",
@@ -2400,7 +2404,11 @@ mod tests {
             "minecraft:oak_leaves[persistent=true]",
             "minecraft:sea_pickle",
         ] {
-            assert_eq!(collision_top_16(id), 16, "{id} must keep collision");
+            assert!(
+                collision_top_16(id) >= delvewright_dsl::blockshape::THIN_HEIGHT_16,
+                "{id} must keep collision"
+            );
+            assert!(!is_thin_decoration(id), "{id} is not walked through");
         }
     }
 
