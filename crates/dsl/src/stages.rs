@@ -4742,6 +4742,29 @@ impl Facing {
     }
 }
 
+/// Whether a `cutscene` shows the party's bodies (spec-0095).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum CutsceneParty {
+    /// Each player in play is shown by a stand-in where they stood: a
+    /// `minecraft:mannequin` wearing their own profile (skin) and a copy of
+    /// their armour and held items, removed when the cutscene ends.
+    #[default]
+    Present,
+    /// No stand-ins: the bodies leave the scene for the cutscene's length.
+    Absent,
+}
+
+impl CutsceneParty {
+    /// The kebab token (`present` / `absent`).
+    pub fn token(self) -> &'static str {
+        match self {
+            CutsceneParty::Present => "present",
+            CutsceneParty::Absent => "absent",
+        }
+    }
+}
+
 /// How a `despawn-actor` removes its puppet (DSL v0.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -5529,6 +5552,13 @@ pub enum Verb {
         /// Absent = face along the direction of travel.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         look_at: Option<Mark>,
+        /// Whether the party's bodies stay in the scene while the camera flies
+        /// (spec-0095). Absent = `present`: every player in play is shown by a
+        /// stand-in wearing their own skin and equipment, standing where they
+        /// stood, for the cutscene's whole length. `absent` takes the bodies out
+        /// of the scene: a vision, a memory, a scene somewhere else.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        party: Option<CutsceneParty>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -7982,6 +8012,15 @@ impl QuestEffect {
     pub fn cutscene_look_at(&self) -> Option<&Mark> {
         match &self.verb {
             Verb::Cutscene { look_at, .. } => look_at.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Whether this `cutscene` shows the party's bodies (spec-0095): the stated
+    /// `party`, or `present` when none is stated. `None` for any other effect.
+    pub fn cutscene_party(&self) -> Option<CutsceneParty> {
+        match &self.verb {
+            Verb::Cutscene { party, .. } => Some(party.unwrap_or_default()),
             _ => None,
         }
     }

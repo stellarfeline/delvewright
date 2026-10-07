@@ -81,6 +81,7 @@
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
 //! - [`solver`]: the jigsaw layout solver.
+//! - [`standin`]: the party is seen in its own cutscenes — the stand-in a cutscene places for each player, and its lifetime proof (`DW0971`, spec-0095).
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
 //! - [`stake`]: the recovery stake's compile-time placement table and the proofs it owes.
 //! - [`statepath`]: a numeric gate judged against the writes the path performs before it (`DW0879`).
@@ -175,6 +176,7 @@ pub mod snapshot;
 pub mod solver;
 pub mod stairs;
 pub mod stake;
+pub mod standin;
 pub mod statepath;
 pub mod strand;
 pub mod surround;

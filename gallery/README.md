@@ -529,6 +529,14 @@ carry takes everyone or no one and the tiller can be pulled from the open floor,
 `DW0932`), `a-crossing-the-cutscene-undoes` (the teleport inside the cutscene,
 `DW0933`) and `a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
 
+**Who is in the shot** (spec-0095). The ferry's crossing and the first muster
+cutscene leave a stand-in for every player where they stood, wearing their own
+skin and gear: the party is in its own cutscenes by default. The second muster
+cutscene, the parade shot style by style, declares `"party": "absent"`: the
+scene is the muster's, and its functions are `cs_muster_3_2_12687a8f_absent`
+with no stand-in line. `validation/stand-in-gate.json` reads two present and
+one absent (`DW0971`).
+
 ## The long gallery
 
 On the far hall's roof, up a stair at the hall's east end, is a corridor of three

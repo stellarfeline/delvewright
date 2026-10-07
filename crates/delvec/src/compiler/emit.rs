@@ -2153,6 +2153,23 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // spec-0095: the stand-in's profile, filled from the player it stands for.
+    if cutscene_parties(plan)
+        .iter()
+        .any(|(_, p)| *p == delvewright_dsl::CutsceneParty::Present)
+    {
+        insert_unique(
+            &mut out,
+            format!(
+                "datapack/data/{ns}/loot_table/{}.json",
+                crate::compiler::standin::STANDIN_LOOT
+            ),
+            json_bytes(&crate::compiler::standin::loot_table()),
+            "loot table",
+            crate::compiler::standin::STANDIN_LOOT,
+        )?;
+    }
+
     // predicates — currently only the sneak-held gate (see
     // SNEAK_HELD_PREDICATE) the cutscene bounce and the respawn wait's view
     // binding read; a campaign with neither emits none.
@@ -2261,6 +2278,17 @@ pub fn build_with_warnings(
         "validation/fixture-gate.json",
         &fixture_gate.to_json(),
     );
+
+    // ---- the party is seen in its own cutscenes (spec-0095, DW0971) ----
+    // Every cutscene declared `present` places its stand-ins before the party
+    // goes to spectator and removes them at its end; every `absent` one places
+    // none. Read off the shipped tree against the declarations.
+    let parties = cutscene_parties(plan);
+    if !parties.is_empty() {
+        let gate = crate::compiler::standin::check(ns, &parties, &out)?;
+        eprintln!("{}", gate.line());
+        put_json(&mut out, "validation/stand-in-gate.json", &gate.to_json());
+    }
 
     // ---- a watcher is out of play everywhere (spec-0077 §5, DW0926) ----
     // A respawn wait holds one player in the observation state while the rest
@@ -7054,7 +7082,8 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             // Shape is policed at validation (`DW0199`); an unshaped cutscene
             // resolves to no shots and emits no call rather than a dangling one.
             if let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) {
-                body.push(format!("function {ns}:{}", cutscene_fn(&shots)));
+                let party = eff.cutscene_party().unwrap_or_default();
+                body.push(format!("function {ns}:{}", cutscene_fn(&shots, party)));
             }
         }
         // --- DSL v0.5 effects (spec-0010) ---
@@ -11516,7 +11545,19 @@ fn mark_key(to: &delvewright_dsl::Mark) -> String {
 /// single shot without `look_at`. The readable prefix keeps generated functions
 /// greppable; the digest makes the key injective, so two cutscenes that share a
 /// first waypoint but differ anywhere later can never collapse onto one function.
-fn cutscene_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
+fn cutscene_fn(
+    shots: &[delvewright_dsl::CameraShot],
+    party: delvewright_dsl::CutsceneParty,
+) -> String {
+    let name = cutscene_shots_fn(shots);
+    match party {
+        delvewright_dsl::CutsceneParty::Present => name,
+        delvewright_dsl::CutsceneParty::Absent => format!("{name}_absent"),
+    }
+}
+
+/// The shot-list half of [`cutscene_fn`]: the name a `present` cutscene keeps.
+fn cutscene_shots_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
     let head = &shots[0];
     let first = head
         .path
@@ -12970,7 +13011,8 @@ fn cutscene_fns(
         // (deterministic — the traversal order is fixed). An author who wants a
         // styled moving-subject cutscene to differ per context gives the shots
         // distinguishing content (e.g. an explicit `seconds`).
-        let start_name = cutscene_fn(&shots);
+        let party = eff.cutscene_party().unwrap_or_default();
+        let start_name = cutscene_fn(&shots, party);
         if !seen.insert(start_name.clone()) {
             continue;
         }
@@ -13027,6 +13069,16 @@ fn cutscene_fns(
         start.push(format!(
             "execute at {marker_at} run summon minecraft:marker ~ ~ ~ {{Tags:[{FIXTURE_NBT}\"dw_csmark_{bare}\"]}}"
         ));
+        // spec-0095: the party stays in the scene. Each player in play leaves a
+        // stand-in where they stand, summoned from the body before spectator
+        // takes it out of the world (`crate::compiler::standin`).
+        if party == delvewright_dsl::CutsceneParty::Present {
+            start.extend(crate::compiler::standin::start_lines(
+                ns,
+                &bare,
+                CUTSCENE_TAG,
+            ));
+        }
         // The cutscene state marker. `gamemode spectator` already takes the
         // players' bodies out of the world; the tag is what campaign machinery
         // reads so it does not keep asking anything of a player who is only
@@ -13127,6 +13179,16 @@ fn cutscene_fns(
             format!("kill @e[tag=dw_cam_{bare}]"),
             format!("kill @e[tag=dw_csmark_{bare}]"),
         ];
+        // spec-0095: the stand-ins leave as the players return, by the engine's
+        // one unseen removal (no death animation where the player now stands).
+        if party == delvewright_dsl::CutsceneParty::Present {
+            end.extend(removal_lines(
+                ns,
+                &crate::compiler::standin::cutscene_tag(&bare),
+                false,
+                Exit::Unseen,
+            ));
+        }
         // Resume: drop the cutscene marker. The stealth judge (zone-presence
         // only — no sneak stat is tracked) needs no re-sync;
         // grace is deliberately NOT reset — it neither accrued nor expired
@@ -13135,6 +13197,33 @@ fn cutscene_fns(
         end.push(format!("scoreboard players set #run_{bare} dw.sys 0"));
         end.push(format!("scoreboard players remove {CS_LIVE} dw.sys 1"));
         out.push((format!("cs_end_{bare}"), lines(&end)));
+    }
+    if cutscene_parties(plan)
+        .iter()
+        .any(|(_, p)| *p == delvewright_dsl::CutsceneParty::Present)
+    {
+        out.push((
+            crate::compiler::standin::STANDIN_FN.to_string(),
+            lines(&crate::compiler::standin::standin_fn_body(ns)),
+        ));
+    }
+    out
+}
+
+/// Every cutscene's start function name with its declared party (spec-0095),
+/// deduplicated exactly as [`cutscene_fns`] deduplicates them.
+fn cutscene_parties(plan: &Plan) -> Vec<(String, delvewright_dsl::CutsceneParty)> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut out = Vec::new();
+    for (eff, _) in crate::compiler::camera::cutscene_units(plan.campaign) {
+        let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let party = eff.cutscene_party().unwrap_or_default();
+        let name = cutscene_fn(&shots, party);
+        if seen.insert(name.clone()) {
+            out.push((name, party));
+        }
     }
     out
 }
@@ -16384,6 +16473,7 @@ fn emit_packtest(
     emit_boundary_packtest(plan, out);
     emit_night_vision_packtest(plan, out);
     emit_lightning_packtests(plan, out);
+    emit_standin_packtest(plan, out);
 
     // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
     // spec-0014). Emits nothing when the campaign uses neither.
@@ -18164,6 +18254,73 @@ fn emit_lightning_packtests(plan: &Plan, out: &mut BuildOutput) {
             lines(&b).into_bytes(),
         );
     }
+}
+
+/// spec-0095 PackTest: the stand-in a `present` cutscene places for a player is
+/// that player — the real [`crate::compiler::standin::STANDIN_FN`], run as the
+/// template's own dummy, leaves a mannequin on the dummy's position wearing the
+/// dummy's own profile (its `id` is the dummy's UUID), facing the dummy's yaw,
+/// dressed in a copy of what the dummy wears and holds, and with no head left
+/// over from the profile step where the dummy wears none. Emits nothing for a
+/// campaign with no `present` cutscene.
+fn emit_standin_packtest(plan: &Plan, out: &mut BuildOutput) {
+    use crate::compiler::standin::{STANDIN_ENTITY, STANDIN_FN};
+    if !cutscene_parties(plan)
+        .iter()
+        .any(|(_, p)| *p == delvewright_dsl::CutsceneParty::Present)
+    {
+        return;
+    }
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let mine = format!("@e[type={STANDIN_ENTITY},tag=dw_standin_new,distance=..0.01]");
+    let one = format!("@n[type={STANDIN_ENTITY},tag=dw_standin_new,distance=..0.01]");
+    let mut b = packtest_header(&format!(
+        "{title}: a cutscene's stand-in wears its player's own profile, facing and gear"
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push("execute at @s run tp @s ~ ~ ~ 90 0".to_string());
+    b.push("item replace entity @s armor.chest with minecraft:iron_chestplate".to_string());
+    b.push("item replace entity @s weapon.mainhand with minecraft:stick".to_string());
+    b.push("item replace entity @s armor.head with minecraft:air".to_string());
+    b.push(format!("execute at @s run function {ns}:{STANDIN_FN}"));
+    // 1. one body, where the dummy stands
+    b.push(format!(
+        "execute at @s store success score #sti_body dw.sys if entity {mine}"
+    ));
+    b.push("assert score #sti_body dw.sys matches 1".to_string());
+    // 2. the dummy's own profile: the stand-in's profile id IS the dummy's UUID
+    b.push("data remove storage dw:sti id".to_string());
+    b.push(format!(
+        "execute at @s run data modify storage dw:sti id set from entity {one} profile.id"
+    ));
+    b.push(
+        "execute store success score #sti_other dw.sys run data modify storage dw:sti id set from entity @s UUID"
+            .to_string(),
+    );
+    b.push("assert score #sti_other dw.sys matches 0".to_string());
+    // 3. the dummy's facing
+    b.push(format!(
+        "execute at @s store result score #sti_yaw dw.sys run data get entity {one} Rotation[0] 100"
+    ));
+    b.push("assert score #sti_yaw dw.sys matches 9000".to_string());
+    // 4. a copy of what the dummy wears and holds
+    b.push(format!(
+        "execute at @s store success score #sti_gear dw.sys if entity @e[type={STANDIN_ENTITY},tag=dw_standin_new,distance=..0.01,nbt={{equipment:{{chest:{{id:\"minecraft:iron_chestplate\"}},mainhand:{{id:\"minecraft:stick\"}}}}}}]"
+    ));
+    b.push("assert score #sti_gear dw.sys matches 1".to_string());
+    // 5. the profile head is gone where the dummy wears no helmet
+    b.push(format!(
+        "execute at @s store success score #sti_head dw.sys if entity @e[type={STANDIN_ENTITY},tag=dw_standin_new,distance=..0.01,nbt={{equipment:{{head:{{}}}}}}]"
+    ));
+    b.push("assert score #sti_head dw.sys matches 0".to_string());
+    b.push(format!("execute at @s run kill {mine}"));
+    b.push("item replace entity @s armor.chest with minecraft:air".to_string());
+    b.push("item replace entity @s weapon.mainhand with minecraft:air".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/standin.mcfunction"),
+        lines(&b).into_bytes(),
+    );
 }
 
 /// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to

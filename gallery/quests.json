@@ -2065,6 +2065,7 @@
               }
             },
             {
+              "party": "absent",
               "shots": [
                 {
                   "bearing": 45.0,
