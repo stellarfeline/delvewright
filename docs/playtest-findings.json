@@ -1588,13 +1588,13 @@
       },
       "campaign": "nobodys-cave-island",
       "carrier": {
-        "code": "DW0205",
-        "kind": "dw"
+        "kind": "invariant",
+        "test": "the_completing_button_carries_its_objectives_pending_guard"
       },
       "finding": "an optional side encounter gated the mainline, so skipping it soft-locked the delve",
       "general_form": "the button that completes a mainline objective is not already on screen at an earlier point of the participation-minimal walk",
       "id": "isl-55",
-      "note": "applies_when added: the button DW0205 walks is a dialogue option, so the binding is declaration-shaped and the precondition is the dialogue nodes those options live in. Nodes with no labelled option = UNBOUND; no dialogue node anywhere = the class measures zero, and a campaign whose objectives complete without a button cannot carry this defect.",
+      "note": "The general form is now an emission invariant rather than a diagnostic (spec-0093 §6.3): the dialogue button that completes an objective is drawn, and its click completes the objective, under the objective's whole pending guard — quest active, every `after` complete, its flag and numeric gate, not yet complete — exactly as every other objective driver. A button that would walk the party past a load-bearing beat is therefore never on screen, and the rule that reported one (DW0205) is retired because its class cannot exist. The named test builds the island's muster/surf structure and asserts the emitted availability bit and the click handler both carry the `after` term and the flag term. applies_when kept: the button is a dialogue option, so the binding is declaration-shaped and the precondition is the dialogue nodes those options live in.",
       "round": 16,
       "triage": "capability"
     },
@@ -2095,17 +2095,6 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has": [
-            "mobs"
-          ]
-        }
-      },
       "binding": {
         "files": [
           "quests.json"
@@ -2125,7 +2114,7 @@
       "finding": "a defence wave gave the party no guidance to where the attackers were, so the fight could not be found",
       "general_form": "a mandatory encounter is discoverable from the objective that requires it",
       "id": "bell-14",
-      "note": "DW0863 refuses a `kill` objective without both a `title` and a `hint`. The ground is a fact about emission rather than a taste about prose: a fight is the one objective kind the compiler puts nothing in the world for - `activation_commands` emits no command for it, no marker, no prop, no name, and the render plan falls back to the literal phrase `the fight` because none exists - while every other kind leaves something standing. So the objective's own two lines are the only thing that can say where the wave arrives. Weaker than the general form in one respect, stated: it proves guidance was written, not that it is sufficient. What bounds that is the sibling rule - DW0862 refuses a prompt that reaches no player - and the author's own words.",
+      "note": "DW0863 refuses a `kill` objective the party cannot find: one that is neither announced with a `title` and a `hint` nor found by the party — every site that fires its wave a placed act within the wave's reach of the wave's anchor (spec-0093 §5). The ground is a fact about emission rather than a taste about prose: a fight is the one objective kind the compiler puts nothing in the world for — `activation_commands` emits no command for it, no marker, no prop, no name, and the render plan falls back to the literal phrase `the fight` because none exists — so either the objective's own two lines say where the wave arrives, or the wave arrives where the party already stands and the bodies acquire the party by vanilla's own follow range. Weaker than the general form in one respect, stated: the announced arm proves guidance was written, not that it is sufficient; what bounds that is the sibling rule — DW0862 refuses a prompt that reaches no player — and the author's own words. Binding: `kill` objectives, the class the general form names (an encounter is mandatory when an objective requires it), identity-shaped and therefore self-measuring: a campaign that declares no `kill` objective measures INAPPLICABLE. The row used to declare `applies_when: has mobs`, a precondition over a different class — waves — which read a campaign with waves and no kill objective as UNBOUND; spec-0093 §6.4 removes it and states the loosening in those words: a wave nothing requires the party to win is not an encounter the party must find, and such a campaign's fights are judged by DW0380 and DW0376.",
       "round": 6,
       "triage": "capability"
     },

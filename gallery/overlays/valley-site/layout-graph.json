@@ -11,6 +11,11 @@
         "node": "node/far-corner",
         "objective": "obj/far-corner",
         "quest": "quest/walk-the-bank"
+      },
+      {
+        "node": "node/far-corner",
+        "objective": "obj/the-corner-stone",
+        "quest": "quest/walk-the-bank"
       }
     ],
     "critical_path": [

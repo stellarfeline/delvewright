@@ -7052,18 +7052,195 @@ fn judge_leg(
 ///    and prescribes moving the checkpoint or adding a return route (never
 ///    deleting the checkpoint to silence the proof).
 pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
-    let cps: Vec<(String, [i32; 3], usize)> = plan
-        .checkpoints
-        .iter()
-        .map(|c| (c.anchor.clone(), c.pos, c.fire_step))
-        .collect();
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    // A checkpoint a trigger sets is rooted where the party can first reach
+    // the trigger (spec-0093 §6.2), not at the entry; the configurations are
+    // gathered once and only when some checkpoint needs them.
+    let mut configs: Option<Vec<TriggerRootConfig>> = None;
+    let mut cps: Vec<(String, [i32; 3], usize)> = Vec::new();
+    for c in &plan.checkpoints {
+        let mut fire_step = c.fire_step;
+        if let Some(trigger) = &c.trigger {
+            let configs = configs.get_or_insert_with(|| trigger_root_configs(plan, world));
+            if let Some(root) = trigger_root_step(plan, world, configs, trigger) {
+                fire_step = fire_step.max(root.step);
+                eprintln!(
+                    "DW0315: checkpoint `{}` is set by `{trigger}`, which the party can first \
+                     reach {} (root step {}, over {} configuration(s))",
+                    c.anchor,
+                    root.when,
+                    root.step,
+                    configs.len()
+                );
+            }
+        }
+        cps.push((c.anchor.clone(), c.pos, fire_step));
+    }
     verify_checkpoints(
         world,
         &cps,
         &critical_positions(plan),
         &plan.region_events,
-        &|g, s| plan.gate_fired_before(g, s),
+        &ancestor,
     )
+}
+
+/// One quest configuration as the trigger-root derivation reads it: the world
+/// with that configuration's region writes applied, the first critical step
+/// arriving under it, and the route cells of every leg that does.
+type TriggerRootConfig = (Option<World>, usize, Vec<[i32; 3]>);
+
+/// The configurations `DW0921` judges, gathered for the trigger-root derivation:
+/// the critical route's cells grouped by the region state of their arrival step,
+/// each with the first step arriving under it, in order of that first step.
+fn trigger_root_configs(plan: &Plan, world: &World) -> Vec<TriggerRootConfig> {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut seeds: Vec<(RegionState, usize, BTreeSet<[i32; 3]>)> = Vec::new();
+    for (step, cells) in critical_route_cells(plan, world) {
+        let st = world.region_state_at(&plan.region_events, step, &ancestor);
+        match seeds.iter_mut().find(|(s, _, _)| *s == st) {
+            Some((_, first, set)) => {
+                *first = (*first).min(step);
+                set.extend(cells);
+            }
+            None => seeds.push((st, step, cells.into_iter().collect())),
+        }
+    }
+    seeds.sort_by_key(|(_, first, _)| *first);
+    seeds
+        .into_iter()
+        .map(|(st, first, cells)| {
+            let w = (!st.is_empty()).then(|| world.with_region_state(&st));
+            (w, first, cells.into_iter().collect())
+        })
+        .collect()
+}
+
+/// Where a trigger-set checkpoint is rooted (spec-0093 §6.2).
+struct TriggerRoot {
+    /// The critical step the no-stranding proof roots at.
+    step: usize,
+    /// The derivation in words, for the binding line and the message.
+    when: String,
+}
+
+/// **The earliest critical step at which the party can fire `trigger`**: the
+/// step the path performs it at when the path performs it; else `first − 1` for
+/// the earliest configuration whose walkable flood from its route cells meets a
+/// cell the trigger fires from; else `None` — no configuration reaches it, and
+/// the caller keeps the entry.
+///
+/// A trigger fires from every standable cell within its `range` of its anchor
+/// (`approach`), or within [`crate::compiler::crosshair::INTERACTION_REACH`] of
+/// the anchor, the struck NPC's or the struck assembly's cell (`use`, `strike`,
+/// `strike-npc`, `strike-assembly`). Flooding from the union of a
+/// configuration's route cells can only root EARLIER than flooding from each
+/// step's own cells, which is the conservative direction: a root too early asks
+/// the checkpoint to re-reach more of the path, never less.
+fn trigger_root_step(
+    plan: &Plan,
+    world: &World,
+    configs: &[TriggerRootConfig],
+    trigger: &str,
+) -> Option<TriggerRoot> {
+    // Performed by the path: rooted at its step, as the region model roots the
+    // trigger's own writes.
+    if let Some(step) = plan
+        .critical_path
+        .iter()
+        .position(|s| s.trigger() == Some(trigger))
+    {
+        return Some(TriggerRoot {
+            step,
+            when: format!("at the path's own `trigger` step #{}", step + 1),
+        });
+    }
+    let c = plan.campaign;
+    let t = c
+        .quests
+        .content
+        .triggers
+        .iter()
+        .find(|t| t.id.as_str() == trigger)?;
+    let (centre, radius) = match &t.on {
+        delvewright_dsl::TriggerOn::Approach { range } => {
+            (plan.point_any(t.at_anchor()?)?, f64::from(*range))
+        }
+        delvewright_dsl::TriggerOn::Strike | delvewright_dsl::TriggerOn::Use => (
+            plan.point_any(t.at_anchor()?)?,
+            crate::compiler::crosshair::INTERACTION_REACH,
+        ),
+        delvewright_dsl::TriggerOn::StrikeNpc { npc } => {
+            let n = c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|n| n.id.as_str() == npc.as_str())?;
+            (
+                plan.body_point(delvewright_dsl::BodyRef::Npc(n))?,
+                crate::compiler::crosshair::INTERACTION_REACH,
+            )
+        }
+        delvewright_dsl::TriggerOn::StrikeAssembly { assembly } => {
+            let decl = c.quests.content.assembly_decl(assembly.as_str())?;
+            let a = plan.point_any(decl.at.anchor.as_str())?;
+            (
+                decl.at.cell(a),
+                crate::compiler::crosshair::INTERACTION_REACH,
+            )
+        }
+    };
+    let r = radius.ceil() as i32;
+    let r2 = radius * radius;
+    let mut fire_cells: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for dx in -r..=r {
+        for dy in -r..=r {
+            for dz in -r..=r {
+                let cell = [centre[0] + dx, centre[1] + dy, centre[2] + dz];
+                let d2 = f64::from(dx * dx + dy * dy + dz * dz);
+                if d2 <= r2 && world.is_standable(cell) {
+                    fire_cells.insert(cell);
+                }
+            }
+        }
+    }
+    if fire_cells.is_empty() {
+        return None;
+    }
+    let first = earliest_reaching_config(configs, world, &fire_cells)?;
+    let step = first.saturating_sub(1);
+    let next = plan
+        .critical_path
+        .get(first)
+        .and_then(|s| s.objective())
+        .map(|o| format!("while `{o}` is next"))
+        .unwrap_or_else(|| format!("from critical step {first}"));
+    Some(TriggerRoot {
+        step,
+        when: format!(
+            "{next} ({} firing cell(s) within {radius} of {centre:?})",
+            fire_cells.len()
+        ),
+    })
+}
+
+/// The pure core of [`trigger_root_step`]: the `first` step of the earliest
+/// configuration (in `first` order) whose walkable flood from its route cells,
+/// over its own world, meets one of `fire_cells`; `None` when no configuration
+/// reaches them. Split out so it is unit-testable over synthetic [`World`]s.
+fn earliest_reaching_config(
+    configs: &[TriggerRootConfig],
+    world: &World,
+    fire_cells: &BTreeSet<[i32; 3]>,
+) -> Option<usize> {
+    configs.iter().find_map(|(w, first, cells)| {
+        let reached = w.as_ref().unwrap_or(world).reachable_walkable(cells);
+        reached
+            .iter()
+            .any(|c| fire_cells.contains(c))
+            .then_some(*first)
+    })
 }
 
 /// The pure core of [`check_checkpoints`] (split out so it is unit-testable
@@ -7116,11 +7293,15 @@ fn verify_checkpoints(
                 code: DW_CHECKPOINT_STRANDED,
                 message: format!(
                     "checkpoint `{anchor}` (cell {cell:?}) strands the party: the next required \
-                     anchor {:?} is not walkable from it over the assembled geometry (a checkpoint \
-                     behind a one-way drop the forward path can't re-cross after respawn). Move the \
-                     checkpoint to a cell that keeps the remaining path reachable, or add a return \
-                     route back up — do NOT delete the checkpoint to silence this proof.",
-                    target.pos
+                     anchor {:?} (critical step {}) is not walkable from it over the assembled \
+                     geometry (a checkpoint behind a one-way drop the forward path can't re-cross \
+                     after respawn). The proof is rooted at step {fire_step}: a beat's checkpoint \
+                     at the beat, a trigger's at the earliest step the party can reach the trigger \
+                     (the `DW0315:` line above says which), and that is the first required anchor \
+                     after it. Move the checkpoint to a cell that keeps the remaining path \
+                     reachable, or add a return route back up — do NOT delete the checkpoint to \
+                     silence this proof.",
+                    target.pos, target.src_step
                 ),
             });
         }
@@ -9296,6 +9477,29 @@ fn nearest_offending(
 
 /// Every hostile force in the campaign, in deterministic content order (waves
 /// then actors, each in declaration order).
+/// **A wave's reach**: the radius inside which its bodies acquire a player —
+/// the lane's `aggro_radius`, else the largest `follow_range` any of its mobs
+/// declares, else [`DEFAULT_FOLLOW_RANGE`] — with the words a message names it
+/// by. The one reading `DW0380`, `DW0478` and `DW0863` share: a fight that
+/// starts within this distance of the party finds the party.
+pub(crate) fn wave_aggro_radius(w: &delvewright_dsl::Wave) -> (f64, &'static str) {
+    match &w.lane {
+        Some(l) => (f64::from(l.aggro_radius), "the lane's `aggro_radius`"),
+        None => match w
+            .mobs
+            .iter()
+            .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
+            .fold(None::<f64>, |acc, r| Some(acc.map_or(r, |a| a.max(r))))
+        {
+            Some(r) => (r, "the wave's declared `follow_range`"),
+            None => (
+                f64::from(DEFAULT_FOLLOW_RANGE),
+                "the default `follow_range` (none declared)",
+            ),
+        },
+    }
+}
+
 pub(crate) fn aggro_sources(
     plan: &Plan,
     world: &World,
@@ -9311,21 +9515,7 @@ pub(crate) fn aggro_sources(
             .flatten()
             .map(|p| ("seated spawn cell", *p, 0.0))
             .collect();
-        let (radius, radius_source) = match &w.lane {
-            Some(l) => (f64::from(l.aggro_radius), "the lane's `aggro_radius`"),
-            None => match w
-                .mobs
-                .iter()
-                .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
-                .fold(None::<f64>, |acc, r| Some(acc.map_or(r, |a| a.max(r))))
-            {
-                Some(r) => (r, "the wave's declared `follow_range`"),
-                None => (
-                    f64::from(DEFAULT_FOLLOW_RANGE),
-                    "the default `follow_range` (none declared)",
-                ),
-            },
-        };
+        let (radius, radius_source) = wave_aggro_radius(w);
         if let Some(wps) = lanes.get(w.id.as_str()) {
             cells.extend(
                 lane_march_cells(plan, world, w, wps)
@@ -15668,6 +15858,64 @@ mod tests {
         let err = verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear)
             .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
+    }
+
+    /// A checkpoint a trigger sets is rooted where the party can first reach the
+    /// trigger (spec-0093 §6.2). On the split floor the near patch is walked at
+    /// steps 0–1 and the far patch from step 3; a trigger that fires only from the
+    /// far patch is first reachable in the far configuration, so the checkpoint
+    /// it sets roots at step 2 and owes only the far patch — which it reaches.
+    #[test]
+    fn a_trigger_checkpoint_is_rooted_where_the_trigger_is_first_reachable() {
+        let world = split_world(65);
+        let configs: Vec<TriggerRootConfig> = vec![
+            (None, 0, vec![[0, 65, 1], [1, 65, 1]]),
+            (None, 3, vec![[3, 65, 1], [4, 65, 1]]),
+        ];
+        let far: BTreeSet<[i32; 3]> = [[4, 65, 0]].into_iter().collect();
+        let near: BTreeSet<[i32; 3]> = [[0, 65, 0]].into_iter().collect();
+        assert_eq!(earliest_reaching_config(&configs, &world, &far), Some(3));
+        assert_eq!(earliest_reaching_config(&configs, &world, &near), Some(0));
+        let nowhere: BTreeSet<[i32; 3]> = [[9, 65, 9]].into_iter().collect();
+        assert_eq!(earliest_reaching_config(&configs, &world, &nowhere), None);
+
+        // The proof under each root: rooted at the entry (the old rule) the far
+        // checkpoint strands the party — the near patch is not walkable from it;
+        // rooted at step 2 it owes the far patch's own anchor and passes.
+        let positions = vec![at_step([1, 65, 1], 1), at_step([4, 65, 1], 3)];
+        let early = vec![("cp/far".to_string(), [3, 65, 1], 0usize)];
+        let err = verify_checkpoints(
+            &world,
+            &early,
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_STRANDED);
+        let rooted = vec![("cp/far".to_string(), [3, 65, 1], 2usize)];
+        assert!(
+            verify_checkpoints(
+                &world,
+                &rooted,
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
+        );
+        // And a trigger the party can reach from the entry keeps the entry root:
+        // the same far checkpoint set from the near patch still strands.
+        let near_first = earliest_reaching_config(&configs, &world, &near).unwrap();
+        let cps = vec![(
+            "cp/far".to_string(),
+            [3, 65, 1],
+            near_first.saturating_sub(1),
+        )];
+        assert!(
+            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear)
+                .is_err()
+        );
     }
 
     #[test]

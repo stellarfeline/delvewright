@@ -572,6 +572,7 @@
         "objectives": [
           {
             "after": [],
+            "announcement": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -600,6 +601,7 @@
               "obj/hear-the-curator"
             ],
             "anchor": "anchor/pedestal",
+            "announcement": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1448,6 +1450,7 @@
           },
           {
             "after": [],
+            "announcement": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1476,6 +1479,7 @@
               "obj/clear-the-muster"
             ],
             "anchor": "anchor/muster",
+            "announcement": "shown",
             "count": 1,
             "dropped_by": "wave/muster",
             "forbids_flags": [
@@ -1531,12 +1535,14 @@
               "obj/cross-the-strait"
             ],
             "anchor": "anchor/exit",
+            "announcement": "hidden",
             "happening": {
               "subject": "anchor/exit",
               "text": "They come to the end of the hall.",
               "verb": "arrives"
             },
             "id": "obj/reach-the-end",
+            "marker": "hidden",
             "radius": 2,
             "requires_flags": [
               "flag/muster-cleared"
@@ -1557,12 +1563,14 @@
               "obj/climb-the-loft"
             ],
             "anchor": "anchor/ferry-deck",
+            "announcement": "shown",
             "happening": {
               "subject": "anchor/ferry-deck",
               "text": "They step down onto the ferry's deck.",
               "verb": "arrives"
             },
             "id": "obj/board-the-ferry",
+            "marker": "shown",
             "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
@@ -2823,6 +2831,7 @@
               "obj/look-in-the-west-bay"
             ],
             "anchor": "anchor/west-pit",
+            "announcement": "hidden",
             "happening": {
               "subject": "anchor/west-pit",
               "text": "They come to the rim of the well and look down it.",

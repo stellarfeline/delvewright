@@ -1920,6 +1920,19 @@ pub fn build_with_warnings(
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
+    // DW0863 (spec-0093 §5): a `kill` objective is announced with a hint, or its
+    // wave arrives within reach of the act that spawns it. Judged here, where
+    // the acts have places; the binding is printed whichever way it goes.
+    {
+        let (fights, verdict) = crate::compiler::promise::check_fight_signposts(plan);
+        eprintln!("{}", fights.line());
+        if let Err(f) = verdict {
+            return Err(BuildFailure::Diagnostic {
+                code: f.code,
+                message: f.message,
+            });
+        }
+    }
 
     // ---- datapack ----
     put_json(
@@ -3885,11 +3898,12 @@ fn emit_functions(
         ));
     }
     // v0.3 objective-activation feedback (M2 fix 4): one "announced" flag per
-    // titled objective. Empty for a v0.2 campaign, so hello-world / keep-crawl
-    // setup stays byte-identical.
+    // ANNOUNCED objective (spec-0093: a title whose resolved `announcement` is
+    // `shown`). Empty for a v0.2 campaign, so hello-world / keep-crawl setup
+    // stays byte-identical.
     for q in &c.quests.content.quests {
         for o in &q.objectives {
-            if o.title().is_some() {
+            if o.announced(&c.quests.content.guidance) {
                 setup.push(format!(
                     "scoreboard objectives add {} dummy",
                     announce_score(o.id().as_str())
@@ -4454,7 +4468,7 @@ fn emit_functions(
     for q in &c.quests.content.quests {
         let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
-            if o.title().is_some() {
+            if o.announced(&c.quests.content.guidance) {
                 tick.push(format!(
                     "execute{} unless score {} {} matches 1 run function {ns}:announce_{}",
                     pending_guard(plan, o, &qa),
@@ -5034,14 +5048,15 @@ fn emit_functions(
             for n in &opt.spawns_npcs {
                 body.push(format!("function {ns}:{}", spawn_npc_fn(n)));
             }
+            // The click completes the objective under the same pending guard the
+            // button is drawn under (spec-0093 §6.3): a press that arrives while
+            // the objective is not pending completes nothing.
             for obj in &opt.completes {
-                if let Some((qid, _)) = objective_quest(c, obj) {
+                if let Some((qid, o)) = objective_quest(c, obj) {
                     body.push(format!(
-                        "execute if score {p} {} matches 1 unless score {p} {} matches 1 run function {ns}:complete_{}",
-                        quest_active_score(qid),
-                        obj_score(obj),
+                        "execute{} run function {ns}:complete_{}",
+                        pending_guard(plan, o, &quest_active_score(qid)),
                         safe_obj_fn(obj),
-                        p = plan::PARTY
                     ));
                 }
             }
@@ -5086,8 +5101,11 @@ fn emit_functions(
             }
             // v0.3 objective-activation feedback (M2 fix 4): the announce function
             // shows the title + hint once and plays a subtle sound. Emitted only
-            // for titled objectives (v0.3); nothing for v0.2.
-            if let Some(title) = o.title() {
+            // for ANNOUNCED objectives (spec-0093): a title whose resolved
+            // `announcement` is `shown`. Nothing for v0.2, nothing for a quiet one.
+            if o.announced(&c.quests.content.guidance)
+                && let Some(title) = o.title()
+            {
                 // spec-0018: the objective is the PARTY's, so its title, hint and
                 // cue address `@a` and the once-latch lives on the party holder —
                 // one announcement per objective, heard by everyone, never a
@@ -5157,8 +5175,11 @@ fn emit_functions(
                 })
             ));
             // v0.3 objective-completion feedback (M2 fix 4): a confirmation line +
-            // sound so progress is legible. Titled objectives only; v0.2 unchanged.
-            if let Some(title) = o.title() {
+            // sound so progress is legible. Announced objectives only (spec-0093);
+            // v0.2 unchanged.
+            if o.announced(&c.quests.content.guidance)
+                && let Some(title) = o.title()
+            {
                 body.push(format!(
                     "tellraw @a {}",
                     tr_with(
@@ -6380,14 +6401,28 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
         if let Some(wave) = e.spawn_wave() {
             let id = wave.as_str();
             if seen.insert(id) && wave_spawn_pos(plan, id).is_none() {
+                let multi_area = delvewright_dsl::Placement::of(plan.campaign)
+                    == delvewright_dsl::Placement::Prefabs
+                    && plan.campaign.world.content.areas.len() > 1;
+                let fired_globally = plan::wave_area(plan.campaign, id).is_none()
+                    && fired_only_by_global_roots(plan.campaign, id);
+                let remedy = if multi_area && fired_globally {
+                    "This wave is fired only from a global root (a trigger, a trap payload, an \
+                     actor's kill) in a campaign of several areas, and a global root carries no \
+                     area, so the compiler cannot say which area's assembly must provide the \
+                     anchor. Fire it from a quest booked in the wave's area (its \
+                     `on_objective_complete` or `on_complete`), or make the campaign \
+                     single-area."
+                } else {
+                    "Ensure a quest in the wave's area fires the `spawn-wave`, or that the wave \
+                     `anchor` exists in that area's prefab pool."
+                };
                 return Err(BuildFailure::Diagnostic {
                     code: DW_WAVE_SPAWN_UNRESOLVED,
                     message: format!(
                         "`spawn-wave` references wave `{id}`, but its spawn anchor is \
                          not placed in any assembled area — the emitted \
-                         `spawn_{safe}` call would dangle and the wave never spawn. \
-                         Ensure a quest in the wave's area fires the `spawn-wave`, or \
-                         that the wave `anchor` exists in that area's prefab pool.",
+                         `spawn_{safe}` call would dangle and the wave never spawn. {remedy}",
                         safe = plan::safe_local(id),
                     ),
                 });
@@ -6395,6 +6430,37 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
         }
     }
     Ok(())
+}
+
+/// Whether every site that fires `spawn-wave` for `wave_id` is a root with no
+/// area of its own — a trigger, a trap payload, an actor's `on_kill`, a shop
+/// offer, a shortcut's unlock, `on_death`, an assembly's landing or a loop's
+/// crossing — so that in a campaign of several areas nothing says where the wave
+/// forms up. Read for `DW0310`'s message, so the refusal names the shape.
+fn fired_only_by_global_roots(c: &delvewright_dsl::Campaign, wave_id: &str) -> bool {
+    let mut any = false;
+    let mut all_global = true;
+    delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
+        let mut fires = false;
+        for e in list {
+            e.visit_deep(&mut |x| {
+                if matches!(x.spawn_wave(), Some(w) if w.as_str() == wave_id) {
+                    fires = true;
+                }
+            });
+        }
+        if fires {
+            any = true;
+            if matches!(
+                site.owner,
+                delvewright_dsl::EffectRootOwner::ObjectiveComplete { .. }
+                    | delvewright_dsl::EffectRootOwner::QuestComplete { .. }
+            ) {
+                all_global = false;
+            }
+        }
+    });
+    any && all_global
 }
 
 // ---------------------------------------------------------------------------
@@ -14878,12 +14944,15 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                         "setblock {} {} {} {}",
                         pos[0], pos[1], pos[2], prop.block
                     ));
-                } else {
+                } else if o.marker_shown(&plan.campaign.quests.content.guidance) {
                     // Visible, glowing, adventure-safe marker so a human can find the
                     // interact target (M2 fix 3): an `item_display` has no collision,
                     // so it obstructs neither movement nor the interaction hitbox.
                     // Named from the objective `title`; an untitled objective gets a
                     // nameless (but still glowing) marker rather than a raw-id label.
+                    // Summoned only for a MARKED objective (spec-0093): an objective
+                    // whose `marker` — or the campaign's `guidance.markers` — is
+                    // `hidden` keeps the hitbox and shows nothing.
                     let name_fields = marker_name_fields(o.title());
                     cmds.push(format!(
                         "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
@@ -14904,6 +14973,11 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             // A distinct, thematically neutral `end_rod` (vs. the interact lantern)
             // so a beacon-like light marks a reach destination. Named from the
             // objective `title`; untitled → nameless glow, never a raw-id label.
+            // Summoned only for a MARKED objective (spec-0093); the completion
+            // volume is adjudicated either way.
+            if !o.marker_shown(&plan.campaign.quests.content.guidance) {
+                return cmds;
+            }
             let name_fields = marker_name_fields(o.title());
             let e = ent_xyz(pos);
             cmds.push(format!(
@@ -15187,13 +15261,14 @@ fn option_display_conditions(
     // PLAYER (`dw.dmask`, run `as @s`), so this is the one gate site a
     // `player`-scoped datum reads from `@s` rather than from the party holder.
     cond.push_str(&state_cond(plan, &opt.requires_state, false));
+    // The objective-state axis is the objective's WHOLE pending guard
+    // (spec-0093 §6.3): quest active ∧ every `after` complete ∧ its gate ∧ not
+    // yet complete — the same guard every other objective driver goes through.
+    // A button drawn before its beat is pending is the island's muster/surf
+    // softlock; it is not drawn.
     for obj in &opt.completes {
-        if let Some((qid, _)) = objective_quest(c, obj) {
-            cond.push_str(&format!(
-                " if score {p} {} matches 1 unless score {p} {} matches 1",
-                quest_active_score(qid),
-                obj_score(obj)
-            ));
+        if let Some((qid, o)) = objective_quest(c, obj) {
+            cond.push_str(&pending_guard(plan, o, &quest_active_score(qid)));
         }
     }
     cond
@@ -23933,15 +24008,18 @@ fn emit_one_dialogue_mask_packtest(
             ));
         }
         for obj in &o.completes {
-            let Some((qid, _)) = objective_quest(c, obj) else {
+            let Some((qid, objective)) = objective_quest(c, obj) else {
                 continue;
             };
             let qa = quest_active_score(qid);
             let os = obj_score(obj);
             satisfied.push(format!("scoreboard players set {p} {qa} 1"));
             satisfied.push(format!("scoreboard players set {p} {os} 0"));
-            // Two independent ways the objective-state axis hides the option:
-            // the quest is not running, or the objective is already done.
+            // The objective-state axis is the objective's whole pending guard
+            // (spec-0093 §6.3), and every term of it hides the option on its
+            // own: the quest is not running, the objective is already done, a
+            // beat it declares `after` is not done, a flag it requires is unset,
+            // a flag it forbids is set, a datum it reads does not satisfy it.
             terms.push((
                 vec![format!("scoreboard players set {p} {qa} 0")],
                 vec![format!("scoreboard players set {p} {qa} 1")],
@@ -23950,6 +24028,37 @@ fn emit_one_dialogue_mask_packtest(
                 vec![format!("scoreboard players set {p} {os} 1")],
                 vec![format!("scoreboard players set {p} {os} 0")],
             ));
+            for a in objective.after() {
+                let sc = obj_score(a.as_str());
+                satisfied.push(format!("scoreboard players set {p} {sc} 1"));
+                terms.push((
+                    vec![format!("scoreboard players set {p} {sc} 0")],
+                    vec![format!("scoreboard players set {p} {sc} 1")],
+                ));
+            }
+            for f in objective.requires_flags() {
+                let sc = plan::flag_score(f.as_str());
+                satisfied.push(format!("scoreboard players set {p} {sc} 1"));
+                terms.push((
+                    vec![format!("scoreboard players set {p} {sc} 0")],
+                    vec![format!("scoreboard players set {p} {sc} 1")],
+                ));
+            }
+            for f in objective.forbids_flags() {
+                let sc = plan::flag_score(f.as_str());
+                satisfied.push(format!("scoreboard players set {p} {sc} 0"));
+                terms.push((
+                    vec![format!("scoreboard players set {p} {sc} 1")],
+                    vec![format!("scoreboard players set {p} {sc} 0")],
+                ));
+            }
+            satisfied.extend(state_drive_lines(plan, objective.requires_state(), true));
+            for cmp in objective.requires_state() {
+                terms.push((
+                    state_drive_lines(plan, std::slice::from_ref(cmp), false),
+                    state_drive_lines(plan, std::slice::from_ref(cmp), true),
+                ));
+            }
         }
         if terms.is_empty() {
             continue;

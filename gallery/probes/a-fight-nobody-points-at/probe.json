@@ -12,6 +12,11 @@
       "path": "/content/quests/1/objectives/1/hint"
     },
     {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/objectives/1/announcement"
+    },
+    {
       "doc": "l10n/zh-cn.json",
       "op": "remove",
       "path": "/content/obj.far-hall.clear-the-muster.title"
@@ -20,8 +25,18 @@
       "doc": "l10n/zh-cn.json",
       "op": "remove",
       "path": "/content/obj.far-hall.clear-the-muster.hint"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/obj.far-hall.clear-the-muster.title"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/obj.far-hall.clear-the-muster.hint"
     }
   ],
   "units": [],
-  "why": "The gallery's one kill objective with both of its player-facing lines removed, and the l10n sidecar following so the inventory stays exact. Nothing else in the campaign changes, and nothing else in the campaign notices: a wave is the one objective kind the compiler puts nothing in the world for - no marker, no prop, no name - so the emitted datapack is byte-for-byte a working delve in which the party is told to clear a muster and given no way to find it. Both lines go rather than one, so DW0862 (a hint the emitter never shows) stays silent and this document demonstrates exactly one refusal. It declares no unit: title and hint are bound in the gallery proper, and what must not compile is a fight that carries neither."
+  "why": "The gallery's one kill objective with both of its player-facing lines removed, and the l10n sidecar following so the inventory stays exact. Nothing else in the campaign changes, and nothing else in the campaign notices: a wave is the one objective kind the compiler puts nothing in the world for - no marker, no prop, no name - so the emitted datapack is byte-for-byte a working delve in which the party is told to clear a muster and given no way to find it. The fight is not found by the party either: `wave/muster` is fired by the near hall's completion at the Factor's counter and forms up at the muster line in the far hall, 12.8 blocks from the act against the wave's declared 10-block reach, so the bodies do not come to the act that spawned them - the second way a fight may be discoverable, and the one a quiet delve uses. Both lines go rather than one, so DW0862 (a hint the emitter never shows) stays silent, and the objective's explicit `announcement: shown` goes with them, so DW0961 (an announcement with nothing to announce) stays silent too: this document demonstrates exactly one refusal. It declares no unit: title and hint are bound in the gallery proper, and what must not compile is a fight that is neither announced nor within reach."
 }

@@ -653,21 +653,6 @@ pub fn check_branches_within(
     check_happenings(c, &mut d);
     let flow = Flow::new(c);
     check_undeclared_forks(c, &flow, &mut d);
-    // The mainline's own skips (`DW0205`) are `crate::compiler::analyze`'s to report; here
-    // only the ones a BRANCH admits and the campaign's critical path does not, so
-    // the same beat is never named twice.
-    let main_path = flow.playthrough();
-    // Keyed on the objective, not the option: two branches take two different
-    // buttons to the same beat, and naming that beat twice tells a reader nothing
-    // the mainline row did not.
-    let on_main: BTreeSet<String> = if main_path.degenerate {
-        BTreeSet::new()
-    } else {
-        flow.skips(&main_path)
-            .into_iter()
-            .map(|s| s.objective)
-            .collect()
-    };
     for b in enumerate(c) {
         let r = realize_one(c, &flow, b);
         check_leakage(c, &flow, &r, &mut d);
@@ -684,7 +669,6 @@ pub fn check_branches_within(
         bind.states += walked.states;
         bind.refused += walked.refused;
         bind.unproven += usize::from(walked.unproven);
-        check_branch_skips(c, &flow, &r, &on_main, &mut d);
     }
     d.sort_by(|a, b| (&a.code, &a.path, &a.message).cmp(&(&b.code, &b.path, &b.message)));
     d.dedup_by(|a, b| a.code == b.code && a.path == b.path && a.message == b.message);
@@ -730,35 +714,6 @@ impl ContradictionBinding {
             u = self.unproven,
             n = self.bound,
         )
-    }
-}
-
-/// `DW0205`, per branch. Optionality interacts with branches: a
-/// branch's own flag assignment changes which cast scene an NPC wears and which
-/// options its gates admit, so a beat that is safely behind a gate on the
-/// campaign's critical path can be bare on one branch. This re-runs the
-/// participation-minimal walk on the branch's own path and reports only what the
-/// mainline walk did not already name.
-fn check_branch_skips(
-    c: &Campaign,
-    flow: &Flow<'_>,
-    r: &RealizedBranch,
-    on_main: &BTreeSet<String>,
-    d: &mut Vec<Diagnostic>,
-) {
-    let Some(w) = r.world else { return };
-    let pt = flow.playthrough_in(w);
-    for mut s in flow.skips(&pt) {
-        if on_main.contains(&s.objective) {
-            continue;
-        }
-        s.branch = Some(r.branch.id.clone());
-        d.push(Diagnostic::error(
-            crate::compiler::flow::DW_OPTIONAL_GATES_MAINLINE,
-            "quests",
-            crate::compiler::analyze::objective_path(c, &s.objective),
-            s.message(),
-        ));
     }
 }
 
