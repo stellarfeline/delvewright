@@ -186,13 +186,15 @@ fn a_second_gallery_into_one_directory_leaves_exactly_the_second() {
     // Make the stale file one the tree's own manifest names, as a previous
     // gallery that emitted it would have.
     let mpath = out_dir.join("manifest.json");
-    let mut m: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&mpath).unwrap()).unwrap();
+    let mut m: serde_json::Value = serde_json::from_slice(&std::fs::read(&mpath).unwrap()).unwrap();
     m["outputs"]["datapack/data/admit/function/gone.mcfunction"] = serde_json::json!("x");
     std::fs::write(&mpath, serde_json::to_vec(&m).unwrap()).unwrap();
     let out = gallery_into(&dir, &out_dir);
     assert_eq!(out.status.code(), Some(0), "{out:?}");
-    assert!(!stale.exists(), "a file the previous gallery emitted survived");
+    assert!(
+        !stale.exists(),
+        "a file the previous gallery emitted survived"
+    );
 }
 
 /// Stage a two-tile zone: two real `.nbt` files and the manifest naming them.
