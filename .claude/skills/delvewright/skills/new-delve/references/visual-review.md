@@ -97,8 +97,8 @@ Two shapes to expect, because they are what the machine cannot say:
   document-level fixes, below.
 
 **A site-plan campaign has no approved image of its blockout** and this
-paragraph does not apply to it — step 4 says why, and its own judgement happened
-at the walk.
+paragraph does not apply to it — step 4 says why, and its own judgement happens
+at the walk, step 13.
 
 ## Saving the world, and installing Chunky
 
@@ -237,7 +237,7 @@ line: marker visible? room not dark? NPC facing the camera with its name as text
 rather than JSON? seam clean? **Findings are document-level** — fix the campaign
 (lighting profile, anchor, NPC facing, name string) and rebuild. Never hand-edit
 output. Declared-dark interiors render faithfully dark, and no render will tell you
-whether one is playable: that judgement belongs to the user's walk at step 9,
+whether one is playable: that judgement belongs to the user's walk at step 13,
 under the night-vision mitigation. Put it on the list you hand them there.
 Never brighten a scene to make a review pass.
 

@@ -1,19 +1,24 @@
-# Step 9 — the walk
+# Step 13 — the walk
 
 ## Contents
 
 - [Start the server](#start-the-server)
 - [Hand it over](#hand-it-over)
 - [When they answer](#when-they-answer)
+- [The walk record](#the-walk-record)
 - [The staging gate](#the-staging-gate)
 
 **You have no body in the game.** You bring the world up and the user walks it;
-a blockout somebody has stood in tells them things no picture and no green check
+a world somebody has stood in tells them things no picture and no green check
 will: scale, whether the route reads, whether the silhouette is the thing that
 was designed.
 
-It happens **now**, before the ladder and before any review — every step after
-this costs more to redo than to defer.
+It happens **now**, on the detailed world — after detail, the ladder and the
+visual review, with the real buildings and materials standing — because a
+blockout somebody stood in told them almost nothing. **The trade-off**: a route
+problem found here is repaired after detail, so it costs a detail rework
+(`delvec --prefabs "$DELVEWRIGHT_PREFABS" detail <campaign-dir> --all`) as
+well as the plan or graph edit, and another walk.
 
 ## Start the server
 
@@ -94,14 +99,15 @@ Then hand the user, in one message:
   and tell them to **accept the resource-pack prompt** when they join;
 - **how to tell you they are done.**
 
-For a site-plan campaign **this walk is the campaign's first real gate**: scale,
-pacing, route legibility, and the silhouette from the declared `views[]`. Say so
-when you hand it over — the user is not being asked to admire it, they are the
-gate. A finding edits the graph or the plan and regenerates — there is no hand edit to
-lose, because there was never a hand edit to make.
+For a site-plan campaign **this walk is the campaign's real gate**: scale,
+pacing, route legibility, and the silhouette from the declared `views[]`, on the
+buildings that ship. Say so when you hand it over — the user is not being asked
+to admire it, they are the gate. A finding edits the graph, the plan or a
+place's program and regenerates — there is no hand edit to lose, because there
+was never a hand edit to make.
 
-**Then end your turn and wait.** Do not run the ladder, do not start step 12,
-and do not write `walk-record.json`.
+**Then end your turn and wait.** Do not hand over, do not release, and do not
+write `walk-record.json`.
 
 ## When they answer
 
@@ -110,13 +116,28 @@ Their words are the finding — record them, and take the server down:
 the 25565 mutex. `--name` defaults to `dw-playtest`; pass the one you brought up.
 `docker compose … down -v` is the compose path's teardown.
 
-**If the walk did not happen** — abandoned, cut short, or the server brought up
-and taken down with nobody in it — the record that says so is
-`verdict: "unwalked"`, and it is the only one of the three values that does not
-assert a walk. Write it at step 13 like any other record, or write none at all;
-never write `passed` or `findings` for a walk nobody took. `DW0841` reads the
-field, so the absence stops detail by itself and does not need a sentence in
-`findings[]` to carry it — that list is prose, and no check reads prose.
+## The walk record
+
+**On a site-plan campaign, write `walk-record.json` now**, beside the
+documents, from the build that was walked — `delvec schema --stage walk-record` is its shape. It is a campaign
+artifact rather than a stage document, so it carries no `dsl_version`, no
+`campaign_id` and no `stage`. Fill it with every hash and the engine revision
+that build printed, the verdict, and whatever the walk noted. **Copy them out of
+the build output rather than computing them**: none of them is a hash of a
+document. The hashes name the build that was walked — the site plan's grid, the
+layout graph's ways, and what detail put in the whole — so a record is a record
+of exactly one build, and every build after an edit to the plan, the graph or a
+detailed place refuses it until it is re-recorded or removed. A record taken on a
+blockout is never a record of the detailed build.
+
+**`verdict` is one of three and you transcribe it, you never choose it.**
+`passed` — they walked it and it may ship; step 14 needs this. `findings` — they
+walked it and something must change first: answer the findings, remove the
+record with the edit that answers them, rebuild, and walk again.
+`verdict: "unwalked"` — **nobody walked it**: abandoned, cut short, or the server brought up and taken
+down with nobody in it. It is the only value that does not assert a walk; never
+write `passed` or `findings` for a walk nobody took, and do not put that truth in
+`findings[]` instead — that list is prose, and nothing reads prose.
 
 ## The staging gate
 
@@ -131,16 +152,16 @@ as `UNBOUND`, and that is a fact about the ledger, not about your delve. Read
 the list, put it in what you hand the user item by item, and never backfill a
 weak check to turn a row green.
 
-**A class this build cannot exercise is not in the red list at all.** On a
-pre-detail blockout the gate prints an `OUT-OF-STAGE` section: rows whose class
-measured zero across the whole declared design, so this walk cannot meet them.
-The walk-record class is one of them on a **first** walk, and it is there by
-construction rather than by anything you did — its objects are walk records, the
-walk that writes one is the walk you are staging, and this page forbids writing
-it before then. Those rows still go into what you hand the user, by class, and
-into the round summary; they do not refuse the build, and they become ordinary
-rows the moment the campaign has a record. So `OUT-OF-STAGE` on a first walk is
-expected; a row in the RED list is not, and is worth stopping for.
+**A class this build cannot exercise is not in the red list at all.** A row
+whose class measured zero across the whole declared design is `INAPPLICABLE` —
+or `OUT-OF-STAGE` on a site-plan build with no place detailed — and is printed
+in its own section. The walk-record class is one of them on a **first** walk,
+and it is there by construction rather than by anything you did — its objects
+are walk records, the walk that writes one is the walk you are staging, and this
+page forbids writing it before then. Those rows still go into what you hand the
+user, by class, and into the round summary; they do not refuse the build, and
+they become ordinary rows the moment the campaign has a record. A row in the RED
+list is worth stopping for.
 
 To go in anyway on a build you know is red:
 

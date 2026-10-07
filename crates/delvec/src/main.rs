@@ -258,9 +258,7 @@ enum Command {
     /// Derived from the site plan on every invocation and an input to nothing:
     /// no gate, no build step and no check ever reads what this prints, so a
     /// file made of it is a copy with no consumer and its staleness has no
-    /// vector into the build. It refuses without a passed, fresh walk record,
-    /// because obtaining an allocation is one of the two events that begin
-    /// detail work.
+    /// vector into the build.
     Allocation {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -283,8 +281,7 @@ enum Command {
     ///
     /// Every input but the place is derived: the frame, the datum, the seams,
     /// the owed names, the palette, the piece id, the seed and the row are the
-    /// tool's. Refuses without a passed, fresh walk record (`DW0841`), as
-    /// `allocation` does.
+    /// tool's.
     Detail {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -1296,47 +1293,54 @@ fn validate_loaded(
                 examined.push(pbind.line());
                 diags.extend(pd);
             }
-            // spec-0050 (DSL v0.15): the detail plan. `DW0841` (the whole was
-            // walked before any part is detailed), `DW0842`-`DW0845` (the
+            // spec-0050 (DSL v0.15): the detail plan. `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its
             // openings are the plan's seams, its anchors have standing) and
             // `DW0848`'s consumer door. Bound HERE because this is the one
             // funnel every subcommand's validation goes through — `build`
             // included — so a defect cannot reach a datapack by skipping
-            // `delvec validate`. No-op for a campaign with no `detail-plan`,
-            // which is every campaign below 0.15.0, and the binding line states
-            // that zero rather than going quiet.
+            // `delvec validate`. No-op for a campaign with no `detail-plan`, and
+            // the binding line states that zero rather than going quiet.
             {
-                // **The three hashes, printed BEFORE the gate that demands
-                // them** (spec-0050 §2). A walk record names its subject and its
-                // instrument by these numbers, they exist nowhere but this
-                // engine's output — none of the three is a hash of a document —
-                // and `DW0841`'s repair is to copy them out of a build. They
-                // used to be printed by `emit`, which a refusal never reaches,
-                // so the one state that needs them was the one state that could
-                // not get them: a stale record refused the build, the build
-                // printed nothing, and the only way to re-record was to compute
-                // a hash by hand or to revert. Printed here, in the one funnel
-                // every subcommand's validation goes through, so `validate`,
-                // `analyze`, `allocation` and a REFUSED `build` all hand the
-                // creator the numbers. The engine is named by its REVISION,
-                // never by its version string — two engines a hundred commits
-                // apart report the same version.
-                if let Some(h) = delvec::compiler::detail::Hashes::of(&campaign) {
-                    eprintln!("{}", h.line());
-                }
-                let (dd, dbind) = delvec::compiler::detail::check(
-                    &campaign,
-                    &prefabs,
-                    loaded.walk_record.as_deref(),
-                );
+                let (dd, dbind) = delvec::compiler::detail::check(&campaign, &prefabs);
                 if campaign.detail_plan.is_some() || campaign.site_plan.is_some() {
                     examined.push(dbind.line());
                 }
                 diags.extend(dd);
-                diags.extend(delvec::compiler::detail::blockout_drift(
+            }
+            // **The walk** (spec-0049 §5.4): `DW0974`, a walk record that does
+            // not describe this build. The walk is taken on the detailed world,
+            // after detail, so nothing here holds detail work; a record that is
+            // PRESENT must name this build in the grid, the ways and the detail,
+            // or every build refuses it. Absent is the campaign nobody has walked
+            // yet, whose build is the one the walk needs, and it refuses nothing.
+            //
+            // **The hashes, printed BEFORE the check that compares them.** A
+            // walk record names its subject and its instrument by these numbers,
+            // they exist nowhere but this engine's output — none is a hash of a
+            // document — and a record is written by copying them out of the build
+            // that was walked. Printed here, in the one funnel every subcommand's
+            // validation goes through, so `validate`, `analyze` and a REFUSED
+            // `build` all hand the creator the numbers. The engine is named by
+            // its REVISION, never by its version string.
+            {
+                if let Some(h) =
+                    delvec::compiler::walk::Hashes::of(&campaign, &prefabs, prefabs_dir)
+                {
+                    eprintln!("{}", h.line());
+                }
+                let record = loaded.walk_record.as_deref();
+                let (wd, wbind) =
+                    delvec::compiler::walk::check(&campaign, &prefabs, prefabs_dir, record);
+                if campaign.site_plan.is_some() || record.is_some() {
+                    examined.push(wbind.line());
+                }
+                diags.extend(wd);
+                diags.extend(delvec::compiler::walk::drift(
                     &campaign,
-                    loaded.walk_record.as_deref(),
+                    &prefabs,
+                    prefabs_dir,
+                    record,
                 ));
             }
             // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
@@ -3611,17 +3615,6 @@ pub(crate) fn print_one_diag(d: &Diagnostic, json: bool) {
 
 /// `delvec allocation` — the handing (spec-0050 §4).
 ///
-/// Refuses without a passed, fresh walk record, and the refusal is the same
-/// `DW0841` validation raises: the two events that begin detail work are
-/// obtaining an allocation and compiling a binding, and both are bound. There
-/// is no third, because no other verb reads a `detail-plan`.
-/// `delvec allocation` — the handing (spec-0050 §4).
-///
-/// Refuses without a passed, fresh walk record, and the refusal is the same
-/// `DW0841` validation raises: the two events that begin detail work are
-/// obtaining an allocation and compiling a binding, and both are bound. There is
-/// no third, because no other verb reads a `detail-plan`.
-///
 /// **Stdout carries the allocation and nothing else** on the success path, so an
 /// authoring loop can redirect it. What it prints is an input to nothing — see
 /// the note inside.
@@ -3656,25 +3649,6 @@ fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: boo
              place, so there is nothing to hand out until the whole exists.",
             campaign_dir.display()
         );
-        return ExitCode::from(1);
-    }
-    // The three hashes, on stderr, before the gate — for the reason
-    // `validate_loaded` prints them there: this verb does not go through that
-    // funnel (see the note above on why it parses rather than validates), so
-    // without this the second of the two doors refuses and hands over nothing
-    // the author can re-record from. stdout stays the machine-readable document
-    // and gains nothing.
-    if let Some(h) = delvec::compiler::detail::Hashes::of(&campaign) {
-        eprintln!("{}", h.line());
-    }
-    // **The gate, at the second of the two events that begin detail work.** It is
-    // asked of the campaign as it stands, so a campaign with no `detail-plan`
-    // yet — which is exactly the campaign asking for its first allocation — is
-    // asked the same question against the plan whose hash it names.
-    if let Some(d) =
-        delvec::compiler::detail::allocation_walk_gate(&campaign, loaded.walk_record.as_deref())
-    {
-        print_one_diag(&d, json);
         return ExitCode::from(1);
     }
     let out = if all {
@@ -3749,7 +3723,7 @@ fn run_schema(stage: &str) -> ExitCode {
         "6" => vec![Stage::Dialogue],
         "7" => vec![Stage::WorldEdits],
         // `walk-record.json` is not a stage document and has no `Stage` — it is
-        // a campaign artifact recording an event (see `detail::walk_record_schema`).
+        // a campaign artifact recording an event (see `walk::walk_record_schema`).
         // It is reachable here anyway because this is the command an author is
         // told to run to see the shape of a document they must write, and the
         // walk record is one of those. The schema says what it is, so the tool
@@ -3757,7 +3731,7 @@ fn run_schema(stage: &str) -> ExitCode {
         "walk-record" => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&delvec::compiler::detail::walk_record_schema())
+                serde_json::to_string_pretty(&delvec::compiler::walk::walk_record_schema())
                     .unwrap()
             );
             return ExitCode::SUCCESS;

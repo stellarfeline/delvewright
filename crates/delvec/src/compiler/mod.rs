@@ -96,6 +96,7 @@
 //! - [`trap_trigger`]: a trap's trigger cell holds the block its trigger kind names (`DW0917`).
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
 //! - [`view`]: the CPU render surface — the visual channel that ships in the one binary a creator installs.
+//! - [`walk`]: the walk record — the owner walks the detailed build, and the record names it by grid, ways and detail (`DW0974`).
 //! - [`watch`]: runtime-watch coverage of per-object bodies, in two tiers.
 //! - [`waypoints`]: the compiler-proven critical-path waypoint polyline, as validation metadata.
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
@@ -191,6 +192,7 @@ pub mod timeline;
 pub mod trap_trigger;
 pub mod traversal;
 pub mod view;
+pub mod walk;
 pub mod watch;
 pub mod waypoints;
 pub mod ways;
