@@ -366,3 +366,84 @@ fn a_step_attributes_its_actor_and_an_approach_does_not() {
         codes(&no_anchor)
     );
 }
+
+/// spec-0093 §6.2 meets the `step` trigger: a checkpoint a plate sets is
+/// rooted where a body can first stand on the plate, and the derivation reads
+/// the plate's own firing cells — the cell and its eight horizontal neighbours
+/// whose bodies lean into it (`nav::STEP_REACH`) — rather than refusing to
+/// compile or falling back to the entry. Driven through the binary, because the
+/// derivation is reported on the build's own `DW0315:` line.
+#[test]
+fn a_checkpoint_a_plate_sets_is_rooted_at_the_plates_firing_cells() {
+    use delvec::admit::structure::{PaletteEntry, Structure};
+    let name = "step-checkpoint";
+    let trigger = step_trigger(serde_json::json!({
+        "once": true,
+        "effects": [ {
+            "type": "set-checkpoint", "anchor": "anchor/plate",
+            "happening": { "verb": "gains", "text": "The flagstone remembers them." }
+        } ]
+    }));
+    // The hello-world campaign whole, as the binary's narrative gates read it,
+    // with the plate's trigger added to its own triggers.
+    let src = common::hello_world_dir();
+    let mut quests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(src.join("quests.json")).unwrap()).unwrap();
+    let content = quests["content"].as_object_mut().unwrap();
+    let triggers = content
+        .entry("triggers")
+        .or_insert_with(|| serde_json::json!([]));
+    triggers.as_array_mut().unwrap().push(trigger);
+    let camp_dir = tmp(&format!("{name}-camp"));
+    common::materialize_from(
+        &src,
+        &serde_json::json!({ "documents": { "quests": quests } }),
+        &camp_dir,
+    );
+    let prefabs_dir = plate_prefabs(&format!("{name}-prefabs"));
+    let loaded = load_campaign_dir(&camp_dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
+    let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let cell = plan.point_any("anchor/plate").unwrap();
+    let mut written = 0;
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let path = prefabs_dir.join(&t.structure_file);
+                let mut s = Structure::read(&std::fs::read(&path).unwrap()).unwrap();
+                let local = [cell[0] - t.pos[0], cell[1] - t.pos[1], cell[2] - t.pos[2]];
+                if s.in_bounds(local) {
+                    s.set_cell(
+                        local,
+                        PaletteEntry::simple("minecraft:stone_pressure_plate"),
+                        None,
+                    );
+                    std::fs::write(&path, s.write()).unwrap();
+                    written += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(written, 1, "the plate is written into exactly one template");
+    let out_dir = tmp(&format!("{name}-out"));
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .arg("build")
+        .arg(&camp_dir)
+        .arg("--prefabs")
+        .arg(&prefabs_dir)
+        .arg("-o")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "the build is green: {stderr}");
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with("DW0315: checkpoint `anchor/plate` is set by `trigger/doormat`"))
+        .unwrap_or_else(|| panic!("the derivation is reported: {stderr}"));
+    assert!(
+        line.contains(&format!("within 1.5 of {cell:?}")),
+        "rooted at the plate's own firing cells: {line}"
+    );
+}

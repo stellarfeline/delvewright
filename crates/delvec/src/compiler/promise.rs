@@ -585,7 +585,7 @@ fn act_places(
                 .collect::<Option<Vec<_>>>()
         }
         EffectRootOwner::Trigger(t) => match &t.on {
-            TriggerOn::Strike | TriggerOn::Use | TriggerOn::Approach { .. } => t
+            TriggerOn::Strike | TriggerOn::Use | TriggerOn::Approach { .. } | TriggerOn::Step => t
                 .at_anchor()
                 .and_then(|a| plan.point_any(a))
                 .map(|p| vec![p]),

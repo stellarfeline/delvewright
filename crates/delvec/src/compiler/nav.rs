@@ -7196,6 +7196,12 @@ fn trigger_root_configs(plan: &Plan, world: &World) -> Vec<TriggerRootConfig> {
         .collect()
 }
 
+/// How far from a `step` trigger's cell a standing body can fire it: a body's
+/// hitbox reaches 0.3 past its own cell, so a body standing in any of the eight
+/// horizontal neighbours can lean into the plate's cell, and the farthest of
+/// them (a corner) is sqrt(2) away. Rooting from more cells roots no later.
+const STEP_REACH: f64 = 1.5;
+
 /// Where a trigger-set checkpoint is rooted (spec-0093 §6.2).
 struct TriggerRoot {
     /// The critical step the no-stranding proof roots at.
@@ -7213,7 +7219,8 @@ struct TriggerRoot {
 /// A trigger fires from every standable cell within its `range` of its anchor
 /// (`approach`), or within [`crate::compiler::crosshair::INTERACTION_REACH`] of
 /// the anchor, the struck NPC's or the struck assembly's cell (`use`, `strike`,
-/// `strike-npc`, `strike-assembly`). Flooding from the union of a
+/// `strike-npc`, `strike-assembly`), or within [`STEP_REACH`] of a plate's cell
+/// (`step`). Flooding from the union of a
 /// configuration's route cells can only root EARLIER than flooding from each
 /// step's own cells, which is the conservative direction: a root too early asks
 /// the checkpoint to re-reach more of the path, never less.
@@ -7250,6 +7257,10 @@ fn trigger_root_step(
             plan.point_any(t.at_anchor()?)?,
             crate::compiler::crosshair::INTERACTION_REACH,
         ),
+        // A step fires on a body whose hitbox is in the plate's cell (the
+        // `dx=0` box of `emit::step_cell_box`): from the cell itself, or from a
+        // horizontal neighbour, edge or corner, whose body leans into it.
+        delvewright_dsl::TriggerOn::Step => (plan.point_any(t.at_anchor()?)?, STEP_REACH),
         delvewright_dsl::TriggerOn::StrikeNpc { npc } => {
             let n = c
                 .npcs
