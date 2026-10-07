@@ -1296,6 +1296,36 @@
                       "type": "spawn-actor"
                     }
                   ]
+                },
+                {
+                  "at_ticks": 60,
+                  "effects": [
+                    {
+                      "look_at": {
+                        "anchor": "anchor/exit"
+                      },
+                      "path": [
+                        {
+                          "anchor": "anchor/muster",
+                          "offset": [
+                            0,
+                            2,
+                            0
+                          ]
+                        },
+                        {
+                          "anchor": "anchor/vantage",
+                          "offset": [
+                            0,
+                            2,
+                            0
+                          ]
+                        }
+                      ],
+                      "seconds": 5,
+                      "type": "cutscene"
+                    }
+                  ]
                 }
               ],
               "type": "sequence",
@@ -3586,6 +3616,41 @@
         "requires_flags": [
           "flag/boarded"
         ]
+      },
+      {
+        "at": "anchor/shortcut-door",
+        "effects": [
+          {
+            "look_at": {
+              "anchor": "anchor/muster"
+            },
+            "path": [
+              {
+                "anchor": "anchor/vantage",
+                "offset": [
+                  0,
+                  2,
+                  0
+                ]
+              },
+              {
+                "anchor": "anchor/muster",
+                "offset": [
+                  0,
+                  2,
+                  0
+                ]
+              }
+            ],
+            "seconds": 6,
+            "type": "cutscene"
+          }
+        ],
+        "id": "trigger/glimpse-the-muster",
+        "on": {
+          "on": "approach",
+          "range": 3
+        }
       }
     ],
     "waves": [
