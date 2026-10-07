@@ -736,3 +736,108 @@ fn an_area_is_painted_over_its_claim_and_every_eye_in_it_is_measured() {
     assert!(line.ends_with("the worst 100.0%"), "{line}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// --- the PackTests read what no sibling can paint ------------------------------
+
+/// A 4-aligned box and a block cell: is the block's 4-cell inside it.
+fn cell_in(b: ([i32; 3], [i32; 3]), c: [i32; 3]) -> bool {
+    (0..3).all(|i| b.0[i] <= c[i] && c[i] <= b.1[i])
+}
+
+fn nums(s: &[&str]) -> [i32; 3] {
+    [
+        s[0].parse().unwrap(),
+        s[1].parse().unwrap(),
+        s[2].parse().unwrap(),
+    ]
+}
+
+/// The cells a generated atmosphere test writes (its `fillbiome` boxes, as the
+/// 4-cells they touch) and the `unless biome` / `if biome` cells it reads
+/// outside its own writes.
+type Box3 = ([i32; 3], [i32; 3]);
+
+fn paints_and_outside_reads(body: &str) -> (Vec<Box3>, Vec<([i32; 3], String)>) {
+    let mut paints = Vec::new();
+    let mut reads = Vec::new();
+    for l in body.lines() {
+        let w: Vec<&str> = l.split_whitespace().collect();
+        if w.first() == Some(&"fillbiome") {
+            let (a, b) = (nums(&w[1..4]), nums(&w[4..7]));
+            let q = |v: i32| v.div_euclid(4) * 4;
+            paints.push((a.map(q), b.map(|v| q(v) + 3)));
+        }
+        if let Some(at) = w.iter().position(|x| *x == "biome") {
+            reads.push((nums(&w[at + 1..at + 4]), w[w.len() - 3].to_string()));
+        }
+    }
+    (paints, reads)
+}
+
+/// Two repaints whose volumes nest, and a place repaint over the carried
+/// keep: the PackTests of one build run in an order none of them chooses, so a
+/// cell one test reads outside its own paint must lie in no other repaint's
+/// volume (a trigger that performs the beat leaves its paint standing).
+#[test]
+fn no_atmosphere_test_reads_a_cell_another_repaint_paints() {
+    let c = campaign(
+        json!([
+            atmosphere("atmosphere/a", "rain", json!({ "visual/sky_color": "#12345a" })),
+            atmosphere("atmosphere/b", "rain", json!({ "visual/sky_color": "#345a12" })),
+            atmosphere("atmosphere/c", "rain", json!({ "visual/sky_color": "#5a1234" }))
+        ]),
+        Some("atmosphere/c"),
+        ["a", "b"]
+            .iter()
+            .zip([[2, 2, 2], [5, 5, 5]])
+            .map(|(id, ext)| {
+                json!({ "type": "set-atmosphere", "atmosphere": format!("atmosphere/{id}"),
+                        "region": { "anchor": "anchor/exit", "extent": ext } })
+            })
+            .chain([json!({ "type": "set-atmosphere", "atmosphere": "atmosphere/a", "place": "area/keep" })])
+            .collect(),
+    );
+    assert!(check(&c).is_empty(), "{:#?}", check(&c));
+    let out = try_build(&c).expect("builds");
+    let tests: Vec<(String, String)> = out
+        .iter()
+        .filter(|(p, _)| p.contains("/test/atmosphere_"))
+        .map(|(p, b)| (p.clone(), String::from_utf8(b.clone()).unwrap()))
+        .collect();
+    let repaints: Vec<&(String, String)> = tests
+        .iter()
+        .filter(|(p, _)| p.contains("repaint"))
+        .collect();
+    assert_eq!(
+        repaints.len(),
+        3,
+        "{:#?}",
+        tests.iter().map(|t| &t.0).collect::<Vec<_>>()
+    );
+    // Every repaint volume of the build: the writers any test can meet.
+    let volumes: Vec<(&str, Vec<Box3>)> = repaints
+        .iter()
+        .map(|(p, b)| (p.as_str(), paints_and_outside_reads(b).0))
+        .collect();
+    let mut checked = 0;
+    for (path, body) in &tests {
+        let (_, reads) = paints_and_outside_reads(body);
+        for (cell, holder) in reads {
+            let is_out = holder.contains("kept") || holder.contains("out");
+            if !is_out {
+                continue;
+            }
+            checked += 1;
+            for (other, boxes) in &volumes {
+                if other == path {
+                    continue;
+                }
+                assert!(
+                    !boxes.iter().any(|b| cell_in(*b, cell)),
+                    "{path} reads {holder} at {cell:?}, inside the paint of {other}"
+                );
+            }
+        }
+    }
+    assert!(checked > 0, "the test bound no outside read");
+}
