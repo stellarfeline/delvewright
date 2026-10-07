@@ -124,7 +124,8 @@ pub use stages::{
     CastPlacement, Class, ClassesContent, Climate, CollectBy, CompareOp, DamageKind, DespawnStyle,
     DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectAudience, EffectSite,
     EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Forfeit,
-    Guard, Happening, HappeningSubject, HappeningVerb, Horizon, HorizonBase, HorizonSpec, ItemDrop,
+    Guard, Guidance, Happening, HappeningSubject, HappeningVerb, Horizon, HorizonBase, HorizonSpec,
+    ItemDrop,
     KillFires, KitItem, LethalVolume, Lethality, Locomotion, Loop, Loot, LootItem,
     MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS, Mark, MobAttributes, MobDrop, MobEffect,
     MobEquipment, NarrateStyle, NestedDispatch, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective,
@@ -134,7 +135,8 @@ pub use stages::{
     SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay, StateScope, StateWrite,
     StealthZone, StrikeAim, StrikeStep, TextureOverride, TimeKeyword, TimeSite, TimedGate, Trap,
     TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb,
-    Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
+    Visibility, Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime,
+    WorldWeather,
     enchantment_component, is_potion_bearing_item, offset_cell,
 };
 pub use stages::{

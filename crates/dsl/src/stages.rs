@@ -2349,6 +2349,11 @@ pub struct PlannedQuest {
 pub struct QuestsContent {
     /// The expanded quests (1:1 with stage 4).
     pub quests: Vec<Quest>,
+    /// **How loudly the campaign guides** (spec-0093): the default for every
+    /// objective's `marker` and `announcement`. Absent = both `shown`, which is
+    /// what every campaign written before the block existed gets, byte for byte.
+    #[serde(default, skip_serializing_if = "Guidance::is_default")]
+    pub guidance: Guidance,
     /// Combat waves (DSL v0.3). Each wave is spawned by a `spawn-wave` effect and
     /// slain to complete a `kill` objective. Empty/absent in v0.2 campaigns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2467,6 +2472,52 @@ pub struct QuestsContent {
     /// author actually wrote; this flag is what makes a second expansion a no-op.
     #[serde(skip)]
     pub ambushes_expanded: bool,
+}
+
+/// Whether a piece of guidance is put in front of the player (spec-0093).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Visibility {
+    /// Shown — the marker is summoned, the announcement is printed.
+    #[default]
+    Shown,
+    /// Hidden — nothing is summoned or printed; the objective still adjudicates.
+    Hidden,
+}
+
+impl Visibility {
+    /// `true` for [`Visibility::Shown`]. Takes a reference so it doubles as the
+    /// serde skip predicate on [`Guidance`]'s two fields.
+    pub fn is_shown(&self) -> bool {
+        *self == Visibility::Shown
+    }
+}
+
+/// The campaign's guidance defaults (spec-0093): what an objective gets when it
+/// states no `marker` or `announcement` of its own.
+///
+/// Two values, both defaulting to `shown`, so a document that omits the block
+/// is the document every campaign already was. The objective's own field wins
+/// over the campaign's; there is no third level, because a quest is where a
+/// beat is booked and not the object a lantern hangs over.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Guidance {
+    /// The default for every `interact` (without a `prop`) and `reach-anchor`
+    /// objective's glowing marker.
+    #[serde(default, skip_serializing_if = "Visibility::is_shown")]
+    pub markers: Visibility,
+    /// The default for every objective's announcement — the `New objective`
+    /// line, the hint's line, the cue sound and the `Objective complete` line.
+    #[serde(default, skip_serializing_if = "Visibility::is_shown")]
+    pub announcements: Visibility,
+}
+
+impl Guidance {
+    /// Serde skip predicate: both `shown` needs no block on the wire.
+    pub fn is_default(&self) -> bool {
+        *self == Guidance::default()
+    }
 }
 
 impl QuestsContent {
@@ -4288,6 +4339,13 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// The NPC to talk to.
         npc: NpcId,
         /// Prerequisite objectives (intra-quest ordering).
@@ -4328,8 +4386,20 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// The anchor to reach.
         anchor: AnchorId,
+        /// Whether the glowing end-rod marker is summoned at the anchor when this
+        /// objective activates (spec-0093). Absent = the campaign's
+        /// [`Guidance::markers`]. The completion volume is adjudicated either way.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        marker: Option<Visibility>,
         /// Completion radius (blocks).
         radius: u32,
         /// Prerequisite objectives (intra-quest ordering).
@@ -4370,6 +4440,13 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// The wave (stage-5 `waves` ref) whose mobs must be slain.
         wave: WaveId,
         /// Prerequisite objectives.
@@ -4416,6 +4493,13 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// Vanilla item id to collect (validated against the registry).
         item: String,
         /// How many are required.
@@ -4529,8 +4613,22 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// The anchor the interaction entity stands at.
         anchor: AnchorId,
+        /// Whether the glowing lantern marker is summoned beside the hitbox when
+        /// this objective activates (spec-0093). Absent = the campaign's
+        /// [`Guidance::markers`]. The `minecraft:interaction` hitbox is summoned
+        /// either way — it is what the player presses. Meaningless beside a
+        /// `prop`, which never had a marker: declaring both is `DW0962`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        marker: Option<Visibility>,
         /// Item the player must be **holding in the main hand** for the
         /// interaction to complete (optional).
         ///
@@ -4956,6 +5054,59 @@ impl Objective {
             | Objective::Collect { hint, .. }
             | Objective::Interact { hint, .. } => hint,
         }
+    }
+
+    /// The objective's own `announcement`, when it states one (spec-0093).
+    pub fn announcement(&self) -> Option<Visibility> {
+        match self {
+            Objective::TalkTo { announcement, .. }
+            | Objective::ReachAnchor { announcement, .. }
+            | Objective::Kill { announcement, .. }
+            | Objective::Collect { announcement, .. }
+            | Objective::Interact { announcement, .. } => *announcement,
+        }
+    }
+
+    /// The objective's own `marker`, when it is a kind that has one and states
+    /// it (spec-0093). `None` for a `talk-to`, `kill` or `collect`, which carry no
+    /// such field, and for an `interact` or `reach-anchor` that leaves it absent.
+    pub fn marker(&self) -> Option<Visibility> {
+        match self {
+            Objective::ReachAnchor { marker, .. } | Objective::Interact { marker, .. } => *marker,
+            Objective::TalkTo { .. } | Objective::Kill { .. } | Objective::Collect { .. } => None,
+        }
+    }
+
+    /// Whether this objective's kind summons a wayfinding marker at all: a
+    /// `reach-anchor` (its end rod) or an `interact` with no `prop` (its lantern).
+    /// A `collect` places its chest, a `talk-to` has a body, a `kill` has bodies,
+    /// and an `interact` with a `prop` has the prop.
+    pub fn summons_marker(&self) -> bool {
+        match self {
+            Objective::ReachAnchor { .. } => true,
+            Objective::Interact { prop, .. } => prop.is_none(),
+            Objective::TalkTo { .. } | Objective::Kill { .. } | Objective::Collect { .. } => false,
+        }
+    }
+
+    /// **Is this objective marked** (spec-0093): its kind summons a marker and
+    /// its resolved visibility — its own `marker`, else the campaign's
+    /// [`Guidance::markers`] — is `shown`.
+    pub fn marker_shown(&self, guidance: &Guidance) -> bool {
+        self.summons_marker() && self.marker().unwrap_or(guidance.markers).is_shown()
+    }
+
+    /// **Is this objective announced** (spec-0093): it has a `title` and its
+    /// resolved visibility — its own `announcement`, else the campaign's
+    /// [`Guidance::announcements`] — is `shown`. The emitter prints the
+    /// activation and completion lines for exactly these objectives, so every
+    /// rule about what the party is told reads this and nothing else.
+    pub fn announced(&self, guidance: &Guidance) -> bool {
+        self.title().is_some_and(|t| !t.trim().is_empty())
+            && self
+                .announcement()
+                .unwrap_or(guidance.announcements)
+                .is_shown()
     }
 
     /// The flags that must be set before this objective activates (v0.3).

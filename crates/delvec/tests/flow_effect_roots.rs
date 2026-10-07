@@ -2,7 +2,7 @@
 //! from (the fourth and last of the three-of-five family).
 //!
 //! `compiler::flow` is the completability proof: `DW0201`/`DW0202`/`DW0203`
-//! reachability, the `DW0204` path replay, the `DW0205` skip walk, and the
+//! reachability, the `DW0204` path replay, and the
 //! critical path the compiler exports. It reads the campaign twice —
 //!
 //! * **producers** (`Flow::new`): every `set-flag` the model may credit, and
