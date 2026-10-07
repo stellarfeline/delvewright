@@ -671,6 +671,70 @@ fn dw0946_a_lamp_behind_a_window_lights_one_bay() {
     assert_ne!(a, b);
 }
 
+/// **A refusal from the post-world-edits pass prints the binding first**
+/// — a world-edits batch that stands a lantern in the landing bay
+/// is refused by the batch replay, not the final build, and the loop binding
+/// line — the numbers that repair it — comes before the refusal.
+#[test]
+fn a_refusal_after_a_world_edits_batch_prints_the_loop_binding() {
+    let dir = campaign_with(
+        "edits-binding",
+        |_| {},
+        |d| {
+            let doc = json!({
+                "campaign_id": "long-gallery",
+                "dsl_version": delvewright_dsl::DSL_VERSION,
+                "stage": "world-edits",
+                "content": { "batches": [{
+                    "area": "area/gallery",
+                    "id": "batch/a-lamp-in-the-landing-bay",
+                    "note": "A lantern stood on the floor of the landing bay alone.",
+                    "edits": [
+                        {
+                            "name": "region/the-lamp",
+                            "verb": "select",
+                            "shape": {
+                                "kind": "box",
+                                "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/long-gallery" },
+                                "min": [1, FLOOR_Y, bay(2) + 3],
+                                "max": [1, FLOOR_Y, bay(2) + 3]
+                            }
+                        },
+                        {
+                            "verb": "fill",
+                            "region": "region/the-lamp",
+                            "recipe": { "blocks": [{ "block": "minecraft:lantern", "weight": 1.0 }] }
+                        }
+                    ]
+                }]}
+            });
+            std::fs::write(
+                d.join("world-edits.json"),
+                serde_json::to_string_pretty(&doc).unwrap() + "\n",
+            )
+            .unwrap();
+        },
+    );
+    let run = build(&dir);
+    let line = run.refused("DW0946");
+    assert!(
+        line.contains("after world-edits batch `batch/a-lamp-in-the-landing-bay`"),
+        "the refusal is the batch replay's: {line}"
+    );
+    let at = |needle: &str| run.stderr.find(needle);
+    let binding = at("loop binding:").unwrap_or_else(|| {
+        panic!(
+            "the batch replay's refusal prints no loop binding line:\n{}",
+            run.stderr
+        )
+    });
+    assert!(
+        binding < at("DW0946").unwrap(),
+        "the binding line comes before the refusal:\n{}",
+        run.stderr
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Criterion 8 — the gate
 // ---------------------------------------------------------------------------
@@ -950,7 +1014,7 @@ fn dw0948_a_figure_posted_in_the_hall() {
     assert_eq!(run.json_opt("validation/loop-gate.json"), None);
     // The npc's post and the quest's cast placement both stand it there.
     assert!(
-        run.binding().contains("bodies in span 2"),
+        run.binding().contains("bodies in the near field 2"),
         "{}",
         run.binding()
     );
@@ -1269,13 +1333,20 @@ fn the_ledger_states_the_binding_per_loop_and_what_is_unchecked() {
     assert!(row["visible"].as_u64().unwrap() > 0);
     assert!(row["eyes"].as_u64().unwrap() > 0);
     assert!(row["span"].is_array());
-    assert_eq!(gate["unchecked"].as_array().unwrap().len(), 5);
+    assert_eq!(gate["unchecked"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        gate["far_field_shift_degrees"],
+        json!(delvec::compiler::r#loop::FAR_FIELD_SHIFT_DEGREES)
+    );
+    assert!(row["near_range"].as_f64().unwrap() > 0.0, "{row}");
     let b = run.binding();
     for part in [
         "1 loop(s)",
         "slab cells 9",
         "open faces 0",
         "at 2 skies",
+        "in the near field",
+        "far-field differences",
         "exercise steps 1",
     ] {
         assert!(b.contains(part), "`{part}` in {b}");
@@ -1415,4 +1486,226 @@ fn a_loop_packtest_puts_back_every_score_it_writes() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0090 — a loop's far field
+// ---------------------------------------------------------------------------
+
+use common::station4::Station4;
+
+/// The primary's documents over station 4's piece ([`common::station4`]): the
+/// same loop, its slab across the spike's `z 4218` selection and its landing
+/// the spike's 12 blocks back.
+fn station4_run(who: &str, hall: Station4, patch: impl FnOnce(&Path)) -> Run {
+    let dir = campaign_with(
+        &format!("station-4-{who}"),
+        |_| {},
+        |d| {
+            common::patch_file(&d.join("world.json"), |w| {
+                w["content"]["areas"][0]["prefab"] = json!("prefab/station-4");
+                // The spike's hall is dark between its last lamp and its
+                // doorway; the declaration admits it without a block moved.
+                w["content"]["areas"][0]["mitigation"] = json!("night-vision");
+            });
+            patch(d);
+        },
+    );
+    build_over(&dir, &hall.prefabs(who))
+}
+
+/// The largest far-field shift a binding line prints, in degrees.
+fn largest_shift(run: &Run) -> f64 {
+    let b = run.binding();
+    b.split("largest shift ")
+        .nth(1)
+        .and_then(|t| t.split('°').next())
+        .and_then(|t| t.parse().ok())
+        .unwrap_or_else(|| panic!("the binding prints its largest shift: {b}"))
+}
+
+/// **The calibration** (spec-0090 §5): station 4 — the spike's hall, its far
+/// end in view 60 blocks past the slab and 72 past the landing, a 12-block
+/// jump — builds, and the largest shift its far field makes is the threshold,
+/// to the fourth decimal. The threshold is this reading; a change to the
+/// measure that moves it reds here before it moves a verdict anywhere else.
+#[test]
+fn station_4_calibrates_the_far_field_threshold() {
+    let run = station4_run("calibrated", Station4::calibrated(), |_| {});
+    run.green();
+    let shift = largest_shift(&run);
+    let limit = delvec::compiler::r#loop::FAR_FIELD_SHIFT_DEGREES;
+    assert!(
+        shift <= limit && limit - shift < 2e-4,
+        "station 4 reads {shift}°, and the threshold is that reading rounded up: {limit}°"
+    );
+    let gate = run.json("validation/loop-gate.json");
+    let row = &gate["rows"][0];
+    assert_eq!(row["far_largest_shift_degrees"], json!(1.2851), "{row}");
+    assert!(
+        row["far_differences"].as_u64().unwrap() > 0,
+        "the far field differs and is admitted, not empty: {row}"
+    );
+    // Where it was read: the walking course beside the west wall, 42 blocks
+    // past the slab, from the eye at the landing's east corner. The world
+    // frame is read off the loop step's own crossing cell (the slab, spike
+    // `[4096, 64, 4218]`).
+    let step = loop_step(&run.json("critical-path.json")).unwrap();
+    let cross: Vec<i64> = step["cross"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    let at = &row["far_largest_shift_at"];
+    let cell: Vec<i64> = at["cell"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    assert_eq!(
+        [cell[0] - cross[0], cell[1] - cross[1], cell[2] - cross[2]],
+        [-1, 0, 42],
+        "{at}"
+    );
+    assert_eq!(
+        row["near_range"],
+        json!(13.8),
+        "the near range of a 12-block jump at this threshold: {row}"
+    );
+}
+
+/// **An end 18 blocks past the slab is refused** — the far end, seen 18
+/// blocks off before the jump and 30 after, is inside the near field of a
+/// 12-block jump, so the hall must repeat there and does not.
+#[test]
+fn dw0946_station_4_with_its_end_18_blocks_ahead() {
+    let run = station4_run("end-18", Station4::calibrated().with_end(18), |_| {});
+    let line = run.refused("DW0946");
+    assert!(line.contains("near field"), "{line}");
+}
+
+/// **A far end 54 blocks past the slab is refused by its light**: past the near
+/// field, but the lamp a bay beyond the last one is missing, and the floor
+/// and wall that light falls on shift by more than the threshold at the jump.
+#[test]
+fn dw0947_station_4_with_its_end_54_blocks_ahead_shifts_its_light() {
+    let run = station4_run("end-54", Station4::calibrated().with_end(54), |_| {});
+    let line = run.refused("DW0947");
+    assert!(
+        !run.binding().contains("far-field differences 0,"),
+        "a refused build counts the far differences it measured: {}",
+        run.binding()
+    );
+    assert!(line.contains("a light far off reaches it"), "{line}");
+    assert!(line.contains("past the near field"), "{line}");
+    let shift: f64 = line
+        .split("the jump moves it ")
+        .nth(1)
+        .and_then(|t| t.split('°').next())
+        .and_then(|t| t.parse().ok())
+        .unwrap_or_else(|| panic!("the refusal prints the shift: {line}"));
+    assert!(
+        shift > delvec::compiler::r#loop::FAR_FIELD_SHIFT_DEGREES,
+        "{line}"
+    );
+}
+
+/// **A lit exit that never comes closer**: the same hall with its doorway's
+/// lintel glowstone, a bright mouth seen down the whole hall. Its light falls
+/// on the hall's last courses, and that lit area is judged like any far
+/// difference: 66 blocks past the slab it shifts less than the threshold and
+/// builds; 60 past, where the unlit hall builds, the light's own lit area is
+/// what is refused.
+#[test]
+fn a_lit_exit_66_blocks_ahead_builds_and_60_is_refused_by_its_light() {
+    let run = station4_run("lit-66", Station4::calibrated().with_end(66).lit(), |_| {});
+    run.green();
+    assert!(
+        largest_shift(&run) <= delvec::compiler::r#loop::FAR_FIELD_SHIFT_DEGREES,
+        "{}",
+        run.binding()
+    );
+    let run = station4_run("lit-60", Station4::calibrated().lit(), |_| {});
+    let line = run.refused("DW0947");
+    assert!(line.contains("a light far off reaches it"), "{line}");
+}
+
+/// **The spike as built is refused by its rear mouth, from an eye
+/// approaching the loop.** Its hall began 30 blocks behind the slab: a body
+/// crossing facing back sees that mouth 18 blocks off after the jump and 30
+/// before. The eye that reads it is in the catch band — 0.3 short of the
+/// landing's approach face, where a walking body's centre is when the poll
+/// first finds it — not on a landing cell.
+#[test]
+fn dw0947_station_4_as_spiked_is_refused_by_its_rear_from_an_approaching_eye() {
+    let run = station4_run("as-spiked", Station4::as_spiked(), |_| {});
+    let line = run.refused("DW0947");
+    let eye_z: f64 = line
+        .split("the screen of the eye at [")
+        .nth(1)
+        .and_then(|t| t.split(']').next())
+        .and_then(|t| t.split(", ").nth(2))
+        .and_then(|t| t.parse().ok())
+        .unwrap_or_else(|| panic!("the refusal names its eye: {line}"));
+    assert!(
+        (eye_z - eye_z.floor() - 0.7).abs() < 1e-6,
+        "the eye stands 0.3 short of a whole-block face — the catch band: {line}"
+    );
+    assert!(run.binding().contains("eyes 24"), "{}", run.binding());
+}
+
+/// The station-4 hall with an NPC posted at `anchor`.
+fn station4_with_a_figure(who: &str, anchor: &str) -> Run {
+    station4_run(who, Station4::calibrated(), |d| {
+        common::patch_file(&d.join("npcs.json"), |n| {
+            n["content"]["npcs"] = json!([{
+                "anchor": anchor,
+                "area": "area/gallery",
+                "base_entity": "minecraft:villager",
+                "id": "npc/watcher",
+                "name": "The Watcher",
+                "persona": {
+                    "archetype": "silent watcher",
+                    "backstory": "It has stood at the end of the hall for as long as the hall has had one.",
+                    "demeanor": "Still.",
+                    "motivation": "Watch.",
+                    "secret": "It is nearer than it looks.",
+                    "speech_style": "None."
+                },
+                "role": "flavor"
+            }]);
+        });
+        common::patch_file(&d.join("quests.json"), |q| {
+            q["content"]["quests"][0]["cast"] = json!({
+                "npc/watcher": { "at": anchor, "dialogue": "dlg/watcher", "doing": "watching" }
+            });
+        });
+        common::patch_file(&d.join("dialogue.json"), |t| {
+            t["content"]["dialogues"] = json!([{
+                "npc": "npc/watcher",
+                "root": "dlg/watcher",
+                "nodes": [ { "id": "dlg/watcher", "text": "…", "options": [] } ]
+            }]);
+        });
+    })
+}
+
+/// **A figure far off is a far feature**: an NPC posted in the end room, 78
+/// blocks past the slab — its post and its cast placement, two bodies — shifts
+/// less than the threshold at the jump and is admitted; the same NPC posted 30 blocks down the hall is past the near
+/// field but shifts more, and is refused naming it.
+#[test]
+fn a_figure_in_the_end_room_is_admitted_and_one_down_the_hall_is_dw0947() {
+    let far = station4_with_a_figure("figure-far", "anchor/in-the-end-room");
+    far.green();
+    assert!(
+        far.binding().contains("bodies in the far field 2"),
+        "{}",
+        far.binding()
+    );
+    let near = station4_with_a_figure("figure-hall", "anchor/down-the-hall");
+    let line = near.refused("DW0947");
+    assert!(line.contains("npc `npc/watcher`"), "{line}");
 }

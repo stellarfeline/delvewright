@@ -416,6 +416,28 @@
         "to": {
           "anchor": "anchor/long-gallery-landing"
         }
+      },
+      {
+        "counts": "state/long-hall-crossings",
+        "id": "loop/the-hall-that-runs-on",
+        "region": {
+          "anchor": "anchor/long-hall-slab",
+          "extent": [
+            1,
+            1,
+            0
+          ]
+        },
+        "requires_state": [
+          {
+            "op": "at-most",
+            "state": "state/long-hall-crossings",
+            "value": 1
+          }
+        ],
+        "to": {
+          "anchor": "anchor/long-hall-landing"
+        }
       }
     ],
     "loot": [
@@ -3144,6 +3166,11 @@
       {
         "id": "state/gallery-crossings",
         "note": "How many times a body has crossed the long gallery's slab.",
+        "scope": "party"
+      },
+      {
+        "id": "state/long-hall-crossings",
+        "note": "How many times a body has crossed the long hall's slab: the loop holds while it is at most 1.",
         "scope": "party"
       }
     ],

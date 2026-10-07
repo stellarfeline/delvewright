@@ -1,0 +1,53 @@
+{
+  "code": "DW0947",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/long-hall",
+        "edits": [
+          {
+            "name": "region/a-near-end",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-long-hall"
+              },
+              "kind": "box",
+              "max": [
+                6,
+                3,
+                110
+              ],
+              "min": [
+                4,
+                1,
+                110
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone_bricks",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/a-near-end",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/a-near-end",
+        "note": "A wall across the long hall 36 courses past its slab."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A wall built across the long hall 36 courses past its slab, so the hall ends there in plain view instead of at its lit exit 54 past. Past the near field of a 6-block jump, but the light the last lamp throws on the floor before the wall has no copy a bay on, and the jump moves that lit area across the screen by more than the far-field threshold; a plain wall 42 past is admitted. The refusal comes from the world-edits replay, names how many far differences are over the threshold and the worst, its eye, distance and shift against the threshold, and the replay prints its loop binding first. It declares no unit."
+}

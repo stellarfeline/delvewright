@@ -1049,6 +1049,21 @@ pub struct LoopRow {
     pub open_faces: usize,
     /// Cells in sight of an eye inside the span.
     pub visible: usize,
+    /// The near range for this loop's offset, in blocks (spec-0090 §3).
+    pub near_range: f64,
+    /// Visible cells inside the near range of some eye.
+    pub near_visible: usize,
+    /// Far cells that differ from their image, in block or light, in some
+    /// configuration — each admitted under the threshold, or the refusal's.
+    pub far_cells: usize,
+    /// The largest on-screen shift, in degrees, any far difference or far body
+    /// makes at the jump.
+    pub far_shift: f64,
+    /// Where the largest far shift was read: the cell and the post-jump eye.
+    pub far_shift_at: Option<([i32; 3], [f64; 3])>,
+    /// Compiler-placed bodies in the span past the near field, judged as far
+    /// features.
+    pub bodies_far: usize,
     /// Configurations the block and light comparison ran over.
     pub configurations: usize,
     /// Declared volumes intersecting the span.
@@ -1086,12 +1101,27 @@ impl LoopBinding {
             "none".to_string()
         };
         let met = self.rows.iter().filter(|r| !r.exercises.is_empty()).count();
+        let (nlo, nhi) = self
+            .rows
+            .iter()
+            .filter(|r| r.near_range > 0.0)
+            .fold((f64::INFINITY, 0.0f64), |(a, b), r| {
+                (a.min(r.near_range), b.max(r.near_range))
+            });
+        let near = if nlo.is_finite() {
+            format!("{nlo:.1}..{nhi:.1}")
+        } else {
+            "none".to_string()
+        };
+        let shift = self.rows.iter().map(|r| r.far_shift).fold(0.0f64, f64::max);
         format!(
             "loop binding: {} loop(s); slab cells {}; eyes {} (fog end {fog} blocks as the kernel \
-             reads it); span {} cells grown to a closed view in {} steps, boundary cells closed by \
-             geometry {} and by fog {}, open faces {}; visible cells {} compared as blocks and as \
-             light at 2 skies over {} configuration(s); volumes in span {}, bodies in span {}; \
-             forced route meets {} of {} holding, exercise steps {}",
+             reads it); span {} cells closed in {} steps, frontier cells closed by geometry {} and \
+             by fog {}, open faces {}; visible cells {} compared as blocks and as light at 2 skies \
+             over {} configuration(s), {} of them in the near field ({near} blocks); far-field \
+             differences {}, largest shift {shift:.4}° of {FAR_FIELD_SHIFT_DEGREES}°; volumes in \
+             span {}, bodies in the near field {}, bodies in the far field {}; forced route meets \
+             {} of {} holding, exercise steps {}",
             self.rows.len(),
             self.sum(|r| r.slab_cells),
             self.sum(|r| r.eyes),
@@ -1102,8 +1132,11 @@ impl LoopBinding {
             self.sum(|r| r.open_faces),
             self.sum(|r| r.visible),
             self.sum(|r| r.configurations),
+            self.sum(|r| r.near_visible),
+            self.sum(|r| r.far_cells),
             self.sum(|r| r.volumes),
             self.sum(|r| r.bodies),
+            self.sum(|r| r.bodies_far),
             met,
             self.rows.len(),
             self.sum(|r| r.exercises.len()),
@@ -1115,8 +1148,10 @@ impl LoopBinding {
         let axis = |a: Option<usize>| a.map(|a| ["x", "y", "z"][a]);
         serde_json::json!({
             "spec": "spec-0086",
+            "far_field": "spec-0090",
             "loops": self.rows.len(),
             "span_reach": SPAN_REACH,
+            "far_field_shift_degrees": FAR_FIELD_SHIFT_DEGREES,
             "rows": self.rows.iter().map(|r| serde_json::json!({
                 "id": r.id,
                 "offset": r.offset,
@@ -1131,6 +1166,15 @@ impl LoopBinding {
                 "closed_by_fog": r.closed_fog,
                 "open_faces": r.open_faces,
                 "visible": r.visible,
+                "near_range": (r.near_range * 10.0).round() / 10.0,
+                "near_visible": r.near_visible,
+                "far_differences": r.far_cells,
+                "far_largest_shift_degrees": (r.far_shift * 10_000.0).round() / 10_000.0,
+                "far_largest_shift_at": r.far_shift_at.map(|(c, e)| serde_json::json!({
+                    "cell": c,
+                    "eye": e.map(|v| (v * 100.0).round() / 100.0),
+                })),
+                "bodies_in_far_field": r.bodies_far,
                 "skies": 2,
                 "configurations": r.configurations,
                 "volumes_in_span": r.volumes,
@@ -1145,19 +1189,42 @@ impl LoopBinding {
                 "particles and positional sounds alive in the span at the move",
                 "items on the ground and projectiles",
                 "a witness: a second player in sight of the mover sees the body jump",
+                "a body caught mid-jump: its eye stands higher than the standing eye the view \
+                 is judged from",
                 "chunk streaming at the far ring, and a client render distance below the server's",
             ],
         })
     }
 }
 
-/// The eye points of every landing cell a body can stand in (spec-0086 §4.3):
-/// the player's eye over its feet at the cell centre and toward each horizontal
-/// corner of the hitbox.
+/// The eyes a walking body has at the moment the poll moves it, each written
+/// where it lands — the **post-jump** eye `e′`; the eye it was moved from is
+/// `e′ − d` (spec-0086 §4.3, widened by spec-0090 §2). For every landing cell a
+/// body can stand in: the standing eye over its feet at the cell centre and
+/// toward each horizontal corner of the hitbox; and, for a horizontal slab, the
+/// **catch band** — the eye of a body the poll first finds, its hitbox's
+/// leading face just inside the slab's approach face, so its centre half a
+/// body-width outside it, at the centre and at each side of the hitbox across
+/// the passage. These are the eyes approaching the loop: the poll moves a
+/// walking body from one of them. A body caught mid-jump has its eye higher;
+/// that eye is not judged (`loop-gate.json`'s `unchecked`).
 fn eyes(l: &LoopPlan, world: &crate::compiler::nav::World) -> Vec<[f64; 3]> {
+    use delvewright_dsl::metrics::{PLAYER_EYE_HEIGHT, PLAYER_WIDTH};
     let (lo, hi) = l.landing();
-    let half = delvewright_dsl::metrics::PLAYER_WIDTH / 2.0;
-    let mut out = Vec::new();
+    let half = PLAYER_WIDTH / 2.0;
+    // The coordinate, along the crossing axis, of the body's centre when the
+    // poll first finds it, written in the landing's frame.
+    let catch = match (l.axis().filter(|&a| a != 1), l.approach_sign()) {
+        (Some(a), Some(s)) if s < 0 => Some((a, f64::from(lo[a]) - half)),
+        (Some(a), Some(_)) => Some((a, f64::from(hi[a]) + 1.0 + half)),
+        _ => None,
+    };
+    let mut out: Vec<[f64; 3]> = Vec::new();
+    let mut push = |e: [f64; 3]| {
+        if !out.contains(&e) {
+            out.push(e);
+        }
+    };
     for x in lo[0]..=hi[0] {
         for y in lo[1]..=hi[1] {
             for z in lo[2]..=hi[2] {
@@ -1165,11 +1232,19 @@ fn eyes(l: &LoopPlan, world: &crate::compiler::nav::World) -> Vec<[f64; 3]> {
                 if !world.is_standable(c) {
                     continue;
                 }
-                let ey = world.feet_y(c) + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
+                let ey = world.feet_y(c) + PLAYER_EYE_HEIGHT;
                 let (cx, cz) = (f64::from(x) + 0.5, f64::from(z) + 0.5);
-                out.push([cx, ey, cz]);
+                push([cx, ey, cz]);
                 for (dx, dz) in [(-half, -half), (-half, half), (half, -half), (half, half)] {
-                    out.push([cx + dx, ey, cz + dz]);
+                    push([cx + dx, ey, cz + dz]);
+                }
+                if let Some((a, at)) = catch {
+                    for side in [-half, 0.0, half] {
+                        let mut e = [cx, ey, cz];
+                        e[a] = at;
+                        e[2 - a] += side;
+                        push(e);
+                    }
                 }
             }
         }
@@ -1248,42 +1323,30 @@ fn sight(
     best
 }
 
-/// The cells on one face of box `b`: face `2a` is the low side of axis `a`,
-/// `2a + 1` the high side.
-fn face_cells(b: ([i32; 3], [i32; 3]), face: usize) -> Vec<[i32; 3]> {
-    let a = face / 2;
-    let v = if face.is_multiple_of(2) {
-        b.0[a]
-    } else {
-        b.1[a]
-    };
-    let mut out = Vec::new();
-    for x in b.0[0]..=b.1[0] {
-        for y in b.0[1]..=b.1[1] {
-            for z in b.0[2]..=b.1[2] {
-                let c = [x, y, z];
-                if c[a] == v {
-                    out.push(c);
-                }
-            }
-        }
-    }
-    out
-}
-
 const FACE_WORDS: [&str; 6] = ["west", "east", "down", "up", "north", "south"];
 
-/// The grown span, or why it did not close.
+/// The span, or why it did not close.
 struct Span {
     b: ([i32; 3], [i32; 3]),
     steps: usize,
     closed_geometry: usize,
     closed_fog: usize,
+    /// Every cell in sight of an eye inside its fog.
+    seen: BTreeSet<[i32; 3]>,
 }
 
-/// Grow the periodic span from the slab and its landing until no open boundary
-/// cell is in sight of an eye inside its fog (spec-0086 §4.3).
-fn grow(
+/// **The span** (spec-0086 §4.3, as spec-0090 §2 computes it): every cell in
+/// sight of an eye inside its fog, found by a breadth-first walk out from the
+/// eyes' own cells through the open cells the eyes see. A seen cell that blocks
+/// the camera is part of the view and ends the walk there; an open cell no eye
+/// sees ends it by geometry, one seen only past the eye's fog end ends it by
+/// fog. The view must still **close**: an open cell in sight outside every
+/// placed piece, above the build into open sky, or [`SPAN_REACH`] cells past the
+/// landing slab is refused, because nothing there is modelled to compare. The
+/// span `b` is the box of the slab, the landing and every cell the walk asked
+/// about — each seen cell and each neighbour of a seen open cell — and the
+/// steps are the walk's depth.
+fn see(
     l: &LoopPlan,
     world: &crate::compiler::nav::World,
     eyes: &[[f64; 3]],
@@ -1297,109 +1360,275 @@ fn grow(
     };
     let (llo, lhi) = l.landing();
     let mut b = (
-        [
-            l.slab.0[0].min(llo[0]),
-            l.slab.0[1].min(llo[1]),
-            l.slab.0[2].min(llo[2]),
-        ],
-        [
-            l.slab.1[0].max(lhi[0]),
-            l.slab.1[1].max(lhi[1]),
-            l.slab.1[2].max(lhi[2]),
-        ],
+        std::array::from_fn(|i| l.slab.0[i].min(llo[i])),
+        std::array::from_fn(|i| l.slab.1[i].max(lhi[i])),
     );
     let in_built = |c: [i32; 3]| built.iter().any(|bx| inside(*bx, c));
-    let mut steps = 0usize;
-    loop {
-        steps += 1;
-        let mut grew = false;
-        for (face, face_word) in FACE_WORDS.iter().enumerate() {
-            for c in face_cells(b, face) {
-                if world.blocks_camera(c) {
-                    continue;
-                }
-                let (s, eye) = sight(world, eyes, fogs, c);
-                if s != Sight::Seen {
-                    continue;
-                }
-                let eye = eye.expect("a seen cell names its eye");
-                if !in_built(c) {
-                    // Above a built column is the sky; anywhere else is the void
-                    // beside the build.
-                    let above = built.iter().any(|bx| {
-                        (bx.0[0]..=bx.1[0]).contains(&c[0])
-                            && (bx.0[2]..=bx.1[2]).contains(&c[2])
-                            && c[1] > bx.1[1]
-                    });
-                    let word = if above {
-                        "up, into open sky above the built volume"
-                    } else {
-                        face_word
-                    };
-                    return Err(format!(
-                        "the eye at [{:.2}, {:.2}, {:.2}] (fog end {} blocks) sees the open cell \
-                         [{}, {}, {}] on the span's {word} face, outside every placed piece — the \
-                         view leaves the built volume, and nothing outside it moves with the body",
-                        eye[0],
-                        eye[1],
-                        eye[2],
-                        fog_of(eye),
-                        c[0],
-                        c[1],
-                        c[2]
-                    ));
-                }
-                let a = face / 2;
-                if face % 2 == 0 {
-                    b.0[a] -= 1;
-                } else {
-                    b.1[a] += 1;
-                }
-                if b.0[a] < llo[a] - SPAN_REACH || b.1[a] > lhi[a] + SPAN_REACH {
-                    return Err(format!(
-                        "the eye at [{:.2}, {:.2}, {:.2}] (fog end {} blocks) sees the open cell \
-                         [{}, {}, {}] on the span's {} face, and the span has grown {SPAN_REACH} \
-                         cells past the landing slab without the view closing",
-                        eye[0],
-                        eye[1],
-                        eye[2],
-                        fog_of(eye),
-                        c[0],
-                        c[1],
-                        c[2],
-                        face_word
-                    ));
-                }
-                grew = true;
-                break;
-            }
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut visited: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut frontier: Vec<[i32; 3]> = Vec::new();
+    for e in eyes {
+        let c = [
+            e[0].floor() as i32,
+            e[1].floor() as i32,
+            e[2].floor() as i32,
+        ];
+        if visited.insert(c) {
+            frontier.push(c);
         }
-        if !grew {
-            break;
-        }
-    }
-    // What closed each boundary cell of the final span.
-    let mut shell: BTreeSet<[i32; 3]> = BTreeSet::new();
-    for face in 0..6 {
-        shell.extend(face_cells(b, face));
     }
     let (mut geo, mut fog) = (0usize, 0usize);
-    for c in shell {
-        if world.blocks_camera(c) {
-            geo += 1;
-            continue;
+    let mut steps = 0usize;
+    while !frontier.is_empty() {
+        steps += 1;
+        let mut next: Vec<[i32; 3]> = Vec::new();
+        for c in std::mem::take(&mut frontier) {
+            // The span covers every cell the walk asked about: a seen open
+            // cell's neighbours are where sight may go on, seen or not.
+            b = (
+                std::array::from_fn(|i| b.0[i].min(c[i])),
+                std::array::from_fn(|i| b.1[i].max(c[i])),
+            );
+            let (s, eye) = sight(world, eyes, fogs, c);
+            match s {
+                Sight::Hidden => {
+                    geo += 1;
+                    continue;
+                }
+                Sight::Fogged => {
+                    fog += 1;
+                    continue;
+                }
+                Sight::Seen => {}
+            }
+            seen.insert(c);
+            if world.blocks_camera(c) {
+                geo += 1;
+                continue;
+            }
+            let eye = eye.expect("a seen cell names its eye");
+            let face = (0..3)
+                .find_map(|i| {
+                    if c[i] < llo[i] - SPAN_REACH {
+                        Some(2 * i)
+                    } else if c[i] > lhi[i] + SPAN_REACH {
+                        Some(2 * i + 1)
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| {
+                    // The face of the landing slab the cell lies off, for the
+                    // message: the axis it lies farthest along.
+                    let mid: [f64; 3] = std::array::from_fn(|i| f64::from(llo[i] + lhi[i]) / 2.0);
+                    let k = (0..3)
+                        .max_by(|&p, &q| {
+                            (f64::from(c[p]) - mid[p])
+                                .abs()
+                                .total_cmp(&(f64::from(c[q]) - mid[q]).abs())
+                        })
+                        .unwrap_or(0);
+                    Some(2 * k + usize::from(f64::from(c[k]) > mid[k]))
+                })
+                .unwrap_or(0);
+            if !in_built(c) {
+                // Above a built column is the sky; anywhere else is the void
+                // beside the build.
+                let above = built.iter().any(|bx| {
+                    (bx.0[0]..=bx.1[0]).contains(&c[0])
+                        && (bx.0[2]..=bx.1[2]).contains(&c[2])
+                        && c[1] > bx.1[1]
+                });
+                let word = if above {
+                    "up, into open sky above the built volume"
+                } else {
+                    FACE_WORDS[face]
+                };
+                return Err(format!(
+                    "the eye at [{:.2}, {:.2}, {:.2}] (fog end {} blocks) sees the open cell \
+                     [{}, {}, {}] on the span's {word} face, outside every placed piece — the \
+                     view leaves the built volume, and nothing outside it moves with the body",
+                    eye[0],
+                    eye[1],
+                    eye[2],
+                    fog_of(eye),
+                    c[0],
+                    c[1],
+                    c[2]
+                ));
+            }
+            if (0..3).any(|i| c[i] < llo[i] - SPAN_REACH || c[i] > lhi[i] + SPAN_REACH) {
+                return Err(format!(
+                    "the eye at [{:.2}, {:.2}, {:.2}] (fog end {} blocks) sees the open cell \
+                     [{}, {}, {}] on the span's {} face, and the span has grown {SPAN_REACH} \
+                     cells past the landing slab without the view closing",
+                    eye[0],
+                    eye[1],
+                    eye[2],
+                    fog_of(eye),
+                    c[0],
+                    c[1],
+                    c[2],
+                    FACE_WORDS[face]
+                ));
+            }
+            for i in 0..3 {
+                for s in [-1, 1] {
+                    let mut n = c;
+                    n[i] += s;
+                    if visited.insert(n) {
+                        next.push(n);
+                    }
+                }
+            }
         }
-        match sight(world, eyes, fogs, c).0 {
-            Sight::Fogged => fog += 1,
-            _ => geo += 1,
-        }
+        frontier = next;
     }
     Ok(Span {
         b,
         steps,
         closed_geometry: geo,
         closed_fog: fog,
+        seen,
     })
+}
+
+/// **The far-field threshold** (spec-0090 §4): the largest on-screen shift,
+/// in degrees, the jump may give a visible cell that differs from its image.
+/// It is a measurement, not a choice: the largest shift [`shift_at`] reads
+/// over the spike's station 4 (spec-0090 §5 — a hall in 6-block bays, its slab
+/// 30 blocks in, a 12-block jump, its far end visible 60 blocks past the slab
+/// and 72 past the landing), the one loop on record walked on a client and
+/// read as seamless. The reading is `1.285125`°, at the lit area of the hall's
+/// floor course beside its west wall 42 blocks past the slab, where the next
+/// lamp a bay beyond is missing, from the eye at the landing's east corner;
+/// the constant is that reading rounded up at the fourth decimal. The test
+/// `station_4_calibrates_the_far_field_threshold` in `tests/endless_corridor.rs`
+/// rebuilds the geometry and reads the shift back off the binding, so a change
+/// to the measure that moves the reading reds it; the second method,
+/// `crates/delvec/tests/measured/far_field.py`, computes it from the spike's own
+/// constants with its own light flood and voxel walk.
+pub const FAR_FIELD_SHIFT_DEGREES: f64 = 1.2852;
+
+/// The on-screen shift, in degrees, of the world point `p` when an eye moves
+/// from `e′ − d` to `e′` with its facing kept (spec-0090 §3): the angle at the
+/// eye between the two directions to `p`. A relative teleport keeps facing
+/// (spec-0086 §2), so this is exactly how far `p` moves across the screen.
+pub fn shift_at(post: [f64; 3], d: [i32; 3], p: [f64; 3]) -> f64 {
+    let pre = [
+        post[0] - f64::from(d[0]),
+        post[1] - f64::from(d[1]),
+        post[2] - f64::from(d[2]),
+    ];
+    let u = [p[0] - pre[0], p[1] - pre[1], p[2] - pre[2]];
+    let v = [p[0] - post[0], p[1] - post[1], p[2] - post[2]];
+    let cross = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ];
+    let sin = (cross[0].powi(2) + cross[1].powi(2) + cross[2].powi(2)).sqrt();
+    let cos = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    sin.atan2(cos).to_degrees()
+}
+
+/// **The near range** of an offset of length `len` (spec-0090 §3): the least
+/// distance from an eye at which a one-cell difference can shift less than the
+/// threshold. A unit cell whose centre lies on the line through both eyes,
+/// beyond them, shifts least, and its least-shifting corner stands `√½` off
+/// that line; its shift between distances `r + ½` and `r + ½ + len` falls as
+/// `r` grows, and the near range is the `r` where it meets
+/// [`FAR_FIELD_SHIFT_DEGREES`]. Every difference nearer than this to some eye
+/// would be refused by the far rule anyway; the near field states it as the
+/// strict periodicity it is.
+pub fn near_range(len: f64) -> f64 {
+    let s = 0.5f64.sqrt();
+    let f = |r: f64| ((s / (r + 0.5)).atan() - (s / (r + 0.5 + len)).atan()).to_degrees();
+    let (mut lo, mut hi) = (0.0f64, 4096.0f64);
+    if f(lo) <= FAR_FIELD_SHIFT_DEGREES {
+        return 0.0;
+    }
+    for _ in 0..80 {
+        let mid = (lo + hi) / 2.0;
+        if f(mid) > FAR_FIELD_SHIFT_DEGREES {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    hi
+}
+
+/// One light flood: the level of every lit cell.
+type LightLevels = BTreeMap<[i32; 3], u8>;
+
+/// Keep the largest far shift a row has read, and where it was read.
+fn record(row: &mut LoopRow, s: f64, c: [i32; 3], eye: [f64; 3]) {
+    if s > row.far_shift {
+        row.far_shift = s;
+        row.far_shift_at = Some((c, eye));
+    }
+}
+
+/// The distance from `c`'s centre to the nearest eye, before or after the
+/// jump.
+fn nearest(c: [i32; 3], eyes: &[[f64; 3]], d: [i32; 3]) -> f64 {
+    let m = [
+        f64::from(c[0]) + 0.5,
+        f64::from(c[1]) + 0.5,
+        f64::from(c[2]) + 0.5,
+    ];
+    eyes.iter()
+        .flat_map(|e| {
+            [
+                *e,
+                [
+                    e[0] - f64::from(d[0]),
+                    e[1] - f64::from(d[1]),
+                    e[2] - f64::from(d[2]),
+                ],
+            ]
+        })
+        .map(|e| dist(e, m))
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// The largest shift any point of `cells` makes on the screen of an eye that
+/// sees one of them inside its fog (every eye when `sighted` is false — a
+/// body is judged whether a wall hides it or not), and that eye.
+fn largest_shift(
+    world: &crate::compiler::nav::World,
+    eyes: &[[f64; 3]],
+    fogs: &[f64],
+    d: [i32; 3],
+    cells: &[[i32; 3]],
+    sighted: bool,
+) -> (f64, [f64; 3]) {
+    let mut best = (0.0f64, eyes.first().copied().unwrap_or([0.0; 3]));
+    for (k, &eye) in eyes.iter().enumerate() {
+        let sees = !sighted
+            || cells.iter().any(|&c| {
+                targets(c).iter().any(|&t| {
+                    dist(eye, t) < fogs[k]
+                        && crate::compiler::nav::walk_cells(eye, t, |cell| {
+                            cell != c && world.blocks_camera(cell)
+                        })
+                        .is_none()
+                })
+            });
+        if !sees {
+            continue;
+        }
+        for &c in cells {
+            for t in targets(c) {
+                let s = shift_at(eye, d, t);
+                if s > best.0 {
+                    best = (s, eye);
+                }
+            }
+        }
+    }
+    best
 }
 
 /// One configuration of the comparison world: the writes applied, and what to
@@ -1794,14 +2023,18 @@ fn check_one(
     let mut fog_hi: f64 = 0.0;
     let mut span: Option<Span> = None;
     let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    // The far field is judged against the farthest any configuration's fog
+    // lets each eye see.
+    let mut fog_far: Vec<f64> = vec![0.0; eyes.len()];
     for (k, (state_label, _)) in fog.states.iter().enumerate() {
         let fogs: Vec<f64> = eyes.iter().map(|e| fog_end_at(fog, k, *e)).collect();
-        for f in &fogs {
+        for (j, f) in fogs.iter().enumerate() {
             fog_lo = fog_lo.min(*f);
             fog_hi = fog_hi.max(*f);
+            fog_far[j] = fog_far[j].max(*f);
         }
         row.fog = (fog_lo, fog_hi);
-        let this = match grow(l, world, &eyes, &fogs, built) {
+        let this = match see(l, world, &eyes, &fogs, built) {
             Ok(s) => s,
             Err(why) => {
                 row.open_faces = 1;
@@ -1828,16 +2061,7 @@ fn check_one(
                 });
             }
         };
-        for x in this.b.0[0]..=this.b.1[0] {
-            for y in this.b.0[1]..=this.b.1[1] {
-                for z in this.b.0[2]..=this.b.1[2] {
-                    let c = [x, y, z];
-                    if sight(world, &eyes, &fogs, c).0 == Sight::Seen {
-                        seen.insert(c);
-                    }
-                }
-            }
-        }
+        seen.extend(this.seen.iter().copied());
         span = Some(match span {
             None => this,
             Some(prev) => Span {
@@ -1848,6 +2072,7 @@ fn check_one(
                 steps: prev.steps.max(this.steps),
                 closed_geometry: prev.closed_geometry.max(this.closed_geometry),
                 closed_fog: prev.closed_fog.max(this.closed_fog),
+                seen: BTreeSet::new(),
             },
         });
     }
@@ -1859,6 +2084,49 @@ fn check_one(
     row.closed_fog = span.closed_fog;
     let visible: Vec<[i32; 3]> = seen.into_iter().collect();
     row.visible = visible.len();
+
+    // ---- spec-0090 §3 the near field and the far field ----
+    let d = l.offset;
+    let len = f64::from(d[0].abs() + d[1].abs() + d[2].abs());
+    let near = near_range(len);
+    row.near_range = near;
+    let is_near = |c: [i32; 3]| nearest(c, &eyes, d) < near;
+    row.near_visible = visible.iter().filter(|c| is_near(**c)).count();
+    let mut shift_cache: BTreeMap<[i32; 3], (f64, [f64; 3])> = BTreeMap::new();
+    let mut shift_of = |c: [i32; 3]| {
+        *shift_cache
+            .entry(c)
+            .or_insert_with(|| largest_shift(world, &eyes, &fog_far, d, &[c], true))
+    };
+    let mut lit_cache: BTreeMap<Vec<[i32; 3]>, (f64, [f64; 3])> = BTreeMap::new();
+    let mut lit_shift_of = |area: &[[i32; 3]]| {
+        *lit_cache
+            .entry(area.to_vec())
+            .or_insert_with(|| largest_shift(world, &eyes, &fog_far, d, area, true))
+    };
+    let far_words = |what: String, c: [i32; 3], s: f64, eye: [f64; 3]| {
+        format!(
+            "loop `{}`: {what} — it lies past the near field ({near:.1} blocks of every eye, \
+             for an offset of {len} blocks), but the jump moves it {s:.3}° across the screen of \
+             the eye at [{:.2}, {:.2}, {:.2}], {:.1} blocks away, over the {FAR_FIELD_SHIFT_DEGREES}° \
+             the far field is allowed — the largest shift on the one loop on record walked on a \
+             client and read as seamless. A difference far off goes unseen only while it moves \
+             less than that: put it farther from the eye, shorten the offset, or make the two \
+             sections the same",
+            l.id,
+            eye[0],
+            eye[1],
+            eye[2],
+            dist(
+                eye,
+                [
+                    f64::from(c[0]) + 0.5,
+                    f64::from(c[1]) + 0.5,
+                    f64::from(c[2]) + 0.5
+                ]
+            )
+        )
+    };
 
     // ---- §4.6 bodies ----
     let mut bodies: Vec<(String, [i32; 3])> =
@@ -1878,13 +2146,19 @@ fn check_one(
     );
     let inside_span: Vec<&(String, [i32; 3])> =
         bodies.iter().filter(|(_, c)| inside(span.b, *c)).collect();
-    row.bodies = inside_span.len();
-    if let Some((label, c)) = inside_span.first() {
+    // A body past the near field is a far feature like any block: the jump
+    // shifts it by its parallax, judged at its feet and head cells from every
+    // eye, seen or not.
+    let (far_bodies, near_bodies): (Vec<_>, Vec<_>) =
+        inside_span.into_iter().partition(|(_, c)| !is_near(*c));
+    row.bodies = near_bodies.len();
+    row.bodies_far = far_bodies.len();
+    if let Some((label, c)) = near_bodies.first() {
         return Err(Failure {
             code: DW_LOOP_BODY,
             message: format!(
-                "loop `{}`: {label} stands at {}, inside the loop's periodic span {} — a body has an \
-                 identity the move cannot repeat, so a body moved a bay back would see the same \
+                "loop `{}`: {label} stands at {}, inside the loop's near field ({near:.1} blocks of an eye) \
+                 in its span {} — a body has an identity the move cannot repeat, so a body moved a bay back would see the same \
                  figure twice, or none. Move the body out of the span; a figure that appears \
                  mid-loop is placed by an `on_cross` effect outside the visible cells, or summoned \
                  after the release",
@@ -1894,9 +2168,24 @@ fn check_one(
             ),
         });
     }
+    for (label, c) in &far_bodies {
+        let cells = [*c, [c[0], c[1] + 1, c[2]]];
+        let (s, eye) = largest_shift(world, &eyes, &fog_far, d, &cells, false);
+        record(row, s, *c, eye);
+        if s > FAR_FIELD_SHIFT_DEGREES {
+            return Err(Failure {
+                code: DW_LOOP_OPEN_VIEW,
+                message: far_words(
+                    format!("{label} stands at {} in the loop's view", cell_words(*c)),
+                    *c,
+                    s,
+                    eye,
+                ),
+            });
+        }
+    }
 
     // ---- §4.4–§4.6 the tiling, in every configuration ----
-    let d = l.offset;
     let image = |c: [i32; 3]| [c[0] - d[0], c[1] - d[1], c[2] - d[2]];
     let both = (
         [
@@ -1940,11 +2229,16 @@ fn check_one(
             live_sets.push(set);
         }
     }
+    // A volume is not seen; what the player sees of a pit is its blocks, which
+    // the tiling judges. Its tiling is about the bodies the loop carries, so it
+    // is judged in the near field, where a body is put down and walks
+    // (spec-0090 §3).
     let span_cells: Vec<[i32; 3]> = (span.b.0[0]..=span.b.1[0])
         .flat_map(|x| {
             (span.b.0[1]..=span.b.1[1])
                 .flat_map(move |y| (span.b.0[2]..=span.b.1[2]).map(move |z| [x, y, z]))
         })
+        .filter(|c| is_near(*c))
         .collect();
     let mut counted: BTreeSet<String> = BTreeSet::new();
     for live in &live_sets {
@@ -1989,8 +2283,8 @@ fn check_one(
                 return Err(Failure {
                     code: DW_LOOP_TILING,
                     message: format!(
-                        "loop `{}`: {label} {} lies in the periodic span without its image under \
-                         the offset{when} — the span's cell {} is {} and the cell it stands for \
+                        "loop `{}`: {label} {} lies in the loop's near field without its image \
+                         under the offset{when} — the span's cell {} is {} and the cell it stands for \
                          from the slab, {}, is {}. A pit the player sees in one bay and not the \
                          next is the frame jump by other means. Make the sections the same: put \
                          the same volume, live from the same stage, under the other bay, or move \
@@ -2086,6 +2380,7 @@ fn check_one(
         }
     }
     row.configurations = configs.len();
+    let mut far_cells: BTreeSet<[i32; 3]> = BTreeSet::new();
     for cfg in &configs {
         let mut m = base.clone();
         for (r, b) in &cfg.writes {
@@ -2097,8 +2392,10 @@ fn check_one(
             .copied()
             .filter(|c| block_at(*c) != block_at(image(*c)))
             .collect();
-        if let Some(first) = diffs.first() {
-            let shown: Vec<String> = diffs
+        let (near_diffs, far_diffs): (Vec<[i32; 3]>, Vec<[i32; 3]>) =
+            diffs.into_iter().partition(|c| is_near(*c));
+        if !near_diffs.is_empty() {
+            let shown: Vec<String> = near_diffs
                 .iter()
                 .take(6)
                 .map(|c| {
@@ -2111,16 +2408,16 @@ fn check_one(
                     )
                 })
                 .collect();
-            let _ = first;
             return Err(Failure {
                 code: DW_LOOP_TILING,
                 message: format!(
-                    "loop `{}`: {} visible cell(s) of the periodic span differ from the cell \
-                     each is seen as from the slab, in the configuration {} — {}. The view from \
-                     the landing would not be the view from the slab. Make the two sections the \
-                     same; never shorten the view to hide the difference",
+                    "loop `{}`: {} visible cell(s) of the loop's near field ({near:.1} blocks of \
+                     an eye) differ from the cell each is seen as from the slab, in the \
+                     configuration {} — {}. The view from the landing would not be the view from \
+                     the slab. Make the two sections the same; never shorten the view to hide \
+                     the difference",
                     l.id,
-                    diffs.len(),
+                    near_diffs.len(),
                     cfg.label,
                     shown.join("; ")
                 ),
@@ -2128,29 +2425,125 @@ fn check_one(
         }
         let model =
             crate::compiler::light::LightModel::from_blocks_within(m.clone(), clip.0, clip.1);
-        for (sky_word, sky) in skies {
-            let lit = model.flood(*sky);
+        let floods: Vec<(&str, u8, LightLevels)> = skies
+            .iter()
+            .map(|(w, sky)| (*w, *sky, model.flood(*sky)))
+            .collect();
+        let mut far_lit: Vec<(usize, [i32; 3])> = Vec::new();
+        for (k, (sky_word, sky, lit)) in floods.iter().enumerate() {
             let at = |c: [i32; 3]| lit.get(&c).copied().unwrap_or(0);
-            if let Some(c) = visible.iter().find(|c| at(**c) != at(image(**c))) {
+            let (near_lit, far): (Vec<[i32; 3]>, Vec<[i32; 3]>) = visible
+                .iter()
+                .copied()
+                .filter(|c| at(*c) != at(image(*c)))
+                .partition(|c| is_near(*c));
+            if let Some(&c) = near_lit.first() {
                 return Err(Failure {
                     code: DW_LOOP_TILING,
                     message: format!(
                         "loop `{}`: the visible cell {} is lit {} and the cell it is seen as from \
                          the slab, {}, is lit {}, at the campaign's {sky_word} reachable sky \
-                         ({sky}), in the configuration {} — something outside the visible cells \
-                         lights two sections differently, a lamp round a corner or a hole in the \
-                         roof over the next bay. Make the sections the same",
+                         ({sky}), in the configuration {}, inside the loop's near field ({near:.1} \
+                         blocks of an eye) — something outside the visible cells lights two \
+                         sections differently, a lamp round a corner or a hole in the roof over \
+                         the next bay. Make the sections the same",
                         l.id,
-                        cell_words(*c),
-                        at(*c),
-                        cell_words(image(*c)),
-                        at(image(*c)),
+                        cell_words(c),
+                        at(c),
+                        cell_words(image(c)),
+                        at(image(c)),
                         cfg.label
                     ),
                 });
             }
+            far_lit.extend(far.into_iter().map(|c| (k, c)));
+        }
+        // The far field: every far difference, in block or in light, is
+        // measured; the configuration is refused on the worst of those over the
+        // threshold, so the message names what to move first.
+        let mut over: Vec<(f64, [f64; 3], [i32; 3], String)> = Vec::new();
+        for c in far_diffs {
+            let (sh, eye) = shift_of(c);
+            record(row, sh, c, eye);
+            far_cells.insert(c);
+            if sh > FAR_FIELD_SHIFT_DEGREES {
+                over.push((
+                    sh,
+                    eye,
+                    c,
+                    format!(
+                        "the visible cell {} holds `{}` and the cell it is seen as from the slab, \
+                         {}, holds `{}`, in the configuration {}",
+                        cell_words(c),
+                        block_at(c),
+                        cell_words(image(c)),
+                        block_at(image(c)),
+                        cfg.label
+                    ),
+                ));
+            }
+        }
+        // A light far off is judged by its lit area: every cell it lights
+        // differently from the image, and every block whose face that cell's
+        // light falls on — the surface the difference shows on, measured as a
+        // block difference there is.
+        for (k, c) in far_lit {
+            let (sky_word, sky, lit) = &floods[k];
+            let at = |c: [i32; 3]| lit.get(&c).copied().unwrap_or(0);
+            let mut area = vec![c];
+            for i in 0..3 {
+                for s in [-1, 1] {
+                    let mut n = c;
+                    n[i] += s;
+                    if block_at(n) != "minecraft:air" {
+                        area.push(n);
+                    }
+                }
+            }
+            let (sh, eye) = lit_shift_of(&area);
+            record(row, sh, c, eye);
+            far_cells.insert(c);
+            if sh > FAR_FIELD_SHIFT_DEGREES {
+                over.push((
+                    sh,
+                    eye,
+                    c,
+                    format!(
+                        "the visible cell {} is lit {} and the cell it is seen as from the slab, \
+                         {}, is lit {}, at the campaign's {sky_word} reachable sky ({sky}), in the \
+                         configuration {} — a light far off reaches it and not its image, and its \
+                         lit area is what is measured",
+                        cell_words(c),
+                        at(c),
+                        cell_words(image(c)),
+                        at(image(c)),
+                        cfg.label
+                    ),
+                ));
+            }
+        }
+        row.far_cells = far_cells.len();
+        if let Some((sh, eye, c, what)) = over
+            .iter()
+            .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.2.cmp(&a.2)))
+            .cloned()
+        {
+            return Err(Failure {
+                code: DW_LOOP_OPEN_VIEW,
+                message: far_words(
+                    format!(
+                        "{} far difference(s) shift more than the far field allows; the worst: \
+                         {what}",
+                        over.len()
+                    ),
+                    c,
+                    sh,
+                    eye,
+                ),
+            });
         }
     }
+    row.far_cells = far_cells.len();
     Ok(())
 }
 
@@ -2208,6 +2601,44 @@ mod tests {
             sight(&wall, &eye, &[FOG_END_DEFAULT], target).0,
             Sight::Seen
         );
+    }
+
+    /// The shift is the angle at the eye between the two directions to a
+    /// point: a point straight down the offset's line does not move, a point
+    /// beside the eye moves by the angle its two sightlines make, and a point
+    /// far off moves as the offset's length over its distance.
+    #[test]
+    fn the_shift_is_the_parallax_of_the_offset() {
+        let d = [0, 0, -12];
+        let post = [0.5, 1.62, 0.5];
+        assert!(shift_at(post, d, [0.5, 1.62, 60.5]) < 1e-9);
+        let side = shift_at(post, d, [3.5, 1.62, 6.5]);
+        let pre_dir = (3.0f64).atan2(-6.0).to_degrees().abs();
+        let post_dir = (3.0f64).atan2(6.0).to_degrees();
+        assert!((side - (pre_dir - post_dir)).abs() < 1e-9, "{side}");
+        let far = shift_at(post, d, [1000.5, 1.62, 0.5]);
+        assert!(
+            (far - (12.0f64 / 1000.0).atan().to_degrees()).abs() < 1e-3,
+            "{far}"
+        );
+    }
+
+    /// The near range is where a one-cell difference on the offset's line
+    /// stops shifting more than the threshold: just inside it the least
+    /// shifting corner moves more, just outside it less, and a longer offset
+    /// has a longer near range.
+    #[test]
+    fn the_near_range_is_where_one_cell_stops_shifting_past_the_threshold() {
+        let s = 0.5f64.sqrt();
+        let f =
+            |r: f64, len: f64| ((s / (r + 0.5)).atan() - (s / (r + 0.5 + len)).atan()).to_degrees();
+        for len in [6.0, 12.0, 24.0] {
+            let r = near_range(len);
+            assert!(f(r - 0.01, len) > FAR_FIELD_SHIFT_DEGREES, "{len}: {r}");
+            assert!(f(r + 0.01, len) < FAR_FIELD_SHIFT_DEGREES, "{len}: {r}");
+        }
+        assert!(near_range(6.0) < near_range(12.0));
+        assert!(near_range(12.0) < near_range(24.0));
     }
 
     fn plan_loop(offset: [i32; 3]) -> LoopPlan {

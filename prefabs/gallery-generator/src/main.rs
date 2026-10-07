@@ -3588,6 +3588,304 @@ const VOLUME_ANCHORS: &[Anchor] = &[
     },
 ];
 
+// ---------------------------------------------------------------------------
+// The LONG HALL: a loop whose far end stays in view (spec-0090)
+// ---------------------------------------------------------------------------
+
+/// The long hall's id.
+///
+/// # What it is for
+///
+/// The gallery's long gallery on the hall roof closes its view inside one bay,
+/// so its loop sees no far field, and the far-field rule binds nothing there.
+/// This piece is the other shape: one straight hall of identical 6-block bays,
+/// no fog, its exit lit and in plain view down the whole hall. The loop
+/// `loop/the-hall-that-runs-on` stands across one bay's mouth and returns a
+/// crossing body one bay back, so the exit stays where it was. What the
+/// gallery shows with it is the far field admitted — cells that differ from
+/// their images, judged by how far the jump moves them on screen — and its
+/// binding line states the count and the largest shift against the threshold.
+///
+/// The hall is the spike's station 4 at a 6-block jump. Its numbers are what
+/// spec-0090 §5.3 tabulates for that jump: an exit 54 blocks past the slab,
+/// lit, shifts 0.7574°, under the 1.2852° threshold, where a 6-block jump's
+/// near range is 10.6 blocks. The approach behind the landing is as deep as
+/// the hall ahead of the slab, because the rule judges every direction.
+const LONG_HALL_ID: &str = "gallery-long-hall";
+
+/// The slab's course, along z, piece-local: 66 courses past the hall's rear
+/// mouth, so the mouth stands 60 behind the landing.
+const LONG_HALL_SLAB_Z: i32 = 74;
+
+/// The jump: one bay.
+const LONG_HALL_JUMP: i32 = 6;
+
+/// The exit's course: the end room's front wall, 54 past the slab.
+const LONG_HALL_END_Z: i32 = LONG_HALL_SLAB_Z + 54;
+
+/// The hall's rear mouth, where the porch opens onto it.
+const LONG_HALL_REAR_Z: i32 = 8;
+
+/// The end room's depth past its front wall.
+const LONG_HALL_ROOM_DEPTH: i32 = 10;
+
+/// Extent: the end room's width, its height, and porch to end room.
+const LONG_HALL_SIZE: [i32; 3] = [11, 7, LONG_HALL_END_Z + LONG_HALL_ROOM_DEPTH + 1];
+
+/// The long hall's anchors. Every one says what the gallery does with it.
+const LONG_HALL_ANCHORS: &[Anchor] = &[
+    Anchor {
+        name: "anchor/long-hall-porch",
+        pos: [5, 1, 4],
+        facing: Some("south"),
+        trigger_block: None,
+        note: "where the party arrives in the long hall: the porch, the hall's mouth ahead",
+        role: Some("entry"),
+    },
+    Anchor {
+        name: "anchor/long-hall-slab",
+        pos: [5, 2, LONG_HALL_SLAB_Z],
+        facing: None,
+        trigger_block: None,
+        note: "the centre of the loop's slab: a bay's mouth, the passage's whole cross-section \
+               at ± [1, 1, 0]",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-landing",
+        pos: [5, 2, LONG_HALL_SLAB_Z - LONG_HALL_JUMP],
+        facing: None,
+        trigger_block: None,
+        note: "where the slab's centre lands: the mouth of the bay before it",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-end",
+        pos: [5, 1, LONG_HALL_END_Z + 5],
+        facing: None,
+        trigger_block: None,
+        note: "the middle of the lit end room: the objective the party reaches once the loop \
+               lets it go",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-down-the-hall",
+        pos: [6, 1, LONG_HALL_SLAB_Z + 16],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "a cell 16 courses past the slab, past the near field: where a probe posts a \
+               figure the jump moves too far",
+        role: None,
+    },
+];
+
+fn build_long_hall() -> Structure {
+    let mut cells: BTreeMap<[i32; 3], &'static str> = BTreeMap::new();
+    let mut fill = |a: [i32; 3], b: [i32; 3], block: &'static str| {
+        for x in a[0]..=b[0] {
+            for y in a[1]..=b[1] {
+                for z in a[2]..=b[2] {
+                    if block == "minecraft:air" {
+                        cells.remove(&[x, y, z]);
+                    } else {
+                        cells.insert([x, y, z], block);
+                    }
+                }
+            }
+        }
+    };
+    let (rear, end) = (LONG_HALL_REAR_Z, LONG_HALL_END_Z);
+    let room_end = end + LONG_HALL_ROOM_DEPTH;
+    // The porch: a lit stone-brick room the hall's rear mouth opens from.
+    fill([1, 0, 0], [9, 0, rear], "minecraft:polished_deepslate");
+    fill([1, 1, 0], [9, 5, rear], "minecraft:stone_bricks");
+    fill([2, 1, 1], [8, 4, rear - 1], "minecraft:air");
+    fill([3, 4, 3], [3, 4, 3], "minecraft:lantern[hanging=true]");
+    fill([7, 4, 3], [7, 4, 3], "minecraft:lantern[hanging=true]");
+    // The hall: station 4's cross-section.
+    fill([3, 0, rear], [7, 0, end], "minecraft:polished_deepslate");
+    fill([3, 1, rear], [7, 4, end], "minecraft:stone_bricks");
+    fill([4, 1, rear], [6, 3, end], "minecraft:air");
+    fill([4, 0, rear], [6, 0, end], "minecraft:dark_oak_planks");
+    fill([5, 1, rear], [5, 1, end], "minecraft:red_carpet");
+    // A pillar pair and a hanging soul lantern every bay, the lamp two courses
+    // past each bay's mouth, up to a full bay short of the exit.
+    for z in (rear + 1)..=(end - LONG_HALL_JUMP) {
+        if (z - (LONG_HALL_SLAB_Z + 2)).rem_euclid(LONG_HALL_JUMP) == 0 {
+            fill([3, 1, z], [3, 3, z], "minecraft:polished_deepslate");
+            fill([7, 1, z], [7, 3, z], "minecraft:polished_deepslate");
+            fill([5, 3, z], [5, 3, z], "minecraft:soul_lantern[hanging=true]");
+        }
+    }
+    // The end room, and the lit exit into it: a glowstone lintel over the
+    // doorway, seen down the whole hall.
+    fill([0, 0, end], [10, 6, room_end], "minecraft:deepslate_bricks");
+    fill([1, 1, end + 1], [9, 5, room_end - 1], "minecraft:air");
+    fill([4, 1, end], [6, 3, end], "minecraft:air");
+    fill([4, 4, end], [6, 4, end], "minecraft:glowstone");
+    for (x, z) in [
+        (2, end + 3),
+        (8, end + 3),
+        (2, room_end - 3),
+        (8, room_end - 3),
+    ] {
+        fill([x, 5, z], [x, 5, z], "minecraft:lantern[hanging=true]");
+    }
+    let mut palette = Palette::new();
+    let blocks = cells
+        .into_iter()
+        .map(|(pos, declared)| {
+            let (name, props) = split_state(declared);
+            BlockEntry {
+                pos,
+                state: palette.idx(name, (!props.is_empty()).then_some(&props[..])),
+            }
+        })
+        .collect();
+    Structure {
+        data_version: DATA_VERSION,
+        size: LONG_HALL_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+/// The long hall, cut into tiles along z at vanilla's 48-per-axis template
+/// cap and declared as one piece (`structure_set`).
+fn write_long_hall(out: &Path) {
+    let s = build_long_hall();
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(LONG_HALL_ID, &cells);
+    connections::assert_shape_is_stated(LONG_HALL_ID, &cells);
+    invariants::assert_fluid_is_contained(LONG_HALL_ID, s.size, &cells);
+    let solid: std::collections::BTreeSet<[i32; 3]> = cells
+        .iter()
+        .filter(|(_, (name, _))| {
+            !matches!(
+                name.as_str(),
+                "minecraft:air"
+                    | "minecraft:red_carpet"
+                    | "minecraft:lantern"
+                    | "minecraft:soul_lantern"
+            )
+        })
+        .map(|(p, _)| *p)
+        .collect();
+    for a in LONG_HALL_ANCHORS {
+        let [x, y, z] = a.pos;
+        assert!(
+            !solid.contains(&[x, y, z]) && !solid.contains(&[x, y + 1, z]),
+            "{LONG_HALL_ID}: `{}` at {:?} is not a clear cell",
+            a.name,
+            a.pos
+        );
+    }
+    let cut = 48;
+    let mut parts = Vec::new();
+    let mut z0 = 0;
+    let mut i = 0;
+    while z0 < s.size[2] {
+        let depth = cut.min(s.size[2] - z0);
+        let mut palette = Palette::new();
+        let blocks = s
+            .blocks
+            .iter()
+            .filter(|b| b.pos[2] >= z0 && b.pos[2] < z0 + depth)
+            .map(|b| {
+                let e = &s.palette[b.state as usize];
+                let props: Vec<(&str, &str)> = e
+                    .properties
+                    .iter()
+                    .flatten()
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                BlockEntry {
+                    pos: [b.pos[0], b.pos[1], b.pos[2] - z0],
+                    state: palette.idx(&e.name, (!props.is_empty()).then_some(&props[..])),
+                }
+            })
+            .collect();
+        let tile = Structure {
+            data_version: DATA_VERSION,
+            size: [s.size[0], s.size[1], depth],
+            palette: palette.entries,
+            blocks,
+            entities: Vec::new(),
+        };
+        let file = format!("{LONG_HALL_ID}.x0y0z{i}.nbt");
+        let nbt = fastnbt::to_bytes(&tile).expect("structure serializes to NBT");
+        let mut gz = GzBuilder::new()
+            .mtime(0)
+            .write(Vec::new(), Compression::new(6));
+        gz.write_all(&nbt).expect("gzip write");
+        std::fs::write(out.join(&file), gz.finish().expect("gzip finish"))
+            .expect("write long hall tile");
+        parts.push(serde_json::json!({
+            "file": file,
+            "id": format!("{LONG_HALL_ID}.x0y0z{i}"),
+            "grid_index": [0, 0, i],
+            "offset": [0, 0, z0],
+            "size": [s.size[0], s.size[1], depth],
+        }));
+        z0 += depth;
+        i += 1;
+    }
+    let mut anchors = serde_json::Map::new();
+    for a in LONG_HALL_ANCHORS {
+        let mut m = serde_json::Map::new();
+        m.insert("pos".into(), serde_json::json!(a.pos));
+        if let Some(f) = a.facing {
+            m.insert("facing".into(), serde_json::json!(f));
+        }
+        m.insert("note".into(), serde_json::json!(a.note));
+        if let Some(role) = a.role {
+            m.insert("role".into(), serde_json::json!(role));
+        }
+        anchors.insert(a.name.into(), serde_json::Value::Object(m));
+    }
+    let mut meta = serde_json::json!({
+        "prefab_id": format!("prefab/{LONG_HALL_ID}"),
+        "structure_set": {
+            "base": LONG_HALL_ID,
+            "size": LONG_HALL_SIZE,
+            "part_max": cut,
+            "grid": [1, 1, i],
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)",
+            "parts": parts,
+        },
+        "anchors": serde_json::Value::Object(anchors),
+        // Free-standing in a `void` world: every side of the box is something
+        // a body that got outside would see.
+        "shown_faces": ["down", "east", "north", "south", "up", "west"],
+        "lighting": {
+            "profile": "lit",
+            "measured_min_light": 3,
+            "measured": "2026-10-06",
+            "method": "derived: a hanging soul lantern every 6-block bay, lanterns in the porch \
+                       and the end room, a glowstone lintel over the exit"
+        },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per \
+                     prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006), \
+                           after the eldritch spike's station 4."
+        }
+    });
+    declare_walk_y(LONG_HALL_ID, &s, &mut meta);
+    document::write_preserving(&out.join(format!("{LONG_HALL_ID}.json")), &meta);
+    println!(
+        "{LONG_HALL_ID}: long hall written — {}x{}x{} in {i} tile(s), its exit {} past the slab",
+        LONG_HALL_SIZE[0],
+        LONG_HALL_SIZE[1],
+        LONG_HALL_SIZE[2],
+        LONG_HALL_END_Z - LONG_HALL_SLAB_Z
+    );
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(out) = args.next() else {
@@ -3631,6 +3929,7 @@ fn main() {
     write_quay(out);
     write_bank(out);
     write_rig(out);
+    write_long_hall(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.
