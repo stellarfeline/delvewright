@@ -3228,6 +3228,9 @@ impl Ambush {
                 crate::l10n::local_id(self.id.as_str())
             )),
             at: Some(self.at.clone()),
+            // An ambush springs on a body's position or a click on open air; it
+            // binds to no pressed block.
+            prop: None,
             on: self.trigger.clone(),
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
@@ -3295,6 +3298,18 @@ pub struct EnvTrigger {
     /// would use. Either mismatch is `DW0194`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<AnchorId>,
+    /// **The visible object the click acts on** (spec-0093 §6.5): for a `use`
+    /// or a `strike` trigger, the block the compiler places at `at` — a lever,
+    /// a bell, a lamp, a stone. A `use` on a block vanilla reports the use of
+    /// (a lever, a button, a bell) fires through vanilla's `default_block_use`
+    /// criterion and summons no hitbox; any other prop, and every `strike`, is
+    /// placed with the `minecraft:interaction` hitbox fitted over it as its hit
+    /// area. A click trigger with no `prop` on open air is refused (`DW0963`):
+    /// the hitbox is invisible and is never the object. A `prop` on an event
+    /// with no cell of its own — an approach, a `strike-npc`, a
+    /// `strike-assembly` — is `DW0964`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prop: Option<Prop>,
     /// The event that fires it.
     pub on: TriggerOn,
     /// Flags that must be set before the trigger can fire (DSL v0.4).
@@ -4686,14 +4701,30 @@ pub enum Objective {
     },
 }
 
-/// A prop block for an `interact` objective (DSL v0.4). The block is the
-/// affordance the player interacts with; its id is validated against the pinned
-/// 1.21.11 block registry (`DW0193`).
+/// A prop block for an `interact` objective or a `use` trigger (DSL v0.4;
+/// spec-0093 §6.5). The block is the affordance the player interacts with; its
+/// id is validated against the pinned 1.21.11 block registry (`DW0193`).
+///
+/// **When the block is one a hand presses** — a lever or a button
+/// ([`crate::blockshape::is_hand_pressed`]) — the block IS the detector: the
+/// compiler summons no `minecraft:interaction` hitbox and the act is vanilla's
+/// own, reported by the `default_block_use` advancement criterion at the
+/// block's cell. Any other block is placed and the invisible hitbox stands in
+/// its cell, because vanilla reports no use of it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Prop {
-    /// Vanilla block id (e.g. `minecraft:lever`).
+    /// Vanilla block id, with an optional blockstate suffix (e.g.
+    /// `minecraft:lever[face=floor,facing=north]`).
     pub block: String,
+}
+
+impl Prop {
+    /// Whether this prop's block is one a hand presses — the block is then the
+    /// act's own detector (spec-0093 §6.5).
+    pub fn is_hand_pressed(&self) -> bool {
+        crate::blockshape::is_hand_pressed(&self.block)
+    }
 }
 
 // ---------------------------------------------------------------------------

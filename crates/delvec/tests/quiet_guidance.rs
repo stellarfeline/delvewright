@@ -25,7 +25,12 @@ const NS: &str = "hello-world";
 
 /// Materialise a hello-world variant whose quests and dialogue are given, with
 /// the story layer (`happening`, cast) declared the way every fixture's is.
-fn variant(name: &str, mut quests: Value, mut dialogue: Value) -> PathBuf {
+fn variant(name: &str, quests: Value, dialogue: Value) -> PathBuf {
+    variant_with(name, quests, dialogue, json!({}))
+}
+
+/// [`variant`] with further stage documents (`"world-edits"` and the like).
+fn variant_with(name: &str, mut quests: Value, mut dialogue: Value, extra: Value) -> PathBuf {
     let base = common::hello_world_dir();
     let npcs: Value =
         serde_json::from_str(&std::fs::read_to_string(base.join("npcs.json")).unwrap()).unwrap();
@@ -52,12 +57,62 @@ fn variant(name: &str, mut quests: Value, mut dialogue: Value) -> PathBuf {
     common::declare_dialogue_story(&mut dialogue);
     let dst = std::env::temp_dir().join(format!("dw-quiet-{name}"));
     let _ = std::fs::remove_dir_all(&dst);
-    common::materialize_from(
-        &base,
-        &json!({ "documents": { "quests": quests, "dialogue": dialogue } }),
-        &dst,
-    );
+    let mut documents = json!({ "quests": quests, "dialogue": dialogue });
+    for (k, v) in extra.as_object().unwrap() {
+        documents[k] = v.clone();
+    }
+    common::materialize_from(&base, &json!({ "documents": documents }), &dst);
     dst
+}
+
+/// A stage-7 edit script that fills the exit anchor's own cell with a block the
+/// piece did not author — what an unmarked `interact` has to stand on.
+fn exit_cell_filled() -> Value {
+    json!({ "world-edits": {
+        "campaign_id": NS, "stage": "world-edits",
+        "content": { "batches": [{
+            "id": "batch/the-slate", "area": "area/keep",
+            "note": "a slate set on the exit cell for an unmarked interact to stand on",
+            "edits": [
+                { "verb": "select", "name": "region/slate",
+                  "shape": { "kind": "box", "min": [0, 0, 0], "max": [0, 0, 0],
+                             "frame": { "kind": "anchor-relative", "anchor": "anchor/exit" } } },
+                { "verb": "fill", "region": "region/slate",
+                  "recipe": { "blocks": [
+                      { "block": "minecraft:lectern[facing=north]", "weight": 1.0 },
+                      { "block": "minecraft:chiseled_bookshelf", "weight": 1.0 } ] } }
+            ]
+        }] }
+    } })
+}
+
+/// [`build_dir`] as a result, for the tests that expect a refusal.
+fn try_build_dir(dir: &Path) -> Result<BuildOutput, String> {
+    let (loaded, campaign) = load(dir);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).map_err(|e| format!("{e:?}"))?;
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        &BTreeMap::new(),
+    )
+    .map_err(|e| match e {
+        emit::BuildFailure::Diagnostic { code, message } => format!("{code}: {message}"),
+        other => format!("{other:?}"),
+    })
 }
 
 fn load(dir: &Path) -> (delvec::compiler::load::LoadedCampaign, Campaign) {
@@ -180,10 +235,21 @@ fn guided_quests(guidance: Option<Value>, press: Value, stand: Value) -> Value {
 }
 
 fn guided(name: &str, guidance: Option<Value>, press: Value, stand: Value) -> BuildOutput {
-    build_dir(&variant(
+    guided_with(name, guidance, press, stand, json!({}))
+}
+
+fn guided_with(
+    name: &str,
+    guidance: Option<Value>,
+    press: Value,
+    stand: Value,
+    extra: Value,
+) -> BuildOutput {
+    build_dir(&variant_with(
         name,
         guided_quests(guidance, press, stand),
         dialogue_completing("obj/talk"),
+        extra,
     ))
 }
 
@@ -209,11 +275,14 @@ fn a_marker_follows_the_objective_and_then_the_campaign() {
     );
 
     // The interact hides its own marker; the reach keeps the default.
-    let out = guided(
+    // An unmarked interact on air is `DW0963` (below), so this one stands on an
+    // authored block.
+    let out = guided_with(
         "markers-press-hidden",
         None,
         json!({ "marker": "hidden" }),
         json!({}),
+        exit_cell_filled(),
     );
     let all = all_functions(&out);
     assert!(!all.contains("minecraft:lantern"), "no lantern: {all}");
@@ -227,11 +296,12 @@ fn a_marker_follows_the_objective_and_then_the_campaign() {
     );
 
     // The campaign hides markers; the reach opts back in.
-    let out = guided(
+    let out = guided_with(
         "markers-campaign-hidden",
         Some(json!({ "markers": "hidden" })),
         json!({}),
         json!({ "marker": "shown" }),
+        exit_cell_filled(),
     );
     let all = all_functions(&out);
     assert!(
@@ -308,6 +378,206 @@ fn an_announcement_follows_the_objective_and_then_the_campaign() {
     assert!(
         fn_body(&out, "announce_o_stand").is_some(),
         "`announcement: shown` wins"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A pressable thing sits on a visible object (spec-0093 §6.5, §7 — DW0963)
+// ---------------------------------------------------------------------------
+
+/// An unmarked interact with no prop whose cell is air asks the party to press
+/// empty space, and is refused where the bytes are known; the same objective on
+/// an authored block, or with its marker shown, builds.
+#[test]
+fn an_unmarked_interact_on_air_is_dw0963() {
+    let dir = variant(
+        "unmarked-on-air",
+        guided_quests(None, json!({ "marker": "hidden" }), json!({})),
+        dialogue_completing("obj/talk"),
+    );
+    let msg = try_build_dir(&dir).expect_err("an unmarked interact on air is refused");
+    assert!(msg.starts_with("DW0963"), "{msg}");
+    assert!(
+        msg.contains("obj/press") && msg.contains("anchor/exit"),
+        "{msg}"
+    );
+    assert!(msg.contains("`prop`"), "the remedy names the object: {msg}");
+    // Shown, the lantern is what the party sees, and it builds.
+    guided("marked-on-air", None, json!({}), json!({}));
+}
+
+/// A lever prop is the whole body: the block is placed, no hitbox is summoned,
+/// vanilla's `default_block_use` at the cell is the advancement, the generated
+/// PackTest grants that advancement, and the critical path hands the bot the
+/// block to right-click. A lamp prop is a visible object vanilla reports no use
+/// of: it is placed and the hitbox is fitted over it.
+#[test]
+fn a_prop_vanilla_reports_binds_the_interact_to_the_blocks_own_use() {
+    let out = guided(
+        "lever-prop",
+        None,
+        json!({ "prop": { "block": "minecraft:lever[face=floor,facing=north]" } }),
+        json!({}),
+    );
+    let activate = fn_body(&out, "activate_o_press").expect("the prop is placed on activation");
+    assert!(
+        activate.contains("setblock")
+            && activate.contains("minecraft:lever[face=floor,facing=north]"),
+        "{activate}"
+    );
+    assert!(
+        !activate.contains("summon minecraft:interaction") && !activate.contains("item_display"),
+        "no hitbox and no marker for a block vanilla reports the use of: {activate}"
+    );
+    let adv = out
+        .get(&format!("datapack/data/{NS}/advancement/i_press.json"))
+        .map(|b| std::str::from_utf8(b).unwrap().to_string())
+        .expect("the interact's advancement");
+    assert!(adv.contains("minecraft:default_block_use"), "{adv}");
+    assert!(
+        adv.contains("minecraft:lever") && adv.contains("location_check"),
+        "{adv}"
+    );
+    assert!(!adv.contains("player_interacted_with_entity"), "{adv}");
+    let path = std::str::from_utf8(out.get("critical-path.json").unwrap()).unwrap();
+    assert!(
+        path.contains("minecraft:lever[face=floor,facing=north]"),
+        "the step hands the bot the block: {path}"
+    );
+    let test = out
+        .iter()
+        .find(|(p, _)| p.ends_with("/test/verb_interact.mcfunction"))
+        .map(|(_, b)| std::str::from_utf8(b).unwrap().to_string())
+        .expect("the generated interact PackTest");
+    assert!(
+        test.contains("advancement grant") && test.contains("i_press"),
+        "the PackTest drives the real advancement: {test}"
+    );
+
+    let out = guided(
+        "lamp-prop",
+        None,
+        json!({ "prop": { "block": "minecraft:redstone_lamp" } }),
+        json!({}),
+    );
+    let activate = fn_body(&out, "activate_o_press").unwrap();
+    assert!(
+        activate.contains("setblock") && activate.contains("summon minecraft:interaction"),
+        "a lamp is placed and the hitbox is fitted over it: {activate}"
+    );
+    let adv = std::str::from_utf8(
+        out.get(&format!("datapack/data/{NS}/advancement/i_press.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(adv.contains("player_interacted_with_entity"), "{adv}");
+}
+
+/// A `use` trigger with a bell prop: the bell is placed at setup, no hitbox is
+/// summoned for it, the tick does not poll it, and its `press_` advancement is
+/// the bell's own ring. The same trigger on air with no prop is DW0963.
+#[test]
+fn a_use_trigger_with_a_bell_prop_is_the_bell() {
+    let with_prop = |prop: Option<Value>| {
+        let mut q = guided_quests(None, json!({}), json!({}));
+        let mut t = json!({
+            "id": "trigger/the-bell", "at": "anchor/exit", "on": { "on": "use" },
+            "effects": [{ "type": "set-flag", "flag": "flag/rung" }]
+        });
+        if let Some(p) = prop {
+            t["prop"] = p;
+        }
+        q["content"]["triggers"] = json!([t]);
+        q
+    };
+    let out = build_dir(&variant(
+        "trigger-bell",
+        with_prop(Some(
+            json!({ "block": "minecraft:bell[attachment=floor,facing=north]" }),
+        )),
+        dialogue_completing("obj/talk"),
+    ));
+    let all = all_functions(&out);
+    assert!(
+        all.contains("setblock") && all.contains("minecraft:bell[attachment=floor,facing=north]"),
+        "{all}"
+    );
+    assert!(
+        !all.contains("dw_trig_the_bell\""),
+        "no hitbox wears the trigger's tag: {all}"
+    );
+    let tick = fn_body(&out, "tick").unwrap();
+    assert!(
+        !tick.contains("trig_the_bell"),
+        "the tick polls no record for it: {tick}"
+    );
+    let adv = std::str::from_utf8(
+        out.get(&format!(
+            "datapack/data/{NS}/advancement/press_the_bell.json"
+        ))
+        .expect("the trigger's press advancement"),
+    )
+    .unwrap();
+    assert!(
+        adv.contains("minecraft:default_block_use") && adv.contains("minecraft:bell"),
+        "{adv}"
+    );
+    assert!(
+        fn_body(&out, "press_the_bell").is_some(),
+        "its dispatch function exists"
+    );
+
+    // The bell behind a flag gate: the press dispatch spells the gate the way
+    // the tick does, as a well-formed `execute … if score … run function` the
+    // emitter's command-tree check admits (a block-bound press was the first
+    // dispatch ever to carry a gate, and its spelling had never been emitted).
+    let mut gated = with_prop(Some(
+        json!({ "block": "minecraft:bell[attachment=floor,facing=north]" }),
+    ));
+    gated["content"]["triggers"][0]["requires_flags"] = json!(["flag/rung"]);
+    gated["content"]["triggers"][0]["once"] = json!(true);
+    let out = build_dir(&variant(
+        "trigger-bell-gated",
+        gated,
+        dialogue_completing("obj/talk"),
+    ));
+    let press = fn_body(&out, "press_the_bell").expect("the gated dispatch");
+    assert!(
+        press.contains("execute unless score #trig_the_bell dw.sys matches 1 if score #party dw.f_rung matches 1 run function"),
+        "{press}"
+    );
+
+    // The same bell struck instead of rung: vanilla reports no left-click on a
+    // block, so the bell is placed and the hitbox is fitted over it.
+    let mut struck = with_prop(Some(
+        json!({ "block": "minecraft:bell[attachment=floor,facing=north]" }),
+    ));
+    struck["content"]["triggers"][0]["on"] = json!({ "on": "strike" });
+    struck["content"]["quests"][0]["objectives"][1]["prop"] =
+        json!({ "block": "minecraft:lever[face=floor,facing=north]" });
+    let out = build_dir(&variant(
+        "trigger-bell-struck",
+        struck,
+        dialogue_completing("obj/talk"),
+    ));
+    let all = all_functions(&out);
+    assert!(
+        all.contains("minecraft:bell[attachment=floor,facing=north]")
+            && all.contains("dw_trig_the_bell\""),
+        "the struck bell is placed and its hitbox stands over it: {all}"
+    );
+
+    // The same trigger with no prop, alone on the exit's open air (the interact
+    // beside it is given a lever, so no second hitbox contests the cell and
+    // `DW0878` stays out of the way): nothing visible stands there.
+    let mut on_air = with_prop(None);
+    on_air["content"]["quests"][0]["objectives"][1]["prop"] =
+        json!({ "block": "minecraft:lever[face=floor,facing=north]" });
+    let dir = variant("trigger-on-air", on_air, dialogue_completing("obj/talk"));
+    let msg = try_build_dir(&dir).expect_err("a use trigger on open air with no prop is refused");
+    assert!(
+        msg.starts_with("DW0963") && msg.contains("trigger/the-bell"),
+        "{msg}"
     );
 }
 

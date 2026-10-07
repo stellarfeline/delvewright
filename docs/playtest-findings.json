@@ -1993,8 +1993,11 @@
         ],
         "kind": "dsl",
         "match": {
-          "prefix": {
-            "id": "trigger/"
+          "in": {
+            "on": [
+              "use",
+              "strike"
+            ]
           }
         }
       },
@@ -2351,7 +2354,7 @@
     },
     {
       "applies_when": {
-        "glob": "world.json",
+        "glob": "design/*",
         "kind": "campaign"
       },
       "binding": {
@@ -2408,7 +2411,7 @@
     },
     {
       "applies_when": {
-        "glob": "world.json",
+        "glob": "design/*",
         "kind": "campaign"
       },
       "binding": {

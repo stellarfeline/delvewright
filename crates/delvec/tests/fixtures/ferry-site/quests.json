@@ -169,6 +169,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:oak_sign[rotation=0]"
+        },
         "requires_flags": [
           "flag/boarded"
         ]
@@ -233,6 +236,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:oak_sign[rotation=0]"
+        },
         "requires_flags": [
           "flag/far-shore"
         ]

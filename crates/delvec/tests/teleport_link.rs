@@ -717,6 +717,7 @@ fn pit_campaign(who: &str, gate: &str) -> PathBuf {
         campaign(who, move |q| {
             q["content"]["triggers"].as_array_mut().unwrap().push(json!({
             "id": "trigger/rescue", "at": "anchor/rescue", "on": {"on": "use"}, "once": false,
+            "prop": {"block": "minecraft:oak_sign[rotation=0]"},
             "requires_flags": [gate],
             "effects": [{"type": "teleport",
                          "from": {"anchor": "anchor/pit", "extent": [0, 0, 0]},
@@ -891,6 +892,7 @@ fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
         hold["objectives"][1]["anchor"] = json!("spawn");
         q["content"]["triggers"] = json!([{
             "id": "trigger/vault", "at": "spawn", "on": {"on": "use"}, "once": false,
+            "prop": {"block": "minecraft:oak_sign[rotation=0]"},
             "requires_flags": [gate],
             "effects": [{"type": "teleport",
                          "from": {"anchor": "anchor/keeper-stand", "extent": [1, 1, 1]},

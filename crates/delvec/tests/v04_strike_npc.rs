@@ -213,6 +213,7 @@ fn strike_trigger_off_an_npc_anchor_keeps_its_standalone_hitbox() {
       "id": "trigger/ward",
       "at": "anchor/exit",
       "on": { "on": "strike" },
+      "prop": { "block": "minecraft:oak_sign[rotation=0]" },
       "once": true,
       "effects": [ { "type": "narrate", "style": "chat", "text": "Wards flare." } ]
     }"#;
@@ -252,6 +253,7 @@ fn strike_trigger_away_from_an_npc_changes_nothing() {
       "id": "trigger/ward",
       "at": "anchor/exit",
       "on": { "on": "strike" },
+      "prop": { "block": "minecraft:oak_sign[rotation=0]" },
       "once": true,
       "effects": [ { "type": "narrate", "style": "chat", "text": "Wards flare." } ]
     }"#;

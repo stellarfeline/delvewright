@@ -262,6 +262,7 @@ fn a_flag_only_a_trigger_sets_is_paid_by_a_trigger_step() {
     ],
     "triggers": [
       { "id": "trigger/light-the-stone", "at": "spawn", "on": { "on": "use" },
+        "prop": { "block": "minecraft:oak_sign[rotation=0]" },
         "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
     ]
   }
@@ -313,6 +314,7 @@ fn strike_the_stone_doc() -> String {
     ],
     "triggers": [
       { "id": "trigger/strike-the-stone", "at": "spawn", "on": { "on": "strike" },
+        "prop": { "block": "minecraft:oak_sign[rotation=0]" },
         "requires_flags": ["flag/told"],
         "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ] }
     ]
@@ -354,6 +356,7 @@ fn press_beyond_the_door_doc() -> String {
     ],
     "triggers": [
       { "id": "trigger/light-the-lamp", "at": "anchor/exit", "on": { "on": "use" },
+        "prop": { "block": "minecraft:oak_sign[rotation=0]" },
         "requires_flags": ["flag/told"],
         "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
     ]
@@ -479,6 +482,7 @@ fn stone_then_barred_exit_doc() -> String {
     ],
     "triggers": [
       { "id": "trigger/light-the-stone", "at": "spawn", "on": { "on": "use" },
+        "prop": { "block": "minecraft:oak_sign[rotation=0]" },
         "requires_flags": ["flag/told"],
         "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
     ]
@@ -512,6 +516,7 @@ fn lamp_beyond_a_barred_door_doc() -> String {
     ],
     "triggers": [
       { "id": "trigger/light-the-lamp", "at": "anchor/exit", "on": { "on": "use" },
+        "prop": { "block": "minecraft:oak_sign[rotation=0]" },
         "requires_flags": ["flag/told"],
         "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
     ]

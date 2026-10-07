@@ -5509,6 +5509,20 @@ fn v04_checks(
     }
 
     // --- block ids: interact props + set-block effects (quest + trigger) ---
+    // A trigger's `prop` (spec-0093 §6.5) is the same object class as an
+    // interact's and is held to the same registry.
+    for (i, t) in quests.triggers.iter().enumerate() {
+        if let Some(prop) = &t.prop {
+            check_block_field(
+                blocks,
+                &prop.block,
+                format!("/content/triggers/{i}/prop/block"),
+                "triggers[].prop",
+                "minecraft:lever[face=floor,facing=north]",
+                d,
+            );
+        }
+    }
     for (i, q) in quests.quests.iter().enumerate() {
         for (j, o) in q.objectives.iter().enumerate() {
             if let Some(prop) = o.prop() {

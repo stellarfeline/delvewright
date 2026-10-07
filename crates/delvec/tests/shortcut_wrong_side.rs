@@ -199,6 +199,7 @@ fn a_point_anchor_is_untouched() {
     c.quests.content.triggers = vec![
         serde_json::from_str::<EnvTrigger>(
             r#"{ "id": "trigger/at-the-exit", "at": "anchor/exit", "on": { "on": "use" },
+                 "prop": { "block": "minecraft:oak_sign[rotation=0]" },
                  "effects": [ { "type": "narrate", "text": "Air.", "style": "chat" } ] }"#,
         )
         .expect("trigger parses"),

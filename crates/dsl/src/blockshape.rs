@@ -142,6 +142,25 @@ pub fn is_air(name: &str) -> bool {
     matches!(bare_id(name), "air" | "cave_air" | "void_air")
 }
 
+/// **The blocks whose use vanilla reports** (spec-0093 §6.5): the lever, every
+/// button and the bell of the pinned registry. A right-click on one is the
+/// block's own default interaction — the lever's `powered` toggles, the
+/// button's pulses, the bell rings — and the pinned game's
+/// `minecraft:default_block_use` advancement criterion fires for the player who
+/// did it, at the block's cell [cited — the pinned registries dump,
+/// `tools/spike-area-effect-arrow/registries-1.21.11.json`, lists the criterion;
+/// the *Lever*, *Button* and *Bell* wiki pages: use flips, presses, rings]. A
+/// pressure plate is stepped on, not used, and belongs to the step machinery; a
+/// lamp, a sign, a lectern's shelf are objects vanilla reports no use of, so an
+/// act on one keeps its hit area fitted over the visible block.
+///
+/// Read by suffix rather than listed where the registry has a family, so a pin
+/// that adds a button adds it here: `#buttons` is every id ending in `_button`.
+pub fn is_hand_pressed(name: &str) -> bool {
+    let id = bare_id(name);
+    id == "lever" || id == "bell" || id.ends_with("_button")
+}
+
 /// Whether a cell's block is a **free fluid** — water or lava occupying the whole
 /// cell with no host block. **The one answer to "is this block id a fluid"** in
 /// this workspace.

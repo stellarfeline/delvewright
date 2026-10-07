@@ -1706,6 +1706,10 @@ pub enum Step {
         command: String,
         /// Item required in inventory, if any.
         requires_item: Option<String>,
+        /// **The vanilla block the act uses** (spec-0093 §6.5): the objective's
+        /// `prop` when it is a lever or a button, which the bot right-clicks
+        /// instead of chatting `command`. `None` = the hitbox and the chat.
+        block: Option<String>,
     },
     /// Perform an environment trigger the path depends on: do to its target
     /// what a player does — strike it, use it, walk within `range` of it, or
@@ -1740,6 +1744,10 @@ pub enum Step {
         /// `transport` marker is then the link's `to`. `None` for every trigger
         /// the path performs for its openings or its flags alone.
         stand: Option<[i32; 3]>,
+        /// **The vanilla block the act uses** (spec-0093 §6.5): the trigger's
+        /// `prop` when it is a lever or a button, which the bot right-clicks
+        /// instead of a hitbox. `None` = the hitbox.
+        block: Option<String>,
     },
     /// **Exercise a loop** (spec-0086 §5.2): walk to `pos` on the approach, cross
     /// the slab at `cross`, be moved by exactly `offset`, and repeat `times`
@@ -5310,6 +5318,7 @@ fn build_critical_path(
                         pos,
                         command: format!("/trigger {} set 1", interact_trigger(id.as_str())),
                         requires_item: requires_item.clone(),
+                        block: crate::compiler::pressable::interact_block(obj).map(str::to_string),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
@@ -5585,6 +5594,7 @@ fn build_critical_path(
                     pos: l.body.first().copied().unwrap_or(stand),
                     range: l.range,
                     stand: Some(stand),
+                    block: pressed_block(campaign, &l.trigger_id),
                 });
                 new_transport.push(Some(l.to));
                 new_sneak.push(false);
@@ -5919,6 +5929,7 @@ fn path_triggers(
                     _ => None,
                 },
                 stand: None,
+                block: pressed_block(campaign, t.id.as_str()),
             });
         }
     }
@@ -6212,6 +6223,20 @@ pub(crate) fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usi
         .unwrap_or(0)
 }
 
+/// The block a trigger's act uses, when its `prop` is one a hand presses
+/// (spec-0093 §6.5) — what a `trigger` step hands the harness to right-click.
+fn pressed_block(campaign: &Campaign, trigger_id: &str) -> Option<String> {
+    campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .find(|t| t.id.as_str() == trigger_id)
+        .and_then(|t| t.prop.as_ref())
+        .filter(|p| p.is_hand_pressed())
+        .map(|p| p.block.clone())
+}
+
 /// The `critical_path` step index of the `talk-to` objective that a dialogue tree
 /// belongs to (its NPC's completing beat), rooting a dialogue-hosted
 /// `set-checkpoint`. `0` if none is found (degenerate).
@@ -6499,6 +6524,8 @@ impl PressAnswer {
         EnvTrigger {
             id: delvewright_dsl::TriggerId(self.trigger_id.clone()),
             at: Some(delvewright_dsl::AnchorId(self.anchor.clone())),
+            // A seal's press answer rides the seal's own bodies; no block.
+            prop: None,
             on: delvewright_dsl::TriggerOn::Use,
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
