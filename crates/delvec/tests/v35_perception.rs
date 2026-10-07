@@ -495,6 +495,11 @@ fn samples() -> Vec<(&'static str, Value)> {
             "particle",
             json!({"type":"particle","particle":"minecraft:soul","at":"players"}),
         ),
+        // spec-0092: a bolt is a world fact.
+        (
+            "lightning",
+            json!({"type":"lightning","at":{"anchor":"anchor/exit","offset":[0,5,0]}}),
+        ),
     ]
 }
 

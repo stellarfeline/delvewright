@@ -44,7 +44,6 @@
 //! - [`faces`]: does the piece next to this one answer the way out it declares?
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
 //! - [`firework`]: `DW0899` — a rocket bursts in open air, clear of every posted body (spec-0068).
-//! - [`lightning`]: `DW0958`/`DW0959` — a bolt strikes clear of every posted body and every block the game would rewrite (spec-0092).
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
@@ -54,6 +53,7 @@
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
 //! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.
 //! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
+//! - [`lightning`]: `DW0958`/`DW0959` — a bolt strikes clear of every posted body and every block the game would rewrite (spec-0092).
 //! - [`link`]: a teleport the route proof takes as a link — the one enumeration of links and gathers, and the cutscene and carry-edge checks (`DW0932`/`DW0933`/`DW0934`).
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
 //! - [`r#loop`]: an endless corridor (spec-0086) — the slab, the closed view, identical blocks and light, and the loop's seal and exercise (`DW0945`–`DW0950`).

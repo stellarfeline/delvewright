@@ -9174,6 +9174,11 @@ mod happening_subject_tests {
                 serde_json::json!({"type":"particle","particle":"minecraft:soul","at":{"anchor":"anchor/well"}}),
                 Some("anchor/well"),
             ),
+            (
+                "lightning",
+                serde_json::json!({"type":"lightning","at":{"anchor":"anchor/court"}}),
+                Some("anchor/court"),
+            ),
         ];
         // The binding: the table answers for every verb the schema declares, and
         // for no name the schema does not.
