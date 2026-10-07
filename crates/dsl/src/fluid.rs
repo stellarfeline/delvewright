@@ -10,7 +10,7 @@
 //! Three facts decide it. All three are block knowledge rather than grid
 //! knowledge, which is why they live here beside the registry every emitter and
 //! auditor already depends on — and all three were **measured on the pinned
-//! 1.21.11 server** (`tools/spike-block-settling/ at 84f364997d24`, its `observations.json`),
+//! 1.21.11 server** (`tools/spike-block-settling/`, its `observations.json`),
 //! because two of them are the opposite of what this module was first written
 //! with:
 //!
@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn everything_but_air_and_fluid_holds_a_body_back() {
-        // The measured rule (`tools/spike-block-settling at 84f364997d24`): spreading water does
+        // The measured rule (`tools/spike-block-settling`): spreading water does
         // not fill a block written dry, whatever the block could hold.
         assert!(holds_fluid(
             "minecraft:iron_bars",
