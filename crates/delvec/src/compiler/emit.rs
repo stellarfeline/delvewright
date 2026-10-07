@@ -21867,14 +21867,20 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             "{title}: damage-players subtracts {amount} half-hearts ({type_id}) (spec-0014)"
         ));
         t.push(format!("function {ns}:setup"));
-        // A dummy at a fixed cell near origin: NoAI so it never moves, Silent, full
-        // health. `damage` applies synchronously, so a 0-player void still shows it.
-        // Pre-clear the tag first — never assume a fresh world on the shared-batch
-        // server — and kill again on the way out.
+        // A body where this template's own PackTest dummy stands: NoAI so it
+        // never moves, Silent, full health. `damage` applies synchronously, so a
+        // 0-player void still shows it. Summoned at the dummy — the nearest
+        // player on the template's first line, inside its own loaded test
+        // structure — and never at a fixed cell: a fixed cell near origin is
+        // loaded or not by how the batch happens to lay its structures out, and
+        // a batch of 19 left `0 -60 0` where the summon put nothing a `damage`
+        // could find (both reads 0, the drop 0). Pre-clear the tag first —
+        // never assume a fresh world on the shared-batch server — and kill again
+        // on the way out.
         t.push("kill @e[tag=dw_dmgtest]".to_string());
         t.push(
-            "summon minecraft:zombie 0 -60 0 {Tags:[\"dw_dmgtest\"],NoAI:1b,Silent:1b,\
-             PersistenceRequired:1b,Health:20f}"
+            "execute at @p run summon minecraft:zombie ~ ~ ~ {Tags:[\"dw_dmgtest\"],NoAI:1b,\
+             Silent:1b,PersistenceRequired:1b,Health:20f}"
                 .to_string(),
         );
         t.push(
