@@ -2934,6 +2934,37 @@ impl TrapTrigger {
     }
 }
 
+impl TrapTrigger {
+    /// The trigger kinds a body fires by walking onto them — a plate and a
+    /// tripwire. A trapped chest is opened, not stepped on.
+    pub const STEPPED: [TrapTrigger; 2] = [TrapTrigger::PressurePlate, TrapTrigger::Tripwire];
+}
+
+/// **Every block of the pinned registry that a step fires**, sorted: the
+/// registry's ids that [`TrapTrigger::is_trigger_block`] accepts for a
+/// [`TrapTrigger::STEPPED`] kind. Read from `crates/dsl/data/blocks-1.21.11.json`
+/// rather than listed, so a pin that adds a plate adds it here;
+/// `crates/delvec/tests/stepped_blocks_tag.rs` holds the set equal to vanilla's
+/// own `#pressure_plates` tag plus the tripwire string.
+pub fn stepped_blocks() -> Vec<&'static str> {
+    crate::blocks::BlockRegistry::v1_21_11()
+        .ids()
+        .filter(|id| TrapTrigger::STEPPED.iter().any(|k| k.is_trigger_block(id)))
+        .collect()
+}
+
+/// Whether `block` — an id, bare or namespaced, with or without a blockstate —
+/// is one a step fires ([`stepped_blocks`]).
+pub fn fires_on_step(block: &str) -> bool {
+    let id = block.split('[').next().unwrap_or(block);
+    let id = if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    };
+    stepped_blocks().contains(&id.as_str())
+}
+
 /// What a [`Trap`] does when sprung (DSL v0.6, spec-0011). Externally tagged so a
 /// future effect adds a variant; a non-`dispense` key (e.g. `tnt`,
 /// `release-falling-block`, `crusher`) is an unknown variant → `DW0100`, keeping
@@ -3300,6 +3331,15 @@ impl EnvTrigger {
     pub fn addresses_presser(&self) -> bool {
         self.audience == TriggerAudience::Presser
     }
+
+    /// Whether vanilla can name the player whose act fired this trigger, which
+    /// is what `audience: presser` needs: a right-click (`use`, through
+    /// `minecraft:player_interacted_with_entity`) and a step (`step`, a player
+    /// in the cell). A left-click is recorded as a UUID no command can become;
+    /// everything else is refused by `DW0427`.
+    pub fn attributes_its_actor(&self) -> bool {
+        matches!(self.on, TriggerOn::Use | TriggerOn::Step)
+    }
 }
 
 /// Who an [`EnvTrigger`]'s effects address (DSL v0.11).
@@ -3309,20 +3349,24 @@ impl EnvTrigger {
 /// player-facing command addresses `@a`. A `presser` trigger is dispatched by a
 /// `minecraft:player_interacted_with_entity` advancement — the one vanilla
 /// primitive that runs a function *as the player who clicked* — so `@s` is the
-/// presser and the bundle addresses them alone.
+/// presser and the bundle addresses them alone. A `presser` trigger `on: step`
+/// is polled as `execute as @a[<the cell>]`, so `@s` is each player who stepped
+/// on, on their own step.
 ///
-/// That primitive exists for **right-clicks only**. Vanilla records a left-click
-/// on an interaction entity in NBT (which names a UUID no command can become) and
-/// offers no criterion for it, so `presser` on a `strike` is refused (`DW0427`)
-/// rather than approximated: per CLAUDE.md's no-hack rule, a capability with no
-/// vanilla primitive under it is excluded, never faked downstream.
+/// The click primitive exists for **right-clicks only**. Vanilla records a
+/// left-click on an interaction entity in NBT (which names a UUID no command can
+/// become) and offers no criterion for it, so `presser` on a `strike` is refused
+/// (`DW0427`) rather than approximated: per CLAUDE.md's no-hack rule, a
+/// capability with no vanilla primitive under it is excluded, never faked
+/// downstream.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TriggerAudience {
     /// The whole party (the default, and what every trigger did before v0.11).
     #[default]
     Party,
-    /// The one player whose click fired it.
+    /// The one player whose press fired it: the right-click of a `use`, the
+    /// step of a `step`.
     Presser,
 }
 
@@ -3347,6 +3391,16 @@ pub enum TriggerOn {
         /// Approach radius (blocks).
         range: u32,
     },
+    /// A player steps onto the anchor's cell, which holds a block a step fires
+    /// — a pressure plate or the tripwire string ([`stepped_blocks`]); the
+    /// piece places it, and a cell that holds anything else is `DW0917`.
+    ///
+    /// Detected as a player whose hitbox is in the cell (the selector a plate
+    /// or tripwire trap fires on), edge-latched so standing on the plate fires
+    /// once. With `audience: presser` each player who steps on is dispatched
+    /// as `@s` on their own step: the act and the actor are the same fact, a
+    /// body in the cell, so no player is inferred after the event.
+    Step,
     /// The player attacks (left-clicks) an **NPC's body** (DSL v0.6).
     ///
     /// The place-based [`TriggerOn::Strike`] cannot express "hit the giant": it
@@ -3378,16 +3432,31 @@ pub enum TriggerOn {
 }
 
 impl TriggerOn {
-    /// The kebab tag (`strike` / `use` / `approach` / `strike-npc` /
+    /// The kebab tag (`strike` / `use` / `approach` / `step` / `strike-npc` /
     /// `strike-assembly`).
     pub fn kind(&self) -> &'static str {
         match self {
             TriggerOn::Strike => "strike",
             TriggerOn::Use => "use",
             TriggerOn::Approach { .. } => "approach",
+            TriggerOn::Step => "step",
             TriggerOn::StrikeNpc { .. } => "strike-npc",
             TriggerOn::StrikeAssembly { .. } => "strike-assembly",
         }
+    }
+
+    /// Whether this event is a click on a `minecraft:interaction` hitbox — a
+    /// `strike`, a `use`, a `strike-npc`, a `strike-assembly`. An `approach`
+    /// and a `step` are a body's position, read on the tick, and have no
+    /// hitbox.
+    pub fn is_click(&self) -> bool {
+        matches!(
+            self,
+            TriggerOn::Strike
+                | TriggerOn::Use
+                | TriggerOn::StrikeNpc { .. }
+                | TriggerOn::StrikeAssembly { .. }
+        )
     }
 
     /// Whether this event needs an `at` anchor — true for everything that

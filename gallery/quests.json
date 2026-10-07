@@ -3654,6 +3654,22 @@
           "on": "approach",
           "range": 6
         }
+      },
+      {
+        "at": "anchor/march",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The flagstone dips under you, and only you feel it.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/step-on-the-plate",
+        "on": {
+          "on": "step"
+        },
+        "once": false
       }
     ],
     "waves": [

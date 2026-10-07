@@ -249,7 +249,7 @@ export interface RestStep extends PresentationMarkers {
 }
 
 /** The environment-trigger events a `trigger` step performs — the DSL's `on` tags. */
-export const TRIGGER_KINDS = ["strike", "use", "approach", "strike-npc", "strike-assembly"] as const;
+export const TRIGGER_KINDS = ["strike", "use", "approach", "step", "strike-npc", "strike-assembly"] as const;
 
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
@@ -259,6 +259,7 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[number];
  * flag a later step reads, because nothing on the quest DAG makes anybody fire
  * it. The bot does what a player does — a `strike` is a real attack on the
  * target's hitbox, a `use` a real right-click, an `approach` a walk into range,
+ * a `step` a walk onto the plate's own cell,
  * a `strike-npc` an attack on the NPC's own hitbox, a `strike-assembly` an attack
  * on the assembly's own hitbox — and the step passes only on the trigger's own
  * fired marker, never on the click landing. A hit count is N such steps, each

@@ -487,8 +487,9 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
         }
     }
     for t in &plan.emitted_triggers_unlocalized() {
-        // `approach` triggers are a per-tick radius test, not an entity.
-        if matches!(t.on, TriggerOn::Approach { .. }) {
+        // `approach` and `step` triggers are a per-tick position test, not an
+        // entity.
+        if !t.on.is_click() {
             continue;
         }
         // `strike-npc` (DSL v0.6) has no cell at all — it rides the NPC's own

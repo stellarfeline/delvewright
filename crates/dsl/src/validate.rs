@@ -2356,22 +2356,23 @@ fn body_traversal_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// they sit together and are checked over the one trigger authority.
 fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, t) in c.quests.content.triggers.iter().enumerate() {
-        if t.addresses_presser() && !matches!(t.on, TriggerOn::Use) {
+        if t.addresses_presser() && !t.attributes_its_actor() {
             d.push(Diagnostic::error(
                 codes::TRIGGER_AUDIENCE_UNATTRIBUTABLE,
                 "quests",
                 format!("/content/triggers/{i}/audience"),
                 format!(
                     "trigger `{}` watches a `{}` and asks for `audience: presser`, but vanilla \
-                     can only attribute a RIGHT-click to a player. \
+                     names the player only for a RIGHT-click and a step. \
                      `minecraft:player_interacted_with_entity` is the one criterion that runs a \
-                     function as the clicker; a left-click is recorded in the interaction \
-                     entity's `attack` NBT, which names a UUID no command can become, and an \
-                     `approach` has no click at all. Guessing — polling the record and hoping the \
-                     nearest player is the striker — is the kind of downstream folklore this \
-                     engine refuses (CLAUDE.md: a capability with no vanilla primitive under it \
-                     is excluded, not faked). Prescription: make it an `on: use` trigger, or drop \
-                     `audience` and let the beat address the party",
+                     function as the clicker, and a step is a player standing in the cell; a \
+                     left-click is recorded in the interaction entity's `attack` NBT, which names \
+                     a UUID no command can become, and an `approach` is not attributed. Guessing \
+                     — polling the record and hoping the nearest player is the striker — is the \
+                     kind of downstream folklore this engine refuses (CLAUDE.md: a capability \
+                     with no vanilla primitive under it is excluded, not faked). Prescription: \
+                     make it an `on: use` or `on: step` trigger, or drop `audience` and let the \
+                     beat address the party",
                     t.id,
                     t.on.kind()
                 ),
@@ -5520,6 +5521,23 @@ fn v04_checks(
                     "minecraft:lever",
                     d,
                 );
+                if crate::stages::fires_on_step(&prop.block) {
+                    d.push(Diagnostic::error(
+                        codes::INTERACT_PROP_STEPPED,
+                        "quests",
+                        format!("/content/quests/{i}/objectives/{j}/prop/block"),
+                        format!(
+                            "`interact` objective `{}` uses `{}` as its prop, a block a player \
+                             fires by stepping on it — but an `interact` completes on a \
+                             right-click, so walking onto it does nothing. Prescription: give the \
+                             objective a block a hand works (a lever, a button), or make the step \
+                             the act: a `trigger` with `on: step` at an anchor whose cell holds the \
+                             plate, whose effects do what completing the objective did",
+                            o.id(),
+                            prop.block
+                        ),
+                    ));
+                }
             }
         }
         for_each_effect_deep(q, |path, eff| {

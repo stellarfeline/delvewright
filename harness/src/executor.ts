@@ -7132,7 +7132,8 @@ export class MineflayerExecutor implements StepExecutor {
    * the `interaction` hitbox the compiler summoned at the anchor; a `use` is a
    * real right-click on it; a `strike-assembly` attacks the assembly's own
    * hitbox at its cell; a `strike-npc` attacks the NPC's own hitbox at its
-   * beat's station; an `approach` is a walk into the trigger's range. Never a
+   * beat's station; an `approach` is a walk into the trigger's range; a `step`
+   * is a walk onto the plate's cell. Never a
    * server-side command: a trigger fired by one would prove the command, not
    * that a player can reach and hit the thing.
    *
@@ -7164,6 +7165,11 @@ export class MineflayerExecutor implements StepExecutor {
       // inside it so the goal's own tolerance cannot leave the bot on the rim.
       if (!step.stand) {
         await this.walkTo(step.pos, Math.max(1, (step.range ?? 1) - 1), label);
+      }
+    } else if (step.on === "step") {
+      // The tick fires on a body in the plate's own cell: a block goal on it.
+      if (!step.stand) {
+        await this.walkTo(step.pos, 0, label);
       }
     } else {
       if (!step.stand) {
