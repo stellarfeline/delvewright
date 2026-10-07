@@ -128,11 +128,8 @@ fn lighting_dark_room_is_dw0751_advisory_exit0() {
     );
 }
 
-/// `DW0760`: gallery emission failure — the output path is blocked by an
-/// existing regular file, so the gallery tree cannot be written.
-#[test]
-fn gallery_output_blocked_is_dw0760_exit3() {
-    let dir = tmp("gallery-blocked");
+/// A gallery run into `out`, with one clean candidate.
+fn gallery_into(dir: &std::path::Path, out_dir: &std::path::Path) -> std::process::Output {
     let candidates = dir.join("candidates");
     std::fs::create_dir_all(&candidates).unwrap();
     std::fs::write(
@@ -140,22 +137,62 @@ fn gallery_output_blocked_is_dw0760_exit3() {
         fixtures::clean_room().write(),
     )
     .unwrap();
-
-    // Block the gallery output root with a regular file.
-    let out_dir = dir.join("out-is-a-file");
-    std::fs::write(&out_dir, b"blocker").unwrap();
-
-    let out = prefab()
+    prefab()
         .args(["gallery"])
         .arg(&candidates)
         .args(["-o"])
-        .arg(&out_dir)
+        .arg(out_dir)
         .args(["--id", "demo"])
         .output()
-        .unwrap();
+        .unwrap()
+}
+
+/// `DW0760`: gallery emission failure — the output path lies under an
+/// existing regular file, so the gallery tree cannot be written.
+#[test]
+fn gallery_output_blocked_is_dw0760_exit3() {
+    let dir = tmp("gallery-blocked");
+    let blocker = dir.join("a-file");
+    std::fs::write(&blocker, b"blocker").unwrap();
+    let out = gallery_into(&dir, &blocker.join("out"));
     assert_eq!(out.status.code(), Some(3), "{out:?}");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("DW0760"), "expected DW0760: {stderr}");
+}
+
+/// `DW0967`: the output root is a regular file, which no gallery wrote — refused
+/// before anything is written, and the file is left as it was.
+#[test]
+fn gallery_output_that_is_a_file_is_dw0967_exit3() {
+    let dir = tmp("gallery-out-is-a-file");
+    let out_dir = dir.join("out-is-a-file");
+    std::fs::write(&out_dir, b"blocker").unwrap();
+    let out = gallery_into(&dir, &out_dir);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("DW0967"), "expected DW0967: {stderr}");
+    assert_eq!(std::fs::read(&out_dir).unwrap(), b"blocker");
+}
+
+/// A second gallery into the same directory replaces the first: the
+/// directory holds exactly what the second wrote, as its manifest names it.
+#[test]
+fn a_second_gallery_into_one_directory_leaves_exactly_the_second() {
+    let dir = tmp("gallery-rewrite");
+    let out_dir = dir.join("out");
+    assert_eq!(gallery_into(&dir, &out_dir).status.code(), Some(0));
+    let stale = out_dir.join("datapack/data/admit/function/gone.mcfunction");
+    std::fs::write(&stale, b"say stale\n").unwrap();
+    // Make the stale file one the tree's own manifest names, as a previous
+    // gallery that emitted it would have.
+    let mpath = out_dir.join("manifest.json");
+    let mut m: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&mpath).unwrap()).unwrap();
+    m["outputs"]["datapack/data/admit/function/gone.mcfunction"] = serde_json::json!("x");
+    std::fs::write(&mpath, serde_json::to_vec(&m).unwrap()).unwrap();
+    let out = gallery_into(&dir, &out_dir);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(!stale.exists(), "a file the previous gallery emitted survived");
 }
 
 /// Stage a two-tile zone: two real `.nbt` files and the manifest naming them.
