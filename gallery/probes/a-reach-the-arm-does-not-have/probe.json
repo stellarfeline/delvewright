@@ -1,0 +1,15 @@
+{
+  "code": "DW0935",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/1/strikes/pattern/0/lock/reaches",
+      "value": [
+        "fly"
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The arm's first step names `fly` among the poses its lock may choose, and its rig has no clip by that name. A reach is a clip the rig generator wrote; a name the rig lacks is a pose nothing can play, refused with the rig's own clips listed. It declares no unit: `reaches` is bound by the primary. The remedy is to name a clip `delvec rig describe` prints."
+}

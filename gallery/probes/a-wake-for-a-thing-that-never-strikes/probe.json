@@ -1,0 +1,12 @@
+{
+  "code": "DW0970",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/assemblies/1/strikes"
+    }
+  ],
+  "units": [],
+  "why": "Resting at the hearth re-arms the reaching arm with `arm-strikes`. This edit takes the arm's whole strike pattern away, so the rest re-arms a pattern that does not exist and the beat does nothing. It declares no unit: `arm-strikes` is bound by the primary's hearth, and what is refused is one aimed at an assembly with no `strikes`. The remedy is to give the assembly a pattern, or drop the effect."
+}

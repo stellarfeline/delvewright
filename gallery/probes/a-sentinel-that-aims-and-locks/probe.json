@@ -1,0 +1,23 @@
+{
+  "code": "DW0969",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/assemblies/0/strikes/pattern/0/lock",
+      "value": {
+        "pick": "nearest",
+        "within": {
+          "anchor": "anchor/plinth",
+          "extent": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ],
+  "units": [],
+  "why": "The sentinel's strikes are aimed: at every wind-up it turns to the one of its four facings nearest its target. This edit also gives its step a `lock`, which turns it to the cell its target stands on. Two rules would choose the one turn the statue strikes from, so the engine refuses the pair. It declares no unit: `aim` and `lock` are each bound by the primary on different things. The remedy is to drop `aim` from the pattern or `lock` from the step."
+}

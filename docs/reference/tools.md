@@ -1998,7 +1998,7 @@ cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
 | `tidal-keep-generator` | `tidal-keep-gen` | `tk-*` (souls set) | `prefabs/tidal-keep-tileset.md` |
 | `hello-room-generator` | `hello-room-gen` | `hello-room` (the M1 piece) | — |
 | `gallery-generator` | `gallery-prefab-gen` | `gallery-hall`, the `gallery-annex-*` tileset + its pool, `gallery-shard`, `gallery-yard` (the detailed box), `gallery-quay` (the shore) and `gallery-bank` (the site), and `rigs/gallery-sentinel` (the hall's assembly, spec-0082) | `gallery/README.md` |
-| `rig-generator` | `rig-gen` | `rigs/tentacle/rig.json` — assembly rigs (spec-0082): parts and clips, written through `delvewright_dsl::rig::Rig` and checked by `rig::check` before a byte is written; `rig/tentacle` is the spike's 34-segment tentacle ported number for number, turned so its blow lands in front, rounded to six decimals | — |
+| `rig-generator` | `rig-gen` | `rigs/tentacle/rig.json` — assembly rigs (spec-0082): parts and clips, written through `delvewright_dsl::rig::Rig` and checked by `rig::check` before a byte is written; `rig/tentacle` is the spike's 34-segment tentacle ported number for number, turned so its blow lands in front, rounded to six decimals, with three slams at three reaches along the floor in front of the mark — `strike-near`, `strike` and `strike-far`, the poses a locked strike chooses among (spec-0094) | — |
 
 `gallery-prefab-gen` differs from its siblings in three ways, each deliberate.
 It writes into a **build directory**, not the content library — spec-0039 §6

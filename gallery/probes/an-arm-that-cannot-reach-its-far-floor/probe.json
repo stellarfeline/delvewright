@@ -1,0 +1,13 @@
+{
+  "code": "DW0968",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/1/strikes/pattern/0/lock/reaches",
+      "value": []
+    }
+  ],
+  "units": [],
+  "why": "The reaching arm locks onto whoever stands nearest on the floor in front of it and strikes them with the first of its poses that comes down there: `near` lays the club one to five cells out, `far` three to eight. This edit takes `far` away from its first step. A display entity does not bend to a point, so the cells only `far` reaches are cells a locked player would stand on and never be struck — the engine names them. It declares no unit: `lock` and `reaches` are bound by the primary, and what is refused is a lock region the poses do not cover. The remedies are to add a reach that comes down there, to shrink the lock region to the cells the poses reach, or to widen `while_in`."
+}
