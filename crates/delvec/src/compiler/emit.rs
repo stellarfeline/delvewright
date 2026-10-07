@@ -26337,12 +26337,52 @@ fn with_bonfire_rest_steps(plan: &Plan, walked: &[plan::Step], steps: Vec<Value>
     if plan.bonfires().next().is_none() {
         return steps;
     }
+    // The area a cell stands in; areas sit `plan::AREA_SPACING` apart, so the
+    // horizontal box decides it.
+    let area_of = |pos: &Value| -> Option<usize> {
+        let c: Vec<i64> = pos.as_array()?.iter().filter_map(Value::as_i64).collect();
+        let (x, z) = (*c.first()? as i32, *c.get(2)? as i32);
+        plan.areas.iter().position(|a| {
+            let (lo, hi) = a.bounds();
+            lo[0] <= x && x <= hi[0] && lo[2] <= z && z <= hi[2]
+        })
+    };
+    let step_area = |st: &Value| st.get("pos").and_then(area_of);
+    // A rest is spliced where the party can walk to the fire: the step that arms
+    // it, unless a crossing carries the party out of the fire's area right after
+    // that step (a crossing is the only move between areas, so the next step then
+    // stands in another area) — then the first later step after which the party
+    // stands in the fire's area again. On a route that stays in one area this is
+    // always the arming step.
+    let rest_after: Vec<(usize, &plan::CheckpointPlan)> = plan
+        .bonfires()
+        .filter_map(|b| {
+            let armed = rest_step_index(plan, walked, b.fire_step)?;
+            let Some(home) = plan.areas.iter().position(|a| {
+                let (lo, hi) = a.bounds();
+                lo[0] <= b.pos[0] && b.pos[0] <= hi[0] && lo[2] <= b.pos[2] && b.pos[2] <= hi[2]
+            }) else {
+                return Some((armed, b));
+            };
+            // Where the party stands after step `i`: the last step at or before
+            // it that names a position; a step that names none (a class pick,
+            // the completion assert) leaves it where it was.
+            let stands_home = |i: usize| {
+                let here = steps[..=i].iter().rev().find_map(step_area);
+                let next = steps[i + 1..].iter().find_map(step_area);
+                here == Some(home) && next.is_none_or(|a| a == home)
+            };
+            let at = (armed..steps.len()).find(|&i| stands_home(i))?;
+            Some((at, b))
+        })
+        .collect();
     let mut out: Vec<Value> = Vec::with_capacity(steps.len());
     for (i, step) in steps.into_iter().enumerate() {
         out.push(step);
-        for bf in plan
-            .bonfires()
-            .filter(|b| rest_step_index(plan, walked, b.fire_step) == Some(i))
+        for bf in rest_after
+            .iter()
+            .filter(|(at, _)| *at == i)
+            .map(|(_, b)| *b)
         {
             let mut rest = json!({
                 "action": "rest",

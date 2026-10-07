@@ -2615,7 +2615,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   checkpoint never moves, so a die-retry trial respawns at world spawn and blows
   the walk-back budget, judging the *campaign* for a *proof* that never performed
   the player loop. Resting is the intended loop, so the proven path
-  performs it. After the step that arms bonfire `<i>` the path carries one
+  performs it. After the step that arms bonfire `<i>` — or, when a crossing
+  carries the party out of the fire's area at that step, after the first later
+  step at which the party stands in that area again (the area of the last step
+  naming a position, with the next one in the same area); none, if the route
+  never returns — the path carries one
   `{"action":"rest","bonfire":<i>,"anchor":"anchor/…","pos":[x,y,z],
   "command":"/trigger dw.rest set 2"}`. The bot walks to `pos`, **right-clicks the
   `dw_bonfire_<i>` interaction** — which is what opens the dialog and, crucially,

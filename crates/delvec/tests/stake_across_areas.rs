@@ -213,3 +213,49 @@ fn a_carry_between_two_areas_is_realised_by_the_crossing_the_route_takes() {
         "{refused:?}"
     );
 }
+
+/// A bonfire armed by the beat the crossing leaves from: the exported path's
+/// `rest` step (spec-0016) is spliced where the party can walk to the fire,
+/// never between the beat and the crossing that carries the party out of the
+/// fire's area at that same moment. This route never returns to the keep, so
+/// no rest is exported at all; before, the rest followed `obj/decide` and the
+/// bot was sent from the landing to a fire in another area.
+#[test]
+fn a_rest_is_never_spliced_where_a_crossing_has_carried_the_party_off() {
+    let dir = campaign("bonfire", false);
+    common::patch_file(&dir.join("quests.json"), |q| {
+        q["content"]["quests"][0]["on_complete"] =
+            json!([{ "type": "bonfire", "anchor": "spawn" }]);
+    });
+    let out = match try_build(&dir) {
+        Ok(out) => out,
+        Err(BuildFailure::Diagnostic { code, message }) => panic!("{}: {message}", code.id()),
+        Err(e) => panic!("{e:?}"),
+    };
+    let path: Value =
+        serde_json::from_slice(out.get("critical-path.json").expect("the path is exported"))
+            .unwrap();
+    let steps = path["steps"].as_array().unwrap();
+    let x = |s: &Value| s["pos"][0].as_i64();
+    for (i, s) in steps.iter().enumerate() {
+        if s["action"] != "rest" {
+            continue;
+        }
+        let fire = x(s).unwrap();
+        // Areas stand 256 blocks apart along x: the step a rest follows and the
+        // step after it stand in the fire's area.
+        for n in [i.checked_sub(1), Some(i + 1)].into_iter().flatten() {
+            if let Some(nx) = steps.get(n).and_then(x) {
+                assert_eq!(
+                    nx.div_euclid(256),
+                    fire.div_euclid(256),
+                    "step {n} beside the rest: {path}"
+                );
+            }
+        }
+    }
+    assert!(
+        !steps.iter().any(|s| s["action"] == "rest"),
+        "the route never returns to the keep, so no rest is exported: {path}"
+    );
+}
