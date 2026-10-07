@@ -619,7 +619,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # `test_check_skill_page.py` judges the plugin against the engine at its
-      # pin and the pre-split page's blob, which a shallow checkout lacks.
+      # pin, which a shallow checkout lacks.
       - uses: ./.github/actions/skill-page-objects
       - uses: actions/setup-python@v5
         with:

@@ -1,9 +1,8 @@
 name: Fetch what the skill-page gate reads
 description: >
-  `tools/ci/check-skill-page.py` judges the creator plugin against two objects that
+  `tools/ci/check-skill-page.py` judges the creator plugin against an object that
   a shallow `actions/checkout` does not carry: the ENGINE at the release tag
-  `[engine].ref` names, materialised with `git archive`, and the PRE-SPLIT PAGE's
-  blob, from which the heading census is re-derived. It also diffs the plugin
+  `[engine].ref` names, materialised with `git archive`. It also diffs the plugin
   root against `origin/main`, which a shallow checkout has no ref for.
 
   The gate refuses rather than judging the page against whatever is on disk, so
@@ -25,10 +24,8 @@ description: >
   TREE, which is the tree that release would tag, and the gate's rule 2 refuses
   any absent name but that one.
 
-  Targeted fetches, not `fetch-depth: 0`. `git fetch origin <sha>` serves a BLOB
-  as well as a commit — measured against this remote — so the whole history is
-  never needed: the three fetches cost about 23 MB and four seconds against the
-  hundreds of megabytes a full history would.
+  Targeted fetches, not `fetch-depth: 0`: the tag and one commit of `main` are
+  all the gate reads, so the whole history is never needed.
 
 runs:
   using: composite
@@ -38,14 +35,12 @@ runs:
       shell: bash
       run: |
         python3 - <<'PY' >> "$GITHUB_OUTPUT"
-        import json, sys, tomllib
+        import sys, tomllib
         sys.stdout.reconfigure(newline="\n")  # tools/ci/check-python-shell-newlines.py
         pin = ".claude/skills/delvewright/skills/new-delve/versions.toml"
         print(f"ref={tomllib.load(open(pin, 'rb'))['engine']['ref']}")
-        census = json.load(open("tools/ci/data/skill-page-headings.json"))
-        print(f"blob={census['source']['blob']}")
         PY
-        echo "skill-page objects: $(grep -E '^(ref|blob)=' "$GITHUB_OUTPUT" | tr '\n' ' ')"
+        echo "skill-page objects: $(grep -E '^ref=' "$GITHUB_OUTPUT" | tr '\n' ' ')"
 
     # The engine the page ships at. By TAG, explicitly into `refs/tags/`, which
     # is the same fetch a creator's Init I2 performs — a tag the remote will not
@@ -61,16 +56,6 @@ runs:
         else
           echo "skill-page objects: origin has no $REF — the engine the gate judges is this tree, which is the tree the release dispatched on this merge commit would tag (ADR-0029 §3)"
         fi
-
-    # The page as it stood before the split. The census is a MEASUREMENT and the
-    # gate re-derives it from these bytes rather than believing the committed
-    # file; without them it falls back to the frozen record and says so, which
-    # is a quieter gate than the one this repository committed.
-    - name: fetch the pre-split page's blob, so the census is re-derived
-      shell: bash
-      env:
-        BLOB: ${{ steps.objects.outputs.blob }}
-      run: git fetch --no-tags --quiet origin "$BLOB"
 
     # `--base origin/main`, for the version-bump rule. `--depth=1` is right HERE
     # and nowhere a developer runs it: the checkout is already shallow, so there

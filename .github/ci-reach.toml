@@ -159,7 +159,6 @@ inputs = [
   { glob = "tools/ci/check-skill-page.py", why = "the release-shelf check this job runs" },
   { glob = "tools/ci/check-stated-counts.py", why = "`check-skill-page.py` loads it" },
   { glob = "tools/ci/check-dw-codes.py", why = "`check-skill-page.py` loads it" },
-  { glob = "tools/ci/data/**", why = "`check-skill-page.py` reads its heading census" },
   { glob = "tools/lib/**", why = "the modules both scripts import" },
 ]
 
