@@ -3460,7 +3460,10 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "requires_flags": [
+          "flag/hall-open"
+        ]
       },
       {
         "at": "anchor/annex-second-bay",
