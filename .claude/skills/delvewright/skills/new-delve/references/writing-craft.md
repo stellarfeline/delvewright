@@ -221,6 +221,9 @@ pass afterwards. Which rules bind which line:
 - **Where the player reads at all**: L1 (`game-writing.md` §8). Before a line
   or an object exists to tell the player what to do, check that the level does
   not already say it.
+- **Every line**: L2 (`game-writing.md` §8). Mystery comes from who speaks and
+  what happens, never from wording the player must decode; nothing the text
+  says of the world contradicts what the level shows.
 - **Every name, everywhere**: N1–N5. The first time a name reaches the player in
   play order it is a body or item carrying it, or a sentence saying what it is;
   one thing has one name. §D above is the spelling half of N4.
