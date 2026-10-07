@@ -31,6 +31,15 @@
         "mitigation": "night-vision",
         "name": "The Quay",
         "prefab": "prefab/gallery-quay"
+      },
+      {
+        "id": "area/long-hall",
+        "name": "The Long Hall",
+        "pieces": {
+          "max": 1,
+          "min": 1
+        },
+        "prefab": "prefab/gallery-long-hall"
       }
     ],
     "atmospheres": [
