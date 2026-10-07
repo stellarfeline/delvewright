@@ -30,6 +30,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gallery_domain  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[2]
 GALLERY = REPO / "gallery"
 CAMERA = "east-bay-after-the-muster"
@@ -70,10 +73,11 @@ def run(delvec: Path, prefabs: Path, build: Path, campaign: Path, out: Path) -> 
 
 
 def perturbed(work: Path, tag: str, edit) -> Path:
+    # What a build point IS is `gallery_domain`'s answer: the primary,
+    # materialised, then the one edit this perturbation makes.
     dest = work / f"gallery-{tag}"
-    if dest.exists():
-        shutil.rmtree(dest)
-    shutil.copytree(GALLERY, dest)
+    if gallery_domain.materialise(dest) == 0:
+        fail(f"the primary materialised zero files into {dest}")
     record = dest / "design" / "cameras.json"
     doc = json.loads(record.read_text())
     cams = [c for c in doc["cameras"] if c["name"] == CAMERA]

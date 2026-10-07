@@ -161,6 +161,7 @@ Each item is a measurement taken while building this spec, or a departure from t
 12. **Criterion 9's gallery assertions run in the gallery job** (`tools/ci/check-gallery-post-beat.py`), not in a cargo test, because a cargo test cannot build the gallery (the precedent of spec-0079's criterion 7). Its perturbations are the text's.
 13. **Criterion 5**: renders of the save differ among themselves by rms 2.616–2.641 (6 pairs); written against save by 2.623–2.649 (12 pairs, median 2.639) — the same band, 0.004 above the highest floor pair at its own highest. Recorded in `tools.md` §4a.
 14. **The skill page** keeps its `world-save.sh` step for cameras until the pinned release carries this change; the lines that drop it are drafted for that pin.
+15. **The baseline moves `render-plan.json` by the POV shots' `after` and by `camera_eye_proof.showcase`** (criterion 9 named the first only): the count moves 7 → 8 because the record holds an eighth camera. With both masked the primary's plan is byte-equal to the base's. Every overlay with a record of its own answers the new picture too — the ocean point after `obj/clear-the-muster` from its own lens, the others at load.
 
 ## Acceptance criteria
 
