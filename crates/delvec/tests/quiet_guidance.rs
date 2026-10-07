@@ -443,6 +443,57 @@ fn the_completing_button_carries_its_objectives_pending_guard() {
     );
 }
 
+/// spec-0093's button guard beside #943's one trigger-guard authority, in one
+/// build: the keeper's `Lead on.` completes under its objective's
+/// `pending_guard`, and a presser `use` trigger gated on the same flag answers
+/// through `trigger_poll_guards`. The two gates are different rules (an
+/// objective's turn, a trigger's arming) with one authority each; both lines
+/// are single-spaced and the build's command-tree check walks them.
+#[test]
+fn the_button_guard_and_a_gated_press_answer_each_read_their_one_authority() {
+    let out = build_dir(&variant(
+        "beach-button-and-press",
+        beach_quests(
+            surf(None),
+            json!({ "triggers": [{
+                "id": "trigger/bell",
+                "at": "anchor/exit",
+                "on": { "on": "use" },
+                "audience": "presser",
+                "requires_flags": ["flag/ashore"],
+                "effects": [{ "type": "narrate", "text": "The bell answers you alone.", "audience": "actor" }]
+            }] }),
+        ),
+        beach_dialogue(),
+    ));
+    let press =
+        fn_body(&out, "press_bell").expect("a presser trigger answers through its press function");
+    assert!(
+        press.lines().any(|l| l
+            == format!(
+                "execute unless score #trig_bell dw.sys matches 1 if score #party dw.f_ashore \
+                 matches 1 run function {NS}:trig_bell"
+            )),
+        "the press answer reads the trigger's gate from the one authority: {press}"
+    );
+    let click = out
+        .iter()
+        .filter(|(p, _)| p.starts_with(&format!("datapack/data/{NS}/function/dlg_keeper_")))
+        .map(|(_, b)| std::str::from_utf8(b).unwrap())
+        .find(|b| b.contains("complete_o_climb_out"))
+        .expect("the click handler for `Lead on.`");
+    let line = click
+        .lines()
+        .find(|l| l.contains("complete_o_climb_out"))
+        .unwrap();
+    assert!(
+        line.contains("if score #party dw.o_surf matches 1")
+            && line.contains("if score #party dw.f_ashore matches 1")
+            && !line.contains("  "),
+        "the click completes under the pending guard, single-spaced: {line}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // DW0863 — a fight the party cannot find (spec-0093 §5)
 // ---------------------------------------------------------------------------
@@ -532,6 +583,37 @@ fn a_wave_fired_from_a_placeless_root_is_not_found_by_the_party() {
     assert!(msg.contains("places the party nowhere"), "{msg}");
     assert!(msg.contains("/content/on_death"), "{msg}");
     assert_eq!((b.sites, b.unplaced), (2, 1));
+}
+
+/// spec-0093 meets the plate's `step` trigger: a wave a stepped plate fires is
+/// placed where the plate is — the act is a body on the plate's cell, so the
+/// party stands there when the wave arrives — and is found by the party
+/// within reach; in a single-area campaign the trigger's wave is the area's
+/// (`DW0310`), so the plan builds.
+#[test]
+fn a_wave_a_stepped_plate_fires_is_found_where_the_plate_is() {
+    let mut q = beach_quests(
+        surf(None),
+        json!({ "triggers": [{
+            "id": "trigger/doormat",
+            "at": "anchor/exit",
+            "on": { "on": "step" },
+            "effects": [{ "type": "spawn-wave", "wave": "wave/surf" }]
+        }] }),
+    );
+    // The plate is the wave's only root.
+    let muster = &mut q["content"]["quests"][0]["on_objective_complete"]["obj/muster"];
+    muster
+        .as_array_mut()
+        .unwrap()
+        .retain(|e| e["type"] != "spawn-wave");
+    let (b, v) = signposts("stepped", q);
+    assert!(v.is_ok(), "{v:?}");
+    assert_eq!(
+        (b.kills, b.announced, b.found, b.sites, b.unplaced),
+        (1, 0, 1, 1, 0),
+        "one site, the plate, placed and within reach"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -281,6 +281,52 @@ fn a_cutscene_shot_aimed_past_the_served_radius_is_refused_at_build() {
     );
 }
 
+/// spec-0091 meets spec-0092 §10's boundary: a shot aimed at something far
+/// outside the playable region is judged by the served radius, not by the
+/// region — the region bounds where a body may stand, the radius what its
+/// client is sent — and the boundary's clock leaves the watching player
+/// alone (`tag=!dw_cutscene`), so the shot is not cut short by a return.
+#[test]
+fn a_shot_past_the_boundary_is_judged_by_the_served_radius_and_the_clock_leaves_it_alone() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("view-distance-shot-past-boundary");
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::cutscene_shots_dir(), &dir);
+    common::patch_file(&dir.join("quests.json"), |doc| {
+        assert_eq!(push_look_at_away(doc, 300), 1);
+    });
+    common::patch_file(&dir.join("world.json"), |doc| {
+        doc["content"]["boundary"] = serde_json::json!({ "margin": 4 });
+    });
+    let bounded = campaign(&dir);
+    assert!(codes(&bounded).is_empty(), "{:?}", codes(&bounded));
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&bounded, &prefabs).expect("plan builds");
+    let (lo, hi) = emit::playable_region_box(&plan).expect("a boundary is declared");
+    assert!(
+        hi[2] - lo[2] < 300,
+        "the shot's subject lies outside the region: {lo:?}..{hi:?}"
+    );
+    let Err(BuildFailure::Diagnostic { code, message }) = try_build(&dir, &bounded) else {
+        panic!("the region does not widen the radius: the far shot is refused at the floor");
+    };
+    assert_eq!(code.id(), "DW0956", "{message}");
+    let mut served = bounded.clone();
+    served.world.content.view_distance = Some(19);
+    let out = try_build(&dir, &served).expect("served, the shot past the boundary builds");
+    assert_eq!(
+        property(&out, "server/server.properties", "view-distance"),
+        "19"
+    );
+    let tick = text(
+        &out,
+        "datapack/data/cutscene-shots/function/boundary_tick.mcfunction",
+    );
+    assert!(
+        tick.contains("execute as @a[tag=!dw_cutscene,tag=!dw_free] unless entity @s["),
+        "the watcher is not returned mid-shot: {tick}"
+    );
+}
+
 /// Move the first cutscene shot's `look_at` `dz` blocks along z, in the raw
 /// quests document; returns how many shots were moved.
 fn push_look_at_away(doc: &mut serde_json::Value, dz: i64) -> usize {
