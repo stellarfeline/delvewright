@@ -279,22 +279,65 @@ def test_no_pull_request_at_all_is_kept(fx, tmp_path):
     assert v == "KEEP" and "has not landed" in why
 
 
-def test_an_empty_branch_with_no_pull_request_is_reclaimed(fx, tmp_path):
-    """A branch cut from main and never advanced carries no work to land.
+def hand_rolled(fx, name, branch):
+    """A worktree made the way a content round makes one: `git worktree add -b`
+    from the checkout, the branch local only, nothing pushed, nothing lease-held."""
+    path = fx.scratch / name
+    git(fx.repo, "worktree", "add", "-b", branch, str(path), "main")
+    return path
 
-    This is the exact shape of the found defect: `wt-bh`
-    (`fix/the-manifest-names-what-was-read`) had no commits beyond its base and
-    no pull request, and the old ladder read "no PR" as "the work has not
-    landed" and kept it forever. There is nothing here `origin/main` does not
-    already hold, so it is reclaimable on the merge-base proof alone.
+
+def branches(fx):
+    return git(fx.repo, "branch", "--format=%(refname:short)").split()
+
+
+def test_a_fresh_hand_rolled_worktree_survives_the_session_sweep(fx, tmp_path):
+    """The found defect: a content round's worktree and its unpushed local branch
+    vanished mid-round.
+
+    A worker that has made its tree and not yet written to it is clean, holds no
+    commit beyond `main`, has no pull request and no lease: the same bytes as a
+    spent verification tree, and the one key that tells them apart (the worker is
+    alive) is not on disk. The session hook runs this tool with `--apply` and no
+    other flag, so the old rung "no pull request and nothing beyond base" removed
+    the tree and force-deleted the branch under the worker.
     """
-    wt = fx.worktree("wt-empty", "nothing-to-land")
-    v, why = verdict_for(sweep(fx, fake_gh(tmp_path, [])), wt)
-    assert v == "RECLAIM"
-    assert "merge-base" in why and "no work to land" in why
-
+    wt = hand_rolled(fx, "ct-fresh", "demo/fresh")
     out = sweep(fx, fake_gh(tmp_path, []), "--apply")
-    assert not wt.exists()
+    assert wt.exists(), out
+    assert "demo/fresh" in branches(fx)
+    assert verdict_for(out, wt)[0] == "KEEP"
+
+
+def test_a_merge_time_run_for_another_branch_leaves_a_fresh_worktree_alone(fx, tmp_path):
+    """Ruled out as the cause: the narrowed `--after-merge OTHER --apply` run
+    selects only the tree holding OTHER, then prunes git's stale records."""
+    fresh = hand_rolled(fx, "ct-fresh", "demo/fresh")
+    landed = fx.worktree("wt-landed", "landed")
+    out = sweep(fx, fake_gh(tmp_path, MERGED), "--after-merge", "landed", "--apply")
+    assert not landed.exists(), out
+    assert fresh.exists() and "demo/fresh" in branches(fx)
+
+
+def test_an_empty_branch_with_no_pull_request_is_reclaimed_only_when_named(fx, tmp_path):
+    """The operator, who can tell an abandoned empty branch from a live one,
+    names it: `--tree` supplies the key the remote cannot. Every other rung
+    (clean, nothing unpushed, unreferenced, unleased) still applies."""
+    wt = fx.worktree("wt-empty", "nothing-to-land")
+    out = sweep(fx, fake_gh(tmp_path, []))
+    v, why = verdict_for(out, wt)
+    assert v == "KEEP" and "--tree" in why and "no work to land" in why
+
+    named = sweep(fx, fake_gh(tmp_path, []), "--tree", str(wt), "--apply")
+    assert not wt.exists(), named
+    assert "nothing-to-land" not in branches(fx)
+
+
+def test_a_named_empty_branch_is_still_kept_when_dirty(fx, tmp_path):
+    wt = fx.worktree("wt-empty-dirty", "nothing-yet")
+    (wt / "notes.txt").write_text("started\n", encoding="utf-8")
+    sweep(fx, fake_gh(tmp_path, []), "--tree", str(wt), "--apply")
+    assert wt.exists() and (wt / "notes.txt").exists()
 
 
 def test_an_unpushed_commit_beyond_base_is_still_kept_with_no_pull_request(fx, tmp_path):

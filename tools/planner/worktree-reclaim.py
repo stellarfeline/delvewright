@@ -300,6 +300,9 @@ class Worktree:
         self.lease_probe_error: str = ""
         self.inbound: list[Path] = []  # symlinks pointing INTO this tree
         self.pr: dict | None = None
+        # Set by the ladder when the tree is clean, unpushed-but-empty and has no
+        # pull request: reclaimable only by an operator naming it (`--tree`).
+        self.empty_branch = False
         self.verdict = "KEEP"
         self.reason = "not evaluated"
         self.size_kib: int | None = None
@@ -846,11 +849,19 @@ def decide(wt: Worktree, *, self_paths: set[Path], authority: Authority) -> None
     if pr is None:
         no_work, proof = branch_has_no_work_beyond_base(wt.path, wt.head)
         if no_work:
-            wt.verdict = "RECLAIM"
+            # Never reclaimed on this reading. A worker that has made its tree and
+            # not yet written to it is clean, holds nothing beyond its base, has no
+            # pull request and (for a hand-rolled content tree) no lease: the very
+            # bytes of an abandoned one. The session hook runs this with `--apply`,
+            # and reading "nothing to lose" off them removed the live tree and
+            # force-deleted its unpushed branch under the worker. Only the operator
+            # can tell the two apart, so the operator names it.
+            wt.empty_branch = True
+            wt.verdict = "KEEP"
             wt.reason = (
-                "no pull request on the remote for this branch, and there is no work to "
-                f"land — {proof}; clean, fully pushed or unpushed-but-empty, unreferenced, "
-                "unleased"
+                "the remote holds no pull request for this branch, and there is no work to "
+                f"land — {proof} — but a worker that has not yet written anything looks "
+                f"exactly like this; if it is abandoned, name it: --tree {wt.path} --apply"
             )
             return
         wt.verdict = "KEEP"
@@ -1605,7 +1616,15 @@ def main(argv: list[str] | None = None) -> int:
             if args.after_merge and wt.branch == args.after_merge:
                 selected.append((rs, wt))
             elif named is not None and wt.path == named:
-                if wt.verdict == "KEEP" and wt.branch is None and wt.reason.startswith("DETACHED"):
+                if wt.verdict == "KEEP" and wt.empty_branch:
+                    wt.verdict = "RECLAIM"
+                    wt.reason = (
+                        "named explicitly by an operator, which is the authority an empty "
+                        "branch with no pull request cannot supply — OVERRIDE: clean, fully "
+                        "pushed or empty, unreferenced and unleased were all still required "
+                        "and all hold"
+                    )
+                elif wt.verdict == "KEEP" and wt.branch is None and wt.reason.startswith("DETACHED"):
                     wt.verdict = "RECLAIM"
                     wt.reason = (
                         "named explicitly by an operator, which is the authority a detached "
