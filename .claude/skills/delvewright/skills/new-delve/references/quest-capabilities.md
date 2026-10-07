@@ -24,7 +24,9 @@ this section is what they are *for* and the traps in each.
   location or direction guidance ("Past the entrance hall, take the left passage
   to the barred door"). The compiler surfaces them in-game when the objective
   activates, in chat and with a sound; without them the player gets no guidance
-  and cannot find interact/collect/reach targets. For `talk-to` they are
+  and cannot find interact/collect/reach targets. A hint backs up what the
+  level shows (`game-writing.md` L1); it never stands in for a destination that
+  does not read as what it is. For `talk-to` they are
   **required whenever the target NPC is not already visible from where the
   previous objective completed** — a different room, down a corridor, across an
   area. Read the "may omit" allowance narrowly: an off-screen NPC 60 blocks away

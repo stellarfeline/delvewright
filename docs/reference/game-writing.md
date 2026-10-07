@@ -8,6 +8,9 @@ for, how to introduce a name, and how to write the Chinese. Evidence, the
 Vesperhold audit and the check design are in
 [game-writing-evidence.md](game-writing-evidence.md).
 
+§8 (L1) says where the player's information comes from at all; §1-§3 say how
+each line of the text that rule allows is written.
+
 Every rule is marked **cited** (with its source) or **authored** (this project's
 rule, with the reason it exists). An authored rule is a decision, not a finding.
 
@@ -233,6 +236,18 @@ transcreating existing lines from English, speaker and situation was chosen in
 rule-guided Chinese in 1; writing fresh from a brief, no writer led, and rule
 guidance did not change Claude's count (evidence §7). In-agent Chinese is the
 fallback when no key is configured.
+
+## 8. The level is what the player reads
+
+- **L1 — The player reads what to do from the level itself.** A closed door
+  with a lever beside it needs no explanation. Text comes only from NPC
+  dialogue and a very few books kept in bookshelves, used to tell the player
+  where to go. A destination is recognised by its building, and must read as
+  what it is at playable scale (a tavern looks like a tavern), never by a
+  highlight marker pointing at it. No object exists only so that reading it
+  opens something. **Authored.** A sign, a floating label, a particle column or
+  a lit path pointing at a destination is the defect; so is a note, plaque or
+  lectern whose only job is to be read so that a gate opens.
 
 ## Sources
 
