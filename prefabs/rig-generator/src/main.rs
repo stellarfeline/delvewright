@@ -293,8 +293,9 @@ fn tentacle() -> Rig {
             .collect(),
         clips,
         provenance: RigProvenance {
-            generator: "prefabs/rig-generator (after tools/spike-display-assembly/gen.py at a7f43d0b7d50)"
-                .to_string(),
+            generator:
+                "prefabs/rig-generator (after tools/spike-display-assembly/gen.py at a7f43d0b7d50)"
+                    .to_string(),
             source: "original".to_string(),
             spdx: "GPL-3.0-or-later".to_string(),
         },
