@@ -5105,6 +5105,45 @@ export class MineflayerExecutor implements StepExecutor {
     );
   }
 
+  /**
+   * A walk that starts with the body already held: wait for control up to the
+   * step's declared allowance plus grace, then walk whatever the gamemode —
+   * bounded, never a refusal, the convention {@link awaitCutscene} keeps. A step
+   * that declares no cutscene does not wait; the hold is logged and the walk
+   * made as before.
+   */
+  private async awaitHeldAtStart(label: string): Promise<void> {
+    const declared = this.stepCutsceneAllowanceS;
+    const mode = this.gameModeNow();
+    if (declared === undefined) {
+      process.stderr.write(
+        `[cutscene] ${label}: the walk starts with the body held (gamemode \`${mode ?? "?"}\`) ` +
+          `during step \`${this.stepLabel}\`, which declares no cutscene — walking as before\n`,
+      );
+      return;
+    }
+    const budget = declared * 1000 + this.cutsceneGraceMs;
+    const started = Date.now();
+    process.stderr.write(
+      `[cutscene] ${label}: the walk starts with the body held (gamemode \`${mode ?? "?"}\`); ` +
+        `waiting up to ${declared}s declared + ${this.cutsceneGraceMs}ms grace\n`,
+    );
+    while (Date.now() - started < budget) {
+      if (this.death) throw this.death;
+      if (!this.controlTaken()) {
+        process.stderr.write(
+          `[cutscene] ${label}: control returned after ${Date.now() - started}ms; walking\n`,
+        );
+        await delay(CUTSCENE_SETTLE_MS);
+        return;
+      }
+      await delay(CUTSCENE_POLL_MS);
+    }
+    process.stderr.write(
+      `[cutscene] ${label}: still \`${this.gameModeNow() ?? "?"}\` after ${budget}ms — walking anyway\n`,
+    );
+  }
+
   private async runGoto(spec: GoalSpec, label: string): Promise<void> {
     const bot = this.requireBot();
     const { x, y, z, range } = spec;
@@ -5123,10 +5162,11 @@ export class MineflayerExecutor implements StepExecutor {
         await delay(1_500);
       }
       try {
-        // Watched only from a walk that starts with the body in hand: a body
-        // already held when the walk begins was handed over that way (the
-        // sequencer waits a declared cutscene out between steps), and that is
-        // not a cutscene this walk fired.
+        // A body already held as the walk starts (a cutscene that began while
+        // the bot stood still — a gate stager's wait, the sequencer's) is waited
+        // out against the step's declaration before the walk is made; the walk
+        // is then watched only if it starts with the body in hand.
+        if (this.controlTaken()) await this.awaitHeldAtStart(label);
         const watch = !this.controlTaken();
         // Through the navigation owner, never `bot.pathfinder.goto` directly: this
         // wait is abandoned on a death and on the timeout, and an abandoned trip's

@@ -25715,8 +25715,10 @@ fn branch_paths(
                 &cp.steps,
                 &cp.transport_by_step,
                 &cp.sneak_by_step,
-                &cp.cutscene_by_step,
-                &en_route,
+                CutsceneHolds {
+                    after: &cp.cutscene_by_step,
+                    en_route: &en_route,
+                },
                 moves,
                 actor_moves,
             ),
@@ -25737,8 +25739,10 @@ fn emit_critical_path(
         &plan.critical_path,
         &plan.critical_path_transport,
         &plan.critical_path_sneak,
-        &plan.critical_path_cutscene,
-        &en_route,
+        CutsceneHolds {
+            after: &plan.critical_path_cutscene,
+            en_route: &en_route,
+        },
         moves,
         actor_moves,
     )
@@ -25749,13 +25753,21 @@ fn emit_critical_path(
 /// One serializer for the exported path and for every spec-0025 per-branch path:
 /// a branch run must consume a contract the harness already parses, so the branch
 /// tier cannot drift into a second, less-tested shape.
+/// The two per-step cutscene numbers a path exports (`compiler::hold`):
+/// `cutscene_seconds` and `en_route_cutscene_seconds`, each aligned 1:1 with
+/// the path's steps.
+#[derive(Clone, Copy)]
+struct CutsceneHolds<'a> {
+    after: &'a [Option<u32>],
+    en_route: &'a [Option<u32>],
+}
+
 fn critical_path_json(
     plan: &Plan,
     walked: &[plan::Step],
     transports: &[Option<[i32; 3]>],
     sneak: &[bool],
-    cutscene: &[Option<u32>],
-    en_route: &[Option<u32>],
+    holds: CutsceneHolds<'_>,
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
 ) -> Value {
@@ -25891,7 +25903,7 @@ fn critical_path_json(
             {
                 obj.insert("sneak".to_string(), json!(true));
             }
-            if let Some(secs) = cutscene[i]
+            if let Some(secs) = holds.after[i]
                 && secs > 0
                 && let Some(obj) = step.as_object_mut()
             {
@@ -25900,7 +25912,7 @@ fn critical_path_json(
             // The longest a cutscene fired by something this step's walk passes
             // can hold the party (`compiler::hold::en_route_holds`); present only
             // when one can.
-            if let Some(secs) = en_route.get(i).copied().flatten()
+            if let Some(secs) = holds.en_route.get(i).copied().flatten()
                 && secs > 0
                 && let Some(obj) = step.as_object_mut()
             {
