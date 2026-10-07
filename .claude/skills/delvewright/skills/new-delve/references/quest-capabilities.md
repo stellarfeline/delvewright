@@ -320,6 +320,13 @@ this section is what they are *for* and the traps in each.
   the whole well of a boat, not its stern — and the trigger itself must stand
   where nobody can stand: on a rail post, over water. The build refuses a
   trigger that can be pulled from outside the volume and names the cells.
+- **The party is in its own cutscenes.** While a `cutscene` plays, every
+  player in play is shown by a stand-in where they stood: their own skin,
+  facing as they faced, wearing a copy of their armour and holding what they
+  held, gone when the camera returns. So a wide shot of the boat shows the
+  party in the boat; frame the shot with them in it. Set `"party": "absent"`
+  on a cutscene whose scene the party is not in — a vision, a memory, a place
+  elsewhere — and the stand-ins are not placed.
 - **A lightning bolt is one effect at a mark.** `lightning {at {anchor,
   offset?}}` strikes a real bolt where the story says — beside the thing the
   storm reveals, on the tree the party sheltered under. Every client draws the

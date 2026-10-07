@@ -2017,7 +2017,7 @@
     },
     {
       "applies_when": {
-        "contains": "minecraft:mannequin",
+        "contains": "profile:{texture:\"delvewright:npc/",
         "glob": "**",
         "kind": "out"
       },
@@ -2040,7 +2040,7 @@
       "finding": "an NPC's skin rendered as a different person entirely from the one the fiction described",
       "general_form": "a declared skin texture is baked and served, and a mannequin declaring a texture id without a source file is refused",
       "id": "bell-12",
-      "note": "The binding stays `npcs.json` on purpose, and the precondition is deliberately wider than it. `skin` is declared on exactly two object classes -- `Npc` (npcs.json) and `Actor` (quests.json), per the compiler's own `schema --stage all` export -- but DW0309 is raised by `compiler::main::read_skins`, which walks `campaign.npcs.content.npcs` only. The binding counts what the carrier quantifies over, so widening it to `quests.json` would report BOUND over actor mannequins nothing reads: coverage asserted, not held. `applies_when` instead counts the mannequin bodies the COMPILER put in this build -- a witness an author cannot write -- so a campaign whose mannequins DW0309 cannot see reds UNBOUND with the gap named, while a campaign with no mannequin at all measures a real zero. Open capability gap: an `Actor` skin is neither baked into `resourcepack.zip` nor refused when its `skins/<texture_id>.png` is absent, so the general form's `is baked and served` half does not yet reach actors. The glob is the whole build tree on purpose: a mannequin that reaches a world as NBT rather than as a `summon` line must still count, and this probe's two failure directions are not symmetric -- over-counting reds a campaign that has to be looked at, under-counting goes quiet.",
+      "note": "The binding stays `npcs.json` on purpose, and the precondition is deliberately wider than it. `skin` is declared on exactly two object classes -- `Npc` (npcs.json) and `Actor` (quests.json), per the compiler's own `schema --stage all` export -- but DW0309 is raised by `compiler::main::read_skins`, which walks `campaign.npcs.content.npcs` only. The binding counts what the carrier quantifies over, so widening it to `quests.json` would report BOUND over actor mannequins nothing reads: coverage asserted, not held. `applies_when` instead counts the mannequin bodies the COMPILER put in this build wearing a declared texture (`profile:{texture:\"delvewright:npc/...` is the one spelling the compiler writes a skinned body with) -- a witness an author cannot write -- so a campaign whose mannequins DW0309 cannot see reds UNBOUND with the gap named, while a campaign with no mannequin at all measures a real zero. Open capability gap: an `Actor` skin is neither baked into `resourcepack.zip` nor refused when its `skins/<texture_id>.png` is absent, so the general form's `is baked and served` half does not yet reach actors. The glob is the whole build tree on purpose: a mannequin that reaches a world as NBT rather than as a `summon` line must still count, and this probe's two failure directions are not symmetric -- over-counting reds a campaign that has to be looked at, under-counting goes quiet. A cutscene's stand-in (spec-0095) is a mannequin too, but it wears the player's own profile and no declared texture, so it is outside DW0309's class and outside this witness; counting every `minecraft:mannequin` made every campaign with a cutscene read UNBOUND here.",
       "round": 6,
       "triage": "capability"
     },
