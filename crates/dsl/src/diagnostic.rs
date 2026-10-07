@@ -805,6 +805,26 @@ pub mod codes {
         pub const ASSEMBLY_RIG: DwCode = DwCode::new("DW0935", ExitTier::Build);
     }
     crate::dw_code! {
+        /// (spec-0094 §5.2) **A locked strike's blow is declared where the lock
+        /// derives it.** A locked step's blow lands on the cells its chosen
+        /// clip comes down on at the locked turn, so a `damage-players` at the
+        /// top of its `on_land` that declares an `in` box, any `damage-players`
+        /// nested inside another effect's list there (it cannot be moved with
+        /// the lock), and a locked step in a pattern that also declares `aim`
+        /// (two rules choosing one turn) are refused, each naming the field.
+        /// Validation-tier (exit 1). Prescription: drop the `in`, lift the
+        /// `damage-players` to the top of `on_land`, or drop `aim` or `lock`.
+        pub const ASSEMBLY_LOCK_SHAPE: DwCode = DwCode::new("DW0969", ExitTier::Build);
+    }
+    crate::dw_code! {
+        /// (spec-0094 §3.3) **An `arm-strikes` names an assembly that never
+        /// strikes.** The assembly declares no `strikes`, so there is no pattern
+        /// to re-arm and the beat does nothing. Validation-tier (exit 1).
+        /// Prescription: give the assembly a `strikes` pattern, or drop the
+        /// effect.
+        pub const ASSEMBLY_ARM_NOTHING: DwCode = DwCode::new("DW0970", ExitTier::Build);
+    }
+    crate::dw_code! {
         /// A `collect` `dropped_by` is not backed by the wave it names:
         /// the wave declares no `{item}` drop of this objective's item, the count
         /// asks for more copies than the wave's mobs can yield, or the objective

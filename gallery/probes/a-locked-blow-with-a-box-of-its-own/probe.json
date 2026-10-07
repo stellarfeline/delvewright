@@ -1,0 +1,20 @@
+{
+  "code": "DW0969",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/assemblies/1/strikes/pattern/0/on_land/0/in",
+      "value": {
+        "anchor": "anchor/reach",
+        "extent": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "The arm's first step locks onto a player and its blow is given an `in` box of its own, the one cell at the middle of the floor. A locked blow lands on the cells the chosen pose comes down on at the turn the lock took, which the compiler derives for every cell it can lock; a written box is a second, fixed answer that is wrong everywhere else. It declares no unit: the blow and the lock are bound by the primary. The remedy is to drop the `in`."
+}

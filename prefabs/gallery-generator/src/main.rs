@@ -526,6 +526,18 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/reach",
+        pos: [7, 1, 12],
+        facing: Some("east"),
+        trigger_block: None,
+        note: "the middle of the floor the reaching arm locks onto (spec-0094): the arm stands \
+               five cells west of here at the wall, its lock region is this cell's 5 x 5 and \
+               its arming region the 9 x 7 round it. South of the hearth and west of the walk \
+               through the near hall, so the critical path crosses the arming region only on \
+               its way to the hearth, never the lock region",
+        role: None,
+    },
+    Anchor {
         name: "anchor/vantage",
         pos: [15, 1, 27],
         facing: Some("north"),
@@ -3939,6 +3951,7 @@ fn main() {
     write_bank(out);
     write_rig(out);
     write_long_hall(out);
+    write_arm_rig(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.
@@ -3955,6 +3968,100 @@ fn main() {
     if let Some(t) = textures {
         write_textures(Path::new(&t));
     }
+}
+
+// ---------------------------------------------------------------------------
+// The reaching arm's rig (spec-0094 §7)
+// ---------------------------------------------------------------------------
+
+/// The gallery's second rig: `rig/gallery-arm`, the arm that locks onto
+/// whoever stands on the floor in front of it (`anchor/reach`).
+///
+/// Two parts — a post and a club — and two strikes at two reaches, because a
+/// display entity cannot bend to a point: a lock turns the whole arm about its
+/// mark and chooses the pose that comes down on the cell it locked. `near`
+/// lays the club along the floor one to five cells in front of the post, `far`
+/// three to eight. `windup` lifts the club back over the post, `idle` holds it
+/// upright, and `rest` lays it down behind the post — the clip the story plays
+/// to stand the arm down (spec-0094 §3.3).
+const ARM_RIG_ID: &str = "gallery-arm";
+
+fn write_arm_rig(out: &Path) {
+    use delvewright_dsl::rig::{self, Clip, PartKind, Rig, RigPart, RigProvenance, Transform};
+    let t = |translation: [f64; 3], scale: [f64; 3]| Transform {
+        translation,
+        left_rotation: [0.0, 0.0, 0.0, 1.0],
+        scale,
+        right_rotation: [0.0, 0.0, 0.0, 1.0],
+    };
+    let post = || t([-0.4, 0.0, -0.4], [0.8, 1.6, 0.8]);
+    let pose = |club: Transform| vec![post(), club];
+    let upright = |sway: f64| t([-0.25, 1.6, -0.25 + sway], [0.5, 2.5, 0.5]);
+    let back = t([-0.25, 1.8, -0.9], [0.5, 2.8, 0.5]);
+    // The club laid along the floor from `from` to `to` cells in front.
+    let laid = |from: f64, to: f64| t([-0.5, 0.0, from], [1.0, 0.3, to - from]);
+    let clip = |ticks_per_frame: u32, looping: bool, frames: Vec<Vec<Transform>>| Clip {
+        ticks_per_frame,
+        looping,
+        frames,
+    };
+    let mut clips = std::collections::BTreeMap::new();
+    clips.insert(
+        "idle".to_string(),
+        clip(10, true, vec![pose(upright(0.0)), pose(upright(0.1))]),
+    );
+    clips.insert(
+        "windup".to_string(),
+        clip(4, false, vec![pose(upright(0.0)), pose(back.clone())]),
+    );
+    clips.insert(
+        "near".to_string(),
+        clip(2, false, vec![pose(back.clone()), pose(laid(1.0, 5.0))]),
+    );
+    clips.insert(
+        "far".to_string(),
+        clip(2, false, vec![pose(back.clone()), pose(laid(3.0, 8.0))]),
+    );
+    clips.insert(
+        "rest".to_string(),
+        clip(5, false, vec![pose(t([-0.25, 0.0, -2.6], [0.5, 0.3, 2.2]))]),
+    );
+    let part = |id: &str, block: &str| RigPart {
+        id: id.to_string(),
+        kind: PartKind::Block,
+        block: block.to_string(),
+        rest: None,
+    };
+    let r = Rig {
+        rig_version: rig::RIG_VERSION,
+        parts: vec![
+            part("post", "minecraft:polished_deepslate"),
+            part("club", "minecraft:polished_blackstone"),
+        ],
+        clips,
+        provenance: RigProvenance {
+            generator: "prefabs/gallery-generator".to_string(),
+            source: "original".to_string(),
+            spdx: "GPL-3.0-or-later".to_string(),
+        },
+    };
+    let issues = rig::check(&r);
+    assert!(
+        issues.is_empty(),
+        "{ARM_RIG_ID}: the rig breaks a rig rule the engine refuses with DW0935: {issues:?}"
+    );
+    let dir = out.join(rig::RIGS_DIR).join(ARM_RIG_ID);
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("create {}: {e}", dir.display()));
+    let path = dir.join(rig::RIG_FILE);
+    let mut text = serde_json::to_string_pretty(&r).expect("a rig serializes");
+    text.push('\n');
+    std::fs::write(&path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    println!(
+        "wrote {} ({} part(s), {} clip(s))",
+        path.display(),
+        r.parts.len(),
+        r.clips.len()
+    );
 }
 
 // ---------------------------------------------------------------------------

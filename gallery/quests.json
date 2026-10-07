@@ -263,6 +263,116 @@
             ]
           }
         }
+      },
+      {
+        "at": {
+          "anchor": "anchor/reach",
+          "offset": [
+            -5,
+            0,
+            0
+          ]
+        },
+        "facing": "east",
+        "id": "assembly/arm",
+        "initial": "idle",
+        "rig": "rig/gallery-arm",
+        "strikes": {
+          "pattern": [
+            {
+              "hold": 10,
+              "lock": {
+                "pick": "nearest",
+                "reaches": [
+                  "far"
+                ],
+                "within": {
+                  "anchor": "anchor/reach",
+                  "extent": [
+                    2,
+                    0,
+                    2
+                  ]
+                }
+              },
+              "on_land": [
+                {
+                  "amount": 1,
+                  "type": "damage-players"
+                },
+                {
+                  "at": {
+                    "anchor": "anchor/reach",
+                    "at": "anchor"
+                  },
+                  "sound": "minecraft:block.anvil.land",
+                  "type": "play-sound"
+                }
+              ],
+              "strike": "near",
+              "windup": "windup"
+            },
+            {
+              "hold": 10,
+              "lock": {
+                "pick": "furthest",
+                "reaches": [
+                  "far"
+                ],
+                "within": {
+                  "anchor": "anchor/reach",
+                  "extent": [
+                    2,
+                    0,
+                    2
+                  ]
+                }
+              },
+              "on_land": [
+                {
+                  "amount": 1,
+                  "type": "damage-players"
+                }
+              ],
+              "strike": "near",
+              "windup": "windup"
+            },
+            {
+              "hold": 6,
+              "lock": {
+                "pick": "random",
+                "reaches": [
+                  "far"
+                ],
+                "within": {
+                  "anchor": "anchor/reach",
+                  "extent": [
+                    2,
+                    0,
+                    2
+                  ]
+                }
+              },
+              "on_land": [
+                {
+                  "amount": 1,
+                  "type": "damage-players"
+                }
+              ],
+              "strike": "near",
+              "ticks_per_frame": 3,
+              "windup": "windup"
+            }
+          ],
+          "while_in": {
+            "anchor": "anchor/reach",
+            "extent": [
+              4,
+              1,
+              3
+            ]
+          }
+        }
       }
     ],
     "lethal_volumes": [
@@ -738,6 +848,10 @@
                     }
                   ]
                 }
+              },
+              {
+                "assembly": "assembly/arm",
+                "type": "arm-strikes"
               }
             ],
             "prompt": "Rest at the hearth",
@@ -875,6 +989,10 @@
             },
             {
               "assembly": "assembly/sentinel",
+              "type": "spawn-assembly"
+            },
+            {
+              "assembly": "assembly/arm",
               "type": "spawn-assembly"
             },
             {
@@ -1358,6 +1476,11 @@
                   "flag/hall-open"
                 ]
               }
+            },
+            {
+              "assembly": "assembly/arm",
+              "clip": "rest",
+              "type": "play-clip"
             }
           ]
         },
@@ -2674,6 +2797,10 @@
             },
             {
               "assembly": "assembly/sentinel",
+              "type": "despawn-assembly"
+            },
+            {
+              "assembly": "assembly/arm",
               "type": "despawn-assembly"
             }
           ],
