@@ -75,7 +75,8 @@
 2. **The default.** A cutscene with no `party` emits, in its start and before `gamemode spectator @a`, the `cs_standin` call over `@a[tag=!dw_cutscene,gamemode=!spectator]`, and in its end the unseen removal of `dw_standin_<bare>`; `party: present` is byte-identical to leaving it out. *`crates/delvec/tests/v36_standin.rs`.*
 3. **The opt-out.** `party: absent` emits `cs_<bare>_absent` with no stand-in line, and a campaign whose only cutscene is absent ships no `cs_standin`, no `standin_profile` loot table and no `standin` PackTest. *`crates/delvec/tests/v36_standin.rs`.*
 4. **The refusal.** Each shape of §5 is `DW0971`. *`compiler::standin::tests`.*
-5. **The live half.** The `standin` PackTest is green on the pinned server in the demo level's suite.
+5. **The live half.** The `standin` PackTest is green on the pinned server in the demo level's suite. *Measured: The Thing Beyond the Fog at content `aea21c7` on engine `5dca19d9a`, 20 of 20 required tests passed with `standin` among them; the bot ladder's run report records the bot's stand-in removed by the cutscene's end at (8215, −128, 8298), the column of the well cell it rang the bell from.*
+   *Red on the ground revision: `crates/delvec/tests/v36_standin.rs` run on `5726e7f6a` fails all three (`unknown field \`party\`` twice; `the start places a stand-in for every player in play` once), and passes on this tree.*
 6. **The gallery.** §6's element builds green; `tools/ci/check-gallery-coverage.py` reports 0 units in neither state.
 7. **The record and the skill.** The rows of §6, in the change that lands the code; `tools/ci/check-dw-codes.py` green.
 8. A demo-level row names **The Thing Beyond the Fog**.
