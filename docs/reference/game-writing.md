@@ -239,15 +239,21 @@ fallback when no key is configured.
 
 ## 8. The level is what the player reads
 
-- **L1 — The player reads what to do from the level itself.** A closed door
-  with a lever beside it needs no explanation. Text comes only from NPC
-  dialogue and a very few books kept in bookshelves, used to tell the player
-  where to go. A destination is recognised by its building, and must read as
-  what it is at playable scale (a tavern looks like a tavern), never by a
-  highlight marker pointing at it. No object exists only so that reading it
-  opens something. **Authored.** A sign, a floating label, a particle column or
-  a lit path pointing at a destination is the defect; so is a note, plaque or
-  lectern whose only job is to be read so that a gate opens.
+- **L1 — The level carries the information; the text only restates it.** A
+  closed door with a lever beside it needs no explanation. Story text comes
+  from NPC dialogue and a few books kept in bookshelves. The objective journal
+  restates what the story has already told the player, updating as they learn
+  it (step one `Talk to the innkeeper`; once her dialogue has said where to go,
+  step two `Go to the mill`), so a player who skimmed or forgot can look it up;
+  it never names a place, person or thing the player has not been told. A
+  destination is recognised by its building, and must read as what it is at
+  playable scale (a tavern looks like a tavern). Guidance cues in the level
+  (a path, a handhold) are diegetic and consistent across the design, blended
+  into the environment and found on a close look, never a jarring highlight. No
+  object exists only so that reading it opens something. **Authored.** A glowing
+  entity, floating label or beam over a target is the defect; so is a sign
+  pointing at a destination, or a note, plaque or lectern whose only job is to
+  be read so that a gate opens.
 
 ## Sources
 
