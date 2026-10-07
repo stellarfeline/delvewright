@@ -1663,8 +1663,16 @@ mod tests {
                     shows: String::new(),
                     sky: Some(camera::CameraSky { time, weather }),
                 }];
-                let cam =
-                    camera::emit(&plan, &sheet, &rows, &camera::EmitOptions::default()).unwrap();
+                let cam = camera::emit(
+                    &plan,
+                    &sheet,
+                    &rows,
+                    &camera::EmitOptions {
+                        world_paths: [("x".to_string(), "/abs/world".to_string())].into(),
+                        ..camera::EmitOptions::default()
+                    },
+                )
+                .unwrap();
                 let class = daylight_class(&sun_at(time.daytime_ticks()));
                 for (kind, bytes) in [
                     ("review", &review[0].1),
