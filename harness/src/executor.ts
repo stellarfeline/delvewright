@@ -1148,6 +1148,21 @@ const CUTSCENE_STEADY_EPS = 0.05;
 const CUTSCENE_POLL_MS = 250;
 
 /**
+ * How many times one walk may lose control to a cutscene and resume — the
+ * bound that keeps a trigger re-firing on every return from hanging the run.
+ */
+const MAX_CONTROL_RESUMES = 8;
+
+/** A walk abandoned because a cutscene took the bot's body (gamemode left adventure). */
+class ControlTakenError extends Error {
+  readonly mode: string | undefined;
+  constructor(mode: string | undefined) {
+    super(`control taken (gamemode \`${mode ?? "?"}\`)`);
+    this.mode = mode;
+  }
+}
+
+/**
  * The longest a respawned player cannot be hurt, in server ticks.
  *
  * On this version the only post-respawn protection is the client-load window
@@ -1547,6 +1562,14 @@ export class MineflayerExecutor implements StepExecutor {
   private campaignCompleteAtStep: number | undefined;
   /** The step index currently executing, for marker attribution. */
   private currentStep = -1;
+  /**
+   * The cutscene allowance of the step under way, in seconds: the larger of
+   * its `cutscene_seconds` and `en_route_cutscene_seconds`, or `undefined` when
+   * it declares neither. Set by {@link beforeStep}; read where a walk finds
+   * control taken ({@link awaitControlEnRoute}).
+   */
+  private stepCutsceneAllowanceS: number | undefined;
+  private stepLabel = "";
   /**
    * gap 7 (death): set once when the bot dies; long waits race against it so a death
    * fails FAST with a diagnostic instead of respawning and pathfinding across the void.
@@ -1980,6 +2003,21 @@ export class MineflayerExecutor implements StepExecutor {
     this.bot = bot;
     this.clientLoaded = loaded;
     this.packState = pack;
+    // Every gamemode change is written down with where the body is and which
+    // step is under way: a cutscene's control window is otherwise invisible
+    // in a run's log, and a stranding reads as a path failure.
+    {
+      let seen: string | undefined;
+      bot.on("game", () => {
+        const mode = bot.game?.gameMode as string | undefined;
+        if (mode === seen) return;
+        process.stderr.write(
+          `[gamemode] ${seen ?? "?"} -> ${mode ?? "?"} at ` +
+            `${bot.entity ? fmt(bot.entity.position) : "?"} during step ${this.currentStep}\n`,
+        );
+        seen = mode;
+      });
+    }
     // Installed in the turn the bot is created, before its `login` can arrive:
     // the join is the first window it has to see.
     this.loadTracer = traceLoadWindows(bot as unknown as TracedBot, {
@@ -4452,8 +4490,20 @@ export class MineflayerExecutor implements StepExecutor {
     try {
       await this.holdFullHealth("its start");
       await this.refreshStagedExclusion();
+      const watch = !this.controlTaken();
       try {
         await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+        // A cutscene that took the body as the walk ended (the goal read as
+        // reached from wherever the camera held it) is waited out, and the walk
+        // is made again from where it returns the bot, before anything is done
+        // at the goal.
+        for (let n = 0; watch && this.controlTaken(); n++) {
+          if (n >= MAX_CONTROL_RESUMES) {
+            throw new Error(`${label}: control was taken by a cutscene ${n} times at the goal`);
+          }
+          await this.awaitControlEnRoute(label);
+          await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+        }
       } catch (err) {
         const fault = this.takeLoopFault();
         if (fault) throw fault;
@@ -4978,6 +5028,83 @@ export class MineflayerExecutor implements StepExecutor {
    * resolve that leaves the bot outside the goal range is treated as a failure, so a
    * stuck hop fails the step loudly instead of silently marching the walk forward.
    */
+  /** Whether a cutscene holds the bot's body: it is in a gamemode it does not walk in. */
+  private controlTaken(): boolean {
+    const mode = this.gameModeNow();
+    return mode !== undefined && mode !== CONTROLLED_GAMEMODE;
+  }
+
+  /**
+   * `p`, abandoned the moment a cutscene takes the body. Polls the gamemode at
+   * {@link CUTSCENE_POLL_MS}; `p`'s own settlement after an abandonment lands on
+   * the handler attached here.
+   */
+  private raceControl<T>(p: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setInterval(() => {
+        if (this.controlTaken()) {
+          clearInterval(timer);
+          reject(new ControlTakenError(this.gameModeNow()));
+        }
+      }, CUTSCENE_POLL_MS);
+      p.then(
+        (v) => {
+          clearInterval(timer);
+          resolve(v);
+        },
+        (e: unknown) => {
+          clearInterval(timer);
+          reject(e);
+        },
+      );
+    });
+  }
+
+  /**
+   * Hold, mid-walk, until a cutscene gives the body back — bounded by the
+   * step's own declaration, never by a number invented here: the larger of its
+   * `cutscene_seconds` and `en_route_cutscene_seconds`, plus the grace
+   * {@link awaitCutscene} uses. A step that declares neither is refused: the
+   * plan did not account for a cutscene the route fired, and that is the
+   * finding.
+   */
+  private async awaitControlEnRoute(label: string): Promise<void> {
+    const bot = this.requireBot();
+    const mode = this.gameModeNow();
+    const declared = this.stepCutsceneAllowanceS;
+    if (declared === undefined) {
+      throw new Error(
+        `${label}: a cutscene took control (gamemode \`${mode ?? "?"}\`) at ` +
+          `${fmt(bot.entity.position)} during step \`${this.stepLabel}\`, which declares no ` +
+          `\`cutscene_seconds\` and no \`en_route_cutscene_seconds\` — the critical path ` +
+          `did not account for a cutscene this step fires`,
+      );
+    }
+    const budget = declared * 1000 + this.cutsceneGraceMs;
+    const started = Date.now();
+    process.stderr.write(
+      `[cutscene] ${label}: control taken (gamemode \`${mode ?? "?"}\`) at ` +
+        `${fmt(bot.entity.position)}; waiting up to ${declared}s declared + ` +
+        `${this.cutsceneGraceMs}ms grace\n`,
+    );
+    while (Date.now() - started < budget) {
+      if (this.death) throw this.death;
+      if (!this.controlTaken()) {
+        process.stderr.write(
+          `[cutscene] ${label}: control returned after ${Date.now() - started}ms at ` +
+            `${fmt(bot.entity.position)}; resuming the walk\n`,
+        );
+        await delay(CUTSCENE_SETTLE_MS);
+        return;
+      }
+      await delay(CUTSCENE_POLL_MS);
+    }
+    throw new Error(
+      `${label}: still \`${this.gameModeNow() ?? "?"}\` after ${budget}ms — longer than the ` +
+        `${declared}s step \`${this.stepLabel}\` declares`,
+    );
+  }
+
   private async runGoto(spec: GoalSpec, label: string): Promise<void> {
     const bot = this.requireBot();
     const { x, y, z, range } = spec;
@@ -4990,17 +5117,25 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     let lastErr: unknown;
+    let resumes = 0;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) {
         await delay(1_500);
       }
       try {
+        // Watched only from a walk that starts with the body in hand: a body
+        // already held when the walk begins was handed over that way (the
+        // sequencer waits a declared cutscene out between steps), and that is
+        // not a cutscene this walk fired.
+        const watch = !this.controlTaken();
         // Through the navigation owner, never `bot.pathfinder.goto` directly: this
         // wait is abandoned on a death and on the timeout, and an abandoned trip's
         // later rejection has to land on a handler that already exists.
         await this.raceDeath(() =>
           withTimeout(
-            this.nav.goto(new goals.GoalNear(x, y, z, range)),
+            watch
+              ? this.raceControl(this.nav.goto(new goals.GoalNear(x, y, z, range)))
+              : this.nav.goto(new goals.GoalNear(x, y, z, range)),
             REACH_TIMEOUT_MS,
             `reaching ${label}`,
           ),
@@ -5015,6 +5150,22 @@ export class MineflayerExecutor implements StepExecutor {
       } catch (err) {
         // A death is terminal for this run — never retry a path across the void.
         if (err instanceof BotDeathError) throw err;
+        // A cutscene took the body: wait it out against the step's declared
+        // allowance, then walk again from wherever it put the bot back. Not an
+        // attempt — the walk did not fail, it was interrupted.
+        if (err instanceof ControlTakenError) {
+          this.stopPathfinding();
+          resumes += 1;
+          if (resumes > MAX_CONTROL_RESUMES) {
+            throw new Error(
+              `${label}: control was taken by a cutscene ${resumes} times in one walk — ` +
+                `something on the way re-fires every time control returns`,
+            );
+          }
+          await this.awaitControlEnRoute(label);
+          attempt -= 1;
+          continue;
+        }
         lastErr = err;
         // Clear the pathfinder for the retry — including the internal stop flag, which
         // would otherwise make the retry (and every later hop) reject instantly without
@@ -5191,6 +5342,14 @@ export class MineflayerExecutor implements StepExecutor {
    * what this walk did (`dueRunBacks`); the harness decides nothing else.
    */
   async beforeStep(step: Step): Promise<void> {
+    const after = "cutsceneSeconds" in step ? step.cutsceneSeconds : undefined;
+    const enRoute = "enRouteCutsceneSeconds" in step ? step.enRouteCutsceneSeconds : undefined;
+    this.stepCutsceneAllowanceS =
+      after === undefined && enRoute === undefined ? undefined : Math.max(after ?? 0, enRoute ?? 0);
+    this.stepLabel =
+      `${step.action}` +
+      ("objective" in step && typeof step.objective === "string" ? ` ${step.objective}` : "") +
+      (step.action === "trigger" ? ` ${step.trigger}` : "");
     const plan = this.combatPlan;
     if (!plan || plan.runBacks.length === 0) return;
     const token =

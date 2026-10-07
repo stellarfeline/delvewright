@@ -2431,8 +2431,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   whole seconds rounded up). `en_route_cutscene_seconds` is the longest a cutscene
   fired by something the step's walk passes can hold the party: an `approach`
   trigger (an ambush desugars to one) whose range, read as the emitted selector
-  reads it, a cell of the step's proven leg enters; a pressure-plate or tripwire
-  trap the leg steps on; a `loop` step's `on_cross`; and an `on_arrive` bundle of
+  reads it, a cell of the step's proven leg enters (every such trigger, for a walk
+  the route proof did not route: a step with no proven leg, and the step after a
+  `rest`, which the bot walks from the bonfire); a pressure-plate or tripwire
+  trap the leg steps on (the same widening); a `loop` step's `on_cross`; and an `on_arrive` bundle of
   a body an earlier step set moving, which lands at a time no tick count states and
   is owed by every later step. The nested lists of the effect grammar are
   classified by `hold::Nesting` (a `sequence` step's timeline, `on_arrive`,
@@ -2441,8 +2443,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   fired by a death or a capture (`on_respawn`, `on_caught`, `on_death`) holds no step
   of the route, nor does an `on_kill`, an assembly's `on_land`, a shop offer or a
   shortcut's `on_unlock`. Gates are not read, so both numbers are upper bounds. The
-  harness sleeps `cutscene_seconds` after the step; when a walk finds the bot out of
-  adventure mode it waits for control up to the larger of the two plus its grace and
+  harness sleeps `cutscene_seconds` after the step; when a walk that began with the body in
+  hand finds it out of adventure mode it abandons the path, waits for control up to the larger of the two plus its grace and
   walks on from where the cutscene returned it, and it **refuses** control taken during
   a step that declares neither, naming the step — the plan missed a cutscene. Both keys
   ride every `branch-path-<branch>.json`.

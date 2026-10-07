@@ -308,6 +308,53 @@ test("awaitCutscene waits out the cutscene and returns once control is restored"
   assert.equal(bot.game.gameMode, "adventure"); // control confirmed returned
 });
 
+/** The mid-walk control wait, reached the way a walk reaches it. */
+type EnRouteWait = { awaitControlEnRoute(label: string): Promise<void> };
+const TALK_STEP = {
+  action: "talk-to" as const,
+  objective: "obj/hear",
+  npc: "npc/marshal",
+  pos: [0, 64, 0] as [number, number, number],
+  command: "/trigger dw.dlg set 1",
+};
+
+test("a cutscene the route fires mid-walk is waited out against the step's en-route allowance", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "200" });
+  await executor.beforeStep({ ...TALK_STEP, enRouteCutsceneSeconds: 1 });
+  bot.game.gameMode = "spectator";
+  setTimeout(() => {
+    bot.game.gameMode = "adventure";
+  }, 150);
+  await within(
+    "awaitControlEnRoute",
+    (executor as unknown as EnRouteWait).awaitControlEnRoute("npc npc/marshal"),
+  );
+  assert.equal(bot.game.gameMode, "adventure");
+});
+
+test("control taken during a step that declares no cutscene is refused, naming the step", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "200" });
+  await executor.beforeStep(TALK_STEP);
+  bot.game.gameMode = "spectator";
+  await assert.rejects(
+    () => (executor as unknown as EnRouteWait).awaitControlEnRoute("npc npc/marshal"),
+    /talk-to obj\/hear`, which declares no `cutscene_seconds` and no `en_route_cutscene_seconds`/,
+  );
+});
+
+test("a hold longer than the step declares is refused rather than waited forever", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "100" });
+  await executor.beforeStep({ ...TALK_STEP, cutsceneSeconds: 0 });
+  bot.game.gameMode = "spectator"; // never restored
+  await assert.rejects(
+    () => (executor as unknown as EnRouteWait).awaitControlEnRoute("npc npc/marshal"),
+    /longer than the 0s step/,
+  );
+});
+
 test("awaitCutscene is bounded: it continues (does not hang) if control never returns", async () => {
   const bot = new FakeBot();
   bot.game.gameMode = "spectator"; // never restored
