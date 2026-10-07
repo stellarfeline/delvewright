@@ -7084,7 +7084,12 @@ fn trigger_root_step(
         });
     }
     let c = plan.campaign;
-    let t = c.quests.content.triggers.iter().find(|t| t.id.as_str() == trigger)?;
+    let t = c
+        .quests
+        .content
+        .triggers
+        .iter()
+        .find(|t| t.id.as_str() == trigger)?;
     let (centre, radius) = match &t.on {
         delvewright_dsl::TriggerOn::Approach { range } => {
             (plan.point_any(t.at_anchor()?)?, f64::from(*range))
@@ -7108,7 +7113,10 @@ fn trigger_root_step(
         delvewright_dsl::TriggerOn::StrikeAssembly { assembly } => {
             let decl = c.quests.content.assembly_decl(assembly.as_str())?;
             let a = plan.point_any(decl.at.anchor.as_str())?;
-            (decl.at.cell(a), crate::compiler::crosshair::INTERACTION_REACH)
+            (
+                decl.at.cell(a),
+                crate::compiler::crosshair::INTERACTION_REACH,
+            )
         }
     };
     let r = radius.ceil() as i32;
@@ -15755,18 +15763,34 @@ mod tests {
         // rooted at step 2 it owes the far patch's own anchor and passes.
         let positions = vec![at_step([1, 65, 1], 1), at_step([4, 65, 1], 3)];
         let early = vec![("cp/far".to_string(), [3, 65, 1], 0usize)];
-        let err = verify_checkpoints(&world, &early, &positions, &RegionEvents::default(), &linear)
-            .unwrap_err();
+        let err = verify_checkpoints(
+            &world,
+            &early,
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED);
         let rooted = vec![("cp/far".to_string(), [3, 65, 1], 2usize)];
         assert!(
-            verify_checkpoints(&world, &rooted, &positions, &RegionEvents::default(), &linear)
-                .is_ok()
+            verify_checkpoints(
+                &world,
+                &rooted,
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
         );
         // And a trigger the party can reach from the entry keeps the entry root:
         // the same far checkpoint set from the near patch still strands.
         let near_first = earliest_reaching_config(&configs, &world, &near).unwrap();
-        let cps = vec![("cp/far".to_string(), [3, 65, 1], near_first.saturating_sub(1))];
+        let cps = vec![(
+            "cp/far".to_string(),
+            [3, 65, 1],
+            near_first.saturating_sub(1),
+        )];
         assert!(
             verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear)
                 .is_err()

@@ -178,7 +178,11 @@ fn hint_under_a_hidden_announcement_is_dw0862() {
         .into_iter()
         .find(|d| d.code == promise::DW_PROMPT_UNSHOWN)
         .expect("a hint under `announcement: hidden` is DW0862");
-    assert!(d.message.contains("states `announcement: hidden`"), "{}", d.message);
+    assert!(
+        d.message.contains("states `announcement: hidden`"),
+        "{}",
+        d.message
+    );
 
     let by_campaign = campaign_under(
         r#""guidance": { "announcements": "hidden" },"#,

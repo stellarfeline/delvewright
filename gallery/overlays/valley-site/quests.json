@@ -1,6 +1,10 @@
 {
   "campaign_id": "gallery",
   "content": {
+    "guidance": {
+      "announcements": "hidden",
+      "markers": "hidden"
+    },
     "quests": [
       {
         "cast": {
@@ -35,8 +39,23 @@
               "verb": "arrives"
             },
             "id": "obj/far-corner",
+            "marker": "shown",
             "radius": 2,
             "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/far-corner"
+            ],
+            "anchor": "anchor/bank-corner",
+            "announcement": "hidden",
+            "happening": {
+              "text": "the party presses the stone set in the far corner of the parapet",
+              "verb": "opens"
+            },
+            "id": "obj/the-corner-stone",
+            "marker": "shown",
+            "type": "interact"
           }
         ],
         "on_complete": [
@@ -110,6 +129,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.0",
   "stage": "quests"
 }

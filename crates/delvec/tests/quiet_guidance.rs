@@ -195,16 +195,36 @@ fn a_marker_follows_the_objective_and_then_the_campaign() {
     // Default: both markers.
     let out = guided("markers-default", None, json!({}), json!({}));
     let all = all_functions(&out);
-    assert!(all.contains("minecraft:lantern"), "the interact's lantern: {all}");
-    assert!(all.contains("minecraft:end_rod"), "the reach's end rod: {all}");
-    assert!(all.contains("summon minecraft:interaction"), "the hitbox: {all}");
+    assert!(
+        all.contains("minecraft:lantern"),
+        "the interact's lantern: {all}"
+    );
+    assert!(
+        all.contains("minecraft:end_rod"),
+        "the reach's end rod: {all}"
+    );
+    assert!(
+        all.contains("summon minecraft:interaction"),
+        "the hitbox: {all}"
+    );
 
     // The interact hides its own marker; the reach keeps the default.
-    let out = guided("markers-press-hidden", None, json!({ "marker": "hidden" }), json!({}));
+    let out = guided(
+        "markers-press-hidden",
+        None,
+        json!({ "marker": "hidden" }),
+        json!({}),
+    );
     let all = all_functions(&out);
     assert!(!all.contains("minecraft:lantern"), "no lantern: {all}");
-    assert!(all.contains("summon minecraft:interaction"), "the hitbox stays: {all}");
-    assert!(all.contains("minecraft:end_rod"), "the reach keeps its rod: {all}");
+    assert!(
+        all.contains("summon minecraft:interaction"),
+        "the hitbox stays: {all}"
+    );
+    assert!(
+        all.contains("minecraft:end_rod"),
+        "the reach keeps its rod: {all}"
+    );
 
     // The campaign hides markers; the reach opts back in.
     let out = guided(
@@ -214,8 +234,14 @@ fn a_marker_follows_the_objective_and_then_the_campaign() {
         json!({ "marker": "shown" }),
     );
     let all = all_functions(&out);
-    assert!(!all.contains("minecraft:lantern"), "no lantern under the default: {all}");
-    assert!(all.contains("minecraft:end_rod"), "`marker: shown` wins over the default: {all}");
+    assert!(
+        !all.contains("minecraft:lantern"),
+        "no lantern under the default: {all}"
+    );
+    assert!(
+        all.contains("minecraft:end_rod"),
+        "`marker: shown` wins over the default: {all}"
+    );
 }
 
 /// An announcement is the objective's to hide and the campaign's to default:
@@ -228,23 +254,46 @@ fn an_announcement_follows_the_objective_and_then_the_campaign() {
     assert!(fn_body(&out, "announce_o_press").is_some());
     assert!(fn_body(&out, "announce_o_stand").is_some());
     let setup = fn_body(&out, "setup").unwrap();
-    assert!(setup.contains("dw.ann_press") && setup.contains("dw.ann_stand"), "{setup}");
+    assert!(
+        setup.contains("dw.ann_press") && setup.contains("dw.ann_stand"),
+        "{setup}"
+    );
     let complete = fn_body(&out, "complete_o_press").unwrap();
     assert!(complete.contains("ui.objective.complete"), "{complete}");
 
-    let out = guided("announce-press-hidden", None, json!({ "announcement": "hidden" }), json!({}));
-    assert!(fn_body(&out, "announce_o_press").is_none(), "no announce function");
-    assert!(fn_body(&out, "announce_o_stand").is_some(), "the other is unchanged");
+    let out = guided(
+        "announce-press-hidden",
+        None,
+        json!({ "announcement": "hidden" }),
+        json!({}),
+    );
+    assert!(
+        fn_body(&out, "announce_o_press").is_none(),
+        "no announce function"
+    );
+    assert!(
+        fn_body(&out, "announce_o_stand").is_some(),
+        "the other is unchanged"
+    );
     let setup = fn_body(&out, "setup").unwrap();
     assert!(!setup.contains("dw.ann_press"), "no once-flag: {setup}");
     let tick = fn_body(&out, "tick").unwrap();
     assert!(!tick.contains("announce_o_press"), "no tick line: {tick}");
     let complete = fn_body(&out, "complete_o_press").unwrap();
-    assert!(!complete.contains("ui.objective.complete"), "no completion line: {complete}");
-    assert!(complete.contains("[dw:complete"), "the bot's marker stays: {complete}");
+    assert!(
+        !complete.contains("ui.objective.complete"),
+        "no completion line: {complete}"
+    );
+    assert!(
+        complete.contains("[dw:complete"),
+        "the bot's marker stays: {complete}"
+    );
     // The title still names the marker.
     let all = all_functions(&out);
-    assert!(all.contains("CustomName:\"Press the plate\""), "the nameplate stays: {all}");
+    assert!(
+        all.contains("CustomName:\"Press the plate\""),
+        "the nameplate stays: {all}"
+    );
 
     let out = guided(
         "announce-campaign-hidden",
@@ -252,8 +301,14 @@ fn an_announcement_follows_the_objective_and_then_the_campaign() {
         json!({}),
         json!({ "announcement": "shown" }),
     );
-    assert!(fn_body(&out, "announce_o_press").is_none(), "quiet by default");
-    assert!(fn_body(&out, "announce_o_stand").is_some(), "`announcement: shown` wins");
+    assert!(
+        fn_body(&out, "announce_o_press").is_none(),
+        "quiet by default"
+    );
+    assert!(
+        fn_body(&out, "announce_o_stand").is_some(),
+        "`announcement: shown` wins"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +375,7 @@ fn surf(follow_range: Option<f64>) -> Value {
     json!({ "id": "wave/surf", "anchor": "anchor/exit", "mobs": [mob] })
 }
 
-/// **The emission invariant that retired `DW0205`** (ledger row `isl-55`): the
+/// **The emission invariant that retired the skip rule** (ledger row `isl-55`): the
 /// availability bit and the click handler of the button that completes
 /// `obj/climb-out` both carry the objective's whole pending guard — `obj/surf`
 /// complete and `flag/ashore` set — so "Lead on." is not on screen beside "We
@@ -409,12 +464,18 @@ fn signposts(name: &str, quests: Value) -> (promise::FightBinding, Result<(), St
 fn a_fight_is_found_by_the_party_when_it_arrives_within_reach_of_the_act() {
     let (b, v) = signposts("found", beach_quests(surf(None), json!({})));
     assert!(v.is_ok(), "{v:?}");
-    assert_eq!((b.kills, b.announced, b.found, b.sites, b.unplaced), (1, 0, 1, 1, 0));
+    assert_eq!(
+        (b.kills, b.announced, b.found, b.sites, b.unplaced),
+        (1, 0, 1, 1, 0)
+    );
 
     let (b, v) = signposts("out-of-reach", beach_quests(surf(Some(2.0)), json!({})));
     let msg = v.expect_err("a wave out of reach of its act is DW0863");
     assert!(msg.starts_with("DW0863"), "{msg}");
-    assert!(msg.contains("4.0 blocks from the anchor"), "the distance: {msg}");
+    assert!(
+        msg.contains("4.0 blocks from the anchor"),
+        "the distance: {msg}"
+    );
     assert!(msg.contains("2 blocks here"), "the reach: {msg}");
     assert!(msg.contains("obj/muster"), "the firing site: {msg}");
     assert_eq!((b.kills, b.announced, b.found), (1, 0, 0));
@@ -442,7 +503,10 @@ fn an_announced_fight_is_found_by_its_lines_unless_its_announcement_is_hidden() 
     assert!(v.is_ok(), "{v:?}");
     assert_eq!((b.kills, b.announced, b.found), (1, 1, 0));
 
-    let (_, v) = signposts("announced-hidden", announced(json!({ "announcement": "hidden" }), None));
+    let (_, v) = signposts(
+        "announced-hidden",
+        announced(json!({ "announcement": "hidden" }), None),
+    );
     let msg = v.expect_err("a hidden announcement says nothing");
     assert!(msg.contains("its announcement is hidden"), "{msg}");
 
@@ -507,7 +571,10 @@ fn a_checkpoint_set_by_an_approach_trigger_builds_and_names_its_trigger() {
         .iter()
         .find(|c| c.trigger.as_deref() == Some("trigger/shrine-rest"))
         .expect("the trigger's checkpoint is on the plan and names its trigger");
-    assert_eq!(cp.fire_step, 0, "the plan keeps the entry; the proof re-roots it");
+    assert_eq!(
+        cp.fire_step, 0,
+        "the plan keeps the entry; the proof re-roots it"
+    );
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {

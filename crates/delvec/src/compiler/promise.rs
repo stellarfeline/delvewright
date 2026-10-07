@@ -418,7 +418,13 @@ pub fn check_fight_signposts(
             }
             let id = id.as_str();
             let wave_id = wave.as_str();
-            let Some(w) = c.quests.content.waves.iter().find(|w| w.id.as_str() == wave_id) else {
+            let Some(w) = c
+                .quests
+                .content
+                .waves
+                .iter()
+                .find(|w| w.id.as_str() == wave_id)
+            else {
                 continue; // an unknown wave is `DW0171`'s refusal, not this one
             };
             let (radius, radius_source) = crate::compiler::nav::wave_aggro_radius(w);
@@ -465,7 +471,9 @@ pub fn check_fight_signposts(
                 };
                 let mut detail = Vec::new();
                 if sites.is_empty() {
-                    detail.push(format!("nothing in the campaign fires `spawn-wave` for `{wave_id}`"));
+                    detail.push(format!(
+                        "nothing in the campaign fires `spawn-wave` for `{wave_id}`"
+                    ));
                 }
                 if anchor.is_none() {
                     detail.push(format!(
@@ -548,7 +556,10 @@ fn act_places(
     let c = plan.campaign;
     match owner {
         EffectRootOwner::ObjectiveComplete { quest, objective } => {
-            let o = quest.objectives.iter().find(|o| o.id().as_str() == *objective)?;
+            let o = quest
+                .objectives
+                .iter()
+                .find(|o| o.id().as_str() == *objective)?;
             objective_place(plan, quest, o).map(|p| vec![p])
         }
         // A quest completes when its last objective does: every objective no
@@ -574,9 +585,10 @@ fn act_places(
                 .collect::<Option<Vec<_>>>()
         }
         EffectRootOwner::Trigger(t) => match &t.on {
-            TriggerOn::Strike | TriggerOn::Use | TriggerOn::Approach { .. } => {
-                t.at_anchor().and_then(|a| plan.point_any(a)).map(|p| vec![p])
-            }
+            TriggerOn::Strike | TriggerOn::Use | TriggerOn::Approach { .. } => t
+                .at_anchor()
+                .and_then(|a| plan.point_any(a))
+                .map(|p| vec![p]),
             TriggerOn::StrikeNpc { npc } => c
                 .npcs
                 .content
@@ -642,7 +654,11 @@ fn objective_place(
             dropped_by,
             ..
         } => {
-            if let Some(f) = plan.collect_fills.iter().find(|f| f.objective_id == id.as_str()) {
+            if let Some(f) = plan
+                .collect_fills
+                .iter()
+                .find(|f| f.objective_id == id.as_str())
+            {
                 return Some(f.cell);
             }
             if let Some(w) = dropped_by {
@@ -667,7 +683,12 @@ fn objective_place(
 /// A wave's spawn anchor, resolved in the area that spawns it.
 fn wave_place(plan: &crate::compiler::plan::Plan, wave_id: &str) -> Option<[i32; 3]> {
     let c = plan.campaign;
-    let w = c.quests.content.waves.iter().find(|w| w.id.as_str() == wave_id)?;
+    let w = c
+        .quests
+        .content
+        .waves
+        .iter()
+        .find(|w| w.id.as_str() == wave_id)?;
     let area = crate::compiler::plan::wave_area(c, wave_id)?;
     plan.point(area, w.anchor.as_str())
 }
