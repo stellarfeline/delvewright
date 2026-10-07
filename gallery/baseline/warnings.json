@@ -168,6 +168,11 @@
       "stage": "world"
     },
     {
+      "code": "DW0950",
+      "pointer": "/content/loops/1",
+      "stage": "quests"
+    },
+    {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
@@ -333,6 +338,11 @@
       "code": "DW0498",
       "pointer": "/content/areas/1",
       "stage": "world"
+    },
+    {
+      "code": "DW0950",
+      "pointer": "/content/loops/1",
+      "stage": "quests"
     },
     {
       "code": "DW0353",
@@ -669,6 +679,11 @@
       "stage": "world"
     },
     {
+      "code": "DW0950",
+      "pointer": "/content/loops/1",
+      "stage": "quests"
+    },
+    {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
@@ -834,6 +849,11 @@
       "code": "DW0498",
       "pointer": "/content/areas/1",
       "stage": "world"
+    },
+    {
+      "code": "DW0950",
+      "pointer": "/content/loops/1",
+      "stage": "quests"
     },
     {
       "code": "DW0353",
@@ -1075,6 +1095,11 @@
       "code": "DW0498",
       "pointer": "/content/areas/1",
       "stage": "world"
+    },
+    {
+      "code": "DW0950",
+      "pointer": "/content/loops/1",
+      "stage": "quests"
     },
     {
       "code": "DW0353",
