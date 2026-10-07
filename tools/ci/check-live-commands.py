@@ -107,26 +107,47 @@ def gamerule_registry() -> set[str]:
     return {name.removeprefix("minecraft:") for name in children}
 
 
-def check_channels(files: list[str]) -> tuple[list[str], int]:
-    """Every live-command site reaches the server through the shared rule."""
+# A call that reaches the server THROUGH the shared rule: the shell functions
+# `dw_rcon`, `dw_rcon_probe`, `dw_rcon_ready`, and the Node `rconChannel(...)`.
+# These are the sites rule (1) exists to protect; a raw `rcon-cli` is the thing it
+# refuses, and by design there are none left to judge.
+CHANNEL_CALL = re.compile(r"\bdw_rcon(?:_probe|_ready)?\b|\brconChannel\(")
+
+
+def check_channels(files: list[str]) -> tuple[list[str], int, int, int]:
+    """Every live-command site reaches the server through the shared rule.
+
+    Returns `(findings, judged, exempt, sites)`:
+
+    * `judged`: files outside the allowlist that name `rcon-cli`, each held to the
+      rule;
+    * `exempt`: allowlisted files that name it, which the rule does not judge and
+      which are therefore never part of what it binds to;
+    * `sites`: calls through the shared rule in judged files, the sites the rule
+      protects. Zero raw `rcon-cli` sites is the intended state, so the binding that
+      can go vacuous is this one: a rule with no call site on the channel has
+      nothing left to protect.
+    """
     findings: list[str] = []
-    bound = 0
+    judged = 0
+    exempt = 0
+    sites = 0
     for path in files:
         if path in CHANNELS or Path(path).suffix not in (".sh", ".mjs", ".js", ".ts", ".bash"):
             continue
         text = (ROOT / path).read_text(errors="replace")
         suffix = Path(path).suffix
-        hits = [
-            (n, line)
-            for n, line in enumerate(text.splitlines(), 1)
-            if "rcon-cli" in strip_comment(line, suffix)
-        ]
+        lines = [(n, line) for n, line in enumerate(text.splitlines(), 1)]
+        hits = [(n, line) for n, line in lines if "rcon-cli" in strip_comment(line, suffix)]
+        calls = sum(1 for _, line in lines if CHANNEL_CALL.search(strip_comment(line, suffix)))
+        if allowed(path):
+            if hits:
+                exempt += 1
+            continue
+        sites += calls
         if not hits:
             continue
-        bound += 1
-        reason = allowed(path)
-        if reason:
-            continue
+        judged += 1
         if any(marker in text for marker in CHANNEL_MARKERS):
             continue
         n, line = hits[0]
@@ -138,7 +159,7 @@ def check_channels(files: list[str]) -> tuple[list[str], int]:
             f"`dw_rcon`/`run` asserts the server accepted the command, "
             f"`dw_rcon_probe`/`probe` is the deliberate unjudged form."
         )
-    return findings, bound
+    return findings, judged, exempt, sites
 
 
 def check_gamerules(
@@ -281,13 +302,14 @@ def main() -> int:
         )
         return 1
 
-    channel_findings, channel_bound = check_channels(files)
+    channel_findings, judged, exempt_files, channel_sites = check_channels(files)
     gamerule_findings, gamerule_bound, exemptions = check_gamerules(files, registry)
     parity_findings, parity_bound = check_rule_parity()
     ready_findings, ready_bound = check_readiness(files)
 
     print(
-        f"check-live-commands: {channel_bound} file(s) invoke rcon-cli; "
+        f"check-live-commands: {judged} file(s) judged for a raw rcon-cli "
+        f"({exempt_files} more exempt and not counted), {channel_sites} call site(s) on the shared rule; "
         f"{gamerule_bound} `gamerule` line(s) checked against "
         f"{len(registry)} pinned identifiers; "
         f"{parity_bound} refusal shape(s) compared across the two rule halves; "
@@ -295,7 +317,7 @@ def main() -> int:
     )
     for e in exemptions:
         print(f"check-live-commands: exempt — {e}")
-    if channel_bound == 0 or gamerule_bound == 0 or parity_bound == 0 or ready_bound == 0:
+    if channel_sites == 0 or gamerule_bound == 0 or parity_bound == 0 or ready_bound == 0:
         print(
             "check-live-commands: a check that binds to nothing is vacuous — "
             "expected live command sites, gamerule lines and refusal shapes to exist",
