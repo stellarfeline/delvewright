@@ -531,7 +531,8 @@ carry takes everyone or no one and the tiller can be pulled from the open floor,
 
 **Who is in the shot** (spec-0095). The ferry's crossing and the first muster
 cutscene leave a stand-in for every player where they stood, wearing their own
-skin and gear: the party is in its own cutscenes by default. The second muster
+skin and gear: the party is in its own cutscenes by default, and the ferry
+spells the default out (`"party": "present"`). The second muster
 cutscene, the parade shot style by style, declares `"party": "absent"`: the
 scene is the muster's, and its functions are `cs_muster_3_2_12687a8f_absent`
 with no stand-in line. `validation/stand-in-gate.json` reads two present and
