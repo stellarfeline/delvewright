@@ -1,12 +1,12 @@
 {
   "coverage": {
-    "units_bound": 1033,
+    "units_bound": 1036,
     "units_refusal_proven": 7,
-    "units_total": 1040,
+    "units_total": 1043,
     "units_unaccounted": 0
   },
   "delvec_version": "1.8.2",
   "dsl_version": "0.36.0",
-  "gallery_source_sha256": "a988b4cdd1477acd0b90da390cbd7d8c5475d6b08e8cafb4a28a9fb0027ea1c2",
+  "gallery_source_sha256": "6f39b2930b68c18b9a37f46254a367fac9b4ed22bcc22c56e7ea611f2c57ae6b",
   "generator_input_sha256": "ded6061f4500d897e46d80fb6e3da20e762d9d6960f0c227c8ebf7b0d423fca3"
 }
