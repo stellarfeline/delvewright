@@ -5980,6 +5980,29 @@ pub enum Verb {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
     },
+    /// Strikes a **lightning bolt** at a mark (DSL v0.36, spec-0092) — the
+    /// one-shot point effect beside [`Verb::Firework`] and [`Verb::Particle`].
+    ///
+    /// A real `minecraft:lightning_bolt`: every client in range draws the bolt
+    /// and the sky flash and hears the thunder. It stands at the mark's cell
+    /// centre on the mark's plane, so it strikes the block under the mark. A
+    /// storm of strikes is a [`Verb::Sequence`] of these.
+    ///
+    /// # A bolt hurts, so the compiler asks where it lands
+    ///
+    /// The bolt hits every living body within the reach
+    /// [`crate::lightning::REACH_HORIZONTAL`] / [`crate::lightning::REACH_BELOW`]
+    /// / [`crate::lightning::REACH_ABOVE`] states, and turns a villager into a
+    /// witch; a build refuses a strike in reach of a place the campaign posts a
+    /// body (`DW0958`), and one whose struck block the game would rewrite — a
+    /// lightning rod or weathering copper (`DW0959`). Players are **not**
+    /// posted: a player in reach takes at most
+    /// [`crate::lightning::worst_damage_hp`] HP. It lights no fire: every delve
+    /// seals `fire_spread_radius_around_player` at 0 (spec-0092 §2.3).
+    Lightning {
+        /// The mark the bolt strikes — the cell's centre, at the mark's plane.
+        at: Mark,
+    },
 }
 
 /// Where a [`Verb::Particle`] spawns (spec-0085 §4.3): a mark, or the literal
@@ -6956,6 +6979,7 @@ impl Verb {
             Verb::DespawnAssembly { .. } => "despawn-assembly",
             Verb::PlayClip { .. } => "play-clip",
             Verb::Particle { .. } => "particle",
+            Verb::Lightning { .. } => "lightning",
         }
     }
 
@@ -7015,6 +7039,8 @@ impl Verb {
             | Verb::Collapse { .. }
             | Verb::Teleport { .. }
             | Verb::Firework { .. }
+            // spec-0092: the thunder is the game's to send; the bolt is a world fact.
+            | Verb::Lightning { .. }
             // spec-0080: a biome repaint is a world fact (`fillbiome`).
             | Verb::SetAtmosphere { .. }
             // spec-0082: an assembly is a world object.
@@ -7238,6 +7264,8 @@ impl QuestEffect {
             | Verb::PlayClip { .. }
             // spec-0085's `particle`.
             | Verb::Particle { .. }
+            // spec-0092's `lightning`.
+            | Verb::Lightning { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -7796,6 +7824,8 @@ impl QuestEffect {
             // A firework is launched from a point and seats nothing, so it names
             // a location in the same shape `play-sound` does.
             Verb::Firework { at, .. } => vec![("at/anchor".to_string(), &at.anchor, None)],
+            // A bolt strikes a point and seats nothing, the same shape.
+            Verb::Lightning { at } => vec![("at/anchor".to_string(), &at.anchor, None)],
             // A particle at a mark names a location the same way; at `players`
             // it names none.
             Verb::Particle {

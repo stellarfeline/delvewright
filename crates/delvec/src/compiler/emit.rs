@@ -871,6 +871,10 @@ pub fn build_with_warnings(
     // firework — no ledger, no artifact, no byte moved for anybody who has not
     // opted in; a ledger that exists and reports zero columns is a finding.
     let mut firework_gate: Option<crate::compiler::firework::FireworkGate> = None;
+    // The strike proofs' binding ledger (`compiler::lightning`, spec-0092 §5),
+    // filled beside the firework's: `None` for a campaign that declares no
+    // strike, so nobody who has not opted in moves a byte.
+    let mut lightning_gate: Option<crate::compiler::lightning::LightningGate> = None;
     // The recovery stake's compile-time placement table (`compiler::stake`), and
     // the ledger of what its proofs looked at. `None` for a campaign that declares
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
@@ -1266,6 +1270,26 @@ pub fn build_with_warnings(
                     crate::compiler::firework::check(plan, blocks, campaign_spawn(plan), &waves);
                 eprintln!("{}", binding.line());
                 firework_gate = Some(binding);
+                if let Some((first, rest)) = findings.split_first() {
+                    for extra in rest {
+                        eprintln!("{} [error] build: {}", extra.code, extra.message);
+                    }
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
+            // **spec-0092: a lightning bolt strikes clear of every posted body and
+            // every block it would rewrite** (`DW0958`, `DW0959`). Asked where the
+            // firework is, for the firework's reason: its reach rule reads
+            // `DW0511`'s enumeration, which is complete only once the seating has
+            // run. The line prints before the verdict, zeroes included.
+            {
+                let (binding, findings) =
+                    crate::compiler::lightning::check(plan, blocks, campaign_spawn(plan), &waves);
+                eprintln!("{}", binding.line());
+                lightning_gate = Some(binding);
                 if let Some((first, rest)) = findings.split_first() {
                     for extra in rest {
                         eprintln!("{} [error] build: {}", extra.code, extra.message);
@@ -2470,6 +2494,9 @@ pub fn build_with_warnings(
     }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
+    }
+    if let Some(gate) = lightning_gate.as_ref().filter(|g| g.declared > 0) {
+        put_json(&mut out, "validation/lightning-gate.json", &gate.to_json());
     }
     // The recovery stake's binding ledger (`compiler::stake`, spec-0032 AC10): how
     // many stakes were declared, how many respawn seats and death regions the
@@ -3919,6 +3946,16 @@ fn emit_functions(
     for (min, max) in edit_bounds {
         setup.extend(crate::compiler::commands::forceload_add_lines(
             min[0], min[2], max[0], max[2],
+        ));
+    }
+    // spec-0092: the chunk each lightning strike lands in, held for the session
+    // like an area's claim. A `summon` into a chunk nothing loads is refused by
+    // the server and the beat ships with no bolt, every proof green — the same
+    // silent no-op `DW0929` refuses for a repaint. Empty for a campaign that
+    // declares no strike → setup byte-identical.
+    for cell in crate::compiler::lightning::strike_cells(plan) {
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            cell[0], cell[2], cell[0], cell[2],
         ));
     }
     setup.push("scoreboard players set #placed dw.sys 0".to_string());
@@ -6166,6 +6203,9 @@ fn assembles_world(plan: &Plan) -> bool {
         // assembles it — otherwise `DW0899` would be declared, compiled and
         // never asked of exactly the campaign that needs it most.
         || crate::compiler::firework::declares_one(plan)
+        // spec-0092: the struck block and the reach are questions about the
+        // assembled world, for the firework's reason.
+        || crate::compiler::lightning::declares_one(plan)
 }
 
 /// Fail the build if any campaign effect — at **every effect root**, at **any
@@ -6970,6 +7010,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         } => {
             emit_firework(plan, at, *flight, explosions, body);
         }
+        // --- spec-0092: a lightning bolt strikes at a mark ---
+        Verb::Lightning { at } => {
+            emit_lightning(plan, at, body);
+        }
         // --- spec-0085: a particle is an effect ---
         Verb::Particle {
             particle,
@@ -7391,6 +7435,25 @@ fn emit_firework(
         item_id = firework::ROCKET_ITEM,
         component = firework::FIREWORKS_COMPONENT,
         bursts = bursts.join(","),
+    ));
+}
+
+/// Emit a `lightning` effect (DSL v0.36, spec-0092): one `summon` of a
+/// `minecraft:lightning_bolt` at the mark's cell centre, on the mark's plane, so
+/// the block it strikes is the block under the mark — the cell
+/// `compiler::lightning` reads for `DW0959`. Absolute coordinates, like every
+/// point effect: the mark is a cell at build time.
+fn emit_lightning(plan: &Plan, at: &delvewright_dsl::Mark, body: &mut Vec<String>) {
+    let Some(anchor) = anchor_point_any(plan, at.anchor.as_str()) else {
+        return; // unresolved anchor (`DW0360` owns it)
+    };
+    let v = ent_xyz(at.cell(anchor));
+    body.push(format!(
+        "summon {entity} {x} {y} {z}",
+        entity = delvewright_dsl::lightning::BOLT_ENTITY,
+        x = v[0],
+        y = v[1],
+        z = v[2],
     ));
 }
 
@@ -16205,6 +16268,7 @@ fn emit_packtest(
     // a boundary.
     emit_boundary_packtest(plan, out);
     emit_night_vision_packtest(plan, out);
+    emit_lightning_packtests(plan, out);
 
     // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
     // spec-0014). Emits nothing when the campaign uses neither.
@@ -17937,6 +18001,54 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/v06_night_vision.mcfunction"),
         lines(&b).into_bytes(),
     );
+}
+
+/// spec-0092 PackTests: every declared strike, by its own emitted line, puts a
+/// `minecraft:lightning_bolt` at its mark on the tick it runs. The line is the
+/// one `emit_lightning` writes into the beat — never a restatement — and the
+/// chunk is the one setup holds loaded for it. Emits nothing for a campaign
+/// that declares no strike.
+fn emit_lightning_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for (n, (path, at)) in crate::compiler::lightning::declared(plan)
+        .into_iter()
+        .enumerate()
+    {
+        let mut line = Vec::new();
+        emit_lightning(plan, at, &mut line);
+        let Some(summon) = line.first() else {
+            continue; // unresolved mark (`DW0360` owns it)
+        };
+        let Some(anchor) = anchor_point_any(plan, at.anchor.as_str()) else {
+            continue;
+        };
+        let v = ent_xyz(at.cell(anchor));
+        let score = format!("#lb{n}");
+        let mut b = packtest_header(&format!(
+            "{title}: the lightning at {path} strikes {}",
+            at.display()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("scoreboard players set {score} dw.sys 0"));
+        b.push(summon.clone());
+        let near = format!(
+            "@e[type={},x={},y={},z={},distance=..1]",
+            delvewright_dsl::lightning::BOLT_ENTITY,
+            v[0],
+            v[1],
+            v[2]
+        );
+        b.push(format!(
+            "execute if entity {near} run scoreboard players set {score} dw.sys 1"
+        ));
+        b.push(format!("assert score {score} dw.sys matches 1"));
+        b.push(format!("kill {near}"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/lightning_{n}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
 }
 
 /// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to
