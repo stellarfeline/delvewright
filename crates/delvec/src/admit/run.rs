@@ -1688,9 +1688,24 @@ fn run_gallery(path: &Path, out: &Path, id: Option<String>, cols: usize, json: b
             return ExitCode::from(EXIT_OUTPUT);
         }
     };
-    if let Err(e) = write_tree(out, &tree) {
-        Diagnostic::error(DW_GALLERY, format!("cannot write gallery: {e}")).print(json);
-        return ExitCode::from(EXIT_OUTPUT);
+    match crate::outdir::replace(out, &tree) {
+        Ok(done) => {
+            if let Some(line) = done.summary(out) {
+                eprintln!("{line}");
+            }
+        }
+        Err(crate::outdir::OutError::NotOwned(why)) => {
+            Diagnostic::error(crate::outdir::DW_OUTPUT_NOT_OWNED.id(), why).print(json);
+            return ExitCode::from(EXIT_OUTPUT);
+        }
+        Err(crate::outdir::OutError::Internal(why)) => {
+            Diagnostic::error(DW_GALLERY, format!("cannot write gallery: {why}")).print(json);
+            return ExitCode::from(EXIT_OUTPUT);
+        }
+        Err(crate::outdir::OutError::Io(e)) => {
+            Diagnostic::error(DW_GALLERY, format!("cannot write gallery: {e}")).print(json);
+            return ExitCode::from(EXIT_OUTPUT);
+        }
     }
     // The count states the EXHIBITS and the templates they were placed from,
     // because for a tiled zone those are different numbers and a single one
@@ -1858,13 +1873,6 @@ fn write_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, data)
-}
-
-fn write_tree(root: &Path, tree: &BTreeMap<String, Vec<u8>>) -> std::io::Result<()> {
-    for (rel, bytes) in tree {
-        write_file(&root.join(rel), bytes)?;
-    }
-    Ok(())
 }
 
 fn parse_ivec3(s: &str) -> Option<[i32; 3]> {

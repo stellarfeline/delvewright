@@ -61,6 +61,8 @@
 # Usage: validation/render-shots.sh <build-dir> [out-dir] [--delvec BIN]
 #   <build-dir>  a `delvec build` output directory (containing render-plan.json)
 #   [out-dir]    where to write scenes/ + shot-index.json (default <build-dir>/shots)
+#                (the default is a derived artifact: the next `delvec build` into
+#                <build-dir> removes it with the build it was rendered from)
 #   --delvec     the engine to emit with (default: the creator's, see below)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"

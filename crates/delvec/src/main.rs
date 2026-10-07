@@ -2818,9 +2818,27 @@ fn run_build(
         }
     };
 
-    if let Err(e) = write_output(out, &output) {
-        eprintln!("internal error: cannot write output: {e}");
-        return ExitCode::from(EXIT_INTERNAL);
+    // The directory holds exactly this build afterwards, or nothing in it moves
+    // (`delvec::outdir`, `DW0967`).
+    match delvec::outdir::replace(out, &output) {
+        Ok(done) => {
+            if let Some(line) = done.summary(out) {
+                eprintln!("{line}");
+            }
+        }
+        Err(delvec::outdir::OutError::NotOwned(why)) => {
+            let code = delvec::outdir::DW_OUTPUT_NOT_OWNED;
+            print_build_error(code, &why, json);
+            return ExitCode::from(code.exit_tier().exit_status());
+        }
+        Err(delvec::outdir::OutError::Internal(why)) => {
+            eprintln!("internal error: cannot write output: {why}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+        Err(delvec::outdir::OutError::Io(e)) => {
+            eprintln!("internal error: cannot write output: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
     }
     ExitCode::SUCCESS
 }
@@ -3278,17 +3296,6 @@ fn run_edit(
         );
     }
     ExitCode::SUCCESS
-}
-
-fn write_output(out: &Path, output: &emit::BuildOutput) -> std::io::Result<()> {
-    for (rel, bytes) in output {
-        let path = out.join(rel);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, bytes)?;
-    }
-    Ok(())
 }
 
 /// `delvec fmt [--check] <path>…` — canonical form for authored Delvewright

@@ -65,7 +65,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -152,7 +151,9 @@ def manifest_delta(expected: dict, got: dict) -> list[str]:
 
 
 def build(delvec: Path, src: Path, out: Path, prefabs: Path, lang: str) -> None:
-    shutil.rmtree(out, ignore_errors=True)
+    # Not cleared first: `delvec build` replaces a tree it wrote and refuses
+    # (`DW0967`) a directory holding anything else, which a silent `rmtree` of
+    # a caller-supplied path would have deleted.
     r = subprocess.run(
         [str(delvec), "--lang", lang, "build", str(src), "-o", str(out), "--prefabs", str(prefabs)],
         capture_output=True,
