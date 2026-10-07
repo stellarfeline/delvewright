@@ -33,7 +33,7 @@ languages are delivered as sidecars.
 
    ```sh
    "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/i18n-translate.py" "$PWD/campaigns/<id>" \
-       --lang <code> --delvec "$(command -v delvec)"
+       --lang <code> --delvec "$(command -v delvec)" --prefabs "$DELVEWRIGHT_PREFABS"
    ```
 
    It writes the sidecar in canonical form (it runs `delvec fmt` on it),

@@ -9,6 +9,7 @@ sidecar we write.
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -35,6 +36,13 @@ def _named_delvec(monkeypatch):
     """`main` resolves a `delvec` before it fetches anything; tests that are not
     about resolution name one, as a creator would with `--delvec`."""
     monkeypatch.setenv("DELVEC", "delvec")
+
+
+@pytest.fixture(autouse=True)
+def _creator_prefabs(tmp_path_factory, monkeypatch):
+    """The creator env `~/.delvewright/env.sh` exports; tests about the prefab
+    root override or unset it."""
+    monkeypatch.setenv("DELVEWRIGHT_PREFABS", str(tmp_path_factory.mktemp("prefabs")))
 
 INVENTORY_DOC = {
     "campaign_id": "keep-trial",
@@ -1141,3 +1149,68 @@ def test_a_run_with_a_refused_row_leaves_it_out_and_fails(tmp_path, monkeypatch,
     content = json.loads(t.sidecar_path(tmp_path, "zh-cn").read_text("utf-8"))["content"]
     assert "quest.greet.goal" not in content, "a refused line never lands"
     assert content["dlg.keeper.greet.text"] == "译"
+
+
+def _content_clone_run(tmp_path, monkeypatch, extra=()):
+    """A creator's content clone: the engine's `campaigns/` symlink is not there, so
+    `delvec`'s own default prefab root resolves to nothing. The fake `delvec` fails
+    any call that names no existing prefab library, as the real one does."""
+    monkeypatch.setattr(t, "fetch_inventory", lambda *a, **k: inventory())
+    monkeypatch.setenv("TEST_I18N_KEY", "secret-value")
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG)
+
+    def poster(url, body, headers, timeout):
+        reply = {i["key"]: "译:" + i["en"].replace("the Keeper", "守关人") for i in sent_rows(body)}
+        return {"choices": [{"message": {"content": json.dumps(reply, ensure_ascii=False)}}]}
+
+    monkeypatch.setattr(t, "post_json", poster)
+    calls = []
+
+    def fake_run(cmd, *a, **k):
+        calls.append(list(cmd))
+        argv = list(cmd)
+        root = argv[argv.index("--prefabs") + 1] if "--prefabs" in argv else "campaigns/prefabs"
+        ok = os.path.isdir(root) and root != "campaigns/prefabs"
+        return subprocess.CompletedProcess(argv, 0 if ok else 1, "", "" if ok else "no prefabs")
+
+    monkeypatch.setattr(t.subprocess, "run", fake_run)
+    argv = [str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path), "--batch-size", "2", *extra]
+    return t.main(argv), calls
+
+
+def test_closing_validate_reads_the_creators_prefab_library(tmp_path, monkeypatch):
+    rc, calls = _content_clone_run(tmp_path, monkeypatch)
+    root = os.environ["DELVEWRIGHT_PREFABS"]
+    validate = [c for c in calls if "validate" in c]
+    assert rc == 0
+    assert validate and validate[0][validate[0].index("--prefabs") + 1] == root
+
+
+def test_prefabs_flag_outranks_the_env(tmp_path, monkeypatch):
+    other = tmp_path / "other-prefabs"
+    other.mkdir()
+    rc, calls = _content_clone_run(tmp_path, monkeypatch, ["--prefabs", str(other)])
+    assert rc == 0
+    assert all(c[c.index("--prefabs") + 1] == str(other) for c in calls)
+
+
+def test_missing_prefab_root_is_refused_naming_the_fix(tmp_path, monkeypatch, capsys):
+    _no_network(monkeypatch)
+    monkeypatch.delenv("DELVEWRIGHT_PREFABS")
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG)
+    monkeypatch.setenv("TEST_I18N_KEY", "secret-value")
+    rc = t.main([str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path)])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "--prefabs" in err and "DELVEWRIGHT_PREFABS" in err and "env.sh" in err
+
+
+def test_prefab_root_that_is_not_a_directory_is_refused(tmp_path, monkeypatch, capsys):
+    _no_network(monkeypatch)
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG)
+    monkeypatch.setenv("TEST_I18N_KEY", "secret-value")
+    rc = t.main(
+        [str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path), "--prefabs", str(tmp_path / "nope")]
+    )
+    assert rc == 2
+    assert "not a directory" in capsys.readouterr().err
