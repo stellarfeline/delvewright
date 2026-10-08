@@ -225,7 +225,7 @@ host** — the view distance it serves and the heap the build stated for it
 (`server/resources.properties` `heap-max`, which the image and the playtest
 server start with; the hosting side meets it, and a host that cannot runs the
 image with `-e MEMORY=<size>` knowing what it gives up) — and the two commands
-they will actually use. Then:
+they will actually use, below. It also carries:
 
 - **how to get in** — Minecraft Java 1.21.11 → Multiplayer → Direct Connect →
   `localhost:25565`. That wording is for the message you send them and nowhere
