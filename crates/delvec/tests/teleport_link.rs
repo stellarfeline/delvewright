@@ -725,19 +725,15 @@ fn the_seal_lifting_list_is_gone_and_one_function_marks_a_ride() {
     }
     // Every place a visited position is MARKED as arrived at by a ride — a
     // `transport_before:` field set to anything but `false` — is inside
-    // `positions_of`, in the non-test half of the `nav` module: every file
-    // under `compiler/nav/`, the only module that can build a visited position.
-    let navs: Vec<(String, &str)> = all
+    // `positions_of`, in the production text of the `nav` module: every file
+    // under `compiler/nav/`, the only module that can build a visited position,
+    // read through the one rule of what is production (`common::source_scan`).
+    let prod =
+        common::source_scan::production_sources(&common::repo_root().join("crates/delvec/src"));
+    let navs: Vec<(String, &str)> = prod
         .iter()
-        .filter(|(p, _)| {
-            p.to_string_lossy()
-                .replace('\\', "/")
-                .contains("compiler/nav/")
-        })
-        .map(|(p, text)| {
-            let body = text.split("#[cfg(test)]\nmod tests").next().unwrap();
-            (p.display().to_string(), body)
-        })
+        .filter(|(rel, _)| rel.starts_with("compiler/nav/"))
+        .map(|(rel, body)| (rel.clone(), body.as_str()))
         .collect();
     assert!(
         navs.len() >= 2,

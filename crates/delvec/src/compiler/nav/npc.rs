@@ -1,3 +1,18 @@
+//! The `move-npc` walk: an NPC's staged legs over the assembled world
+//! (`DW0307`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::{BodyScope, BodyStation, Plan, ResolvedAnchor, body_station};
+use delvewright_dsl::Verb;
+/// [`PLAYER_WIDTH`] is imported for a different question than the step rule's
+/// constants ([`World::neighbors_fp`]) and is deliberately not a
+/// fourth arm of the rule: it is the fallback hitbox [`npc_render_width`] hands
+/// [`step_vertices`], which shapes a step the router has **already** permitted
+/// and never re-decides whether it may be taken.
+use delvewright_dsl::metrics::PLAYER_WIDTH;
+use std::collections::{BTreeMap, BTreeSet};
+
 /// A planned `move-npc`: the resolved endpoints plus the per-tick waypoint
 /// polyline the emitter teleports the NPC body + interaction hitbox along.
 /// `waypoints[0]` is the origin and `waypoints.last()` is exactly the integer

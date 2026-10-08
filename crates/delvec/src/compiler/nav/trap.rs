@@ -1,3 +1,14 @@
+//! The trap proofs: a lethal trap on the forced path can be discharged
+//! (`DW0342`), a volley's cadence is a timing read (`DW0918`), a volley
+//! blankets its zone, and a collapse does not bury the path (`DW0442`,
+//! `DW0444`, `DW0445`, `DW0446`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::{Plan, TrapPlan};
+use delvewright_dsl::{Lethality, TrapReset};
+use std::collections::{BTreeMap, BTreeSet};
+
 /// Prove a `volley`'s cadence is a timing read — [`DW_VOLLEY_COIN_FLIP`]
 /// (`DW0918`).
 ///
@@ -255,7 +266,6 @@ fn disarm_reachable_before(
 // ---------------------------------------------------------------------------
 // spec-0022 — command-driven trap payloads: volley coverage + collapse burial
 // ---------------------------------------------------------------------------
-
 
 /// Height above a kill-zone cell's floor a volley aims at: centre mass of a
 /// standing player (a 1.8-tall hitbox with feet on the floor). Aiming at the
@@ -553,6 +563,14 @@ pub fn check_collapses(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
+    use std::collections::BTreeSet;
+
+    use crate::compiler::plan::RegionEvents;
+    use crate::compiler::plan::TrapDisarmPlan;
+    use crate::compiler::plan::{RegionEvent, RegionWrite};
+    use delvewright_dsl::{Lethality, TrapReset, TrapTrigger};
 
     // --- volley cadence (spec-0022, DW0918) ---
 

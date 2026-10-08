@@ -1,3 +1,12 @@
+//! The stealth proofs: a stealth zone is standable and reachable, and in time
+//! for a punishing beat's grace window (`DW0327`, `DW0355`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::Plan;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BinaryHeap};
+
 /// A resolved stealth zone `(anchor name, centre cell, half-extents)`.
 type ZoneCell = (String, [i32; 3], [u32; 3]);
 /// A stealth beat probe for [`verify_stealth`]: `(zones, firing step)`.
@@ -315,6 +324,9 @@ fn nearest_zone_by_flee_time(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn stealth_zone_over_void_is_dw0327() {

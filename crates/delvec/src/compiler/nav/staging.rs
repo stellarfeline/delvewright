@@ -1,3 +1,12 @@
+//! What the `move-npc` and `move-actor` walks share: where a body was left on a
+//! branch, the smoothed and resampled polyline, the facing, and the timeline's
+//! own seals.
+
+use super::*;
+use crate::compiler::failure::Failure;
+use delvewright_dsl::QuestEffect;
+use std::collections::{BTreeMap, BTreeSet};
+
 /// The branch condition a staging effect fires under: the per-effect
 /// `requires_flags` / `forbids_flags` gate (DSL v0.6).
 ///
@@ -23,7 +32,7 @@ pub struct BranchGate {
 
 impl BranchGate {
     /// The gate an effect carries.
-    fn of(eff: &QuestEffect) -> Self {
+    pub(in crate::compiler::nav) fn of(eff: &QuestEffect) -> Self {
         Self {
             requires: eff
                 .requires_flags()
@@ -86,7 +95,7 @@ impl BranchGate {
     /// A short, deterministic, filename-safe key for this gate ("" when
     /// unconditional). Derived from the sorted flag names, so it cannot depend on
     /// declaration order or map iteration.
-    fn key(&self) -> String {
+    pub(in crate::compiler::nav) fn key(&self) -> String {
         if self.is_unconditional() {
             return String::new();
         }
@@ -105,17 +114,17 @@ impl BranchGate {
 
 /// One staged position for a body, and the branch condition it was staged under.
 #[derive(Clone, Debug)]
-struct Staging {
+pub(in crate::compiler::nav) struct Staging {
     /// The branch this staging happened on.
     gate: BranchGate,
     /// Where it left the body (snapped floor cell).
-    pos: [i32; 3],
+    pub(in crate::compiler::nav) pos: [i32; 3],
     /// The facing it left the body in, when the leg planned one.
-    yaw: Option<i32>,
+    pub(in crate::compiler::nav) yaw: Option<i32>,
 }
 
 /// The staging history of every walked body, in campaign effect order.
-type StagingHistory = BTreeMap<String, Vec<Staging>>;
+pub(in crate::compiler::nav) type StagingHistory = BTreeMap<String, Vec<Staging>>;
 
 /// The most recent staging of `body` that provably already happened on the branch
 /// a leg gated by `gate` runs on — the origin that leg's walk must start from.
@@ -124,7 +133,7 @@ type StagingHistory = BTreeMap<String, Vec<Staging>>;
 /// implied by `gate`. `None` means nothing in the history is provable on this
 /// branch, and the caller falls back to the body's declared home anchor — the
 /// pre-chaining behaviour, which is right precisely when no prior leg is proven.
-fn chained_staging<'a>(
+pub(in crate::compiler::nav) fn chained_staging<'a>(
     history: &'a StagingHistory,
     body: &str,
     gate: &BranchGate,
@@ -137,7 +146,7 @@ fn chained_staging<'a>(
 }
 
 /// Record where a leg left a body, on the branch it ran on.
-fn record_staging(
+pub(in crate::compiler::nav) fn record_staging(
     history: &mut StagingHistory,
     body: &str,
     gate: BranchGate,
@@ -152,7 +161,7 @@ fn record_staging(
 
 /// `DW0488` for a deduped occurrence whose branch-correct origin is not the one
 /// the shared driver was planned from.
-fn shared_origin_error(
+pub(in crate::compiler::nav) fn shared_origin_error(
     verb: &str,
     body: &str,
     to_anchor: &str,
@@ -314,7 +323,12 @@ fn step_vertices(a: [f64; 3], b: [f64; 3], width: f64) -> Vec<[f64; 3]> {
 /// which use-gate it passed — and a thinned route would silently stop binding
 /// those rules. This is the polyline the body is RENDERED along; the proof keeps
 /// the cells.
-fn smooth_walk(world: &World, cells: &[[i32; 3]], fp: &Footprint, width: f64) -> Vec<[i32; 3]> {
+pub(in crate::compiler::nav) fn smooth_walk(
+    world: &World,
+    cells: &[[i32; 3]],
+    fp: &Footprint,
+    width: f64,
+) -> Vec<[i32; 3]> {
     if cells.len() < 3 {
         return cells.to_vec();
     }
@@ -354,7 +368,11 @@ fn smooth_walk(world: &World, cells: &[[i32; 3]], fp: &Footprint, width: f64) ->
 /// single tick — an emitted jitter far more visible than the right angles the
 /// straight line was cut to remove. The yaw is a property of the segment being
 /// walked, so it is taken from the exact samples; only the position is rounded.
-fn resample_body(cells: &[[i32; 3]], speed: f64, width: f64) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
+pub(in crate::compiler::nav) fn resample_body(
+    cells: &[[i32; 3]],
+    speed: f64,
+    width: f64,
+) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
     let mut pts: Vec<[f64; 3]> = Vec::with_capacity(cells.len() * 3);
     for (i, c) in cells.iter().enumerate() {
         let p = cell_center(*c);
@@ -439,7 +457,7 @@ fn point_at(pts: &[[f64; 3]], cum: &[f64], d: f64) -> [f64; 3] {
 /// `declared` is handed in rather than looked up here, because only the caller
 /// knows the scope its mover's anchors resolve in: an NPC's are its own area's
 /// ([`anchor_facing_yaw`]), an actor's are global ([`actor_anchor_facing_yaw`]).
-fn apply_arrival_yaw(yaws: &mut [i32], declared: Option<i32>) {
+pub(in crate::compiler::nav) fn apply_arrival_yaw(yaws: &mut [i32], declared: Option<i32>) {
     if let Some(last) = yaws.last_mut() {
         *last = arrival_yaw_of(declared, *last);
     }
@@ -475,7 +493,7 @@ fn yaw_of(dx: f64, dz: f64) -> Option<i32> {
 /// no horizontal motion of their own (a walk that opens with `resample`'s vertical
 /// step-up leg, or a degenerate zero-length move). An established facing is never
 /// overwritten with a fabricated south.
-fn yaws_along(waypoints: &[[f64; 3]], seed: i32) -> Vec<i32> {
+pub(in crate::compiler::nav) fn yaws_along(waypoints: &[[f64; 3]], seed: i32) -> Vec<i32> {
     let n = waypoints.len();
     let mut yaws = vec![0i32; n];
     // Forward pass: each waypoint faces its NEXT step; the final waypoint reuses the
@@ -496,7 +514,12 @@ fn yaws_along(waypoints: &[[f64; 3]], seed: i32) -> Vec<i32> {
 
 /// The first cell along the straight start→target line the actor's footprint cannot
 /// stand on — a best-effort "first blocked cell" for the `DW0325` message.
-fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footprint) -> [i32; 3] {
+pub(in crate::compiler::nav) fn first_blocked_fp(
+    world: &World,
+    start: [i32; 3],
+    target: [i32; 3],
+    fp: &Footprint,
+) -> [i32; 3] {
     let d = [
         target[0] - start[0],
         target[1] - start[1],
@@ -517,7 +540,9 @@ fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footp
 }
 
 /// The world cells a timeline's sealed gate regions fill (see [`crate::compiler::timeline`]).
-fn seal_cells(seal: &crate::compiler::timeline::GateState) -> BTreeSet<[i32; 3]> {
+pub(in crate::compiler::nav) fn seal_cells(
+    seal: &crate::compiler::timeline::GateState,
+) -> BTreeSet<[i32; 3]> {
     let mut cells = BTreeSet::new();
     for &(lo, hi) in seal.keys() {
         cells.extend(crate::compiler::assembled::region_cells(lo, hi));
@@ -534,16 +559,16 @@ fn seal_cells(seal: &crate::compiler::timeline::GateState) -> BTreeSet<[i32; 3]>
 /// a sorted `Vec<Region>` and stored in insertion order: deterministic, no
 /// hash-order iteration (ADR-0006).
 #[derive(Default)]
-struct SealCache {
+pub(in crate::compiler::nav) struct SealCache {
     index: BTreeMap<Vec<crate::compiler::timeline::Region>, usize>,
-    worlds: Vec<World>,
+    pub(in crate::compiler::nav) worlds: Vec<World>,
 }
 
 impl SealCache {
     /// The index of the sealed view for `seal`, or `None` when nothing is sealed
     /// (the caller then uses the base world — which is what keeps a campaign with
     /// no `close-gate` byte-identical: no clone, no different world, same routes).
-    fn index_of(
+    pub(in crate::compiler::nav) fn index_of(
         &mut self,
         base: &World,
         seal: &crate::compiler::timeline::GateState,
@@ -565,7 +590,7 @@ impl SealCache {
 /// The `DW0410` diagnostic for a staged walk the timeline's own `close-gate`
 /// makes impossible: names the verb, the mover, the leg, and every gate anchor
 /// sealed ahead of it, plus the three ways out.
-fn gate_timeline_error(
+pub(in crate::compiler::nav) fn gate_timeline_error(
     verb: &str,
     mover: &str,
     to_anchor: &str,
@@ -595,6 +620,10 @@ fn gate_timeline_error(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
+    use delvewright_dsl::metrics::PLAYER_WIDTH;
+    use std::collections::BTreeSet;
 
     /// **Owner playtest (castle tour): a walk across open ground read as a machine
     /// tracing gridlines rather than a person crossing a yard.**

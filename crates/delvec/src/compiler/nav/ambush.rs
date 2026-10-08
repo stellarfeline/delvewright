@@ -1,3 +1,10 @@
+//! The ambush proof: an ambush leaves the player a play (`DW0376`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::Plan;
+use std::collections::BTreeSet;
+
 /// Prove every `ambush` (spec-0016 §3) leaves the player a play —
 /// [`DW_AMBUSH_NO_COUNTERPLAY`] (`DW0376`).
 ///
@@ -73,6 +80,8 @@ fn verify_ambushes(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
 
     /// A 1-wide, ceilinged corridor along x at z=1 (walls at z=0 and z=2, floor
     /// at y=64, ceiling at y=67). A body standing in it cannot be climbed over —

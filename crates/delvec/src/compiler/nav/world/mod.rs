@@ -1475,3 +1475,6 @@ impl World {
         )
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,3 +1,11 @@
+//! The cutscene proofs: a camera dolly never clips a solid, and its aim stays
+//! inside the angular budget (`DW0308`, `DW0347`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::{Plan, ResolvedAnchor};
+use delvewright_dsl::Mark;
+
 /// The camera dolly world points of a cutscene (anchor + offset, block centres) —
 /// the exact points the emitter lerps between. Shared with the emitter so the
 /// air-corridor check validates what actually ships.
@@ -191,6 +199,8 @@ fn round3(p: [f64; 3]) -> [f64; 3] {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
 
     #[test]
     fn cutscene_clip_detects_a_solid_on_the_dolly_and_passes_clean_air() {

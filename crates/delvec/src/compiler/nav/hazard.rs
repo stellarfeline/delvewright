@@ -1,3 +1,12 @@
+//! The timed-hazard proof: a periodic hazard can be watched from safety before
+//! it is committed to (`DW0388`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::Plan;
+use delvewright_dsl::Diagnostic;
+use std::collections::BTreeSet;
+
 // ---------------------------------------------------------------------------
 // Hazard observability (spec-0016 §4 addendum, souls dossier §5.3 / §2.2 axis 5)
 // ---------------------------------------------------------------------------
@@ -244,6 +253,8 @@ fn sees_hazard_cell(world: &World, watch: [i32; 3], hazard: [i32; 3]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
 
     /// A one-wide run of open columns along x at a fixed z.
     fn run_x(z: i32, x0: i32, x1: i32) -> Vec<[i32; 2]> {

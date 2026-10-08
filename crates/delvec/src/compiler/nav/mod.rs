@@ -31,22 +31,55 @@ mod world;
 pub use route::*;
 pub use world::*;
 
-use crate::compiler::failure::Failure;
+mod actor;
+mod ambush;
+mod checkpoint;
+mod cutscene;
+mod furniture;
+mod hazard;
+mod horizon;
+mod lane;
+mod leave;
+mod lethal;
+mod npc;
+mod respawn;
+mod sea;
+mod shortcut;
+mod staging;
+mod stealth;
+mod timed_gate;
+mod trap;
+mod view;
+mod wave;
+pub use actor::*;
+pub use ambush::*;
+pub use checkpoint::*;
+pub use cutscene::*;
+pub use furniture::*;
+pub use hazard::*;
+pub use horizon::*;
+pub use lane::*;
+pub use leave::*;
+pub use lethal::*;
+pub use npc::*;
+pub use respawn::*;
+pub use sea::*;
+pub use shortcut::*;
+pub use staging::*;
+pub use stealth::*;
+pub use timed_gate::*;
+pub use trap::*;
+pub use view::*;
+pub use wave::*;
+
+#[cfg(test)]
+mod testkit;
+
 use delvewright_dsl::Verb;
-/// [`PLAYER_WIDTH`] is imported for a different question than the step rule's
-/// constants ([`World::neighbors_fp`]) and is deliberately not a
-/// fourth arm of the rule: it is the fallback hitbox [`npc_render_width`] hands
-/// [`step_vertices`], which shapes a step the router has **already** permitted
-/// and never re-decides whether it may be taken.
-use delvewright_dsl::metrics::PLAYER_WIDTH;
-use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
-use delvewright_dsl::{Lethality, Mark, QuestEffect, TrapReset};
+use delvewright_dsl::QuestEffect;
 
-use crate::compiler::plan::{
-    BodyScope, BodyStation, Plan, RegionEvents, ResolvedAnchor, TrapPlan, body_station,
-};
+use crate::compiler::plan::Plan;
 use delvewright_dsl::Diagnostic;
 use delvewright_dsl::{DwCode, ExitTier};
 
@@ -394,45 +427,6 @@ delvewright_dsl::dw_code! {
     pub const DW_MOVE_ORIGIN_SHARED: DwCode = DwCode::new("DW0488", ExitTier::Build);
 }
 
-/// Every quest effect in the campaign (objective-complete, quest-complete, and
-/// trigger effects), matching the emitter's `all_campaign_effects` traversal —
-/// each effect ahead of the ones nested in its `sequence` steps / `on_arrive`
-/// bundle (spec-0014), so nav planning sees moves and cutscenes wherever they
-/// appear. Pre-0.6 campaigns have no nesting, so the flattened list equals the
-/// shallow one and output stays byte-identical.
-///
-/// Defined as [`crate::compiler::timeline::walk`] with the per-effect gate states dropped:
-/// the two share **one** traversal, so the effect a planner is looking at and the
-/// timeline state attributed to it can never drift out of alignment.
-fn all_effects<'a>(plan: &'a Plan) -> Vec<&'a QuestEffect> {
-    crate::compiler::timeline::walk(plan)
-        .into_iter()
-        .map(|(e, _)| e)
-        .collect()
-}
-
-/// Whether the campaign uses any verb that needs the voxel `World` (`move-npc` or
-/// `cutscene`). When false, the emitter skips building the occupancy model, so
-/// v0.2/v0.3 output is untouched.
-pub fn needs_world(plan: &Plan) -> bool {
-    all_effects(plan).iter().any(|e| {
-        matches!(
-            &e.verb,
-            Verb::MoveNpc { .. } | Verb::Cutscene { .. } | Verb::MoveActor { .. }
-        )
-    })
-    // The critical-path walkability check (DW0311) also needs the occupancy model.
-        || has_walkable_critical_leg(plan)
-    // The checkpoint (DW0315/DW0316) and stealth-zone (DW0327) proofs, v0.6, need
-    // the assembled occupancy model too, as does the trap proof (DW0342, spec-0011).
-        || !plan.checkpoints.is_empty()
-        || !plan.stealth_beats.is_empty()
-    // A loop's slab, span and tiling are judged over the assembled world
-    // (spec-0086 §4).
-        || !plan.loops.is_empty()
-        || !plan.traps.is_empty()
-}
-
 delvewright_dsl::dw_code! {
     /// `DW0921`: **a place a body can get into and not out of.** From a cell of the
     /// proven route, a body walking, falling and jumping ([`World::body_moves`]) can
@@ -451,23 +445,6 @@ delvewright_dsl::dw_code! {
     /// room shut until a later beat opens it is only a trap when the beat is out of
     /// reach from inside — which is what this refuses.
     pub const DW_BODY_CANNOT_LEAVE: DwCode = DwCode::new("DW0921", ExitTier::Build);
-}
-
-/// The spec-0016 §7 pacing lints. **Warning tier** — every finding here is a
-/// design judgement the compiler can measure but must not overrule, so these
-/// return diagnostics rather than failing the build.
-///
-/// 1. [`DW_RETRY_COST`] (`DW0379`) — bonfire/checkpoint → the DEEPEST beat it
-///    respawns into, over the proven path, must be under
-///    [`RETRY_BUDGET_TICKS`]. Dying should be an investment, not a commute.
-/// 2. [`DW_OPTIONAL_ELITE_UNAVOIDABLE`] (`DW0380`) — an enemy no critical-path
-///    `kill` objective requires must have a route around it. The Tree Sentinel
-///    pattern is legitimate; a "walk around it" you cannot walk around is not.
-pub fn pacing_lints(plan: &Plan, world: &World) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    out.extend(retry_cost_lint(plan, world));
-    out.extend(optional_elite_lint(plan, world));
-    out
 }
 
 delvewright_dsl::dw_code! {
@@ -678,3 +655,58 @@ delvewright_dsl::dw_code! {
     pub const DW_VOLLEY_SLOT_OCCLUDED: DwCode = DwCode::new("DW0446", ExitTier::Build);
 }
 
+/// Every quest effect in the campaign (objective-complete, quest-complete, and
+/// trigger effects), matching the emitter's `all_campaign_effects` traversal —
+/// each effect ahead of the ones nested in its `sequence` steps / `on_arrive`
+/// bundle (spec-0014), so nav planning sees moves and cutscenes wherever they
+/// appear. Pre-0.6 campaigns have no nesting, so the flattened list equals the
+/// shallow one and output stays byte-identical.
+///
+/// Defined as [`crate::compiler::timeline::walk`] with the per-effect gate states dropped:
+/// the two share **one** traversal, so the effect a planner is looking at and the
+/// timeline state attributed to it can never drift out of alignment.
+fn all_effects<'a>(plan: &'a Plan) -> Vec<&'a QuestEffect> {
+    crate::compiler::timeline::walk(plan)
+        .into_iter()
+        .map(|(e, _)| e)
+        .collect()
+}
+
+/// Whether the campaign uses any verb that needs the voxel `World` (`move-npc` or
+/// `cutscene`). When false, the emitter skips building the occupancy model, so
+/// v0.2/v0.3 output is untouched.
+pub fn needs_world(plan: &Plan) -> bool {
+    all_effects(plan).iter().any(|e| {
+        matches!(
+            &e.verb,
+            Verb::MoveNpc { .. } | Verb::Cutscene { .. } | Verb::MoveActor { .. }
+        )
+    })
+    // The critical-path walkability check (DW0311) also needs the occupancy model.
+        || has_walkable_critical_leg(plan)
+    // The checkpoint (DW0315/DW0316) and stealth-zone (DW0327) proofs, v0.6, need
+    // the assembled occupancy model too, as does the trap proof (DW0342, spec-0011).
+        || !plan.checkpoints.is_empty()
+        || !plan.stealth_beats.is_empty()
+    // A loop's slab, span and tiling are judged over the assembled world
+    // (spec-0086 §4).
+        || !plan.loops.is_empty()
+        || !plan.traps.is_empty()
+}
+
+/// The spec-0016 §7 pacing lints. **Warning tier** — every finding here is a
+/// design judgement the compiler can measure but must not overrule, so these
+/// return diagnostics rather than failing the build.
+///
+/// 1. [`DW_RETRY_COST`] (`DW0379`) — bonfire/checkpoint → the DEEPEST beat it
+///    respawns into, over the proven path, must be under
+///    [`RETRY_BUDGET_TICKS`]. Dying should be an investment, not a commute.
+/// 2. [`DW_OPTIONAL_ELITE_UNAVOIDABLE`] (`DW0380`) — an enemy no critical-path
+///    `kill` objective requires must have a route around it. The Tree Sentinel
+///    pattern is legitimate; a "walk around it" you cannot walk around is not.
+pub fn pacing_lints(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    out.extend(retry_cost_lint(plan, world));
+    out.extend(optional_elite_lint(plan, world));
+    out
+}

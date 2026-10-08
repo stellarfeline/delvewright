@@ -12,6 +12,7 @@ pub mod corridor;
 pub mod ferry;
 pub mod pinned;
 pub mod sculpt;
+pub mod source_scan;
 pub mod station4;
 
 /// The six stage filenames (matching `delvec::compiler::load::STAGE_FILES`).

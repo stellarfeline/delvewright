@@ -1,3 +1,13 @@
+//! The checkpoint proofs: a checkpoint never strands the party and stands on
+//! floor (`DW0315`, `DW0316`), and the walk back from a rest point is costed
+//! (`DW0379`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::{Plan, RegionEvents};
+use delvewright_dsl::Diagnostic;
+use std::collections::BTreeSet;
+
 /// Prove no `set-checkpoint` strands the party (DSL v0.6, spec-0012). Two
 /// obligations, per checkpoint:
 ///
@@ -333,7 +343,7 @@ fn verify_checkpoints(
 const RETRY_BUDGET_TICKS: u32 = 60 * 20;
 
 /// `DW0379`: the walk back from each rest point to the DEEPEST beat it governs.
-fn retry_cost_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+pub(in crate::compiler::nav) fn retry_cost_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
     let cps: Vec<(String, [i32; 3], usize, bool)> = plan
         .checkpoints
         .iter()
@@ -447,6 +457,12 @@ fn verify_retry_cost(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
+    use std::collections::BTreeSet;
+
+    use crate::compiler::plan::RegionEvents;
+    use crate::compiler::plan::{RegionEvent, RegionWrite};
 
     /// A rest point 4 blocks from the next beat is a real retry loop: 16 ticks
     /// back, well inside the 60 s budget. No warning.

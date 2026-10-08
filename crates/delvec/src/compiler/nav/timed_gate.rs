@@ -1,10 +1,18 @@
+//! The timed-gate proofs: a gate is a timing read, not a coin flip, and its
+//! disarm is usable before it (`DW0378`, `DW0393`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::Plan;
+use std::collections::BTreeSet;
+
 /// The minimum share of a timed hazard's cycle that must admit passage
 /// (spec-0016 §4). Below this the hazard stops being a timing read and becomes a
 /// coin flip. Expressed as a percentage so the arithmetic below stays in
 /// integers — no float rounding in a proof (ADR-0006). One floor for every timed
 /// hazard: a `timed-gate` (`DW0378`) and a `volley` (`DW0918`) are judged by
 /// [`timing_read`] against this same number.
-const TIMING_READ_MIN_ADMIT_PERCENT: u32 = 20;
+pub(in crate::compiler::nav) const TIMING_READ_MIN_ADMIT_PERCENT: u32 = 20;
 
 /// One timing read: a route of `moves` blocks that must be completed inside a
 /// window of `open_ticks` which recurs every `open_ticks + closed_ticks`.
@@ -16,29 +24,33 @@ const TIMING_READ_MIN_ADMIT_PERCENT: u32 = 20;
 /// percentage rounded DOWN — the proof never credits a hazard with a share it
 /// does not have.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct TimingRead {
+pub(in crate::compiler::nav) struct TimingRead {
     /// Blocks on the route the body must complete inside the window.
-    moves: u32,
+    pub(in crate::compiler::nav) moves: u32,
     /// `moves` charged at [`SPRINT_TICKS_PER_BLOCK`].
-    cross_ticks: u32,
+    pub(in crate::compiler::nav) cross_ticks: u32,
     /// Entry phases, of `cycle`, from which the route is completed in time.
-    admits: u32,
+    pub(in crate::compiler::nav) admits: u32,
     /// Ticks in one full cycle.
-    cycle: u32,
+    pub(in crate::compiler::nav) cycle: u32,
     /// `admits` as a percentage of `cycle`, rounded down.
-    percent: u32,
+    pub(in crate::compiler::nav) percent: u32,
 }
 
 impl TimingRead {
     /// Below [`TIMING_READ_MIN_ADMIT_PERCENT`]: a coin flip, not a timing read.
-    fn is_coin_flip(&self) -> bool {
+    pub(in crate::compiler::nav) fn is_coin_flip(&self) -> bool {
         self.percent < TIMING_READ_MIN_ADMIT_PERCENT
     }
 }
 
 /// Judge a route of `moves` blocks against a window of `open_ticks` recurring
 /// every `open_ticks + closed_ticks` — see [`TimingRead`].
-fn timing_read(moves: u32, open_ticks: u32, closed_ticks: u32) -> TimingRead {
+pub(in crate::compiler::nav) fn timing_read(
+    moves: u32,
+    open_ticks: u32,
+    closed_ticks: u32,
+) -> TimingRead {
     let cross_ticks = moves * SPRINT_TICKS_PER_BLOCK;
     let cycle = open_ticks + closed_ticks;
     let admits = open_ticks.saturating_sub(cross_ticks) + u32::from(cross_ticks <= open_ticks);
@@ -223,6 +235,8 @@ fn gate_crossing_footings(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
 
     fn timed_gate(
         region: ([i32; 3], [i32; 3]),

@@ -1,7 +1,13 @@
+//! Fluid against the built world: fluid that runs out of it (`DW0318`), and the
+//! ambient sea inside the walk region (`DW0851`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use std::collections::BTreeSet;
+
 // ---------------------------------------------------------------------------
 // Fluid that leaves the built world (DW0318)
 // ---------------------------------------------------------------------------
-
 
 /// **What the fluid-escape proof looked at**, so the verdict is readable as a
 /// measurement rather than as a silence (CLAUDE.md: every validation artifact
@@ -155,7 +161,6 @@ impl FluidEscape {
 // ---------------------------------------------------------------------------
 // The ambient sea inside the built volume (DW0851)
 // ---------------------------------------------------------------------------
-
 
 /// **What the sea-seepage proof looked at**, so its verdict reads as a
 /// measurement rather than a silence (CLAUDE.md: every validation artifact states
@@ -525,6 +530,13 @@ impl SeaSeepage {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // -----------------------------------------------------------------------
+    // DW0318 — fluid that leaves the built world
+    // -----------------------------------------------------------------------
 
     fn plate_with_a_source_at_the_edge() -> World {
         let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();

@@ -1,3 +1,10 @@
+//! Boundary safety against the world's horizon: no step off the proven ground
+//! leaves the world or strands a swimmer (`DW0322`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use std::collections::{BTreeMap, BTreeSet};
+
 /// How many individual violations a `DW0322` report names before summarising the
 /// remainder as a count. A boundary failure is systemic by nature — one stripped
 /// berm is hundreds of exposed columns — and hundreds of identical lines are
@@ -5,7 +12,7 @@
 /// Aborting at the first one instead hid the *scale*, which is the single most
 /// useful fact about the failure: "one cell" and "the whole coastline" call for
 /// completely different fixes.
-const BOUNDARY_LIST_LIMIT: usize = 6;
+pub(in crate::compiler::nav) const BOUNDARY_LIST_LIMIT: usize = 6;
 
 /// How far past the placed geometry the ocean-stranding search window extends
 /// before the sea counts as **open sea** (see [`verify_boundary_safety`]). Any
@@ -435,6 +442,9 @@ fn ocean_window(world: &World) -> Option<([i32; 2], [i32; 2])> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
+    use std::collections::{BTreeMap, BTreeSet};
 
     /// **Why `DW0318` runs before `DW0322`, demonstrated rather than asserted.**
     ///

@@ -1,3 +1,11 @@
+//! The shortcut proofs: a long route to the unlock exists, and opening the gate
+//! shortens it (`DW0373`, `DW0374`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::Plan;
+use std::collections::BTreeSet;
+
 /// Prove every `shortcut` door (spec-0016 §2) is a real shortcut.
 ///
 /// The base occupancy model treats every gate region as passable (the
@@ -90,6 +98,8 @@ fn verify_shortcuts(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
 
     /// A shortcut plan over a 1-cell gate column at `(gx, y..y+1, zw)`.
     fn shortcut(gx: i32, y: i32, zw: i32, unlock: [i32; 3]) -> crate::compiler::plan::ShortcutPlan {

@@ -783,3 +783,6 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

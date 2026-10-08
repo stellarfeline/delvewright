@@ -1,3 +1,12 @@
+//! The `move-actor` walk: an actor's staged legs over the assembled world
+//! (`DW0325`, `DW0410`, `DW0488`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::{Plan, ResolvedAnchor};
+use delvewright_dsl::Verb;
+use std::collections::{BTreeMap, BTreeSet};
+
 /// The declared facing of an anchor an **actor** walks to, as a yaw — the
 /// counterpart of [`anchor_facing_yaw`], resolved the way an actor's anchors are
 /// resolved everywhere else in this module: globally, first match, because an
@@ -48,7 +57,10 @@ impl ActorMovePlan {
 }
 
 /// The stage-5 actor with this id, if declared.
-fn actor_of<'a>(plan: &'a Plan, actor_id: &str) -> Option<&'a delvewright_dsl::Actor> {
+pub(in crate::compiler::nav) fn actor_of<'a>(
+    plan: &'a Plan,
+    actor_id: &str,
+) -> Option<&'a delvewright_dsl::Actor> {
     plan.campaign
         .quests
         .content

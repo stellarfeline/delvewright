@@ -1,3 +1,10 @@
+//! A TD lane's polyline over the assembled world (`DW0386`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::Plan;
+use std::collections::BTreeMap;
+
 /// The proven lane polyline of every wave that declares one (spec-0016 §6): wave
 /// id → the snapped, walk-connected waypoint cells in march order. These cells —
 /// not the raw anchor positions — are what the compiler writes into

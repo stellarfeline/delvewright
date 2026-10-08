@@ -1,3 +1,11 @@
+//! The optional-elite bypass: an enemy no objective requires has a way around
+//! it (`DW0380`).
+
+use super::*;
+use crate::compiler::plan::Plan;
+use delvewright_dsl::Diagnostic;
+use std::collections::BTreeSet;
+
 /// Default aggro radius for a wave mob with no declared `follow_range` — vanilla's
 /// `generic.follow_range` default for the common hostiles (zombie, skeleton,
 /// husk, pillager). Used by the optional-elite bypass lint when the author has
@@ -12,7 +20,7 @@ pub const DEFAULT_FOLLOW_RANGE: u32 = 16;
 /// forced solid around the wave anchor and the forced critical path is re-routed:
 /// if a leg that routed before no longer does, every way forward runs through the
 /// fight and "optional" is a lie.
-fn optional_elite_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+pub(in crate::compiler::nav) fn optional_elite_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
     use delvewright_dsl::Objective;
     let c = plan.campaign;
     let required: BTreeSet<&str> = c
@@ -122,6 +130,8 @@ fn verify_optional_elites(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
 
     /// A non-talk-to visited position (test convenience for `route_visited`).
     /// A room `w × d` split by a wall at `z = zw` with a single doorway at

@@ -658,6 +658,14 @@ pub fn reachable_under_every_quest_state(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
+    use std::collections::BTreeSet;
+
+    use crate::compiler::plan::RegionEvents;
+    use crate::compiler::plan::{RegionEvent, RegionWrite};
+
+    use crate::compiler::nav::*;
 
     // --- close-gate completability (DSL v0.6) --------------------------------
 

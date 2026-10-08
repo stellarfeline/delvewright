@@ -1,3 +1,9 @@
+//! The derived cameras of the render plan: no eye stands inside geometry
+//! (`DW0724`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+
 /// One derived camera's eye, as [`verify_camera_eyes`] needs it.
 ///
 /// Built by the derivation ([`crate::compiler::render_plan`]) from the same eye position it
@@ -54,6 +60,8 @@ pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), Fa
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::compiler::nav::testkit::*;
 
     fn eye(shot_id: &str, kind: &'static str, cell: [i32; 3]) -> CameraEye {
         CameraEye {

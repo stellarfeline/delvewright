@@ -1,104 +1,11 @@
+//! The world's tests: standability, the step rule, footprints, and the liveness
+//! of staged volumes.
 
-/// **Every production decline of the campaign's premises, enumerated.**
-///
-/// [`Premises::of_plan`] makes forgetting a premise impossible — you cannot
-/// state a subset — but [`Premises::geometry_only`] is still a way to decline
-/// the whole set, and a decline nobody has to write down is the original
-/// defect with a better name. So the production call sites are listed here
-/// with their counts, and a new one reds this test until it is added.
-///
-/// The point is not the numbers. It is that adding a decline is an edit to
-/// this list, which a reviewer reads, rather than an absence, which nobody
-/// can see. Each entry's reason lives at its call site, in a comment beside
-/// the call; this test only insists that the entry exists.
-///
-/// The population is the package's sources (`crates/delvec/src`, the
-/// compiler and the binary that mounts it — `delvec snapshot` stands a
-/// camera up in `main.rs`), each file's top-level `#[cfg(test)]` tail
-/// removed — a synthetic world in a unit test has no campaign behind it
-/// and nothing to state.
-#[test]
-fn premise_declines_are_enumerated() {
-    // (file under `src/`, how many production call sites) — the path, not
-    // the file name: `mod.rs` names more than one file.
-    const EXPECTED: &[(&str, usize)] = &[
-        // `blockout.rs`: the stage-5 battery's `open` and `sealed` worlds,
-        // which carry their own sealing authority; and the stairwell pass,
-        // which asks only whether one step between two courses of a stair
-        // is a body move over the mass as laid — a question about geometry
-        // inside the stair's own box, with no campaign premise to consult.
-        ("compiler/blockout.rs", 3),
-        // `edit.rs`: a `relight` verb's own darkness survey.
-        ("compiler/edit.rs", 1),
-        // `light.rs`: the relight pass's darkness survey.
-        ("compiler/light.rs", 1),
-        // `compiler/nav/world/mod.rs`: the synthetic constructors' own door
-        // (`from_solid_and_flooded`), which every unit-test world goes
-        // through.
-        ("compiler/nav/world/mod.rs", 1),
-        // `main.rs`: `delvec snapshot`, where a camera is stood up against
-        // blocks.
-        ("main.rs", 1),
-        // `sculpt/mod.rs`: the pocket proof over a sculpted piece ALONE,
-        // before any campaign exists to state a premise (spec-0087 §3.4) — no
-        // horizon, no volume, no gate; the piece's own blocks are the question.
-        ("sculpt/mod.rs", 1),
-    ];
-
-    let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files: Vec<std::path::PathBuf> = Vec::new();
-    let mut stack = vec![here.join("src")];
-    while let Some(dir) = stack.pop() {
-        for e in std::fs::read_dir(&dir).expect("read the crate's own sources") {
-            let p = e.expect("dir entry").path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.extension().is_some_and(|x| x == "rs") {
-                files.push(p);
-            }
-        }
-    }
-    files.sort();
-    assert!(
-        files.len() > 20,
-        "the population is the crate's sources, not a handful: {}",
-        files.len()
-    );
-
-    let mut found: Vec<(String, usize)> = Vec::new();
-    for f in &files {
-        let text = std::fs::read_to_string(f).expect("read source");
-        // Everything from the file's own top-level `#[cfg(test)]` on is test
-        // code. Column zero is what makes it top-level; a nested one inside a
-        // function is indented and does not truncate the file.
-        let prod = match text.find("\n#[cfg(test)]\n") {
-            Some(i) => &text[..i],
-            None => &text[..],
-        };
-        // The definition itself is `pub fn geometry_only`, never a call.
-        let n = prod.matches("Premises::geometry_only()").count();
-        if n > 0 {
-            let rel = f.strip_prefix(here.join("src")).expect("under src");
-            found.push((rel.to_string_lossy().replace('\\', "/"), n));
-        }
-    }
-    // Order by path, as EXPECTED is.
-    found.sort();
-    let expected: Vec<(String, usize)> = EXPECTED
-        .iter()
-        .map(|(f, n)| ((*f).to_string(), *n))
-        .collect();
-    assert_eq!(
-        found,
-        expected,
-        "a production world declines the campaign's premises somewhere this \
-         list does not name. That is legitimate — say WHY at the call site, \
-         then add it here. It is not legitimate to leave it unlisted: the \
-         whole reason `Premises` exists is that a premise nobody has to \
-         mention is a premise that goes missing. ({} source file(s) examined)",
-        files.len()
-    );
-}
+use super::*;
+use crate::compiler::nav::testkit::*;
+use crate::compiler::nav::*;
+use crate::compiler::plan::RegionEvents;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A floor at `y - 1` over `[0,w) × [0,d)` with open air to `y + 3`, `solid`
 /// extra cells, and one declared furniture region when `region` is `Some`.

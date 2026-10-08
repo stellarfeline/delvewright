@@ -1307,11 +1307,10 @@ pub fn walk_cells(
     None
 }
 
-
 // --- DW0355: stealth onset survivability ------------------------------------
 
 /// Ticks a sprinting player needs to cross one block. Vanilla sprint is
 /// 5.612 blocks/s = 0.2806 blocks/tick → 3.56 t/block; rounded **up** to 4 so the
 /// model never credits the player with speed they do not have. (Sprint-jumping is
 /// faster; the proof deliberately does not assume the player chains jumps.)
-const SPRINT_TICKS_PER_BLOCK: u32 = 4;
+pub(in crate::compiler::nav) const SPRINT_TICKS_PER_BLOCK: u32 = 4;

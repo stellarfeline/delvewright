@@ -1,7 +1,12 @@
+//! The router's tests: legs, exports, and the shaped step cost.
 
-// -----------------------------------------------------------------------
-// DW0318 — fluid that leaves the built world
-// -----------------------------------------------------------------------
+use super::*;
+use crate::compiler::nav::testkit::*;
+use crate::compiler::nav::*;
+use crate::compiler::plan::RegionEvents;
+use crate::compiler::plan::{RegionEvent, RegionWrite, Step};
+use delvewright_dsl::metrics::PLAYER_WIDTH;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// **A press from outside the volume is found** (spec-0092 §10,
 /// `DW0932`'s "pressed from outside its volume"): a floor of stone, a lever

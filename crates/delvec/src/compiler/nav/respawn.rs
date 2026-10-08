@@ -1,3 +1,12 @@
+//! The respawn-point safe zone: no cell the party comes back to life on is
+//! inside a hostile's aggro range (`DW0478`).
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::Plan;
+use delvewright_dsl::Verb;
+use std::collections::BTreeMap;
+
 /// One hostile force as the bonfire safe-zone proof (`DW0478`) sees it: a
 /// perception radius plus every cell the force provably occupies.
 #[derive(Clone, Debug)]
@@ -762,6 +771,9 @@ fn cell_distance(a: [i32; 3], b: [i32; 3]) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use std::collections::BTreeMap;
 
     /// A hostile force for the `DW0478` proof. A "lane path cell" carries the
     /// [`LANE_MARCH_DRIFT`] margin exactly as [`aggro_sources`] assigns it;

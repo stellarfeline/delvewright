@@ -1,3 +1,8 @@
+//! What the furniture exclusion bound on one build (spec-0065 §4.3).
+
+use super::*;
+use crate::compiler::plan::Plan;
+
 /// **What the furniture exclusion bound on one build** (spec-0065 §4.3).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FurnitureBinding {

@@ -1,9 +1,11 @@
+//! Synthetic worlds and fixtures the nav tests of more than one object share.
+
 use super::*;
-use crate::compiler::plan::{RegionEvent, RegionWrite, Step};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A flat solid floor at `y-1` over `[0,w) × [0,d)`, with the given interior
 /// cells at `y` set solid (obstacles). Cells at `y` not listed are open air.
-fn floored(w: i32, d: i32, y: i32, walls: &[[i32; 3]]) -> World {
+pub(in crate::compiler::nav) fn floored(w: i32, d: i32, y: i32, walls: &[[i32; 3]]) -> World {
     let mut solid = BTreeSet::new();
     for x in 0..w {
         for z in 0..d {
@@ -19,7 +21,12 @@ fn floored(w: i32, d: i32, y: i32, walls: &[[i32; 3]]) -> World {
 
 /// [`floored`], plus one declared lethal volume — the geometry the
 /// footprint-versus-volume rule is stated over.
-fn floored_with_lethal(w: i32, d: i32, y: i32, region: ([i32; 3], [i32; 3])) -> World {
+pub(in crate::compiler::nav) fn floored_with_lethal(
+    w: i32,
+    d: i32,
+    y: i32,
+    region: ([i32; 3], [i32; 3]),
+) -> World {
     let mut solid = BTreeSet::new();
     for x in 0..w {
         for z in 0..d {
@@ -64,7 +71,7 @@ fn floored_with_lethal(w: i32, d: i32, y: i32, region: ([i32; 3], [i32; 3])) -> 
 /// The linear "every earlier step is an ancestor" gate-ordering used by the
 /// synthetic gate tests (no parallel branches). Production routing uses the
 /// campaign's real DAG-causal predicate (`Plan::gate_fired_before`).
-fn linear(g: usize, s: usize) -> bool {
+pub(in crate::compiler::nav) fn linear(g: usize, s: usize) -> bool {
     g < s
 }
 
@@ -74,7 +81,7 @@ fn linear(g: usize, s: usize) -> bool {
 /// stated explicitly rather than left open, because an unbounded root is the
 /// exact defect [`AnchorRoot`] exists to prevent and no production path may
 /// construct one.
-fn roots(at: [i32; 3]) -> [AnchorRoot; 1] {
+pub(in crate::compiler::nav) fn roots(at: [i32; 3]) -> [AnchorRoot; 1] {
     [AnchorRoot {
         at,
         within: ([-64, 0, -64], [64, 128, 64]),
@@ -83,14 +90,18 @@ fn roots(at: [i32; 3]) -> [AnchorRoot; 1] {
 
 /// The plate's own AABB — one "piece" covering the built cells and nothing
 /// beyond them.
-fn plate_built() -> Vec<(String, Bbox)> {
+pub(in crate::compiler::nav) fn plate_built() -> Vec<(String, Bbox)> {
     vec![("prefab/plate".to_string(), ([0, 63, 0], [2, 64, 2]))]
 }
 
 /// The `ocean` horizon's ambient: sea level 62, sea floor 54 (the pinned
 /// superflat `crate::compiler::plan::SEA_LEVEL` / `SEA_FLOOR_TOP_Y`), with `covered`
 /// standing in for the placed pieces' AABBs.
-fn ocean(solid: BTreeSet<[i32; 3]>, flooded: BTreeSet<[i32; 3]>, covered: Vec<Bbox>) -> World {
+pub(in crate::compiler::nav) fn ocean(
+    solid: BTreeSet<[i32; 3]>,
+    flooded: BTreeSet<[i32; 3]>,
+    covered: Vec<Bbox>,
+) -> World {
     World::from_solid_and_flooded(solid, flooded).with_ambient(
         Ambient::Ocean(Sea {
             level: 62,
@@ -102,7 +113,7 @@ fn ocean(solid: BTreeSet<[i32; 3]>, flooded: BTreeSet<[i32; 3]>, covered: Vec<Bb
 
 /// A built volume from bare AABBs, naming each box after its index — a
 /// synthetic stand-in for the prefab ids [`built_volume`] reads off a plan.
-fn built(boxes: Vec<Bbox>) -> Vec<(String, Bbox)> {
+pub(in crate::compiler::nav) fn built(boxes: Vec<Bbox>) -> Vec<(String, Bbox)> {
     boxes
         .into_iter()
         .enumerate()
@@ -111,11 +122,11 @@ fn built(boxes: Vec<Bbox>) -> Vec<(String, Bbox)> {
 }
 
 /// An inclusive world AABB, as [`World::built`] carries it.
-type Bbox = ([i32; 3], [i32; 3]);
+pub(in crate::compiler::nav) type Bbox = ([i32; 3], [i32; 3]);
 
 /// A visited critical position at a given step (spec-0016 §7 lints select on
 /// `src_step`, which the plain `vp` helper always leaves at 0).
-fn vp_at(pos: [i32; 3], src_step: usize) -> VisitedPos {
+pub(in crate::compiler::nav) fn vp_at(pos: [i32; 3], src_step: usize) -> VisitedPos {
     VisitedPos {
         pos,
         transport_before: false,
@@ -128,14 +139,19 @@ fn vp_at(pos: [i32; 3], src_step: usize) -> VisitedPos {
 
 /// Whether an entity of `width` standing (feet) at `p` has any part of its AABB
 /// inside a solid cell. Height 1.95 (the player/villager box).
-fn aabb_clips(world: &World, p: [f64; 3], width: f64) -> bool {
+pub(in crate::compiler::nav) fn aabb_clips(world: &World, p: [f64; 3], width: f64) -> bool {
     aabb_clips_body(world, p, width, 1.95)
 }
 
 /// [`aabb_clips`] for a body of the given hitbox. The height became an argument
 /// with isl-58: a waypoint is now allowed off the cell floor (the hop apex), so
 /// which courses the body occupies stops being a constant.
-fn aabb_clips_body(world: &World, p: [f64; 3], width: f64, height: f64) -> bool {
+pub(in crate::compiler::nav) fn aabb_clips_body(
+    world: &World,
+    p: [f64; 3],
+    width: f64,
+    height: f64,
+) -> bool {
     let span = |c: f64| {
         (
             (c - width / 2.0).floor() as i32,
@@ -153,7 +169,13 @@ fn aabb_clips_body(world: &World, p: [f64; 3], width: f64, height: f64) -> bool 
 /// A world from explicit collision classes: a flat solid floor at
 /// `y-1` over `[0,w) × [0,d)` with the given `tall` (fence/wall) and
 /// `use_gates` (closed fence gate) cells at stand level.
-fn classified(w: i32, d: i32, y: i32, tall: &[[i32; 3]], use_gates: &[[i32; 3]]) -> World {
+pub(in crate::compiler::nav) fn classified(
+    w: i32,
+    d: i32,
+    y: i32,
+    tall: &[[i32; 3]],
+    use_gates: &[[i32; 3]],
+) -> World {
     let mut solid = BTreeSet::new();
     for x in 0..w {
         for z in 0..d {
@@ -177,7 +199,7 @@ fn classified(w: i32, d: i32, y: i32, tall: &[[i32; 3]], use_gates: &[[i32; 3]])
 // --- v0.6 checkpoint / stealth proofs (spec-0012 / spec-0014) ---
 
 /// Two floor patches (x∈{0,1} and x∈{3,4}) with a void gap at x=2.
-fn split_world(y: i32) -> World {
+pub(in crate::compiler::nav) fn split_world(y: i32) -> World {
     let mut solid = BTreeSet::new();
     for x in [0, 1, 3, 4] {
         for z in 0..3 {
@@ -188,7 +210,7 @@ fn split_world(y: i32) -> World {
     World::from_solid_cells(solid)
 }
 
-fn at_step(pos: [i32; 3], src_step: usize) -> VisitedPos {
+pub(in crate::compiler::nav) fn at_step(pos: [i32; 3], src_step: usize) -> VisitedPos {
     VisitedPos {
         pos,
         transport_before: false,
@@ -201,13 +223,10 @@ fn at_step(pos: [i32; 3], src_step: usize) -> VisitedPos {
 
 // --- v0.6 trap completability proof (spec-0011, DW0342) ---
 
-use crate::compiler::plan::TrapDisarmPlan;
-use delvewright_dsl::{Lethality, TrapReset, TrapTrigger};
-
 /// A 1-wide walkable corridor along z=1: a floor strip at `[0..len, y-1, 1]`.
 /// `[x, y, 1]` are the only standable cells, so the corridor has no bypass — a
 /// cell on it is a genuine chokepoint the player cannot walk around.
-fn corridor(len: i32, y: i32) -> World {
+pub(in crate::compiler::nav) fn corridor(len: i32, y: i32) -> World {
     let mut solid = BTreeSet::new();
     for x in 0..len {
         solid.insert([x, y - 1, 1]);
@@ -218,14 +237,14 @@ fn corridor(len: i32, y: i32) -> World {
 // --- hazard observability (spec-0016 §4 addendum, DW0388) ---
 
 /// The y every observability fixture walks on. Feet at `WY`, head at `WY + 1`.
-const WY: i32 = 65;
+pub(in crate::compiler::nav) const WY: i32 = 65;
 
 /// A synthetic world stated in terms of what is **open**: `open` lists the
 /// `(x, z)` columns a player can stand in at [`WY`]. Everything else inside the
 /// padded bounding box is solid rock at feet and head height, with a floor
 /// below and a lid above. Sightlines are the whole subject here, so describing
 /// the carved space directly is what makes each fixture's geometry readable.
-fn carved(open: &[[i32; 2]]) -> World {
+pub(in crate::compiler::nav) fn carved(open: &[[i32; 2]]) -> World {
     let air: BTreeSet<[i32; 2]> = open.iter().copied().collect();
     let xs: Vec<i32> = open.iter().map(|c| c[0]).collect();
     let zs: Vec<i32> = open.iter().map(|c| c[1]).collect();
@@ -246,7 +265,7 @@ fn carved(open: &[[i32; 2]]) -> World {
 }
 
 /// A one-wide run of open columns along z at a fixed x.
-fn run_z(x: i32, z0: i32, z1: i32) -> Vec<[i32; 2]> {
+pub(in crate::compiler::nav) fn run_z(x: i32, z0: i32, z1: i32) -> Vec<[i32; 2]> {
     (z0..=z1).map(|z| [x, z]).collect()
 }
 
@@ -255,7 +274,14 @@ fn run_z(x: i32, z0: i32, z1: i32) -> Vec<[i32; 2]> {
 /// optional **bypass** hole at `x = bx` (the long way round). The gate cells
 /// are open in the base world — the assembled model always clears a gate
 /// region — and the proof re-seals them itself.
-fn shortcut_world(w: i32, d: i32, y: i32, zw: i32, gx: i32, bypass: Option<i32>) -> World {
+pub(in crate::compiler::nav) fn shortcut_world(
+    w: i32,
+    d: i32,
+    y: i32,
+    zw: i32,
+    gx: i32,
+    bypass: Option<i32>,
+) -> World {
     let mut walls = Vec::new();
     for x in 0..w {
         if x == gx || Some(x) == bypass {
@@ -271,7 +297,7 @@ fn shortcut_world(w: i32, d: i32, y: i32, zw: i32, gx: i32, bypass: Option<i32>)
 
 /// A world from an explicit cell→block map, through the real classifier — the
 /// only way to exercise the partial-height model end to end.
-fn blocks_world(cells: &[([i32; 3], &str)]) -> World {
+pub(in crate::compiler::nav) fn blocks_world(cells: &[([i32; 3], &str)]) -> World {
     let map: BTreeMap<[i32; 3], String> =
         cells.iter().map(|(c, n)| (*c, (*n).to_string())).collect();
     World::from_occupancy(
@@ -285,7 +311,7 @@ fn blocks_world(cells: &[([i32; 3], &str)]) -> World {
 /// A 5-long, 3-wide room at y=65 whose only two lanes (z=0 and z=2) run from
 /// x=0 to x=4; the middle lane z=1 is walled. Sealing one lane's chokepoint
 /// forces the route onto the other.
-fn two_lane_room(y: i32) -> World {
+pub(in crate::compiler::nav) fn two_lane_room(y: i32) -> World {
     let mut cells: Vec<([i32; 3], &str)> = Vec::new();
     for x in 0..5 {
         for z in 0..3 {

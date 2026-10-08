@@ -1,3 +1,11 @@
+//! The leave relation: a place a body can get into and not out of (`DW0921`),
+//! judged over a campaign's route and over a sculpted piece.
+
+use super::*;
+use crate::compiler::failure::Failure;
+use crate::compiler::plan::Plan;
+use std::collections::{BTreeMap, BTreeSet};
+
 /// How many pockets a `DW0921` report names before summarising the rest.
 const POCKET_LIST_LIMIT: usize = 6;
 
@@ -779,4 +787,3 @@ mod leave_tests {
         );
     }
 }
-

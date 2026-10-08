@@ -1,3 +1,9 @@
+//! How a body reaches a declared volume: the reach query the lethal-volume
+//! proofs read.
+
+use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
 /// How a body first got its hitbox into a declared volume, as
 /// [`World::reach_into_volumes`] found it: the reached cell it set off from,
 /// the cells it passed through on the way in, and the movement in words.
@@ -372,4 +378,3 @@ mod mob_reach_tests {
         assert!(opened.mob_moves([1, 1, 0], &zombie()).contains(&[2, 1, 0]));
     }
 }
-
