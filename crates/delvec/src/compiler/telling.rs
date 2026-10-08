@@ -290,11 +290,7 @@ fn introduces(text: &str, s: usize, e: usize) -> bool {
     } else {
         first
     };
-    let second = if first == Some("the") {
-        b.next()
-    } else {
-        b.next()
-    };
+    let second = b.next();
     if matches!(lead, Some("called" | "named")) || (lead == Some("as") && second == Some("known")) {
         return true;
     }
