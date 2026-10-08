@@ -655,3 +655,800 @@ pub fn reachable_under_every_quest_state(
         acc.unwrap_or_else(|| world.reachable_walkable(&[seat])),
     )
 }
+
+#[cfg(test)]
+mod tests {
+
+    // --- close-gate completability (DSL v0.6) --------------------------------
+
+    /// A `close-gate` firing before a forced walked leg seals the gate region, so a
+    /// critical path that must re-cross it fails DW0311; a later `open-gate` before
+    /// the same leg reopens it and the route passes again.
+    #[test]
+    fn close_gate_seals_a_forced_leg_is_dw0311() {
+        // A 1-wide corridor along x, y=65; the pass-through cell [2,65,0] is the sole
+        // connection between the two ends. Base world (gate open) routes end to end.
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_ok(),
+            "the open corridor must route with no gate events"
+        );
+        // A close-gate seals the pass-through before the leg to `b` (fire_step 0 < 2).
+        let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
+        assert!(
+            err.message.contains("close-gate"),
+            "the message must name the sealed gate: {}",
+            err.message
+        );
+        // Reopening the gate before the leg (open-gate at a later fire_step) restores it.
+        let open = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Unseal, 1);
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone(), open.clone()]),
+                &linear
+            )
+            .is_ok(),
+            "a gate reopened by open-gate before the leg must route again"
+        );
+    }
+
+    // --- the region write, generalised (DSL v0.10, spec-0031) ---------------
+
+    /// A `fill-region` seals a forced leg exactly as a `close-gate` does, and a
+    /// later `clear-region` over the same box reopens it.
+    ///
+    /// Same world, same predicate, same proof as the gate pair above — which is the
+    /// claim: the completability rule belongs to the region, and a verb that names
+    /// no gate inherits it rather than re-deriving it.
+    #[test]
+    fn fill_region_seals_a_forced_leg_and_clear_region_reopens_it() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let fill = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![fill.clone()]),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
+        let clear = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Clear, 1);
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![fill.clone(), clear.clone()]),
+                &linear
+            )
+            .is_ok(),
+            "a region cleared before the leg must route again"
+        );
+    }
+
+    /// A floor at `y=64` with a three-cell gap at `x ∈ {1,2,3}` — the two ends are
+    /// separated by open void, so nothing routes end to end until something lays
+    /// floor in the gap.
+    fn chasm() -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..5i32 {
+            if !(1..=3).contains(&x) {
+                solid.insert([x, 64, 0]); // floor, minus the gap
+            }
+            solid.insert([x, 67, 0]); // ceiling
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// A `fill-region` that LAYS floor — a repaired stair, a lowered bridge, a
+    /// placed plank — carries the critical path across a gap, and the exported
+    /// waypoints are judged in the same world the route was proven in.
+    ///
+    /// The two halves used to disagree about this world, and only one of them was
+    /// wrong. The completability proof ([`route_visited`]) has read the leg's
+    /// runtime region state since spec-0031; the waypoint self-check
+    /// ([`verify_exported_routes`]) re-judged the very same cells against the BARE
+    /// assembled world, where the plank does not exist. So a leg over runtime-laid
+    /// floor routed and was then refused `DW0314` for having "no floor" — and a
+    /// campaign whose critical path crosses a bridge it lowers could not ship.
+    #[test]
+    fn a_critical_path_over_runtime_laid_floor_routes_and_exports() {
+        let world = chasm();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_err(),
+            "the chasm must not route before anything lays floor in it"
+        );
+        // FORCED, and it has to be: this test asserts the leg routes and exports,
+        // and only a fill the party cannot skip carries a forced leg's footing. The
+        // unforced spelling of this very plank is the opposite verdict — see
+        // `the_export_self_check_reads_a_legs_world_with_the_unforced_reading`.
+        let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![plank.clone()]),
+                &linear
+            )
+            .is_ok(),
+            "the proof must credit floor the campaign lays from a beat the party cannot skip, \
+             before the leg is walked"
+        );
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![plank.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
+        assert_eq!(legs.len(), 1, "the walked leg must be exported");
+        assert!(
+            legs[0].cells.contains(&[2, 65, 0]),
+            "the exported route must cross the laid floor: {:?}",
+            legs[0].cells
+        );
+        // The half that was wrong. Judged against the bare world these cells have
+        // no floor; judged against the world the leg was proven over, they do.
+        assert!(
+            !world.is_standable([2, 65, 0]),
+            "the bare assembled world really does lack the floor — otherwise this \
+             test proves nothing"
+        );
+        verify_exported_routes(&world, &legs)
+            .expect("a waypoint on floor the campaign lays must pass the export self-check");
+    }
+
+    /// The direction the self-check exists for is untouched: a cell a **later pass**
+    /// mutated is still `DW0314`, because a terrain edit is not a runtime region
+    /// write and no leg state restores it.
+    ///
+    /// Same leg, same laid plank, same exported route — but the final world has had
+    /// one of the route's cells walled since the route was proven. The leg's own
+    /// region state cannot explain that cell away, so the refusal stands.
+    #[test]
+    fn a_later_pass_that_walls_a_proven_cell_is_still_dw0314() {
+        let world = chasm();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        // FORCED for the same reason: the leg has to route at all before a later
+        // pass can be shown to break it.
+        let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![plank.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
+        // A later pass drops a block into a cell the proven route walks through.
+        let mutated = world.with_sealed(&[[2, 65, 0]].into_iter().collect());
+        let err = verify_exported_routes(&mutated, &legs)
+            .expect_err("a walled waypoint must still be refused");
+        assert_eq!(err.code, DW_WAYPOINT_NOT_STANDABLE); // DW0314
+        assert!(
+            err.message.contains("[2, 65, 0]"),
+            "the message must name the offending cell: {}",
+            err.message
+        );
+    }
+
+    /// **The junction of the two halves, at the one point where it is directly
+    /// observable.** The export self-check judges a leg in the world the leg was
+    /// proven over ([`LegRoute::proven_world`]), and that world is built by
+    /// [`World::with_region_state`] — which also applies the unforced reading
+    /// ([`World::with_unforced`]). So the self-check inherits forcedness for free,
+    /// and neither half alone says so: one decided *which world* the check reads,
+    /// the other decided *what an unforced fill does to a world*.
+    ///
+    /// Same world, same leg, same exported cells. The only thing that differs
+    /// between the two verdicts below is whether the plank under `[2,65,0]` was
+    /// laid by a beat the party cannot skip.
+    ///
+    /// **What would make this test vacuous**, stated so a later reader can check
+    /// it rather than trust it:
+    ///
+    /// * If the chasm did not really lack the floor, the accept would pass for the
+    ///   wrong reason — the bare world would already be standable and
+    ///   `proven_world` would be doing nothing. Asserted below.
+    /// * If the exported route did not really cross the laid cell, both verdicts
+    ///   would be about a cell nobody stands on. Asserted below.
+    /// * If `verify_exported_routes` returned `Err` for some unrelated cell, the
+    ///   refusal would look right and mean nothing. The code is asserted, and the
+    ///   message is required to name one of the cells standing on the plank.
+    ///
+    /// One thing this test deliberately does NOT claim: that a whole campaign can
+    /// reach the refusing branch. It cannot — `route_visited` refuses an unforced
+    /// footing as `DW0546` before any route is exported, so at campaign scale this
+    /// reading is defence in depth rather than the live gate. That is why the
+    /// unforced leg here is constructed rather than routed: `route_walked_legs`
+    /// over an unforced plank correctly produces no leg at all, which is asserted
+    /// too. The campaign-scale statement of the same junction is
+    /// `crates/delvec/tests/laid_footing_root.rs`.
+    #[test]
+    fn the_export_self_check_reads_a_legs_world_with_the_unforced_reading() {
+        let world = chasm();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let box_ = ([1, 64, 0], [3, 64, 0]);
+
+        // Not assumed: the bare assembled world really has no floor here, so
+        // anything that stands at [2,65,0] is standing on something a runtime
+        // write laid.
+        assert!(
+            !world.is_standable([2, 65, 0]),
+            "the chasm must really be a chasm, or neither verdict below means anything"
+        );
+
+        // --- forced: the leg routes, and the export self-check accepts it -------
+        let forced = RegionEvent::forced(box_, RegionWrite::Fill, 0);
+        let legs: Vec<LegRoute> = route_walked_legs(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![forced.clone()]),
+            &linear,
+        )
+        .into_iter()
+        .map(|(leg, _)| leg)
+        .collect();
+        assert_eq!(legs.len(), 1, "the forced plank must carry a walked leg");
+        assert!(
+            legs[0].cells.contains(&[2, 65, 0]),
+            "the exported route must really cross the laid cell: {:?}",
+            legs[0].cells
+        );
+        // Reverting the leg-carries-its-world half reds HERE: judged against the
+        // bare `world`, [2,65,0] has no floor and this becomes `DW0314`.
+        verify_exported_routes(&world, &legs)
+            .expect("footing the party cannot skip must pass the export self-check");
+
+        // --- unforced: the same cells, in a world that may not hold the plank ---
+        // `route_walked_legs` will not produce this leg — an unforced plank is
+        // impassable and not floor, so nothing routes across it. That is the
+        // campaign-scale verdict, and it is asserted rather than assumed.
+        assert!(
+            route_walked_legs(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![RegionEvent::unforced(
+                    box_,
+                    RegionWrite::Fill,
+                    0,
+                    "a trap nobody must spring"
+                )]),
+                &linear,
+            )
+            .is_empty(),
+            "an unforced plank must not carry a walked leg at all"
+        );
+        // So the leg is carried over from the forced run with only its region
+        // state re-marked: identical cells, identical world, one bit different.
+        let mut unforced_state = RegionState::default();
+        unforced_state
+            .unforced
+            .extend(crate::compiler::assembled::region_cells(box_.0, box_.1));
+        let mut leg = legs[0].clone();
+        leg.region_state = unforced_state;
+        // Reverting the footing half reds HERE: with an unforced fill folded back
+        // into `solid`, [2,65,0] is floored and the self-check accepts a waypoint
+        // standing on a plank the party may never have laid.
+        let err = verify_exported_routes(&world, std::slice::from_ref(&leg))
+            .expect_err("a waypoint standing on unforced footing must not be exported");
+        assert_eq!(err.code, DW_WAYPOINT_NOT_STANDABLE); // DW0314
+        // The refusal must be ABOUT the plank, not about some other cell that
+        // happens to be unstandable — that is the vacuity this assertion removes.
+        // Which of the three cells standing on the box is reported is the loop's
+        // order and not a claim, so any of them satisfies it.
+        assert!(
+            [[1, 65, 0], [2, 65, 0], [3, 65, 0]]
+                .iter()
+                .any(|c| err.message.contains(&format!("{c:?}"))),
+            "the refusal must name a cell whose footing is the uncertain plank: {}",
+            err.message
+        );
+    }
+
+    /// A leg that writes no region judges the bare world, clones nothing, and is
+    /// the answer it always was — the fast path every campaign without a runtime
+    /// region takes.
+    #[test]
+    fn a_leg_with_no_runtime_write_judges_the_bare_world() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let legs: Vec<LegRoute> =
+            route_walked_legs(&world, &[a, b], &RegionEvents::default(), &linear)
+                .into_iter()
+                .map(|(leg, _)| leg)
+                .collect();
+        assert_eq!(legs.len(), 1);
+        assert!(
+            legs[0].proven_world(&world).is_none(),
+            "a leg with no runtime write must not clone a world"
+        );
+        verify_exported_routes(&world, &legs).expect("an ordinary leg still passes");
+    }
+
+    // --- what a write LEAVES: fluid is not floor ----------------------------
+
+    /// A runtime fill of a **fluid** takes the floor away, and the model says so.
+    ///
+    /// The corridor's floor at `[2,64,0]` is the only footing between the two ends.
+    /// A `Fill` there is a no-op (the cell was already solid) and the leg routes. A
+    /// `Flood` there — the same box, the same fire step, the same verb, a different
+    /// block — replaces the floor with water, and a body does not stand on water.
+    ///
+    /// This is the whole defect in four lines: with `Flood` folded into `Fill`, the
+    /// second case routed too, and the compiler proved a party walking across a
+    /// pond in mid-air.
+    #[test]
+    fn a_fluid_fill_takes_the_floor_away_and_a_solid_fill_does_not() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let floor_box = ([2, 64, 0], [2, 64, 0]);
+        let solid_fill = RegionEvent::forced(floor_box, RegionWrite::Fill, 0);
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![solid_fill.clone()]),
+                &linear
+            )
+            .is_ok(),
+            "filling a floor cell with a block leaves it floor"
+        );
+        let fluid_fill = RegionEvent::forced(floor_box, RegionWrite::Flood, 0);
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![fluid_fill.clone()]),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
+        assert!(
+            err.message.contains("[2, 64, 0]..[2, 64, 0]"),
+            "the message must name the box that took the footing: {}",
+            err.message
+        );
+    }
+
+    /// A flooded cell blocks passage as hard as a wall does, on top of not being
+    /// floor — so a fluid fill laid **across** the corridor closes it exactly as a
+    /// `close-gate` would.
+    ///
+    /// The code here is `DW0311`, not `DW0544`, and that is the counterfactual being
+    /// honest rather than a gap. `DW0544` answers one question — *would this route
+    /// exist if the box held a block?* — and for a box laid across the path the
+    /// answer is no: the campaign built a wall, and calling the fluid the culprit
+    /// would send the author to change a block that changes nothing. What the fluid
+    /// must still buy them is the right HINT: not "your prefab has a wedged
+    /// doorway", which is the geometry-is-innocent misattribution this family exists
+    /// to prevent.
+    #[test]
+    fn a_fluid_fill_across_the_corridor_is_a_wall_and_says_which() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let flood = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Flood, 0);
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone()]),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+        assert!(
+            err.message.contains("FLUID"),
+            "an unroutable leg the campaign flooded must not be reported as a wedged \
+             doorway: {}",
+            err.message
+        );
+    }
+
+    /// Where a fluid fill and a solid fill overlap, the **fluid** wins.
+    ///
+    /// Not a tie-break picked for convenience: a flooded cell is everything a walled
+    /// cell is (impassable) and one thing more (not floor), so taking it is the
+    /// conservative answer in the same sense that "a fill beats a clear" is. It also
+    /// makes the result independent of declaration order, which ADR-0006 requires.
+    #[test]
+    fn where_a_fluid_fill_overlaps_a_solid_fill_the_fluid_wins() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let over_floor = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0);
+        // A solid fill over a box that covers the same cell, declared either side of
+        // the flood. Both orders must refuse.
+        let wider_solid = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
+        for events in [
+            vec![over_floor.clone(), wider_solid.clone()],
+            vec![wider_solid, over_floor],
+        ] {
+            let err = route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(events.to_vec()),
+                &linear,
+            )
+            .unwrap_err();
+            assert_eq!(
+                err.code, DW_FLUID_FILL_ON_CRITICAL_PATH,
+                "a solid fill over the same cells must not dry the fluid out"
+            );
+        }
+    }
+
+    /// A runtime **clear** declared over a box a different write floods does not dry
+    /// it: within one quest state the order is clear → fill → flood, so the wettest
+    /// answer is the one that survives.
+    ///
+    /// This is [`World::with_cleared`]'s stated rule reaching a case it could not
+    /// reach before — a `fill … air` against a wet cell lets the water back in
+    /// rather than removing it, and the water may now be water a runtime write put
+    /// there rather than only water a prefab did. What the ordering guards is a
+    /// reorder of [`World::with_region_state`]: run the clear last and this campaign
+    /// silently proves a dry floor again.
+    #[test]
+    fn a_clear_over_a_flooded_box_does_not_dry_it() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let flood = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0);
+        // A different box (so it is a different region, with its own latest write)
+        // covering the flooded floor cell and the air above it.
+        let clear = RegionEvent::forced(([2, 64, 0], [2, 65, 0]), RegionWrite::Clear, 1);
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone(), clear.clone()]),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH);
+    }
+
+    /// A campaign that writes no fluid pays nothing: the counterfactual is never
+    /// built, and every existing verdict is the verdict it always was.
+    #[test]
+    fn a_world_with_no_runtime_flood_reports_none() {
+        let world = floored(5, 1, 65, &[]);
+        assert!(!world.has_runtime_flood());
+        let sealed = world.with_sealed(&[[2, 65, 0]].into_iter().collect());
+        assert!(
+            !sealed.has_runtime_flood(),
+            "a seal is not a flood, however many cells it forces"
+        );
+    }
+
+    /// The half no gate could ever exercise: a `clear-region` credits a route
+    /// through geometry the **prefab** put there, not merely through a wall an
+    /// earlier effect built. The assembled model holds every gate cell open
+    /// unconditionally, so `open-gate` never had to prove this and never did.
+    #[test]
+    fn clear_region_opens_prefab_geometry() {
+        // A wall cell across the corridor: no route at all in the base world.
+        let world = floored(5, 1, 65, &[[2, 65, 0], [2, 66, 0]]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&world, &[a, b], &RegionEvents::default(), &linear).is_err(),
+            "the walled corridor must not route before the clear"
+        );
+        let clear = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Clear, 0);
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![clear.clone()]),
+                &linear
+            )
+            .is_ok(),
+            "the cleared wall must be passable from the DAG point the clear fires at"
+        );
+    }
+
+    /// An `open-gate` is **not** an unfiltered clear: it removes only the gate's own
+    /// block. So it cannot delete geometry another proof has forced solid — a
+    /// `collapse`'s debris resting in the doorway stays exactly where it fell.
+    ///
+    /// The guard is [`World::pinned`], and it holds for an authored `clear-region`
+    /// too: clearing a region says "the blocks the campaign put here are gone", not
+    /// "the hazard another proof is reasoning about never happened".
+    #[test]
+    fn a_runtime_clear_does_not_undo_another_proofs_premise() {
+        let world = floored(5, 1, 65, &[]);
+        let debris: BTreeSet<[i32; 3]> = [[2, 65, 0], [2, 66, 0]].into_iter().collect();
+        let buried = world.with_sealed(&debris);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&buried, &[a, b], &RegionEvents::default(), &linear).is_err(),
+            "the debris blocks the corridor"
+        );
+        for write in [RegionWrite::Unseal, RegionWrite::Clear] {
+            let ev = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), write, 0);
+            assert!(
+                route_visited(
+                    &buried,
+                    &[a, b],
+                    &RegionEvents::from(vec![ev.clone()]),
+                    &linear
+                )
+                .is_err(),
+                "{write:?} must not delete another proof's forced-solid cells"
+            );
+        }
+    }
+
+    /// The seal is **DAG-causal**, not linear: a `close-gate` fired on a parallel
+    /// quest branch (an ancestor of neither end of the leg) must NOT seal it, even
+    /// though its `fire_step` is numerically earlier — the fix for the lineariser
+    /// interleaving a sibling branch ahead of a sealed leg (island `take-the-cheese`
+    /// vs `hide`). A genuinely-forced causal re-crossing is still sealed.
+    #[test]
+    fn close_gate_seal_is_dag_causal_not_linear() {
+        let world = floored(5, 1, 65, &[]);
+        let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 8);
+        let a = at_step([0, 65, 0], 9);
+        let b = at_step([4, 65, 0], 10);
+        // Parallel: the close (step 8), the prior position (step 9) and the arrival
+        // (step 10) are three sibling branches — nothing at either end inherits it.
+        let parallel = |g: usize, s: usize| !((g == 8 || g == 9) && (s == 9 || s == 10)) && g < s;
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone()]),
+                &parallel
+            )
+            .is_ok(),
+            "a close on a parallel branch must not seal a non-causal leg"
+        );
+        // Causal: step 8 (close) and step 9 are ancestors of step 10 (a forced
+        // re-crossing with no reopen) → sealed → DW0311 (proof preserved).
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &linear,
+        )
+        .expect_err("a forced causal re-crossing of a sealed gate must fail");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+    }
+
+    /// **A leg the ancestry does not connect is still judged.** The start (step
+    /// 9) is not an ancestor of the arrival (step 10), but the close (step 8)
+    /// precedes the start: the party standing at the start has shut the gate it
+    /// is about to cross. Read over the open world, this leg built clean.
+    #[test]
+    fn an_unconnected_leg_is_sealed_by_what_its_start_has_fired() {
+        let world = floored(5, 1, 65, &[]);
+        let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 8);
+        let a = at_step([0, 65, 0], 9);
+        let b = at_step([4, 65, 0], 10);
+        // The close is the start's ancestor; neither it nor the start is the
+        // arrival's.
+        let unconnected = |g: usize, s: usize| !((g == 8 || g == 9) && s == 10) && g < s;
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![close.clone()]),
+            &unconnected,
+        )
+        .expect_err("the start's own close shuts the leg");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+        // The start's own firing counts too: the close fires AT step 9.
+        let at_start = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 9);
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![at_start.clone()]),
+            &unconnected,
+        )
+        .expect_err("the close the start step fires shuts the leg");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+        // And the exported route agrees with the proof: no leg is routed.
+        assert!(
+            route_walked_legs(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![close.clone()]),
+                &unconnected
+            )
+            .is_empty(),
+            "the harness is never handed a route the proof refused"
+        );
+    }
+
+    // --- unforced footing (DW0546) -------------------------------------------
+
+    /// A corridor whose floor is missing at `x = 2`: the two ends are separated by a
+    /// one-cell void gap, so nothing routes end to end until something floors it.
+    fn gapped_floor() -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..5i32 {
+            if x != 2 {
+                solid.insert([x, 64, 0]); // floor, minus the gap
+            }
+            solid.insert([x, 67, 0]); // ceiling
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// **The rule, at the layer it lives on.** The identical fill over the identical
+    /// box carries the forced leg when the party cannot avoid causing it, and does
+    /// not when they can. Only the root differs.
+    ///
+    /// Red before forcedness reached the geometry: both cases routed, because a fill
+    /// was a fill and the model had no way to say who had to fire it.
+    #[test]
+    fn only_a_forced_fill_lays_footing_the_critical_path_may_use() {
+        let world = gapped_floor();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let gap = ([2, 64, 0], [2, 64, 0]);
+
+        let forced = RegionEvent::forced(gap, RegionWrite::Fill, 0);
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![forced.clone()]),
+                &linear
+            )
+            .is_ok(),
+            "a plank the party cannot avoid laying is floor they certainly have"
+        );
+
+        let unforced = RegionEvent::unforced(gap, RegionWrite::Fill, 0, "the payload of trap `t`");
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![unforced.clone()]),
+            &linear,
+        )
+        .expect_err("a plank laid by a skippable beat may not carry the forced path");
+        assert_eq!(err.code, DW_UNFORCED_FOOTING); // DW0546
+        assert!(
+            err.message.contains("[2, 64, 0]..[2, 64, 0]"),
+            "the message must name the box: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("the payload of trap `t`"),
+            "the message must name the beat: {}",
+            err.message
+        );
+    }
+
+    /// The blocking half of an unforced write is credited in FULL — only the footing
+    /// half is withheld. A fill laid across the corridor closes the leg whoever fires
+    /// it, and the author is told which write walled them rather than sent to hunt a
+    /// wedged doorway.
+    ///
+    /// This is the half that keeps the fix from being a quiet weakening: an unforced
+    /// write is strictly *more* restrictive than a forced one, never less.
+    #[test]
+    fn an_unforced_fill_still_seals_and_says_which() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let wall = RegionEvent::unforced(
+            ([2, 65, 0], [2, 66, 0]),
+            RegionWrite::Fill,
+            0,
+            "the payload of trap `t`",
+        );
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![wall.clone()]),
+            &linear,
+        )
+        .expect_err("an unforced fill across the corridor is still a wall");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
+        assert!(
+            err.message.contains("close-gate") && err.message.contains("NOT forced"),
+            "the message must name the unforced write, never blame the prefab: {}",
+            err.message
+        );
+    }
+
+    /// **The case that keeps this from refusing correct campaigns.** A fill over a
+    /// cell the world already holds solid changes nothing about footing: the box is
+    /// floor whether or not the beat fires, both futures agree, and there is no
+    /// uncertainty to model. Re-surfacing an existing floor is decoration, and the
+    /// rule binds to laying NEW floor.
+    #[test]
+    fn an_unforced_fill_over_existing_floor_is_not_a_finding() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let repave = RegionEvent::unforced(
+            ([2, 64, 0], [2, 64, 0]),
+            RegionWrite::Fill,
+            0,
+            "the payload of trap `t`",
+        );
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(vec![repave.clone()]),
+                &linear
+            )
+            .is_ok(),
+            "a fill over a cell that was already floor takes nothing away"
+        );
+    }
+
+    /// A **forced** write landing later on the same box restores ordinary footing,
+    /// with no special case: latest-write-wins already says which firing the party
+    /// will find, and the winner carries its own forcedness.
+    #[test]
+    fn a_later_forced_fill_wins_over_an_earlier_unforced_one() {
+        let world = gapped_floor();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 3);
+        let gap = ([2, 64, 0], [2, 64, 0]);
+        let events = [
+            RegionEvent::unforced(gap, RegionWrite::Fill, 0, "the payload of trap `t`"),
+            RegionEvent::forced(gap, RegionWrite::Fill, 2),
+        ];
+        assert!(
+            route_visited(
+                &world,
+                &[a, b],
+                &RegionEvents::from(events.to_vec()),
+                &linear
+            )
+            .is_ok(),
+            "a beat the party must complete re-lays the plank for certain"
+        );
+    }
+
+    /// An unforced **flood** needs no split and gets none: impassable and never floor
+    /// is already the pointwise-worst of "the water is there" and "it is not", so it
+    /// is judged exactly as a forced flood is — `DW0544`, not `DW0546`.
+    #[test]
+    fn an_unforced_flood_is_judged_as_a_flood() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let flood = RegionEvent::unforced(
+            ([2, 64, 0], [2, 64, 0]),
+            RegionWrite::Flood,
+            0,
+            "the payload of trap `t`",
+        );
+        let err = route_visited(
+            &world,
+            &[a, b],
+            &RegionEvents::from(vec![flood.clone()]),
+            &linear,
+        )
+        .expect_err("a fluid fill takes the floor away whoever fires it");
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
+    }
+}
