@@ -8,7 +8,7 @@ English · [简体中文](README.zh-CN.md)
 
 **Delvewright turns a creative prompt into a story-driven Minecraft adventure map for one to four friends, and proves by machine that it can be finished before it is handed over.**
 
-It automates the tedium and the verification, not the design: it stops and waits for you to approve the design and to walk the build, and when it refuses something it names what to change instead of changing it.
+It automates the tedium and the verification, not the design: it stops and waits for you to approve the design, hands you the finished delve to play, and when it refuses something it names what to change instead of changing it.
 
 **Play it now:** join `minecraft.stellarfeline.ca` from a Minecraft Java 1.21.11 client, and accept the resource-pack prompt when you join. The server runs Vesperhold, the castle in the picture.
 
@@ -22,7 +22,7 @@ In [Claude Code](https://claude.com/claude-code):
 /delvewright:new-delve a guided tour of a real castle, nine rooms, no combat
 ```
 
-The first run sets up its own toolchain. After that it asks you three things — where to get the Minecraft client jar, whether the design is right, and what you saw when you walked the build — and does the rest. What arrives is the campaign's documents, a spoiler-free storybook, and one command that builds, checks and serves the delve on `localhost:25565`. It needs git, Python 3.11 or newer, Java 21 or newer, and Docker with Compose v2 ([everything the first run checks](.claude/skills/delvewright/skills/new-delve/references/init.md)).
+The first run sets up its own toolchain. After that it asks you two things — where to get the Minecraft client jar, and whether the design is right — and does the rest. The first time you play it is the finished first version. What arrives is the campaign's documents, a spoiler-free storybook, and one command that builds, checks and serves the delve on `localhost:25565`. It needs git, Python 3.11 or newer, Java 21 or newer, and Docker with Compose v2 ([everything the first run checks](.claude/skills/delvewright/skills/new-delve/references/init.md)).
 
 ## How it works
 
@@ -33,8 +33,7 @@ flowchart TD
     G --> Q["quests · dialogue"]
     Q --> B["delvec build<br/>validate · analyze · compile"]
     B -->|"refused: a DW code names what to change"| Q
-    B --> W{{"the walk<br/>you play the blockout"}}
-    W --> L["the ladder<br/>PackTest · a bot plays it"]
+    B --> L["the ladder<br/>PackTest · a bot plays it"]
     L -->|"red goes back to the documents"| Q
     L --> I(["a delve image<br/>one docker run, and friends join"])
 ```

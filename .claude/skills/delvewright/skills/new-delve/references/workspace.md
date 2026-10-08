@@ -50,7 +50,7 @@ with its own schema:
 |---|---|
 | `geometry-brief.json` · `layout-graph.json` · `site-plan.json` | a site-plan campaign — step 2B; a site-plan campaign has no `areas[]` |
 | `design.json` | step 4, the moment the user approves the reference images — one row per approved picture, and the only home the approved sky has |
-| `detail-plan.json` | step 9, optional, before the walk |
+| `detail-plan.json` | step 9, optional |
 | `world-edits.json` | whenever the map editor was used to fix terrain — see *Reference: tools by symptom* |
 
 ## The envelope, and the number in it
@@ -83,7 +83,7 @@ or an older campaign.
 document:
 
 ```sh
-delvec schema --stage world          # or npcs, quests, site-plan, walk-record, …
+delvec schema --stage world          # or npcs, quests, site-plan, cameras, …
 delvec schema --stage all            # every document at once
 ```
 
@@ -131,7 +131,7 @@ there is no `main` to keep off — the first branch you make is the campaign's.
 
 **Commit the campaign onto its own `campaign/<campaign-id>` branch**, as soon
 as the documents are on disk — not onto `main`, and not held back until
-everything is green. A campaign is in progress until somebody has walked it, and
+everything is green. A campaign is in progress until the user has played it, and
 everything of it lands on that branch: the documents, the design record, any
 prefab it needs, the generation record, the storybook. Sort a file by which
 artifact it belongs to: if abandoning the campaign would delete it, it is the
@@ -289,7 +289,7 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   entry, a showcase camera or a cutscene shot aimed past it, naming the fewest
   chunks that would serve it. The build states the cost (`server/
   resources.properties` `heap-max`, the host's to meet) and the storybook owes
-  the player the render-distance line (step 14): a client set below the
+  the player the render-distance line (step 13): a client set below the
   declared number is served less, and nothing on the server can raise it.
 - **`horizon`.** Absent = `void`, and that is the right answer unless the
   ground around the map is part of the design. `void` keeps the area datum where

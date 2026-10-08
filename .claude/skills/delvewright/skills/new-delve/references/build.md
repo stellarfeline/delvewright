@@ -83,8 +83,6 @@ their absence there is the placement model, not a run that went wrong:
   carries a `transport` key; step 2A is about what puts it there.
 - `render-plan.json` — the deterministic shot list, each shot with the `expect`
   line step 12 checks it against. **Every campaign.**
-- **Site-plan campaigns**: the hashes and the engine revision it prints at the
-  end. The walk record at step 13 copies them from the build that was walked.
 - **Site-plan campaigns**: `DW0822`, the pacing line — it stands beside
   `DW0813` on every site-plan build and on no other. It measures the critical
   path over the built

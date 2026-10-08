@@ -7,7 +7,7 @@ metadata:
 
 # /new-delve — building a delve, end to end
 
-This page is the spine: the three stops, the fourteen steps in order, the
+This page is the spine: the two stops, the thirteen steps in order, the
 standing constraints, and a pointer per step to the file that carries its body.
 Read the pointer's file when you reach that step, and not before.
 
@@ -32,25 +32,23 @@ this page, and their prompt is a constraint set — what it pins down is honoure
 verbatim, what it leaves open is yours to invent.
 
 Every command below is yours to run and every document below is yours to write.
-**Three things are not**, because they need a body in the game, a judgement that
-is the user's to make, or their permission to touch something outside this
-project. At each one you stop, hand over exactly what is needed, and **wait for
-an answer**:
+**Two things are not**, because they need a judgement that is the user's to
+make, or their permission to touch something outside this project. At each one
+you stop, hand over exactly what is needed, and **wait for an answer**:
 
 | where | what you hand the user | what you wait for |
 |---|---|---|
 | **Init I5** the client jar | the two ways it can reach the machine, download named as the default | which one — or the directory to copy from |
 | **§4** the design gate | the design walkthrough — every scene, near view and far | an explicit yes |
-| **§13** the walk | a running server on the detailed build, the connect line, and what to look for item by item | what they saw |
 
 Stopping means: say what you have done, hand over the thing, say what you need
 back, and **end your turn there**. Do not proceed on silence, do not substitute
 your own judgement for the answer, and **never write anything that asserts a
-step whose actor is the user actually happened** — a walk nobody walked and an
-approval nobody gave are the two ways this pipeline produces a green run and a
-delve no one has ever looked at.
+step whose actor is the user actually happened** — an approval nobody gave is how
+this pipeline produces a green run and a delve no one has ever looked at.
 
-§14 is also a hand-over, but nothing comes back: it ends the run. Anywhere else
+§13 is also a hand-over, but nothing comes back: it ends the run. The first time
+the user plays the delve is the finished first version. Anywhere else
 the user *may* be offered a choice — which candidate piece, which frame — the
 offer is optional and you proceed without it.
 
@@ -69,8 +67,8 @@ it; the forbidden zones apply in full. That file names its own other half,
 `CLAUDE.local.md`, and tells whoever lacks it to say so and ask "before
 improvising anything about dispatch, review, merge or staging". **You will not
 have it** — it is gitignored on the operator's machine, so no clone can produce
-it — **and this page improvises none of those four.** It stops at §4 and §13 and
-hands those to the user; §14 hands over and ends. So record the absence in one
+it — **and this page improvises none of those four.** It stops at §4 and hands
+that to the user; §13 hands over and ends. So record the absence in one
 line and carry on with the run: the answer is the same every time, and the turn
 spent asking comes out of the user's.
 
@@ -126,12 +124,11 @@ Decide          areas[] or a site plan — one campaign, one    ── §Which p
  7  analyze     analyze the quest graph
  8  build       build the datapack and the world
  8b cameras     one showcase camera per approved image
- 9  detail      site-plan campaigns only; nothing waits on a walk
+ 9  detail      site-plan campaigns only
 10  ladder      PackTest · bot · branch runs, on the detailed build
 11  chronicle   only when the plan declares branch_points
 12  visual      the POV sequence, then the renders
-13  the walk    STOP — the user walks the detailed world, you wait
-14  hand over   storybook, staging gate, play commands
+13  hand over   storybook, staging gate, play commands — the end
 ```
 
 Two branches change what you do, and both are decided before step 1:
@@ -334,8 +331,7 @@ dead quest is a design bug. **Read**: `references/build.md`.
 
 **Needs**: step 7 clean. **Produces**: the datapack tree at
 `"$DELVEWRIGHT_ENGINE/validation/delve-output"`, `critical-path.json` and
-`render-plan.json`; on a site-plan campaign the three hashes and the pacing
-line. Must exit 0. **Read**: `references/build.md`.
+`render-plan.json`; on a site-plan campaign the pacing line. Must exit 0. **Read**: `references/build.md`.
 
 ## 8b. The showcase cameras
 
@@ -344,8 +340,8 @@ one showcase camera per approved image of `design.json`. Estimate each from the
 picture — which side, how high, how close, how wide, what the point of interest
 is — then draw it against the tree step 8 built and move it until the picture is
 in the frame. An approved picture with no camera stops the next build, naming
-the pictures, and stops the staging gate in step 14, so this is before the walk
-and not after it. A camera answers one picture: never re-aim one at a second,
+the pictures, and stops the staging gate in step 13, so this is before the
+hand-over and not after it. A camera answers one picture: never re-aim one at a second,
 write another row. `delvec cameras` draws the record against that tree and
 renders its scenes; `delvec place-camera` is the record's one writer. A row no
 camera answers is `DW0900`; a camera whose subject is farther than the served
@@ -356,10 +352,9 @@ side, how high, how close, how wide — is
 hand, in the running game, is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`
 §4a.
 
-## 9. Detail — site-plan campaigns only, before the walk
+## 9. Detail — site-plan campaigns only
 
-Optional, and nothing about it waits on a walk: the user walks the world that
-ships, with its real buildings and materials, so detail comes first. **Needs**:
+Optional. **Needs**:
 step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`.
@@ -368,7 +363,7 @@ step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
 
 **Needs**: step 9 done, or skipped. **Produces**: PackTest and bot runs at exit
 0, plus a branch run per branch whenever the build emitted
-`validation/branch-plan.json` — on the build the user will walk. **Read**:
+`validation/branch-plan.json` — on the build that ships. **Read**:
 `references/ladder.md`; on a red, `references/when-red.md`.
 
 ## 11. The branch chronicle — only when the plan declares `branch_points`
@@ -388,23 +383,15 @@ first command. **A POV frame that is the wrong picture** is a camera question,
 not a render one: place that one by hand in the running game
 (`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 
-## 13. The walk — STOP, this one is the user's
+## 13. Hand it over
 
-**Needs**: steps 9-12. **Hands over**: a running server on the detailed build,
-the connect line, and what to look for item by item — naming per item every
-finding still open that they must *not* test. **Waits for**: what they saw. Do
-not hand over, release, or write `walk-record.json` before they answer.
-**The trade-off**: a route problem found here is repaired after detail, so it
-costs a detail rework as well as the plan or graph edit, and another walk.
-**Read**: `references/walk.md`, and `references/playtest-rounds.md` from round 2
-on.
-
-## 14. Hand it over
-
-**Needs**: everything above — on a site-plan campaign, a `walk-record.json` of
-this build whose verdict is `passed`. **Produces**: `campaigns/<id>/README.md` — the
+**Needs**: everything above — step 10's ladder green on the build that ships,
+step 11 where it applies, and your step 12 visual review done — and the staging
+gate run against that build. **Produces**: `campaigns/<id>/README.md` — the
 storybook — its localized editions, and the report that ends the run. Nothing
-comes back. **Read**: `references/hand-over.md`. **When the exterior or
+comes back: the first time the user plays the delve, it is the finished first
+version. **Read**: `references/hand-over.md`, and `references/playtest-rounds.md`
+from round 2 on. **When the exterior or
 starting-scene shot is not the one to ship**, place that camera by hand in the
 running game (`references/tools-by-symptom.md`, *a render camera nobody is
 satisfied with*) rather than re-rendering the one you have.
@@ -438,14 +425,13 @@ reference means the file listed here.
 | `references/npc-skins.md` | the skin toolchain, when a design calls for a face; a vanilla texture the delve replaces | step 5 |
 | `references/other-languages.md` | the localization stage | step 5 |
 | `references/build.md` | `fmt`, `analyze`, `build`, and what the build writes | steps 6-8 |
-| `references/walk.md` | bringing the server up, what to hand the user, and the walk record | step 13 |
 | `references/ladder.md` | PackTest, the bot, branch runs, and how to triage a red | step 10 |
 | `references/chronicle.md` | reading a branch's chronicle against the design | step 11 |
 | `references/visual-review.md` | the POV sequence, Chunky, and what the set costs | step 12 |
 | `references/detail.md` | `detail-plan.json`, one place at a time | step 9 |
 | `references/new-pieces.md` | making a piece the library does not have | steps 2, 9 |
-| `references/hand-over.md` | the storybook, its marker, and the play commands | step 14 |
-| `references/playtest-rounds.md` | every round after the first | steps 13, 14 |
+| `references/hand-over.md` | the storybook, its marker, the play server, the staging gate, and the report | step 13 |
+| `references/playtest-rounds.md` | every round after the first | step 13 |
 | `references/when-red.md` | the symptoms most likely to stop you | any red |
 | `references/tools-by-symptom.md` | the tool inventory, by the symptom that wants it | any step |
 | `references/pitfalls.md` | difficulty, combat, bonfires, waves, staging | steps 3, 5 |

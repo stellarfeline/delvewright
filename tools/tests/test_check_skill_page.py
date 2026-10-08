@@ -451,20 +451,19 @@ def test_a_program_a_later_step_invokes_and_init_never_proves_reds(mod, tree, en
     assert has(run(mod, engine), "invokes `docker compose`, and Init proves it nowhere")
 
 
-def test_the_rule_reaches_the_reference_that_actually_runs_the_ladder(mod, tree, engine):
-    """**`references/walk.md` is inside rule 16's population, by name.**
+def test_the_rule_reaches_the_reference_that_actually_serves_the_build(mod, tree, engine):
+    """**`references/hand-over.md` is inside rule 16's population, by name.**
 
     The rule and the file have different authors: the rule was written where
-    `SKILL.md` invokes Compose, and `walk.md` — the page that brings the server
-    up for the walk — was rewritten afterwards. The test above would stay green
-    if that rewrite had moved walk.md's `docker compose` line out of a fence or
-    behind a variable, because SKILL.md alone still satisfies it, and the rule
-    would then be saying nothing about the one step whose whole ladder is built
-    on Compose.
+    `SKILL.md` invokes Compose, and `hand-over.md` — the page that brings the
+    play server up — was written afterwards. The test above would stay green
+    if that page's `docker compose` line moved out of a fence or behind a
+    variable, because SKILL.md alone still satisfies it, and the rule would then
+    be saying nothing about the step that serves the build.
 
     So this asserts the population rather than the refusal: the finding names
-    walk.md, which it can only do if walk.md really invokes an acquired program
-    in a fenced span the rule reads.
+    hand-over.md, which it can only do if hand-over.md really invokes an
+    acquired program in a fenced span the rule reads.
     """
     edit(tree / "SKILL.md", "\ndocker compose version", "\n# (nothing here)")
     init = tree / "references" / "init.md"
@@ -472,7 +471,7 @@ def test_the_rule_reaches_the_reference_that_actually_runs_the_ladder(mod, tree,
     assert "docker compose version" in text
     init.write_text(text.replace("docker compose version", "docker info"), "utf-8")
     rep = run(mod, engine)
-    assert has(rep, "references/walk.md invokes `docker compose`"), rep.findings
+    assert has(rep, "references/hand-over.md invokes `docker compose`"), rep.findings
 
 
 # ------------------------------------------------ rule 19, the pin check every run --
@@ -652,58 +651,66 @@ def test_a_dw_code_only_a_comment_mentions_is_not_declared(mod):
 # and the resolution against a schema, not what any release exports — the online
 # run asks the release itself.
 
-WALK_TWO = {
+RECORD_TWO = {
     "$defs": {
-        "Verdict": {
+        "State": {
             "oneOf": [
-                {"const": "passed", "type": "string"},
-                {"const": "findings", "type": "string"},
+                {"const": "open", "type": "string"},
+                {"const": "closed", "type": "string"},
             ]
         }
     },
     "properties": {
-        "verdict": {"$ref": "#/$defs/Verdict"},
+        "state": {"$ref": "#/$defs/State"},
         "areas": {"type": "array"},
-        "findings": {"type": "array"},
+        "notes": {"type": "array"},
     },
 }
 HELP = (
-    "      --stage <STAGE>      Which document. `walk-record` for the walk record; "
+    "      --stage <STAGE>      Which document. `stand-in` for the stand-in record; "
     "`<prefab-id>.json` is not a stage; or `all` for every stage document\n"
 )
 
 
-def fake_release(walk_record: dict):
+def fake_release(record: dict):
     def delvec(argv):
         if argv == ["schema", "--stage", "all"]:
             return 0, json.dumps({"world": {"properties": {"time": {"enum": ["dusk"]}}}})
         if argv == ["schema", "--help"]:
             return 0, HELP
-        if argv == ["schema", "--stage", "walk-record"]:
-            return 0, json.dumps(walk_record)
+        if argv == ["schema", "--stage", "stand-in"]:
+            return 0, json.dumps(record)
         return 2, ""
 
     return delvec
 
 
-def release_rep(mod, walk_record):
+def release_rep(mod, record):
     rep = mod.Report()
-    mod.release_binary_rule(rep, fake_release(walk_record), "v0.0.0")
+    mod.release_binary_rule(rep, fake_release(record), "v0.0.0")
     return rep
 
 
+def teach(tree, fragment):
+    """Append one document fragment to a real page file."""
+    path = tree / "references" / "hand-over.md"
+    path.write_text(path.read_text(encoding="utf-8") + f"\n`{fragment}`\n", encoding="utf-8")
+
+
 def test_a_variant_the_release_does_not_admit_reds(mod, tree):
-    """The measured case: the page teaches `verdict: "unwalked"` and a walk record
-    of two verdicts refuses it as an unknown variant."""
-    rep = release_rep(mod, WALK_TWO)
-    assert has(rep, "gives `verdict` the value 'unwalked'"), rep.findings
+    """The measured case: the page teaches `state: "ajar"` and a record of two
+    states refuses it as an unknown variant."""
+    teach(tree, '{"state": "ajar", "areas": []}')
+    rep = release_rep(mod, RECORD_TWO)
+    assert has(rep, "gives `state` the value 'ajar'"), rep.findings
 
 
 def test_the_same_page_holds_against_a_release_that_admits_it(mod, tree):
-    walk = json.loads(json.dumps(WALK_TWO))
-    walk["$defs"]["Verdict"]["oneOf"].append({"const": "unwalked", "type": "string"})
-    rep = release_rep(mod, walk)
-    assert not has(rep, "gives `verdict`"), rep.findings
+    teach(tree, '{"state": "ajar", "areas": []}')
+    record = json.loads(json.dumps(RECORD_TWO))
+    record["$defs"]["State"]["oneOf"].append({"const": "ajar", "type": "string"})
+    rep = release_rep(mod, record)
+    assert not has(rep, "gives `state`"), rep.findings
     bound, of = {what: (b, n) for what, b, n in rep.bindings}[
         "closed-set value(s) the release's schemas admit"
     ]
@@ -713,35 +720,26 @@ def test_the_same_page_holds_against_a_release_that_admits_it(mod, tree):
 def test_a_field_the_release_does_not_carry_reds(mod, tree):
     """A document fragment whose keys are mostly the release's, naming one that
     is not. The stage is found through the binary's help, not a list here."""
-    path = tree / "references" / "walk.md"
-    path.write_text(
-        path.read_text(encoding="utf-8")
-        + '\n`{"verdict": "passed", "areas": [], "walked_by": "a"}`\n',
-        encoding="utf-8",
-    )
-    assert has(release_rep(mod, WALK_TWO), "names the field `walked_by`")
+    teach(tree, '{"state": "open", "areas": [], "opened_by": "a"}')
+    assert has(release_rep(mod, RECORD_TWO), "names the field `opened_by`")
 
 
 def test_a_fragment_of_mostly_unknown_keys_is_not_read_as_a_document(mod, tree):
     """A text component, a skin palette or a renderer option is not a document,
     and the object decides that: most of its keys are no field at all."""
-    path = tree / "references" / "walk.md"
-    path.write_text(
-        path.read_text(encoding="utf-8")
-        + '\n`{"translate": "k", "fallback": "x", "verdict": "passed"}`\n',
-        encoding="utf-8",
-    )
-    rep = release_rep(mod, WALK_TWO)
+    teach(tree, '{"translate": "k", "fallback": "x", "state": "open"}')
+    rep = release_rep(mod, RECORD_TWO)
     assert not has(rep, "names the field `translate`"), rep.findings
 
 
 def test_a_value_given_to_a_field_some_document_leaves_open_is_not_judged(mod, tree):
     """A name one document closes and another leaves open resolves to a
     candidate, not a match — so the value is not refused on the closed one."""
-    walk = json.loads(json.dumps(WALK_TWO))
-    walk["properties"]["nested"] = {"properties": {"verdict": {"type": "string"}}}
-    rep = release_rep(mod, walk)
-    assert not has(rep, "gives `verdict`"), rep.findings
+    teach(tree, '{"state": "ajar", "areas": []}')
+    record = json.loads(json.dumps(RECORD_TWO))
+    record["properties"]["nested"] = {"properties": {"state": {"type": "string"}}}
+    rep = release_rep(mod, record)
+    assert not has(rep, "gives `state`"), rep.findings
 
 
 def codes_release(listed, exit_code=0):
@@ -860,7 +858,7 @@ def test_a_moved_layout_manifest_reds(mod, tree, engine):
 
 def test_a_profile_compose_does_not_declare_reds(mod, tree, engine):
     edit(
-        tree / "references" / "walk.md",
+        tree / "references" / "hand-over.md",
         "--profile play up",
         "--profile plays up",
     )
