@@ -369,3 +369,44 @@ fn the_binding_line_states_what_was_examined() {
          examined, 0 refused"
     );
 }
+
+/// The strike's PackTest waits for the strike's chunk before it summons: setup
+/// force-loads the chunk on the template's first tick, and a chunk force-loaded
+/// on this tick is not loaded yet, so a summon there does nothing (measured on
+/// The Thing Beyond the Fog, whose bolt strikes over the water off every
+/// placed piece: `#lb0` read 0 on tick 0). The template schedules a probe that
+/// sets its own score once `execute if loaded` holds at the cell, awaits that
+/// score, and only then runs the beat's own line.
+#[test]
+fn the_strike_test_waits_for_its_chunk_before_it_summons() {
+    let out = try_build("pt-wait", &quests_with_strike("anchor/exit", [0, 0, 0]))
+        .unwrap_or_else(|(c, m)| panic!("{c}: {m}"));
+    let t = std::str::from_utf8(
+        out.get("packtest-datapack/data/hello-world/test/lightning_0.mcfunction")
+            .expect("the strike's PackTest"),
+    )
+    .unwrap();
+    let lines: Vec<&str> = t.lines().collect();
+    let at = |needle: &str| {
+        lines
+            .iter()
+            .position(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("`{needle}` in:\n{t}"))
+    };
+    assert!(at("function hello-world:lightning_wait_0") < at("await score #lbl0 dw.sys matches 1"));
+    assert!(at("await score #lbl0 dw.sys matches 1") < at("summon minecraft:lightning_bolt"));
+    let wait = std::str::from_utf8(
+        out.get("packtest-datapack/data/hello-world/function/lightning_wait_0.mcfunction")
+            .expect("the chunk probe"),
+    )
+    .unwrap();
+    assert!(
+        wait.contains("execute if loaded ") && wait.contains("set #lbl0 dw.sys 1"),
+        "{wait}"
+    );
+    assert!(
+        wait.contains("execute unless loaded ")
+            && wait.contains("schedule function hello-world:lightning_wait_0 1t"),
+        "{wait}"
+    );
+}

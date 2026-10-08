@@ -18600,6 +18600,31 @@ fn emit_lightning_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("scoreboard players set {score} dw.sys 0"));
+        // Setup force-loads the strike's chunk, and a chunk force-loaded on this
+        // tick is not loaded yet: a mark off the placed pieces (a bolt out over
+        // the water) is a summon into nothing on tick 0. The beat fires long
+        // after setup in play; the template waits for the chunk the same way,
+        // by a probe it schedules each tick until `execute if loaded` holds.
+        let cell = at.cell(anchor);
+        let loaded = format!("#lbl{n}");
+        let wait = format!("lightning_wait_{n}");
+        b.push(format!("scoreboard players set {loaded} dw.sys 0"));
+        b.push(format!("function {ns}:{wait}"));
+        b.push(format!("await score {loaded} dw.sys matches 1"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/{wait}.mcfunction"),
+            lines(&[
+                format!(
+                    "execute if loaded {} {} {} run scoreboard players set {loaded} dw.sys 1",
+                    cell[0], cell[1], cell[2]
+                ),
+                format!(
+                    "execute unless loaded {} {} {} run schedule function {ns}:{wait} 1t",
+                    cell[0], cell[1], cell[2]
+                ),
+            ])
+            .into_bytes(),
+        );
         b.push(summon.clone());
         let near = format!(
             "@e[type={},x={},y={},z={},distance=..1]",
