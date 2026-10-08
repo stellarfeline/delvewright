@@ -137,7 +137,7 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
 /// Build `campaign` against a synthetic dark structure the way `delvec build
 /// --lang <lang>` does: determine the night-vision `DW0210` verdict on the
 /// **canonical English** campaign first, then localize a clone with `translations`
-/// (the l10n sidecar swap) before planning + emitting. This mirrors `main.rs` so a
+/// (the l10n sidecar swap) before planning + emitting. This mirrors `cli/campaign.rs` so a
 /// test can prove the lighting gate reaches the same verdict in every language.
 fn build_localized(
     campaign_en: &Campaign,

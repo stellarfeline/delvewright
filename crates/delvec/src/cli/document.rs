@@ -1,3 +1,15 @@
+//! `delvec fmt`, `schema`, `codes` and `allocation`: the subcommands that
+//! print or rewrite a document rather than build a world.
+
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use delvewright_dsl::{Diagnostic, Stage, parse_campaign, stage_schema};
+
+use crate::EXIT_INTERNAL;
+use crate::cli::campaign::load_or_refuse;
+use crate::cli::report::{print_diags, print_one_diag};
+
 /// `delvec fmt [--check] <path>…` — canonical form for authored Delvewright
 /// JSON.
 ///
@@ -12,7 +24,7 @@
 /// FINDING, not a pass (CLAUDE.md: a green gate that binds to nothing is
 /// vacuous), because the way this gate dies quietly is a path that stops
 /// matching after a directory is renamed.
-fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
+pub(crate) fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
     use delvewright_dsl::fmt;
 
     let mut files: Vec<PathBuf> = Vec::new();
@@ -144,7 +156,12 @@ fn first_differing_line(a: &str, b: &str) -> usize {
 /// and the metrics table. Nothing about it depends on which pieces exist, which
 /// is why it can be asked for before the piece is built — which is the only
 /// moment it is any use.
-fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: bool) -> ExitCode {
+pub(crate) fn run_allocation(
+    campaign_dir: &Path,
+    place: Option<&str>,
+    all: bool,
+    json: bool,
+) -> ExitCode {
     let loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
         Err(exit) => return ExitCode::from(exit),
@@ -198,7 +215,7 @@ fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: boo
 }
 
 /// The `--stage` help: every document `delvec schema` answers to.
-fn schema_stage_help() -> String {
+pub(crate) fn schema_stage_help() -> String {
     let names: Vec<String> = Stage::ALL
         .iter()
         .map(|s| format!("`{}`", s.name()))
@@ -215,7 +232,7 @@ fn schema_stage_help() -> String {
     )
 }
 
-fn run_schema(stage: &str) -> ExitCode {
+pub(crate) fn run_schema(stage: &str) -> ExitCode {
     // EVERY stage answers to its own name, the one `DW0100` prints when that
     // stage's document will not parse: a refusal that names `site-plan` and
     // then tells the author to run `--stage <1..7>` has sent them somewhere
@@ -356,7 +373,7 @@ fn run_schema(stage: &str) -> ExitCode {
 /// compiler.
 /// `delvec codes`: the DW-code registry, one JSON object per line, sorted by
 /// code; the count on stderr.
-fn run_codes() -> ExitCode {
+pub(crate) fn run_codes() -> ExitCode {
     let all = delvewright_dsl::diagnostic::declared();
     let mut out = String::new();
     for entry in &all {

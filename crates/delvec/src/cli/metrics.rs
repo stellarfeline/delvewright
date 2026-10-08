@@ -1,5 +1,18 @@
+//! `delvec metrics`, `calibrate` and `rig`: the engine's own standards and
+//! library rigs.
+
+use std::path::Path;
+use std::process::ExitCode;
+
+use clap::Subcommand;
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::Diagnostic;
+
+use crate::EXIT_INTERNAL;
+use crate::cli::report::{print_build_error, print_diags, write_file};
+
 #[derive(Subcommand)]
-enum RigAction {
+pub(crate) enum RigAction {
     /// Check a rig and print it: the part count, every clip with its length in
     /// ticks, and per clip the footprint of its last frame — the cells its
     /// parts stand in relative to the assembly's mark, which is the number a
@@ -17,7 +30,7 @@ enum RigAction {
 
 /// The four cardinals an assembly can face, for `delvec rig describe`.
 #[derive(Clone, Copy, clap::ValueEnum)]
-enum FacingArg {
+pub(crate) enum FacingArg {
     South,
     North,
     West,
@@ -25,7 +38,7 @@ enum FacingArg {
 }
 
 impl FacingArg {
-    fn facing(self) -> delvewright_dsl::Facing {
+    pub(crate) fn facing(self) -> delvewright_dsl::Facing {
         match self {
             FacingArg::South => delvewright_dsl::Facing::South,
             FacingArg::North => delvewright_dsl::Facing::North,
@@ -41,7 +54,7 @@ impl FacingArg {
 /// Exit codes: `0` printed · `1` the rig is missing, malformed or breaks a rig
 /// rule (`DW0935`), or the id is not `rig/<kebab>` · `10` the library cannot
 /// be read.
-fn run_rig_describe(
+pub(crate) fn run_rig_describe(
     rig: &str,
     facing: delvewright_dsl::Facing,
     prefabs_dir: &Path,
@@ -156,7 +169,12 @@ fn run_rig_describe(
 /// snap radius (`DW0390`). The patch file is still written on exit 3 — the
 /// snappable shots are real work, and withholding them would only make the
 /// creator redo the session.
-fn run_calibrate(report_path: &Path, layout_path: &Path, out: &str, json: bool) -> ExitCode {
+pub(crate) fn run_calibrate(
+    report_path: &Path,
+    layout_path: &Path,
+    out: &str,
+    json: bool,
+) -> ExitCode {
     use delvec::compiler::calibrate;
 
     let report_raw = match std::fs::read_to_string(report_path) {
@@ -299,7 +317,7 @@ fn run_calibrate(report_path: &Path, layout_path: &Path, out: &str, json: bool) 
     }
 }
 
-fn run_metrics(json: bool, gym_dir: Option<&std::path::Path>) -> ExitCode {
+pub(crate) fn run_metrics(json: bool, gym_dir: Option<&std::path::Path>) -> ExitCode {
     use delvewright_dsl::metrics::{Metrics, export};
 
     let table = Metrics::table();

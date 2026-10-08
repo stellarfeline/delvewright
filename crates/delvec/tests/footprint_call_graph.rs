@@ -60,8 +60,8 @@ fn rig_describe_and_the_strike_check_read_one_footprint() {
     }
     // The printed footprint.
     assert!(body(&rig, "describe").contains("last_frame_footprint(clip, facing)"));
-    let main = read("crates/delvec/src/main.rs");
-    let describe = body(&main, "run_rig_describe");
+    let cli = read("crates/delvec/src/cli/metrics.rs");
+    let describe = body(&cli, "run_rig_describe");
     assert!(
         describe.contains("rig::describe(") && describe.contains("rig::last_frame_footprint("),
         "`delvec rig describe` prints through the dsl's footprint"
@@ -91,16 +91,42 @@ fn rig_describe_and_the_strike_check_read_one_footprint() {
         "the strike rule reads the dsl's per-part cells: {struck}"
     );
     // Neither caller has a footprint of its own.
-    for (file, src) in [("main.rs", &main), ("assembly.rs", &asm)] {
+    for (file, src) in [("cli/metrics.rs", &cli), ("assembly.rs", &asm)] {
         assert!(
-            !src.lines().any(|l| {
-                let t = l.trim_start();
-                (t.starts_with("fn ")
-                    || t.starts_with("pub fn ")
-                    || t.starts_with("pub(crate) fn "))
-                    && t.contains("footprint")
-            }),
+            !src.lines()
+                .any(|l| defines_fn(l.trim_start()) && l.contains("footprint")),
             "{file} defines a footprint function of its own"
         );
+    }
+}
+
+/// Whether a trimmed source line opens a `fn` item, at any visibility: none,
+/// `pub`, or a restricted `pub(crate)` / `pub(super)` / `pub(in path)`.
+fn defines_fn(t: &str) -> bool {
+    let rest = match t.strip_prefix("pub") {
+        Some(r) if r.starts_with('(') => r.find(')').map_or(r, |i| &r[i + 1..]).trim_start(),
+        Some(r) if r.starts_with(' ') => r.trim_start(),
+        _ => t,
+    };
+    rest.starts_with("fn ")
+}
+
+#[test]
+fn a_fn_definition_is_recognised_at_every_visibility() {
+    for def in [
+        "fn last_frame_footprint(",
+        "pub fn last_frame_footprint(",
+        "pub(crate) fn last_frame_footprint(",
+        "pub(super) fn last_frame_footprint(",
+        "pub(in crate::cli) fn last_frame_footprint(",
+    ] {
+        assert!(defines_fn(def), "{def}");
+    }
+    for not_def in [
+        "rig::last_frame_footprint(clip, facing)",
+        "let footprint = frame_footprint(frame);",
+        "public_fn_footprint()",
+    ] {
+        assert!(!defines_fn(not_def), "{not_def}");
     }
 }

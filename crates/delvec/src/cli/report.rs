@@ -1,5 +1,12 @@
+//! How the compiler surface reports: diagnostics on stdout or stderr under
+//! `--json`, the binding notes, and the files a subcommand writes.
+
+use std::path::Path;
+
+use delvewright_dsl::{Diagnostic, DwCode};
+
 /// Write `bytes` to `path`, creating parent directories.
-fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(super) fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -63,7 +70,7 @@ pub(crate) fn print_build_error(code: DwCode, message: &str, json: bool) {
 /// run that refused one thing opened with four to six paragraphs about what it
 /// had examined. They are the last thing a run says now, and they say it under a
 /// heading so a reader can see where the answers to their own question ended.
-fn report_binding_notes(campaign: &delvewright_dsl::Campaign, collected: &[String]) {
+pub(super) fn report_binding_notes(campaign: &delvewright_dsl::Campaign, collected: &[String]) {
     let mut buf: Vec<String> = collected.to_vec();
     layout_binding_lines(campaign, &mut buf);
     if buf.is_empty() {

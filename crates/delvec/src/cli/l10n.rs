@@ -1,3 +1,15 @@
+//! `delvec l10n-inventory` and `l10n-apply`: a campaign's translation
+//! sidecars.
+
+use std::path::Path;
+use std::process::ExitCode;
+
+use delvewright_dsl::parse_campaign;
+
+use crate::EXIT_INTERNAL;
+use crate::cli::campaign::load_or_refuse;
+use crate::cli::report::print_diags;
+
 /// One `l10n-inventory` row: an inventory key, its canonical English source, the
 /// kind of text it is, the NPC whose voice it is (when the key scheme names one),
 /// the situation it is said in, the translation the current sidecar already
@@ -49,7 +61,7 @@ struct NpcContext<'a> {
 /// Deliberately runs **before** validation gating: an incomplete sidecar is the
 /// normal state when you ask for the inventory. Only an unparseable campaign fails
 /// (exit 1); no prefab library is needed.
-fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
+pub(crate) fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
     let loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
         Err(exit) => return ExitCode::from(exit),
@@ -169,7 +181,12 @@ fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
 /// run **lists** every such English with its keys and the sidecar stays directly
 /// editable for them. Named, not hidden: the alternative is a tool that silently
 /// gives one answer to two questions.
-fn run_l10n_apply(campaign_dir: &Path, lang: &str, table_path: &Path, json: bool) -> ExitCode {
+pub(crate) fn run_l10n_apply(
+    campaign_dir: &Path,
+    lang: &str,
+    table_path: &Path,
+    json: bool,
+) -> ExitCode {
     use delvewright_dsl::{L10nDoc, L10nKind};
     use std::collections::{BTreeMap, BTreeSet};
 

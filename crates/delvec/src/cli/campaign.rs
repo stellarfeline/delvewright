@@ -1,3 +1,25 @@
+//! `delvec validate`, `analyze`, `build` and `textures`: the subcommands that
+//! act on a whole campaign, and the one loader and validation funnel every
+//! subcommand that reads a campaign goes through.
+
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::process::ExitCode;
+
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::blockout::{Knob, Perturb};
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit;
+use delvec::compiler::load::{
+    LoadedCampaign, load_campaign_dir, missing_stage_documents_diagnostic,
+};
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{Diagnostic, DwCode, parse_campaign, validate_campaign_with};
+
+use crate::EXIT_INTERNAL;
+use crate::cli::report::{print_build_error, print_diags, report_binding_notes};
+
 /// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
 /// declares a `skin.texture_id` for which the campaign ships no
 /// `skins/<texture_id>.png`. Build-tier (exit 3). One rule with a
@@ -78,7 +100,12 @@ pub(crate) fn load_or_refuse(campaign_dir: &Path, json: bool) -> Result<LoadedCa
 }
 
 /// `delvec textures` (spec-0084 §5.2): one comparison sheet per declared texture.
-fn run_textures(campaign_dir: &Path, out: &Path, textures: Option<&str>, json: bool) -> ExitCode {
+pub(crate) fn run_textures(
+    campaign_dir: &Path,
+    out: &Path,
+    textures: Option<&str>,
+    json: bool,
+) -> ExitCode {
     use delvec::compiler::textures;
     let loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
@@ -177,7 +204,7 @@ pub(crate) fn validate_stage(
 /// [`validate_stage`] over an already-loaded (possibly augmented) campaign —
 /// split out so `delvec edit` can validate a script with a candidate batch
 /// appended before anything touches the campaign directory.
-fn validate_loaded(
+pub(super) fn validate_loaded(
     loaded: delvec::compiler::load::LoadedCampaign,
     prefabs_dir: &Path,
     json: bool,
@@ -531,7 +558,7 @@ pub(crate) fn has_error(diags: &[Diagnostic]) -> bool {
         .any(|d| d.severity == delvewright_dsl::Severity::Error)
 }
 
-fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
+pub(crate) fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
     match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) if !has_error(&v.diags) => ExitCode::SUCCESS,
         Ok(_) => ExitCode::from(1),
@@ -539,7 +566,7 @@ fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode
     }
 }
 
-fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
+pub(crate) fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
     let v = match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
@@ -650,7 +677,7 @@ enum BuildKind<'a> {
     Demonstrate(Knob, Perturb),
 }
 
-fn run_build(
+pub(crate) fn run_build(
     campaign_dir: &Path,
     out: Option<&Path>,
     perturb: &[Knob],

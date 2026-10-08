@@ -9,25 +9,23 @@
 //! analysis failure · `3` build failure · `≥10` internal error. A mounted
 //! surface keeps its own exit-code table, documented on its `cli` module.
 
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
+mod cli;
 mod detail;
 
 use clap::{Parser, Subcommand};
-use delvec::compiler::analyze::analyze_campaign;
-use delvec::compiler::blockout::{Knob, Perturb};
-use delvec::compiler::commands::CommandTree;
-use delvec::compiler::emit;
-use delvec::compiler::load::{
-    LoadedCampaign, load_campaign_dir, missing_stage_documents_diagnostic,
-};
-use delvec::compiler::plan::Plan;
-use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvec::compiler::blockout::Knob;
 use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
-use delvewright_dsl::{
-    Diagnostic, DwCode, Stage, parse_campaign, stage_schema, validate_campaign_with,
+
+use crate::cli::campaign::{run_analyze, run_build, run_textures, run_validate};
+use crate::cli::document::{run_allocation, run_codes, run_fmt, run_schema, schema_stage_help};
+use crate::cli::edit::{EditAction, run_edit};
+use crate::cli::l10n::{run_l10n_apply, run_l10n_inventory};
+use crate::cli::metrics::{RigAction, run_calibrate, run_metrics, run_rig_describe};
+use crate::cli::view::{
+    SnapshotArgs, camera_stands, run_blocking_chart, run_cameras_preview, run_snapshot,
 };
 
 /// Internal-error exit code (spec-0002: ≥10).

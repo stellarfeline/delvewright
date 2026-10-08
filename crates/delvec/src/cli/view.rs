@@ -1,15 +1,29 @@
+//! `delvec snapshot`, `cameras --preview`, the camera stand check and
+//! `blocking-chart`: the view arms that read the binary's campaign loader.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+
+use crate::EXIT_INTERNAL;
+use crate::cli::campaign::{read_structures, validate_stage};
+use crate::cli::report::{print_build_error, print_diags, write_file};
+
 /// The `snapshot` subcommand's arguments, bundled so the dispatcher stays legible.
-struct SnapshotArgs<'a> {
-    camera: Option<&'a str>,
-    at: Option<&'a str>,
-    orbit: f64,
-    dist: Option<f64>,
-    shot: Option<&'a str>,
-    out: &'a Path,
-    labels: bool,
-    width: u32,
-    height: u32,
-    timing: bool,
+pub(crate) struct SnapshotArgs<'a> {
+    pub(crate) camera: Option<&'a str>,
+    pub(crate) at: Option<&'a str>,
+    pub(crate) orbit: f64,
+    pub(crate) dist: Option<f64>,
+    pub(crate) shot: Option<&'a str>,
+    pub(crate) out: &'a Path,
+    pub(crate) labels: bool,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) timing: bool,
 }
 
 /// `delvec snapshot <campaign-dir> …` — draft-render one frame of the assembled
@@ -27,7 +41,7 @@ struct SnapshotArgs<'a> {
 /// Validation diagnostics are printed but never gate the render. Only an
 /// unparseable campaign (exit 1) or a placement failure (exit 3) stops it — in
 /// both cases there is no world to look at.
-fn run_snapshot(
+pub(crate) fn run_snapshot(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     args: SnapshotArgs<'_>,
@@ -184,7 +198,7 @@ fn run_snapshot(
 /// [`delvec::compiler::view::beat::stands`] — the record's `after` rules
 /// refused under `DW0721` (exit 2). A campaign that does not plan has its
 /// own refusal printed here, and the caller is told only the code.
-fn camera_stands(
+pub(crate) fn camera_stands(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     json: bool,
@@ -266,7 +280,7 @@ fn camera_base(
 /// seconds — so a camera is placed before the path tracer is asked about light.
 /// The record is read by the one reader (`compiler::view::camera`); nothing here
 /// restates where a camera is.
-fn run_cameras_preview(
+pub(crate) fn run_cameras_preview(
     build_dir: &Path,
     campaign_dir: &Path,
     prefabs_dir: &Path,
@@ -442,7 +456,7 @@ fn run_cameras_preview(
 /// The manifest sidecar path for an output image: the image path with its
 /// extension replaced by `manifest.json` (`shot.png` → `shot.manifest.json`).
 /// A path with no extension simply gains one.
-fn manifest_path_for(out: &Path) -> PathBuf {
+pub(super) fn manifest_path_for(out: &Path) -> PathBuf {
     out.with_extension("manifest.json")
 }
 
@@ -468,7 +482,7 @@ fn edited_assembled(
 
 /// The `ocean`-horizon sea level to draw as a background plane, or `None` for a
 /// `void`-horizon campaign (see `snapshot::SEA_PLANE_NOTE`).
-fn sea_level_of(campaign: &delvewright_dsl::Campaign) -> Option<i32> {
+pub(super) fn sea_level_of(campaign: &delvewright_dsl::Campaign) -> Option<i32> {
     match delvewright_dsl::horizon_base(&campaign.world.content.horizon) {
         delvewright_dsl::HorizonBase::Ocean => Some(delvec::compiler::plan::SEA_LEVEL),
         _ => None,
@@ -587,7 +601,7 @@ fn resolve_camera(
 /// subject. The walk itself is `camera::stand_in_open_air`, shared with the
 /// render plan's own cameras — it used to live here, private to this one flag,
 /// while every derived camera in `render-plan.json` went without it.
-fn pull_into_open_air(
+pub(super) fn pull_into_open_air(
     grid: &delvec::compiler::snapshot::VoxelGrid,
     subject: [f64; 3],
     eye: [f64; 3],
@@ -702,7 +716,7 @@ fn camera_from_shot(
 /// are found from and the corridor overlay is the DW0311-proven critical path.
 /// Routing is best-effort: a campaign whose critical path does not route yet
 /// simply charts without the corridor tint rather than refusing to chart.
-fn run_blocking_chart(
+pub(crate) fn run_blocking_chart(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     out: &Path,

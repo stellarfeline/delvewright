@@ -790,21 +790,21 @@ fn the_parameterised_derivation_has_exactly_one_production_caller() {
     }
 
     // `plan.rs` calls it from `Plan::build` with the literal that asks for
-    // nothing; the binary's `main.rs` calls it from the `--perturb` arm.
-    // Nothing else may.
+    // nothing; the binary's `cli/campaign.rs` calls it from the `--perturb`
+    // arm. Nothing else may.
     let sites: Vec<&str> = callers.iter().map(|(f, _)| f.as_str()).collect();
     assert_eq!(
         sites,
         vec![
-            "crates/delvec/src/compiler/plan.rs",
-            "crates/delvec/src/main.rs"
+            "crates/delvec/src/cli/campaign.rs",
+            "crates/delvec/src/compiler/plan.rs"
         ],
         "the parameterised derivation acquired a caller: {callers:#?}"
     );
     assert!(
-        callers[0].1.contains("Perturb::none()"),
+        callers[1].1.contains("Perturb::none()"),
         "`Plan::build` must pass the literal that asks for nothing: {}",
-        callers[0].1
+        callers[1].1
     );
 
     // And the facility is not NAMED anywhere else either — a file that mentions
@@ -812,9 +812,9 @@ fn the_parameterised_derivation_has_exactly_one_production_caller() {
     assert_eq!(
         named_perturb.iter().map(String::as_str).collect::<Vec<_>>(),
         vec![
+            "crates/delvec/src/cli/campaign.rs",
             "crates/delvec/src/compiler/blockout.rs",
             "crates/delvec/src/compiler/plan.rs",
-            "crates/delvec/src/main.rs",
         ],
         "binding: {} source file(s) scanned, {} call site(s) found",
         files.len(),

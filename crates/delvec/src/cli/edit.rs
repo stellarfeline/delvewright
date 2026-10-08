@@ -1,5 +1,25 @@
+//! `delvec edit apply|preview`: the stage-7 edit script, replayed, checked
+//! and rendered.
+
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use clap::Subcommand;
+use delvec::compiler::analyze::analyze_campaign;
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit;
+use delvec::compiler::plan::Plan;
+use delvewright_dsl::Stage;
+
+use crate::EXIT_INTERNAL;
+use crate::cli::campaign::{
+    has_error, load_or_refuse, read_skins, read_structures, validate_loaded,
+};
+use crate::cli::report::{print_build_error, print_diags, write_file};
+use crate::cli::view::{manifest_path_for, pull_into_open_air, sea_level_of};
+
 #[derive(Subcommand)]
-enum EditAction {
+pub(crate) enum EditAction {
     /// Replay the edit script — plus an optional `--batch` candidate — and, on
     /// a fully green replay, persist the candidate into `world-edits.json`
     /// (canonical form). Without `--batch`, replays and re-renders only.
@@ -50,7 +70,7 @@ enum EditAction {
 /// discarded) before anything is persisted; measured cost is ~0.3 s on the
 /// largest content campaign against a ~0.34 s snapshot render, so there is no
 /// reason for a cheaper tier to exist.
-fn run_edit(
+pub(crate) fn run_edit(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     batch: Option<&Path>,

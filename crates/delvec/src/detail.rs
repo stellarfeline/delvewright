@@ -46,10 +46,11 @@ use delvewright_dsl::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::{
-    EXIT_INTERNAL, has_error, load_or_refuse, print_build_error, print_diags, print_one_diag,
-    read_skins, read_structures, validate_stage,
+use crate::EXIT_INTERNAL;
+use crate::cli::campaign::{
+    has_error, load_or_refuse, read_skins, read_structures, validate_stage,
 };
+use crate::cli::report::{print_build_error, print_diags, print_one_diag};
 
 delvewright_dsl::dw_code! {
     /// `DW0882`: **the program asks for a value the whole does not hand.** A
