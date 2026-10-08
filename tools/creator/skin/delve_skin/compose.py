@@ -28,7 +28,6 @@ from typing import Dict, List
 
 import numpy as np
 from PIL import Image
-from skinpy import Skin
 
 from delve_skin.palette import (
     RGBA,
@@ -39,6 +38,7 @@ from delve_skin.palette import (
     seed_from_id,
     shade,
 )
+from delve_skin import models
 from delve_skin.png import encode_rgba
 from delve_skin.wardrobe import SHOULDER_HAIR, Span, Wardrobe
 
@@ -78,15 +78,24 @@ FACE_CHIN = 0
 PALETTE_KEYS = (
     "skin", "skin_shadow", "hair", "hair_shadow", "hair_grey",
     "beard", "beard_grey", "tunic", "tunic_shadow", "belt",
-    "legwear", "legwear_shadow", "sandal", "eye",
+    "legwear", "legwear_shadow", "sandal", "eye", "hood", "hood_shadow",
 )
 
 #: Fields a cast-sheet entry may carry, for the same reason: a misspelled
 #: ``wardrobe`` would compose the default costume and say nothing.
 ENTRY_KEYS = (
-    "texture_id", "model", "palette", "wardrobe", "style_brief", "role",
+    "texture_id", "entity", "model", "palette", "wardrobe", "style_brief", "role",
     "hidden_layers", "features", "seed",
 )
+
+#: The body a cast entry dresses when it names none: a player-model mannequin.
+MANNEQUIN = "mannequin"
+
+
+def entities() -> tuple[str, ...]:
+    """What a cast entry's ``entity`` may name: a mannequin, or a mob model the
+    wardrobe fits (every part the player's size, :func:`models.dressable`)."""
+    return (MANNEQUIN,) + tuple(k for k in models.dressable() if k != "player")
 
 
 @dataclass(frozen=True)
@@ -94,7 +103,7 @@ class CastEntry:
     """One row of a skin cast sheet (spec-0009 workflow step 1)."""
 
     texture_id: str
-    model: str  # "wide" | "slim" -- MANDATORY (spec-0009)
+    model: str  # "wide" | "slim" -- MANDATORY for a mannequin (spec-0009); "" for a mob
     palette: Dict[str, str]
     wardrobe: Wardrobe = field(default_factory=Wardrobe)
     style_brief: str = ""
@@ -102,6 +111,7 @@ class CastEntry:
     hidden_layers: List[str] = field(default_factory=list)
     features: Dict[str, object] = field(default_factory=dict)
     seed: int | None = None
+    entity: str = MANNEQUIN
 
     @staticmethod
     def from_dict(d: dict) -> "CastEntry":
@@ -115,15 +125,50 @@ class CastEntry:
                 f"{', '.join(repr(k) for k in unknown)}; known fields: "
                 f"{', '.join(ENTRY_KEYS)}"
             )
-        # spec-0009: model is mandatory; omission silently renders slim.
-        if "model" not in d or d["model"] in (None, ""):
+        entity = d.get("entity", MANNEQUIN)
+        if entity not in entities():
+            known = ", ".join(repr(e) for e in entities())
             raise ValueError(
-                f"cast entry {texture_id!r} missing required field "
-                "'model' (wide|slim) -- an omitted model renders slim and "
-                "distorts a wide skin (spec-0009)"
+                f"cast entry {texture_id!r}: entity {entity!r} is not a body this "
+                f"composer dresses ({known}). The wardrobe is written for a body "
+                "whose head, torso and limbs are the player's size; for any other "
+                f"model, `python -m delve_skin parts {entity}` prints its own boxes "
+                "to draw the sheet to"
             )
-        if d["model"] not in ("wide", "slim"):
-            raise ValueError(f"model must be 'wide' or 'slim', got {d['model']!r}")
+        if entity != MANNEQUIN:
+            if d.get("model") not in (None, ""):
+                raise ValueError(
+                    f"cast entry {texture_id!r}: entity {entity!r} has one model, so "
+                    "'model' (wide|slim) says nothing -- remove it"
+                )
+        else:
+            # spec-0009: model is mandatory; omission silently renders slim.
+            if "model" not in d or d["model"] in (None, ""):
+                raise ValueError(
+                    f"cast entry {texture_id!r} missing required field "
+                    "'model' (wide|slim) -- an omitted model renders slim and "
+                    "distorts a wide skin (spec-0009)"
+                )
+            if d["model"] not in ("wide", "slim"):
+                raise ValueError(f"model must be 'wide' or 'slim', got {d['model']!r}")
+        hidden = list(d.get("hidden_layers", []))
+        if hidden and entity != MANNEQUIN:
+            raise ValueError(
+                f"cast entry {texture_id!r}: 'hidden_layers' is a mannequin's, and "
+                f"entity {entity!r} is not one"
+            )
+        layers = models.mannequin_layers()
+        unknown_layers = [h for h in hidden if h not in layers]
+        if unknown_layers:
+            raise ValueError(
+                f"cast entry {texture_id!r}: unknown hidden layer(s) "
+                f"{', '.join(repr(h) for h in unknown_layers)}; a mannequin's layers "
+                f"are {', '.join(layers)}"
+            )
+        if len(set(hidden)) != len(hidden):
+            raise ValueError(
+                f"cast entry {texture_id!r}: 'hidden_layers' names a layer twice"
+            )
         palette = dict(d.get("palette", {}))
         unknown_colours = sorted(set(palette) - set(PALETTE_KEYS))
         if unknown_colours:
@@ -132,22 +177,38 @@ class CastEntry:
                 f"{', '.join(repr(k) for k in unknown_colours)}; known keys: "
                 f"{', '.join(PALETTE_KEYS)}"
             )
+        wardrobe = Wardrobe.from_dict(d.get("wardrobe"), texture_id, d.get("features"))
+        if entity != MANNEQUIN:
+            missing = [
+                feat for feat in wardrobe.needs_body_shell()
+                if not models.layout(entity).shell["torso"]
+            ]
+            if missing:
+                raise ValueError(
+                    f"cast entry {texture_id!r}: {', '.join(missing)} is drawn on the "
+                    f"torso's overlay shell, and the {entity!r} model builds none"
+                )
         return CastEntry(
             texture_id=texture_id,
-            model=d["model"],
+            entity=entity,
+            model=d.get("model") or "",
             palette=palette,
-            wardrobe=Wardrobe.from_dict(
-                d.get("wardrobe"), texture_id, d.get("features")
-            ),
+            wardrobe=wardrobe,
             style_brief=d.get("style_brief", ""),
             role=d.get("role", ""),
-            hidden_layers=list(d.get("hidden_layers", [])),
+            hidden_layers=hidden,
             features=dict(d.get("features", {})),
             seed=d.get("seed"),
         )
 
     def resolved_seed(self) -> int:
         return self.seed if self.seed is not None else seed_from_id(self.texture_id)
+
+    def model_key(self) -> str:
+        """The model-part table key this entry's sheet is drawn to."""
+        if self.entity != MANNEQUIN:
+            return self.entity
+        return "player" if self.model == "wide" else "player_slim"
 
 
 def _resolve_palette(raw: Dict[str, str]) -> Dict[str, RGBA]:
@@ -174,17 +235,28 @@ def _resolve_palette(raw: Dict[str, str]) -> Dict[str, RGBA]:
     p.setdefault("legwear_shadow", shade(p["legwear"], -40))
     p.setdefault("sandal", (74, 55, 40, 255))
     p.setdefault("eye", (40, 34, 30, 255))
+    # A hood is cut from the torso's cloth unless it names its own, and its rim
+    # is that cloth in shadow -- the role `tunic_shadow` has for the torso.
+    p.setdefault("hood", p["tunic"])
+    p.setdefault("hood_shadow", shade(p["hood"], -40))
     return p
 
 
 class _Canvas:
-    """Thin part/face addressing helper over a skinpy Skin."""
+    """Part/face addressing over one layer of a model's sheet.
 
-    def __init__(self) -> None:
-        self.skin = Skin.new()
+    ``parts`` maps a composer part id to the skinpy ``BodyPart`` that layer
+    paints (:class:`delve_skin.models.Canvas`): the base boxes, or the shell
+    boxes over them. A part the model does not paint addresses a discarded
+    buffer, so every call is made, and consumes the seeded stream, the same on
+    every model.
+    """
+
+    def __init__(self, parts) -> None:
+        self.parts = parts
 
     def face(self, part: str, face: str):
-        return self.skin.get_body_part_for_id(part).get_face_for_id(face)
+        return self.parts[part].get_face_for_id(face)
 
     def fill(self, part: str, face: str, color: RGBA) -> None:
         f = self.face(part, face)
@@ -475,9 +547,87 @@ def _build_torso(c: _Canvas, p: Dict[str, RGBA], w: Wardrobe,
         c.px("torso", "front", 4, 9, skin)
 
 
-def compose_skin(entry: CastEntry) -> Image.Image:
-    """Compose an original 64x64 RGBA skin for a cast entry (deterministic)."""
-    if entry.model == "slim":
+def _build_shell(c: _Canvas, p: Dict[str, RGBA], w: Wardrobe, rng: np.random.Generator,
+                 has_torso_shell: bool) -> None:
+    """The overlay shell (spec-0097 §6.2): beard, hair, hood and collar, half a
+    pixel off the head and a quarter off the torso.
+
+    Painted after the whole base, so a sheet's base pixels are the ones it
+    composed before the shell existed, and the stream the base consumed is the
+    stream it always consumed.
+    """
+    hair, hair_sh, hair_grey = p["hair"], p["hair_shadow"], p["hair_grey"]
+    beard, grey = p["beard"], p["beard_grey"]
+    hair_span = w.hair_span()
+    framed = w.hair_has_a_cut_line()
+
+    if w.hooded():
+        hood, rim = p["hood"], p["hood_shadow"]
+        for face in ("up", "back", "left", "right"):
+            c.fill("head", face, hood)
+            c.noise("head", face, hood, 6, rng)
+        # The front frames the face: the brow row and the outer columns, with
+        # the rim in shadow just inside them. The face rows stay open.
+        c.rows("head", "front", 7, 7, hood)
+        c.columns("head", "front", 0, 0, 0, 7, hood)
+        c.columns("head", "front", 7, 7, 0, 7, hood)
+        c.columns("head", "front", 1, 6, FACE_HAIRLINE, FACE_HAIRLINE, rim)
+        c.columns("head", "front", 1, 1, 0, FACE_HAIRLINE - 1, rim)
+        c.columns("head", "front", 6, 6, 0, FACE_HAIRLINE - 1, rim)
+        if has_torso_shell:
+            # The fall: over the shoulders and down the upper back.
+            c.fill("torso", "up", hood)
+            c.rows("torso", "back", 9, 11, hood)
+            c.rows("torso", "back", 9, 9, rim)
+    elif hair_span is not None:
+        hy0, hy1 = hair_span
+        c.fill("head", "up", hair)
+        c.noise("head", "up", hair, 8, rng)
+        c.rows("head", "back", hy0, 7, hair)
+        c.noise("head", "back", hair, 8, rng, only_color=hair)
+        c.rows("head", "left", hy0, hy1, hair)
+        c.rows("head", "right", hy0, hy1, hair)
+        # The fringe's lip over the brow.
+        c.rows("head", "front", 7, 7, hair)
+        if framed:
+            c.rows("head", "left", hy0, hy0, hair_sh)
+            c.rows("head", "right", hy0, hy0, hair_sh)
+            c.rows("head", "back", hy0, hy0, hair_sh)
+            c.columns("head", "front", 0, 0, hy0, 7, hair)
+            c.columns("head", "front", 7, 7, hy0, 7, hair)
+        if w.greys_hair():
+            c.streak("head", "up", None, hair_grey, rng)
+            c.streak("head", "back", (hy0, 7), hair_grey, rng)
+        if w.hair_reaches_the_shoulders() and has_torso_shell:
+            sy0, sy1 = SHOULDER_HAIR
+            c.rows("torso", "back", sy0, sy1, hair)
+            c.rows("torso", "back", sy0, sy0, hair_sh)
+
+    greys_beard = w.greys_beard()
+    if w.facial_hair == "beard":
+        for x in range(1, 7):
+            for y in (FACE_CHIN, FACE_MOUTH):
+                col = grey if greys_beard and (rng.integers(0, 5) == 0 or y == 0) else beard
+                c.px("head", "front", x, y, jitter(rng, col, 8))
+    if w.facial_hair in ("beard", "moustache"):
+        for x in range(2, 6):
+            c.px("head", "front", x, FACE_LIP, jitter(rng, beard, 8))
+    if w.facial_hair == "beard":
+        c.fill("head", "down", beard)
+        c.noise("head", "down", beard, 8, rng)
+        if not w.hooded():
+            c.rows("head", "left", FACE_CHIN, FACE_LIP, beard)
+            c.rows("head", "right", FACE_CHIN, FACE_LIP, beard)
+
+    if w.collar_ring() and has_torso_shell:
+        # A ring that stands off the neck: the top two rows of the torso shell
+        # all the way round, its lower row in shadow.
+        c.band("torso", (10, 11), p["tunic"])
+        c.band("torso", (10, 10), p["tunic_shadow"])
+
+
+def _compose(entry: CastEntry) -> models.Canvas:
+    if entry.entity == MANNEQUIN and entry.model == "slim":
         raise NotImplementedError(
             "slim geometry is not supported by the wide-only skinpy-extended "
             "layout yet; author the cast entry as 'wide' or extend the composer. "
@@ -486,7 +636,8 @@ def compose_skin(entry: CastEntry) -> Image.Image:
     p = _resolve_palette(entry.palette)
     w = entry.wardrobe
     rng = rng_for(entry.resolved_seed())
-    c = _Canvas()
+    sheet = models.Canvas(entry.model_key())
+    c = _Canvas(sheet.base)
     # Order matters for deterministic rng consumption; keep it stable.
     _build_torso(c, p, w, rng)
     _build_arm(c, "left_arm", p, w, rng)
@@ -494,7 +645,43 @@ def compose_skin(entry: CastEntry) -> Image.Image:
     _build_leg(c, "left_leg", p, w, rng)
     _build_leg(c, "right_leg", p, w, rng)
     _build_head(c, p, w, entry.features, rng)
-    return c.skin.to_image()
+    _build_shell(_Canvas(sheet.shell), p, w, rng, sheet.has_shell("torso"))
+    return sheet
+
+
+def compose_skin(entry: CastEntry) -> Image.Image:
+    """Compose an original RGBA sheet for a cast entry (deterministic): 64x64 for
+    a mannequin, the model's own texture size for a mob."""
+    w, h, rgba = _compose(entry).to_rgba()
+    return Image.frombytes("RGBA", (w, h), rgba)
+
+
+def compose_preview_skin(entry: CastEntry) -> Image.Image:
+    """The sheet as a 64x64 player-layout skin a preview can project.
+
+    Each composer part's base faces are copied, and each shell's opaque pixels
+    laid over the face beneath -- what the shell covers, seen from outside. The
+    half-pixel stand-off is not drawn: the projection is of the base's cubes.
+    """
+    sheet = _compose(entry)
+    flat = models.Canvas("player")
+    for pid in models.PART_IDS:
+        for face in models.FACES:
+            dst = flat.base[pid].get_face_for_id(face)
+            fw, fh = dst.shape
+            layers = []
+            if sheet.layout.base[pid] is not None:
+                layers.append(sheet.base[pid].get_face_for_id(face))
+            if sheet.layout.shell[pid] is not None:
+                layers.append(sheet.shell[pid].get_face_for_id(face))
+            for src in layers:
+                for x in range(fw):
+                    for y in range(fh):
+                        col = src.get_color(x, y)
+                        if int(col[3]) > 0:
+                            dst.set_color(x, y, tuple(int(v) for v in col))
+    w, h, rgba = flat.to_rgba()
+    return Image.frombytes("RGBA", (w, h), rgba)
 
 
 def compose_png_bytes(entry: CastEntry) -> bytes:

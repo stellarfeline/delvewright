@@ -37,6 +37,9 @@ from delve_skin.compose import (  # noqa: E402
     compose_png_bytes,
     compose_skin,
 )
+from delve_skin import models  # noqa: E402
+from delve_skin.cli import parts_table  # noqa: E402
+from delve_skin.compose import compose_preview_skin, entities  # noqa: E402
 from delve_skin.preview import PREVIEW_ANGLES, render_previews  # noqa: E402
 from delve_skin.wardrobe import (  # noqa: E402
     COLLAR,
@@ -44,6 +47,7 @@ from delve_skin.wardrobe import (  # noqa: E402
     FOOTWEAR,
     GREYING,
     HAIR,
+    HOOD,
     LEGS,
     SHOULDER_HAIR,
     SLEEVES,
@@ -174,7 +178,7 @@ def test_every_fixture_sheet_composes_its_golden_file():
                 "a different file -- the encoder moved"
             )
             checked += 1
-    assert checked == 3, f"expected 3 pinned entries, pinned {checked}"
+    assert checked == 7, f"expected 7 pinned entries, pinned {checked}"
 
 
 def test_the_png_file_is_byte_stable_within_one_run():
@@ -707,7 +711,7 @@ def test_help_names_every_axis_value_and_every_key():
     for axis in (SLEEVES, LEGS, FOOTWEAR, HAIR):
         for value in axis:
             assert value in help_text, f"--help does not name wardrobe value {value!r}"
-    for group in (FACIAL_HAIR, COLLAR, GREYING):
+    for group in (FACIAL_HAIR, COLLAR, HOOD, GREYING):
         for value in group:
             assert value in help_text, f"--help does not name wardrobe value {value!r}"
 
@@ -719,7 +723,7 @@ def test_readme_documents_every_axis_value_and_palette_key():
     axes = (
         ("sleeves", SLEEVES), ("legs", LEGS), ("footwear", FOOTWEAR),
         ("hair", HAIR), ("facial_hair", FACIAL_HAIR), ("collar", COLLAR),
-        ("greying", GREYING),
+        ("hood", HOOD), ("greying", GREYING),
     )
     for name, axis in axes:
         assert f"`{name}`" in readme, f"README does not document wardrobe.{name}"
@@ -738,6 +742,7 @@ def test_catalog_card_records_the_wardrobe():
         "hair": "short",
         "facial_hair": "none",
         "collar": "open",
+        "hood": "none",
         "greying": "none",
     }
 
@@ -752,3 +757,172 @@ def test_the_wardrobe_fixture_is_a_costume_the_old_composer_could_not_make():
     for axis in ("hair", "collar", "greying"):
         assert getattr(w, axis) != getattr(default, axis), f"{axis} is still the default"
     assert isinstance(compose_skin(_entries(WARDROBE_FIXTURE)[0]), Image.Image)
+
+
+# --- the overlay shell (spec-0097) -------------------------------------------
+
+OVERLAY_FIXTURE = FIXTURES / "overlay.cast.json"
+
+
+def _overlay(texture_id: str) -> CastEntry:
+    return next(e for e in _entries(OVERLAY_FIXTURE) if e.texture_id == texture_id)
+
+
+def _sheet(entry: CastEntry) -> "models.Canvas":
+    """Compose, then address the result through the model's own base and shell."""
+    import numpy as np
+
+    canvas = models.Canvas(entry.model_key())
+    img = compose_skin(entry)
+    canvas.image[:] = np.swapaxes(np.asarray(img), 0, 1)
+    return canvas
+
+
+def _shell_at(canvas, part: str, face: str, x: int, y: int):
+    return tuple(int(c) for c in canvas.shell[part].get_face_for_id(face).get_color(x, y))
+
+
+def _opaque(px) -> bool:
+    return px[3] > 0
+
+
+def test_a_beard_stands_off_the_jaw_on_the_hat():
+    sheet = _sheet(_dressed(facial_hair="beard"))
+    for y in (FACE_CHIN, FACE_MOUTH):
+        for x in range(1, 7):
+            assert _near(_shell_at(sheet, "head", "front", x, y), GUIDE_HAIR, tol=16), (x, y)
+    for x in range(2, 6):
+        assert _opaque(_shell_at(sheet, "head", "front", x, FACE_LIP))
+    assert not _opaque(_shell_at(sheet, "head", "front", 3, FACE_EYES)), "the eyes are covered"
+    assert _opaque(_shell_at(sheet, "head", "left", 1, FACE_CHIN)), "the jaw side"
+    shaven = _sheet(_dressed(facial_hair="none", hair="bald"))
+    hat = [_shell_at(shaven, "head", f, x, y) for f in models.FACES
+           for x in range(8) for y in range(8)]
+    assert not any(_opaque(p) for p in hat), "a bald clean-shaven head paints no hat"
+
+
+def test_hair_has_a_lip_at_the_fringe_and_long_hair_falls_on_the_jacket():
+    sheet = _sheet(_dressed(hair="long", facial_hair="none"))
+    for x in range(8):
+        assert _near(_shell_at(sheet, "head", "front", x, 7), GUIDE_HAIR, tol=16), x
+    assert not _opaque(_shell_at(sheet, "head", "front", 3, FACE_EYES))
+    sy0, sy1 = SHOULDER_HAIR
+    for y in range(sy0, sy1 + 1):
+        assert _opaque(_shell_at(sheet, "torso", "back", 3, y)), y
+    short = _sheet(_dressed(hair="short", facial_hair="none"))
+    assert not any(
+        _opaque(_shell_at(short, "torso", "back", x, y)) for x in range(8) for y in range(12)
+    ), "only long hair reaches the jacket"
+
+
+def test_a_hood_frames_the_face_and_falls_to_the_shoulders():
+    sheet = _sheet(_dressed(hood="up", facial_hair="none"))
+    for y in range(0, FACE_HAIRLINE):
+        for x in range(2, 6):
+            assert not _opaque(_shell_at(sheet, "head", "front", x, y)), (x, y)
+    for y in range(8):
+        assert _opaque(_shell_at(sheet, "head", "front", 0, y))
+        assert _opaque(_shell_at(sheet, "head", "front", 7, y))
+    for face in ("up", "back", "left", "right"):
+        assert all(_opaque(_shell_at(sheet, "head", face, x, y)) for x in range(8) for y in range(8))
+    assert _opaque(_shell_at(sheet, "torso", "up", 0, 0)), "the fall on the shoulders"
+    assert _opaque(_shell_at(sheet, "torso", "back", 3, 10))
+
+
+def test_a_high_collar_rings_the_neck_and_a_closed_one_does_not():
+    high = _sheet(_dressed(collar="high"))
+    for face in ("front", "back", "left", "right"):
+        for y in (10, 11):
+            assert _opaque(_shell_at(high, "torso", face, 0, y)), (face, y)
+        assert not _opaque(_shell_at(high, "torso", face, 0, 9)), face
+    closed = _sheet(_dressed(collar="closed"))
+    assert not any(
+        _opaque(_shell_at(closed, "torso", f, x, y))
+        for f in ("front", "back", "left", "right") for x in range(4) for y in range(12)
+    )
+
+
+def test_the_shell_is_painted_after_the_base_and_moves_none_of_it():
+    """The base of every fixture is the base it composed before the shell existed:
+    the shell draws from the stream only after the base is done, so the one
+    difference a shell makes to the base faces is none."""
+    entry = _dressed(hood="up", collar="high", hair="long")
+    flat = _dressed(hood="none", collar="closed", hair="long")
+    a, b = _sheet(entry), _sheet(flat)
+    for pid in models.PART_IDS:
+        for face in models.FACES:
+            fa = a.base[pid].get_face_for_id(face)
+            fb = b.base[pid].get_face_for_id(face)
+            w, h = fa.shape
+            assert all(
+                tuple(fa.get_color(x, y)) == tuple(fb.get_color(x, y))
+                for x in range(w) for y in range(h)
+            ), (pid, face)
+
+
+def test_a_zombie_is_drawn_to_its_own_boxes():
+    entry = _overlay("zombie-farmer")
+    assert entry.model_key() == "zombie"
+    img = compose_skin(entry)
+    assert img.size == (64, 64)
+    px = img.load()
+    for (u, v) in ((32, 48), (16, 48)):  # the player's left limbs; a zombie mirrors
+        assert not any(px[x, y][3] for x in range(u, u + 16) for y in range(v, v + 16)), (u, v)
+    for (u, v) in ((16, 32), (40, 32), (48, 48), (0, 32), (0, 48)):  # no jacket, sleeves, pants
+        assert not any(px[x, y][3] for x in range(u, u + 16) for y in range(v, v + 16)), (u, v)
+    assert any(px[x, y][3] for x in range(32, 64) for y in range(0, 16)), "the hat shell"
+
+
+def test_an_outer_layer_is_painted_at_the_base_positions():
+    entry = _overlay("drowned-sailor")
+    img = compose_skin(entry)
+    px = img.load()
+    assert any(px[x, y][3] for x in range(0, 32) for y in range(0, 16)), "the outer head box"
+    assert any(px[x, y][3] for x in range(16, 40) for y in range(20, 22)), "the collar on the outer body"
+    for (u, v) in ((16, 32), (40, 32), (48, 48), (0, 32), (0, 48)):
+        assert not any(px[x, y][3] for x in range(u, u + 16) for y in range(v, v + 16)), (u, v)
+
+
+def test_a_body_the_wardrobe_does_not_fit_is_refused_by_name():
+    row = {"texture_id": "v", "entity": "villager", "palette": {}}
+    with pytest.raises(ValueError, match="parts villager"):
+        CastEntry.from_dict(row)
+    with pytest.raises(ValueError, match="torso's overlay shell"):
+        CastEntry.from_dict({"texture_id": "z", "entity": "zombie", "palette": {},
+                             "wardrobe": {"collar": "high"}})
+    with pytest.raises(ValueError, match="has one model"):
+        CastEntry.from_dict({"texture_id": "z", "entity": "zombie", "model": "wide",
+                             "palette": {}})
+    assert "player" not in entities() and "mannequin" in entities()
+    assert set(entities()) >= {"zombie", "husk", "drowned", "drowned_outer_layer"}
+
+
+def test_hidden_layers_are_the_jars_and_named_once():
+    base = {"texture_id": "h", "model": "wide", "palette": {}}
+    assert CastEntry.from_dict({**base, "hidden_layers": ["hat"]}).hidden_layers == ["hat"]
+    with pytest.raises(ValueError, match="unknown hidden layer"):
+        CastEntry.from_dict({**base, "hidden_layers": ["helmet"]})
+    with pytest.raises(ValueError, match="twice"):
+        CastEntry.from_dict({**base, "hidden_layers": ["hat", "hat"]})
+    with pytest.raises(ValueError, match="mannequin's"):
+        CastEntry.from_dict({"texture_id": "z", "entity": "zombie", "palette": {},
+                             "hidden_layers": ["hat"]})
+
+
+def test_every_model_prints_its_own_table():
+    piglin = parts_table("piglin")
+    assert "hat" not in piglin and "jacket" in piglin
+    assert "texOffs 0,38" in parts_table("villager"), "the villager's robe"
+    for key in models.model_keys():
+        assert parts_table(key).startswith(f"{key}: ")
+
+
+def test_the_preview_shows_what_the_shell_covers():
+    entry = _dressed(hood="up", facial_hair="none")
+    flat = compose_preview_skin(entry)
+    assert flat.size == (64, 64)
+    head = Skin.from_image(flat).get_body_part_for_id("head").get_face_for_id("up")
+    hood = (0x2F, 0x44, 0x36)  # the wardrobe fixture's tunic, which a hood defaults to
+    assert _near(tuple(int(c) for c in head.get_color(3, 3)), hood, tol=8)
+    for e in _entries(OVERLAY_FIXTURE):
+        assert compose_preview_skin(e).size == (64, 64), e.texture_id
