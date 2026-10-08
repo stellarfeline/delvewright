@@ -95,6 +95,14 @@ any game, however oblique its story.
 - **S5 — Lore is optional; the critical path is plain.** Exposition the player
   must have goes in a line they cannot miss; history goes in an optional branch
   or a lectern. **Cited:** Slabinski ("the treachery of forced lore").
+- **S6 — A style shows what the words cannot; it never carries emphasis the
+  words should.** A styled span (`[[obfuscated|…]]`, `[[bold|…]]`,
+  `[[color=…|…]]`, spec-0096) is for a fact about the text itself — a word the
+  speaker cannot get out, a name that will not stay still on the page — at most
+  one span in a line and rarely in a campaign. A bolded word that should have
+  been a better word, or a colour that marks a keyword so the sentence need not
+  say it, is the defect. **Authored**: no research in the record covers in-line
+  styling; this is an open gap against §2.
 
 ## 3. Introduce a name before you use it
 

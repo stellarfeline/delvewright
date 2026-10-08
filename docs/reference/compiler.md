@@ -44,7 +44,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 | 1 | Load campaign dir (6 required stage docs + the 5 optional documents + `walk-record.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10), **naming the document that could not be read** |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1); also `DW0455`, a body-family code refused at declaration time |
-| 4 | l10n sidecar coverage + reserved channels + language-code mapping | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184` (exit 1) |
+| 4 | l10n sidecar coverage + reserved channels + language-code mapping + inline style markup | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes`, `dsl::textstyle::validate_inline_styles` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184`/`DW0975`/`DW0976` (exit 1) |
 | 5 | Analyze (branch-coherent quest/dialogue reachability + critical-path replay) | `compiler::analyze` over `compiler::flow` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed); then read the settled draw back and report a pool that seats the same anchor-bearing prefab twice (`DW0498`, `compiler::pool`) | `compiler::solver`, `compiler::pool` | `DW030x` (exit 3); advisory `DW0498` |
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
@@ -1139,8 +1139,26 @@ all, and the delve must still be playable in English.
 | Language codes | `dsl::mclang::mc_lang_code` normalises (lowercase, `-`→`_`) and then **checks membership against the pinned client's own language set** — `CLIENT_LANGS`, 143 stems **derived** from Mojang's 1.21.11 asset index (`tools/maintenance/derive-client-langs.py`; digests in the module header), never transcribed. The membership check is what makes normalisation safe: a bare rewrite alone would invent `de` from `de`, a filename no client asks for, and a lang file nobody loads is a language silently dropped. A bare language resolves to `<lang>_<lang>` if the client ships one, else to its sole file; ambiguous (`zh`, `sr`, `be`) and unknown codes are `DW0184`. Baked into the source — the compiler never reaches the network during a build (ADR-0006). |
 | `--lang <code>` | The single-language bake (spec-0029 §4): strings are swapped before emission, nothing carries a translate key, and the build ships **no** lang files — there is nothing for a client to select between. For local dev and one-language artifacts; the release path does not use it. |
 | Art titles | `emit_narrate` does not `to_ascii_uppercase()` an `art` string — a case transform is something a `{"translate": …}` component cannot express, since the client resolves the lang file after the compiler is gone. The `delve:art` font carries a **second bitmap provider** over the same atlas addressed by the lowercase letters, so a lowercase letter renders through its uppercase bitmap: identical pixels, in every language. Cells with no lowercase form are `\u0000` (vanilla's unused-cell marker), so no char is claimed twice. |
-| Width gates | `DW0330`/`DW0331` check source **and** every declared translation. Any declared language may be what a player sees, so those checks are load-bearing rather than belt-and-braces. |
+| Width gates | `DW0330`/`DW0331` check source **and** every declared translation. Any declared language may be what a player sees, so those checks are load-bearing rather than belt-and-braces. A styled span is measured as it draws (`textfit::width_for`): its markup is not drawn, an obfuscated span is as wide as its text, a bold span adds one font pixel per character (`textfit::bold_widening`, every character counted — the estimate can only be wider). |
 | Build inputs | Every `l10n/<code>.json` is an input of **every** build (not just a `--lang` bake) and is hashed into `manifest.json` — the sidecar's bytes ship in the pack, so they are as much a build input as a stage document. |
+
+#### Inline styles — a span of a line carries a style (spec-0096)
+
+Any player-facing string — every row `each_string` walks, so every text class
+the inventory knows — may carry styled spans:
+
+```
+The ledger is kept by [[obfuscated|someone else]] at [[italic,color=dark_purple|night]].
+```
+
+| Piece | Behaviour |
+|---|---|
+| Grammar | `[[<styles>|<text>]]`; `<styles>` is one or more of `obfuscated`, `bold`, `italic`, `underlined`, `strikethrough`, `color=<c>` (`<c>` one of the sixteen vanilla names or `#rrggbb`, emitted lower-case), comma-separated, no spaces, each once. `<text>` runs to the first `]]`, is not blank and holds no `[[`. Outside a span `[[` and `]]` do not occur; a single bracket is prose. Spans do not nest. One parser, `dsl::textstyle::parse`; malformed markup in the English or a sidecar row is `DW0975`. |
+| Emission | `emit::tr` / `tr_with` / `snbt_component` / `snbt_text_component` — the only paths a tagged string reaches the tree by (`DW0185`) — lower a styled line to `{"translate": K, "fallback": F, "with": [S…]}` with `S_i = {"translate": "K.span.<i>", "fallback": T_i, <style keys>}`. `F` is the line with span `i` replaced by `%<i+1>$s` and every other `%` doubled; `T_i` is the span's text, `%` doubled (`dsl::textstyle::lower`). The line's own emitter style (a bark's `italic`, a title's `color`) sits on the outer component and the span inherits it, overriding only the keys it names. A line with **no** span emits exactly the pre-surface component. The SNBT form (an NPC's `CustomName`) is the same compound through `emit::snbt_of`. A `tr_with` caller passing its own `with` over a styled line panics: chrome carries no span. |
+| Lang files | Each language writes `K → F` and `K.span.<i> → T_i` (`emit::styled_rows`), `en_us` from the English as authored. A translation's spans are **aligned to the English by style** (`dsl::textstyle::lower_aligned`) — the k-th span of a style in the translation answers the k-th span of that style in the English — so a sidecar row may place spans in its own order (`%2$s…%1$s`) and the style, which rides on the component, always meets its own text. A row whose span multiset is not the English's is `DW0976` at validate, re-proved by the build with the same code. No inventory key has a `span` segment followed by an index, so a span key never shadows a row (asserted). |
+| `--lang` bake | Strings are swapped and untagged, so a styled line is drawn from its own spans in its own order as `{"text": "", "extra": [{"text": …, <style>}…]}`. |
+| Visible text | `dsl::l10n::plain` returns the line with each span replaced by its text (`dsl::textstyle::visible`), so every named exclusion below, the death plan's `message` the bot watches chat for (`deathplan::worded`), the art-glyph check (`DW0328`) and both width gates read what is drawn, never markup. |
+| Binding | `validate` prints `inline-style binding: N of M player-facing line(s) carry S span(s); R sidecar row(s) held to their English's spans`. |
 
 #### One delve, one vocabulary
 
@@ -1248,7 +1266,8 @@ correction is a one-line table edit. English stays canonical.
 
 An authored string that does not land in a text component cannot carry a translate
 key. Every such site is named here and reads its string through
-`dsl::l10n::plain`; none of them is rendered by a client. Anything **not** on this
+`dsl::l10n::plain` — the visible text, a styled span reading as its own text
+(spec-0096); none of them is rendered by a client. Anything **not** on this
 list that emits an authored string outside a component fails the build with
 `DW0185`, so this table cannot silently grow.
 
@@ -4830,6 +4849,8 @@ to a list of codes.
 | `DW0182` | A player-visible string — authored English (the whole l10n inventory) or any sidecar translation — contains the reserved completion-marker sigil `[dw:complete`. That chat sequence is the validation bot's completion oracle (§4 "The completion-marker channel"); content carrying it could forge a passing critical-path step, so the sigil is **reserved**, not merely discouraged. Reword the line. |
 | `DW0183` | (i18n v2, spec-0029) A player-visible string — authored or translated — contains a character from the reserved private-use block `U+E000..U+F8FF`. That block is how the compiler carries an l10n key from the stage docs to the text component the string is emitted into (`dsl::l10n::TR_SIGIL`), so content carrying it could impersonate a translation tag; it also has no glyph in any Minecraft font. Remove the character. |
 | `DW0184` | (i18n v2, spec-0029) A declared `world.languages` code does not resolve to a language file the **pinned client actually loads** (`dsl::mclang::CLIENT_LANGS`, derived from Mojang's 1.21.11 asset index), so its `assets/delvewright/lang/<code>.json` would sit under a filename no client ever asks for and the language would ship invisible. Also fires on an ambiguous bare code (`zh`, `sr`, `be` — several regions, no `<lang>_<lang>`), because guessing the region is how a language ships invisible. Use a code the client loads. A language is never silently dropped. |
+| `DW0975` | (spec-0096) **Style markup that does not parse.** A player-visible string — authored English (every inventory row) or any sidecar row — carries a `[[` or `]]` that is not one well-formed span `[[<styles>|<text>]]`: an unclosed `[[`, a `]]` closing nothing, no `|`, no style, an unknown or repeated style, a colour neither a vanilla name nor `#rrggbb`, blank text, or a `[[` inside a span. `dsl::textstyle::validate_inline_styles`. The message names the key, the character offset and the grammar. Prescription: correct the span, or remove the doubled brackets. |
+| `DW0976` | (spec-0096) **A translation whose styled spans are not the English's.** A sidecar row drops, adds or restyles a span of its English line (the multisets of span styles differ; `dsl::textstyle::lower_aligned`). The style rides on the component, so a translation only places and words each span. Raised at validate over every sidecar row whose English and translation both parse; the build's language-file writer (`emit::styled_rows`) re-proves the alignment and refuses with the same code. Prescription: keep every span of the English with its style unchanged and its text transcreated; it may move within the line. |
 | `DW0190` | An image id a campaign declares is malformed or duplicated: a body's `skin.texture_id`, or a `world.textures[]` row's `id` (spec-0084 §6.4). |
 | `DW0191` | A `talk-to` has no **ungated** completing option (all `requires_flags`-gated → deadlock risk). |
 | `DW0192` | Wave-mob `effects[].effect` not a known 1.21.11 status-effect id. |
