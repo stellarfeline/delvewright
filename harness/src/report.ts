@@ -271,7 +271,7 @@ export class RunReport {
    *
    * i18n v2 emits an authored custom name as a translate component, so the
    * heuristic that prefers a body by its name reads a component rather than a
-   * string. That weakens a preference, never an identity (`executor.ts` says so),
+   * string. That weakens a preference, never an identity (`executor/wave.ts` says so),
    * but the spec requires the weakening be MEASURED: a run that made decisions
    * and found zero usable names is a finding, and a run that made none is an
    * unbound gate, which is also a finding.

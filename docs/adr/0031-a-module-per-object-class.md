@@ -1042,6 +1042,44 @@ where the assembly touched it):
   `tools/tests/test_check_anchor_providers.py` writes a fixture by that name
   into a temporary source root. It is a fixture, and it is unchanged.
 
+**What B8 found** (corrections to this record, made where B8 touched it):
+
+- The executor is one class, and a TypeScript class cannot be declared across
+  files. `executor.ts` keeps the class's state (its fields) and its
+  constructor. Each `executor/<object>.ts` exports `methods`, an object literal
+  of the methods it holds, each with an explicit `this: MineflayerExecutor`.
+  `executor.ts` merges their types into the class by declaration merging
+  (`interface MineflayerExecutor extends Methods`) and installs them on the
+  prototype, one registry line per file. An object file imports the class as a
+  type only, so no module imports `executor.ts` at run time except its callers.
+  A method keeps its indentation and its comments, so a move changes only its
+  signature line and its closing brace.
+- TypeScript's `private` is lexical to the class body, and it has no
+  module-scoped visibility. Every member that a method in another file reads is
+  therefore public on the type. The reach outside `executor/` is unchanged:
+  `run.ts`, `report.ts` and the bots import from `executor.ts` exactly what
+  they imported before, and `executor.ts` re-exports exactly the names it
+  exported.
+- The objects are `connection` (connect, the event handlers, `waitFor`, and
+  the shared `delay`, `withTimeout` and `fmt`), `chat`, `objective`, `trigger`,
+  `interact`, `class`, `talk`, `walk`, `timed-gate`, `cutscene` (the body's
+  control), `transport`, `loop`, `sustain`, `death`, `repaint`, `score`,
+  `lethal` (the death loop), `stake`, `wave`, `die-retry`, `staging`, `muster`,
+  `rest`, `witness`, `crosshair`, `collect` and `settle`. A constant that
+  several files read lives with the object it names, and the others import it.
+- Fifteen top-level declarations were read by nothing at the base revision:
+  `SLOWEST_VANILLA_ATTACK_SPEED`, `FIGHT_HERE_RANGE`, `TICK_POLL_MS`,
+  `DRINK_SETTLE_MS`, `ENTITY_EVENT_USE_FINISHED`, `STEP_PROBE_BLOCKS`,
+  `StrikeOutcome`, `ACTOR_MATCH_RADIUS`, `ACTOR_SETTLE_MS`,
+  `ACTOR_FIGHT_TIMEOUT_MS`, `MID_FIGHT_MS`, `WAVE_CENSUS_POLL_MS`,
+  `DEFEND_BUDGET_MS`, `THREAT_POLL_MS` and `WALK_SETTLE_MS`. B8 is a move, so
+  it moves them with their subject. Deleting them is a separate step.
+- No tool, workflow or crate reads `executor.ts` by path. The one source scan
+  over the harness that missed the new directory was the createBot-factory
+  scan in `test/client-loaded.test.ts`, which listed `src/` one level deep. It
+  now walks the directory recursively, and a `createBot(` planted in
+  `executor/wave.ts` reds it.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,
