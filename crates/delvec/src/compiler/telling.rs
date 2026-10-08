@@ -34,7 +34,8 @@
 //! - the class the player picks, and the kit it hands over;
 //! - an item the player is given;
 //! - a sentence the player reads that says what it is: the name after `a`/`an`
-//!   (`a watch of dead soldiers`), after `called`/`named`/`known as`, followed by
+//!   (`a watch of dead soldiers`), after `called`/`named`/`known as` or `this
+//!   is`/`I am` (`This is the Quiet Keep.`), followed by
 //!   an apposition (`the Watch, the keep's dead garrison,`) or by `is`/`are`/
 //!   `was`/`were`.
 //!
@@ -294,6 +295,14 @@ fn introduces(text: &str, s: usize, e: usize) -> bool {
         b.next()
     };
     if matches!(lead, Some("called" | "named")) || (lead == Some("as") && second == Some("known")) {
+        return true;
+    }
+    // `This is the Quiet Keep.`, `I am the Keeper.` — naming what is in front of
+    // the player, or the speaker.
+    if matches!(
+        (lead, second),
+        (Some("is"), Some("this" | "here")) | (Some("am"), Some("i")) | (Some("are"), Some("we"))
+    ) {
         return true;
     }
     // The gloss forms below say what a name IS; a possessed or pointed-at
@@ -856,6 +865,9 @@ mod tests {
         assert!(!introduces(t, s, e));
         let t = "Vesperhold. A king, a court, a bell.";
         let (s, e) = occurrences(t, "Vesperhold")[0];
+        assert!(introduces(t, s, e));
+        let t = "This is the Quiet Keep.";
+        let (s, e) = occurrences(t, "Quiet Keep")[0];
         assert!(introduces(t, s, e));
         let t = "The watch was put down.";
         let (s, e) = occurrences(t, "Watch")[0];
