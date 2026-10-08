@@ -108,10 +108,22 @@ fn a_fn_definition_is_recognised_at_every_visibility() {
     for (def, name) in [
         ("fn last_frame_footprint(", "last_frame_footprint"),
         ("pub fn last_frame_footprint(", "last_frame_footprint"),
-        ("pub(crate) fn last_frame_footprint(", "last_frame_footprint"),
-        ("pub(super) fn last_frame_footprint(", "last_frame_footprint"),
-        ("pub(in crate::cli) fn last_frame_footprint(", "last_frame_footprint"),
-        ("    pub(in crate::compiler::plan) fn build_with(", "build_with"),
+        (
+            "pub(crate) fn last_frame_footprint(",
+            "last_frame_footprint",
+        ),
+        (
+            "pub(super) fn last_frame_footprint(",
+            "last_frame_footprint",
+        ),
+        (
+            "pub(in crate::cli) fn last_frame_footprint(",
+            "last_frame_footprint",
+        ),
+        (
+            "    pub(in crate::compiler::plan) fn build_with(",
+            "build_with",
+        ),
     ] {
         assert_eq!(source_scan::fn_name(def), Some(name), "{def}");
     }
