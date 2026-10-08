@@ -1099,6 +1099,24 @@ was wrong.
 **Phase E — CI** (independent; may run first): the gallery split of §6, one
 PR, under the three-part rename procedure.
 
+**What landed first** (a correction to the order above): A1, B1–B8 and E
+land together, as one feature branch merged into `main`. A2–A6, C and D
+continue on a follow-up feature branch, so the giant files are split
+without waiting for the fold by object. Until that branch lands, §5's
+per-file ledgers keep the Phase B paths, and the catalog rows stay on the
+pages A1 gave them. This record stays Proposed until the follow-up branch
+lands and it is finalised against what was built.
+
+- §8 says no `pub` item leaves the DSL crate. B1 removed three root aliases
+  (`l10n_inventory`, `l10n_plain`, `l10n_untag`) and
+  `detailplan::owed_anchors`, and the moved modules changed the paths of the
+  items they hold. The crate's Rust API changed and its document format did
+  not. Its version stays `0.36.0`. That number has not been published:
+  crates.io serves `delvewright-dsl` up to `0.35.1`, so the API change ships
+  inside the first `0.36.0` upload and no published version is contradicted.
+  `delvec schema --stage all` is byte-identical to `main`'s, and
+  `dsl_version` does not move.
+
 ### 8. What this does not change
 
 - **Emission bytes.** Every manifest in `gallery/baseline/manifests.json` is
