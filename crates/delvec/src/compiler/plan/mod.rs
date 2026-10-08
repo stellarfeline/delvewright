@@ -371,6 +371,14 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW0985`: an objective's numeric gate reads a datum only presses write (`path::drive`),
+    /// and no sequence of presses within the plan's bound drives it to a value
+    /// the gate accepts. The bot would walk up to the objective and wait for
+    /// ever; the delve cannot be finished.
+    pub const DW_GATE_UNDRIVABLE: DwCode = DwCode::new("DW0985", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
     /// a layout, sealed gates are modelled as cut edges in the piece-connectivity
     /// graph; an objective whose anchor is only reachable through a gate that no
