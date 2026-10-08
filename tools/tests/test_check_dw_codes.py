@@ -531,3 +531,38 @@ def test_a_tier_the_registry_disagrees_on_reds(gate):
     rows = [dict(ROWS[0], tier="Analysis"), ROWS[1]]
     errors = gate.registry_errors(rows, constants, tiers)
     assert any("DW0901 (A) is tier Analysis" in e for e in errors), errors
+
+
+STAGING_GATE = pathlib.Path(__file__).resolve().parents[1] / "creator" / "staging-gate.py"
+
+
+def test_a_code_documented_only_outside_the_catalog_is_undocumented_to_both_gates(
+    gate, monkeypatch
+):
+    """The pair: this gate and the staging gate guard one catalog and must read
+    it by one rule. A code with its own `###` section and prose but no catalog
+    row passed this gate (it counted any mention) while the staging gate refused
+    it as having no row. Both now answer from `documented_codes()`."""
+    _rs(gate, "compiler", "walk.rs", 'pub const DW_A: &str = "DW0974";\n'
+        'pub const DW_B: &str = "DW0975";')
+    gate.DOC_PATH.write_text(
+        "| Code | Meaning |\n"
+        "|------|---------|\n"
+        "| `DW0975` | A rule with its row. |\n"
+        "\n"
+        "### DW0974 — a rule documented only here\n"
+        "\n"
+        "`DW0974` refuses a record that does not describe this build.\n",
+        encoding="utf-8",
+    )
+    assert gate.undocumented_source_codes(gate.source_codes()) == ["DW0974"]
+
+    spec = importlib.util.spec_from_file_location("staging_gate_pair", STAGING_GATE)
+    staging = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(staging)
+    monkeypatch.setattr(staging, "_load_dw_checker", lambda: gate)
+    engine = staging.Engine()
+    assert engine.dw_documented == gate.documented_codes() == {"DW0975"}
+    ok, why = engine.dw_exists("DW0974")
+    assert not ok and "no diagnostics-catalog row" in why

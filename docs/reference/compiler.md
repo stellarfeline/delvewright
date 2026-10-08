@@ -7310,6 +7310,10 @@ the build. Every obligation is recomputed from the plan at every validation.
 
 ### DW0974 — a walk record that does not describe this build (`compiler::walk`; error; exit 1)
 
+| Code | Meaning |
+|------|---------|
+| `DW0974` | **A walk record that does not describe this build.** Validation funnel (exit 1), `compiler::walk::check` from `validate_loaded`, after the detail plan's checks: a PRESENT `walk-record.json` that does not parse, names no build (no site plan or no layout graph), or whose `site_plan_sha256` (grid), `layout_graph_sha256` (ways) or `detail_sha256` (detail) half differs from this build's — the first half that moved is named with both hashes; a detail half equal to the blockout's beside a build that binds a place is named a walk of the BLOCKOUT. An absent record and a `findings`/`unwalked` verdict of this build are not refused. **Drift advisory** (warning, same code): every key half equal and `blockout_sha256` differs from this engine's. Prescription: walk the build that ships and write its record from the hashes printed at validation. |
+
 The owner walks the detailed world, after detail, and `walk-record.json` names
 the build that was walked (§2, *The walk record*). Run in `validate_loaded`, the
 one funnel every `delvec` subcommand's validation goes through — `build`
