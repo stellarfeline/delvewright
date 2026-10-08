@@ -47,7 +47,8 @@
 //! Each string is placed at the first state of the compiler's play order at
 //! which the player can read it — the walk [`Flow::journal`] takes, along the
 //! exported critical path and every realised branch's own: a dialogue line or
-//! option where [`crate::compiler::flow::Walk::dialogue_on_screen`] draws it, an
+//! option where [`crate::compiler::flow::Walk::dialogue_on_screen`] draws it (and,
+//! after a `talk-to` step, wherever the node its option opens leads), an
 //! objective's title and hint once its `after` is done, a quest's goal and its
 //! barks once it runs, an effect's strings at the step that fires it. A string
 //! the walk cannot date (an environment trigger, a refusal, a reaction bundle,
@@ -760,7 +761,7 @@ fn states_of(
         done.insert(step.objective.clone());
         fired.extend(j.fired);
         out.push(State {
-            screen: w.dialogue_on_screen(casts),
+            screen: w.dialogue_on_screen_after(casts, step),
             active: w.active_quests().clone(),
             done: done.clone(),
             fired: fired.clone(),

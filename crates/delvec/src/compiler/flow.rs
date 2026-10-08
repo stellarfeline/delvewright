@@ -639,7 +639,25 @@ impl Walk<'_, '_> {
         &self,
         casts: &BTreeMap<String, crate::compiler::cast::NpcCast>,
     ) -> DialogueOnScreen {
-        self.flow.dialogue_on_screen(casts, &self.st)
+        self.flow.dialogue_on_screen(casts, &self.st, None)
+    }
+
+    /// [`Self::dialogue_on_screen`] just after `step` was taken by its dialogue
+    /// option: the option's `next` node is shown at the state its own effects
+    /// produced, so what that node draws counts too — a button the click itself
+    /// made pending is on screen at once, even where no right-click reaches the
+    /// node any more.
+    pub fn dialogue_on_screen_after(
+        &self,
+        casts: &BTreeMap<String, crate::compiler::cast::NpcCast>,
+        step: &PathStep,
+    ) -> DialogueOnScreen {
+        let opened = self.flow.talk_next(step);
+        self.flow.dialogue_on_screen(
+            casts,
+            &self.st,
+            opened.as_ref().map(|(n, d)| (n.as_str(), d.as_str())),
+        )
     }
 }
 
@@ -2103,6 +2121,16 @@ impl<'a> Flow<'a> {
             .map(|q| q.id.as_str())
     }
 
+    /// The `(npc, node)` the dialogue option that takes `step` opens next, when
+    /// the step is a `talk-to` taken by an option with a `next`.
+    fn talk_next(&self, step: &PathStep) -> Option<(String, String)> {
+        let n = step.talk_option?;
+        let npc = self.talk_npc(&step.objective)?;
+        let t = self.trees.iter().find(|t| t.npc == npc)?;
+        let next = t.options.iter().find(|o| o.n == n)?.next.clone()?;
+        Some((npc.to_string(), next))
+    }
+
     /// The NPC a `talk-to` objective names, or `None` for any other kind.
     fn talk_npc(&self, id: &str) -> Option<&'a str> {
         match self.objective(id) {
@@ -2214,14 +2242,20 @@ impl<'a> Flow<'a> {
         &self,
         casts: &BTreeMap<String, crate::compiler::cast::NpcCast>,
         st: &ReplayState,
+        opened: Option<(&str, &str)>,
     ) -> DialogueOnScreen {
         let mut out = DialogueOnScreen::default();
         for t in &self.trees {
-            let Some(root) = self.scene_root(casts, &t.npc, t, st) else {
-                continue;
-            };
             let drawn = |o: &OptModel| self.option_drawn(o, st);
-            let reach = reachable_from(t, &root, &drawn);
+            let mut reach = match self.scene_root(casts, &t.npc, t, st) {
+                Some(root) => reachable_from(t, &root, &drawn),
+                None => BTreeSet::new(),
+            };
+            if let Some((npc, node)) = opened
+                && npc == t.npc
+            {
+                reach.extend(reachable_from(t, node, &drawn));
+            }
             let mut within: BTreeMap<usize, usize> = BTreeMap::new();
             for o in &t.options {
                 let i = within.entry(o.node).or_insert(0);
