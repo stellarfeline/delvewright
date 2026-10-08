@@ -44,7 +44,7 @@
 //!   be authoring arithmetic — unlike the layout graph's `critical_path`, which
 //!   is authored precisely because it is a *choice* among many, a rise is the
 //!   consequence of where the plan already put the two places. §9 records it.
-//! * The plan's `lighting` is [`crate::stages::AreaLighting`], the engine's
+//! * The plan's `lighting` is [`crate::AreaLighting`], the engine's
 //!   existing "which fixture, to what light level" object, not a twin of it.
 //!
 //! # No opt-out exists
@@ -64,6 +64,7 @@ use std::num::NonZeroU32;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::AreaLighting;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
 use crate::ids::{DatumId, EdgeId, FactId, NodeId, ViewId, VolumeId};
@@ -72,7 +73,6 @@ use crate::metrics::{
     MAX_JUMP_RISE_16, MetricKind, MetricValue, Metrics, Pitch, Reads, SizeClass, WayClass,
     passable_clearance_cells, passable_width_cells,
 };
-use crate::stages::AreaLighting;
 
 crate::dw_code! {
     /// `DW0824`: the graph and the plan do not agree exactly.
@@ -1850,7 +1850,7 @@ fn openers(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
     // Every gate region the campaign opens, however it opens it: an `open-gate`
     // at any nesting depth, or a `shortcut` whose far side lifts the bar.
     let mut opened: BTreeSet<&str> = BTreeSet::new();
-    crate::stages::for_each_campaign_effect(c, &mut |_, _, eff| {
+    crate::for_each_campaign_effect(c, &mut |_, _, eff| {
         eff.visit_deep(&mut |e| {
             if let Some(a) = e.open_gate_anchor() {
                 opened.insert(a.0.as_str());

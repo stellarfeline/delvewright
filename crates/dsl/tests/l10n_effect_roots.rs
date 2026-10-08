@@ -13,8 +13,8 @@ mod common;
 use std::collections::BTreeMap;
 
 use delvewright_dsl::{
-    Campaign, DSL_VERSION, L10nDoc, L10nKind, RawCampaign, l10n_inventory, localize,
-    on_screen_narrates, parse_campaign, validate_l10n,
+    Campaign, DSL_VERSION, L10nDoc, L10nKind, RawCampaign, l10n, localize, on_screen_narrates,
+    parse_campaign, validate_l10n,
 };
 
 /// The trap-payload narrate's inventory key (`fx.trap.<trap>.<i>`, keyed exactly
@@ -134,7 +134,7 @@ fn campaign_without_new_roots() -> Campaign {
 /// A complete `zh-cn` sidecar for `c`: every inventory key, translated by marking
 /// it (the content is irrelevant here — coverage is what `DW0180` checks).
 fn sidecar_for(c: &Campaign) -> BTreeMap<String, L10nDoc> {
-    let content = l10n_inventory(c)
+    let content = l10n::inventory(c)
         .into_iter()
         .map(|(k, v)| (k, format!("[zh] {v}")))
         .collect();
@@ -202,7 +202,7 @@ fn dw0180_reds_a_sidecar_missing_the_new_roots() {
 #[test]
 fn the_new_roots_are_localized_too() {
     let mut c = campaign_with_new_roots();
-    let inv = l10n_inventory(&c);
+    let inv = l10n::inventory(&c);
     assert_eq!(inv.get(TRAP_KEY).map(String::as_str), Some(TRAP_NARRATE_EN));
     assert_eq!(
         inv.get(RESPAWN_KEY).map(String::as_str),
@@ -214,7 +214,7 @@ fn the_new_roots_are_localized_too() {
         (RESPAWN_KEY.to_string(), "[zh] respawn".to_string()),
     ]);
     localize(&mut c, &translations);
-    let after = l10n_inventory(&c);
+    let after = l10n::inventory(&c);
     assert_eq!(after.get(TRAP_KEY).map(String::as_str), Some("[zh] trap"));
     assert_eq!(
         after.get(RESPAWN_KEY).map(String::as_str),
@@ -230,7 +230,7 @@ fn the_new_roots_are_localized_too() {
 #[test]
 fn the_consumer_scan_and_the_inventory_agree_on_every_root() {
     let c = campaign_with_new_roots();
-    let inv = l10n_inventory(&c);
+    let inv = l10n::inventory(&c);
     let narrates = on_screen_narrates(&c);
 
     let trap = narrates

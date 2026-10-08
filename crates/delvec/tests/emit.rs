@@ -22,7 +22,7 @@ fn l10n_inventory_and_localize() {
     let loaded = load_campaign_dir(&common::keep_trial_dir()).unwrap();
     let mut campaign = parse_campaign(&loaded.raw).expect("valid keep-trial parses");
 
-    let inv = delvewright_dsl::l10n_inventory(&campaign);
+    let inv = delvewright_dsl::l10n::inventory(&campaign);
     // Player-visible keys are present with their canonical English values.
     assert_eq!(
         inv.get("world.title").map(String::as_str),

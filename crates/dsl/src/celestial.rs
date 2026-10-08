@@ -686,7 +686,7 @@ pub(crate) fn check(c: &crate::envelope::Campaign, d: &mut Vec<crate::diagnostic
         }
     };
     push("world", "/content/time".into(), world, CelestialSite::World);
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, e| {
+    crate::for_each_campaign_effect(c, &mut |path, _site, e| {
         if let Some(t) = e.set_time() {
             push("quests", format!("{path}/time"), t, CelestialSite::Cut);
         }

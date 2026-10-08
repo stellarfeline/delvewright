@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::stages::Facing;
+use crate::Facing;
 
 /// The only rig document version this engine reads.
 pub const RIG_VERSION: u32 = 1;

@@ -10,7 +10,7 @@ use crate::detailplan::DetailPlanContent;
 use crate::envelope::{Envelope, Stage};
 use crate::layout::{GeometryBriefContent, LayoutGraphContent};
 use crate::siteplan::SitePlanContent;
-use crate::stages::{
+use crate::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
     WorldEditsContent,
 };

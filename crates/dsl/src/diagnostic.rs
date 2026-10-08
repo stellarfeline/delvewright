@@ -1343,8 +1343,8 @@ pub mod codes {
         /// encounter really is meant to re-seat (bill it `elite` instead), or drop
         /// `respawns_on_rest` if it really is the boss.
         ///
-        /// [`Wave`]: crate::stages::Wave
-        /// [`Actor`]: crate::stages::Actor
+        /// [`Wave`]: crate::Wave
+        /// [`Actor`]: crate::Actor
         pub const BOSS_RESPAWNS_ON_REST: DwCode = DwCode::new("DW0499", ExitTier::Build);
     }
 
@@ -1596,7 +1596,7 @@ pub mod codes {
     crate::dw_code! {
         /// (spec-0085 §3.3) **An audience on a party fact.** An effect states the
         /// envelope's `audience` or `in` on a verb the emitter fires once for the
-        /// world ([`crate::stages::Verb::addresses_players`] answers `false`) — a
+        /// world ([`crate::Verb::addresses_players`] answers `false`) — a
         /// flag, a gate, a block, a region, a timeline, a rocket. A box has no party
         /// and a world fact has no audience; a `sequence`'s steps each state their
         /// own.

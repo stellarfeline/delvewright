@@ -269,8 +269,8 @@ shipping content does rest on).
 
 Envelope (every stage): `{ dsl_version, campaign_id, stage, content }`,
 `deny_unknown_fields`. IDs are type-prefixed kebab-case; all cross-stage refs are
-**strictly backward**. Source of truth: `crates/dsl/src/stages.rs` (schemas
-exported via `delvec schema`). Introduced-by column cites the spec.
+**strictly backward**. Source of truth: the stage-surface modules under
+`crates/dsl/src/`, one per object class (schemas exported via `delvec schema`). Introduced-by column cites the spec.
 
 ### Stage 1 — `world`
 
@@ -5015,7 +5015,8 @@ this doc is current behavior).
   heuristic and a tripwire for a hand-rolled walk, not a proof of absence. It
   protects against forgetting a KNOWN root; the gate for a root nobody knows is
   `tools/ci/check-capability-ownership.py` check E, which reads the effect-bundle
-  FIELDS out of `stages.rs` and fails on any it cannot account for.
+  FIELDS out of the DSL stage-surface modules (its `DSL_STAGE_MODULES`
+  registry) and fails on any it cannot account for.
 
   **Open finding: `plan::required_anchors_for_area`.** It collects the anchors an
   area's assembly must provide from R1+R2 (and R3 only when the campaign has a

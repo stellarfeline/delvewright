@@ -38,7 +38,7 @@ import time
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
 from versions import pin as versions_pin  # noqa: E402
 
-# (keyword, /time set argument) — the table in crates/dsl/src/stages.rs.
+# (keyword, /time set argument) — the table in crates/dsl/src/world.rs.
 TIMES = [("day", "day"), ("noon", "noon"), ("dusk", "12000"), ("night", "night"),
          ("midnight", "midnight"), ("dawn", "23000")]
 WEATHERS = ["clear", "rain", "thunder"]

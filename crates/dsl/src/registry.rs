@@ -303,7 +303,7 @@ pub struct VendoredItemRegistry {
 
 impl VendoredItemRegistry {
     /// The v0 subset of the 1.21.11 item registry used by the M1 fixtures, plus
-    /// the four [`crate::stages::POTION_BEARING_ITEMS`] — a kit item's potion
+    /// the four [`crate::POTION_BEARING_ITEMS`] — a kit item's potion
     /// `contents` is DSL surface with its own rules (`DW0486`/`DW0487`), so the
     /// crate's own tests must be able to name the items those rules are about
     /// without the compiler's full injected registry.
@@ -602,7 +602,7 @@ pub const TECHNICAL_BLOCK_IDS: &[&str] = &[
 ///
 /// One spelling for one fact. This normalization existed twice — inside
 /// [`VendoredEffectRegistry::contains`] and inside
-/// [`crate::stages::MobEffect::is_instant`] — before `DW0540` needed a third
+/// [`crate::MobEffect::is_instant`] — before `DW0540` needed a third
 /// copy to decide whether a `clear-effect` removes the effect a `give-effect`
 /// granted. Two ids that the registry accepts as the same must not be two ids to
 /// a rule that pairs them, and a private third copy is how they drift apart.

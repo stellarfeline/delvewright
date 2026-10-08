@@ -301,6 +301,6 @@ does not depend on knowing the roots in advance.
 
 **What it is not.** A/B are text scans; a private body built through a helper that
 hides the `summon`, or a default assembled from fragments, is invisible. C/D parse
-`stages.rs` structurally but see only what `pub` fields and variant blocks look
+the stage-surface modules structurally but see only what `pub` fields and variant blocks look
 like textually. This makes the known shapes un-addable **in silence**. It does not
 certify that none remain.

@@ -521,7 +521,7 @@ fn dw0210_night_vision_verdict_is_language_independent() {
     );
 
     // Identity translation for the whole inventory, so localize runs cleanly.
-    let tr: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(&c).into_iter().collect();
+    let tr: BTreeMap<String, String> = delvewright_dsl::l10n::inventory(&c).into_iter().collect();
     assert!(
         passes_dw0210(build_localized(&c, dark, "zh-cn", &tr)),
         "the same declaration must satisfy DW0210 in the zh-cn build"
@@ -542,7 +542,7 @@ fn dw0210_fires_in_every_language_without_night_vision() {
         other => panic!("en: expected DW0210, got {other:?}"),
     }
     // Identity translation for the (unchanged) inventory, so localize runs cleanly.
-    let tr: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(&c).into_iter().collect();
+    let tr: BTreeMap<String, String> = delvewright_dsl::l10n::inventory(&c).into_iter().collect();
     match build_localized(&c, dark, "zh-cn", &tr).unwrap_err() {
         BuildFailure::Diagnostic { code, .. } => assert_eq!(code, "DW0210"),
         other => panic!("zh-cn: expected DW0210, got {other:?}"),

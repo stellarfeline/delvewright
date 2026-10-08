@@ -2837,7 +2837,7 @@ fn lang_assets(
     // The campaign reaching emission is tagged, so its inventory values are
     // translation tags; `plain` recovers the canonical English each tag carries.
     // Derived from the live inventory, never from a fixture (spec-0029 AC2).
-    let english: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(c)
+    let english: BTreeMap<String, String> = delvewright_dsl::l10n::inventory(c)
         .into_iter()
         .map(|(k, v)| (k, plain(&v).to_string()))
         .collect();
@@ -3259,7 +3259,7 @@ fn marker_name_fields(title: Option<&str>) -> String {
 /// `'{"text":…}'`, which 1.21.11 renders as literal raw JSON above an entity's
 /// head (owner-verified). The generated summons carry no `'{"text"` substring.
 fn snbt_text_component(s: &str) -> String {
-    match delvewright_dsl::l10n_untag(s) {
+    match delvewright_dsl::l10n::untag(s) {
         Some((key, english)) => snbt_translate(key, english),
         None => format!("{{text:{}}}", snbt_string(s)),
     }
@@ -3297,7 +3297,7 @@ delvewright_dsl::dw_code! {
 /// has no lang files at all, and the delve must still be playable in English
 /// (spec-0029 §3).
 fn tr(s: &str) -> Value {
-    match delvewright_dsl::l10n_untag(s) {
+    match delvewright_dsl::l10n::untag(s) {
         Some((key, english)) => json!({ "translate": key, "fallback": english }),
         None => json!({ "text": s }),
     }
@@ -3321,7 +3321,7 @@ fn tr_with(s: &str, fields: &[(&str, Value)]) -> Value {
 /// [`snbt_text_component`] always was: 1.21.11 renders `'{"text":…}'` above an
 /// entity's head verbatim.
 pub(crate) fn snbt_component(s: &str) -> String {
-    match delvewright_dsl::l10n_untag(s) {
+    match delvewright_dsl::l10n::untag(s) {
         Some((key, english)) => snbt_translate(key, english),
         // An untagged string keeps the bare quoted-string component form 1.21.11
         // already read it as, so a compiler-baked name stays byte-for-byte what it
@@ -3345,7 +3345,7 @@ fn snbt_translate(key: &str, english: &str) -> String {
 /// that are not text components and are not read by a player. Re-exported here so
 /// every exclusion in `emit` is greppable as `plain(`.
 fn plain(s: &str) -> &str {
-    delvewright_dsl::l10n_plain(s)
+    delvewright_dsl::l10n::plain(s)
 }
 
 /// The delve title for a **compiler artifact**, not for a player: the generated

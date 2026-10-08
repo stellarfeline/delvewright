@@ -1144,7 +1144,7 @@ def test_the_live_flag_gate_precondition_counts_what_the_emission_binds(gate, tm
 
 def test_the_live_flask_precondition_binds_on_a_potion_bearing_kit_item(gate, tmp_path):
     """`DW0487` fires on a POTION-BEARING kit item, and the carriers are the
-    four ids of `dsl::stages::POTION_BEARING_ITEMS` — in both the namespaced
+    four ids of `dsl::class::POTION_BEARING_ITEMS` — in both the namespaced
     and bare forms `is_potion_bearing_item` normalises. A leather boot cannot
     carry a placeholder-flask defect, which is why the precondition is those
     four items and not "kit items"."""

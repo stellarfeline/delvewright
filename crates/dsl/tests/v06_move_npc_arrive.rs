@@ -120,7 +120,7 @@ fn sequence_via_move_npc_on_arrive_inside_sequence_is_dw0329() {
 fn move_npc_on_arrive_narrate_enters_l10n_inventory() {
     let campaign =
         parse_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str())).expect("campaign parses");
-    let inv = delvewright_dsl::l10n_inventory(&campaign);
+    let inv = delvewright_dsl::l10n::inventory(&campaign);
     let key = "fx.open-the-door.oc.talk.1.arrive.1.narrate";
     assert_eq!(
         inv.get(key).map(String::as_str),
