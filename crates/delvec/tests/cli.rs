@@ -1387,7 +1387,11 @@ fn oversized_wave_exits_2_with_dw0312() {
     let mut quests: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&qp).unwrap()).unwrap();
     // Far more mobs than any assembled room can seat on distinct standable cells.
+    // A name tag marks one body, so a crowd of this size wears none.
     quests["content"]["waves"][0]["mobs"][0]["count"] = serde_json::json!(100_000);
+    if let Some(m) = quests["content"]["waves"][0]["mobs"][0].as_object_mut() {
+        m.remove("name");
+    }
     std::fs::write(&qp, serde_json::to_string_pretty(&quests).unwrap()).unwrap();
 
     let out = tmp("wave-overflow-out");

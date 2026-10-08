@@ -342,8 +342,7 @@
                 "effect": "minecraft:slowness"
               }
             ],
-            "entity": "minecraft:zombie",
-            "name": "Keep Guard"
+            "entity": "minecraft:zombie"
           }
         ],
         "respawns_on_rest": true
@@ -354,8 +353,7 @@
         "mobs": [
           {
             "count": 2,
-            "entity": "minecraft:sheep",
-            "name": "Startled Ewe"
+            "entity": "minecraft:sheep"
           }
         ]
       }

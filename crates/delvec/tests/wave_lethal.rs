@@ -42,7 +42,7 @@ fn quests(volume: bool) -> String {
     c["waves"] = serde_json::json!([{
         "id": "wave/sentries",
         "anchor": "spawn",
-        "mobs": [{ "entity": "minecraft:zombie", "count": 2, "name": "Sentry" }]
+        "mobs": [{ "entity": "minecraft:zombie", "count": 2 }]
     }]);
     c["quests"][0]["on_objective_complete"]["obj/talk"]
         .as_array_mut()

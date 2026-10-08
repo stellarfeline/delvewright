@@ -80,9 +80,13 @@
         "id": "wave/garrison",
         "mobs": [
           {
-            "count": 2,
+            "count": 1,
             "entity": "minecraft:zombie",
             "name": "Hollow Footman"
+          },
+          {
+            "count": 1,
+            "entity": "minecraft:zombie"
           }
         ]
       }
