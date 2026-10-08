@@ -1,5 +1,6 @@
-//! What the dialogue tells the player: a question gets an answer (`DW0981`),
-//! and a name reaches a line only after the player has been told it (`DW0982`).
+//! What the text tells the player: a question gets an answer (`DW0981`), a
+//! name reaches a line only after the player has been told it (`DW0982`), and a
+//! name tag marks a person, never one of a crowd (`DW0983`).
 //!
 //! Both are `docs/reference/game-writing.md` rules made mechanical: §2 S1/S5 (the
 //! critical path is plain) for the first, §3 N1/N3 (introduce a name before you
@@ -75,6 +76,141 @@ delvewright_dsl::dw_code! {
     /// `DW0982`: a declared name reaches an NPC's line or an option before the
     /// play order has told the player what it is.
     pub const DW_NAME_UNTOLD: DwCode = DwCode::new("DW0982", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW0983`: a custom name tags a body that is one of many — the members of a
+    /// wave, or any body sharing a name that tags a group.
+    pub const DW_NAME_ON_A_CROWD: DwCode = DwCode::new("DW0983", ExitTier::Build);
+}
+
+// ---------------------------------------------------------------------------
+// DW0983 — a name tag is a person
+// ---------------------------------------------------------------------------
+
+/// What `DW0983` examined, zeroes included.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CrowdBinding {
+    /// Waves declared.
+    pub waves: usize,
+    /// Waves with at least one named member.
+    pub named_waves: usize,
+    /// Named actors.
+    pub named_actors: usize,
+    /// Names that tag a group.
+    pub group_names: usize,
+    /// Waves refused.
+    pub refused_waves: usize,
+    /// Actors refused.
+    pub refused_actors: usize,
+}
+
+impl CrowdBinding {
+    /// The binding line `delvec validate` prints.
+    pub fn line(&self) -> String {
+        format!(
+            "name-tag binding (DW0983): {} of {} wave(s) carry a named member, {} named \
+             actor(s); {} name(s) tag a group; {} wave(s) and {} actor(s) refused",
+            self.named_waves,
+            self.waves,
+            self.named_actors,
+            self.group_names,
+            self.refused_waves,
+            self.refused_actors
+        )
+    }
+}
+
+/// `DW0983`: a name tag belongs to a unique character. The object decides
+/// which bodies are unique: a name is a **group's** when one wave entry with
+/// that name spawns more than one body, or when two entries of one wave carry
+/// it; a group's name names no one, so every wave member and every actor that
+/// carries it is refused, in every wave. A name borne by exactly one body of
+/// each encounter it appears in (an elite or a boss inside a wave, a named
+/// actor, the same character as a wave member and later as an actor) is a
+/// person, and stands.
+pub fn check_name_tags(c: &Campaign) -> (Vec<Diagnostic>, CrowdBinding) {
+    let q = &c.quests.content;
+    let mut bind = CrowdBinding {
+        waves: q.waves.len(),
+        ..CrowdBinding::default()
+    };
+    let mut group: BTreeMap<&str, String> = BTreeMap::new();
+    for w in &q.waves {
+        let mut bodies: BTreeMap<&str, (u32, usize)> = BTreeMap::new();
+        for m in &w.mobs {
+            if let Some(n) = m.name.as_deref() {
+                let e = bodies.entry(n).or_default();
+                e.0 += m.count;
+                e.1 += 1;
+            }
+        }
+        if !bodies.is_empty() {
+            bind.named_waves += 1;
+        }
+        for (n, (count, rows)) in bodies {
+            if count > 1 {
+                group.entry(n).or_insert_with(|| {
+                    format!(
+                        "`{}` spawns {count} bodies under it{}",
+                        w.id,
+                        if rows > 1 {
+                            format!(" across {rows} entries")
+                        } else {
+                            String::new()
+                        }
+                    )
+                });
+            }
+        }
+    }
+    bind.named_actors = q.actors.iter().filter(|a| a.name.is_some()).count();
+    bind.group_names = group.len();
+    let mut d = Vec::new();
+    for (wi, w) in q.waves.iter().enumerate() {
+        let mut hit = false;
+        for (mi, m) in w.mobs.iter().enumerate() {
+            let Some(n) = m.name.as_deref() else { continue };
+            let Some(why) = group.get(n) else { continue };
+            hit = true;
+            d.push(Diagnostic::error(
+                DW_NAME_ON_A_CROWD,
+                "quests",
+                format!("/content/waves/{wi}/mobs/{mi}/name"),
+                format!(
+                    "`{}`'s entry {mi} (`{}` × {}) wears the name `{n}`, and that name tags a \
+                     group: {why}. A name tag belongs to a character the story treats as a \
+                     person — a boss, an elite, a named actor, an NPC — and a crowd of \
+                     ordinary bodies wears none (game-writing.md §3 N6). Remove `name` from the \
+                     entry; if the fight needs a heading, state the wave's `health_bar.title`. \
+                     If one of these bodies is a character, give it its own entry of `count: 1` \
+                     and its own name",
+                    w.id, m.entity, m.count
+                ),
+            ));
+        }
+        if hit {
+            bind.refused_waves += 1;
+        }
+    }
+    for (ai, a) in q.actors.iter().enumerate() {
+        let Some(n) = a.name.as_deref() else { continue };
+        let Some(why) = group.get(n) else { continue };
+        bind.refused_actors += 1;
+        d.push(Diagnostic::error(
+            DW_NAME_ON_A_CROWD,
+            "quests",
+            format!("/content/actors/{ai}/name"),
+            format!(
+                "actor `{}` wears the name `{n}`, and that name tags a group: {why}. An actor is \
+                 one body, and its name tag says it is a person; a name a crowd also wears says \
+                 it is one of them (game-writing.md §3 N6). Give the actor a name of its own, or \
+                 none",
+                a.id
+            ),
+        ));
+    }
+    (d, bind)
 }
 
 // ---------------------------------------------------------------------------

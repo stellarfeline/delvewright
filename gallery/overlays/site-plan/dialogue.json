@@ -35,10 +35,15 @@
                     "type": "complete-objective"
                   }
                 ],
-                "label": "What is it worth?"
+                "label": "What is it worth?",
+                "next": "dlg/factor-worth"
               }
             ],
             "text": "Everything on the counter is priced. The emeralds are the hall's, not mine."
+          },
+          {
+            "id": "dlg/factor-worth",
+            "text": "Nothing to you. It is the hall's, and the hall does not sell it."
           }
         ],
         "npc": "npc/factor",
@@ -50,10 +55,15 @@
             "id": "dlg/warden-root",
             "options": [
               {
-                "label": "Is it put down?"
+                "label": "Is it put down?",
+                "next": "dlg/warden-down"
               }
             ],
             "text": "The muster formed up here and did not stay formed. What is left of it is still in the hall."
+          },
+          {
+            "id": "dlg/warden-down",
+            "text": "Not by me. Whoever clears the hall puts it down."
           }
         ],
         "npc": "npc/warden",

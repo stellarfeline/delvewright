@@ -1154,6 +1154,13 @@ fn validate_loaded(
             diags.extend(delvec::compiler::telling::check_questions(
                 &campaign, &sidecars,
             ));
+            // A name tag marks a person: a name a crowd wears is refused on
+            // every body that wears it (DW0983), with what it examined.
+            {
+                let (td, tbind) = delvec::compiler::telling::check_name_tags(&campaign);
+                examined.push(tbind.line());
+                diags.extend(td);
+            }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.

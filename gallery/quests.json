@@ -3688,8 +3688,7 @@
               "main_hand": {
                 "item": "minecraft:wooden_sword"
               }
-            },
-            "name": "Muster Hand"
+            }
           },
           {
             "count": 1,
@@ -3714,7 +3713,8 @@
       {
         "anchor": "anchor/lane-west",
         "health_bar": {
-          "range": 16
+          "range": 16,
+          "title": "The Lane Patrol"
         },
         "id": "wave/lane",
         "lane": {
@@ -3735,8 +3735,7 @@
                 "item": "minecraft:arrow"
               }
             ],
-            "entity": "minecraft:pillager",
-            "name": "Lane Pillager"
+            "entity": "minecraft:pillager"
           }
         ],
         "on_kill": {
@@ -3754,6 +3753,9 @@
       },
       {
         "anchor": "anchor/lane-east",
+        "health_bar": {
+          "range": 12
+        },
         "id": "wave/edge",
         "mobs": [
           {
@@ -3761,7 +3763,8 @@
               "follow_range": 12.0
             },
             "count": 1,
-            "entity": "minecraft:skeleton"
+            "entity": "minecraft:skeleton",
+            "name": "The Edge Sentry"
           }
         ],
         "on_kill": {

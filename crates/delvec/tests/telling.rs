@@ -193,3 +193,89 @@ fn the_speaker_is_told_by_speaking() {
     assert!(d.is_empty(), "{d:#?}");
     assert!(bind.uses >= 1, "the use must be counted: {bind:?}");
 }
+
+/// hello-world with one wave of `rows` (`(entity, count, name)`) and, when
+/// given, one actor named `actor`.
+fn with_wave(rows: &[(&str, u32, Option<&str>)], actor: Option<&str>) -> Campaign {
+    let mut quests = hw("quests.json");
+    let mobs: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|(e, n, name)| {
+            let mut m = serde_json::json!({ "entity": e, "count": n });
+            if let Some(name) = name {
+                m["name"] = (*name).into();
+            }
+            m
+        })
+        .collect();
+    quests["content"]["waves"] =
+        serde_json::json!([{ "id": "wave/crowd", "anchor": "anchor/exit", "mobs": mobs }]);
+    if let Some(a) = actor {
+        quests["content"]["actors"] = serde_json::json!([{
+            "id": "actor/one", "entity": "minecraft:zombie", "anchor": "anchor/exit", "name": a
+        }]);
+    }
+    parse(&hw("world.json"), &quests, &hw("dialogue.json"))
+}
+
+/// The playtest shape: three zombies of one wave, all tagged `The Watch`.
+#[test]
+fn a_name_tag_on_a_crowd_is_dw0983() {
+    let c = with_wave(&[("minecraft:zombie", 3, Some("The Watch"))], None);
+    let (d, bind) = telling::check_name_tags(&c);
+    assert_eq!(d.len(), 1, "{d:#?}");
+    assert_eq!(d[0].code, "DW0983");
+    assert_eq!(d[0].code, telling::DW_NAME_ON_A_CROWD.id());
+    assert_eq!(d[0].severity, Severity::Error);
+    assert_eq!(d[0].path, "/content/waves/0/mobs/0/name");
+    assert_eq!(
+        (bind.waves, bind.group_names, bind.refused_waves),
+        (1, 1, 1)
+    );
+}
+
+/// Two entries of one wave under one name are a crowd too, entry by entry.
+#[test]
+fn one_name_on_two_entries_is_dw0983_on_both() {
+    let c = with_wave(
+        &[
+            ("minecraft:zombie", 1, Some("Footman")),
+            ("minecraft:husk", 1, Some("Footman")),
+        ],
+        None,
+    );
+    let (d, _) = telling::check_name_tags(&c);
+    assert_eq!(d.iter().filter(|x| x.code == "DW0983").count(), 2, "{d:#?}");
+}
+
+/// A single named body inside a wave — the elite or the boss — is a character,
+/// and its unnamed escort is a crowd that wears nothing.
+#[test]
+fn a_named_elite_among_unnamed_bodies_is_clean() {
+    let c = with_wave(
+        &[
+            ("minecraft:zombie", 4, None),
+            ("minecraft:vindicator", 1, Some("The Watch Captain")),
+        ],
+        Some("The Porter"),
+    );
+    let (d, bind) = telling::check_name_tags(&c);
+    assert!(d.is_empty(), "{d:#?}");
+    assert_eq!(
+        (bind.named_waves, bind.named_actors, bind.group_names),
+        (1, 1, 0)
+    );
+}
+
+/// An actor wearing a crowd's name claims to be one of the crowd.
+#[test]
+fn an_actor_wearing_a_crowds_name_is_dw0983() {
+    let c = with_wave(&[("minecraft:zombie", 2, Some("Footman"))], Some("Footman"));
+    let (d, bind) = telling::check_name_tags(&c);
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0983" && x.path == "/content/actors/0/name"),
+        "{d:#?}"
+    );
+    assert_eq!(bind.refused_actors, 1);
+}

@@ -277,8 +277,7 @@
         "mobs": [
           {
             "count": 2,
-            "entity": "minecraft:spider",
-            "name": "Muster Stray"
+            "entity": "minecraft:spider"
           }
         ],
         "respawns_on_rest": true,
