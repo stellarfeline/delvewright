@@ -3690,6 +3690,15 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/long-hall-chest",
+        pos: [5, 2, LONG_HALL_END_Z + LONG_HALL_ROOM_DEPTH - 1],
+        facing: None,
+        trigger_block: None,
+        note: "the top of the chest against the end room's far wall: what the end room holds, \
+               in front of the eye that arrives at the end",
+        role: None,
+    },
+    Anchor {
         name: "anchor/long-hall-down-the-hall",
         pos: [6, 1, LONG_HALL_SLAB_Z + 16],
         facing: Some("north"),
@@ -3752,6 +3761,13 @@ fn build_long_hall() -> Structure {
     ] {
         fill([x, 5, z], [x, 5, z], "minecraft:lantern[hanging=true]");
     }
+    // What the end room holds: a chest against its far wall, on the hall's
+    // axis, in front of the eye that arrives at the end.
+    fill(
+        [5, 1, room_end - 1],
+        [5, 1, room_end - 1],
+        "minecraft:chest[facing=north,type=single]",
+    );
     let mut palette = Palette::new();
     let blocks = cells
         .into_iter()
