@@ -1,7 +1,10 @@
 # Step 9 — detail
 
 
-Optional. A blockout is walkable and legible and made of concrete; detailing
+Required before hand-over: the staging gate refuses a site-plan build with no
+detail plan, since a campaign is staged only once detailed. Places are detailed
+one at a time, and not every place has to be. A blockout is walkable and legible
+and made of concrete; detailing
 replaces one place's massing with a real building, one place at a time — every
 unbound box is still massed, so the map builds, walks and renders at every point
 between none detailed and all of them.
@@ -26,10 +29,6 @@ Where the piece goes is computed from the site plan's own box: the play space
 plus the one floor course under it. The piece must be **exactly** that shape —
 undersize is refused the same way oversize is (`DW0843`), because the box is the
 footprint and a smaller building means a smaller box, which is a site-plan edit.
-
-**Nothing here waits on a walk.** The user walks the detailed world at step 13,
-so detail comes first and needs no walk record. A walk record written before
-detail would name the blockout, which is not the build that ships.
 
 1. **Read the allocation**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
    <campaign-dir> <place>`. It is what the whole hands the place — the frame's
@@ -58,8 +57,8 @@ detail would name the blockout, which is not the build that ships.
    working, because those names were bound to places before any detail existed
    and detailing must never force a quest edit — and a way the plan did not
    allocate is refused in both directions (`DW0844`).
-4. **After any plan or graph edit** — including one that answers a walk
-   finding at step 13: `delvec --prefabs "$DELVEWRIGHT_PREFABS"
+4. **After any plan or graph edit** — including one that answers a playtest
+   finding in a later round: `delvec --prefabs "$DELVEWRIGHT_PREFABS"
    detail <campaign-dir> --all`. Every program-detailed place is re-made; one
    that no longer fits is refused by name.
 

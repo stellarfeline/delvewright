@@ -278,17 +278,14 @@ def test_a_zero_precondition_is_labelled_inapplicable_and_does_not_refuse(gate, 
 
 
 # ---------------------------------------------------------------------------
-# The blockout: a pre-detail site-plan subject (spec-0049)
+# The blockout: a pre-detail site-plan subject (spec-0049) is not stageable
 #
-# The conflict this answers: spec-0049 stages a whole-map walk BEFORE any
-# content exists, and the gate's zero-binding verdicts redded precisely
-# because no content exists — no green state, and the remedy each red named
-# was the one thing the spec forbids doing first. The repair is a verdict the
-# OBJECT determines: a site-plan campaign whose build the compiler records as
-# derived massing, with no detail-plan document anywhere, may carry
-# OUT-OF-STAGE for a row whose class measures zero at both binding and
-# precondition. Nothing an operator types reaches it, and every test below
-# drives it in both directions.
+# A campaign is staged only once detailed: the first time a player meets it is
+# its finished first version. `main` refuses a pre-detail blockout before any
+# row is adjudicated, with or without `--strict`, and `--stage-anyway` does not
+# reach it. Adjudication itself knows no stage — the helpers below also serve
+# as a site-plan subject for the row-level tests, whose verdicts are the same
+# on any subject.
 # ---------------------------------------------------------------------------
 
 
@@ -333,25 +330,10 @@ def adjudicate_on(gate, camp, build, row):
     return gate.adjudicate(row, engine_of(gate), gate.Subject(camp, build))
 
 
-def test_an_identity_zero_on_a_blockout_is_out_of_stage_not_red(gate, tmp_path):
-    """The probe selects the class by identity, so its zero counts the class
-    itself: a measured double zero on a build that does not claim to be
-    finished. Non-red, but never silent — the id lands in the token."""
-    camp = make_blockout_campaign(tmp_path)
-    build = make_blockout_build(tmp_path)
-    r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
-    assert r["verdict"] == "OUT-OF-STAGE"
-    assert r["verdict"] not in gate.RED_VERDICTS
-    assert r["binding"] == 0 and r["precondition"] == 0
-
-
 def test_the_same_zero_on_an_assembled_campaign_is_counted_inapplicable(gate, tmp_path):
-    """The stage is the only thing that moves: `OUT-OF-STAGE` needs the
-    twice-measured blockout and this subject is not one, so the same measured
-    double zero is `INAPPLICABLE` — and never `UNBOUND`, whose whole content
-    is that nobody looked. Neither refuses; what separates them is that only
-    OUT-OF-STAGE makes a claim about a stage, which is why `--strict` reaches
-    it and not this."""
+    """A measured double zero is `INAPPLICABLE` — and never `UNBOUND`, whose
+    whole content is that nobody looked. It is counted, not refused, and
+    `--strict` does not add it."""
     r = run(gate, tmp_path, IDENTITY_ZERO_ROW, objectives=[{"type": "talk-to"}])
     assert r["verdict"] not in gate.RED_VERDICTS
     assert r["verdict"] == "INAPPLICABLE"
@@ -420,28 +402,6 @@ def test_a_declaration_shaped_zero_on_an_assembled_campaign_still_says_nobody_lo
     assert r["precondition"] == 0
 
 
-def test_a_detail_plan_document_ends_the_blockout_stage(gate, tmp_path):
-    """The verdict is about a stage, never about a campaign: the day the
-    campaign details, no row carries the blockout allowance any more — the
-    same measured double zero is adjudicated afresh as `INAPPLICABLE`, out of
-    the boot banner and out of `--strict`'s reach."""
-    camp = make_blockout_campaign(tmp_path, detail_plan=True)
-    build = make_blockout_build(tmp_path)
-    r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
-    assert r["verdict"] == "INAPPLICABLE"
-
-
-def test_a_manifest_not_compiled_from_the_site_plan_fails_closed(gate, tmp_path):
-    """The stage claim needs the compiler's own record. A build whose manifest
-    does not list the site plan among its inputs gets no blockout verdict,
-    whatever the campaign directory says."""
-    camp = make_blockout_campaign(tmp_path)
-    build = make_blockout_build(tmp_path, inputs=("quests.json",))
-    r = adjudicate_on(gate, camp, build, IDENTITY_ZERO_ROW)
-    assert r["verdict"] != "OUT-OF-STAGE"
-    assert r["verdict"] == "INAPPLICABLE"
-
-
 def test_a_nonzero_precondition_stays_red_on_a_blockout(gate, tmp_path):
     """The quietly-lost direction: objects that could carry the defect exist
     (the precondition measures non-zero), and the check is inert over them.
@@ -460,25 +420,6 @@ def test_a_nonzero_precondition_stays_red_on_a_blockout(gate, tmp_path):
     r = adjudicate_on(gate, camp, build, row)
     assert r["verdict"] == "UNBOUND"
     assert r["precondition"] == 1
-
-
-def test_a_measured_double_zero_is_out_of_stage_only_at_pre_detail(gate, tmp_path):
-    row = dict(
-        IDENTITY_ZERO_ROW,
-        id="dz",
-        applies_when={
-            "kind": "dsl",
-            "files": ["quests.json"],
-            "match": {"eq": {"type": "interact"}},
-        },
-    )
-    blockout = tmp_path / "blockout"
-    blockout.mkdir()
-    camp = make_blockout_campaign(blockout)
-    build = make_blockout_build(blockout)
-    assert adjudicate_on(gate, camp, build, row)["verdict"] == "OUT-OF-STAGE"
-    r = run(gate, tmp_path, row, objectives=[{"type": "talk-to"}])
-    assert r["verdict"] == "INAPPLICABLE"
 
 
 def test_a_declaration_shaped_zero_without_a_probe_stays_red_on_a_blockout(gate, tmp_path):
@@ -523,29 +464,12 @@ STORYBOOK_ROW = {
 }
 
 
-def test_an_absent_campaign_file_class_on_a_blockout_is_out_of_stage(gate, tmp_path):
-    """The blocker this clause exists for: the storybook is written at
-    skill-workflow step 14 and the blockout is walked at step 9, so EVERY
-    campaign at blockout carries zero of them."""
-    camp = make_blockout_campaign(tmp_path)
-    r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), STORYBOOK_ROW)
-    assert r["verdict"] == "OUT-OF-STAGE"
-    assert (r["binding"], r["precondition"]) == (0, 0)
-
-
 def test_the_same_missing_storybook_on_an_assembled_campaign_is_inapplicable(gate, tmp_path):
     """The file class is self-measuring on every subject, so the verdict is the
-    measured `INAPPLICABLE`; only the blockout stage turns that same pair of
-    zeros into `OUT-OF-STAGE`."""
+    measured `INAPPLICABLE`."""
     camp = make_campaign(tmp_path, objectives=[{"type": "talk-to"}])
     build = make_build(tmp_path)
     r = adjudicate_on(gate, camp, build, STORYBOOK_ROW)
-    assert r["verdict"] == "INAPPLICABLE"
-
-
-def test_the_storybook_is_readjudicated_once_the_campaign_details(gate, tmp_path):
-    camp = make_blockout_campaign(tmp_path, detail_plan=True)
-    r = adjudicate_on(gate, camp, make_blockout_build(tmp_path), STORYBOOK_ROW)
     assert r["verdict"] == "INAPPLICABLE"
 
 
@@ -629,8 +553,7 @@ def test_an_unemitted_artifact_with_declared_objects_is_missing_check(gate, tmp_
 
 def test_an_unemitted_artifact_whose_class_measures_zero_is_explained(gate, tmp_path):
     """The compiler emits these ledgers only over objects that exist, so a
-    measured-zero precondition explains the absence: INAPPLICABLE on an
-    assembled subject (still red), OUT-OF-STAGE on a blockout."""
+    measured-zero precondition explains the absence: INAPPLICABLE."""
     row = dict(
         IDENTITY_ZERO_ROW,
         id="art0",
@@ -641,11 +564,6 @@ def test_an_unemitted_artifact_whose_class_measures_zero_is_explained(gate, tmp_
             "match": {"eq": {"type": "volley"}},
         },
     )
-    blockout = tmp_path / "blockout"
-    blockout.mkdir()
-    camp = make_blockout_campaign(blockout)
-    build = make_blockout_build(blockout)
-    assert adjudicate_on(gate, camp, build, row)["verdict"] == "OUT-OF-STAGE"
     r = run(gate, tmp_path, row, objectives=[{"type": "talk-to"}])
     assert r["verdict"] == "INAPPLICABLE"
 
@@ -698,52 +616,92 @@ def test_a_row_may_not_declare_its_own_binding_as_its_precondition(gate, tmp_pat
         gate.load_ledger(bad)
 
 
-def test_a_green_blockout_mints_a_token_the_verifier_announces(gate, tmp_path):
-    """End to end: the gate passes an honestly-empty blockout, the token names
-    the out-of-stage classes, and the boot banner reads them aloud — the
-    owner is told the session's scope where the session starts."""
-    camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}])
-    tree = make_blockout_build(tmp_path)
-    ledger = tmp_path / "led.json"
-    ledger.write_text(
-        json.dumps({"findings": [dict(BOUND_ROW, id="ok"), dict(IDENTITY_ZERO_ROW, id="oos")]})
-    )
-    proc = subprocess.run(
+def stage(camp, tree, ledger, *extra):
+    return subprocess.run(
         [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
-         "--ledger", str(ledger)],
+         "--ledger", str(ledger), *extra],
         capture_output=True, text=True,
     )
+
+
+def green_ledger(tmp_path):
+    ledger = tmp_path / "led.json"
+    ledger.write_text(json.dumps({"findings": [dict(BOUND_ROW, id="ok")]}))
+    return ledger
+
+
+def test_a_blockout_is_refused_with_and_without_strict(gate, tmp_path):
+    """The floor did not drop: a blockout whose every row would pass is still
+    refused, on the default path and under `--strict`, with the reason and the
+    remedy, and no token is minted."""
+    camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}])
+    tree = make_blockout_build(tmp_path)
+    ledger = green_ledger(tmp_path)
+    for extra in ((), ("--strict",)):
+        proc = stage(camp, tree, ledger, *extra)
+        assert proc.returncode == 1, (extra, proc.stderr)
+        assert "not stageable" in proc.stderr
+        assert "staged only once detailed" in proc.stderr
+        assert "delvec detail" in proc.stderr
+        assert not (tree / "staging-admission.json").exists()
+
+
+def test_the_same_campaign_detailed_is_stageable(gate, tmp_path):
+    """One variable moves — the detail-plan document, in the source and in the
+    compiler's record — and the same ledger admits it."""
+    camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}], detail_plan=True)
+    tree = make_blockout_build(
+        tmp_path, inputs=("quests.json", "site-plan.json", "detail-plan.json")
+    )
+    proc = stage(camp, tree, green_ledger(tmp_path))
     assert proc.returncode == 0, proc.stderr
-    assert "OUT-OF-STAGE" in proc.stderr
-    token = json.loads((tree / "staging-admission.json").read_text())
-    assert token["pre_detail"] is True
-    assert token["out_of_stage"] == ["oos"]
-    assert token["out_of_stage_count"] == 1
-    r = verify(tree)
-    assert r.returncode == 0
-    assert "BLOCKOUT WALK" in r.stderr
-    assert "cannot exercise: 1" in r.stderr
+    assert (tree / "staging-admission.json").is_file()
 
 
-def test_an_assembled_token_gets_no_blockout_banner(gate, tmp_path):
-    r = verify(admitted_tree(tmp_path, gate))
-    assert r.returncode == 0
-    assert "BLOCKOUT WALK" not in r.stderr
+def test_either_instrument_alone_names_a_blockout(gate, tmp_path):
+    """Fail closed: the answer refuses, so a disagreement refuses. A source with
+    no detail plan beside a build that claims one, and a since-detailed source
+    beside a build compiled before it was detailed, are both blockouts."""
+    src_says = tmp_path / "src"
+    src_says.mkdir()
+    camp = make_blockout_campaign(src_says)
+    build = make_blockout_build(
+        src_says, inputs=("quests.json", "site-plan.json", "detail-plan.json")
+    )
+    assert gate.Subject(camp, build).pre_detail is True
+
+    manifest_says = tmp_path / "manifest"
+    manifest_says.mkdir()
+    camp = make_blockout_campaign(manifest_says, detail_plan=True)
+    build = make_blockout_build(manifest_says)
+    assert gate.Subject(camp, build).pre_detail is True
+    assert "compiled from `site-plan.json`" in gate.Subject(camp, build).blockout_witness()
+
+    areas = tmp_path / "areas"
+    areas.mkdir()
+    plain = make_campaign(areas, objectives=[{"type": "talk-to"}])
+    assert gate.Subject(plain, make_build(areas)).pre_detail is False
 
 
-def test_strict_fails_on_out_of_stage_rows(gate, tmp_path):
-    """The absolute floor treats OUT-OF-STAGE like DECLARED-UNCOVERABLE."""
+def test_an_override_does_not_reach_the_blockout_refusal(gate, tmp_path):
+    """`--stage-anyway` admits a red list; a blockout is not one."""
     camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}])
     tree = make_blockout_build(tmp_path)
-    ledger = tmp_path / "led.json"
-    ledger.write_text(json.dumps({"findings": [dict(IDENTITY_ZERO_ROW, id="oos")]}))
-    proc = subprocess.run(
-        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
-         "--ledger", str(ledger), "--strict"],
-        capture_output=True, text=True,
+    proc = stage(
+        camp, tree, green_ledger(tmp_path),
+        "--stage-anyway", "a session that wants the blockout served", "--acknowledge-red", "0",
     )
-    assert proc.returncode == 1
+    assert proc.returncode == 1, proc.stderr
+    assert "not stageable" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
 
+
+def test_a_refusal_removes_a_stale_token(gate, tmp_path):
+    camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}])
+    tree = make_blockout_build(tmp_path)
+    (tree / "staging-admission.json").write_text("{}")
+    assert stage(camp, tree, green_ledger(tmp_path)).returncode == 1
+    assert not (tree / "staging-admission.json").exists()
 
 # ---------------------------------------------------------------------------
 # An ABSENT optional stage document: "this campaign declares none" vs
@@ -825,8 +783,8 @@ def test_a_manifest_with_no_inputs_object_fails_closed(gate, tmp_path):
 
 def test_the_measured_zero_is_adjudicated_unchanged_on_an_assembled_campaign(gate, tmp_path):
     """The widening adds NO verdict of its own. The zero is handed to the
-    unchanged adjudication, and off a pre-detail blockout that is the counted
-    `INAPPLICABLE` exactly as every other measured zero of a class is."""
+    unchanged adjudication, and that is the counted `INAPPLICABLE` exactly as
+    every other measured zero of a class is."""
     camp = make_campaign(tmp_path, objectives=[{"type": "talk-to"}])
     build = make_build(tmp_path)
     (build / "manifest.json").write_text(
@@ -835,16 +793,6 @@ def test_the_measured_zero_is_adjudicated_unchanged_on_an_assembled_campaign(gat
     r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
     assert r["verdict"] == "INAPPLICABLE"
     assert r["binding"] == 0
-
-
-def test_the_measured_zero_reaches_out_of_stage_only_on_a_blockout(gate, tmp_path):
-    """And on a blockout it reaches the verdict that already existed for a
-    measured double zero — no new verdict is minted anywhere."""
-    camp = make_blockout_campaign(tmp_path)
-    build = make_blockout_build(tmp_path)
-    r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
-    assert r["verdict"] == "OUT-OF-STAGE"
-    assert r["binding"] == 0 and r["precondition"] == 0
 
 
 def test_a_present_document_never_reaches_the_branch(gate, tmp_path):
@@ -2541,101 +2489,3 @@ def test_the_staging_surface_writes_its_report_outside_the_tree(gate):
     assert '"$OUT_DIR/staging-gate.md"' not in server, (
         "the report is a sibling of the build tree, never a child of it"
     )
-
-
-# ---------------------------------------------------------------------------
-# A gate whose green depends on an artifact its own step forbids producing yet
-#
-# `gal-01` binds on `walk-record.json` in the campaign source. `references/
-# walk.md` forbids writing that file until the walk has happened — and the walk
-# is what the staging this gate guards EXISTS for. So on a site-plan campaign's
-# first staging the row measured zero against a precondition (`site-plan.json`
-# has a node) that was never the class's own population: the objects that carry
-# a walk-record defect are walk records. The row reported UNBOUND by
-# construction and the only route through was the deliberate override.
-#
-# The binding is a campaign-source glob with no `contains`, so the file IS the
-# object and the probe measures its own precondition. The row declares no
-# `applies_when` now, and these drive what it says at each stage.
-# ---------------------------------------------------------------------------
-
-
-WALK_RECORD_ROW = {
-    "id": "walkrec",
-    "finding": "the walk record's freshness key re-opened on edits the walk cannot depend on",
-    "carrier": {"kind": "dw", "code": LIVE_CODE},
-    "binding": {"kind": "campaign", "glob": "walk-record.json"},
-}
-
-
-def walk_subject(gate, tmp_path, *, record: bool, pre_detail: bool):
-    camp = make_campaign(tmp_path, objectives=[{"type": "narrate"}])
-    (camp / "site-plan.json").write_text(
-        json.dumps({"content": {"places": [{"node": "node/hall"}]}})
-    )
-    if record:
-        (camp / "walk-record.json").write_text(json.dumps({"verdict": "passed"}))
-    build = make_build(tmp_path)
-    inputs = {"quests.json": "0" * 8, "site-plan.json": "1" * 8}
-    if not pre_detail:
-        inputs["detail-plan.json"] = "2" * 8
-        (camp / "detail-plan.json").write_text(json.dumps({"content": {"details": []}}))
-    (build / "manifest.json").write_text(json.dumps({"inputs": inputs}))
-    return gate.Subject(camp, build)
-
-
-def test_before_the_first_walk_the_row_is_out_of_stage_not_unbound(gate, tmp_path):
-    """What the row says before a walk exists. Not BOUND — nothing is
-    fabricated, no object is manufactured, and the class is named in the token,
-    printed in its own section and announced at boot. What it stops being is a
-    refusal a creator has no act that could clear."""
-    subj = walk_subject(gate, tmp_path, record=False, pre_detail=True)
-    assert subj.pre_detail is True
-    r = gate.adjudicate(WALK_RECORD_ROW, engine_of(gate), subj)
-    assert r["verdict"] == "OUT-OF-STAGE", r
-    assert r["binding"] == 0 and r["precondition"] == 0
-    assert "this build does not claim to be the build that could" in r["detail"]
-
-
-def test_after_the_walk_the_same_row_binds(gate, tmp_path):
-    """One variable moves — the record the walk produces — and the class goes
-    live. The blockout allowance is a statement about one staging of one stage,
-    never about this row."""
-    subj = walk_subject(gate, tmp_path, record=True, pre_detail=True)
-    r = gate.adjudicate(WALK_RECORD_ROW, engine_of(gate), subj)
-    assert r["verdict"] == "BOUND", r
-    assert r["binding"] == 1
-
-
-def test_off_the_blockout_a_missing_record_is_not_out_of_stage(gate, tmp_path):
-    """And the allowance does not follow the campaign. The moment it details,
-    the same measured double zero is the counted `INAPPLICABLE` — no blockout
-    wording, and `--strict`'s floor stops treating it as a stage claim."""
-    subj = walk_subject(gate, tmp_path, record=False, pre_detail=False)
-    assert subj.pre_detail is False
-    r = gate.adjudicate(WALK_RECORD_ROW, engine_of(gate), subj)
-    assert r["verdict"] == "INAPPLICABLE", r
-
-
-def test_the_live_ledger_row_declares_no_precondition_over_the_site_plan(gate):
-    """The ledger's own shape, because the repair is in the row.
-
-    A precondition counting site-plan nodes is a population one step behind
-    nothing: the objects that carry this defect are walk records. Declared, it
-    turned a structurally unavoidable zero into a refusal on every site-plan
-    campaign's first staging.
-    """
-    root = pathlib.Path(__file__).resolve().parents[2]
-    ledger = json.loads((root / "docs" / "playtest-findings.json").read_text())
-    row = next(r for r in ledger["findings"] if r["id"] == "gal-01")
-    assert row["binding"] == {"kind": "campaign", "glob": "walk-record.json"}
-    assert "applies_when" not in row
-    assert gate.probe_is_self_measuring(row["binding"], _AnyCampaign()) is True
-
-
-class _AnyCampaign:
-    """Just enough of a `Subject` for the self-measuring test: a campaign
-    directory that holds no `walk-record.json`, which is the state the
-    recogniser has to answer True for."""
-
-    campaign = pathlib.Path("/nonexistent-campaign-dir")

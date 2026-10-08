@@ -20,12 +20,6 @@
 //! much as one that overflows it: the box is the footprint, so a smaller
 //! building means a smaller box, which is a site-plan edit, taken visibly.
 //!
-//! # Detail is not held behind a walk
-//!
-//! The walk is taken on the detailed world, after this stage, so nothing here
-//! asks for a walk record. What the record is bound to, and what it holds, is
-//! [`crate::compiler::walk`]'s.
-//!
 //! # What invokes each check, and what happens without it
 //!
 //! | check | event it is bound to |

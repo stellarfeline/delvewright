@@ -1,6 +1,6 @@
 //! **A campaign document that cannot be read names itself.**
 //!
-//! The loader reads twelve documents plus any `l10n/` sidecar, and every one of
+//! The loader reads eleven documents plus any `l10n/` sidecar, and every one of
 //! them used to fail with a bare `No such file or directory (os error 2)` that
 //! named nothing: the author of a six-document campaign missing one of them was
 //! told only that *something* under the directory could not be read, and had to
@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::load::{
     DETAIL_PLAN_FILE, GEOMETRY_BRIEF_FILE, LAYOUT_GRAPH_FILE, LoadedCampaign, SITE_PLAN_FILE,
-    STAGE_FILES, WALK_RECORD_FILE, WORLD_EDITS_FILE, load_campaign_dir,
+    STAGE_FILES, WORLD_EDITS_FILE, load_campaign_dir,
 };
 
 /// Every optional stage document, in load order — the siblings of
@@ -40,9 +40,9 @@ const OPTIONAL_FILES: [&str; 5] = [
 ];
 
 /// **The binding count of this path**: every document name the loader can put
-/// in a message. Six required + five optional + the walk record. The `l10n/`
-/// sidecars are unbounded in principle and are bound separately below.
-const NAMEABLE: usize = STAGE_FILES.len() + OPTIONAL_FILES.len() + 1;
+/// in a message. Six required + five optional. The `l10n/` sidecars are
+/// unbounded in principle and are bound separately below.
+const NAMEABLE: usize = STAGE_FILES.len() + OPTIONAL_FILES.len();
 
 /// `Result::expect_err` needs `T: Debug`, and [`LoadedCampaign`] is not a
 /// debuggable type — deriving one on a production struct to suit a test would be
@@ -172,24 +172,8 @@ fn an_absent_optional_document_is_still_not_an_error() {
     for opt in OPTIONAL_FILES {
         assert!(!dir.join(opt).exists());
     }
-    assert!(!dir.join(WALK_RECORD_FILE).exists());
     let loaded = load_campaign_dir(&dir).expect("a campaign with no optional documents loads");
     assert!(loaded.raw.world_edits.is_none());
-    assert!(loaded.walk_record.is_none());
-}
-
-#[test]
-fn an_unreadable_walk_record_names_itself() {
-    let dir = campaign("walk-record");
-    shadow_with_dir(&dir.join(WALK_RECORD_FILE));
-
-    let err = err_of(
-        load_campaign_dir(&dir),
-        "an unreadable walk record must fail",
-    );
-    let msg = err.to_string();
-    assert!(msg.contains(WALK_RECORD_FILE), "must name it: {msg}");
-    assert_ne!(err.kind(), ErrorKind::NotFound, "{msg}");
 }
 
 #[test]
@@ -258,7 +242,7 @@ fn a_campaign_path_that_is_not_a_directory_says_so() {
 /// **State the binding count** (CLAUDE.md: a green gate that binds to nothing is
 /// vacuous, not a pass) — and state it as a *measurement*, not as a constant.
 ///
-/// Every one of the twelve documents is perturbed here and the ones whose
+/// Every one of the eleven documents is perturbed here and the ones whose
 /// message names them are counted, so the number printed is what the loader
 /// actually did rather than what this file asserts it should do. A constant
 /// compared against itself would be green on a loader that names nothing.
@@ -273,13 +257,6 @@ fn the_binding_count_is_measured_and_is_not_zero() {
         {
             named_itself.push(*doc);
         }
-    }
-    let dir = campaign("count-walk-record");
-    shadow_with_dir(&dir.join(WALK_RECORD_FILE));
-    if let Err(e) = load_campaign_dir(&dir)
-        && e.to_string().contains(WALK_RECORD_FILE)
-    {
-        named_itself.push(WALK_RECORD_FILE);
     }
 
     eprintln!(

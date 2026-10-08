@@ -8,7 +8,7 @@
 
 **Delvewright 是一个 AI Minecraft 冒险地图生成器：它把一个创意提示变成一座供一到四位朋友游玩的、由故事驱动的 RPG 地牢——一个带任务与 NPC 的原版数据包——并在交付之前由机器证明它能被通关。**
 
-它自动化的是繁琐的劳动和验证，而不是设计：它会停下来，等你认可设计、等你亲自走一遍构建出的地图；当它拒绝某样东西时，它会指明该改什么，而不是替你去改。
+它自动化的是繁琐的劳动和验证，而不是设计：它会停下来等你认可设计，最后把完成的 delve 交到你手里去玩；当它拒绝某样东西时，它会指明该改什么，而不是替你去改。
 
 **现在就来玩：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca`，进入时接受资源包提示。服务器上运行的是 Vesperhold，也就是图中这座城堡。
 
@@ -22,7 +22,7 @@
 /delvewright:new-delve a guided tour of a real castle, nine rooms, no combat
 ```
 
-第一次运行会自行搭建工具链。之后它只问你三件事——从哪里获取 Minecraft 客户端 jar、设计是否正确、以及你走一遍构建出的地图时看到了什么——其余的都由它完成。最终交付的是这个 campaign 的文档、一份不剧透的 storybook，以及一条命令：构建、检查并在 `localhost:25565` 上运行这个 delve。它需要 git、Python 3.11 或更新版本、Java 21 或更新版本，以及带 Compose v2 的 Docker（[第一次运行检查的全部内容](.claude/skills/delvewright/skills/new-delve/references/init.md)）。
+第一次运行会自行搭建工具链。之后它只问你两件事——从哪里获取 Minecraft 客户端 jar，以及设计是否正确——其余的都由它完成。你第一次玩到的，就是完成的第一版。最终交付的是这个 campaign 的文档、一份不剧透的 storybook，以及一条命令：构建、检查并在 `localhost:25565` 上运行这个 delve。它需要 git、Python 3.11 或更新版本、Java 21 或更新版本，以及带 Compose v2 的 Docker（[第一次运行检查的全部内容](.claude/skills/delvewright/skills/new-delve/references/init.md)）。
 
 ## 工作原理
 
@@ -33,8 +33,7 @@ flowchart TD
     G --> Q["quests · dialogue"]
     Q --> B["delvec build<br/>validate · analyze · compile"]
     B -->|"被拒绝：DW 代码指明该改什么"| Q
-    B --> W{{"实地行走<br/>你来玩 blockout"}}
-    W --> L["验证阶梯<br/>PackTest · 机器人通关"]
+    B --> L["验证阶梯<br/>PackTest · 机器人通关"]
     L -->|"红灯回到文档"| Q
     L --> I(["一个 delve 镜像<br/>一次 docker run，朋友们即可加入"])
 ```

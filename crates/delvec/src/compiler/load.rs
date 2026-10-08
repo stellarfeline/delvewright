@@ -57,14 +57,13 @@ pub const GEOMETRY_BRIEF_FILE: &str = "geometry-brief.json";
 /// A refusal that names only the first half tells an author which six documents
 /// are required and leaves them unable to tell whether the seventh they have not
 /// written is the next thing they owe.
-pub const OPTIONAL_FILES: [&str; 7] = [
+pub const OPTIONAL_FILES: [&str; 6] = [
     WORLD_EDITS_FILE,
     GEOMETRY_BRIEF_FILE,
     LAYOUT_GRAPH_FILE,
     SITE_PLAN_FILE,
     DETAIL_PLAN_FILE,
     DESIGN_FILE,
-    WALK_RECORD_FILE,
 ];
 
 /// The layout graph's filename (spec-0049 §3) — see [`GEOMETRY_BRIEF_FILE`].
@@ -90,20 +89,6 @@ pub const DETAIL_PLAN_FILE: &str = "detail-plan.json";
 /// stopped.
 pub const DESIGN_FILE: &str = "design.json";
 
-/// **The walk record's filename** (spec-0049 §5.4, gated by spec-0050 §2).
-///
-/// Not a stage document: it carries no `dsl_version`, no `campaign_id` and no
-/// `stage`, because it is not authored against a schema version — it is the
-/// record of a human walking one particular build, and its form is
-/// `compiler::walk`'s rather than the DSL's.
-///
-/// It is deliberately **not** hashed into the manifest inputs. It reaches no
-/// emitted byte: `DW0974` refuses a record that does not describe the build
-/// beside it, and a build whose record was merely re-recorded must stay
-/// byte-identical, or double-build determinism would become a property of when
-/// somebody last walked the map.
-pub const WALK_RECORD_FILE: &str = "walk-record.json";
-
 /// A loaded campaign directory: the parsed-ready [`RawCampaign`] plus the exact
 /// raw file contents (by filename) for deterministic input hashing.
 pub struct LoadedCampaign {
@@ -119,10 +104,6 @@ pub struct LoadedCampaign {
     /// `textures/<id>.png.mcmeta`) → raw bytes. Empty when the campaign ships no
     /// `textures/` directory. Every one is also a manifest input.
     pub textures: BTreeMap<String, Vec<u8>>,
-    /// `walk-record.json`, verbatim, when the campaign directory ships one —
-    /// see [`WALK_RECORD_FILE`] for why it travels beside the stage documents
-    /// rather than among them.
-    pub walk_record: Option<String>,
     /// The approved reference images under `design/` (spec-0061). Read here
     /// because it is the one place that knows where the campaign directory is,
     /// and because the design gate holds the record and the directory to each
@@ -150,10 +131,6 @@ fn named(what: impl std::fmt::Display, e: std::io::Error) -> std::io::Error {
 /// campaign missing a stage document **byte-identically** to one that never
 /// declared it, with nothing downstream able to tell the two apart. That is a
 /// silent wrong build, which is worse than a refusal.
-///
-/// [`WALK_RECORD_FILE`] has always been read this way; its five siblings carried
-/// the weaker probe, so the rule already lived in this file and reached one of
-/// the six documents it should govern.
 fn optional(r: std::io::Result<String>) -> std::io::Result<Option<String>> {
     match r {
         Ok(s) => Ok(Some(s)),
@@ -327,14 +304,6 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     let site_plan = optional(read(SITE_PLAN_FILE))?;
     let detail_plan = optional(read(DETAIL_PLAN_FILE))?;
     let design = optional(read(DESIGN_FILE))?;
-    // Read outside the `read` closure on purpose: that closure records a
-    // filename into `inputs`, and the walk record is not a build input — see
-    // [`WALK_RECORD_FILE`].
-    let walk_record = match std::fs::read_to_string(dir.join(WALK_RECORD_FILE)) {
-        Ok(s) => Some(s),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(named(WALK_RECORD_FILE, e)),
-    };
     // The approved images the record is held against. An absent `design/` is
     // no images; anything else about it that cannot be read is an error naming
     // the directory, the same rule `optional` carries for a document.
@@ -376,7 +345,6 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
             detail_plan,
             design,
         },
-        walk_record,
         design_files,
         inputs,
         l10n,

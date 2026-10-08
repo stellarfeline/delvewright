@@ -97,9 +97,9 @@ pub const DW_RECORD_AT_BUILD: delvewright_dsl::DwCode =
 pub const SCHEMA_FILE_KEY: &str = "x-delvewright-file";
 
 /// **The camera record's JSON Schema** — `delvec schema --stage cameras`. A
-/// campaign artifact, not a stage document, exported beside `walk-record` and
-/// `prefab-metadata` because it is a document a creator's tools write and an
-/// author reads the shape of; it names its own path ([`SCHEMA_FILE_KEY`]).
+/// campaign artifact, not a stage document, exported beside `prefab-metadata`
+/// because it is a document a creator's tools write and an author reads the
+/// shape of; it names its own path ([`SCHEMA_FILE_KEY`]).
 pub fn record_schema() -> serde_json::Value {
     let mut v = serde_json::to_value(schemars::schema_for!(CameraSheet))
         .expect("the camera-record schema serializes to JSON");

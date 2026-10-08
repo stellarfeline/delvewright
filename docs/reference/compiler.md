@@ -41,7 +41,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 
 | # | Pass | Crate/module | Fails with |
 |---|------|--------------|-----------|
-| 1 | Load campaign dir (6 required stage docs + the 5 optional documents + `walk-record.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10), **naming the document that could not be read** |
+| 1 | Load campaign dir (6 required stage docs + the 5 optional documents + `l10n/` sidecars) | `compiler::load` | internal (≥10), **naming the document that could not be read** |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1); also `DW0455`, a body-family code refused at declaration time |
 | 4 | l10n sidecar coverage + reserved channels + language-code mapping | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184` (exit 1) |
@@ -616,10 +616,7 @@ bytes runs through the compiler computing the frame from the site plan inside
 is the same tooth the blockout's is: inversion is not forbidden, it is
 uncompilable. The escalation path a part that wants different *space* takes is
 a **site-plan revision**; a part that wants different *traversal* revises the
-**layout graph**. Detail is not held behind a walk: the walk is taken on the
-detailed world, after detail (*The walk record* below), so either revision
-before the walk costs a re-detail and nothing else, and after it the record no
-longer names the build (`DW0974`).
+**layout graph**, and either revision costs a re-detail (`delvec detail --all`).
 
 **The frame** a piece must exactly fill is the box's play space grown one course
 downward — the walk plane's own floor. Everything else the derivation writes
@@ -655,82 +652,6 @@ lofts and pits inside a place, its materials and its light. What is not: the
 seams, their cells, their rises, and the absence of any way out the plan did not
 allocate.
 
-**The walk record** — `walk-record.json` (`compiler::walk`). The owner walks
-the DETAILED world, after detail, with its real buildings and materials; a
-blockout somebody stood in tells them almost nothing. So nothing about detail
-asks for a walk record, and the record names the build that was walked.
-
-It is a campaign artifact, not a stage document — no `dsl_version`, no
-`campaign_id`, no `stage`, because it records an event rather than being
-authored against a schema. Its form is
-`{site_plan_sha256, layout_graph_sha256, detail_sha256, blockout_sha256,
-engine_revision, verdict, findings[]}`, and every run that validates a
-site-plan campaign prints all four hashes with the engine's **revision** beside
-them, so a record can name its subject and its instrument literally.
-
-**The key is three halves, each over what the engine DERIVES and none over a
-document's bytes.** `site_plan_sha256` is the **grid** — every placed box's
-corner, extent, floor and headroom, every placed seam's cells, crossing and
-rise, the whole's own volumes and the region they stand in.
-`layout_graph_sha256` is the **ways** a body moves by — every edge whole, the
-entry, the goal, the critical path, the beats and every station.
-`detail_sha256` is **what stands in the whole** — per bound place, in place
-order: the piece, the sha256 of each of its templates' `.nbt` bytes as they lie
-in the prefab directory, with the template's offset and size, and the cell and
-facing of each piece anchor an owed name is re-bound to. The `palette` is not in
-it: it is handed to a program and never placed. A build that binds no place has
-a detail half too — the hash of `detail 0 row(s)` — so a record taken on a
-blockout names the blockout. `sha256sum site-plan.json` produces none of them;
-the run's own output is the only place they exist, which is why they are printed
-at **validation**, refused runs included. A `dsl_version` bump, a reformat, a
-reworded note, a renamed intent, a reordered `details[]` or a palette change
-moves no half; a box moved one block, a way changed, or a place bound, unbound
-or re-made does. `blockout_sha256` is the massing with nothing bound, which the
-drift advisory reads; it is not in the key.
-
-**`DW0974` holds the record to the build beside it.** A record that is present
-must parse and name this build in all three halves, at every validation —
-`build` included — or the run refuses, naming the half that moved with both
-hashes, and naming a blockout record beside a detailed build as exactly that. An
-absent record refuses nothing: it is the campaign nobody has walked yet, and its
-build is the one the walk needs. The remedy is to walk this build and re-record,
-or to remove the record, which describes a build that no longer exists. **The
-trade-off is stated, not hidden:** a route problem the walk finds is now repaired
-after detail, so it costs a detail rework (`delvec detail --all`) as well as the
-plan or graph edit, and a fresh walk.
-
-**`verdict` is one of three, and the third is `unwalked`.** `passed` — the build
-was walked and may ship. `findings` — the build was walked and something must
-change first. `unwalked` — nobody walked it: a build stood up and taken down, a
-walk abandoned, a walk cut short. With only the first two every legal record
-asserted a walk; `unwalked` lets the document state its own subject rather than
-put the truth in `findings[]` prose nothing reads. `DW0974` refuses on presence,
-never on the verdict — a `findings` or `unwalked` record of this build is a true
-statement about it — and the binding line names the verdict it read
-("a record of THIS build, verdict `passed`"). No engine check reads the verdict
-further; `/new-delve`'s hand-over ships a build only beside a `passed` record of
-it. A
-record that does not parse is told the whole set, read off `Verdict`'s own schema
-(`Verdict::tokens`), never off a literal. Nothing here decides whether a body was
-in the world: that a human walked is the record author's assertion, held by
-operating practice.
-
-It is hand-authored and refused when it is wrong, so it is schema-exportable
-like everything else a person writes: `delvec schema --stage walk-record`,
-derived from the same struct `DW0974` parses. The record is not a build input: a
-re-recorded walk moves no emitted byte.
-
-**The engine revision** is stamped into the binary at compile time by
-`crates/delvec/build.rs`. A source build reads it out of the checkout it is
-built from — suffixed `-dirty` when that tree carries uncommitted changes, since
-a build behind an uncommitted edit is not a build of that revision. A release
-recipe or container build that has the revision and no `.git` passes
-`DELVEC_ENGINE_REVISION` in the environment and that wins unchanged. Where
-neither can be established — a source tarball such as crates.io serves — the
-engine prints `unstamped` rather than claiming a revision it does not have. The
-stamp reaches stderr and diagnostic text only and no emitted byte, so two
-binaries differing only in it compile a campaign to identical output.
-
 ### Stage 7 — `world-edits` (optional; spec-0017)
 
 The map editor's edit script (`world-edits.json`), the artifact of record for
@@ -759,7 +680,7 @@ from l10n (no stage-7 string is player-visible).
 
 `design.json`, the machine half of an approved look. **Optional**: absent = a
 campaign that has not approved a design, which validation measures and prints
-as a zero and which `tools/creator/staging-gate.py` refuses — a build the owner walks
+as a zero and which `tools/creator/staging-gate.py` refuses — a build the owner plays
 carries an approved design or is not staged. Present = parsed, validated and
 hashed into `manifest.json` inputs like any other stage document. Nothing in it
 is player-visible, so nothing in it is l10n-inventoried.
@@ -860,9 +781,9 @@ common.
 | `volumes[]` | `{id: volume/<kebab>, region, role, note?}` — the mass the WHOLE owns: `massif` (the mountain a cave system is inside), `ground` (the plane under a village), `clearance` (the sky a silhouette needs kept empty). They stand beside places, under them and over them, never inside one (`DW0835`), and they answer to the region like anything else the plan places (`DW0826`). |
 | `identities[]` | `{fact, measure, cmp}` — guarded comparisons binding the plan to the geometry brief's written numbers. `cmp` is `eq`/`lt`/`le`/`gt`/`ge`. `measure` is a tagged union over a **small fixed vocabulary**, not a parsed string: `{"of":"region-extent","axis":x\|y\|z}`, `{"of":"box-extent","node":…,"axis":x\|z}`, `{"of":"box-height","node":…}`, `{"of":"distance-xz","from":…,"to":…}` (Euclidean between footprint centres), `{"of":"datum-y","datum":…}`. An unknown measure is an ordinary `DW0100` and a node it names is checked like any other reference. **Marked judgement**: the vocabulary will grow, and the falsifier is the first brief fact a campaign cannot bind with it — at which point the missing measure is added as a variant, never worked around by binding a different fact. |
 | `sightlines[]` | `{edge, from, to}` — **one per `vision` edge** (`DW0824`), the segment the stage-5 battery walks. A vision edge carries a sightline rather than a seam because a vista's two ends are routinely not adjacent — a tower seen from a shore shares no face with it — so the seam construct cannot state the one thing it asserts. Each end must lie inside the place its connection names (`DW0824`): the proof walks exactly this segment, so ends elsewhere would prove a different claim, green or red. |
-| `views[]` | `{id: view/<kebab>, eye, look_at, note?}` — the named exterior vantages the walk judges the silhouette from, rendered beside the stage-2 reference sheet. Optional; a plan with zero views has that zero stated in the binding line. |
+| `views[]` | `{id: view/<kebab>, eye, look_at, note?}` — the named exterior vantages the silhouette is judged from, rendered beside the stage-2 reference sheet. Optional; a plan with zero views has that zero stated in the binding line. |
 | `lighting` | `{fixture, min_light}` applied to every enclosed box, so a blockout interior is walkable at night without per-box surface. **The engine's existing area-lighting object**, not a twin of it, so it answers the same range rule with the same code (`DW0196`). |
-| Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared** (with how many are pinned, how many derived, and in how many components), seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views — then one **placing** line per box with its corner and how it was obtained (spec-0059). Two zeroes are called out as findings rather than counted: a plan with no view (the walk has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
+| Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared** (with how many are pinned, how many derived, and in how many components), seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views — then one **placing** line per box with its corner and how it was obtained (spec-0059). Two zeroes are called out as findings rather than counted: a plan with no view (the visual review has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
 
 ### The horizon's surround (spec-0026)
 
@@ -1003,8 +924,7 @@ derived — a pure function of the site plan, the layout graph, the metrics tabl
 and the engine — so there is nothing an author writes here and nothing an author
 can get wrong here. Both authored documents reach it: the plan states where the
 boxes and the seams' cells are, the graph states what those seams are and what
-headroom a sky-open place claims, which is why the walk record's key holds a
-half for each. What a reader needs to know
+headroom a sky-open place claims. What a reader needs to know
 about it is what it BUILDS, which is fixed:
 
 | Thing | What the derivation makes of it |

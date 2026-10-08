@@ -118,26 +118,16 @@ section with their justification, and their COUNT is in the headline, because
 rule 4 makes each one a standing risk item at every staging review. `--strict`
 fails on them too, for a reviewer who wants the absolute floor.
 
-The third non-red is not an escape at all — it is a different subject. A
-**pre-detail blockout** (a site-plan campaign whose only geometry is the
-derived massing; spec-0049) is staged for a walk that judges scale, pacing,
-route legibility and silhouette — a build that does not claim to be finished,
-and whose own artifact chain says so: the campaign's placement authority is
-the site plan, the build's manifest was compiled from it, and no detail-plan
-document exists in either. On such a subject a row whose class **measures
-zero everywhere it could be declared** — zero binding AND zero precondition,
-both counted, never asserted — is `OUT-OF-STAGE`: the walk cannot exercise
-the class because this build contains none of its objects, and the build does
-not pretend to be the build that could. Those rows are printed in their own
-section, their count is in the headline, the admission token carries their
-ids, and the boot banner names them — the owner is told what this session is
-not protected from, per class, exactly as rule 4 demands. `--strict` fails on
-them, because a stage claim is exactly what a reviewer at the floor wants
-re-examined. The verdict is a statement about one staging of one stage: the
-moment the campaign gains a detail-plan document it is adjudicated afresh with
-no blockout allowance — the same measured double zero is then the counted
-`INAPPLICABLE`, the banner stops naming a blockout, and `--strict` stops
-treating it as a stage claim.
+**A pre-detail blockout is not stageable.** A site-plan campaign whose only
+geometry is the derived massing (spec-0049) — no place detailed — is refused
+before any row is adjudicated, with or without `--strict`, and `--stage-anyway`
+does not reach the refusal: the first time a player meets a campaign is its
+finished first version, so a blockout is never handed to one. The subject is a
+blockout when EITHER of two unrelated instruments says so — the campaign
+source places by site plan and carries no `detail-plan.json`, or the build's
+compiler-written manifest lists `site-plan.json` among its inputs and no
+`detail-plan.json` — so a stale build of a since-detailed campaign is refused
+too. See `Subject.pre_detail`.
 
 The precondition may be a declared `applies_when`, or the binding probe's own
 shape where that probe COUNTS THE OBJECT CLASS ITSELF: an identity-shaped
@@ -149,16 +139,15 @@ What the mechanism demands, and why the defect it exists to catch cannot
 supply it. Both non-red readings of a zero rest on a measurement taken over
 the CAMPAIGN SOURCE — the design its author declared, which no compiler,
 emission or packaging defect can rewrite. `measures_campaign_source` is that
-demand, and it is checked before either verdict is reached: a double zero
+demand, and it is checked before that verdict is reached: a double zero
 counted only in the BUILD tree (an `artifact` binding with an `out`
 precondition, say) is a zero a defect can manufacture by dropping the
 emission, so it stays `UNBOUND` and refuses. A build whose combat *went
 missing* therefore fails at least one measurement: declared objects make the
 binding non-zero (BOUND or UNBOUND), a declared precondition surface makes the
 precondition non-zero (UNBOUND), a declared-but-unemitted combat artifact is
-MISSING-CHECK, a pair of build-side zeros is UNBOUND, and a detailed or
-areas-placed campaign cannot present the blockout record at all. No operator
-flag, row field or disposition reaches either verdict.
+MISSING-CHECK, and a pair of build-side zeros is UNBOUND. No operator flag,
+row field or disposition reaches that verdict.
 
 That is all. There is no "skip", no "known-red", no threshold.
 A finding whose general form was never built is a red, and an honest red list is
@@ -244,7 +233,7 @@ RED_VERDICTS = (
 # coverage. `--strict` does not add it: the only thing that would restore is
 # "resemble the campaigns we happened to test".
 NOT_A_GAP_VERDICTS = ("INAPPLICABLE",)
-EXEMPT_VERDICTS = ("DECLARED-UNCOVERABLE", "OUT-OF-STAGE")
+EXEMPT_VERDICTS = ("DECLARED-UNCOVERABLE",)
 PASS_VERDICTS = ("BOUND",)
 
 VALID_DISPOSITIONS = ("no-machine-form", "not-a-defect")
@@ -468,32 +457,46 @@ class Subject:
     @property
     def pre_detail(self) -> bool:
         """Is this subject a pre-detail blockout — a site-plan campaign whose
-        only geometry is the derived massing (spec-0049), staged for the walk
-        that is that campaign's first gate?
+        only geometry is the derived massing (spec-0049)? Such a subject is not
+        stageable: `main` refuses it before any row is adjudicated.
 
         Measured from the object twice, by instruments with unrelated failure
-        modes, and any disagreement is NOT a blockout (fail closed):
+        modes, and EITHER one saying so is a blockout (fail closed — the answer
+        refuses, so a disagreement refuses):
 
         - the campaign SOURCE places by site plan (`site-plan.json` is a stage
           document; DW0839 makes the two placement authorities exclusive) and
-          carries no detail-stage document;
+          carries no detail-plan document;
         - the BUILD's own manifest — written by the compiler, not by whoever
           runs this gate — lists `site-plan.json` among the inputs the world
-          was compiled from, and no `detail-plan.json`.
-
-        The determination is re-derived at every staging. The day a campaign
-        gains a detail-plan document (spec-0050), this returns False and every
-        OUT-OF-STAGE row on it reverts to red — the verdict is about a stage,
-        never about a campaign.
+          was compiled from, and no `detail-plan.json`. A build taken before
+          the campaign was detailed is a blockout whatever the source now says.
         """
-        if "site-plan.json" not in self.stages:
-            return False
-        if (self.campaign / "detail-plan.json").is_file():
-            return False
+        if "site-plan.json" in self.stages and not (
+            self.campaign / "detail-plan.json"
+        ).is_file():
+            return True
         inputs = self.manifest_inputs
-        if inputs is None:
-            return False
-        return "site-plan.json" in inputs and "detail-plan.json" not in inputs
+        return (
+            inputs is not None
+            and "site-plan.json" in inputs
+            and "detail-plan.json" not in inputs
+        )
+
+    def blockout_witness(self) -> str:
+        """Which instrument named this subject a blockout, in words."""
+        said = []
+        if "site-plan.json" in self.stages and not (
+            self.campaign / "detail-plan.json"
+        ).is_file():
+            said.append("the campaign places by `site-plan.json` and has no `detail-plan.json`")
+        inputs = self.manifest_inputs
+        if inputs is not None and "site-plan.json" in inputs and "detail-plan.json" not in inputs:
+            said.append(
+                "the build's manifest was compiled from `site-plan.json` and no "
+                "`detail-plan.json`"
+            )
+        return "; ".join(said)
 
     def artifact(self, rel: str) -> object | None:
         p = self.build / "validation" / rel
@@ -678,10 +681,8 @@ def _absent_stage_docs(files: list, pred: dict, subj: Subject) -> tuple[int | No
     - a build tree that cannot say what the compiler read keeps `None`.
 
     And the zero this returns is **not an exemption**. It is handed to the same
-    unchanged adjudication as any other zero: INAPPLICABLE (red) on a finished
-    campaign, and OUT-OF-STAGE only where the pre-detail blockout
-    determination — itself twice-measured — already grants it. No verdict, flag,
-    row field or disposition is added anywhere.
+    unchanged adjudication as any other zero: the counted INAPPLICABLE. No
+    verdict, flag, row field or disposition is added anywhere.
     """
     inputs = subj.manifest_inputs
     if inputs is None:
@@ -845,15 +846,12 @@ def probe_is_self_measuring(binding: dict, subj: Subject) -> bool:
       never inferred.
 
     **What this recogniser can and cannot buy, stated as its bound.** It names
-    a zero; it never excuses one. On an assembled campaign a self-measuring
-    zero is `INAPPLICABLE` — a red, in the refusal list, in the admission
-    token, in the round summary as a class the owner is not protected from —
-    exactly as a declared `applies_when` measuring zero already was. The only
-    non-red it can reach is `OUT-OF-STAGE`, and that is gated on
-    `subj.pre_detail`, which is measured twice off the campaign and the
-    compiler's own manifest and can be presented by no defect. So the whole
-    effect of recognising a shape here is WHICH red is printed, and with it
-    whether the report says the class was measured or says nobody looked.
+    a zero; it never excuses one. A self-measuring zero is `INAPPLICABLE` —
+    counted, in the admission token, in the round summary as a class the
+    owner is not protected from — exactly as a declared `applies_when`
+    measuring zero already was. So the whole effect of recognising a shape
+    here is whether the report says the class was measured or says nobody
+    looked.
 
     What the recogniser deliberately does not reach is the ambiguous shapes
     below: a `has`/`has_any` predicate, a `contains` glob, an `artifact` or
@@ -881,8 +879,8 @@ def measures_campaign_source(probe_spec: dict | None) -> bool:
     """Does this probe count over the campaign SOURCE — the author's declared
     design — rather than over the build tree?
 
-    This is the property `INAPPLICABLE` and `OUT-OF-STAGE` are secured by, and
-    the reason neither is an opt-out a defect can supply. A `dsl` predicate
+    This is the property `INAPPLICABLE` is secured by, and the reason it is
+    not an opt-out a defect can supply. A `dsl` predicate
     reads the stage documents the author wrote; a `campaign` glob reads the
     campaign directory. Nothing a compiler, emitter or packaging step does can
     move either number: to make a class measure zero there you have to not
@@ -1106,7 +1104,7 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
                     "declared design"
                 )
                 return out
-            out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
+            out["verdict"] = "INAPPLICABLE"
             out["detail"] = (
                 f"{detail}; the defect class needs {pre_detail}, and this "
                 "campaign declares none — nothing here can exercise the class"
@@ -1149,10 +1147,8 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
         # zero is INAPPLICABLE (counted, the class is not here) and not UNBOUND
         # (a refusal, the class is here and the check is inert): saying "which
         # kind of zero this is was never measured" over a probe that measured
-        # it is the gate reporting its own ignorance where it has a number. The
-        # blockout reading of the same double zero — OUT-OF-STAGE — still
-        # requires `subj.pre_detail`, twice-measured, and nothing here reaches
-        # it. For every declaration- or derivation-shaped probe the gate keeps
+        # it is the gate reporting its own ignorance where it has a number.
+        # For every declaration- or derivation-shaped probe the gate keeps
         # refusing to guess. `probe_is_self_measuring` admits only `dsl` and
         # `campaign` probes, so this branch is source-measured by construction.
         if probe_is_self_measuring(row["binding"], subj):
@@ -1162,18 +1158,12 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
                 if row["binding"].get("kind") == "campaign"
                 else "the probe selects the object class by identity"
             )
-            tail = (
-                "of a pre-detail blockout — this walk cannot exercise the "
-                "class, and this build does not claim to be the build that "
-                "could"
-                if subj.pre_detail
-                else "— nothing this campaign declares can exercise the class"
-            )
             out["precondition"] = 0
-            out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
+            out["verdict"] = "INAPPLICABLE"
             out["detail"] = (
                 f"{detail}; {why}, so its zero is the class measuring zero "
-                f"across the declared design {tail}"
+                "across the declared design — nothing this campaign declares "
+                "can exercise the class"
             )
             return out
         out["verdict"] = "UNBOUND"
@@ -1198,7 +1188,7 @@ def adjudicate(row: dict, eng: Engine, subj: Subject) -> dict:
                 "declared design"
             )
             return out
-        out["verdict"] = "OUT-OF-STAGE" if subj.pre_detail else "INAPPLICABLE"
+        out["verdict"] = "INAPPLICABLE"
         out["detail"] = (
             f"{detail}; the defect class needs {pre_detail}, and this campaign "
             "declares none — nothing here can exercise the class"
@@ -1333,13 +1323,7 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
     L.append(f"- Ledger: {len(results)} finding(s), {doc.get('ledger_version', '?')}")
     versions = ", ".join(f"{k} {v}" for k, v in sorted(subj.stage_versions.items()))
     L.append(f"- Declared dsl_version: {versions or '(none — no source)'}")
-    stage = (
-        "pre-detail blockout (site-plan placement authority; the only geometry "
-        "is the derived massing — spec-0049)"
-        if subj.pre_detail
-        else "assembled (this build claims its content is complete)"
-    )
-    L.append(f"- Subject stage: {stage}")
+    L.append("- Subject stage: assembled (this build claims its content is complete)")
     n_excl = sum(
         1 for p in sorted(subj.build.rglob("*")) if p.is_file() and is_gate_artifact(p)
     )
@@ -1361,19 +1345,12 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
         f"- `INAPPLICABLE`: {n_inap} "
         "(the class measured zero across the declared design — an optional "
         "surface this campaign does not use; counted, not refused, and this "
-        "walk cannot exercise any of them)"
+        "session cannot meet any of them)"
     )
     n_unc = len(by["DECLARED-UNCOVERABLE"])
     L.append(
         f"- `DECLARED-UNCOVERABLE`: {n_unc} "
         "(justified; each is a standing risk item at this staging review)"
-    )
-    n_oos = len(by["OUT-OF-STAGE"])
-    L.append(
-        f"- `OUT-OF-STAGE`: {n_oos} "
-        "(measured double zero on a pre-detail blockout; each is a class this "
-        "walk cannot exercise, re-adjudicated at every staging and counted as "
-        "`INAPPLICABLE` once the campaign details)"
     )
     L.append(f"- `BOUND`: {len(by['BOUND'])}")
     L.append("")
@@ -1386,7 +1363,7 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
     L.append("|---|----|---------|--------------|-------|-------|---------|")
     for r in results:
         binds = "—" if r["binding"] is None else str(r["binding"])
-        if r["verdict"] in ("INAPPLICABLE", "OUT-OF-STAGE"):
+        if r["verdict"] == "INAPPLICABLE":
             binds = f"0 / pre {r['precondition']}"
         rnd = "" if r["round"] is None else f"r{r['round']}"
         L.append(
@@ -1430,26 +1407,6 @@ def render_report(doc: dict, subj: Subject, results: list[dict], strict: bool) -
         )
         L.append("")
         for r in inap:
-            L.append(f"- **{r['id']}** — {r['finding']} — _{r['detail']}_")
-        L.append("")
-
-    oos = by["OUT-OF-STAGE"]
-    if oos:
-        L.append("## Out of stage — classes this blockout walk cannot exercise")
-        L.append("")
-        L.append(
-            "This build is a pre-detail blockout: its placement authority is "
-            "the site plan and its only geometry is the derived massing, so "
-            "the walk it is staged for judges scale, pacing, routes and "
-            "silhouette. Each row below measured ZERO objects of its class "
-            "across the whole declared design (binding and precondition both "
-            "counted). The owner's walk is not protected from these classes "
-            "and cannot meet them; every one is adjudicated afresh, with no "
-            "blockout allowance, the moment this campaign leaves the blockout "
-            "stage."
-        )
-        L.append("")
-        for r in oos:
             L.append(f"- **{r['id']}** — {r['finding']} — _{r['detail']}_")
         L.append("")
 
@@ -1519,7 +1476,6 @@ def write_admission(
     the gate green on some tree, then serve another.
     """
     reds = [r for r in results if r["verdict"] in RED_VERDICTS]
-    oos = [r for r in results if r["verdict"] == "OUT-OF-STAGE"]
     inap = [r for r in results if r["verdict"] == "INAPPLICABLE"]
     doc = {
         # Sorts first under `sort_keys`, so the marker is inside the header read
@@ -1540,12 +1496,6 @@ def write_admission(
         # it must never do.
         "inapplicable_count": len(inap),
         "inapplicable": [r["id"] for r in inap],
-        # A pre-detail blockout's admission names, per class, what the walk
-        # cannot exercise — the boot banner reads these, so the session's
-        # scope is announced rather than remembered.
-        "pre_detail": subj.pre_detail,
-        "out_of_stage_count": len(oos),
-        "out_of_stage": [r["id"] for r in oos],
         "overridden": override is not None,
         "override": override,
     }
@@ -1602,7 +1552,8 @@ def main() -> int:
         action="store_true",
         help=(
             "also fail on the rows a DECLARATION excused — DECLARED-UNCOVERABLE "
-            "and OUT-OF-STAGE (the absolute floor). It does NOT add "
+            "(the absolute floor). A pre-detail blockout is refused with or "
+            "without it. It does NOT add "
             "INAPPLICABLE: nothing declared that, the class measured zero "
             "across the design, and failing on it would restore 'resemble the "
             "campaigns we happened to test'."
@@ -1689,6 +1640,31 @@ def main() -> int:
     subj = Subject(args.campaign, args.build)
     for err in subj.parse_errors:
         print(f"staging-gate: unreadable stage file — {err}", file=sys.stderr)
+
+    # A campaign is staged only once detailed. Refused before any row is
+    # adjudicated, whatever `--strict` says, and out of `--stage-anyway`'s
+    # reach: the override admits a red list, and this is not one.
+    if subj.pre_detail:
+        stale = args.admit or (args.build / ADMISSION_NAME)
+        if stale.is_file():
+            stale.unlink()
+        why = (
+            f"`{subj.name}` is a pre-detail blockout ({subj.blockout_witness()}). "
+            "A campaign is staged only once detailed: the first time a player "
+            "meets it is its finished first version, so a blockout is never "
+            "handed to one. Detail its places (`delvec detail <campaign-dir> "
+            "--all`), rebuild, and stage that build. `--stage-anyway` does not "
+            "reach this refusal."
+        )
+        if args.report:
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(
+                f"<!-- {GATE_ARTIFACT_MARKER} -->\n# Staging gate — `{subj.name}`\n\n"
+                f"**REFUSED — not stageable.** {why}\n",
+                encoding="utf-8",
+            )
+        print(f"staging-gate: REFUSED — not stageable. {why}", file=sys.stderr)
+        return 1
 
     rows = [r for r in doc["findings"] if _applies(r, subj)]
     results = [adjudicate(r, eng, subj) for r in rows]
@@ -1832,16 +1808,9 @@ def main() -> int:
         )
         return 2
     write_admission(admit_path, subj, results, fingerprint, ledger_digest, None)
-    n_oos = sum(1 for r in results if r["verdict"] == "OUT-OF-STAGE")
-    oos_note = (
-        f" ({n_oos} class(es) OUT-OF-STAGE on this pre-detail blockout — named "
-        "in the token and announced at boot)"
-        if n_oos
-        else ""
-    )
     print(
         f"staging-gate: {subj.name} is stageable — all {len(results)} findings carry a "
-        f"live, binding check or a justified exemption{oos_note}; admitted -> {admit_path}",
+        f"live, binding check or a justified exemption; admitted -> {admit_path}",
         file=sys.stderr,
     )
     # A pass is admission, never coverage. Say what this build cannot exercise

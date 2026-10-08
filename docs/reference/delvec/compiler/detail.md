@@ -8,8 +8,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 ### DW0842–DW0845, DW0848 and DW0882 — the detail plan (`compiler::detail` + `dsl::prefab` + `delvec detail`; spec-0050, spec-0058)
 
 Stage 6 of the map pipeline: a place is detailed inside the box the whole gave
-it. The document is `detail-plan.json` (§2); this is what judges it. Detail is
-not held behind a walk — the walk comes after it, and its record is `DW0974`'s.
+it. The document is `detail-plan.json` (§2); this is what judges it.
 
 **What invokes each check, and what happens without it.** `DW0842`–`DW0845` run
 in `validate_loaded`, the one funnel every `delvec` subcommand's validation goes

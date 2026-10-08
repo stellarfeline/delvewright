@@ -1130,9 +1130,9 @@ impl PrefabMeta {
     /// `waterline_y` by the seating and waterline bindings — which is a binding
     /// a schema unit could not give them.
     ///
-    /// It is exported anyway, and for the reason the walk record is: this is
-    /// the command an author is told to run to see the shape of a document they
-    /// must write, and a piece's metadata is one of those.
+    /// It is exported anyway: this is the command an author is told to run to
+    /// see the shape of a document they must write, and a piece's metadata is
+    /// one of those.
     pub fn schema() -> serde_json::Value {
         let mut v = serde_json::to_value(schemars::schema_for!(PrefabMeta))
             .expect("the prefab-metadata schema serializes to JSON");

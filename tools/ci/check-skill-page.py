@@ -101,8 +101,8 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        every DW code the page names is listed by the release's `delvec codes`
        — or, where the tree at the tag has no such verb, the run says rule 18
        did not ask and rule 17 carries that release.
-                                               RED: `verdict: "unwalked"` against
-                                                    a walk record of two verdicts
+                                               RED: a closed-set value the
+                                                    release does not admit
    19  the pin check runs on every run: the run shape's `Init` entry names
        I1b, and `scripts/check-toolchain.py` is invoked in a fence of Init's
        I1b section and in the I8 checklist.    RED: `Init  build the toolchain,
