@@ -725,31 +725,53 @@ fn the_seal_lifting_list_is_gone_and_one_function_marks_a_ride() {
     }
     // Every place a visited position is MARKED as arrived at by a ride — a
     // `transport_before:` field set to anything but `false` — is inside
-    // `positions_of`, in the non-test half of `nav.rs`.
-    let (_, nav) = all
+    // `positions_of`, in the non-test half of the `nav` module: every file
+    // under `compiler/nav/`, the only module that can build a visited position.
+    let navs: Vec<(String, &str)> = all
         .iter()
-        .find(|(p, _)| p.ends_with("compiler/nav.rs"))
-        .expect("nav.rs");
-    let body = nav.split("#[cfg(test)]\nmod tests").next().unwrap();
-    let start = body.find("\nfn positions_of(").expect("positions_of");
+        .filter(|(p, _)| {
+            p.to_string_lossy()
+                .replace('\\', "/")
+                .contains("compiler/nav/")
+        })
+        .map(|(p, text)| {
+            let body = text.split("#[cfg(test)]\nmod tests").next().unwrap();
+            (p.display().to_string(), body)
+        })
+        .collect();
+    assert!(
+        navs.len() >= 2,
+        "the nav module read {} file(s)",
+        navs.len()
+    );
+    let homes: Vec<&(String, &str)> = navs
+        .iter()
+        .filter(|(_, b)| b.contains("fn positions_of("))
+        .collect();
+    assert_eq!(homes.len(), 1, "positions_of is defined once");
+    let (home, body) = homes[0];
+    let start = body.find("fn positions_of(").expect("positions_of");
     let end = start + body[start..].find("\n}\n").expect("its end");
     let mut marks = 0usize;
-    for (i, _) in body.match_indices("transport_before:") {
-        let rest = &body[i + "transport_before:".len()..];
-        let value = rest.trim_start().split([',', '\n']).next().unwrap().trim();
-        if value == "false" || value == "bool" {
-            continue;
+    for (path, text) in &navs {
+        for (i, _) in text.match_indices("transport_before:") {
+            let rest = &text[i + "transport_before:".len()..];
+            let value = rest.trim_start().split([',', '\n']).next().unwrap().trim();
+            if value == "false" || value == "bool" {
+                continue;
+            }
+            marks += 1;
+            assert!(
+                path == home && (start..end).contains(&i),
+                "a ride is marked outside `positions_of`, in {path}: `transport_before: {value}`"
+            );
         }
-        marks += 1;
-        assert!(
-            (start..end).contains(&i),
-            "a ride is marked outside `positions_of`: `transport_before: {value}`"
-        );
     }
     assert!(
         marks >= 2,
         "positions_of marks a crossing and a link ({marks} found)"
     );
+    let body = navs.iter().map(|(_, b)| *b).collect::<Vec<_>>().join("\n");
     // The four readers all enumerate through it.
     for reader in [
         "pub fn check_critical_path_bound(",

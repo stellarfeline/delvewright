@@ -19,7 +19,7 @@
 //!
 //! Each of the four is about the SAME object class — a player-facing promise
 //! attached to an objective — and none of them is about the verb that happens to
-//! carry it. Split across `loot.rs`, `nav.rs`, `cast.rs` and `combat.rs` they
+//! carry it. Split across `loot.rs`, `nav/`, `cast.rs` and `combat.rs` they
 //! would be four private readings of "what did the party get told", which is
 //! exactly the shape [`crate::compiler::cast`] already had to unpick once. One module,
 //! one reading of the prompt surface.
