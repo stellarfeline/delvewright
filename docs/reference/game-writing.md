@@ -8,6 +8,10 @@ for, how to introduce a name, and how to write the Chinese. Evidence, the
 Vesperhold audit and the check design are in
 [game-writing-evidence.md](game-writing-evidence.md).
 
+§8 says where the player's information comes from at all (L1) and that the text
+tells it plainly and truly (L2); §1-§3 say how each line of the text those rules
+allow is written.
+
 Every rule is marked **cited** (with its source) or **authored** (this project's
 rule, with the reason it exists). An authored rule is a decision, not a finding.
 
@@ -233,6 +237,35 @@ transcreating existing lines from English, speaker and situation was chosen in
 rule-guided Chinese in 1; writing fresh from a brief, no writer led, and rule
 guidance did not change Claude's count (evidence §7). In-agent Chinese is the
 fallback when no key is configured.
+
+## 8. The level is what the player reads
+
+- **L1 — The level carries the information; the text only restates it.** A
+  closed door with a lever beside it needs no explanation. Story text comes
+  from NPC dialogue and a few books kept in bookshelves. The objective journal
+  restates what the story has already told the player, updating as they learn
+  it (step one `Talk to the innkeeper`; once her dialogue has said where to go,
+  step two `Go to the mill`), so a player who skimmed or forgot can look it up;
+  it never names a place, person or thing the player has not been told. A
+  destination is recognised by its building, and must read as what it is at
+  playable scale (a tavern looks like a tavern). Guidance cues in the level
+  (a path, a handhold) are diegetic and consistent across the design, blended
+  into the environment and found on a close look, never a jarring highlight. No
+  object exists only so that reading it opens something. **Authored.** A glowing
+  entity, floating label or beam over a target is the defect; so is a sign
+  pointing at a destination, or a note, plaque or lectern whose only job is to
+  be read so that a gate opens.
+- **L2 — Mystery comes from the telling and the events, never from obscured
+  wording; whatever the text says of the world is true.** A line the player must
+  decode to learn what they need is S1's defect, in every register. Dread comes
+  from who is speaking, what they saw or did not see, and what they will not
+  say: `Where the light forgets itself, the second door listens.` is the defect;
+  `The second door is in the unlit cellar. The cook will not go down there
+  again, and she will not say why.` is the form. The text never contradicts
+  what the level shows: a creature that moves and strikes is not called a
+  statue. An unknown thing may go unnamed or be mentioned obliquely
+  (`something at the bottom of the well`), but every claim made of it is true
+  in the story. **Authored.**
 
 ## Sources
 

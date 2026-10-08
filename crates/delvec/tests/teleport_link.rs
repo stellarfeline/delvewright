@@ -424,6 +424,95 @@ fn a_teleport_under_its_roots_cutscene_is_dw0933_at_the_emitted_tick() {
     assert!(line.contains("one flat bundle"), "{line}");
 }
 
+/// Two `when`-gated sequences of the one trigger: the first plays the cutscene
+/// under `forbids flag/crossed` and sets that flag at `set_at`; the second
+/// carries at tick 0 under `teleport_when`.
+fn branched(q: &mut Value, set_at: u32, teleport_when: Value) {
+    trigger_mut(q)["effects"] = json!([
+        {"type": "sequence", "when": {"forbids_flags": ["flag/crossed"]}, "steps": [
+            {"at_ticks": 0, "effects": [cutscene()]},
+            {"at_ticks": set_at, "effects": [{"type": "set-flag", "flag": "flag/crossed"}]}
+        ]},
+        {"type": "sequence", "when": teleport_when, "steps": [
+            {"at_ticks": 0, "effects": [teleport()]}
+        ]}
+    ]);
+}
+
+#[test]
+fn a_teleport_whose_gate_excludes_the_cutscenes_is_not_dw0933() {
+    // The cutscene plays only while `flag/crossed` is unset, the carry only once
+    // it is set, and nothing in the press sets it before both gates are read:
+    // one press plays one branch, so the carry never fires under the camera.
+    let run = build(&campaign("cs-exclusive", |q| {
+        branched(q, 40, json!({"requires_flags": ["flag/crossed"]}));
+    }));
+    assert!(
+        !run.stderr.contains("DW0933"),
+        "exclusive gates refused:\n{}",
+        run.stderr
+    );
+    run.green();
+}
+
+#[test]
+fn gates_that_can_both_hold_under_the_cutscene_are_still_dw0933() {
+    // Distinct flags: `forbids flag/crossed` and `requires flag/paid` both hold
+    // once the toll is paid, so both branches can play in one press.
+    let run = build(&campaign("cs-distinct", |q| {
+        branched(q, 40, json!({"requires_flags": ["flag/paid"]}));
+        q["content"]["triggers"][0]["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "set-flag", "flag": "flag/paid"}));
+    }));
+    run.refused("DW0933");
+    // The cutscene's branch sets `flag/crossed` at tick 0, inside the press
+    // itself, so the carry's gate reads it set: both branches play at once.
+    let run = build(&campaign("cs-self-opened", |q| {
+        branched(q, 0, json!({"requires_flags": ["flag/crossed"]}));
+    }));
+    run.refused("DW0933");
+}
+
+/// The carrying step's `cutscene_seconds` covers the cutscene its `sequence`
+/// plays, read against the tick the emitted driver calls `cs_end` at: a
+/// cutscene on the sequence's first step, and one on a later step that starts
+/// `at_ticks` after the trigger fires. A step that exported no hold, or one
+/// shorter than the emitted bracket, leaves the bot walking in spectator,
+/// stranded at the camera (`compiler::hold`). A `sequence` inside a `sequence`
+/// is refused (`DW0329`), so one level is every depth a timeline has.
+#[test]
+fn the_carrying_step_waits_out_a_cutscene_its_sequence_plays() {
+    assert_carrying_hold("cs-hold-first", 0, |q| cutscene_then_teleport(q, 22));
+    assert_carrying_hold("cs-hold-later", 30, |q| {
+        trigger_mut(q)["effects"] = json!([{"type": "sequence", "steps": [
+            {"at_ticks": 0, "effects": [{"type": "narrate", "text": "The tiller creaks."}]},
+            {"at_ticks": 30, "effects": [cutscene()]},
+            {"at_ticks": 52, "effects": [teleport_whole_room()]}
+        ]}]);
+    });
+}
+
+/// Build the primary with `patch` and assert the carrying step's
+/// `cutscene_seconds` is the whole seconds to `cs_end`, for a cutscene that
+/// starts `start` ticks after the trigger fires.
+fn assert_carrying_hold(who: &str, start: u32, patch: impl FnOnce(&mut Value)) {
+    let run = build(&campaign(who, patch));
+    run.green();
+    let end = start + emitted_cs_end_tick(&run.out);
+    let path = run.json("critical-path.json");
+    let step = carrying_step(&path).expect("a trigger step carries the party");
+    let secs = step["cutscene_seconds"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{who}: the carrying step owes no cutscene hold: {step}"));
+    assert_eq!(
+        secs,
+        u64::from(end.div_ceil(20)),
+        "{who}: `cs_end` runs at tick {end} after the trigger fires"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Criterion 11 — the binding line and the ledger.
 // ---------------------------------------------------------------------------

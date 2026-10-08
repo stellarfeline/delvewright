@@ -286,6 +286,7 @@ optional fields commit you to, and what a stub owes.
 `references/the-shipped-library.md` and take the library there — this is the
 step that needs it. On the site plan the map's own reference is drawn first:
 `references/map-reference.md`.
+Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
 
@@ -311,7 +312,8 @@ and `design.json`. **Read**: `references/design-gate.md`.
 first campaign state where `validate` clean is reachable. **Read**:
 `references/content.md`, plus `references/quest-capabilities.md` for what the
 DSL can express and `references/writing-craft.md` for how the prose has to be
-written — both before writing, not after a refusal. A custom face, or a
+written (its L1 rule decides what the level shows and what is
+written at all) — both before writing, not after a refusal. A custom face, or a
 vanilla texture the delve replaces (the moon, a mob's skin, a block), is
 `references/npc-skins.md`. Other languages are a final document stage:
 `references/other-languages.md`.
