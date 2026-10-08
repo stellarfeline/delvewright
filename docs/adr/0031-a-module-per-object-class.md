@@ -1111,9 +1111,10 @@ lands and it is finalised against what was built.
   (`l10n_inventory`, `l10n_plain`, `l10n_untag`) and
   `detailplan::owed_anchors`, and the moved modules changed the paths of the
   items they hold. The crate's Rust API changed and its document format did
-  not. Its version stays `0.36.0`. That number has not been published:
-  crates.io serves `delvewright-dsl` up to `0.35.1`, so the API change ships
-  inside the first `0.36.0` upload and no published version is contradicted.
+  not. Its version does not move. The version `main` carries has not been
+  published: crates.io serves `delvewright-dsl` up to `0.35.1`, so the API
+  change ships inside that version's first upload and no published version
+  is contradicted.
   `delvec schema --stage all` is byte-identical to `main`'s, and
   `dsl_version` does not move.
 
