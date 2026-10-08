@@ -66,13 +66,13 @@ use delvewright_dsl::{DwCode, ExitTier};
 delvewright_dsl::dw_code! {
     /// `DW0981`: a dialogue option whose label or tooltip is a question leads to
     /// no line that could answer it.
-    pub const DW_QUESTION_UNANSWERED: DwCode = DwCode::new("DW0981", ExitTier::Analysis);
+    pub const DW_QUESTION_UNANSWERED: DwCode = DwCode::new("DW0981", ExitTier::Build);
 }
 
 delvewright_dsl::dw_code! {
     /// `DW0982`: a declared name reaches an NPC's line or an option before the
     /// play order has told the player what it is.
-    pub const DW_NAME_UNTOLD: DwCode = DwCode::new("DW0982", ExitTier::Analysis);
+    pub const DW_NAME_UNTOLD: DwCode = DwCode::new("DW0982", ExitTier::Build);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +166,10 @@ pub fn check_questions(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Ve
 // ---------------------------------------------------------------------------
 // DW0982 — a name is told before it is used
 // ---------------------------------------------------------------------------
+
+/// How many earlier labels and mentions a `DW0982` message names before it
+/// counts the rest.
+const SHOWN_LISTED: usize = 3;
 
 /// When a string first reaches the player on one walk: the state index (`0`
 /// before the first step, `k` after the `k`-th).
@@ -292,64 +296,80 @@ fn introduces(text: &str, s: usize, e: usize) -> bool {
     if matches!(lead, Some("called" | "named")) || (lead == Some("as") && second == Some("known")) {
         return true;
     }
-    // `the Watch, the keep's dead garrison,` / `the Undertide — grey water`.
+    // The gloss forms below say what a name IS; a possessed or pointed-at
+    // thing (`your tallow is where you left it`) is presupposed, not glossed.
+    if before.first().is_some_and(|w| {
+        matches!(
+            w.as_str(),
+            "my" | "your" | "his" | "her" | "our" | "their" | "its" | "this" | "that"
+        )
+    }) {
+        return false;
+    }
     let rest = &text[e..];
     let rest = rest
         .strip_prefix("'s")
         .or_else(|| rest.strip_prefix("’s"))
-        .unwrap_or(rest);
-    let rest_trim = rest.trim_start();
-    if let Some(after) = rest_trim
-        .strip_prefix(',')
-        .or_else(|| rest_trim.strip_prefix('—'))
-        .or_else(|| rest_trim.strip_prefix('–'))
-        .or_else(|| rest_trim.strip_prefix('('))
+        .unwrap_or(rest)
+        .trim_start();
+    // `the Watch, the keep's dead garrison,` / `the Undertide — grey water`.
+    if let Some(after) = [',', '—', '–', '(']
+        .iter()
+        .find_map(|p| rest.strip_prefix(*p))
+        && matches!(
+            words_after(after, 1).first().map(String::as_str),
+            Some("the" | "a" | "an" | "who" | "which" | "what")
+        )
     {
-        let next: String = after
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .trim_matches(|c: char| !c.is_alphanumeric())
-            .to_ascii_lowercase();
-        if matches!(next.as_str(), "the" | "a" | "an" | "who" | "which" | "what") {
-            return true;
-        }
+        return true;
     }
     // `Vesperhold. A king, a court, a bell.` — the name standing alone, and the
     // next sentence saying what it is with an indefinite.
-    if let Some(after) = rest_trim
-        .strip_prefix('.')
-        .or_else(|| rest_trim.strip_prefix(':'))
+    if let Some(after) = ['.', ':'].iter().find_map(|p| rest.strip_prefix(*p))
+        && matches!(
+            words_after(after, 1).first().map(String::as_str),
+            Some("a" | "an")
+        )
     {
-        let next: String = after
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .trim_matches(|c: char| !c.is_alphanumeric())
-            .to_ascii_lowercase();
-        if matches!(next.as_str(), "a" | "an") {
-            return true;
-        }
+        return true;
     }
-    let next: String = rest_trim
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .trim_matches(|c: char| !c.is_alphanumeric())
-        .to_ascii_lowercase();
-    matches!(next.as_str(), "is" | "are" | "was" | "were")
+    // `Halvard is the bell-warden`, `the Undertide was a river`.
+    let next = words_after(rest, 2);
+    matches!(
+        (
+            next.first().map(String::as_str),
+            next.get(1).map(String::as_str)
+        ),
+        (
+            Some("is" | "are" | "was" | "were"),
+            Some("a" | "an" | "the" | "one")
+        )
+    )
+}
+
+/// The first `n` words of `text`, lowercased and stripped of punctuation.
+fn words_after(text: &str, n: usize) -> Vec<String> {
+    text.split_whitespace()
+        .take(n)
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_ascii_lowercase()
+        })
+        .collect()
 }
 
 /// Whether the occurrence at `(s, e)` is a use of the name: written with the
-/// name's own capitalisation, or as a definite reference.
+/// name's own capitalisation, or after an article or a possessive.
 fn is_use(text: &str, core: &str, s: usize, e: usize) -> bool {
     if &text[s..e] == core && core.chars().next().is_some_and(char::is_uppercase) {
         return true;
     }
+    // A demonstrative points at what is in front of the player (`this keep`),
+    // so it presupposes nothing; an article or a possessive does.
     words_before(text, s, 1).first().is_some_and(|w| {
         matches!(
             w.as_str(),
-            "the" | "my" | "your" | "his" | "her" | "our" | "their" | "its" | "this" | "that"
+            "the" | "my" | "your" | "his" | "her" | "our" | "their" | "its"
         )
     })
 }
@@ -657,14 +677,21 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
         let seen = if u.shown.is_empty() {
             "nothing the player read before it carries the name".to_string()
         } else {
-            let parts: Vec<String> = u
+            let mut parts: Vec<String> = u
                 .shown
                 .iter()
+                .take(SHOWN_LISTED)
                 .map(|s| match s {
                     Shown::Label(k) => format!("the label `{k}` shows it"),
                     Shown::Mention(k) => format!("`{k}` mentions it as if known"),
                 })
                 .collect();
+            if u.shown.len() > SHOWN_LISTED {
+                parts.push(format!(
+                    "{} more string(s) mention it",
+                    u.shown.len() - SHOWN_LISTED
+                ));
+            }
             format!(
                 "{} — a label shows a name and a definite mention presupposes it; neither says \
                  what it is",
@@ -678,10 +705,13 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
             format!(
                 "{whose} uses `{}` (declared by `{}`) {when}, and the player has not been told \
                  what it is: {seen}. Text: `{text}`. Tell it first, in a line the player reads \
-                 before this one — `a`/`an` and the name (`a watch of dead soldiers`), the name \
-                 with what it is (`{}, <what it is>,`), or `called {}` — or have the speaker say \
-                 it in words the player already has (game-writing.md §3 N1, N3)",
-                n.text, n.key, n.text, n.text
+                 before this one: the name with what it is (`{core}, <what it is>,` or \
+                 `{core} is <what it is>`), `called {core}`, or an indefinite that brings it \
+                 in (`a … {core}`) — or have the speaker say it in words the player already \
+                 has (game-writing.md §3 N1, N3)",
+                n.text,
+                n.key,
+                core = n.core
             ),
         ));
     }
@@ -817,10 +847,32 @@ mod tests {
     }
 
     #[test]
+    fn a_copula_glosses_and_a_possession_presupposes() {
+        let t = "Halvard is the bell-warden.";
+        let (s, e) = occurrences(t, "Halvard")[0];
+        assert!(introduces(t, s, e));
+        let t = "Your tallow is where you left it, still warm.";
+        let (s, e) = occurrences(t, "Tallow")[0];
+        assert!(!introduces(t, s, e));
+        let t = "Vesperhold. A king, a court, a bell.";
+        let (s, e) = occurrences(t, "Vesperhold")[0];
+        assert!(introduces(t, s, e));
+        let t = "The watch was put down.";
+        let (s, e) = occurrences(t, "Watch")[0];
+        assert!(!introduces(t, s, e));
+    }
+
+    #[test]
     fn a_common_word_is_not_the_name() {
         let t = "I keep watch here.";
         let (s, e) = occurrences(t, "Watch")[0];
         assert!(!is_use(t, "Watch", s, e));
+        let t = "This keep is mine to guard.";
+        let (s, e) = occurrences(t, "Keep")[0];
+        assert!(!is_use(t, "Keep", s, e));
+        let t = "You pulled the lever at my stand.";
+        let (s, e) = occurrences(t, "Stand")[0];
+        assert!(is_use(t, "Stand", s, e));
     }
 
     #[test]
