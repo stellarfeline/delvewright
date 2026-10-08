@@ -913,6 +913,48 @@ the assembly touched it):
 - A page names the file its module is: `delvec/compiler/emit.md` and
   `delvec/compiler/nav.md` name `emit/mod.rs` and `nav/mod.rs`.
 
+**What B5 found** (corrections to this record, made where B5 touched it):
+
+- `impl Plan` was about 1360 lines. `plan/mod.rs` keeps the constructor
+  (`build`, `build_with`, `relinked`, `build_linked`, `with_design_files`).
+  Each accessor moves to its object's file, in that file's own
+  `impl<'a> Plan<'a>` block. For example, `bonfires` and `flasks` go to
+  `checkpoint.rs`, `body_point` to `body.rs`, and `branch_critical_path` to
+  `path/`.
+- The forced walk measured about 1950 lines with its region events, so under
+  the 1500-line rule it is a directory: `path/mod.rs` (`Step`,
+  `CriticalPath`, `build_critical_path`), `path/region.rs` (the region
+  events and when each fires), `path/triggers.rs` (the triggers the walk
+  performs and the step each beat fires at) and `path/ancestors.rs`.
+- The effect-root walks (`EffectRoot`, `for_each_effect_root`,
+  `for_each_gate_effect`) are in `plan/effects.rs`, which mirrors
+  `dsl::effects`. §5's allowance in `check-effect-roots` follows
+  `required_anchors_for_area` to `plan/anchors.rs`.
+- The `plan.rs` allowance covered more than its reason said. The scan reports
+  one window per file, and the first window in `plan.rs` was
+  `required_anchors_for_area`. After the split, two more hand-rolled walks of
+  R1+R2+R3 appear: `collect_v06_effects` (`plan/checkpoint.rs`) and
+  `collect_open_gate_anchors` (`plan/gate_reach.rs`, which feeds the `DW0306`
+  model). Each now has its own `ALLOWED` entry, marked as an open finding
+  that has not been triaged. The exempt region drops from 8529 lines to the
+  three files, and the rest of `plan/` is scanned.
+- The ten codes `plan.rs` declared stay in `plan/mod.rs`, the module
+  `plan.rs` was. `delvec codes` is byte-identical and no catalog row moves.
+  They move with their checks in Phase C.
+- Files §2 does not name: `surround` (the terrain around the map),
+  `gate_reach` (the `DW0306` deadlock proof), `effects`, `body` and `naming`.
+  `collect_v06_effects` and its collector move whole into `checkpoint.rs`,
+  in the same way as B3a's `emit_v06_packtests`. Phase C splits off the
+  stealth half.
+- An item that was private to `plan.rs` and is read from a sibling becomes
+  `pub(super)`. In `path/`'s children it becomes
+  `pub(in crate::compiler::plan)`, or `pub(super)` where only `path/` reads
+  it. An item read nowhere else stays private. That covers 29 items, two
+  `AnchorTable` methods and the two fields of `PathLinks`.
+- `tests/blockout.rs`'s single-caller scan used to recognise a definition of
+  `build_with` only by a `pub fn` or `fn` prefix. It now accepts every
+  visibility and has its own test.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,
