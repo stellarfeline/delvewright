@@ -333,8 +333,7 @@ fn write_program(campaign: &Path, node: &str, program: &Value) {
     .unwrap();
 }
 
-/// The blockout fixture, with generated programs for `nodes` — and no walk
-/// record: the walk is taken on the detailed world, after detail.
+/// The blockout fixture, with generated programs for `nodes`.
 fn fixture(root: &Path, nodes: &[&str]) -> (PathBuf, PathBuf) {
     let campaign = root.join("campaign");
     let prefabs = root.join("prefabs");
@@ -499,51 +498,6 @@ fn refused(campaign: &Path, prefabs: &Path, args: &[&str]) -> String {
         "a refusal wrote something"
     );
     text(&out)
-}
-
-/// **Detail asks for no walk.** The walk is taken on the detailed world, after
-/// detail, so the verb details a campaign nobody has walked — and the build it
-/// ends with exits zero. Red on the old order, which refused here, before the
-/// program was opened.
-#[test]
-fn detail_needs_no_walk_record() {
-    let tmp = tempdir("no-walk");
-    let (campaign, prefabs) = fixture(&tmp, &["node/exit"]);
-    assert!(!campaign.join("walk-record.json").exists());
-    let out = delvec(&[
-        "--prefabs",
-        prefabs.to_str().unwrap(),
-        "detail",
-        campaign.to_str().unwrap(),
-        "node/exit",
-    ]);
-    let t = text(&out);
-    assert_eq!(code(&out), 0, "{t}");
-    assert!(
-        prefabs.join("blockout-exit.json").exists(),
-        "the piece was written"
-    );
-}
-
-/// **A walk taken before detail is spent by detailing.** Its record names the
-/// blockout, the detailed build is a different build, and the build the verb
-/// ends with refuses the record (`DW0974`) — a route problem found at the walk
-/// is cheap only while the walk is the last thing that happened.
-#[test]
-fn detailing_after_a_walk_leaves_a_record_of_another_build() {
-    let tmp = tempdir("walk-then-detail");
-    let (campaign, prefabs) = fixture(&tmp, &["node/exit"]);
-    common::record_walk(&campaign, &prefabs);
-    let out = delvec(&[
-        "--prefabs",
-        prefabs.to_str().unwrap(),
-        "detail",
-        campaign.to_str().unwrap(),
-        "node/exit",
-    ]);
-    let t = text(&out);
-    assert_ne!(code(&out), 0, "{t}");
-    assert!(t.contains("DW0974") && t.contains("BLOCKOUT"), "{t}");
 }
 
 #[test]

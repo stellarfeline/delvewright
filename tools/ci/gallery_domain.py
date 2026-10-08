@@ -64,8 +64,8 @@ on every run, and an edit whose path the primary no longer has is a refusal
 naming the probe and the path rather than a silent change of subject.
 
 A probe may still ship a whole FILE, and exactly one shape needs to: a document
-the primary does not have at all (`site-plan.json`, `detail-plan.json`,
-`walk-record.json` — the map-pipeline documents the primary cannot carry, since
+the primary does not have at all (`site-plan.json`, `detail-plan.json` — the
+map-pipeline documents the primary cannot carry, since
 `DW0839` refuses a campaign holding both `areas[]` and a site plan). There is
 nothing for such a file to drift from. A file that SHADOWS a primary document is
 refused: that is the copy this exists to end.
