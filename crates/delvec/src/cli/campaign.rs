@@ -240,6 +240,8 @@ pub(super) fn validate_loaded(
                 // charges it counts, the `(list, datum)` pairs they bind, and the
                 // effect lists walked as the denominator.
                 delvewright_dsl::PurchaseBinding::of(&campaign).line(),
+                // `DW0527`: bundles and effects the read-after-write rule walked.
+                delvewright_dsl::ReadAfterWriteBinding::of(&campaign).line(),
                 // spec-0073: what the health-bar rules (`DW0909`/`DW0910`/`DW0912`,
                 // raised inside `validate_campaign_with` above) examined — fights
                 // carrying a bar over fights declared, zeroes included.

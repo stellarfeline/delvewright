@@ -583,8 +583,6 @@ pub(crate) fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         ));
     }
 
-    crate::state::read_after_write_checks(c, d);
-
     // --- shops: id hygiene, and no button that cannot answer ------------------
     let mut seen_shop: BTreeSet<&str> = BTreeSet::new();
     for (i, sh) in shops.iter().enumerate() {

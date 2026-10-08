@@ -712,7 +712,44 @@ fn check_player_state_not_scheduled(
 /// who means to write then compare is doing something legitimate, and the
 /// diagnostic's job is to make sure they meant it.
 pub(crate) fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    read_after_write_walk(c, d);
+}
+
+/// What the read-after-write rule (`DW0527`) examined, zeroes included.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ReadAfterWriteBinding {
+    /// Effect bundles walked — the denominator.
+    pub bundles: usize,
+    /// Effects walked across those bundles.
+    pub effects: usize,
+    /// Conditional writes (gated on the datum they write) the walk recorded.
+    pub gated_writes: usize,
+    /// Diagnostics raised (`DW0527`).
+    pub refused: usize,
+}
+
+impl ReadAfterWriteBinding {
+    /// Count what [`read_after_write_checks`] examines on `c`.
+    pub fn of(c: &Campaign) -> Self {
+        read_after_write_walk(c, &mut Vec::new())
+    }
+
+    /// The one line this rule owes its reader.
+    pub fn line(&self) -> String {
+        format!(
+            "read-after-write binding: {} effect(s) over {} bundle(s) walked, {} gated write(s) \
+             recorded, {} refused (DW0527).",
+            self.effects, self.bundles, self.gated_writes, self.refused
+        )
+    }
+}
+
+fn read_after_write_walk(c: &Campaign, d: &mut Vec<Diagnostic>) -> ReadAfterWriteBinding {
+    let before = d.len();
+    let mut b = ReadAfterWriteBinding::default();
     crate::effects::for_each_effect_root(c, &mut |site, list| {
+        b.bundles += 1;
+        b.effects += list.len();
         // Only a **conditional** write counts, and that narrowing is the whole
         // precision of this rule. An UNCONDITIONAL write followed by a comparison
         // is the ordinary sequenced idiom — *pay the toll, then the door opens
@@ -756,10 +793,13 @@ pub(crate) fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     .iter()
                     .any(|c| c.state.as_str() == id.as_str())
             {
+                b.gated_writes += 1;
                 written.entry(id.as_str()).or_insert(i);
             }
         }
     });
+    b.refused = d.len() - before;
+    b
 }
 
 /// `DW0847`: a gate whose own terms contradict each other can never open, so
