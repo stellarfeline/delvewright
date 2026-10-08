@@ -12,18 +12,32 @@
 //!   authored JSON (stage documents, l10n sidecars, prefab metadata).
 //! - [`stage_schema`]: export a stage's JSON Schema.
 //!
+//! Each stage type lives in the module of the object it declares (ADR-0031), and
+//! the root re-exports every module's public items through one glob per module.
+//! Every stage struct is `deny_unknown_fields`; reserved enum values a campaign's
+//! `dsl_version` is too low for parse and are refused by [`validate`].
+//!
 //! Determinism (ADR-0006): all iteration is over `BTreeMap`/`BTreeSet` or slices;
 //! nothing depends on hash order, wall-clock, or absolute paths.
 
+pub mod actor;
+pub mod ambush;
+pub mod assembly;
 pub mod blocks;
 pub mod blockshape;
+pub mod body;
 pub mod canonical;
+pub mod cast;
 pub mod celestial;
 pub mod chrome;
+pub mod class;
 pub mod color;
+pub mod cutscene;
 pub mod design;
 pub mod detailplan;
 pub mod diagnostic;
+pub mod dialogue;
+pub mod economy;
 pub mod effects;
 pub mod envelope;
 pub mod equipment;
@@ -41,112 +55,85 @@ pub mod healthbar;
 pub mod ids;
 pub mod l10n;
 pub mod layout;
+pub mod lethal;
 pub mod license;
 pub mod lightning;
+pub mod r#loop;
+pub mod loot;
+pub mod mark;
 pub mod mclang;
 pub mod metrics;
+pub mod npc;
 pub mod onkill;
 pub mod perception;
 pub mod placement;
 pub mod prefab;
-pub mod purchase;
+pub mod quest;
+pub mod quest_plan;
 pub mod registry;
 pub mod rig;
 pub mod schema;
+mod serde_fields;
+pub mod shortcut;
 pub mod siteplan;
 pub mod split;
-pub mod stages;
+pub mod state;
+pub mod stealth;
+pub mod timed_gate;
+pub mod trap;
+pub mod trigger;
 pub mod validate;
 pub mod viewdistance;
+pub mod wave;
+pub mod world;
+pub mod world_edits;
 
-pub use canonical::to_canonical_string;
-pub use celestial::{Body, CelestialTime, Clock, MoonPhase, Position};
-pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
-pub use design::{
-    CONCEPT_DIR, DesignContent, IMAGE_EXTENSIONS, REFERENCE_DIR, REFERENCE_DIRS, Reference,
-    is_image_extension,
-};
-pub use detailplan::{Detail, DetailPlanContent, FLOOR_COURSE, Frame, bound_places, is_bound};
-pub use diagnostic::{Diagnostic, DwCode, ExitTier, Group, Severity, Subject, codes};
-pub use effects::{
-    EffectRootKind, EffectRootOwner, EffectRootSite, RootBinding, for_each_effect_root,
-    for_each_effect_root_mut,
-};
-pub use envelope::{
-    Campaign, DSL_VERSION, Envelope, RawCampaign, Stage, check_campaign, parse_campaign,
-};
-pub use equipment::{EquipmentBinding, Equippable, EquippableFact, PieceKind};
-pub use fight::{Fight, FightKind, fights, quest_area, unleashed_actors, wave_area};
-pub use firework::{FireworkExplosion, FireworkShape};
-pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
-pub use healthbar::{HealthBar, HealthBarBinding, health_bar_checks};
-pub use ids::{
-    ActorId, AmbushId, AnchorId, AreaId, AssemblyId, AtmosphereId, BranchId, BranchPointId,
-    CampaignId, ClassId, DatumId, DialogueId, EdgeId, EditBatchId, EndingId, FactId, FlagId,
-    LethalVolumeId, LoopId, NodeId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, RigId,
-    ShortcutId, StateId, TimedGateId, TriggerId, ViewId, VolumeId, WaveId,
-};
-pub use l10n::{
-    ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
-    SoundRef, TR_SIGIL, TextKind, art_narrates, bonfire_option_labels, declared_mc_codes,
-    dialogue_option_labels, each_string, has_tr_sigil, inventory as l10n_inventory, key_kind,
-    key_situations, key_speaker, local_id, localize, namespace_skin_textures, on_screen_narrates,
-    pack_key, pack_namespace, pack_texture_dir, pack_texture_id, plain as l10n_plain,
-    play_sound_actor_refs, sound_refs, tag_translatables, untag as l10n_untag, validate_l10n,
-    validate_l10n_provenance, validate_marker_channel, validate_tr_sigil,
-};
-pub use layout::{
-    Beat, BriefFact, Closure, Direction, Edge, EdgeGating, GeometryBriefContent, Grant, Grants,
-    LayoutBinding, LayoutGraphContent, OpensFrom, Station, StationKind,
-};
-pub use mclang::mc_lang_code;
-pub use onkill::on_kill_checks;
-pub use placement::{Placement, anchor_vocabulary_unknowable};
-pub use prefab::PrefabMeta;
-pub use purchase::{PurchaseBinding, purchase_checks};
-pub use registry::{
-    AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
-    ItemRegistry, Lighting, LightingProfile, VendoredAnchorRegistry, VendoredEffectRegistry,
-    VendoredEntityRegistry, VendoredItemRegistry, is_potion_id, is_technical_block,
-};
-pub use schema::stage_schema;
-pub use siteplan::{
-    Axis, Ceiling, Cmp, Datum, ENTRY_ANCHOR, Face, Floor, Identity, Measure, Offset, PackedBox,
-    PlanAxis, PlanBinding, PlanBox, Provenance, SITE_AREA, Seam, Sightline, SitePlanContent, View,
-    Volume, VolumeRole, WorldBox, node_anchor, owed_anchors, placed_boxes, placed_seams,
-    placements, refused_upstream, seam_anchor, seam_unlock_anchor, synthesized_anchor_kinds,
-    synthesized_anchors, synthesized_gate_block,
-};
-pub use siteplan::{PlacedBox, PlacedSeam};
-pub use stages::{
-    Actor, Ambush, Area, AreaLighting, AreaMitigation, Assembly, AssemblyHitbox, AssemblyStrikes,
-    Atmosphere, AtmosphereTint, BONFIRE_PROMPT_EN, BONFIRE_REST_LABEL_EN, BONFIRE_SAVE_LABEL_EN,
-    BodyTraversal, BonfireLabels, Boundary, BranchDecl, BranchPoint, CameraShot, CameraSubject,
-    Carrier, CastAbsence, CastBarks, CastDialogue, CastDialogueKeyword, CastEntry, CastPlace,
-    CastPlacement, Class, ClassesContent, Climate, CollectBy, CompareOp, CutsceneParty, DamageKind,
-    DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectAudience,
-    EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture,
-    Forfeit, Guard, Guidance, Happening, HappeningSubject, HappeningVerb, Horizon, HorizonBase,
-    HorizonSpec, ItemDrop, KillFires, KitItem, LethalVolume, Lethality, LockPick, Locomotion, Loop,
-    Loot, LootItem, MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS, Mark, MobAttributes, MobDrop,
-    MobEffect, MobEquipment, NarrateStyle, NestedDispatch, Npc, NpcDialogue, NpcSkin, NpcsContent,
-    Objective, OnFull, OnKill, ParticleAt, Persona, Pieces, PlannedQuest, PlayersKeyword,
-    PotionContents, PotionEffect, Precipitation, Prop, Quest, QuestEffect, QuestPlanContent,
-    QuestsContent, Relationship, RespawnWait, Role, SequenceStep, Shop, ShopOffer, Shortcut,
-    ShotStyle, SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay,
-    StateScope, StateWrite, StealthZone, StrikeAim, StrikeLock, StrikeStep, TextureOverride,
-    TimeKeyword, TimeSite, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger,
-    Trigger, TriggerAudience, TriggerOn, Verb, Visibility, Wave, WaveLane, WaveMob, WaveSummon,
-    WorldContent, WorldDifficulty, WorldTime, WorldWeather, enchantment_component, fires_on_step,
-    is_potion_bearing_item, offset_cell, stepped_blocks,
-};
-pub use stages::{
-    BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,
-    body_skins_mut, body_traversal_sites, for_each_campaign_effect,
-};
-pub use stages::{
-    EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,
-    SocketState, TreeKind, WorldEdit, WorldEditsContent,
-};
-pub use stages::{ResolvedHorizon, horizon_base, horizon_defaults, resolved_horizon};
-pub use validate::{declares_bonfire, validate_campaign, validate_campaign_with};
+pub use actor::*;
+pub use ambush::*;
+pub use assembly::*;
+pub use body::*;
+pub use canonical::*;
+pub use cast::*;
+pub use celestial::*;
+pub use chrome::*;
+pub use class::*;
+pub use cutscene::*;
+pub use design::*;
+pub use detailplan::*;
+pub use diagnostic::*;
+pub use dialogue::*;
+pub use economy::*;
+pub use effects::*;
+pub use envelope::*;
+pub use equipment::*;
+pub use fight::*;
+pub use firework::*;
+pub use gate::*;
+pub use healthbar::*;
+pub use ids::*;
+pub use l10n::*;
+pub use layout::*;
+pub use lethal::*;
+pub use r#loop::*;
+pub use loot::*;
+pub use mark::*;
+pub use mclang::*;
+pub use npc::*;
+pub use onkill::*;
+pub use placement::*;
+pub use prefab::*;
+pub use quest::*;
+pub use quest_plan::*;
+pub use registry::*;
+pub use schema::*;
+pub use shortcut::*;
+pub use siteplan::*;
+pub use state::*;
+pub use stealth::*;
+pub use timed_gate::*;
+pub use trap::*;
+pub use trigger::*;
+pub use validate::*;
+pub use wave::*;
+pub use world::*;
+pub use world_edits::*;

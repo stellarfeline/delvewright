@@ -108,7 +108,9 @@ def gate(tmp_path, monkeypatch):
     assert spec.loader is not None
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(module, "DOC", tmp_path / "compiler.md")
+    doc = tmp_path / "docs" / "reference" / "compiler.md"
+    doc.parent.mkdir(parents=True)
+    monkeypatch.setattr(module, "DOC", doc)
     monkeypatch.setattr(module, "ROOT_CARGO_TOML", tmp_path / "Cargo.toml")
     monkeypatch.setattr(module, "ENVELOPE_RS", tmp_path / "envelope.rs")
     monkeypatch.setattr(module, "DSL_CARGO_TOML", tmp_path / "dsl-Cargo.toml")
@@ -279,6 +281,35 @@ def test_write_moves_every_bound_claim_and_then_passes(gate):
     text = gate.DOC.read_text(encoding="utf-8")
     assert "1.1.0" in text and "0.19.0" in text and "1.21.11" in text
     assert "0.0.1" not in text and "0.0.2" not in text and "0.0.3" not in text
+
+
+def _row_on_its_module_page(gate, *, header_dsl: str, row_dsl: str):
+    """The live layout: the header in `compiler.md`, the `DW0102` row on the
+    page of the module declaring it."""
+    full = DOC_TEMPLATE.format(delvec="1.1.0", dsl=header_dsl, mc="1.21.11", dw0102=row_dsl)
+    header, _sep, table = full.partition("\n| Code |")
+    gate.DOC.write_text(header, encoding="utf-8")
+    page = gate.REPO_ROOT / "docs" / "reference" / "dsl" / "diagnostic.md"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text("# `delvewright_dsl::diagnostic`\n\n| Code |" + table, encoding="utf-8")
+    return page
+
+
+def test_the_dw0102_row_is_read_on_its_module_page(gate, capsys):
+    run(gate)
+    _row_on_its_module_page(gate, header_dsl="0.19.0", row_dsl="0.19.0")
+    assert gate.main([]) == 0
+    _row_on_its_module_page(gate, header_dsl="0.19.0", row_dsl="0.0.2")
+    assert gate.main([]) == 1
+    assert "the `DW0102` catalog row restates the accepted dsl_version" in capsys.readouterr().err
+
+
+def test_write_moves_the_dw0102_row_on_its_module_page(gate):
+    run(gate)
+    page = _row_on_its_module_page(gate, header_dsl="0.19.0", row_dsl="0.0.2")
+    assert gate.main(["--write"]) == 0
+    assert "accepts, `0.19.0`" in page.read_text(encoding="utf-8")
+    assert "DW0102" not in gate.DOC.read_text(encoding="utf-8")
 
 
 def test_missing_dw0102_row_exits_2(gate):

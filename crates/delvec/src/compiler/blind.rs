@@ -39,8 +39,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_dsl::stages::{Objective, TrapTrigger, TriggerOn};
 use delvewright_dsl::{DwCode, ExitTier, QuestEffect, Verb};
+use delvewright_dsl::{Objective, TrapTrigger, TriggerOn};
 
 use crate::compiler::failure::{Failure, cells_by_floor};
 use crate::compiler::nav::World;

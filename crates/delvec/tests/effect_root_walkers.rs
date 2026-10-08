@@ -38,7 +38,7 @@
 //! |---|---|
 //! | `dsl::for_each_effect_root` | the `RootBinding` counts ≥ 1 site at this root |
 //! | `dsl::for_each_campaign_effect` | the probe narrate is yielded, with an `EffectSite` for this root |
-//! | `dsl::l10n_inventory` (→ `for_each_effect_root_mut`) | the probe text has an inventory key |
+//! | `dsl::l10n::inventory` (→ `for_each_effect_root_mut`) | the probe text has an inventory key |
 //! | `compiler::flow::gate_flags` | `flag/probe-<root>` is a flag some gate reads |
 //! | `emit::declared_flags` | `setup` declares `dw.f_probe_<root>` |
 //! | `emit::all_campaign_effects` + `emit_effect_bundle` | the probe text is in an emitted function |
@@ -463,7 +463,7 @@ fn every_root_is_visited_by_every_walker() {
 
         // W3 — the l10n inventory (and with it `for_each_effect_root_mut`, from
         // which it is generated): the probe line is translatable.
-        let inv = delvewright_dsl::l10n_inventory(&c);
+        let inv = delvewright_dsl::l10n::inventory(&c);
         assert!(
             inv.values().any(|v| *v == probe_text(k)),
             "the {} root's narrate is not in the l10n inventory — it would ship \

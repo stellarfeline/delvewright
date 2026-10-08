@@ -655,7 +655,7 @@ pub fn clause_gate_holds(
     flags: &BTreeMap<String, i32>,
     datums: &BTreeMap<String, i32>,
 ) -> bool {
-    use delvewright_dsl::stages::CompareOp;
+    use delvewright_dsl::CompareOp;
     cl.requires_flags
         .iter()
         .all(|f| flags.get(f).copied().unwrap_or(0) == 1)

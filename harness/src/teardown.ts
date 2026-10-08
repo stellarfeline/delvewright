@@ -13,7 +13,7 @@
 //
 // This module is pure (no mineflayer import) so the classifier is unit-testable
 // with fake positions; wiring it to a real death's observed Y lives in
-// executor.ts.
+// executor/death.ts.
 
 /** How a named entity's death is classified in the run report. */
 export type DeathKind = "scripted_teardown" | "combat";

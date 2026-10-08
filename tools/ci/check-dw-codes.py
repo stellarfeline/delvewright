@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Bidirectional DW-diagnostic-code consistency + test-coverage gate.
 
-Keeps `docs/reference/compiler.md` honest against the Rust source (CLAUDE.md
-Methodology): the diagnostics catalog in the reference must list exactly the DW
-codes that exist in `crates/**/*.rs` — no more, no less. It also enforces the
-CLAUDE.md Conventions rule: every DW diagnostic must be covered by at least one
-test asserting its code.
+Keeps the diagnostics catalog honest against the Rust source (CLAUDE.md
+Methodology): the catalog must list exactly the DW codes that exist in
+`crates/**/*.rs` — no more, no less — and each row must be on the page of the
+module that declares its code. It also enforces the CLAUDE.md Conventions rule:
+every DW diagnostic must be covered by at least one test asserting its code.
+
+The catalog is read through `tools/lib/dwcatalog.py`, the one reader every gate
+that asks about it shares: `docs/reference/compiler.md` §5 holds its shared
+rules, and each row sits on `docs/reference/<crate>/<module path>.md`.
 
 ## Consistency (bidirectional)
 
@@ -16,6 +20,23 @@ test asserting its code.
 - A PENDING code that has landed in source          -> FAIL (graduate it: turn its
   catalog entry into a normal row and drop it from PENDING).
 - A PENDING code not actually documented            -> FAIL (document it).
+
+## Row in page (one record per code, where its declaration is)
+
+A code's row is on the page of the module that declares it —
+`dwcatalog.page_for(crate, module_of(file))`, the declaring module computed from
+the source file the constant is written in:
+
+- A row on any other page                            -> FAIL (move the row to
+  its declaring module's page; a code whose declaration moved and whose row did
+  not is this shape).
+- A module page under `docs/reference/{delvec,dsl}/` that mirrors no source
+  file                                               -> FAIL (the module moved
+  or was deleted; its page goes with it).
+- With `--delvec`, the registry's `module` field (`module_path!()` at the
+  declaration) must name the same module the source reading computed, or an
+  inline module declared inside that file (`diagnostic::codes`) -> otherwise
+  FAIL: the source reading and the binary disagree about where the code lives.
 
 ## Uniqueness (one code, one rule)
 
@@ -110,9 +131,10 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from lib import mdtable  # noqa: E402
+from lib import dwcatalog, mdtable  # noqa: E402
+from lib.rust_source import VISIBILITY  # noqa: E402
 
-CODE_RE = re.compile(r"DW[0-9]{4}")
+CODE_RE = dwcatalog.CODE_RE
 # A diagnostic-code constant, in either shape the workspace uses:
 #
 #   pub const L10N_MISSING: DwCode = DwCode::new("DW0180", ExitTier::Build);
@@ -132,6 +154,8 @@ CONST_RE = re.compile(
     r'(?:DwCode::new\(\s*)?"(DW[0-9]{4})"'
 )
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+# The page holding the exit-tier table of §1. The catalog itself is every page
+# `dwcatalog.catalog_pages` lists.
 DOC_PATH = REPO_ROOT / "docs" / "reference" / "compiler.md"
 CRATES_DIR = REPO_ROOT / "crates"
 
@@ -301,13 +325,8 @@ def declared_constants() -> dict[str, set[tuple[str, str]]]:
     return table
 
 
-CATALOG_ROW_RE = re.compile(r"^\|\s*`(DW[0-9]{4})`\s*\|")
-
-# The exit-tier table in §1. Its rows are code-shaped, so the catalog reader has
-# to know it is not the catalog — identified by its header, positively, and the
-# identification is self-protecting: rename the header and these ten codes
-# immediately read as duplicate catalog rows, which is already a FAIL.
-EXIT_TIER_HEADER = ("Code", "What the author changes")
+CATALOG_ROW_RE = dwcatalog.CATALOG_ROW_RE
+EXIT_TIER_HEADER = dwcatalog.EXIT_TIER_HEADER
 
 # A `DwCode` constant together with the tier it declares. Deliberately separate
 # from CONST_RE, which also matches the bare `&str` codes in the tooling
@@ -359,25 +378,21 @@ def documented_analysis_codes() -> tuple[set[str], int]:
     return codes, len(rows)
 
 
-def catalog_rows() -> tuple[dict[str, int], list[tuple[int, str]]]:
-    """`(DW code -> catalog rows introducing it, catalog rows no table holds)`.
+def catalog_rows() -> tuple[dict[str, int], list[tuple[pathlib.PurePosixPath, int, str]]]:
+    """`(DW code -> catalog rows introducing it, catalog rows no table holds)`,
+    over every catalog page, read by `dwcatalog`.
 
     A code with two rows documents two rules, which is a finding. A row that no
     table holds documents nothing at all: a blank line ends a pipe table, so
-    such a row renders as a paragraph of literal pipe characters on the page
-    this file exists to BE. Twenty-one of them were live here at once — four
-    detached blocks covering DW0370 through DW0499 — and this counted every one
-    as a documented diagnostic, because it matched a regex against lines and had
-    no notion of a table. `tools/lib/mdtable.py` reads the file the way its
-    reader does.
+    such a row renders as a paragraph of literal pipe characters. Twenty-one of
+    them were live at once — four detached blocks covering DW0370 through
+    DW0499 — when this gate matched a regex against lines; `dwcatalog` reads
+    each page through `tools/lib/mdtable.py`, the way its reader does.
     """
-    text = DOC_PATH.read_text(encoding="utf-8")
-    rows, detached = mdtable.rows_matching(text, CATALOG_ROW_RE)
-    rows = [r for r in rows if r.header != EXIT_TIER_HEADER]
+    rows, detached = dwcatalog.catalog_rows(REPO_ROOT)
     counts: dict[str, int] = {}
     for row in rows:
-        code = CATALOG_ROW_RE.match(row.line.strip()).group(1)
-        counts[code] = counts.get(code, 0) + 1
+        counts[row.code] = counts.get(row.code, 0) + 1
     return counts, detached
 
 
@@ -386,10 +401,11 @@ def catalog_row_counts() -> dict[str, int]:
 
 
 def documented_codes() -> set[str]:
-    """The DW codes `compiler.md` documents: those with a diagnostics-catalog
-    row. The one rule for "documented" — this gate and the staging gate both
-    read it here; a code named only in a heading or prose is undocumented."""
-    return set(catalog_row_counts())
+    """The DW codes the catalog documents: those with a catalog row. The one
+    rule for "documented" is `dwcatalog.documented_codes`; this gate and the
+    staging gate both read it. A code named only in a heading or prose is
+    undocumented."""
+    return dwcatalog.documented_codes(REPO_ROOT)
 
 
 def undocumented_source_codes(src: set[str]) -> list[str]:
@@ -398,13 +414,70 @@ def undocumented_source_codes(src: set[str]) -> list[str]:
 
 
 def module_of(rs: pathlib.Path, crate: str) -> str:
-    """The module path a source file declares: `src/a/b.rs` is `a::b`,
-    `src/a/mod.rs` is `a`, `src/lib.rs` and `src/main.rs` are the root."""
-    rel = rs.relative_to(CRATES_DIR / crate / "src").with_suffix("")
-    parts = list(rel.parts)
-    if parts and parts[-1] in ("mod", "lib", "main"):
-        parts = parts[:-1]
-    return "::".join(parts)
+    """The module path a source file declares — `dwcatalog.module_of`, the
+    one rule, over this gate's crates directory."""
+    return dwcatalog.module_of(rs, crate, CRATES_DIR)
+
+
+def declaring_modules() -> dict[str, set[tuple[str, str, pathlib.Path]]]:
+    """DW code -> {(crate dir, module, source file)} for every constant
+    declaring it in `crates/<crate>/src/**/*.rs`."""
+    table: dict[str, set[tuple[str, str, pathlib.Path]]] = {}
+    for crate_dir in sorted(p for p in CRATES_DIR.iterdir() if p.is_dir()):
+        src = crate_dir / "src"
+        if not src.is_dir():
+            continue
+        for rs in sorted(src.rglob("*.rs")):
+            for _name, code in CONST_RE.findall(rs.read_text(encoding="utf-8")):
+                table.setdefault(code, set()).add((crate_dir.name, module_of(rs, crate_dir.name), rs))
+    return table
+
+
+def row_in_page_errors() -> tuple[list[str], int, int]:
+    """`(findings, rows on their declaring module's page, module pages read)`.
+
+    Every catalog row must be on `page_for` of the module declaring its code,
+    and every module page must mirror a source file that exists.
+    """
+    errors: list[str] = []
+    declared = declaring_modules()
+    rows, _detached = dwcatalog.catalog_rows(REPO_ROOT)
+    placed = 0
+    for row in rows:
+        owners = declared.get(row.code)
+        if not owners:
+            continue  # absent from source: the consistency half reports it
+        expected = sorted({dwcatalog.page_for(c, m) for c, m, _rs in owners})
+        if row.page in expected:
+            placed += 1
+            continue
+        where = ", ".join(
+            f"`{m or '(crate root)'}` in {rs.relative_to(REPO_ROOT)}" for _c, m, rs in sorted(owners)
+        )
+        errors.append(
+            f"{row.page}:{row.lineno}: the catalog row for {row.code} is on the wrong page. "
+            f"{row.code} is declared by {where}, so its row belongs on "
+            f"{' or '.join(str(p) for p in expected)}. Move the row there — a code whose "
+            "declaration moved carries its row with it in the same change."
+        )
+    pages = [p for p in dwcatalog.catalog_pages(REPO_ROOT) if dwcatalog.module_for_page(p)]
+    for page in pages:
+        crate, module = dwcatalog.module_for_page(page)
+        src = CRATES_DIR / crate / "src"
+        parts = module.split("::") if module else []
+        candidates = (
+            [src / pathlib.Path(*parts).with_suffix(".rs"), src / pathlib.Path(*parts) / "mod.rs"]
+            if parts
+            else [src / "lib.rs", src / "main.rs"]
+        )
+        if not any(c.is_file() for c in candidates):
+            errors.append(
+                f"{page} is the page of `{crate}::{module or '(crate root)'}`, and no source file "
+                f"declares that module ({', '.join(str(c.relative_to(REPO_ROOT)) for c in candidates)} "
+                "are all absent). A page lives at its module's path: move it with the module, "
+                "or delete it with the module."
+            )
+    return errors, placed, len(pages)
 
 
 def join_module(module: str, *more: str) -> str:
@@ -414,7 +487,7 @@ def join_module(module: str, *more: str) -> str:
 # `use a::b::c;`, `pub use a::b::{c, d as e, self, *};` — the path and, when
 # braced, the leaf list. Nested braces are not read (the tree writes none).
 USE_RE = re.compile(
-    r"^\s*(pub(?:\([^)]*\))?\s+)?use\s+([\w:]+?)(?:::(?:\{([^}]*)\}|(\*)))?\s*;",
+    rf"^\s*({VISIBILITY})use\s+([\w:]+?)(?:::(?:\{{([^}}]*)\}}|(\*)))?\s*;",
     re.MULTILINE,
 )
 
@@ -622,21 +695,47 @@ def strip_cfg_test_bodies(text: str) -> str:
     return out
 
 
-def crate_test_scopes(crate: str) -> list[tuple[str | None, str, str]]:
+# `#[cfg(test)] mod tests;` at column zero: a test module written as its own file.
+OUT_OF_LINE_TEST_MOD_RE = re.compile(
+    rf"^#\[cfg\(test\)\]\n{VISIBILITY}mod\s+(\w+)\s*;", re.MULTILINE
+)
+
+
+def out_of_line_test_files(src_dir: pathlib.Path) -> set[pathlib.Path]:
+    """Every file under `src_dir` that is an out-of-line `#[cfg(test)]` module,
+    or lies under one's directory — test code exactly as an inline module is."""
+    roots: list[pathlib.Path] = []
+    for rs in sorted(src_dir.rglob("*.rs")):
+        here = rs.parent if rs.stem in ("mod", "lib", "main") else rs.with_suffix("")
+        for name in OUT_OF_LINE_TEST_MOD_RE.findall(rs.read_text(encoding="utf-8")):
+            roots += [here / f"{name}.rs", here / name]
+    return {
+        rs
+        for rs in src_dir.rglob("*.rs")
+        if any(rs == r or r in rs.parents for r in roots)
+    }
+
+
+def crate_test_scopes(crate: str) -> list[tuple[str | None, str, str | None]]:
     """Every text that counts as test code for a crate: `(module, body,
     enclosing file without its test bodies)` — module None and file "" for a
     whole file under crates/<crate>/tests/**/*.rs, the declaring module and the
     surrounding file for a `#[cfg(test)]` module body inside
-    crates/<crate>/src/**/*.rs."""
-    scopes: list[tuple[str | None, str, str]] = []
+    crates/<crate>/src/**/*.rs, and the file's own module and None for an
+    out-of-line `#[cfg(test)]` module's whole file."""
+    scopes: list[tuple[str | None, str, str | None]] = []
     tests_dir = CRATES_DIR / crate / "tests"
     if tests_dir.is_dir():
         for rs in sorted(tests_dir.rglob("*.rs")):
             scopes.append((None, rs.read_text(encoding="utf-8"), ""))
     src_dir = CRATES_DIR / crate / "src"
     if src_dir.is_dir():
+        whole = out_of_line_test_files(src_dir)
         for rs in sorted(src_dir.rglob("*.rs")):
             text = rs.read_text(encoding="utf-8")
+            if rs in whole:
+                scopes.append((module_of(rs, crate), text, None))
+                continue
             bodies = cfg_test_module_bodies(text)
             if bodies:
                 outer = strip_cfg_test_bodies(text)
@@ -661,7 +760,7 @@ def tested_codes() -> set[str]:
             names: dict[str, str] = {}
             modules: dict[str, tuple[str, str]] = {}
             context = module
-            if module is not None:
+            if module is not None and outer is not None:
                 # A `#[cfg(test)] mod tests` sits inside the file's module: its
                 # own `use` lines resolve from there (`super` is the file's
                 # module), and the file's top-level imports are visible to it
@@ -867,6 +966,48 @@ def registry_errors(
     return errors
 
 
+def registry_module_errors(
+    rows: list[dict], declared: dict[str, set[tuple[str, str, pathlib.Path]]]
+) -> tuple[list[str], int]:
+    """`(findings, codes whose module agrees)`: the registry's `module` field
+    against the module the source reading computed for the same code.
+
+    `module` is `module_path!()` where `dw_code!` expands, so it names the
+    crate (`delvewright_dsl`, `delvec`), raw identifiers spelled `r#loop`, and
+    any inline module the constant sits in (`diagnostic::codes`). It agrees
+    when it is the file's module, or that module followed by inline modules
+    the file itself declares.
+    """
+    errors: list[str] = []
+    agreed = 0
+    for r in rows:
+        owners = declared.get(r["code"])
+        if not owners:
+            continue  # a code no source declares: registry_errors reports it
+        segs = [x.removeprefix("r#") for x in str(r.get("module") or "").split("::")]
+        crate = CRATE_ROOTS.get(segs[0])
+        ok = False
+        for c, m, rs in owners:
+            mparts = m.split("::") if m else []
+            if crate != c or segs[1 : 1 + len(mparts)] != mparts:
+                continue
+            rest = segs[1 + len(mparts) :]
+            text = rs.read_text(encoding="utf-8")
+            if all(re.search(r"\bmod\s+(?:r#)?" + re.escape(x) + r"\s*\{", text) for x in rest):
+                ok = True
+                break
+        if ok:
+            agreed += 1
+            continue
+        where = ", ".join(f"{c}::{m or '(crate root)'} ({rs.relative_to(REPO_ROOT)})" for c, m, rs in sorted(owners))
+        errors.append(
+            f"{r['code']} ({r.get('name')}): `delvec codes` says it is declared in "
+            f"`{r.get('module')}`, and the source reading says {where}. The page its row "
+            "is held to is computed from the source reading, so the two must agree."
+        )
+    return errors, agreed
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     delvec = None
@@ -878,27 +1019,28 @@ def main(argv: list[str] | None = None) -> int:
     if not DOC_PATH.is_file():
         print(f"error: reference doc not found: {DOC_PATH}", file=sys.stderr)
         return 2
+    pages = dwcatalog.catalog_pages(REPO_ROOT)
     if not CRATES_DIR.is_dir():
         print(f"error: crates dir not found: {CRATES_DIR}", file=sys.stderr)
         return 2
 
     src = source_codes()
-    doc = codes_in(DOC_PATH.read_text(encoding="utf-8"))
+    doc = dwcatalog.mentioned_codes(REPO_ROOT)
 
     errors: list[str] = []
 
     missing_from_doc = undocumented_source_codes(src)
     if missing_from_doc:
         errors.append(
-            "DW codes in crates/**/*.rs with no diagnostics-catalog row in "
-            "docs/reference/compiler.md (a heading or prose mention is not a row; "
-            f"add one): {', '.join(missing_from_doc)}"
+            "DW codes in crates/**/*.rs with no diagnostics-catalog row on any "
+            "catalog page (a heading or prose mention is not a row; add one on the "
+            f"declaring module's page, docs/reference/<crate>/<module path>.md): {', '.join(missing_from_doc)}"
         )
 
     extra_in_doc = sorted(doc - src - PENDING)
     if extra_in_doc:
         errors.append(
-            "DW codes in docs/reference/compiler.md but NOT in source and NOT "
+            "DW codes named on a catalog page but NOT in source and NOT "
             f"declared PENDING (remove or fix): {', '.join(extra_in_doc)}"
         )
 
@@ -939,9 +1081,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     row_counts, detached_rows = catalog_rows()
-    for lineno, line in detached_rows:
+    for page, lineno, line in detached_rows:
         errors.append(
-            f"docs/reference/compiler.md:{lineno} is a diagnostics-catalog row "
+            f"{page}:{lineno} is a diagnostics-catalog row "
             f"that no table contains:\n    {line[:100]}\n    A blank line ends a "
             "pipe table, so this row renders as a paragraph of literal pipe "
             "characters and documents nothing to anyone reading the page. Delete "
@@ -951,9 +1093,19 @@ def main(argv: list[str] | None = None) -> int:
     dup_rows = sorted(code for code, n in row_counts.items() if n > 1)
     if dup_rows:
         errors.append(
-            "DW codes with MORE THAN ONE diagnostics-catalog row in "
-            "docs/reference/compiler.md — one code documents one rule "
+            "DW codes with MORE THAN ONE diagnostics-catalog row across the "
+            "catalog pages — one code documents one rule "
             f"(renumber or merge the duplicate row): {', '.join(dup_rows)}"
+        )
+
+    # --- row in page: one record per code, at its declaring module's path -----
+    page_errors, placed, module_pages = row_in_page_errors()
+    errors += page_errors
+    if placed == 0:
+        errors.append(
+            "row-in-page bound ZERO catalog rows to their declaring module's page. The "
+            "catalog is never empty, so this is the reader having stopped finding rows "
+            "(tools/lib/dwcatalog.py) — not a pass"
         )
 
     # --- exit tier: source and reference in lockstep -------------------------
@@ -1058,7 +1210,12 @@ def main(argv: list[str] | None = None) -> int:
     if delvec is not None:
         rows = registry_rows(delvec)
         errors += registry_errors(rows, declared_constants(), tiers)
-        registry_note = f"registry: `delvec codes` lists {len(rows)} code(s)"
+        module_errors, agreed = registry_module_errors(rows, declaring_modules())
+        errors += module_errors
+        registry_note = (
+            f"registry: `delvec codes` lists {len(rows)} code(s), {agreed} of them in the "
+            "module the source reading computed"
+        )
 
     if errors:
         print("DW-code consistency check FAILED:", file=sys.stderr)
@@ -1068,6 +1225,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"DW-code consistency OK: {len(src)} source codes documented; "
+        f"{placed} catalog row(s) on their declaring module's page, over "
+        f"{len(pages)} catalog page(s) ({module_pages} module pages); "
         f"{len(PENDING)} approved-landing (pending); "
         f"{len(requires_test)} require tests, all covered "
         f"({len(ALLOWLIST)} allowlisted); "

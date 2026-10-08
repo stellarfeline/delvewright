@@ -331,7 +331,7 @@ fn a_tile_that_is_not_the_size_its_manifest_declares_is_dw0803() {
 /// `DW0803` is bound to **both** entry points a stale tile can arrive through,
 /// and the second one is why the check exists at all.
 ///
-/// `emit::build_with_warnings` protects the datapack. `main::read_structures`
+/// `emit::build_with_warnings` protects the datapack. `cli::campaign::read_structures`
 /// is the one place every CLI consumer of prefab bytes passes through — `build`,
 /// `snapshot`, `viewer`, `blocking-chart` — and a REVIEW artifact drawn from a
 /// stale tile is a picture that lies, which no later gate can catch because the

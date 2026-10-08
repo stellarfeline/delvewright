@@ -14,6 +14,9 @@
 //! own. Both reach the one per-part cell set, `Transform::cells`, through
 //! `frame_footprint_turned`.
 
+mod common;
+
+use common::source_scan;
 use std::path::Path;
 
 fn read(rel: &str) -> String {
@@ -24,18 +27,22 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(root.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
-/// The body of `fn <name>` in `src`: from its signature to the next top-level
-/// item.
+/// The body of `fn <name>` in `src`: from its signature to the nearest
+/// following top-level function, at any visibility (`fn`, `pub fn`,
+/// `pub(crate) fn`, `pub(in …) fn`), or `#[cfg(test)]`.
 fn body<'a>(src: &'a str, name: &str) -> &'a str {
     let sig = src
         .find(&format!("fn {name}("))
         .unwrap_or_else(|| panic!("no `fn {name}`"));
     let rest = &src[sig..];
-    let end = rest[1..]
-        .find("\nfn ")
-        .or_else(|| rest[1..].find("\npub fn "))
-        .or_else(|| rest[1..].find("\n#[cfg(test)]"))
-        .map(|i| i + 1)
+    let starts_item = |line: &str| {
+        (!line.starts_with(char::is_whitespace) && source_scan::fn_name(line).is_some())
+            || line.starts_with("#[cfg(test)]")
+    };
+    let end = rest
+        .match_indices('\n')
+        .map(|(i, _)| i + 1)
+        .find(|&i| starts_item(&rest[i..]))
         .unwrap_or(rest.len());
     &rest[..end]
 }
@@ -52,8 +59,8 @@ fn rig_describe_and_the_strike_check_read_one_footprint() {
     }
     // The printed footprint.
     assert!(body(&rig, "describe").contains("last_frame_footprint(clip, facing)"));
-    let main = read("crates/delvec/src/main.rs");
-    let describe = body(&main, "run_rig_describe");
+    let cli = read("crates/delvec/src/cli/metrics.rs");
+    let describe = body(&cli, "run_rig_describe");
     assert!(
         describe.contains("rig::describe(") && describe.contains("rig::last_frame_footprint("),
         "`delvec rig describe` prints through the dsl's footprint"
@@ -83,16 +90,50 @@ fn rig_describe_and_the_strike_check_read_one_footprint() {
         "the strike rule reads the dsl's per-part cells: {struck}"
     );
     // Neither caller has a footprint of its own.
-    for (file, src) in [("main.rs", &main), ("assembly.rs", &asm)] {
+    for (file, src) in [("cli/metrics.rs", &cli), ("assembly.rs", &asm)] {
         assert!(
-            !src.lines().any(|l| {
-                let t = l.trim_start();
-                (t.starts_with("fn ")
-                    || t.starts_with("pub fn ")
-                    || t.starts_with("pub(crate) fn "))
-                    && t.contains("footprint")
-            }),
+            !src.lines()
+                .any(|l| source_scan::fn_name(l).is_some() && l.contains("footprint")),
             "{file} defines a footprint function of its own"
         );
+    }
+}
+
+/// Both scans in this file, and blockout's single-caller scan, read a `fn`
+/// header through the one visibility rule (`common::source_scan::fn_name`): a
+/// definition is recognised at every visibility, and a call or a binding that
+/// merely names the function is not a definition.
+#[test]
+fn a_fn_definition_is_recognised_at_every_visibility() {
+    for (def, name) in [
+        ("fn last_frame_footprint(", "last_frame_footprint"),
+        ("pub fn last_frame_footprint(", "last_frame_footprint"),
+        (
+            "pub(crate) fn last_frame_footprint(",
+            "last_frame_footprint",
+        ),
+        (
+            "pub(super) fn last_frame_footprint(",
+            "last_frame_footprint",
+        ),
+        (
+            "pub(in crate::cli) fn last_frame_footprint(",
+            "last_frame_footprint",
+        ),
+        (
+            "    pub(in crate::compiler::plan) fn build_with(",
+            "build_with",
+        ),
+    ] {
+        assert_eq!(source_scan::fn_name(def), Some(name), "{def}");
+    }
+    for not_def in [
+        "rig::last_frame_footprint(clip, facing)",
+        "let footprint = frame_footprint(frame);",
+        "public_fn_footprint()",
+        "Self::build_with(campaign, prefabs, Perturb::none())",
+        "let plan = Plan::build_with(&c, &p, perturb)?;",
+    ] {
+        assert_eq!(source_scan::fn_name(not_def), None, "{not_def}");
     }
 }

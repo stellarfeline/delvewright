@@ -8,7 +8,7 @@ way to guarantee that is to derive both from the same walk of the same document:
 - `bind_document(schema, stage, doc)` — what an authored document *writes*.
 
 Both are driven by `delvec schema --stage all` and **nothing else**. There is no
-parser of `stages.rs` here, and there must never be one: the compiler's own
+parser of the DSL's Rust sources here, and there must never be one: the compiler's own
 export is the single enumeration authority, the same doctrine that made
 `for_each_effect_root` the only list of effect roots in the workspace. A second
 enumeration would be a second authority, and the two would disagree exactly when

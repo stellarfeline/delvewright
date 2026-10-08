@@ -1253,7 +1253,7 @@ pub(crate) fn opening_region(
 }
 
 // ---------------------------------------------------------------------------
-// Anchor transform (consumed by plan.rs)
+// Anchor transform (consumed by plan::anchors)
 // ---------------------------------------------------------------------------
 
 /// Transform a local point through a piece's placement (pos + rotation) to world.

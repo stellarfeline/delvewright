@@ -35,6 +35,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::envelope::Campaign;
 use crate::ids::{NodeId, PrefabId};
+#[cfg(doc)]
+use crate::owed_anchors;
 use crate::siteplan::PlacedBox;
 
 // ---------------------------------------------------------------------------
@@ -243,25 +245,6 @@ pub fn is_bound(c: &Campaign, node: &NodeId) -> bool {
     c.detail_plan
         .as_ref()
         .is_some_and(|e| e.content.detail_of(node).is_some())
-}
-
-/// The synthesized anchor names **this place owes** (spec-0050 §6).
-///
-/// Exactly the synthesized names whose bearer is this box: its own
-/// `anchor/node-…`; `spawn` when it is the entry node; each `anchor/unlock-…`
-/// whose `opens_from` side it is. A gate region (`anchor/seam-…`) is never owed
-/// — it is whole fabric, and one over a bound upper box's floor course resolves
-/// to the seam's allocated cells as ever, which `DW0844`'s barred row has
-/// already required the piece to bar.
-///
-/// Derived from the same two documents [`crate::siteplan::synthesized_anchors`]
-/// reads, and **proven to partition it**: a test walks every node, unions the
-/// owed sets with the seam anchors, and asserts equality with the one authority.
-/// A name that stopped being owed by anyone would otherwise be a name the piece
-/// is never asked for and the campaign still resolves.
-#[must_use]
-pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
-    crate::siteplan::owed_anchors(c, node)
 }
 
 #[cfg(test)]

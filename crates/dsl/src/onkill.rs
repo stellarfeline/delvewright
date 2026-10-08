@@ -13,9 +13,8 @@
 //! refusals read one compiler-side predicate (`plan::fight_comes_back`), which
 //! needs the campaign's rest points.
 //!
-//! The types ([`crate::stages::OnKill`], [`crate::stages::KillFires`]) are
-//! stage-5 surface and live with the rest of it in [`crate::stages`]; this
-//! module holds the two refusals that need only the documents:
+//! This module holds the types ([`OnKill`], [`KillFires`]) and the two
+//! refusals that need only the documents:
 //!
 //! * `DW0100` — an empty `effects` list (the exported schema's `minItems: 1`,
 //!   which serde does not enforce);
@@ -24,6 +23,10 @@
 //!   `unleash-actor` names that is not `vulnerable`
 //!   ([`crate::fight::unleashed_actors`]).
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use crate::QuestEffect;
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::Campaign;
 use crate::fight::{Fight, fights, unleashed_actors, wave_area};
@@ -81,6 +84,45 @@ pub fn on_kill_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     fight.id()
                 ),
             ));
+        }
+    }
+}
+
+/// What happens each time a body of this fight is killed (spec-0074): the
+/// `on_kill` of a wave or an actor.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OnKill {
+    /// Whether a body that comes back pays again. Required where the fight comes
+    /// back after the party has met it — a bonfire re-seats it, or the beat that
+    /// seats it can fire more than once (`DW0915`); left off where it does not,
+    /// and `every-kill` there is refused as inert (`DW0914`). No default: whether
+    /// an economy can be farmed is the creator's judgement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fires: Option<KillFires>,
+    /// The effects, run as the credited player for each credited kill. Every verb
+    /// an `on_objective_complete` bundle accepts, each gated by its own `when`.
+    #[schemars(length(min = 1))]
+    pub effects: Vec<QuestEffect>,
+}
+
+/// Whether a body that comes back after a rest pays again (spec-0074 §4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum KillFires {
+    /// Over the whole delve the fight pays at most once per body it seats — the
+    /// wave's body count, or once for an actor. A re-seat does not renew it.
+    FirstKill,
+    /// Every credited kill pays, however many times the fight is re-seated.
+    EveryKill,
+}
+
+impl KillFires {
+    /// The kebab token, as it appears in the DSL.
+    pub fn token(self) -> &'static str {
+        match self {
+            KillFires::FirstKill => "first-kill",
+            KillFires::EveryKill => "every-kill",
         }
     }
 }

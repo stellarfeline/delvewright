@@ -143,7 +143,7 @@ fn fresh_inventory(dir: &Path) -> BTreeMap<String, String> {
         design: None,
     })
     .expect("fixture parses");
-    delvewright_dsl::l10n_inventory(&campaign)
+    delvewright_dsl::l10n::inventory(&campaign)
 }
 
 /// AC1 — a campaign declaring `["zh-cn"]` ships exactly `en_us.json` and
@@ -740,7 +740,7 @@ fn dw0185_catches_an_authored_string_emitted_as_a_literal() {
         "datapack/data/x/function/leak.mcfunction".to_string(),
         format!(
             "tellraw @a {{\"text\":\"{}\"}}\n",
-            delvewright_dsl::l10n_plain("") // keeps the literal below honest
+            delvewright_dsl::l10n::plain("") // keeps the literal below honest
         )
         .into_bytes(),
     );

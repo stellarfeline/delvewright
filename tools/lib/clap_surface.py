@@ -27,6 +27,10 @@ this parser the concatenation of `crates/delvec/src/main.rs` and every
 `crates/*/src/**/*.rs`, `main.rs` first, so `Cli`'s own subcommand enum is the
 first one found; a mounted group reads as ONE top-level subcommand with every
 nested flag folded in, and `parse_groups` says which nested verbs it carries.
+A declaration is read at every visibility, through the one rule
+`tools/lib/rust_source.py` holds for every gate that reads Rust source: the
+nested action sets of the compiler's verbs live in the binary's `cli/` modules
+at `pub(crate)`. A copy of this file carries `rust_source.py` beside it.
 
 A parse that finds NOTHING is a failure for every caller, never a pass — the
 callers own that refusal, because "zero subcommands" means something different
@@ -35,13 +39,21 @@ to each of them, but none of them may read it as agreement.
 
 from __future__ import annotations
 
+import pathlib
 import re
+import sys
 
+# A declaration is recognised by what it is, never by how far it is exported —
+# a nested action set moved into a module of the binary at its narrowest
+# visibility is still the surface. Callers load this file by path, so the
+# sibling is found beside it.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from rust_source import VISIBILITY  # noqa: E402
 # A clap subcommand enum: `#[derive(Subcommand)] enum <Name> { ... }` — with any
 # other derives beside it (`#[derive(Clone, Subcommand)]`). Variants sit at
 # four spaces, their fields at eight — the shape rustfmt guarantees.
 ENUM_RE = re.compile(
-    r"(?ms)^#\[derive\([^)]*\b(?:clap::)?Subcommand\b[^)]*\)\]\s*\n(?:pub\s+)?enum\s+(\w+)\s*\{(.*?)\n\}"
+    r"(?ms)^#\[derive\([^)]*\b(?:clap::)?Subcommand\b[^)]*\)\]\s*\n" + VISIBILITY + r"enum\s+(\w+)\s*\{(.*?)\n\}"
 )
 # `#[command(flatten)] View(some::path::ViewCommand),` — the flattened enum's own
 # variants ARE top-level subcommands, so a parser that stopped at the variant
@@ -51,7 +63,7 @@ ENUM_RE = re.compile(
 FLATTEN_ATTR_RE = re.compile(r"^\s*#\[command\(flatten\)\]")
 FLATTEN_VARIANT_RE = re.compile(r"^    (?P<name>[A-Z]\w*)\((?P<ty>[\w:]+)\)")
 VARIANT_RE = re.compile(r"^    (?P<name>[A-Z]\w*)\s*(?P<open>\{)?")
-FIELD_RE = re.compile(r"^        (?P<name>[a-z]\w*)\s*:")
+FIELD_RE = re.compile(r"^        " + VISIBILITY + r"(?P<name>[a-z]\w*)\s*:")
 ARG_ATTR_RE = re.compile(r"^\s*#\[(?:arg|clap)\((?P<body>.*)")
 EXPLICIT_LONG_RE = re.compile(r'long\s*=\s*"(?P<name>[^"]+)"')
 SUBCOMMAND_ATTR_RE = re.compile(r"^\s*#\[command\(subcommand\)\]")
@@ -65,12 +77,12 @@ MOUNTED_VARIANT_RE = re.compile(r"^    (?P<name>[A-Z]\w*)\((?P<ty>[\w:]+)\),?\s*
 # struct, and at most one `#[command(subcommand)]` field naming an enum.
 ARGS_STRUCT_RE = re.compile(
     r"(?ms)^#\[derive\([^)]*\b(?:clap::)?Args\b[^)]*\)\]\s*\n(?:#\[[^\n]*\]\s*\n)*"
-    r"(?:pub\s+)?struct\s+(\w+)\s*\{(.*?)\n\}"
+    + VISIBILITY + r"struct\s+(\w+)\s*\{(.*?)\n\}"
 )
-ARGS_FIELD_RE = re.compile(r"^    (?:pub\s+)?(?P<name>[a-z]\w*)\s*:\s*(?P<ty>[\w:<>]+)")
-FLATTEN_FIELD_RE = re.compile(r"^        (?:pub\s+)?(?P<name>[a-z]\w*)\s*:\s*(?P<ty>[\w:]+)")
-GLOBAL_STRUCT_RE = re.compile(r"(?ms)^struct\s+Cli\s*\{(.*?)\n\}")
-GLOBAL_FIELD_RE = re.compile(r"^    (?P<name>[a-z]\w*)\s*:")
+ARGS_FIELD_RE = re.compile(r"^    " + VISIBILITY + r"(?P<name>[a-z]\w*)\s*:\s*(?P<ty>[\w:<>]+)")
+FLATTEN_FIELD_RE = re.compile(r"^        " + VISIBILITY + r"(?P<name>[a-z]\w*)\s*:\s*(?P<ty>[\w:]+)")
+GLOBAL_STRUCT_RE = re.compile(r"(?ms)^" + VISIBILITY + r"struct\s+Cli\s*\{(.*?)\n\}")
+GLOBAL_FIELD_RE = re.compile(r"^    " + VISIBILITY + r"(?P<name>[a-z]\w*)\s*:")
 # The top-level subcommand enum is whatever `Cli`'s own `#[command(subcommand)]`
 # field names — everything else is a nested action set.
 TOP_ENUM_RE = re.compile(

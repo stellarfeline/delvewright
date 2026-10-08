@@ -28,7 +28,7 @@ It greps for the roots it knows, so it cannot see a root that is *not in the
 enumeration at all*: `shortcuts[].on_unlock` was a `Vec<QuestEffect>` emission
 lowered for two versions while every walk, and this file, went green. The gate for
 THAT shape is `tools/ci/check-capability-ownership.py` check E, which enumerates the
-effect-bundle FIELDS out of `stages.rs` and fails on any it cannot account for.
+effect-bundle FIELDS out of the DSL stage modules and fails on any it cannot account for.
 The two are complementary and neither replaces the other: this one catches a walk
 that forgets a known root, that one catches a root nobody knows.
 
@@ -91,7 +91,25 @@ ALLOWED = {
         "THE enumeration. This is the one file that is supposed to name every "
         "root; every other walk inherits from it."
     ),
-    "crates/delvec/src/compiler/plan.rs": (
+    "crates/delvec/src/compiler/plan/checkpoint.rs": (
+        "`collect_v06_effects` — OPEN FINDING, not triaged. It plans every "
+        "`set-checkpoint` and `begin-stealth` from R1+R2+R3 and the dialogue "
+        "root, and walks neither `traps[].payload`, `shortcuts[].on_unlock` nor "
+        "`on_death`, so such an effect in one of those roots is not planned. "
+        "Whether validation already refuses it there is not established. It sat "
+        "unseen under the one exemption for the whole of the former `plan.rs`: "
+        "the scan reports one window per file, and that file's first window was "
+        "`required_anchors_for_area`."
+    ),
+    "crates/delvec/src/compiler/plan/gate_reach.rs": (
+        "`collect_open_gate_anchors` — OPEN FINDING, not triaged. The `DW0306` "
+        "deadlock model collects `open-gate` anchors from R1+R2+R3 only, so a "
+        "gate opened from a trap payload, a shortcut's `on_unlock`, a dialogue "
+        "option or `on_death` is not in the model. Whether validation already "
+        "refuses `open-gate` there is not established. Surfaced the same way as "
+        "the `checkpoint.rs` entry."
+    ),
+    "crates/delvec/src/compiler/plan/anchors.rs": (
         "`required_anchors_for_area` — OPEN FINDING, not a false positive. It "
         "collects the anchors an area's assembly must provide from R1+R2 (and R3 "
         "only when the campaign has a single area), so an anchor named only in a "

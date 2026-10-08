@@ -98,7 +98,7 @@
 //! declares no teleport emits no ledger at all, so a ledger that exists and says
 //! zero is a finding rather than a pass.
 
-use delvewright_dsl::stages::for_each_campaign_effect;
+use delvewright_dsl::for_each_campaign_effect;
 
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;

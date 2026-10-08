@@ -34,6 +34,7 @@ edit. Template at the bottom.
 | [0027](0027-the-content-repository-is-optional-and-the-rig-is-reached-not-carried.md) | The content repository is an optional clone, and the plugin reaches the engine tree instead of carrying pieces of it | Accepted |
 | [0028](0028-three-things-released-by-name.md) | Three things, each released by its name and its version: `<name>--v<semver>` tags for `delvec`, `delvewright-dsl` and the `delvewright` plugin | Accepted; §3 superseded by ADR-0029 |
 | [0029](0029-the-page-ships-at-a-tag.md) | The page ships at a tag — the marketplace serves the plugin from the engine release the page pins | Accepted |
+| [0031](0031-a-module-per-object-class.md) | A module per object class — no file that every feature touches | Proposed |
 
 ## Template
 

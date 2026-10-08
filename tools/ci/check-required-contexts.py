@@ -70,14 +70,21 @@ FILTER_JOB = "changes (which jobs a pull request reaches)"
 # dict of keys, which nobody counts.
 MAX_ADVISORY_JOBS = 1
 
-# The gallery entry's expiry, as something this checker can EVALUATE rather than
+# The gallery entries' expiry, as something this checker can EVALUATE rather than
 # recite. `gallery/baseline/header.json` records the coverage counts (spec-0039
 # §6), so "it becomes required in the change that takes the unaccounted count to
 # zero" is a committed number, not a promise. When it reaches zero the entry has
 # outlived its reason and this file says so.
-GALLERY_JOB = "gallery (coverage + build + baseline)"
+# The gallery is four jobs (ADR-0031 §6); the expiry applies to whichever of
+# them is advisory.
+GALLERY_JOBS = (
+    "gallery pieces (generator output)",
+    "gallery coverage (every surface written or refused)",
+    "gallery views (render plan, whole map, cameras)",
+    "gallery baseline (emission, warnings, served points)",
+)
 _REPO = pathlib.Path(__file__).resolve().parents[2]
-# The job is THREE gates, so the expiry reads all of them. Keying it off the
+# The jobs are THREE gates, so the expiry reads all of them. Keying it off the
 # coverage count alone would have demanded the job be made required the moment
 # coverage reached zero, while the render arm was still red — which is the
 # deadlock this file exists to prevent, arriving through the mechanism built to
@@ -190,8 +197,10 @@ def main() -> int:
                 f"is holding a budget slot for a gate that no longer exists."
             )
 
-    # The gallery entry's expiry, evaluated.
-    if GALLERY_JOB in ADVISORY_JOBS and GALLERY_HEADER.is_file():
+    # The gallery entries' expiry, evaluated.
+    for gallery_job in (j for j in GALLERY_JOBS if j in ADVISORY_JOBS):
+        if not GALLERY_HEADER.is_file():
+            continue
         try:
             counts = json.loads(GALLERY_HEADER.read_text(encoding="utf-8")).get(
                 "coverage", {}
@@ -207,7 +216,7 @@ def main() -> int:
             render_left = None
         if left == 0 and render_left == 0:
             findings.append(
-                f"{GALLERY_JOB!r} is still advisory and every gate it runs is clean "
+                f"{gallery_job!r} is still advisory and every gate it runs is clean "
                 f"— ZERO unaccounted units and ZERO render findings. The condition "
                 f"the entry was granted under has been met.\n"
                 f"    Make it required: add the name to {MANIFEST.name} and to "
@@ -215,7 +224,7 @@ def main() -> int:
             )
         elif left is None or render_left is None:
             findings.append(
-                f"{GALLERY_JOB!r} is advisory and its own artifacts record no "
+                f"{gallery_job!r} is advisory and its own artifacts record no "
                 f"counts (unaccounted={left!r}, render findings={render_left!r}), so "
                 f"nothing here can tell whether the entry has outlived its reason. "
                 f"Regenerate them: `tools/ci/gallery-baseline.py --write` and "

@@ -1,0 +1,46 @@
+name: The run's gallery pieces
+description: >
+  Take the gallery pieces the `gallery-pieces` job generated for this run —
+  `gallery-prefabs/` and the generated files inside `gallery/` (skins, textures,
+  stand-in reference images), packed by `tools/ci/gallery-pieces.py` — refuse
+  them unless the archive's sha256 is the one that job reported, and unpack them
+  into the checkout at the paths `tools/ci/gallery-prefabs.py` wrote them to. A
+  gallery job takes them through this instead of generating its own: one run,
+  one generation, the way `.github/actions/delvec-binary` hands down the engine.
+
+  The repository must already be checked out: the unpack lands inside it.
+
+inputs:
+  sha256:
+    description: >
+      `needs.gallery-pieces.outputs.sha256` — the digest the generating job
+      computed before uploading. Read through the job output, not from the
+      artifact, so the expected value does not travel with the bytes it checks.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: download the run's gallery pieces
+      uses: actions/download-artifact@v4
+      with:
+        name: gallery-pieces
+        path: ${{ runner.temp }}/gallery-pieces
+    - name: the run's gallery pieces are the ones that were generated
+      shell: bash
+      env:
+        WANT: ${{ inputs.sha256 }}
+      run: |
+        set -euo pipefail
+        src="$RUNNER_TEMP/gallery-pieces/gallery-pieces.tar"
+        if [ -z "$WANT" ]; then
+          echo "gallery-pieces: no sha256 was handed over — the generating job reported none, so there is nothing to check the bytes against" >&2
+          exit 1
+        fi
+        got="$(sha256sum "$src" | cut -d' ' -f1)"
+        if [ "$got" != "$WANT" ]; then
+          echo "gallery-pieces: the downloaded archive hashes $got; the generating job reported $WANT" >&2
+          exit 1
+        fi
+        tar -xf "$src"
+        echo "gallery-pieces: unpacked $(tar -tf "$src" | wc -l | tr -d ' ') file(s), sha256 $got"

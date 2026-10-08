@@ -33,8 +33,8 @@
 //! only when control is actually taken, so the direction of an over-statement
 //! is a slower run, never a stranded one.
 
-use delvewright_dsl::stages::{TrapTrigger, TriggerOn};
 use delvewright_dsl::{Campaign, QuestEffect, Verb};
+use delvewright_dsl::{TrapTrigger, TriggerOn};
 
 use crate::compiler::nav::LegRoute;
 use crate::compiler::plan::{Plan, Step};

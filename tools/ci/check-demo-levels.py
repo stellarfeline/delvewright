@@ -121,6 +121,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib import mdtable  # noqa: E402
+from lib.rust_source import VISIBILITY  # noqa: E402
 from lib.gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -130,7 +131,7 @@ CRATES = "crates"
 ATTR_START = re.compile(r"#\[(?:arg|clap)\(")
 LONG_NAMED = re.compile(r"\blong\s*=\s*\"([A-Za-z0-9][A-Za-z0-9-]*)\"")
 LONG_BARE = re.compile(r"\blong\b\s*(?:[,)]|$)")
-FIELD_NAME = re.compile(r"(?:pub(?:\([^)]*\))?\s+)?([a-z_][a-z0-9_]*)\s*:")
+FIELD_NAME = re.compile(rf"{VISIBILITY}([a-z_][a-z0-9_]*)\s*:")
 
 DW_CODE = re.compile(r"DW[0-9]{4}")
 ADR_REF = re.compile(r"ADR-([0-9]{4})")

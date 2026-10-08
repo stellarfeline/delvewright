@@ -43,7 +43,7 @@
 //! campaign stage document is authored against a versioned schema, a typo there
 //! is the bug the attribute exists to catch, and forward compatibility is
 //! handled by the `dsl_version` fence instead. Every stage struct in
-//! [`crate::stages`] keeps it for exactly that reason.
+//! the stage modules keeps it for exactly that reason.
 //!
 //! It is wrong on a **consumer that is not the owner**, which is what every
 //! reader of this document is. Here a new key is not a typo — it is a newer

@@ -542,7 +542,7 @@ fn npc_name(c: &Campaign, npc_id: &str) -> String {
         .npcs
         .iter()
         .find(|n| n.id.as_str() == npc_id)
-        .map(|n| delvewright_dsl::l10n_plain(&n.name).to_string())
+        .map(|n| delvewright_dsl::l10n::plain(&n.name).to_string())
         .unwrap_or_else(|| local_of(npc_id))
 }
 
@@ -591,7 +591,7 @@ fn area_name_of(c: &Campaign, area_id: &str) -> String {
         .areas
         .iter()
         .find(|a| a.id.as_str() == area_id)
-        .map(|a| delvewright_dsl::l10n_plain(&a.name).to_string())
+        .map(|a| delvewright_dsl::l10n::plain(&a.name).to_string())
         .unwrap_or_default()
 }
 
@@ -599,7 +599,7 @@ fn area_name_of(c: &Campaign, area_id: &str) -> String {
 /// expect line to one sentence. Reviewer artifact, so the hint is read as its
 /// English source (`l10n::plain`) — a spec-0029 named exclusion.
 fn first_clause(hint: &str) -> String {
-    let hint = delvewright_dsl::l10n_plain(hint);
+    let hint = delvewright_dsl::l10n::plain(hint);
     let end = hint.find(['.', ';', '—']).unwrap_or(hint.len());
     hint[..end].trim().to_string()
 }
@@ -930,7 +930,7 @@ pub fn render_plan(
             .npcs
             .iter()
             .find(|n| n.id.as_str() == npc.npc_id)
-            .map(|n| delvewright_dsl::l10n_plain(&n.name))
+            .map(|n| delvewright_dsl::l10n::plain(&n.name))
             .unwrap_or("NPC");
         let Some(ResolvedAnchor::Point { pos, facing }) =
             plan.anchors.get(&(area.clone(), anchor.to_string()))
@@ -979,7 +979,7 @@ pub fn render_plan(
         if let Some(h) = hint {
             expect.push(Value::String(format!(
                 "matches objective hint: {}",
-                delvewright_dsl::l10n_plain(&h)
+                delvewright_dsl::l10n::plain(&h)
             )));
         }
         out.push(Shot {
