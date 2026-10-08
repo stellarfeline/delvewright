@@ -105,7 +105,7 @@ The four previews flatten each shell's opaque pixels onto the base face beneath 
 
 ## 7. The gallery's obligation, and the demo level
 
-- `npcs.json`: one skinned NPC declares `hidden_layers: ["cape"]` — bound when the summon's bytes move with it.
+- `npcs.json`: the Curator declares `hidden_layers: ["cape"]`, and the Standard Bearer in `quests.json` the other six, so every `SkinLayer` member is written once and both mannequin summons carry the field — bound when the summons' bytes move with it.
 - `probes/a-layer-hidden-twice`: that list with `cape` twice — `DW0980`.
 - The gallery generator's two skins paint only the `player` / `player_slim` footprint, read from the table, so the gallery's own skins pass `DW0978`.
 - `world.json` gains a row replacing `minecraft:entity/zombie/drowned_outer_layer` with a generated sheet painted at the base positions of the outer model.
