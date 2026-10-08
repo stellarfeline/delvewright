@@ -333,12 +333,79 @@ impl Stake {
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::gate::DatumSet;
 use crate::registry::AnchorRegistry;
 use crate::validate::{AnchorProviders, station_kind_diag};
 use crate::{CompareOp, StateWrite};
+
+crate::dw_code! {
+    /// (v0.10, spec-0032) A `stakes[]` declaration is unusable as a personal
+    /// wager: its `state` is a datum the campaign never declares, or one declared
+    /// `party`-scoped.
+    ///
+    /// **The scope half is the multiplayer decision most likely to be made by
+    /// accident** (spec-0032, stated for correction rather than left to emerge).
+    /// A stake is one player's loss and one player's chance to get it back; a
+    /// party-shared purse would turn a teammate's death into a penalty on
+    /// everyone, and nothing in the JSON would say so. Validation-tier (exit 1).
+    /// Prescription: declare the datum `player`-scoped, or point the stake at a
+    /// datum that is.
+    pub const STAKE_STATE_SCOPE: DwCode = DwCode::new("DW0520", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.10, spec-0032) A `drop-stake` effect names a stake the campaign never
+    /// declares in the stage-5 `stakes` list. Validation-tier (exit 1).
+    /// Prescription: declare it, or fix the id.
+    pub const STAKE_UNDECLARED: DwCode = DwCode::new("DW0521", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.10, spec-0032) A declared stake that **no `drop-stake` effect anywhere
+    /// in the campaign ever leaves**. The retention policy, the forfeit rule and
+    /// the whole placement table are computed for a mechanism no beat can fire —
+    /// a declaration wearing a feature's clothes.
+    ///
+    /// The same vacuity rule `DW0502` states for a datum with no reader
+    /// (CLAUDE.md: *a green gate that binds to nothing is vacuous, not a pass*).
+    /// Validation-tier (exit 1). Prescription: drop it from a beat — `on_death`
+    /// is the usual one — or delete the declaration.
+    pub const STAKE_NEVER_DROPPED: DwCode = DwCode::new("DW0522", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.10, spec-0032) A `shops[].offers[]` entry that cannot deliver
+    /// anything: it declares no `effects`, so its button is drawn, is pressable,
+    /// and does nothing.
+    ///
+    /// The shop analogue of the invisible-affordance rule: a control the player
+    /// can operate must have an observable answer. A refusal counts — an offer
+    /// whose only effect is a gated `narrate` saying "you cannot afford that" is
+    /// exactly the authored shape spec-0032 asks for. Validation-tier (exit 1).
+    /// Prescription: give the offer effects, or delete it.
+    pub const SHOP_OFFER_INERT: DwCode = DwCode::new("DW0523", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.10, spec-0032) A `forfeit` of kind `proportion` whose `percent` is
+    /// above 100 — a death that takes more than the whole purse. Validation-tier
+    /// (exit 1). Prescription: 0–100, or use `all`.
+    pub const STAKE_FORFEIT_RANGE: DwCode = DwCode::new("DW0524", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0071 §2) **A purchase whose literals do not add up.** In one effect
+    /// list, a charge (`add-state` moving a datum down) fires at a balance that
+    /// cannot pay it — the floor its own `when` and its list's enclosing gate
+    /// leave open is below the amount charged, or nothing floors it at all — or
+    /// the arm that answers below the price stops at a ceiling that is not one
+    /// below where the charge starts, leaving a gap or an overlap. A price has no
+    /// field (spec-0032): it is written as gate terms and a charge, so the
+    /// engine compares the copies. Validation-tier (exit 1).
+    pub const PURCHASE_ARITHMETIC: DwCode = DwCode::new("DW0901", ExitTier::Build);
+}
 
 /// A shop's anchor must be provided by some prefab bound in this campaign
 /// (DSL v0.10, spec-0032) — the same rule, and the same message shape, every
@@ -429,7 +496,7 @@ pub(crate) fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         match c.quests.content.state_decl(s.state.as_str()) {
             None => d.push(Diagnostic::error(
-                codes::STAKE_STATE_SCOPE,
+                STAKE_STATE_SCOPE,
                 "quests",
                 format!("/content/stakes/{i}/state"),
                 format!(
@@ -442,7 +509,7 @@ pub(crate) fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             )),
             Some(decl) if decl.scope != crate::StateScope::Player => {
                 d.push(Diagnostic::error(
-                    codes::STAKE_STATE_SCOPE,
+                    STAKE_STATE_SCOPE,
                     "quests",
                     format!("/content/stakes/{i}/state"),
                     format!(
@@ -461,7 +528,7 @@ pub(crate) fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             && percent > 100
         {
             d.push(Diagnostic::error(
-                codes::STAKE_FORFEIT_RANGE,
+                STAKE_FORFEIT_RANGE,
                 "quests",
                 format!("/content/stakes/{i}/forfeit/percent"),
                 format!(
@@ -485,7 +552,7 @@ pub(crate) fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         };
         if c.quests.content.stake_decl(stake.as_str()).is_none() {
             d.push(Diagnostic::error(
-                codes::STAKE_UNDECLARED,
+                STAKE_UNDECLARED,
                 "quests",
                 path.to_string(),
                 format!(
@@ -503,7 +570,7 @@ pub(crate) fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             continue;
         }
         d.push(Diagnostic::error(
-            codes::STAKE_NEVER_DROPPED,
+            STAKE_NEVER_DROPPED,
             "quests",
             format!("/content/stakes/{i}/id"),
             format!(
@@ -542,7 +609,7 @@ pub(crate) fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         if sh.offers.is_empty() {
             d.push(Diagnostic::error(
-                codes::SHOP_OFFER_INERT,
+                SHOP_OFFER_INERT,
                 "quests",
                 format!("/content/shops/{i}/offers"),
                 format!(
@@ -556,7 +623,7 @@ pub(crate) fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         for (j, off) in sh.offers.iter().enumerate() {
             if off.effects.is_empty() {
                 d.push(Diagnostic::error(
-                    codes::SHOP_OFFER_INERT,
+                    SHOP_OFFER_INERT,
                     "quests",
                     format!("/content/shops/{i}/offers/{j}/effects"),
                     format!(
@@ -758,7 +825,7 @@ fn judge(list: &EffectList<'_>, state: &str, d: &mut Vec<Diagnostic>) {
         match floor {
             Some(f) if (f as i64) >= charge => {}
             Some(f) => d.push(Diagnostic::error(
-                codes::PURCHASE_ARITHMETIC,
+                PURCHASE_ARITHMETIC,
                 list.stage,
                 format!("{}/{i}", list.path),
                 format!(
@@ -777,7 +844,7 @@ fn judge(list: &EffectList<'_>, state: &str, d: &mut Vec<Diagnostic>) {
             // disagree with, and a datum a campaign means to drive below zero is
             // a design this rule has no standing to refuse.
             None if priced_elsewhere(list, state, i) => d.push(Diagnostic::error(
-                codes::PURCHASE_ARITHMETIC,
+                PURCHASE_ARITHMETIC,
                 list.stage,
                 format!("{}/{i}", list.path),
                 format!(
@@ -828,7 +895,7 @@ fn judge(list: &EffectList<'_>, state: &str, d: &mut Vec<Diagnostic>) {
             )
         };
         d.push(Diagnostic::error(
-            codes::PURCHASE_ARITHMETIC,
+            PURCHASE_ARITHMETIC,
             list.stage,
             format!("{}/{i}", list.path),
             format!(

@@ -197,10 +197,46 @@ impl LockPick {
 use std::collections::BTreeMap;
 
 use crate::Verb;
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::registry::AnchorRegistry;
 use crate::validate::{AnchorProviders, station_kind_diag};
+
+crate::dw_code! {
+    /// (spec-0082 §5.1, §5.5) **An assembly's rig cannot be emitted as
+    /// declared.** The library holds no `rigs/<name>/rig.json` for the
+    /// assembly's `rig`, or the file does not parse, or it breaks a structural
+    /// rule (no part, an unknown block, a clip with no frame, a frame short a
+    /// part, a cadence outside `1..=20`, a non-finite transform, a zero scale);
+    /// or an `initial`, a strike step's `windup`/`strike`, or a `play-clip`
+    /// names a clip the rig lacks — the message lists the rig's clips.
+    /// Validation-tier (exit 1). Prescription: regenerate the rig with its
+    /// generator, or name a clip the rig declares (`delvec rig describe`
+    /// prints them).
+    pub const ASSEMBLY_RIG: DwCode = DwCode::new("DW0935", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0094 §5.2) **A locked strike's blow is declared where the lock
+    /// derives it.** A locked step's blow lands on the cells its chosen
+    /// clip comes down on at the locked turn, so a `damage-players` at the
+    /// top of its `on_land` that declares an `in` box, any `damage-players`
+    /// nested inside another effect's list there (it cannot be moved with
+    /// the lock), and a locked step in a pattern that also declares `aim`
+    /// (two rules choosing one turn) are refused, each naming the field.
+    /// Validation-tier (exit 1). Prescription: drop the `in`, lift the
+    /// `damage-players` to the top of `on_land`, or drop `aim` or `lock`.
+    pub const ASSEMBLY_LOCK_SHAPE: DwCode = DwCode::new("DW0969", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0094 §3.3) **An `arm-strikes` names an assembly that never
+    /// strikes.** The assembly declares no `strikes`, so there is no pattern
+    /// to re-arm and the beat does nothing. Validation-tier (exit 1).
+    /// Prescription: give the assembly a `strikes` pattern, or drop the
+    /// effect.
+    pub const ASSEMBLY_ARM_NOTHING: DwCode = DwCode::new("DW0970", ExitTier::Build);
+}
 
 /// spec-0082: **assemblies, their rigs, and every reference to one.**
 ///
@@ -258,7 +294,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
             RigLookup::Unknown => None,
             RigLookup::Missing => {
                 d.push(Diagnostic::error(
-                    codes::ASSEMBLY_RIG,
+                    ASSEMBLY_RIG,
                     "quests",
                     format!("{at}/rig"),
                     format!(
@@ -277,7 +313,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
             }
             RigLookup::Malformed(e) => {
                 d.push(Diagnostic::error(
-                    codes::ASSEMBLY_RIG,
+                    ASSEMBLY_RIG,
                     "quests",
                     format!("{at}/rig"),
                     format!(
@@ -294,7 +330,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
                 let issues = crate::rig::check(r);
                 for issue in &issues {
                     d.push(Diagnostic::error(
-                        codes::ASSEMBLY_RIG,
+                        ASSEMBLY_RIG,
                         "quests",
                         format!("{at}/rig"),
                         format!(
@@ -314,7 +350,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
                     return;
                 }
                 d.push(Diagnostic::error(
-                    codes::ASSEMBLY_RIG,
+                    ASSEMBLY_RIG,
                     "quests",
                     path,
                     format!(
@@ -356,7 +392,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
                             .contains(&t)
                     {
                         paced.push(Diagnostic::error(
-                            codes::ASSEMBLY_RIG,
+                            ASSEMBLY_RIG,
                             "quests",
                             format!("{at}/strikes/pattern/{j}/ticks_per_frame"),
                             format!(
@@ -453,7 +489,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
         };
         if matches!(e.verb, Verb::ArmStrikes { .. }) && strikes.get(assembly) == Some(&false) {
             d.push(Diagnostic::error(
-                codes::ASSEMBLY_ARM_NOTHING,
+                ASSEMBLY_ARM_NOTHING,
                 "quests",
                 format!("{path}/assembly"),
                 format!(
@@ -480,7 +516,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
             && !r.clips.contains_key(clip)
         {
             d.push(Diagnostic::error(
-                codes::ASSEMBLY_RIG,
+                ASSEMBLY_RIG,
                 "quests",
                 format!("{path}/clip"),
                 format!(
@@ -552,7 +588,7 @@ fn lock_shape_checks(
         let here = format!("{at}/pattern/{j}");
         if s.aim.is_some() {
             d.push(Diagnostic::error(
-                codes::ASSEMBLY_LOCK_SHAPE,
+                ASSEMBLY_LOCK_SHAPE,
                 "quests",
                 format!("{here}/lock"),
                 format!(
@@ -568,7 +604,7 @@ fn lock_shape_checks(
             let p = format!("{here}/on_land/{k}");
             if matches!(e.verb, Verb::DamagePlayers { .. }) && e.damage_within().is_some() {
                 d.push(Diagnostic::error(
-                    codes::ASSEMBLY_LOCK_SHAPE,
+                    ASSEMBLY_LOCK_SHAPE,
                     "quests",
                     format!("{p}/in"),
                     format!(
@@ -587,7 +623,7 @@ fn lock_shape_checks(
             }
             for q in deep {
                 d.push(Diagnostic::error(
-                    codes::ASSEMBLY_LOCK_SHAPE,
+                    ASSEMBLY_LOCK_SHAPE,
                     "quests",
                     q.clone(),
                     format!(

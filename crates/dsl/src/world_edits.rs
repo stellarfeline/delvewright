@@ -420,10 +420,22 @@ pub struct PaletteBlock {
 
 use std::collections::BTreeSet;
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::{Campaign, Stage};
 use crate::registry::BlockRegistry;
 use crate::validate::split_blockstate;
+
+crate::dw_code! {
+    /// (v0.6, spec-0017) A stage-7 edit script is structurally invalid: an edit
+    /// names a region no earlier `select` in its batch defined, a composition
+    /// (`union`/`intersect`/`subtract`) lists too few regions, a box `min`
+    /// exceeds `max` on an axis, a surface band's `from` exceeds `to`, a palette
+    /// recipe is empty / carries a non-positive or non-finite weight or `scale`,
+    /// a `matching` list is empty, or a morph `by`/`passes` is 0. (Unknown block
+    /// ids in recipes reuse [`BLOCK_UNKNOWN`] / `DW0193`; id-syntax and
+    /// duplicate-name violations reuse `DW0110`/`DW0111`.)
+    pub const EDIT_INVALID: DwCode = DwCode::new("DW0162", ExitTier::Build);
+}
 
 /// Structural validation of the stage-7 edit script: id syntax/uniqueness
 /// (`DW0110`/`DW0111`), area refs (`DW0112`), strictly-backward region refs and
@@ -492,7 +504,7 @@ pub(crate) fn world_edits_checks(
             bad_syntax(d, stage, path, "region", r.as_str());
         } else if !regions.contains(r.as_str()) {
             d.push(Diagnostic::error(
-                codes::EDIT_INVALID,
+                EDIT_INVALID,
                 stage,
                 path,
                 format!(
@@ -512,7 +524,7 @@ pub(crate) fn world_edits_checks(
     ) {
         if recipe.blocks.is_empty() {
             d.push(Diagnostic::error(
-                codes::EDIT_INVALID,
+                EDIT_INVALID,
                 stage,
                 format!("{path}/blocks"),
                 "palette recipe has no entries — give it at least one weighted block (and \
@@ -524,7 +536,7 @@ pub(crate) fn world_edits_checks(
         for (i, b) in recipe.blocks.iter().enumerate() {
             if !(b.weight.is_finite() && b.weight > 0.0) {
                 d.push(Diagnostic::error(
-                    codes::EDIT_INVALID,
+                    EDIT_INVALID,
                     stage,
                     format!("{path}/blocks/{i}/weight"),
                     format!(
@@ -545,7 +557,7 @@ pub(crate) fn world_edits_checks(
             && !(scale.is_finite() && scale > 0.0)
         {
             d.push(Diagnostic::error(
-                codes::EDIT_INVALID,
+                EDIT_INVALID,
                 stage,
                 format!("{path}/scale"),
                 format!("recipe `scale` `{scale}` must be a finite number > 0 (blocks⁻¹)"),
@@ -602,7 +614,7 @@ pub(crate) fn world_edits_checks(
         let massing_count = batch.edits.iter().filter(|e| is_massing(e)).count();
         if massing_count > 0 && massing_count < batch.edits.len() {
             d.push(Diagnostic::error(
-                codes::EDIT_INVALID,
+                EDIT_INVALID,
                 stage,
                 format!("{bpath}/edits"),
                 format!(
@@ -616,7 +628,7 @@ pub(crate) fn world_edits_checks(
         }
         if massing_count > 0 && seen_detailing {
             d.push(Diagnostic::error(
-                codes::EDIT_INVALID,
+                EDIT_INVALID,
                 stage,
                 bpath.to_string(),
                 format!(
@@ -668,7 +680,7 @@ pub(crate) fn world_edits_checks(
                         RegionShape::Box { frame, min, max } => {
                             if min.iter().zip(max).any(|(lo, hi)| lo > hi) {
                                 d.push(Diagnostic::error(
-                                    codes::EDIT_INVALID,
+                                    EDIT_INVALID,
                                     stage,
                                     format!("{epath}/shape"),
                                     format!(
@@ -712,7 +724,7 @@ pub(crate) fn world_edits_checks(
                             );
                             if from > to {
                                 d.push(Diagnostic::error(
-                                    codes::EDIT_INVALID,
+                                    EDIT_INVALID,
                                     stage,
                                     format!("{epath}/shape"),
                                     format!(
@@ -733,7 +745,7 @@ pub(crate) fn world_edits_checks(
                             );
                             if bl.is_empty() {
                                 d.push(Diagnostic::error(
-                                    codes::EDIT_INVALID,
+                                    EDIT_INVALID,
                                     stage,
                                     format!("{epath}/shape/blocks"),
                                     format!(
@@ -755,7 +767,7 @@ pub(crate) fn world_edits_checks(
                         RegionShape::Union { of } | RegionShape::Intersect { of } => {
                             if of.len() < 2 {
                                 d.push(Diagnostic::error(
-                                    codes::EDIT_INVALID,
+                                    EDIT_INVALID,
                                     stage,
                                     format!("{epath}/shape/of"),
                                     format!(
@@ -786,7 +798,7 @@ pub(crate) fn world_edits_checks(
                             );
                             if remove.is_empty() {
                                 d.push(Diagnostic::error(
-                                    codes::EDIT_INVALID,
+                                    EDIT_INVALID,
                                     stage,
                                     format!("{epath}/shape/remove"),
                                     format!(
@@ -833,7 +845,7 @@ pub(crate) fn world_edits_checks(
                     check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
                     if matching.is_empty() {
                         d.push(Diagnostic::error(
-                            codes::EDIT_INVALID,
+                            EDIT_INVALID,
                             stage,
                             format!("{epath}/matching"),
                             "replace matches no blocks — list at least one base block id to \
@@ -855,7 +867,7 @@ pub(crate) fn world_edits_checks(
                         MorphOp::Raise { by, recipe } => {
                             if *by == 0 {
                                 d.push(Diagnostic::error(
-                                    codes::EDIT_INVALID,
+                                    EDIT_INVALID,
                                     stage,
                                     format!("{epath}/op/by"),
                                     "morph raise `by` is 0 — a zero raise is a no-op; give a \
@@ -868,7 +880,7 @@ pub(crate) fn world_edits_checks(
                         MorphOp::Lower { by } => {
                             if *by == 0 {
                                 d.push(Diagnostic::error(
-                                    codes::EDIT_INVALID,
+                                    EDIT_INVALID,
                                     stage,
                                     format!("{epath}/op/by"),
                                     "morph lower `by` is 0 — a zero lower is a no-op; give a \
@@ -880,7 +892,7 @@ pub(crate) fn world_edits_checks(
                         MorphOp::Smooth { passes, recipe } => {
                             if *passes == 0 {
                                 d.push(Diagnostic::error(
-                                    codes::EDIT_INVALID,
+                                    EDIT_INVALID,
                                     stage,
                                     format!("{epath}/op/passes"),
                                     "morph smooth `passes` is 0 — a zero-pass smooth is a \
@@ -906,7 +918,7 @@ pub(crate) fn world_edits_checks(
                     }
                     if items.is_empty() {
                         d.push(Diagnostic::error(
-                            codes::EDIT_INVALID,
+                            EDIT_INVALID,
                             stage,
                             format!("{epath}/items"),
                             "scatter has no items — give it at least one weighted dressing \
@@ -917,7 +929,7 @@ pub(crate) fn world_edits_checks(
                     for (i, b) in items.iter().enumerate() {
                         if !(b.weight.is_finite() && b.weight > 0.0) {
                             d.push(Diagnostic::error(
-                                codes::EDIT_INVALID,
+                                EDIT_INVALID,
                                 stage,
                                 format!("{epath}/items/{i}/weight"),
                                 format!(
@@ -937,7 +949,7 @@ pub(crate) fn world_edits_checks(
                     }
                     if !(density.is_finite() && *density > 0.0 && *density <= 1.0) {
                         d.push(Diagnostic::error(
-                            codes::EDIT_INVALID,
+                            EDIT_INVALID,
                             stage,
                             format!("{epath}/density"),
                             format!(
@@ -950,7 +962,7 @@ pub(crate) fn world_edits_checks(
                         && *limit == 0
                     {
                         d.push(Diagnostic::error(
-                            codes::EDIT_INVALID,
+                            EDIT_INVALID,
                             stage,
                             format!("{epath}/limit"),
                             "scatter `limit` is 0 — a zero-item scatter is a no-op; give a \
@@ -972,7 +984,7 @@ pub(crate) fn world_edits_checks(
                     }
                     if *count == 0 {
                         d.push(Diagnostic::error(
-                            codes::EDIT_INVALID,
+                            EDIT_INVALID,
                             stage,
                             format!("{epath}/count"),
                             "plant `count` is 0 — a zero-tree plant is a no-op; give a \
@@ -1031,7 +1043,7 @@ pub(crate) fn world_edits_checks(
                         && !(1..=14).contains(ml)
                     {
                         d.push(Diagnostic::error(
-                            codes::EDIT_INVALID,
+                            EDIT_INVALID,
                             stage,
                             format!("{epath}/min_light"),
                             format!(
@@ -1051,7 +1063,7 @@ pub(crate) fn world_edits_checks(
                         .and_then(|a| a.lighting);
                     if area_lighting.is_none() && (fixture.is_none() || min_light.is_none()) {
                         d.push(Diagnostic::error(
-                            codes::EDIT_INVALID,
+                            EDIT_INVALID,
                             stage,
                             epath.to_string(),
                             format!(

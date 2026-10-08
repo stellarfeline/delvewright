@@ -700,6 +700,61 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   objective). B2b moves both unchanged; the merge is its own step, proven by a
   test that plants that flag on both sites.
 
+**What B2c found** (corrections to this record, made where B2c touched it):
+
+- `validate/mod.rs` now holds the driver, `AnchorProviders`, `station_kind_diag`
+  and the helpers two or more object modules call (`declares_bonfire`,
+  `declares_checkpoint`, the three deep effect walks, `split_blockstate`,
+  `check_block_field`, `collect_declared_flags`, `produced_flags`,
+  `quest_ancestors`, `graph_has_cycle`). A helper with one object caller went
+  to that object (`declared_endings` to `quest_plan`).
+- `syntax`, `uniqueness` and `references` are each one function per collection
+  (`<object>_id_syntax`, `<object>_id_uniqueness`, `<object>_dangling_refs`),
+  called from the driver in the order the pass walked them, so the three passes
+  are three runs of calls rather than one call per object. The rule each applies
+  is the id grammar's and lives in `ids.rs`: the syntax macro (`id_syntax!`),
+  `dup_check` and `dangling`. `envelope` is `envelope::envelope_checks`. The
+  area-id set the NPC and quest-plan references shared is
+  `world::declared_area_ids`; the stage-7 batch check computes the same set
+  itself, a second copy left in place because merging the two is not a move.
+- `check_enchantments` reads an enchantment map, and the one other rule about
+  that map, `enchantment_component`, is in `wave.rs`, so it went there with
+  `DW0433`/`DW0434`. `check_stack_count` and `MIN_CONTAINER_SLOTS` are the
+  container fill's and went to `loot.rs` with `DW0435`/`DW0436`; a trap's
+  `dispense` and a `collect` call them there.
+- `split_blockstate` is not `world_edits_checks`' alone: `check_block_field`,
+  shared by the quest and trigger checks, calls it too, so it stays in
+  `validate/mod.rs`.
+- `DW0102` stays in `diagnostic::codes`. Its constant is named `DSL_VERSION`,
+  which is also the format number `envelope.rs` declares, so declaring the
+  code there takes an inline module, and `check-dw-codes`' remedy scan reads
+  a name the tree uses twice only through `codes::` — the move would unbind
+  `DW0102`'s raise site from that scan. Moving it needs a renamed constant (a
+  `delvec codes` change) or a scan that qualifies by the declaring module.
+  `DW0101` and `DW0103` moved.
+- 29 codes moved: `economy` 6 (`DW0520`–`DW0524`, `DW0901`), `trap` 5,
+  `assembly` 3, `envelope`, `lethal`, `loot`, `shortcut`, `timed_gate` and
+  `wave` 2 each, `ambush`, `loop` and `world_edits` 1 each. The codes still in
+  `diagnostic::codes` are raised from two modules or more (`DW0100`, `DW0102`,
+  `DW0110`–`DW0112`, `DW0142`, `DW0143`, `DW0170`, `DW0172`, `DW0173`,
+  `DW0190`, `DW0192`, `DW0193`, `DW0196`, `DW0432`, `DW0500`, `DW0741`,
+  `DW0953`) or from one module no B2 cut holds (`equipment` `DW0898`;
+  `healthbar` `DW0909`, `DW0910`, `DW0912`; `onkill` `DW0913`; `celestial`
+  `DW0931`; `l10n` `DW0180`–`DW0184`, `DW0187`, `DW0188`; `chrome` `DW0186`;
+  `viewdistance` `DW0956`) or from no DSL module (`DW0940`, raised by
+  `compiler::textures` alone). Dissolving `diagnostic::codes` is a step of its
+  own.
+- Catalog: the trade-and-stake section and the purchase section go to
+  `dsl/economy.md` whole, the locked-strike section to `dsl/assembly.md`.
+  `DW043x`'s rows end two each on `dsl/wave.md`, `dsl/loot.md` and
+  `delvec/compiler/loot.md`; the tie is broken by the object the section
+  describes, the container fill, so its prose is on `dsl/loot.md` (authored).
+  The four pointer sections left without a row on `dsl/diagnostic.md` are
+  dropped.
+- `world.rs` (1668 lines) and `wave.rs` (1592) are past the §1 limit; both
+  were past it before this step (1529, 1528), and each becoming a directory is
+  a step of its own.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,

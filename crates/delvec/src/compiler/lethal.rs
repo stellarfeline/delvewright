@@ -159,10 +159,10 @@ impl LethalGate {
 ///
 /// One code, three shapes, one rule — *a killing volume and what shows it
 /// agree*. The full derivation is on
-/// [`delvewright_dsl::codes::LETHAL_INVISIBLE`], which is where the code itself
+/// [`delvewright_dsl::lethal::LETHAL_INVISIBLE`], which is where the code itself
 /// is declared: the document arm lives in `dsl::validate`, so a second constant
 /// here would be one number for two rules.
-pub const DW_LETHAL_INVISIBLE: DwCode = delvewright_dsl::codes::LETHAL_INVISIBLE;
+pub const DW_LETHAL_INVISIBLE: DwCode = delvewright_dsl::lethal::LETHAL_INVISIBLE;
 
 /// What `DW0891` examined for one volume in one configuration (spec-0062 §5,
 /// spec-0088 §5) — one row of the ledger per (volume, configuration) pair.

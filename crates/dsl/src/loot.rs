@@ -64,11 +64,24 @@ fn one_u32() -> u32 {
 
 use std::collections::BTreeSet;
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::registry::{AnchorRegistry, ItemRegistry};
 use crate::validate::{AnchorProviders, station_kind_diag};
 use crate::wave::check_enchantments;
+
+crate::dw_code! {
+    /// (spec-0021) Two `loot` entries target the same anchor, so one would
+    /// silently overwrite the other's contents.
+    pub const LOOT_DUPLICATE_ANCHOR: DwCode = DwCode::new("DW0435", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A single-slot fill's `count` exceeds the item's `minecraft:max_stack_size`
+    /// in the pinned 1.21.11 registry. `item replace … container.<n> with <item>
+    /// <count>` fails **silently** above the cap, shipping an empty slot.
+    pub const ITEM_COUNT_OVER_STACK: DwCode = DwCode::new("DW0436", ExitTier::Build);
+}
 
 /// Exclusive ownership of an adopted container (DSL v0.8, `DW0435`).
 ///
@@ -100,7 +113,7 @@ pub(crate) fn collect_container_claim_checks(c: &Campaign, d: &mut Vec<Diagnosti
             let mine = format!("collect objective `{}`", o.id());
             if let Some(prev) = claimed.get(cont.as_str()) {
                 d.push(Diagnostic::error(
-                    codes::LOOT_DUPLICATE_ANCHOR,
+                    LOOT_DUPLICATE_ANCHOR,
                     "quests",
                     format!("/content/quests/{i}/objectives/{j}/container"),
                     format!(
@@ -155,7 +168,7 @@ pub(crate) fn check_stack_count(
         return;
     }
     d.push(Diagnostic::error(
-        codes::ITEM_COUNT_OVER_STACK,
+        ITEM_COUNT_OVER_STACK,
         "quests",
         path,
         format!(
@@ -241,7 +254,7 @@ pub(crate) fn loot_checks(
         // the first slot-for-slot, so one declaration silently loses.
         if let Some(prev) = seen_anchor.insert(l.anchor.as_str(), i) {
             d.push(Diagnostic::error(
-                codes::LOOT_DUPLICATE_ANCHOR,
+                LOOT_DUPLICATE_ANCHOR,
                 "quests",
                 format!("/content/loot/{i}/anchor"),
                 format!(

@@ -7,7 +7,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ### DW043x — geometry & container proofs (stair orientation; spec-0021 loot; `collect` container adoption)
 
-This module's rows of a section whose prose is on the [`delvewright_dsl::diagnostic` page](../../dsl/diagnostic.md#dw043x--geometry--container-proofs-stair-orientation-spec-0021-loot-collect-container-adoption).
+This module's rows of a section whose prose is on the [`delvewright_dsl::loot` page](../../dsl/loot.md#dw043x--geometry--container-proofs-stair-orientation-spec-0021-loot-collect-container-adoption).
 
 | Code | Meaning |
 |------|---------|

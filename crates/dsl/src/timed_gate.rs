@@ -95,12 +95,34 @@ pub struct TimedGateDisarm {
 
 use std::collections::BTreeSet;
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
 use crate::registry::AnchorRegistry;
 use crate::validate::{
     AnchorProviders, for_each_effect_deep, for_each_trigger_effect_deep, station_kind_diag,
 };
+
+crate::dw_code! {
+    /// (spec-0016 §4) A `timed-gate` declaration is structurally invalid: a
+    /// malformed or duplicate `timed-gate/<id>`, an `open_ticks` or
+    /// `closed_ticks` of 0 (a gate that never opens, or never closes — neither is
+    /// a timing gate), a `phase` at or beyond the full cycle, or a gate another
+    /// `timed-gate` or a `shortcut` already owns (two clocks fighting over one
+    /// region, or a clock fighting a permanent open), or a `disarm.via` anchor no
+    /// area's prefab provides / one that IS the gate anchor (the jam lever cannot
+    /// live inside the span it stops).
+    pub const TIMED_GATE_INVALID: DwCode = DwCode::new("DW0377", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A `close-gate` effect targets the gate of a `timed-gate` that
+    /// declares a `disarm`. A disarm suppresses the clock **permanently with the
+    /// gate resting open** — a jammed portcullis stays up — so, exactly like a
+    /// `shortcut` (`DW0372`), its permanence is structural: there is no verb that
+    /// can re-arm it. Use a different gate for the beat that must re-seal, or drop
+    /// the `disarm`.
+    pub const TIMED_GATE_REARMED: DwCode = DwCode::new("DW0389", ExitTier::Build);
+}
 
 /// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377` /
 /// `DW0389`.
@@ -134,12 +156,7 @@ pub(crate) fn timed_gate_checks(
     let mut driven: BTreeSet<&str> = BTreeSet::new();
     for (i, g) in quests.timed_gates.iter().enumerate() {
         let err = |path: String, msg: String, d: &mut Vec<Diagnostic>| {
-            d.push(Diagnostic::error(
-                codes::TIMED_GATE_INVALID,
-                "quests",
-                path,
-                msg,
-            ));
+            d.push(Diagnostic::error(TIMED_GATE_INVALID, "quests", path, msg));
         };
         if !g.id.is_valid_syntax() {
             err(
@@ -291,7 +308,7 @@ pub(crate) fn timed_gate_checks(
     }
     let report = |path: String, anchor: &str, d: &mut Vec<Diagnostic>| {
         d.push(Diagnostic::error(
-            codes::TIMED_GATE_REARMED,
+            TIMED_GATE_REARMED,
             "quests",
             path,
             format!(

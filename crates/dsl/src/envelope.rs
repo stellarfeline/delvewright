@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::design::DesignContent;
 use crate::detailplan::DetailPlanContent;
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::ids::CampaignId;
 use crate::layout::{GeometryBriefContent, LayoutGraphContent};
 use crate::siteplan::SitePlanContent;
@@ -360,6 +360,19 @@ pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
 // Validation
 // ---------------------------------------------------------------------------
 
+crate::dw_code! {
+    /// Envelope `stage` does not match the document's slot.
+    pub const STAGE_MISMATCH: DwCode = DwCode::new("DW0101", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Inconsistent `campaign_id` across stages.
+    pub const CAMPAIGN_ID_MISMATCH: DwCode = DwCode::new("DW0103", ExitTier::Build);
+}
+
+/// The envelope of every stage document: its `stage` (`DW0101`), its
+/// `dsl_version` (`DW0102`), and its `campaign_id`'s syntax (`DW0110`) and
+/// agreement with the world stage's (`DW0103`).
 pub(crate) fn envelope_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let stages = [
         (Stage::World, c.world.stage, c.world.dsl_version.as_str()),
@@ -417,7 +430,7 @@ pub(crate) fn envelope_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (expected, actual, version) in stages {
         if actual != expected {
             d.push(Diagnostic::error(
-                codes::STAGE_MISMATCH,
+                STAGE_MISMATCH,
                 expected.name(),
                 "/stage",
                 format!(
@@ -493,7 +506,7 @@ pub(crate) fn envelope_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         if id.as_str() != canonical {
             d.push(Diagnostic::error(
-                codes::CAMPAIGN_ID_MISMATCH,
+                CAMPAIGN_ID_MISMATCH,
                 stage.name(),
                 "/campaign_id",
                 format!(

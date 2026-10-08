@@ -156,10 +156,49 @@ pub struct LethalVolume {
 
 use std::collections::BTreeSet;
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::registry::AnchorRegistry;
 use crate::validate::{AnchorProviders, station_kind_diag};
+
+crate::dw_code! {
+    /// (spec-0031, DSL v0.10) A `lethal_volumes[]` entry's `message` is blank.
+    ///
+    /// The volume would still kill — and would kill in silence, which is the one
+    /// thing the declaration exists to prevent. There is no compiler default that
+    /// could be right for a cliff, a lava pit and an acid pool at once, so a blank
+    /// wording is refused rather than papered over: a gate that reports green
+    /// while the player learns nothing is exactly the vacuous pass CLAUDE.md names.
+    pub const LETHAL_MESSAGE_BLANK: DwCode = DwCode::new("DW0512", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0062) **A killing volume and what shows it disagree.**
+    ///
+    /// One rule, three shapes, and every remedy each names is admitted by the
+    /// others — which is why one code carries all of them (spec-0062 §4).
+    ///
+    /// * **Caught floor that shows nothing.** Some cell the party can walk to
+    ///   lies in the volume's keep-out, and the block under or in it is not one
+    ///   of the volume's `shown_by`. The player reads stone and dies on it. The
+    ///   remedy is the geometry's: lower the volume so its keep-out's top course
+    ///   lies under the floor, draw its `extent` in, or author a block vanilla
+    ///   hurts with under those cells and declare it. Never mark walkable-looking
+    ///   ground unwalkable — the compiler knows and the player does not.
+    /// * **A declared signal the bytes do not hold.** A `shown_by` block under
+    ///   or in no caught cell, whether the list is wrong or the volume catches
+    ///   nothing at all. The `DW0887` shape, on a volume instead of a waterline.
+    /// * **A `shown_by` naming a block vanilla does not hurt a body with.** The
+    ///   document arm, and the only one answerable with nothing placed:
+    ///   `minecraft:stone` over stone is borne out by the bytes and shows
+    ///   nothing.
+    ///
+    /// The world arm is raised by `delvec::compiler::lethal` over the final
+    /// assembled world (whether a cell is floor is a fact about the settled
+    /// bytes, so nothing before assembly can answer it); the document arm here,
+    /// by [`crate::validate`].
+    pub const LETHAL_INVISIBLE: DwCode = DwCode::new("DW0891", ExitTier::Build);
+}
 
 /// Stage-5 lethal-volume structural checks (DSL v0.10, spec-0031): id syntax and
 /// uniqueness, a resolvable region anchor, and a wording the player can actually
@@ -258,7 +297,7 @@ pub(crate) fn lethal_volume_checks(
                 continue;
             }
             d.push(Diagnostic::error(
-                codes::LETHAL_INVISIBLE,
+                LETHAL_INVISIBLE,
                 "quests",
                 format!("/content/lethal_volumes/{i}/shown_by/{j}"),
                 format!(
@@ -278,7 +317,7 @@ pub(crate) fn lethal_volume_checks(
         }
         if v.message.trim().is_empty() {
             d.push(Diagnostic::error(
-                codes::LETHAL_MESSAGE_BLANK,
+                LETHAL_MESSAGE_BLANK,
                 "quests",
                 format!("/content/lethal_volumes/{i}/message"),
                 format!(

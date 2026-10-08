@@ -15,7 +15,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ### DW0968–DW0970 — a strike locks where the player stands (`dsl::validate` + `compiler::assembly`; error)
 
-This module's rows of a section whose prose is on the [`delvewright_dsl::diagnostic` page](../../dsl/diagnostic.md#dw0968dw0970--a-strike-locks-where-the-player-stands-dslvalidate--compilerassembly-error).
+This module's rows of a section whose prose is on the [`delvewright_dsl::assembly` page](../../dsl/assembly.md#dw0968dw0970--a-strike-locks-where-the-player-stands-dslvalidate--compilerassembly-error).
 
 | Code | Meaning |
 |---|---|

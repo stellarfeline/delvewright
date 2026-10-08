@@ -273,7 +273,7 @@ pub struct TrapDisarm {
 use std::collections::BTreeSet;
 
 use crate::Verb;
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::loot::check_stack_count;
 use crate::registry::{
@@ -282,6 +282,47 @@ use crate::registry::{
 use crate::validate::{
     AnchorProviders, collect_declared_flags, for_each_trap_payload_deep, station_kind_diag,
 };
+
+crate::dw_code! {
+    /// (v0.6) Trap declaration structurally invalid (spec-0011): a malformed or
+    /// duplicated `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides,
+    /// or a trap whose `disarm.via` collides with its own trigger anchor.
+    /// Validation-tier (exit 1). Renumbered off the spec's stale reserved number
+    /// (0197 — since taken).
+    pub const TRAP_INVALID: DwCode = DwCode::new("DW0340", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
+    /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
+    /// spec's stale reserved number (0198 — since taken).
+    pub const TRAP_PAYLOAD_UNKNOWN: DwCode = DwCode::new("DW0341", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0022) A trap declares **no consequence at all**: neither the legacy
+    /// redstone `effect` nor a command `payload`. A trap that does nothing is
+    /// mute hardware the completability proofs would nonetheless reason about,
+    /// so it is a content mistake, not a no-op. Validation-tier (exit 1).
+    pub const TRAP_NO_CONSEQUENCE: DwCode = DwCode::new("DW0440", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0022) A `volley` `projectile` / `collapse` `falling_block` /
+    /// `then_floor` id is not in the pinned 1.21.11 registry (a `projectile`
+    /// must be an ENTITY id, the collapse blocks BLOCK ids).
+    /// Validation-tier (exit 1).
+    pub const TRAP_VERB_ID_UNKNOWN: DwCode = DwCode::new("DW0441", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0022) A `volley`'s `salvos` / `interval` is out of range (`salvos`
+    /// in `1..=16`, `interval` in `1..=200`). A volley fires its whole kill zone
+    /// every salvo, so the entity count is `salvos x cells`; and salvos spread
+    /// wider than the interval cap stop reading as one trap event.
+    /// Validation-tier (exit 1).
+    pub const VOLLEY_CADENCE: DwCode = DwCode::new("DW0443", ExitTier::Build);
+}
 
 /// DSL v0.6 trap validation (spec-0011). Each trap binds to a **point anchor**
 /// an area's prefab provides — any anchor, whatever it is called; a spec-0022
@@ -316,7 +357,7 @@ pub(crate) fn trap_checks(
     for (i, t) in quests.traps.iter().enumerate() {
         if !t.id.is_valid_syntax() {
             d.push(Diagnostic::error(
-                codes::TRAP_INVALID,
+                TRAP_INVALID,
                 "quests",
                 format!("/content/traps/{i}/id"),
                 format!(
@@ -328,7 +369,7 @@ pub(crate) fn trap_checks(
         }
         if !seen.insert(t.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::TRAP_INVALID,
+                TRAP_INVALID,
                 "quests",
                 format!("/content/traps/{i}/id"),
                 format!(
@@ -349,7 +390,7 @@ pub(crate) fn trap_checks(
         }
         if !providers.resolvable(t.at.as_str()) {
             d.push(Diagnostic::error(
-                codes::TRAP_INVALID,
+                TRAP_INVALID,
                 "quests",
                 format!("/content/traps/{i}/at"),
                 format!(
@@ -380,7 +421,7 @@ pub(crate) fn trap_checks(
             }
             if !providers.resolvable(dis.via.as_str()) {
                 d.push(Diagnostic::error(
-                    codes::TRAP_INVALID,
+                    TRAP_INVALID,
                     "quests",
                     format!("/content/traps/{i}/disarm/via"),
                     format!(
@@ -395,7 +436,7 @@ pub(crate) fn trap_checks(
             }
             if dis.via == t.at {
                 d.push(Diagnostic::error(
-                    codes::TRAP_INVALID,
+                    TRAP_INVALID,
                     "quests",
                     format!("/content/traps/{i}/disarm/via"),
                     format!(
@@ -413,7 +454,7 @@ pub(crate) fn trap_checks(
         // mistake, never a deliberate no-op.
         if t.effect.is_none() && t.payload.is_empty() {
             d.push(Diagnostic::error(
-                codes::TRAP_NO_CONSEQUENCE,
+                TRAP_NO_CONSEQUENCE,
                 "quests",
                 format!("/content/traps/{i}"),
                 format!(
@@ -442,7 +483,7 @@ pub(crate) fn trap_checks(
                         .unwrap_or(crate::DEFAULT_VOLLEY_PROJECTILE);
                     if !entities.contains(proj) {
                         d.push(Diagnostic::error(
-                            codes::TRAP_VERB_ID_UNKNOWN,
+                            TRAP_VERB_ID_UNKNOWN,
                             "quests",
                             format!("{base}/projectile"),
                             format!(
@@ -455,7 +496,7 @@ pub(crate) fn trap_checks(
                     let n = salvos.unwrap_or(crate::DEFAULT_VOLLEY_SALVOS);
                     if n == 0 || n > crate::MAX_VOLLEY_SALVOS {
                         d.push(Diagnostic::error(
-                            codes::VOLLEY_CADENCE,
+                            VOLLEY_CADENCE,
                             "quests",
                             format!("{base}/salvos"),
                             format!(
@@ -470,7 +511,7 @@ pub(crate) fn trap_checks(
                     let iv = interval.unwrap_or(crate::DEFAULT_VOLLEY_INTERVAL);
                     if iv == 0 || iv > crate::MAX_VOLLEY_INTERVAL {
                         d.push(Diagnostic::error(
-                            codes::VOLLEY_CADENCE,
+                            VOLLEY_CADENCE,
                             "quests",
                             format!("{base}/interval"),
                             format!(
@@ -497,7 +538,7 @@ pub(crate) fn trap_checks(
                         let Some(id) = id else { continue };
                         if !blocks.contains(id) {
                             d.push(Diagnostic::error(
-                                codes::TRAP_VERB_ID_UNKNOWN,
+                                TRAP_VERB_ID_UNKNOWN,
                                 "quests",
                                 format!("{base}/{field}"),
                                 format!(
@@ -557,7 +598,7 @@ pub(crate) fn trap_checks(
         if let Some((item, count)) = t.dispense() {
             if !items.contains(item) {
                 d.push(Diagnostic::error(
-                    codes::TRAP_PAYLOAD_UNKNOWN,
+                    TRAP_PAYLOAD_UNKNOWN,
                     "quests",
                     format!("/content/traps/{i}/effect/dispense/item"),
                     format!(

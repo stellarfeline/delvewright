@@ -645,7 +645,7 @@ fn run_rig_describe(
     let id = delvewright_dsl::RigId(rig.to_string());
     let refuse = |message: String| {
         let d = Diagnostic::error(
-            delvewright_dsl::codes::ASSEMBLY_RIG,
+            delvewright_dsl::assembly::ASSEMBLY_RIG,
             "rig",
             rig.to_string(),
             message,
@@ -693,7 +693,7 @@ fn run_rig_describe(
             .iter()
             .map(|i| {
                 Diagnostic::error(
-                    delvewright_dsl::codes::ASSEMBLY_RIG,
+                    delvewright_dsl::assembly::ASSEMBLY_RIG,
                     "rig",
                     format!("{rig}{}", i.field),
                     format!(

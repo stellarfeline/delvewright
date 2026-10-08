@@ -48,12 +48,28 @@ pub struct Shortcut {
 
 use std::collections::BTreeSet;
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
 use crate::registry::AnchorRegistry;
 use crate::validate::{
     AnchorProviders, for_each_effect_deep, for_each_trigger_effect_deep, station_kind_diag,
 };
+
+crate::dw_code! {
+    /// (spec-0016 §2) A `shortcut` declaration is structurally invalid: a
+    /// malformed or duplicate `shortcut/<id>`, a `gate`/`unlock` anchor no area's
+    /// prefab provides, or a `gate` that IS the `unlock` (the mechanism must sit
+    /// on the far side, not in the doorway).
+    pub const SHORTCUT_INVALID: DwCode = DwCode::new("DW0371", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0016 §2) A `close-gate` effect targets a gate a `shortcut` owns.
+    /// A shortcut opens **permanently** — that is the whole pattern — so its
+    /// permanence is structural: there is no verb that can put it back. Use a
+    /// different gate for the point-of-no-return beat.
+    pub const SHORTCUT_RESEALED: DwCode = DwCode::new("DW0372", ExitTier::Build);
+}
 
 /// Validate the stage-5 `shortcuts` section (spec-0016 §2).
 ///
@@ -80,7 +96,7 @@ pub(crate) fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
     for (i, sc) in quests.shortcuts.iter().enumerate() {
         if !sc.id.is_valid_syntax() {
             d.push(Diagnostic::error(
-                codes::SHORTCUT_INVALID,
+                SHORTCUT_INVALID,
                 "quests",
                 format!("/content/shortcuts/{i}/id"),
                 format!(
@@ -92,7 +108,7 @@ pub(crate) fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
         }
         if !seen.insert(sc.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::SHORTCUT_INVALID,
+                SHORTCUT_INVALID,
                 "quests",
                 format!("/content/shortcuts/{i}/id"),
                 format!(
@@ -122,7 +138,7 @@ pub(crate) fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
             }
             if !providers.resolvable(anchor.as_str()) {
                 d.push(Diagnostic::error(
-                    codes::SHORTCUT_INVALID,
+                    SHORTCUT_INVALID,
                     "quests",
                     format!("/content/shortcuts/{i}/{field}"),
                     format!(
@@ -138,7 +154,7 @@ pub(crate) fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
         }
         if sc.gate == sc.unlock {
             d.push(Diagnostic::error(
-                codes::SHORTCUT_INVALID,
+                SHORTCUT_INVALID,
                 "quests",
                 format!("/content/shortcuts/{i}/unlock"),
                 format!(
@@ -155,7 +171,7 @@ pub(crate) fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
     let owned: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
     let report = |path: String, anchor: &str, d: &mut Vec<Diagnostic>| {
         d.push(Diagnostic::error(
-            codes::SHORTCUT_RESEALED,
+            SHORTCUT_RESEALED,
             "quests",
             path,
             format!(

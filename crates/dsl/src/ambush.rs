@@ -128,8 +128,18 @@ impl Ambush {
 
 use std::collections::BTreeSet;
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
+
+crate::dw_code! {
+    /// (spec-0016 §3) An `ambush` declaration is structurally invalid: a
+    /// malformed or duplicate `ambush/<id>`, an empty `actors` list (an ambush
+    /// that ambushes nobody), or the same actor listed twice (the second
+    /// `spawn-actor` is a guarded no-op, so the author's intent silently halves).
+    /// The telegraph is deliberately NOT required — an un-telegraphed ambush is
+    /// core souls vocabulary.
+    pub const AMBUSH_INVALID: DwCode = DwCode::new("DW0375", ExitTier::Build);
+}
 
 /// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0375`.
 ///
@@ -148,7 +158,7 @@ pub(crate) fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, a) in c.quests.content.ambushes.iter().enumerate() {
         if !a.id.is_valid_syntax() {
             d.push(Diagnostic::error(
-                codes::AMBUSH_INVALID,
+                AMBUSH_INVALID,
                 "quests",
                 format!("/content/ambushes/{i}/id"),
                 format!(
@@ -160,7 +170,7 @@ pub(crate) fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         if !seen.insert(a.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::AMBUSH_INVALID,
+                AMBUSH_INVALID,
                 "quests",
                 format!("/content/ambushes/{i}/id"),
                 format!(
@@ -172,7 +182,7 @@ pub(crate) fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         if a.actors.is_empty() {
             d.push(Diagnostic::error(
-                codes::AMBUSH_INVALID,
+                AMBUSH_INVALID,
                 "quests",
                 format!("/content/ambushes/{i}/actors"),
                 format!(
@@ -187,7 +197,7 @@ pub(crate) fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         for (j, actor) in a.actors.iter().enumerate() {
             if !dup.insert(actor.as_str()) {
                 d.push(Diagnostic::error(
-                    codes::AMBUSH_INVALID,
+                    AMBUSH_INVALID,
                     "quests",
                     format!("/content/ambushes/{i}/actors/{j}"),
                     format!(

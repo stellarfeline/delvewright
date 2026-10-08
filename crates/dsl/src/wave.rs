@@ -1531,6 +1531,18 @@ pub(crate) fn mob_effect_checks(
 // Validation
 // ---------------------------------------------------------------------------
 
+crate::dw_code! {
+    /// (spec-0021) An `equipment` or `loot` enchantment id is not in the pinned
+    /// 1.21.11 enchantment registry.
+    pub const ENCHANTMENT_UNKNOWN: DwCode = DwCode::new("DW0433", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0021) An enchantment level is outside the 1..=255 range vanilla's
+    /// `minecraft:enchantments` component can carry.
+    pub const ENCHANTMENT_LEVEL: DwCode = DwCode::new("DW0434", ExitTier::Build);
+}
+
 /// Validate an enchantment map: known ids (`DW0433`), legal levels (`DW0434`).
 ///
 /// Levels are checked against what the `minecraft:enchantments` **component**
@@ -1550,7 +1562,7 @@ pub(crate) fn check_enchantments(
     for (id, level) in ench {
         if !reg.contains(id) {
             d.push(Diagnostic::error(
-                codes::ENCHANTMENT_UNKNOWN,
+                ENCHANTMENT_UNKNOWN,
                 stage,
                 format!("{path}/{id}"),
                 format!(
@@ -1564,7 +1576,7 @@ pub(crate) fn check_enchantments(
         }
         if *level == 0 || *level > 255 {
             d.push(Diagnostic::error(
-                codes::ENCHANTMENT_LEVEL,
+                ENCHANTMENT_LEVEL,
                 stage,
                 format!("{path}/{id}"),
                 format!(

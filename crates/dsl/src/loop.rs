@@ -78,10 +78,25 @@ pub struct Loop {
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::registry::AnchorRegistry;
 use crate::validate::{AnchorProviders, station_kind_diag};
+
+crate::dw_code! {
+    /// (spec-0086 §3.2, §3.4, §3.5) **A loop whose release is not a fact about the
+    /// party, or that has none.**
+    ///
+    /// One rule — *the gate is the release, and the release is the party's* —
+    /// asked four ways: a loop with no gate term at all (it holds forever, a
+    /// soft-lock spelled out); a `requires_state` term naming a `player`-scoped
+    /// datum (one player released and another looped is a party split in two);
+    /// a `counts` naming a `player`-scoped datum (for the same reason); and a
+    /// `teleport` inside `on_cross` (the body was just moved, and a second move in
+    /// the same tick is two carries with one position). Validation-tier (exit 1).
+    /// Prescription: a `party` datum, a flag, or a release the party reaches.
+    pub const LOOP_GATE: DwCode = DwCode::new("DW0949", ExitTier::Build);
+}
 
 /// Stage-5 loop structural checks (spec-0086): id syntax and uniqueness, the two
 /// anchors resolvable, and the release a fact about the party (`DW0949`).
@@ -163,7 +178,7 @@ pub(crate) fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
         // `DW0949`: the gate is the release, and a loop with none holds forever.
         if l.gate().is_empty() {
             d.push(Diagnostic::error(
-                codes::LOOP_GATE,
+                LOOP_GATE,
                 "quests",
                 at(""),
                 format!(
@@ -182,7 +197,7 @@ pub(crate) fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
         for (k, cmp) in l.requires_state.iter().enumerate() {
             if scope_of.get(cmp.state.as_str()) == Some(&crate::StateScope::Player) {
                 d.push(Diagnostic::error(
-                    codes::LOOP_GATE,
+                    LOOP_GATE,
                     "quests",
                     at(&format!("/requires_state/{k}")),
                     format!(
@@ -212,7 +227,7 @@ pub(crate) fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
                     ),
                 )),
                 Some(crate::StateScope::Player) => d.push(Diagnostic::error(
-                    codes::LOOP_GATE,
+                    LOOP_GATE,
                     "quests",
                     at("/counts"),
                     format!(
@@ -243,7 +258,7 @@ pub(crate) fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
         teleports(&l.on_cross, &at("/on_cross"), &mut found);
         for path in found {
             d.push(Diagnostic::error(
-                codes::LOOP_GATE,
+                LOOP_GATE,
                 "quests",
                 path.clone(),
                 format!(
