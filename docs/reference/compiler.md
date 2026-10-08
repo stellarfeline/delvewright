@@ -71,7 +71,8 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
   re-verification in pass 9.
 - The light field itself (`compiler::light`) is **dense**: over the assembled
-  AABB, each cell is one byte holding whether light passes it, whether the sky is
+  AABB plus the layer of open air above it (the cell a body stands in on the
+  tallest block, which reads the sky and block light it really has), each cell is one byte holding whether light passes it, whether the sky is
   above it and what it emits, resolved from its block id once. Sky exposure is one
   top-down sweep per column; the frontier drains brightest-first, so each cell is
   relaxed once. The greedy relight loop floods once and **extends** the field per
