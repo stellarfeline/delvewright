@@ -271,7 +271,7 @@ pub struct PlannedQuest {
 use crate::Verb;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
-use crate::validate::{declared_endings, graph_has_cycle, produced_flags};
+use crate::validate::{graph_has_cycle, produced_flags};
 
 crate::dw_code! {
     /// Quest dependency cycle.
@@ -883,6 +883,99 @@ pub(crate) fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     );
                 }
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+/// Every ending id some `campaign-complete` declares. There is no separate
+/// declaration list — the same rule flags follow.
+pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    crate::for_each_campaign_effect(c, &mut |_p, _site, eff| {
+        if let Verb::CampaignComplete {
+            ending: Some(e), ..
+        } = &eff.verb
+        {
+            out.insert(e.as_str().to_string());
+        }
+    });
+    out
+}
+
+/// `DW0110` over the planned quests' ids.
+pub(crate) fn plan_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
+        crate::ids::id_syntax!(d, q.id, "quest-plan", format!("/content/quests/{i}/id"));
+    }
+}
+
+/// `DW0111` over the planned quests' ids.
+pub(crate) fn plan_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::ids::dup_check(
+        c.quest_plan
+            .content
+            .quests
+            .iter()
+            .enumerate()
+            .map(|(i, q)| (q.id.as_str(), format!("/content/quests/{i}/id"))),
+        "quest-plan",
+        "quest",
+        d,
+    );
+}
+
+/// `DW0112` over what a planned quest names: its area, its NPCs, and the
+/// quests it `depends_on`.
+pub(crate) fn plan_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::ids::dangling;
+    let area_ids = crate::world::declared_area_ids(c);
+    let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    let planned_ids: BTreeSet<&str> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| q.id.as_str())
+        .collect();
+    for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
+        dangling(
+            d,
+            area_ids.contains(q.area.as_str()),
+            "quest-plan",
+            format!("/content/quests/{i}/area"),
+            format!(
+                "quest references unknown area `{}` — {}",
+                q.area,
+                crate::placement::Placement::of(c).area_remedy(),
+            ),
+        );
+        for (k, npc) in q.npcs.iter().enumerate() {
+            dangling(
+                d,
+                npc_ids.contains(npc.as_str()),
+                "quest-plan",
+                format!("/content/quests/{i}/npcs/{k}"),
+                format!(
+                    "quest references unknown npc `{npc}` — declare it in stage 2 or correct the \
+                     reference"
+                ),
+            );
+        }
+        for (k, dep) in q.depends_on.iter().enumerate() {
+            dangling(
+                d,
+                planned_ids.contains(dep.as_str()),
+                "quest-plan",
+                format!("/content/quests/{i}/depends_on/{k}"),
+                format!(
+                    "quest depends on unknown quest `{dep}` — declare it in the stage-4 quest \
+                     plan or correct the `depends_on` entry"
+                ),
+            );
         }
     }
 }

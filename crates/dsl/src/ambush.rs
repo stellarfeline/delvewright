@@ -121,3 +121,83 @@ impl Ambush {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeSet;
+
+use crate::diagnostic::{Diagnostic, codes};
+use crate::envelope::Campaign;
+
+/// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0375`.
+///
+/// An ambush desugars to an ordinary environment trigger at parse time, so it
+/// inherits every trigger diagnostic already in the compiler — id/range checks
+/// (`DW0194`), anchor resolution, unknown actor refs, the `use`-on-an-NPC rule
+/// (`DW0350`). This function only owns what the sugar itself can get wrong:
+/// its own id, and an actor list that does not actually stage an ambush.
+///
+/// It deliberately does **not** require a `telegraph`. The un-telegraphed
+/// ambush is core souls vocabulary — 初见杀 is how a
+/// level teaches. What the engine owes the player is counterplay on the retry,
+/// which is a geometric question and is proven in `compiler::nav` (`DW0376`).
+pub(crate) fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, a) in c.quests.content.ambushes.iter().enumerate() {
+        if !a.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/id"),
+                format!(
+                    "malformed ambush id `{}` — ambush ids must be lowercase kebab-case with the \
+                     `ambush/` prefix (e.g. `ambush/stair-turn`)",
+                    a.id
+                ),
+            ));
+        }
+        if !seen.insert(a.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/id"),
+                format!(
+                    "duplicate ambush id `{}` — rename one so every ambush id is unique (each \
+                     desugars to a trigger named after it)",
+                    a.id
+                ),
+            ));
+        }
+        if a.actors.is_empty() {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/actors"),
+                format!(
+                    "ambush `{}` lists no actors — it would spring nothing. List the actors that \
+                     ambush the player, or delete the declaration; a beat that fires and does \
+                     nothing is never what was meant.",
+                    a.id
+                ),
+            ));
+        }
+        let mut dup: BTreeSet<&str> = BTreeSet::new();
+        for (j, actor) in a.actors.iter().enumerate() {
+            if !dup.insert(actor.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::AMBUSH_INVALID,
+                    "quests",
+                    format!("/content/ambushes/{i}/actors/{j}"),
+                    format!(
+                        "ambush `{}` lists actor `{actor}` twice — `spawn-actor` is idempotent, so \
+                         the second one is a silent no-op and the ambush is half the size it \
+                         reads as. Declare a second actor instead.",
+                        a.id
+                    ),
+                ));
+            }
+        }
+    }
+}

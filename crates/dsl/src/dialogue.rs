@@ -700,3 +700,48 @@ pub(crate) fn npc_tree_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 }
+
+/// `DW0110` over the dialogue node ids.
+pub(crate) fn dialogue_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
+            crate::ids::id_syntax!(
+                d,
+                node.id,
+                "dialogue",
+                format!("/content/dialogues/{i}/nodes/{j}/id")
+            );
+        }
+    }
+}
+
+/// `DW0111` over the dialogue trees and their nodes.
+pub(crate) fn dialogue_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // Dialogue trees: at most one per NPC (a duplicate tree is a duplicate npc
+    // binding within the stage-6 dialogue namespace).
+    crate::ids::dup_check(
+        c.dialogue
+            .content
+            .dialogues
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.npc.as_str(), format!("/content/dialogues/{i}/npc"))),
+        "dialogue",
+        "dialogue tree for npc",
+        d,
+    );
+    // Dialogue node ids: unique within each tree.
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        crate::ids::dup_check(
+            tree.nodes.iter().enumerate().map(|(j, node)| {
+                (
+                    node.id.as_str(),
+                    format!("/content/dialogues/{i}/nodes/{j}/id"),
+                )
+            }),
+            "dialogue",
+            "dialogue node",
+            d,
+        );
+    }
+}

@@ -356,6 +356,156 @@ pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+pub(crate) fn envelope_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let stages = [
+        (Stage::World, c.world.stage, c.world.dsl_version.as_str()),
+        (Stage::Npcs, c.npcs.stage, c.npcs.dsl_version.as_str()),
+        (
+            Stage::Classes,
+            c.classes.stage,
+            c.classes.dsl_version.as_str(),
+        ),
+        (
+            Stage::QuestPlan,
+            c.quest_plan.stage,
+            c.quest_plan.dsl_version.as_str(),
+        ),
+        (Stage::Quests, c.quests.stage, c.quests.dsl_version.as_str()),
+        (
+            Stage::Dialogue,
+            c.dialogue.stage,
+            c.dialogue.dsl_version.as_str(),
+        ),
+    ];
+    let stages: Vec<(Stage, Stage, &str)> = stages
+        .into_iter()
+        .chain(
+            c.world_edits
+                .iter()
+                .map(|e| (Stage::WorldEdits, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.geometry_brief
+                .iter()
+                .map(|e| (Stage::GeometryBrief, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.layout_graph
+                .iter()
+                .map(|e| (Stage::LayoutGraph, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.site_plan
+                .iter()
+                .map(|e| (Stage::SitePlan, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.detail_plan
+                .iter()
+                .map(|e| (Stage::DetailPlan, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.design
+                .iter()
+                .map(|e| (Stage::Design, e.stage, e.dsl_version.as_str())),
+        )
+        .collect();
+    for (expected, actual, version) in stages {
+        if actual != expected {
+            d.push(Diagnostic::error(
+                codes::STAGE_MISMATCH,
+                expected.name(),
+                "/stage",
+                format!(
+                    "`stage` is `{}` but this is the `{}` stage document — set `stage` to `{}` (or \
+                     move this content into the `{}` document it belongs to)",
+                    actual.name(),
+                    expected.name(),
+                    expected.name(),
+                    actual.name(),
+                ),
+            ));
+        }
+        if version != DSL_VERSION {
+            d.push(Diagnostic::error(
+                codes::DSL_VERSION,
+                expected.name(),
+                "/dsl_version",
+                format!(
+                    "dsl_version `{version}` is not the one this engine accepts — set it to \
+                     `{DSL_VERSION}` and revise the document against that surface. An engine \
+                     accepts exactly the number it implements (ADR-0024); a document written \
+                     for another number is built by the engine that implements that number."
+                ),
+            ));
+        }
+    }
+
+    let ids: Vec<(Stage, &crate::ids::CampaignId)> = [
+        (Stage::World, &c.world.campaign_id),
+        (Stage::Npcs, &c.npcs.campaign_id),
+        (Stage::Classes, &c.classes.campaign_id),
+        (Stage::QuestPlan, &c.quest_plan.campaign_id),
+        (Stage::Quests, &c.quests.campaign_id),
+        (Stage::Dialogue, &c.dialogue.campaign_id),
+    ]
+    .into_iter()
+    .chain(
+        c.world_edits
+            .iter()
+            .map(|e| (Stage::WorldEdits, &e.campaign_id)),
+    )
+    .chain(
+        c.geometry_brief
+            .iter()
+            .map(|e| (Stage::GeometryBrief, &e.campaign_id)),
+    )
+    .chain(
+        c.layout_graph
+            .iter()
+            .map(|e| (Stage::LayoutGraph, &e.campaign_id)),
+    )
+    .chain(
+        c.site_plan
+            .iter()
+            .map(|e| (Stage::SitePlan, &e.campaign_id)),
+    )
+    .chain(
+        c.detail_plan
+            .iter()
+            .map(|e| (Stage::DetailPlan, &e.campaign_id)),
+    )
+    .chain(c.design.iter().map(|e| (Stage::Design, &e.campaign_id)))
+    .collect();
+    let canonical = c.world.campaign_id.as_str();
+    for (stage, id) in ids {
+        if !id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                stage.name(),
+                "/campaign_id",
+                format!("malformed campaign_id `{id}` (expected kebab-case)"),
+            ));
+        }
+        if id.as_str() != canonical {
+            d.push(Diagnostic::error(
+                codes::CAMPAIGN_ID_MISMATCH,
+                stage.name(),
+                "/campaign_id",
+                format!(
+                    "campaign_id `{id}` differs from `{canonical}` (the world stage's id) — set \
+                     every stage's `campaign_id` to `{canonical}` so all six documents name one \
+                     campaign"
+                ),
+            ));
+        }
+    }
+}
+
 #[cfg(test)]
 mod version_tests {
     use super::*;

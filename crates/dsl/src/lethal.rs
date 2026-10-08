@@ -149,3 +149,169 @@ pub struct LethalVolume {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<Guard>,
 }
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeSet;
+
+use crate::diagnostic::{Diagnostic, codes};
+use crate::envelope::Campaign;
+use crate::registry::AnchorRegistry;
+use crate::validate::{AnchorProviders, station_kind_diag};
+
+/// Stage-5 lethal-volume structural checks (DSL v0.10, spec-0031): id syntax and
+/// uniqueness, a resolvable region anchor, and a wording the player can actually
+/// read (`DW0512`).
+///
+/// Everything geometric is deliberately absent here and lives in the compiler:
+/// where the box lands, what it overlaps and whether the party can still finish
+/// are questions about the *solved layout*, which the DSL crate does not have.
+pub(crate) fn lethal_volume_checks(
+    c: &Campaign,
+    anchors: &dyn AnchorRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let volumes = &c.quests.content.lethal_volumes;
+    if volumes.is_empty() {
+        return;
+    }
+    // The same "is this anchor provided by some bound prefab" rule every stage-5
+    // anchor reference uses; a pool area defers the answer to the compiler.
+    let providers = AnchorProviders::build(c, anchors);
+    let mut seen_id: BTreeSet<&str> = BTreeSet::new();
+    for (i, v) in volumes.iter().enumerate() {
+        if !v.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                format!("/content/lethal_volumes/{i}/id"),
+                format!(
+                    "malformed lethal-volume id `{}` — lethal-volume ids must be lowercase \
+                     kebab-case with the `lethal/` prefix (e.g. `lethal/cliff-fall`)",
+                    v.id
+                ),
+            ));
+        }
+        if !seen_id.insert(v.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                format!("/content/lethal_volumes/{i}/id"),
+                format!("duplicate lethal-volume id `{}`", v.id),
+            ));
+        }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            v.region.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "a lethal volume's region centre",
+            "quests",
+            format!("/content/lethal_volumes/{i}/region/anchor"),
+        ) {
+            d.push(f);
+        }
+        if !providers.resolvable(v.region.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("/content/lethal_volumes/{i}/region/anchor"),
+                format!(
+                    "lethal-volume anchor `{}` is not provided by any prefab bound in this \
+                     campaign — {}",
+                    v.region.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor the prefab exposes (anchor names come from prefab \
+                         metadata; do NOT invent one)"
+                    ),
+                ),
+            ));
+        }
+        // `DW0891`, document arm (spec-0062 §4): a `shown_by` id that is a known
+        // block and not one vanilla hurts a body with. Nothing has to be placed
+        // to know it, so it is refused here rather than three passes later, and
+        // the message prints the set the author may choose from — a remedy that
+        // named no candidates would be a remedy an author has to guess at.
+        //
+        // An id the pinned version does not have at all is `DW0193`, the code
+        // every block id in the DSL validates under, and deliberately not this
+        // rule's: a typo is a typo wherever it is written.
+        for (j, block) in v.shown_by.iter().enumerate() {
+            if crate::blocks::BlockRegistry::v1_21_11()
+                .validate_state_string(block)
+                .is_err()
+            {
+                d.push(Diagnostic::error(
+                    codes::BLOCK_UNKNOWN,
+                    "quests",
+                    format!("/content/lethal_volumes/{i}/shown_by/{j}"),
+                    format!(
+                        "lethal volume `{}` declares `shown_by` block `{block}`, which is not a \
+                         block state of Minecraft Java 1.21.11",
+                        v.id
+                    ),
+                ));
+                continue;
+            }
+            if crate::blockshape::hurts_body(block) {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::LETHAL_INVISIBLE,
+                "quests",
+                format!("/content/lethal_volumes/{i}/shown_by/{j}"),
+                format!(
+                    "lethal volume `{}` declares `shown_by` block `{block}`, which vanilla does \
+                     not hurt a body with — so it shows a player nothing, and floor made of it \
+                     reads as safe however this volume is declared. `shown_by` says what the \
+                     player SEES; it is not a word that switches the rule off. Name the block \
+                     that shows the danger, from the set vanilla hurts a body with: {}.",
+                    v.id,
+                    crate::blockshape::HURTING_BLOCKS_1_21_11
+                        .iter()
+                        .map(|b| format!("`{b}`"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            ));
+        }
+        if v.message.trim().is_empty() {
+            d.push(Diagnostic::error(
+                codes::LETHAL_MESSAGE_BLANK,
+                "quests",
+                format!("/content/lethal_volumes/{i}/message"),
+                format!(
+                    "lethal volume `{}` declares a blank `message`, so it would kill in silence \
+                     — the one thing this declaration exists to prevent. Write the line the \
+                     player reads as they die (`The undertow takes you.`); there is no compiler \
+                     default that could be right for a cliff, a lava pit and an acid pool at \
+                     once.",
+                    v.id
+                ),
+            ));
+        }
+    }
+}
+
+/// `DW0953`'s empty-gate shape (spec-0088 §3.2): a `when` with no term is not a
+/// stage. The player-scoped shape is raised beside `DW0503` in
+/// [`state_checks`], where every gate's `requires_state` is already read.
+pub(crate) fn lethal_stage_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, v) in c.quests.content.lethal_volumes.iter().enumerate() {
+        if v.when.is_some() && v.gate().is_empty() {
+            d.push(Diagnostic::error(
+                codes::LETHAL_STAGE_GATE,
+                "quests",
+                format!("/content/lethal_volumes/{i}/when"),
+                format!(
+                    "lethal volume `{}` declares `when: {{}}` — a stage with no term. An \
+                     always-live volume is spelled by leaving `when` out; to stage it, name a \
+                     flag (`requires_flags` / `forbids_flags`) or a `party`-scoped datum \
+                     (`requires_state`)",
+                    v.id.as_str()
+                ),
+            ));
+        }
+    }
+}

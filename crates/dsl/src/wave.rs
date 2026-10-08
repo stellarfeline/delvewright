@@ -556,8 +556,8 @@ use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::registry::{AnchorRegistry, EffectRegistry, EntityRegistry, ItemRegistry};
 use crate::validate::{
-    AnchorProviders, check_enchantments, declares_bonfire, for_each_effect_deep,
-    for_each_trap_payload_deep, for_each_trigger_effect_deep, quest_ancestors, station_kind_diag,
+    AnchorProviders, declares_bonfire, for_each_effect_deep, for_each_trap_payload_deep,
+    for_each_trigger_effect_deep, quest_ancestors, station_kind_diag,
 };
 use crate::{Objective, Verb};
 use std::collections::BTreeSet;
@@ -1523,6 +1523,58 @@ pub(crate) fn mob_effect_checks(
                     ));
                 }
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+/// Validate an enchantment map: known ids (`DW0433`), legal levels (`DW0434`).
+///
+/// Levels are checked against what the `minecraft:enchantments` **component**
+/// can carry (1..=255), not against each enchantment's survival max. Exceeding
+/// the survival max from a command is legal vanilla and is a legitimate way to
+/// build a set-piece elite, so refusing it would be the compiler overruling a
+/// design decision it cannot second-guess; 0 and >255 are simply not
+/// representable and would be silently dropped by the game.
+pub(crate) fn check_enchantments(
+    ench: &std::collections::BTreeMap<String, u32>,
+    what: &str,
+    stage: &'static str,
+    path: &str,
+    reg: &dyn crate::registry::EnchantmentRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    for (id, level) in ench {
+        if !reg.contains(id) {
+            d.push(Diagnostic::error(
+                codes::ENCHANTMENT_UNKNOWN,
+                stage,
+                format!("{path}/{id}"),
+                format!(
+                    "{what} enchantment `{id}` is not in the pinned 1.21.11 enchantment \
+                     registry — use a valid namespaced enchantment id (e.g. \
+                     `minecraft:protection`, `minecraft:sharpness`). Note the vanilla \
+                     ids for curses are `minecraft:binding_curse` and \
+                     `minecraft:vanishing_curse`, NOT `curse_of_binding`."
+                ),
+            ));
+        }
+        if *level == 0 || *level > 255 {
+            d.push(Diagnostic::error(
+                codes::ENCHANTMENT_LEVEL,
+                stage,
+                format!("{path}/{id}"),
+                format!(
+                    "{what} enchantment `{id}` has level {level}, outside the 1..=255 range \
+                     the `minecraft:enchantments` component stores. Levels above an \
+                     enchantment's survival maximum ARE allowed (that is how a set-piece \
+                     elite is built) — but 0 means \"not enchanted\" and is silently \
+                     dropped by the game, so declare the level you want or remove the entry."
+                ),
+            ));
         }
     }
 }

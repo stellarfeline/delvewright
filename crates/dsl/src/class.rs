@@ -683,3 +683,25 @@ pub(crate) fn bonfire_flask_checks(c: &Campaign, has_bonfire: bool, d: &mut Vec<
         }
     }
 }
+
+/// `DW0110` over the class ids.
+pub(crate) fn class_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, cl) in c.classes.content.classes.iter().enumerate() {
+        crate::ids::id_syntax!(d, cl.id, "classes", format!("/content/classes/{i}/id"));
+    }
+}
+
+/// `DW0111` over the class ids.
+pub(crate) fn class_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::ids::dup_check(
+        c.classes
+            .content
+            .classes
+            .iter()
+            .enumerate()
+            .map(|(i, cl)| (cl.id.as_str(), format!("/content/classes/{i}/id"))),
+        "classes",
+        "class",
+        d,
+    );
+}

@@ -189,3 +189,441 @@ impl LockPick {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeMap;
+
+use crate::Verb;
+use crate::diagnostic::{Diagnostic, codes};
+use crate::envelope::Campaign;
+use crate::registry::AnchorRegistry;
+use crate::validate::{AnchorProviders, station_kind_diag};
+
+/// spec-0082: **assemblies, their rigs, and every reference to one.**
+///
+/// * Each assembly's `rig` resolves in the library and passes the rig's
+///   structural rules ([`crate::rig::check`]); its `initial` and every strike
+///   step's `windup`/`strike` name clips the rig declares (`DW0935`). A
+///   registry that is not the whole library answers
+///   [`crate::rig::RigLookup::Unknown`] and nothing is refused on its word.
+/// * Its mark's anchor, and its arming region's, are provided by some area
+///   (`DW0142`), and the mark is a point station.
+/// * Every `spawn-assembly` / `despawn-assembly` / `play-clip`, at every depth
+///   of every effect root, names a declared assembly (`DW0112`), and a
+///   `play-clip` names a clip its rig declares (`DW0935`).
+/// * Every `strike-assembly` trigger names a declared assembly (`DW0112`).
+///
+/// The hitbox's bounds, its reach and where a blow lands are judged at build
+/// time, where cells exist (`DW0936`–`DW0938`, `compiler::assembly`).
+pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    use crate::rig::RigLookup;
+    let quests = &c.quests.content;
+    if quests.assemblies.is_empty()
+        && !quests
+            .triggers
+            .iter()
+            .any(|t| t.on.assembly_target().is_some())
+    {
+        // Still walk the effects: a verb naming an assembly in a campaign that
+        // declares none is a dangling reference.
+        let mut any = false;
+        crate::for_each_campaign_effect(c, &mut |_, _, e| {
+            any |= assembly_verb(e).is_some();
+        });
+        if !any {
+            return;
+        }
+    }
+    let providers = AnchorProviders::build(c, anchors);
+    // The rig each declared assembly resolved to, for the clip checks below.
+    let mut rigs: BTreeMap<&str, Option<&crate::rig::Rig>> = BTreeMap::new();
+    let clip_list = |r: &crate::rig::Rig| -> String {
+        let names = r.clip_names();
+        if names.is_empty() {
+            "none".to_string()
+        } else {
+            names
+                .iter()
+                .map(|n| format!("`{n}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    };
+    for (i, a) in quests.assemblies.iter().enumerate() {
+        let at = format!("/content/assemblies/{i}");
+        let resolved = match anchors.rig(&a.rig) {
+            RigLookup::Unknown => None,
+            RigLookup::Missing => {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    format!("{at}/rig"),
+                    format!(
+                        "assembly `{}` names rig `{}`, and the library holds no `{}/{}/{}` — a \
+                         rig is a file a generator writes beside the prefab library, never \
+                         campaign JSON. Run the generator that writes it, or name a rig the \
+                         library holds",
+                        a.id,
+                        a.rig,
+                        crate::rig::RIGS_DIR,
+                        crate::l10n::local_id(a.rig.as_str()),
+                        crate::rig::RIG_FILE,
+                    ),
+                ));
+                None
+            }
+            RigLookup::Malformed(e) => {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    format!("{at}/rig"),
+                    format!(
+                        "assembly `{}` names rig `{}`, whose `{}` does not parse as a rig \
+                         document: {e}. Regenerate it with the generator that wrote it",
+                        a.id,
+                        a.rig,
+                        crate::rig::RIG_FILE,
+                    ),
+                ));
+                None
+            }
+            RigLookup::Found(r) => {
+                let issues = crate::rig::check(r);
+                for issue in &issues {
+                    d.push(Diagnostic::error(
+                        codes::ASSEMBLY_RIG,
+                        "quests",
+                        format!("{at}/rig"),
+                        format!(
+                            "assembly `{}` names rig `{}`, which breaks a rig rule at `{}`: {}. \
+                             Regenerate the rig with its generator",
+                            a.id, a.rig, issue.field, issue.message
+                        ),
+                    ));
+                }
+                if issues.is_empty() { Some(r) } else { None }
+            }
+        };
+        rigs.insert(a.id.as_str(), resolved);
+        if let Some(r) = resolved {
+            let mut need = |clip: &str, path: String, role: &str| {
+                if r.clips.contains_key(clip) {
+                    return;
+                }
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_RIG,
+                    "quests",
+                    path,
+                    format!(
+                        "assembly `{}` asks for clip `{clip}` as its {role}, and rig `{}` declares \
+                         no such clip. Its clips are: {}",
+                        a.id,
+                        a.rig,
+                        clip_list(r)
+                    ),
+                ));
+            };
+            if let Some(initial) = &a.initial {
+                need(initial, format!("{at}/initial"), "`initial`");
+            }
+            let mut paced: Vec<Diagnostic> = Vec::new();
+            if let Some(s) = &a.strikes {
+                for (j, step) in s.pattern.iter().enumerate() {
+                    need(
+                        &step.windup,
+                        format!("{at}/strikes/pattern/{j}/windup"),
+                        "strike step's `windup`",
+                    );
+                    need(
+                        &step.strike,
+                        format!("{at}/strikes/pattern/{j}/strike"),
+                        "strike step's `strike`",
+                    );
+                    if let Some(lock) = &step.lock {
+                        for (k, reach) in lock.reaches.iter().enumerate() {
+                            need(
+                                reach,
+                                format!("{at}/strikes/pattern/{j}/lock/reaches/{k}"),
+                                "locked strike step's `reaches`",
+                            );
+                        }
+                    }
+                    if let Some(t) = step.ticks_per_frame
+                        && !(crate::rig::MIN_TICKS_PER_FRAME..=crate::rig::MAX_TICKS_PER_FRAME)
+                            .contains(&t)
+                    {
+                        paced.push(Diagnostic::error(
+                            codes::ASSEMBLY_RIG,
+                            "quests",
+                            format!("{at}/strikes/pattern/{j}/ticks_per_frame"),
+                            format!(
+                                "assembly `{}`'s strike step {j} plays its clips at {t} tick(s) per \
+                                 frame. A keyframe cadence is {} to {} — the bounds every rig clip \
+                                 is held to. Choose a cadence in that range, or drop \
+                                 `ticks_per_frame` to play each clip at its own",
+                                a.id,
+                                crate::rig::MIN_TICKS_PER_FRAME,
+                                crate::rig::MAX_TICKS_PER_FRAME
+                            ),
+                        ));
+                    }
+                }
+            }
+            d.extend(paced);
+        }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            a.at.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "an assembly's mark",
+            "quests",
+            format!("{at}/at/anchor"),
+        ) {
+            d.push(f);
+        } else if !providers.resolvable(a.at.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("{at}/at/anchor"),
+                format!(
+                    "assembly `{}` stands at anchor `{}`, which no area's prefab provides — {}",
+                    a.id,
+                    a.at.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                    ),
+                ),
+            ));
+        }
+        if let Some(s) = &a.strikes {
+            lock_shape_checks(a, i, s, d);
+            for (j, step) in s.pattern.iter().enumerate() {
+                let Some(lock) = &step.lock else { continue };
+                if providers.resolvable(lock.within.anchor.as_str()) {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("{at}/strikes/pattern/{j}/lock/within/anchor"),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player in a region centred \
+                         on anchor `{}`, which no area's prefab provides — {}",
+                        a.id,
+                        lock.within.anchor,
+                        providers.anchor_remedy(
+                            "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                        ),
+                    ),
+                ));
+            }
+        }
+        if let Some(s) = &a.strikes
+            && !providers.resolvable(s.while_in.anchor.as_str())
+        {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("{at}/strikes/while_in/anchor"),
+                format!(
+                    "assembly `{}`'s arming region is centred on anchor `{}`, which no area's \
+                     prefab provides — {}",
+                    a.id,
+                    s.while_in.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                    ),
+                ),
+            ));
+        }
+    }
+    // Which declared assemblies strike, for `arm-strikes` (`DW0970`).
+    let strikes: BTreeMap<&str, bool> = quests
+        .assemblies
+        .iter()
+        .map(|a| (a.id.as_str(), a.strikes.is_some()))
+        .collect();
+    // Every verb that names an assembly, at every depth of every root.
+    crate::for_each_campaign_effect(c, &mut |path, _site, e| {
+        let Some((assembly, clip)) = assembly_verb(e) else {
+            return;
+        };
+        if matches!(e.verb, Verb::ArmStrikes { .. }) && strikes.get(assembly) == Some(&false) {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_ARM_NOTHING,
+                "quests",
+                format!("{path}/assembly"),
+                format!(
+                    "`arm-strikes` re-arms assembly `{assembly}`'s strike pattern, and the \
+                     assembly declares no `strikes` — there is no pattern to re-arm, so the beat \
+                     does nothing. Give the assembly a `strikes` pattern, or drop the effect"
+                ),
+            ));
+        }
+        let Some(resolved) = rigs.get(assembly) else {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                path.to_string(),
+                format!(
+                    "`{}` names assembly `{assembly}`, which the stage-5 `assemblies` list does \
+                     not declare — declare it, or fix the reference",
+                    e.verb.tag()
+                ),
+            ));
+            return;
+        };
+        if let (Some(clip), Some(r)) = (clip, resolved)
+            && !r.clips.contains_key(clip)
+        {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_RIG,
+                "quests",
+                format!("{path}/clip"),
+                format!(
+                    "`play-clip` asks assembly `{assembly}` for clip `{clip}`, and its rig \
+                     declares no such clip. Its clips are: {}",
+                    clip_list(r)
+                ),
+            ));
+        }
+    });
+    for (i, t) in quests.triggers.iter().enumerate() {
+        if let Some(m) = t.on.assembly_target()
+            && !rigs.contains_key(m.as_str())
+        {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                format!("/content/triggers/{i}/on/assembly"),
+                format!(
+                    "`strike-assembly` trigger `{}` targets assembly `{m}`, which the stage-5 \
+                     `assemblies` list does not declare — use a declared assembly id",
+                    t.id
+                ),
+            ));
+        }
+    }
+}
+
+/// The assembly a verb names, with the clip a `play-clip` asks for.
+fn assembly_verb(e: &QuestEffect) -> Option<(&str, Option<&str>)> {
+    match &e.verb {
+        Verb::SpawnAssembly { assembly } | Verb::DespawnAssembly { assembly } => {
+            Some((assembly.as_str(), None))
+        }
+        Verb::PlayClip { assembly, clip } => Some((assembly.as_str(), Some(clip.as_str()))),
+        Verb::ArmStrikes { assembly } => Some((assembly.as_str(), None)),
+        _ => None,
+    }
+}
+
+/// spec-0094 §5.2 (`DW0969`): **a locked step's blow is the lock's to place.**
+/// A locked step lands on the cells its chosen clip comes down on at the turn
+/// it locked to, so a box an author writes cannot be where the blow lands: a
+/// top-level `damage-players` in its `on_land` declares no `in`, no
+/// `damage-players` stands inside another effect's list there, and a pattern
+/// that turns by `aim` has no locked step.
+fn lock_shape_checks(
+    a: &crate::Assembly,
+    i: usize,
+    s: &crate::AssemblyStrikes,
+    d: &mut Vec<Diagnostic>,
+) {
+    fn nested_damage(effs: &[QuestEffect], path: &str, out: &mut Vec<String>) {
+        for (k, e) in effs.iter().enumerate() {
+            let here = format!("{path}/{k}");
+            if matches!(e.verb, Verb::DamagePlayers { .. }) {
+                out.push(here.clone());
+            }
+            for (seg, _, list) in e.nested_effect_lists_labeled() {
+                nested_damage(list, &format!("{here}/{seg}"), out);
+            }
+        }
+    }
+    let at = format!("/content/assemblies/{i}/strikes");
+    for (j, step) in s.pattern.iter().enumerate() {
+        if step.lock.is_none() {
+            continue;
+        }
+        let here = format!("{at}/pattern/{j}");
+        if s.aim.is_some() {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_LOCK_SHAPE,
+                "quests",
+                format!("{here}/lock"),
+                format!(
+                    "assembly `{}`'s strike pattern turns by `aim`, and its step {j} declares a \
+                     `lock` — two rules choosing the one turn the assembly strikes from. A locked \
+                     step turns to the cell it locks onto; an aimed pattern turns to one of its \
+                     facings. Drop `aim` from the pattern, or drop `lock` from the step",
+                    a.id
+                ),
+            ));
+        }
+        for (k, e) in step.on_land.iter().enumerate() {
+            let p = format!("{here}/on_land/{k}");
+            if matches!(e.verb, Verb::DamagePlayers { .. }) && e.damage_within().is_some() {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_LOCK_SHAPE,
+                    "quests",
+                    format!("{p}/in"),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player, and its \
+                         `damage-players` ({p}) declares an `in` box. A locked blow lands on the \
+                         cells its clip comes down on at the turn it locked to — the compiler \
+                         derives that area for every cell it can lock, so a written box is a \
+                         second, fixed answer that is wrong at every other cell. Drop the `in`",
+                        a.id
+                    ),
+                ));
+            }
+            let mut deep = Vec::new();
+            for (seg, _, list) in e.nested_effect_lists_labeled() {
+                nested_damage(list, &format!("{p}/{seg}"), &mut deep);
+            }
+            for q in deep {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_LOCK_SHAPE,
+                    "quests",
+                    q.clone(),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player, and a \
+                         `damage-players` ({q}) stands inside another effect's list. Only a blow \
+                         at the top of a locked step's `on_land` is moved to the cells the clip \
+                         comes down on; this one would land nowhere the lock chose. Move it to the \
+                         top of `on_land` (a `when` on it is kept)",
+                        a.id
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// `DW0110` over each assembly's id and the rig it names.
+pub(crate) fn assembly_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, a) in c.quests.content.assemblies.iter().enumerate() {
+        crate::ids::id_syntax!(d, a.id, "quests", format!("/content/assemblies/{i}/id"));
+        crate::ids::id_syntax!(d, a.rig, "quests", format!("/content/assemblies/{i}/rig"));
+    }
+}
+
+/// `DW0111` over the assembly ids: unique within the stage-5 assemblies
+/// namespace (spec-0082).
+pub(crate) fn assembly_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::ids::dup_check(
+        c.quests
+            .content
+            .assemblies
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.id.as_str(), format!("/content/assemblies/{i}/id"))),
+        "quests",
+        "assembly",
+        d,
+    );
+}
