@@ -1,0 +1,13 @@
+{
+  "code": "DW0978",
+  "patch": [
+    {
+      "doc": "npcs.json",
+      "op": "replace",
+      "path": "/content/npcs/0/skin/texture_id",
+      "value": "curator-stray"
+    }
+  ],
+  "units": [],
+  "why": "This edit dresses the Curator in `skins/curator-stray.png`, the generator's curator skin with one more opaque pixel at (0, 0) — the head unwrap's top-left corner, which no face of either player model samples. A mannequin skin is held to the player model it is worn on, at build, so a pixel no box reads is refused rather than shipped."
+}

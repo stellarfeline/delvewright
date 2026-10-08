@@ -134,6 +134,14 @@
         "id": "actor/standard-bearer",
         "name": "The Standard Bearer",
         "skin": {
+          "hidden_layers": [
+            "hat",
+            "jacket",
+            "left_sleeve",
+            "right_sleeve",
+            "left_pants_leg",
+            "right_pants_leg"
+          ],
           "model": "wide",
           "texture_id": "bearer"
         },

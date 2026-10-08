@@ -131,6 +131,15 @@
           "spdx": "original"
         },
         "replaces": "minecraft:block/stone_bricks"
+      },
+      {
+        "id": "drowned-wrap",
+        "license": {
+          "note": "One flat colour on the torso and limb faces of the drowned outer model's own boxes, written by prefabs/gallery-generator from the engine's model-part table, deliberately not art: the outer layer samples the BASE positions, so this is where a drowned's second layer reads.",
+          "source": "original",
+          "spdx": "original"
+        },
+        "replaces": "minecraft:entity/zombie/drowned_outer_layer"
       }
     ],
     "theme": "A lit stone hall divided by a barred wall.",
