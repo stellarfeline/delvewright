@@ -191,7 +191,7 @@ pub fn resolve<'a>(
         let pointer = format!("/content/textures/{i}");
         let Some(entry) = census.textures.get(&row.replaces) else {
             diags.push(Finding::new(
-                codes::TEXTURE_PATH,
+                delvewright_dsl::world::TEXTURE_PATH,
                 format!("{pointer}/replaces"),
                 path_message(&row.id, &row.replaces, census),
             ));

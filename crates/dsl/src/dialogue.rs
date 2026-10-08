@@ -320,3 +320,331 @@ impl DialogueEffect {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Validation — the checks `dsl::validate` runs over this object (ADR-0031)
+// ---------------------------------------------------------------------------
+
+use crate::Objective;
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
+use crate::envelope::Campaign;
+
+crate::dw_code! {
+    /// Stage-6 dialogue node unreachable from `root`.
+    pub const DIALOGUE_UNREACHABLE: DwCode = DwCode::new("DW0120", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Stage-6 dialogue `root`/`next` references an unknown node.
+    pub const DIALOGUE_BAD_REF: DwCode = DwCode::new("DW0121", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Stage-6 dialogue effect references an objective that is unknown, not a
+    /// `talk-to`, or a `talk-to` on a different NPC (foreign effect).
+    pub const DIALOGUE_BAD_OBJECTIVE: DwCode = DwCode::new("DW0122", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A stage-5 `talk-to` objective has no reachable completing dialogue option
+    /// (the static half of the compiler's `DW0203` deadlock guarantee).
+    pub const DIALOGUE_UNCOVERED: DwCode = DwCode::new("DW0123", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.4) A `talk-to` objective has no **ungated** reachable completing
+    /// dialogue option — every completing option is `requires_flags`-gated, so
+    /// the objective can deadlock the moment it activates (spec-0008 §1). Keep at
+    /// least one ungated completing path.
+    pub const DIALOGUE_FLAG_DEADLOCK: DwCode = DwCode::new("DW0191", ExitTier::Build);
+}
+
+pub(crate) fn dialogue_graph_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::{DialogueEffect, Objective};
+
+    // Stage-5 objective facts: which are `talk-to`, and (for those) their npc.
+    let mut all_objectives: BTreeSet<&str> = BTreeSet::new();
+    let mut talk_npc: BTreeMap<&str, &str> = BTreeMap::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            all_objectives.insert(o.id().as_str());
+            if let Objective::TalkTo { id, npc, .. } = o {
+                talk_npc.insert(id.as_str(), npc.as_str());
+            }
+        }
+    }
+
+    // npc id -> objective ids completed by an option reachable from that tree's
+    // root (feeds the DW0123 coverage check).
+    let mut reachable_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        let node_ids: BTreeSet<&str> = tree.nodes.iter().map(|n| n.id.as_str()).collect();
+
+        // `next` / effect references.
+        for (j, node) in tree.nodes.iter().enumerate() {
+            for (k, opt) in node.options.iter().enumerate() {
+                if let Some(next) = &opt.next
+                    && !node_ids.contains(next.as_str())
+                {
+                    d.push(Diagnostic::error(
+                        DIALOGUE_BAD_REF,
+                        "dialogue",
+                        format!("/content/dialogues/{i}/nodes/{j}/options/{k}/next"),
+                        format!(
+                            "dialogue option `next` references unknown node `{next}` — add a node \
+                             with that id to this tree or correct the reference"
+                        ),
+                    ));
+                }
+                for (m, eff) in opt.effects.iter().enumerate() {
+                    let DialogueEffect::CompleteObjective { objective } = eff else {
+                        continue;
+                    };
+                    let oid = objective.as_str();
+                    let path = format!(
+                        "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/objective"
+                    );
+                    let msg = if !all_objectives.contains(oid) {
+                        Some(format!(
+                            "dialogue `complete-objective` effect references unknown objective \
+                             `{objective}` — it must name a `talk-to` objective on this tree's \
+                             npc; declare it or correct the reference"
+                        ))
+                    } else if let Some(owner) = talk_npc.get(oid) {
+                        if *owner == tree.npc.as_str() {
+                            None
+                        } else {
+                            Some(format!(
+                                "dialogue effect completes `talk-to` objective `{objective}`, \
+                                 which belongs to npc `{owner}`, not this tree's npc `{}` — a tree \
+                                 may only complete its own npc's objectives; move the effect into \
+                                 `{owner}`'s tree",
+                                tree.npc
+                            ))
+                        }
+                    } else {
+                        Some(format!(
+                            "dialogue `complete-objective` effect targets objective `{objective}`, \
+                             which is not a `talk-to` objective — only `talk-to` objectives are \
+                             completed through dialogue; retarget it or change the objective's type"
+                        ))
+                    };
+                    if let Some(msg) = msg {
+                        d.push(Diagnostic::error(
+                            DIALOGUE_BAD_OBJECTIVE,
+                            "dialogue",
+                            path,
+                            msg,
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Root existence.
+        if !node_ids.contains(tree.root.as_str()) {
+            d.push(Diagnostic::error(
+                DIALOGUE_BAD_REF,
+                "dialogue",
+                format!("/content/dialogues/{i}/root"),
+                format!(
+                    "dialogue tree `root` references unknown node `{}` — add a node with that id \
+                     or point `root` at an existing node",
+                    tree.root
+                ),
+            ));
+            continue; // reachability is undefined without a root
+        }
+
+        // Reachability from root.
+        //
+        // Entry points: the tree's own `root`, plus (DSL v0.7, spec-0020) every
+        // node some quest's `cast` ledger declares as this NPC's root. A ledger
+        // root IS an entry point — right-click opens it directly once that quest
+        // begins — so a node reached only that way is reachable, not orphaned.
+        // Without this, retiring a premise root by swapping to a later one would
+        // make the later one `DW0120`, and the ledger would be unusable for the
+        // exact thing it exists to do.
+        //
+        // The walk itself is `NpcDialogue::reachable_from` — the one authority,
+        // shared with the cast ledger's `DW0858`, which asks the same question
+        // over a different root set.
+        let mut roots = vec![tree.root.as_str()];
+        for q in &c.quests.content.quests {
+            for (npc, entry) in &q.cast {
+                if npc.as_str() != tree.npc.as_str() {
+                    continue;
+                }
+                for p in entry.placements() {
+                    if let Some(crate::CastDialogue::Root(r)) = &p.dialogue {
+                        roots.push(r.as_str());
+                    }
+                }
+            }
+        }
+        let seen = tree.reachable_from(&roots);
+        for (j, node) in tree.nodes.iter().enumerate() {
+            if !seen.contains(node.id.as_str()) {
+                d.push(Diagnostic::error(
+                    DIALOGUE_UNREACHABLE,
+                    "dialogue",
+                    format!("/content/dialogues/{i}/nodes/{j}"),
+                    format!(
+                        "dialogue node `{}` is unreachable from `root` — add an option whose \
+                         `next` leads here from a reachable node, or remove this node",
+                        node.id
+                    ),
+                ));
+            }
+        }
+
+        // Objectives completed by reachable options (for the coverage check).
+        let completes = reachable_completes.entry(tree.npc.as_str()).or_default();
+        for node in &tree.nodes {
+            if !seen.contains(node.id.as_str()) {
+                continue;
+            }
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let DialogueEffect::CompleteObjective { objective } = eff {
+                        completes.insert(objective.as_str());
+                    }
+                }
+            }
+        }
+    }
+
+    // Every `talk-to` objective must have ≥ 1 reachable completing option in its
+    // own npc's tree (the static half of the compiler's DW0203 guarantee).
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            if let Objective::TalkTo { id, npc, .. } = o {
+                let covered = reachable_completes
+                    .get(npc.as_str())
+                    .is_some_and(|s| s.contains(id.as_str()));
+                if !covered {
+                    d.push(Diagnostic::error(
+                        DIALOGUE_UNCOVERED,
+                        "dialogue",
+                        format!("/content/quests/{qi}/objectives/{oi}"),
+                        format!(
+                            "`talk-to` objective `{id}` has no reachable dialogue option in npc \
+                             `{npc}`'s tree that completes it — add an option (reachable from \
+                             `root`) with a `complete-objective` effect for `{id}`, else the \
+                             objective can never finish"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Dialogue v0.4: option `requires_flags` resolve against declared flags
+/// (`DW0172`); a `talk-to` whose completing options are all flag-gated is a
+/// potential deadlock (`DW0191`, spec-0008 §1).
+pub(crate) fn dialogue_flag_checks(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
+    use crate::DialogueEffect;
+    // Option requires_flags resolution.
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
+            for (k, opt) in node.options.iter().enumerate() {
+                for (m, f) in opt.requires_flags.iter().enumerate() {
+                    if !flags.contains(f.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::FLAG_UNKNOWN,
+                            "dialogue",
+                            format!(
+                                "/content/dialogues/{i}/nodes/{j}/options/{k}/requires_flags/{m}"
+                            ),
+                            format!(
+                                "dialogue option `requires_flags` references flag `{f}`, which no \
+                                 `set-flag` effect ever produces — add a `set-flag {{ flag: \
+                                 \"{f}\" }}` effect somewhere, or correct the flag name"
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    // v0.6: dialogue option `forbids_flags` — same unknown-flag treatment as
+    // `requires_flags` (DW0172).
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
+            for (k, opt) in node.options.iter().enumerate() {
+                for (m, f) in opt.forbids_flags.iter().enumerate() {
+                    if !flags.contains(f.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::FLAG_UNKNOWN,
+                            "dialogue",
+                            format!(
+                                "/content/dialogues/{i}/nodes/{j}/options/{k}/forbids_flags/{m}"
+                            ),
+                            format!(
+                                "dialogue option `forbids_flags` references flag `{f}`, which no \
+                                 `set-flag` effect ever produces — the gate can never suppress \
+                                 anything; add the producing `set-flag {{ flag: \"{f}\" }}` \
+                                 effect, or correct the flag name"
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    // Per-NPC: objectives completed by an UNGATED option in that npc's tree. An
+    // option gated either way — `requires_flags` (hidden until set) or, v0.6,
+    // `forbids_flags` (hidden once set) — counts as gated: the static analysis
+    // does no temporal reasoning about which flags end up set, so any
+    // conditionally-visible option may be unavailable exactly when needed.
+    let mut ungated_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut any_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for tree in &c.dialogue.content.dialogues {
+        let npc = tree.npc.as_str();
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let DialogueEffect::CompleteObjective { objective } = eff {
+                        any_completes
+                            .entry(npc)
+                            .or_default()
+                            .insert(objective.as_str());
+                        if opt.requires_flags.is_empty() && opt.forbids_flags.is_empty() {
+                            ungated_completes
+                                .entry(npc)
+                                .or_default()
+                                .insert(objective.as_str());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            if let Objective::TalkTo { id, npc, .. } = o {
+                let npc = npc.as_str();
+                let oid = id.as_str();
+                let completed = any_completes.get(npc).is_some_and(|s| s.contains(oid));
+                let ungated = ungated_completes.get(npc).is_some_and(|s| s.contains(oid));
+                // Only when it IS completed somewhere (else DW0123 fires) but every
+                // completing option is flag-gated.
+                if completed && !ungated {
+                    d.push(Diagnostic::error(
+                        DIALOGUE_FLAG_DEADLOCK,
+                        "quests",
+                        format!("/content/quests/{qi}/objectives/{oi}"),
+                        format!(
+                            "`talk-to` objective `{id}` has no ungated completing dialogue option \
+                             in npc `{npc}`'s tree — every completing option is `requires_flags`- \
+                             or `forbids_flags`-gated, so it can be unavailable the moment it is \
+                             needed; keep at least one completing option with no flag gate"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}

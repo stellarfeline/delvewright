@@ -256,7 +256,7 @@ pub fn surround_rect(
 /// and back. CLAUDE.md names that shape: a gate that names a remedy owes a check
 /// that the remedy is reachable, and nothing held that check.
 pub const DW_SURROUND_NO_REGION: delvewright_dsl::DwCode =
-    delvewright_dsl::diagnostic::codes::SURROUND_NO_REGION;
+    delvewright_dsl::world::SURROUND_NO_REGION;
 
 /// **The columns of the declared region a piece already floors** — the set the
 /// surround's moat must leave untouched.
@@ -369,7 +369,7 @@ fn build_surround(
     // The build-time restatement of the range fence the validation layer
     // already applied — the SAME code, because it is the same rule, and a
     // second code here would be two names for one refusal.
-    .map_err(|m| PlanError::new(delvewright_dsl::diagnostic::codes::HORIZON_PARAM, m))?;
+    .map_err(|m| PlanError::new(delvewright_dsl::world::HORIZON_PARAM, m))?;
 
     // **The moat**, and until this call it was a method nothing invoked.
     //

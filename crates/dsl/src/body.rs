@@ -394,3 +394,70 @@ pub fn body_skins_mut(c: &mut crate::envelope::Campaign) -> Vec<&mut NpcSkin> {
     );
     out
 }
+
+// ---------------------------------------------------------------------------
+// Validation — the checks `dsl::validate` runs over this object (ADR-0031)
+// ---------------------------------------------------------------------------
+
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
+use crate::envelope::Campaign;
+
+crate::dw_code! {
+    /// (v0.11, spec-0034) **A declared locomotion the engine cannot hold the
+    /// body to** — today exactly one value, `aquatic`.
+    ///
+    /// The declaration surface exists so an author can claim a capability and
+    /// have the claim PROVEN. `aquatic` is the one
+    /// class that carries no exemption and governs no rule: it is a ledger
+    /// label the compiler derives from vanilla's own `#minecraft:aquatic` tag.
+    /// Declaring it could therefore never change a verdict, so it would always
+    /// land in `DW0454` — and a value whose only possible outcome is another
+    /// diagnostic is a trap, not a surface.
+    ///
+    /// The gap it names, stated rather than left to folklore (CLAUDE.md's
+    /// no-hack rule): the compiler routes **every** body on standable ground,
+    /// and `flooded` cells are impassable and never floor for every body. There
+    /// is no water-traversal model for a declaration to feed, so there is
+    /// nothing to hold an aquatic claim to. When routing grows one, this
+    /// refusal is what has to be deleted to enable the value.
+    ///
+    /// Error tier, raised in `validate_campaign_with`, so the run ends at the
+    /// validation tier (exit 1). Prescription: remove the declaration — a body whose
+    /// route crosses water is governed by the flooded-cell rules already, and
+    /// the derived aquatic class still reaches the binding ledger.
+    pub const TRAVERSAL_UNPROVABLE: DwCode = DwCode::new("DW0455", ExitTier::Build);
+}
+
+/// DSL v0.11 (spec-0034): a declared locomotion the engine cannot hold the body
+/// to is refused at declaration time (`DW0455`).
+///
+/// Today that is exactly `aquatic`, and the reason is structural rather than a
+/// taste call: `aquatic` carries no exemption and governs no rule, so declaring
+/// it could never change a verdict — it would land in `DW0454` every time. A
+/// value whose only outcome is another diagnostic is a trap, so it is refused
+/// here with the gap named.
+pub(crate) fn body_traversal_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for site in body_traversal_sites(c) {
+        if site.traversal.locomotion != Locomotion::Aquatic {
+            continue;
+        }
+        let (stage, path, id) = (site.body.stage(), &site.path, site.body.id());
+        d.push(Diagnostic::error(
+            TRAVERSAL_UNPROVABLE,
+            stage,
+            format!("{path}/locomotion"),
+            format!(
+                "`{id}` declares `locomotion: aquatic`, which the compiler cannot hold it to. \
+                 `aquatic` is the one class that carries no exemption and governs no rule — it is \
+                 a ledger label derived from vanilla's own `#minecraft:aquatic` tag — so the \
+                 declaration could never change a verdict and would be reported inert (`DW0454`). \
+                 The gap, stated rather than left to folklore: routing has ONE reachability model, \
+                 standable ground, and water-flooded cells are impassable and never floor for \
+                 EVERY body, so there is nothing for an aquatic claim to feed. Prescription: \
+                 remove the declaration — a route that crosses water is already governed by the \
+                 flooded-cell rules, and a body vanilla itself calls aquatic still reaches the \
+                 traversal proof's binding ledger under its derived class."
+            ),
+        ));
+    }
+}

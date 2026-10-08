@@ -1007,3 +1007,523 @@ pub struct Pieces {
     /// Maximum number of pieces to assemble.
     pub max: u32,
 }
+
+// ---------------------------------------------------------------------------
+// Validation — the checks `dsl::validate` runs over this object (ADR-0031)
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeSet;
+
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
+use crate::envelope::Campaign;
+use crate::ids::is_kebab;
+use crate::registry::AnchorRegistry;
+
+crate::dw_code! {
+    /// Area binds neither or both of `prefab` / `prefab_pool` (exactly one
+    /// required).
+    pub const PREFAB_BINDING: DwCode = DwCode::new("DW0160", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Area `prefab_pool` references a pool absent from `prefabs/` metadata.
+    pub const POOL_UNKNOWN: DwCode = DwCode::new("DW0161", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Area `prefab` names a piece absent from `prefabs/` metadata — the same
+    /// obligation [`POOL_UNKNOWN`] carries on the other arm of the binding. It
+    /// is an error rather than a deferral because an area whose piece is absent
+    /// contributes no anchor set at all, so every per-area anchor proof over it
+    /// is SKIPPED rather than failed: a misspelling here is strictly less
+    /// checked than a correct name.
+    pub const PREFAB_UNKNOWN: DwCode = DwCode::new("DW0856", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) `horizon: "ocean"` declared without a `boundary` (spec-0013):
+    /// validation-tier (exit 1). An infinite swimmable sea with no return rule is
+    /// an authoring error. Grouped in the DW032x world/region family by domain;
+    /// unlike the compiler-tier DW030x geometry codes it is raised at DSL
+    /// validation, so it exits 1.
+    pub const OCEAN_NO_BOUNDARY: DwCode = DwCode::new("DW0320", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) `boundary.margin` outside the `0..=64` range (spec-0013):
+    /// validation-tier (exit 1).
+    pub const BOUNDARY_MARGIN: DwCode = DwCode::new("DW0321", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A stage-1 `horizon` param is out of range, or is a param of a base other
+    /// than the one declared (spec-0026): validation-tier (exit 1).
+    pub const HORIZON_PARAM: DwCode = DwCode::new("DW0853", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A `horizon` whose base BUILDS terrain, on a campaign that states no
+    /// extent for that terrain to stand around (spec-0026): validation-tier
+    /// (exit 1).
+    ///
+    /// A surround rings a declared extent — a site plan's `region`. A campaign
+    /// that seats its pieces with `areas[]` declares none, and the union of
+    /// whatever gets placed is not a substitute: it is an artifact of the
+    /// compiler's fixed area stride, mostly the void between areas, so ringing
+    /// it builds a mountain range around empty space.
+    pub const SURROUND_NO_REGION: DwCode = DwCode::new("DW0855", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6, spec-0018) `world.min_players` outside the `1..=4` range. A delve is
+    /// played by ONE party of 1–4 (ADR/CLAUDE.md product definition), so a declared
+    /// mandatory party size can never sit outside it. Validation-tier (exit 1).
+    pub const PARTY_SIZE: DwCode = DwCode::new("DW0356", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0077 §7) **A respawn wait that cannot be honoured.**
+    /// `world.respawn_wait.seconds` lies outside `1..=120`, or the campaign
+    /// declares a `respawn_wait` and no `set-checkpoint` or `bonfire` for a
+    /// fallen player to come back to (the wait hangs off the checkpoint respawn
+    /// edge, so with none it is a silently dead declaration). One rule about what
+    /// a wait needs, two ways to break it. Validation-tier (exit 1). The build's
+    /// own self-check that a shipped selector cannot read a waiter is `DW0926`.
+    /// Prescription: a value in `1..=120`, or a checkpoint, or drop the field.
+    pub const RESPAWN_WAIT_INVALID: DwCode = DwCode::new("DW0925", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) `world.difficulty` is `peaceful`. On
+    /// peaceful the server discards every hostile-category mob as it is ticked —
+    /// `/summon`ed, `NoAI`, `PersistenceRequired`, all of it — so a peaceful delve
+    /// is one in which every wave, every hostile actor and every ambush silently
+    /// ceases to exist. There is no delve that wants that, so the keyword is
+    /// refused rather than honoured. Validation-tier (exit 1).
+    pub const DIFFICULTY_INVALID: DwCode = DwCode::new("DW0468", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0084 §6.1) A `world.textures[]` row's `replaces` names a texture the
+    /// pinned client does not ship — not the `minecraft` namespace, a path with
+    /// `textures/` or `.png` left on, another version's path, a misspelling — or
+    /// two rows replace one texture. Judged against the census vendored from the
+    /// pinned client jar (`delvec::compiler::textures`); the duplicate half is
+    /// judged in validation, where no census is needed.
+    pub const TEXTURE_PATH: DwCode = DwCode::new("DW0939", ExitTier::Build);
+}
+
+/// **How far this campaign is from being one piece**, in a clause — the half of
+/// `DW0855` that tells a creator which of the three moves is one step away.
+///
+/// It names the count it read, so a reader can see what the refusal counted
+/// rather than being told a category.
+fn one_piece_gap(c: &Campaign) -> String {
+    let areas = &c.world.content.areas;
+    match areas.len() {
+        0 => ", and no area is declared at all".to_string(),
+        1 => format!(
+            ", and its one area `{id}` draws from a pool rather than binding a single `prefab`",
+            id = areas[0].id.as_str(),
+        ),
+        n => format!(", which is {n} areas rather than one"),
+    }
+}
+
+/// The spec-0026 **horizon library**: a declared horizon's params are
+/// range-checked here, and a param that belongs to another base is refused.
+pub(crate) fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::{HorizonBase, horizon_defaults};
+
+    let Some(h) = c.world.content.horizon.as_ref() else {
+        return;
+    };
+
+    let r = h.resolved();
+
+    // Params foreign to the declared base. The wire shape is flat — one schema
+    // rather than one per base — so this is where a param finds out it is not
+    // for the base beside it. Silently ignoring it is the worse answer: an
+    // author who wrote `rim_height` on an `ocean` believes something is being
+    // read.
+    if let crate::Horizon::Spec(spec) = h {
+        let mut foreign: Vec<&str> = Vec::new();
+        if !matches!(r.base, HorizonBase::Valley) {
+            if spec.ratio.is_some() {
+                foreign.push("ratio");
+            }
+            if spec.rim_height.is_some() {
+                foreign.push("rim_height");
+            }
+        }
+        for name in foreign {
+            d.push(Diagnostic::error(
+                HORIZON_PARAM,
+                "world",
+                format!("/content/horizon/{name}"),
+                format!(
+                    "`{name}` is a `valley` param and this horizon declares base `{base}`, which \
+                     reads nothing from it. Remove it, or declare `base: \"valley\"` — a param \
+                     nothing reads is a statement the author believes is taking effect.",
+                    base = r.base.token()
+                ),
+            ));
+        }
+    }
+
+    // A base that BUILDS terrain needs a map to build it around, and whether
+    // this campaign states one is `crate::placement::Extent`'s answer — the same
+    // one `compiler::plan::surround_rect` derives the rectangle from, so the
+    // tier that refuses and the tier that builds cannot disagree about which
+    // campaigns have an extent. Refused here rather than at the build because it
+    // is a fact about the documents: nothing has to be placed to know that
+    // nothing states an extent.
+    if r.base.has_surround() && !crate::placement::Extent::of(c).is_stated() {
+        d.push(Diagnostic::error(
+            SURROUND_NO_REGION,
+            "world",
+            "/content/horizon/base",
+            format!(
+                "`horizon` base `{base}` builds terrain around the map, and this campaign never \
+                 says how big the map is. A surround rings a DECLARED extent, and this campaign \
+                 declares none: it places {n} area(s) with `areas[]`{how}. The union of whatever \
+                 those place is not a substitute — areas sit on the compiler's fixed stride with \
+                 void between them, and a pool's footprint is whatever the solver drew — so that \
+                 union is mostly nothing and the horizon would be a mountain range built around \
+                 empty space. There are three moves and all three are reachable from here: make \
+                 the map ONE PIECE — a single area bound to a single `prefab`, whose own declared \
+                 region is then the map's extent, which is how a site (a building with its \
+                 island, its moat and its banks in one box) is placed; or give the campaign a \
+                 site plan and declare `areas` empty, which is the same choice `DW0839` asks for; \
+                 or set `horizon` to `void` or `ocean`, which need no map to be a horizon of.",
+                base = r.base.token(),
+                n = c.world.content.areas.len(),
+                how = one_piece_gap(c),
+            ),
+        ));
+    }
+
+    // Ranges. Checked on the RESOLVED view so a shorthand is judged by the same
+    // rule as the object form it desugars to.
+    if r.base.has_surround() {
+        if !(horizon_defaults::RATIO_MIN..=horizon_defaults::RATIO_MAX).contains(&r.ratio)
+            || !r.ratio.is_finite()
+        {
+            d.push(Diagnostic::error(
+                HORIZON_PARAM,
+                "world",
+                "/content/horizon/ratio",
+                format!(
+                    "`ratio` = {} is out of range — set it within {}..={} ({} is the default). \
+                     It is the surround's total footprint as a multiple of the \
+                     map's: under {} there is no room for a gap floor and a slope run \
+                     both, and over {} the surround is mostly terrain no body reaches, at a cost \
+                     that is all shipped bytes.",
+                    r.ratio,
+                    horizon_defaults::RATIO_MIN,
+                    horizon_defaults::RATIO_MAX,
+                    horizon_defaults::RATIO,
+                    horizon_defaults::RATIO_MIN,
+                    horizon_defaults::RATIO_MAX,
+                ),
+            ));
+        }
+        if !(horizon_defaults::RIM_HEIGHT_MIN..=horizon_defaults::RIM_HEIGHT_MAX)
+            .contains(&r.rim_height)
+        {
+            d.push(Diagnostic::error(
+                HORIZON_PARAM,
+                "world",
+                "/content/horizon/rim_height",
+                format!(
+                    "`rim_height` = {} is out of range — set it within {}..={} ({} is the \
+                     default). It is the crest's height over the gap floor: under {} \
+                     the rim does not close the horizon from a body standing on that floor, and \
+                     over {} the surround stops fitting under whatever the map puts above it.",
+                    r.rim_height,
+                    horizon_defaults::RIM_HEIGHT_MIN,
+                    horizon_defaults::RIM_HEIGHT_MAX,
+                    horizon_defaults::RIM_HEIGHT,
+                    horizon_defaults::RIM_HEIGHT_MIN,
+                    horizon_defaults::RIM_HEIGHT_MAX,
+                ),
+            ));
+        }
+    }
+}
+
+/// spec-0084: the half of a `world.textures[]` row that needs neither the
+/// pinned client's census nor the campaign's files — the id (`DW0190`, the rule
+/// a skin's `texture_id` already has), one row per replaced texture (`DW0939`),
+/// and the licence (`DW0741`). The census half (`DW0939`, `DW0940`) and the file
+/// (`DW0309`) are judged where the files are read, `delvec::compiler::textures`.
+fn texture_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+    let mut replaced: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, t) in c.world.content.textures.iter().enumerate() {
+        if !is_kebab(&t.id) {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "world",
+                format!("/content/textures/{i}/id"),
+                format!(
+                    "texture `id` `{}` is malformed — it must be a bare kebab token (e.g. \
+                     `red-moon`), matching the `textures/<id>.png` filename",
+                    t.id
+                ),
+            ));
+        } else if !ids.insert(t.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "world",
+                format!("/content/textures/{i}/id"),
+                format!(
+                    "duplicate texture `id` `{}` — each row names its own image; rename one \
+                     (and its `textures/<id>.png`)",
+                    t.id
+                ),
+            ));
+        }
+        if let Some(first) = replaced.insert(t.replaces.as_str(), i) {
+            d.push(Diagnostic::error(
+                TEXTURE_PATH,
+                "world",
+                format!("/content/textures/{i}/replaces"),
+                format!(
+                    "texture `{}` replaces `{}`, which `world.textures[{first}]` already \
+                     replaces — a texture is drawn one way, so remove one of the two rows",
+                    t.id, t.replaces
+                ),
+            ));
+        }
+        for reason in crate::license::image_license_refusals(&t.license) {
+            d.push(Diagnostic::error(
+                codes::LICENSE_REFUSED,
+                "world",
+                format!("/content/textures/{i}/license"),
+                format!("texture `{}` (replaces `{}`): {reason}", t.id, t.replaces),
+            ));
+        }
+    }
+}
+
+/// Stage-1 `horizon`/`boundary` validation (spec-0013), the party size
+/// (spec-0018), the declared difficulty and the declared textures (spec-0084).
+pub(crate) fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    texture_checks(c, d);
+    // spec-0091: the declared view distance's range, and every site-plan line
+    // of sight judged against the radius it serves. The binding it states is
+    // printed by the CLI, which asks for it again without the diagnostics.
+    crate::viewdistance::checks(c, d);
+    // spec-0018: a delve is played by ONE party of 1–4, so a declared
+    // mandatory size outside that range can never be honoured.
+    if let Some(n) = c.world.content.min_players
+        && !(1..=4).contains(&n)
+    {
+        d.push(Diagnostic::error(
+            PARTY_SIZE,
+            "world",
+            "/content/min_players".to_string(),
+            format!(
+                "`min_players` = {n} is out of range — a delve is played by one party of 1–4, \
+                 so set it to a value in 1..=4 (absent = 1, a party of one)"
+            ),
+        ));
+    }
+    // spec-0077 §7: a respawn wait is `1..=120` seconds, and it hangs off the
+    // checkpoint respawn edge, so it needs a checkpoint or bonfire to exist.
+    if let Some(w) = c.world.content.respawn_wait {
+        if !(1..=120).contains(&w.seconds) {
+            d.push(Diagnostic::error(
+                RESPAWN_WAIT_INVALID,
+                "world",
+                "/content/respawn_wait/seconds".to_string(),
+                format!(
+                    "`respawn_wait.seconds` = {} is out of range — a fallen player waits 1 to 120 \
+                     seconds, so set it to a value in 1..=120, or drop `respawn_wait` for no wait",
+                    w.seconds
+                ),
+            ));
+        }
+        if !crate::declares_checkpoint(c) {
+            d.push(Diagnostic::error(
+                RESPAWN_WAIT_INVALID,
+                "world",
+                "/content/respawn_wait".to_string(),
+                "`respawn_wait` is declared but this campaign declares no `set-checkpoint` or \
+                 `bonfire` — the wait begins on the checkpoint respawn edge, so with nothing to \
+                 come back to it never runs. Add the checkpoint or bonfire a fallen player \
+                 returns to, or drop `respawn_wait`."
+                    .to_string(),
+            ));
+        }
+    }
+    // Declared combat difficulty. `peaceful` is the
+    // one keyword the compiler refuses: on peaceful the server discards every
+    // hostile-category mob as it ticks it — summoned, `NoAI` and
+    // `PersistenceRequired` are all irrelevant — so a peaceful delve is one in
+    // which the entire cast of threats quietly does not exist.
+    if matches!(
+        c.world.content.difficulty,
+        Some(crate::WorldDifficulty::Peaceful)
+    ) {
+        d.push(Diagnostic::error(
+            DIFFICULTY_INVALID,
+            "world",
+            "/content/difficulty".to_string(),
+            "`difficulty: \"peaceful\"` is refused: on peaceful the server discards every \
+             hostile-category mob as it ticks it — being `/summon`ed, `NoAI` or \
+             `PersistenceRequired` does not save one — so every wave, hostile actor and \
+             ambush in this campaign would silently cease to exist. Declare `easy`, `normal` \
+             or `hard`; for a delve that is genuinely combat-free, simply omit `difficulty` \
+             (a campaign with no waves already ships peaceful by derivation)"
+                .to_string(),
+        ));
+    }
+    // A horizon whose ambient a body can ENTER needs a return rule. The
+    // question is the ambient's, never the base's name: an ocean is an
+    // infinite swimmable sea, and a valley's gap floor is walkable ground
+    // that runs to the foot of the rim. `void` is the only base a body
+    // cannot enter, because there is nothing out there to stand on.
+    let entered_base = match crate::horizon_base(&c.world.content.horizon) {
+        crate::HorizonBase::Void => None,
+        crate::HorizonBase::Ocean => Some((
+            "ocean",
+            "an infinite swimmable sea with no return rule lets players wander off the map",
+        )),
+        crate::HorizonBase::Valley => Some((
+            "valley",
+            "the gap floor between the map and the rim is walkable ground, and with no \
+             return rule a player who steps off the map is simply outside it",
+        )),
+    };
+    if let Some((base, why)) = entered_base
+        && c.world.content.boundary.is_none()
+    {
+        d.push(Diagnostic::error(
+            OCEAN_NO_BOUNDARY,
+            "world",
+            "/content/horizon".to_string(),
+            format!(
+                "`horizon` base `{base}` needs a `boundary` — {why}. Add a `boundary` (a \
+                 bare `{{}}` uses the default margin), or set `horizon` to `void`"
+            ),
+        ));
+    }
+    // `margin` range check (0..=64).
+    if let Some(b) = &c.world.content.boundary
+        && !(0..=64).contains(&b.margin)
+    {
+        d.push(Diagnostic::error(
+            BOUNDARY_MARGIN,
+            "world",
+            "/content/boundary/margin".to_string(),
+            format!(
+                "`boundary.margin` = {} is out of range — set it to a value in 0..=64 (16 is \
+                 the default)",
+                b.margin
+            ),
+        ));
+    }
+}
+
+/// Per-area `lighting` (spec-0010): `min_light` is range-checked (1..=14,
+/// `DW0196`).
+pub(crate) fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // Range-check min_light (1..=14) where a lighting block is declared.
+    for (i, area) in c.world.content.areas.iter().enumerate() {
+        if let Some(lighting) = &area.lighting
+            && !(1..=14).contains(&lighting.min_light)
+        {
+            d.push(Diagnostic::error(
+                codes::LIGHTING_RANGE,
+                "world",
+                format!("/content/areas/{i}/lighting/min_light"),
+                format!(
+                    "area `{}` `lighting.min_light` = {} is out of range — set it to a value \
+                     in 1..=14 (7 is the default)",
+                    area.id, lighting.min_light
+                ),
+            ));
+        }
+    }
+}
+
+pub(crate) fn prefab_binding(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    for (i, a) in c.world.content.areas.iter().enumerate() {
+        // Exactly one of `prefab` / `prefab_pool`.
+        match (&a.prefab, &a.prefab_pool) {
+            (Some(_), Some(_)) => d.push(Diagnostic::error(
+                PREFAB_BINDING,
+                "world",
+                format!("/content/areas/{i}"),
+                format!(
+                    "area `{}` binds both `prefab` and `prefab_pool`; bind exactly one",
+                    a.id
+                ),
+            )),
+            (None, None) => d.push(Diagnostic::error(
+                PREFAB_BINDING,
+                "world",
+                format!("/content/areas/{i}"),
+                format!(
+                    "area `{}` binds neither `prefab` nor `prefab_pool`; bind exactly one",
+                    a.id
+                ),
+            )),
+            _ => {}
+        }
+        // A bound PIECE must resolve against the prefab-metadata surface, on
+        // exactly the terms the pool arm below already demands. The asymmetry
+        // this replaces was not a missing message — it was a missing message
+        // that TOOK A PROOF WITH IT. An area whose prefab the registry does not
+        // hold contributes no set to [`AnchorProviders`], and every per-area
+        // anchor check reads a missing set as *defer to the compiler* and
+        // skips. So one mistyped character in `world.json` turned seven
+        // `DW0142` refusals into silence on the gallery, and left the campaign
+        // green in a way that is strictly less checked than a correct name —
+        // the unbound vacuity mode, one keystroke away.
+        //
+        // `has_prefab` is asked rather than `anchors_for` because only the
+        // first distinguishes *the library does not hold this* from *this
+        // registry cannot say*: a subset registry answers `None` and nothing is
+        // refused on its word.
+        if let Some(prefab) = &a.prefab
+            && prefab.is_valid_syntax()
+            && anchors.has_prefab(prefab) == Some(false)
+        {
+            d.push(Diagnostic::error(
+                PREFAB_UNKNOWN,
+                "world",
+                format!("/content/areas/{i}/prefab"),
+                format!(
+                    "area `{}` binds `prefab` `{prefab}`, which is not declared in the prefab \
+                     metadata — bind a piece that exists in the prefabs dir, or add `{prefab}` \
+                     to the prefab library. This is a prefab-library/naming issue, not a \
+                     quest-logic one. It is refused rather than deferred because an area whose \
+                     piece is absent declares NO anchors, so every anchor a quest in this area \
+                     names would be accepted without being examined — a misspelling here \
+                     switches the anchor proof (`DW0142`) off for the whole area instead of \
+                     failing it",
+                    a.id
+                ),
+            ));
+        }
+        // A bound pool must resolve against the prefab-metadata surface.
+        if let Some(pool) = &a.prefab_pool
+            && pool.is_valid_syntax()
+            && !anchors.has_pool(pool)
+        {
+            d.push(Diagnostic::error(
+                POOL_UNKNOWN,
+                "world",
+                format!("/content/areas/{i}/prefab_pool"),
+                format!(
+                    "area `prefab_pool` `{pool}` is not declared in the prefab metadata — bind a \
+                     pool that exists in the prefabs dir, or add `{pool}` to the prefab library. \
+                     This is a prefab-library/naming issue, not a quest-logic one"
+                ),
+            ));
+        }
+    }
+}

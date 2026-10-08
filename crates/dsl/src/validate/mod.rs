@@ -16,8 +16,8 @@ use crate::registry::{
     VendoredItemRegistry,
 };
 use crate::{
-    EditFrame, EncounterTier, Locomotion, MorphOp, Objective, PlannedQuest, QuestEffect,
-    RegionShape, TriggerOn, WorldEdit, body_traversal_sites,
+    EditFrame, EncounterTier, MorphOp, Objective, PlannedQuest, QuestEffect, RegionShape,
+    TriggerOn, WorldEdit,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -44,14 +44,14 @@ pub fn validate_campaign_with(
     syntax(c, &mut d);
     uniqueness(c, &mut d);
     references(c, &mut d);
-    dialogue(c, &mut d);
+    crate::dialogue::dialogue_graph_checks(c, &mut d);
     plan(c, &mut d);
     after_ordering(c, &mut d);
     press_answer_checks(c, &mut d);
     press_obligation_checks(c, &mut d);
-    horizon_param_checks(c, &mut d);
-    world_checks(c, &mut d);
-    lighting_range_checks(c, &mut d);
+    crate::world::horizon_param_checks(c, &mut d);
+    crate::world::world_checks(c, &mut d);
+    crate::world::lighting_range_checks(c, &mut d);
     // spec-0031: the runtime-state surface. Every loop inside is empty for a
     // campaign that declares no datum and no comparison.
     state_checks(c, &mut d);
@@ -70,8 +70,8 @@ pub fn validate_campaign_with(
     economy_checks(c, &mut d);
     // spec-0034: the per-body traversal declaration. The walk is empty for a
     // campaign that declares none.
-    body_traversal_checks(c, &mut d);
-    prefab_binding(c, anchors, &mut d);
+    crate::body::body_traversal_checks(c, &mut d);
+    crate::world::prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
     // `DW0849`: an item gate no class can bring. The walk is empty for a
@@ -79,7 +79,7 @@ pub fn validate_campaign_with(
     // two authored documents (a quest's item gate against the class kits).
     // Bound HERE rather than to a step someone runs, because this is the
     // function every `delvec` subcommand's validation stage calls.
-    item_gate_class_checks(c, &mut d);
+    crate::class::item_gate_class_checks(c, &mut d);
     // The stage-5 verbs, waves and flags.
     v03_checks(c, items, anchors, entities, &mut d);
     // Props/set-block/narrate/triggers/skins/lifecycle/cutscene. The
@@ -161,7 +161,7 @@ pub fn validate_campaign_with(
     // and the potion registry is complete in-crate, so no injected registry is
     // needed.
     let effects_reg = VendoredEffectRegistry::v1_21_11();
-    kit_potion_checks(c, &effects_reg, &mut d);
+    crate::class::kit_potion_checks(c, &effects_reg, &mut d);
     // spec-0031: the stage-5 lethal volumes. Structural only — the
     // completability half (`DW0510` the forced route, `DW0511` the respawn seat)
     // is compiler-tier, because it needs the solved layout.
@@ -377,7 +377,7 @@ impl AnchorProviders {
 /// graph, or to name a station of the demanded kind. Both are things the graph
 /// can say — `kind` is a required field with two writable values, and nothing
 /// refuses a node for declaring either.
-fn station_kind_diag(
+pub(crate) fn station_kind_diag(
     providers: &AnchorProviders,
     name: &str,
     demands: impl Into<Option<crate::layout::StationKind>>,
@@ -1639,188 +1639,6 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // Rule group 3 — stage-6 dialogue graph
 // ---------------------------------------------------------------------------
 
-fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    use crate::{DialogueEffect, Objective};
-
-    // Stage-5 objective facts: which are `talk-to`, and (for those) their npc.
-    let mut all_objectives: BTreeSet<&str> = BTreeSet::new();
-    let mut talk_npc: BTreeMap<&str, &str> = BTreeMap::new();
-    for q in &c.quests.content.quests {
-        for o in &q.objectives {
-            all_objectives.insert(o.id().as_str());
-            if let Objective::TalkTo { id, npc, .. } = o {
-                talk_npc.insert(id.as_str(), npc.as_str());
-            }
-        }
-    }
-
-    // npc id -> objective ids completed by an option reachable from that tree's
-    // root (feeds the DW0123 coverage check).
-    let mut reachable_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-
-    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
-        let node_ids: BTreeSet<&str> = tree.nodes.iter().map(|n| n.id.as_str()).collect();
-
-        // `next` / effect references.
-        for (j, node) in tree.nodes.iter().enumerate() {
-            for (k, opt) in node.options.iter().enumerate() {
-                if let Some(next) = &opt.next
-                    && !node_ids.contains(next.as_str())
-                {
-                    d.push(Diagnostic::error(
-                        codes::DIALOGUE_BAD_REF,
-                        "dialogue",
-                        format!("/content/dialogues/{i}/nodes/{j}/options/{k}/next"),
-                        format!(
-                            "dialogue option `next` references unknown node `{next}` — add a node \
-                             with that id to this tree or correct the reference"
-                        ),
-                    ));
-                }
-                for (m, eff) in opt.effects.iter().enumerate() {
-                    let DialogueEffect::CompleteObjective { objective } = eff else {
-                        continue;
-                    };
-                    let oid = objective.as_str();
-                    let path = format!(
-                        "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/objective"
-                    );
-                    let msg = if !all_objectives.contains(oid) {
-                        Some(format!(
-                            "dialogue `complete-objective` effect references unknown objective \
-                             `{objective}` — it must name a `talk-to` objective on this tree's \
-                             npc; declare it or correct the reference"
-                        ))
-                    } else if let Some(owner) = talk_npc.get(oid) {
-                        if *owner == tree.npc.as_str() {
-                            None
-                        } else {
-                            Some(format!(
-                                "dialogue effect completes `talk-to` objective `{objective}`, \
-                                 which belongs to npc `{owner}`, not this tree's npc `{}` — a tree \
-                                 may only complete its own npc's objectives; move the effect into \
-                                 `{owner}`'s tree",
-                                tree.npc
-                            ))
-                        }
-                    } else {
-                        Some(format!(
-                            "dialogue `complete-objective` effect targets objective `{objective}`, \
-                             which is not a `talk-to` objective — only `talk-to` objectives are \
-                             completed through dialogue; retarget it or change the objective's type"
-                        ))
-                    };
-                    if let Some(msg) = msg {
-                        d.push(Diagnostic::error(
-                            codes::DIALOGUE_BAD_OBJECTIVE,
-                            "dialogue",
-                            path,
-                            msg,
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Root existence.
-        if !node_ids.contains(tree.root.as_str()) {
-            d.push(Diagnostic::error(
-                codes::DIALOGUE_BAD_REF,
-                "dialogue",
-                format!("/content/dialogues/{i}/root"),
-                format!(
-                    "dialogue tree `root` references unknown node `{}` — add a node with that id \
-                     or point `root` at an existing node",
-                    tree.root
-                ),
-            ));
-            continue; // reachability is undefined without a root
-        }
-
-        // Reachability from root.
-        //
-        // Entry points: the tree's own `root`, plus (DSL v0.7, spec-0020) every
-        // node some quest's `cast` ledger declares as this NPC's root. A ledger
-        // root IS an entry point — right-click opens it directly once that quest
-        // begins — so a node reached only that way is reachable, not orphaned.
-        // Without this, retiring a premise root by swapping to a later one would
-        // make the later one `DW0120`, and the ledger would be unusable for the
-        // exact thing it exists to do.
-        //
-        // The walk itself is `NpcDialogue::reachable_from` — the one authority,
-        // shared with the cast ledger's `DW0858`, which asks the same question
-        // over a different root set.
-        let mut roots = vec![tree.root.as_str()];
-        for q in &c.quests.content.quests {
-            for (npc, entry) in &q.cast {
-                if npc.as_str() != tree.npc.as_str() {
-                    continue;
-                }
-                for p in entry.placements() {
-                    if let Some(crate::CastDialogue::Root(r)) = &p.dialogue {
-                        roots.push(r.as_str());
-                    }
-                }
-            }
-        }
-        let seen = tree.reachable_from(&roots);
-        for (j, node) in tree.nodes.iter().enumerate() {
-            if !seen.contains(node.id.as_str()) {
-                d.push(Diagnostic::error(
-                    codes::DIALOGUE_UNREACHABLE,
-                    "dialogue",
-                    format!("/content/dialogues/{i}/nodes/{j}"),
-                    format!(
-                        "dialogue node `{}` is unreachable from `root` — add an option whose \
-                         `next` leads here from a reachable node, or remove this node",
-                        node.id
-                    ),
-                ));
-            }
-        }
-
-        // Objectives completed by reachable options (for the coverage check).
-        let completes = reachable_completes.entry(tree.npc.as_str()).or_default();
-        for node in &tree.nodes {
-            if !seen.contains(node.id.as_str()) {
-                continue;
-            }
-            for opt in &node.options {
-                for eff in &opt.effects {
-                    if let DialogueEffect::CompleteObjective { objective } = eff {
-                        completes.insert(objective.as_str());
-                    }
-                }
-            }
-        }
-    }
-
-    // Every `talk-to` objective must have ≥ 1 reachable completing option in its
-    // own npc's tree (the static half of the compiler's DW0203 guarantee).
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oi, o) in q.objectives.iter().enumerate() {
-            if let Objective::TalkTo { id, npc, .. } = o {
-                let covered = reachable_completes
-                    .get(npc.as_str())
-                    .is_some_and(|s| s.contains(id.as_str()));
-                if !covered {
-                    d.push(Diagnostic::error(
-                        codes::DIALOGUE_UNCOVERED,
-                        "dialogue",
-                        format!("/content/quests/{qi}/objectives/{oi}"),
-                        format!(
-                            "`talk-to` objective `{id}` has no reachable dialogue option in npc \
-                             `{npc}`'s tree that completes it — add an option (reachable from \
-                             `root`) with a `complete-objective` effect for `{id}`, else the \
-                             objective can never finish"
-                        ),
-                    ));
-                }
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Rule group 4 — quest plan
 // ---------------------------------------------------------------------------
@@ -2176,179 +1994,6 @@ fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // Rule group 5 — reserved values / fields
 // ---------------------------------------------------------------------------
 
-/// The spec-0026 **horizon library**: a declared horizon's params are
-/// range-checked here, and a param that belongs to another base is refused.
-/// **How far this campaign is from being one piece**, in a clause — the half of
-/// `DW0855` that tells a creator which of the three moves is one step away.
-///
-/// It names the count it read, so a reader can see what the refusal counted
-/// rather than being told a category.
-fn one_piece_gap(c: &Campaign) -> String {
-    let areas = &c.world.content.areas;
-    match areas.len() {
-        0 => ", and no area is declared at all".to_string(),
-        1 => format!(
-            ", and its one area `{id}` draws from a pool rather than binding a single `prefab`",
-            id = areas[0].id.as_str(),
-        ),
-        n => format!(", which is {n} areas rather than one"),
-    }
-}
-
-fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    use crate::{HorizonBase, horizon_defaults};
-
-    let Some(h) = c.world.content.horizon.as_ref() else {
-        return;
-    };
-
-    let r = h.resolved();
-
-    // Params foreign to the declared base. The wire shape is flat — one schema
-    // rather than one per base — so this is where a param finds out it is not
-    // for the base beside it. Silently ignoring it is the worse answer: an
-    // author who wrote `rim_height` on an `ocean` believes something is being
-    // read.
-    if let crate::Horizon::Spec(spec) = h {
-        let mut foreign: Vec<&str> = Vec::new();
-        if !matches!(r.base, HorizonBase::Valley) {
-            if spec.ratio.is_some() {
-                foreign.push("ratio");
-            }
-            if spec.rim_height.is_some() {
-                foreign.push("rim_height");
-            }
-        }
-        for name in foreign {
-            d.push(Diagnostic::error(
-                codes::HORIZON_PARAM,
-                "world",
-                format!("/content/horizon/{name}"),
-                format!(
-                    "`{name}` is a `valley` param and this horizon declares base `{base}`, which \
-                     reads nothing from it. Remove it, or declare `base: \"valley\"` — a param \
-                     nothing reads is a statement the author believes is taking effect.",
-                    base = r.base.token()
-                ),
-            ));
-        }
-    }
-
-    // A base that BUILDS terrain needs a map to build it around, and whether
-    // this campaign states one is `crate::placement::Extent`'s answer — the same
-    // one `compiler::plan::surround_rect` derives the rectangle from, so the
-    // tier that refuses and the tier that builds cannot disagree about which
-    // campaigns have an extent. Refused here rather than at the build because it
-    // is a fact about the documents: nothing has to be placed to know that
-    // nothing states an extent.
-    if r.base.has_surround() && !crate::placement::Extent::of(c).is_stated() {
-        d.push(Diagnostic::error(
-            codes::SURROUND_NO_REGION,
-            "world",
-            "/content/horizon/base",
-            format!(
-                "`horizon` base `{base}` builds terrain around the map, and this campaign never \
-                 says how big the map is. A surround rings a DECLARED extent, and this campaign \
-                 declares none: it places {n} area(s) with `areas[]`{how}. The union of whatever \
-                 those place is not a substitute — areas sit on the compiler's fixed stride with \
-                 void between them, and a pool's footprint is whatever the solver drew — so that \
-                 union is mostly nothing and the horizon would be a mountain range built around \
-                 empty space. There are three moves and all three are reachable from here: make \
-                 the map ONE PIECE — a single area bound to a single `prefab`, whose own declared \
-                 region is then the map's extent, which is how a site (a building with its \
-                 island, its moat and its banks in one box) is placed; or give the campaign a \
-                 site plan and declare `areas` empty, which is the same choice `DW0839` asks for; \
-                 or set `horizon` to `void` or `ocean`, which need no map to be a horizon of.",
-                base = r.base.token(),
-                n = c.world.content.areas.len(),
-                how = one_piece_gap(c),
-            ),
-        ));
-    }
-
-    // Ranges. Checked on the RESOLVED view so a shorthand is judged by the same
-    // rule as the object form it desugars to.
-    if r.base.has_surround() {
-        if !(horizon_defaults::RATIO_MIN..=horizon_defaults::RATIO_MAX).contains(&r.ratio)
-            || !r.ratio.is_finite()
-        {
-            d.push(Diagnostic::error(
-                codes::HORIZON_PARAM,
-                "world",
-                "/content/horizon/ratio",
-                format!(
-                    "`ratio` = {} is out of range — set it within {}..={} ({} is the default). \
-                     It is the surround's total footprint as a multiple of the \
-                     map's: under {} there is no room for a gap floor and a slope run \
-                     both, and over {} the surround is mostly terrain no body reaches, at a cost \
-                     that is all shipped bytes.",
-                    r.ratio,
-                    horizon_defaults::RATIO_MIN,
-                    horizon_defaults::RATIO_MAX,
-                    horizon_defaults::RATIO,
-                    horizon_defaults::RATIO_MIN,
-                    horizon_defaults::RATIO_MAX,
-                ),
-            ));
-        }
-        if !(horizon_defaults::RIM_HEIGHT_MIN..=horizon_defaults::RIM_HEIGHT_MAX)
-            .contains(&r.rim_height)
-        {
-            d.push(Diagnostic::error(
-                codes::HORIZON_PARAM,
-                "world",
-                "/content/horizon/rim_height",
-                format!(
-                    "`rim_height` = {} is out of range — set it within {}..={} ({} is the \
-                     default). It is the crest's height over the gap floor: under {} \
-                     the rim does not close the horizon from a body standing on that floor, and \
-                     over {} the surround stops fitting under whatever the map puts above it.",
-                    r.rim_height,
-                    horizon_defaults::RIM_HEIGHT_MIN,
-                    horizon_defaults::RIM_HEIGHT_MAX,
-                    horizon_defaults::RIM_HEIGHT,
-                    horizon_defaults::RIM_HEIGHT_MIN,
-                    horizon_defaults::RIM_HEIGHT_MAX,
-                ),
-            ));
-        }
-    }
-}
-
-/// DSL v0.11 (spec-0034): a declared locomotion the engine cannot hold the body
-/// to is refused at declaration time (`DW0455`).
-///
-/// Today that is exactly `aquatic`, and the reason is structural rather than a
-/// taste call: `aquatic` carries no exemption and governs no rule, so declaring
-/// it could never change a verdict — it would land in `DW0454` every time. A
-/// value whose only outcome is another diagnostic is a trap, so it is refused
-/// here with the gap named.
-fn body_traversal_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    for site in body_traversal_sites(c) {
-        if site.traversal.locomotion != Locomotion::Aquatic {
-            continue;
-        }
-        let (stage, path, id) = (site.body.stage(), &site.path, site.body.id());
-        d.push(Diagnostic::error(
-            codes::TRAVERSAL_UNPROVABLE,
-            stage,
-            format!("{path}/locomotion"),
-            format!(
-                "`{id}` declares `locomotion: aquatic`, which the compiler cannot hold it to. \
-                 `aquatic` is the one class that carries no exemption and governs no rule — it is \
-                 a ledger label derived from vanilla's own `#minecraft:aquatic` tag — so the \
-                 declaration could never change a verdict and would be reported inert (`DW0454`). \
-                 The gap, stated rather than left to folklore: routing has ONE reachability model, \
-                 standable ground, and water-flooded cells are impassable and never floor for \
-                 EVERY body, so there is nothing for an aquatic claim to feed. Prescription: \
-                 remove the declaration — a route that crosses water is already governed by the \
-                 flooded-cell rules, and a body vanilla itself calls aquatic still reaches the \
-                 traversal proof's binding ledger under its derived class."
-            ),
-        ));
-    }
-}
-
 /// `DW0427`/`DW0428`: the two ways a trigger's **press answer** surface can be
 /// declared wrong (DSL v0.11).
 ///
@@ -2496,198 +2141,6 @@ fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// (`plan::press_answer_trigger_id`). Stated here because the *reservation* is a
 /// DSL-level fact even though today's only user is in the compiler.
 const RESERVED_TRIGGER_PREFIX: &str = "dw-";
-
-/// Normalise an authored item id to its namespaced form, so `stripped_oak_log`
-/// and `minecraft:stripped_oak_log` are the same item to every comparison here.
-/// Same rule [`crate::is_potion_bearing_item`] applies to its own list.
-fn ns_item(id: &str) -> String {
-    if id.contains(':') {
-        id.to_string()
-    } else {
-        format!("minecraft:{id}")
-    }
-}
-
-/// Every item this campaign can put into the hands of a player **whatever class
-/// they picked** — the class-blind half of the provenance question `DW0849`
-/// asks.
-///
-/// The five ways an item enters a player's inventory are the class kit
-/// ([`crate::Class::kit`], which is class-BOUND and therefore
-/// deliberately absent here) and these four. They are gathered from the closed
-/// enumerations rather than from a walk of the sites this function's author
-/// happened to remember: effects come through
-/// [`crate::for_each_campaign_effect`], which is
-/// [`crate::effects::for_each_effect_root`] underneath — the same eight roots
-/// emission lowers from, and the one `tools/ci/check-effect-roots.py` holds closed.
-///
-/// A trap's `dispense` payload is **not** a source, and the exclusion is about
-/// the object rather than about effort: a dispenser fires its stack at the party
-/// as a hazard. Being shot with a thing is not being handed it, and a campaign
-/// whose only supply of a required item is a trap firing it has a defect this
-/// check should name rather than excuse.
-fn class_blind_item_sources(c: &Campaign) -> BTreeSet<String> {
-    let mut src: BTreeSet<String> = BTreeSet::new();
-    let quests = &c.quests.content;
-
-    // A `give-item` anywhere. Deliberately unconditional on its flag gate and on
-    // its position in the quest DAG: a gated grant is still a way the item can
-    // be had, and treating one as no source at all would red campaigns that are
-    // fine. The direction of the approximation is chosen — this check refuses
-    // only where NOTHING class-blind supplies the item.
-    crate::for_each_campaign_effect(c, &mut |_path, _site, eff| {
-        if let Some(item) = eff.give_item() {
-            src.insert(ns_item(item));
-        }
-    });
-
-    for q in &quests.quests {
-        for o in &q.objectives {
-            // A `collect` is provisioned into a container the compiler fills or
-            // adopts, or dropped by a wave — every one of those is open to
-            // whoever walks up to it.
-            if let Objective::Collect { item, .. } = o {
-                src.insert(ns_item(item));
-            }
-        }
-    }
-
-    for l in &quests.loot {
-        for it in &l.items {
-            src.insert(ns_item(&it.item));
-        }
-    }
-
-    for w in &quests.waves {
-        for m in &w.mobs {
-            for drop in &m.drops {
-                match (drop.item(), drop.slot()) {
-                    (Some(item), _) => {
-                        src.insert(ns_item(item));
-                    }
-                    // A worn piece drops the item the same mob's `equipment`
-                    // declares in that slot (`DW0490` already refuses a slot the
-                    // equipment leaves empty, so this lookup is total on a
-                    // campaign that got that far).
-                    (None, Some(slot)) => {
-                        if let Some(eq) = m.equipment.as_ref().and_then(|e| e.filled(slot)) {
-                            src.insert(ns_item(eq.item()));
-                        }
-                    }
-                    (None, None) => {}
-                }
-            }
-        }
-    }
-
-    src
-}
-
-/// `DW0849`: **an item gate a class cannot bring.**
-///
-/// ## The finding this is the general form of
-///
-/// A required item was issued through one class's kit rather than to the party,
-/// so a player who picked any other class arrived at the objective that consumed
-/// it and could do nothing. The instance was repaired by moving the item; the
-/// class of defect — *completability that depends on which class was picked* —
-/// had no check, and a campaign is free to reintroduce it at every new item
-/// gate.
-///
-/// ## Why this is a property of the object class, not of `interact`
-///
-/// The object is an **item gate**: a place where an objective completes only for
-/// a player who holds a named thing. Today the DSL has exactly one such site
-/// ([`Objective::Interact::requires_item`]) — a shop's price is a
-/// [`crate::StateCompare`] over a datum and not an item at all, and no
-/// verb removes an item from an inventory. So the enumeration is one arm wide
-/// today and is written as an enumeration anyway, because the second site is
-/// where a rule keyed to the first verb leaves the next author with no surface.
-///
-/// ## The quantifier, and why it is `for all` rather than `there exists`
-///
-/// A delve is played by one to four players who each pick one class, so **a solo
-/// player of any class is a supported party**. An item only one class can bring
-/// is therefore an objective some real party is assembled unable to finish, and
-/// it finds out at the thing it cannot press. This is exactly the reasoning
-/// [`codes::BONFIRE_NO_FLASK`] already states for the flask: one class without it
-/// is as broken as none.
-///
-/// ## The direction the approximation runs
-///
-/// [`class_blind_item_sources`] is deliberately generous — a flag-gated
-/// `give-item` late in the DAG counts as a source. The refusal therefore fires
-/// only where the item has **no** class-blind supply anywhere in the campaign,
-/// which is the shape the finding had and the shape a typo has. Making it
-/// stricter would need the reachability model, which does not model items at
-/// all; making it stricter *without* that model would red correct campaigns,
-/// and a check that reds correct work is how a check gets weakened.
-fn item_gate_class_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let classes = &c.classes.content.classes;
-    if classes.is_empty() {
-        // The schema requires 1..4, so this is unreachable on a parsed campaign;
-        // returning rather than dividing by an empty quantifier keeps the "for
-        // all classes" reading honest instead of vacuously true.
-        return;
-    }
-    let blind = class_blind_item_sources(c);
-
-    for (i, q) in c.quests.content.quests.iter().enumerate() {
-        for (j, o) in q.objectives.iter().enumerate() {
-            let Objective::Interact {
-                id, requires_item, ..
-            } = o
-            else {
-                continue;
-            };
-            let Some(raw) = requires_item.as_deref() else {
-                continue;
-            };
-            let item = ns_item(raw);
-            if blind.contains(&item) {
-                continue;
-            }
-            let cannot: Vec<&str> = classes
-                .iter()
-                .filter(|cl| !cl.kit.iter().any(|k| ns_item(&k.item) == item))
-                .map(|cl| cl.id.as_str())
-                .collect();
-            if cannot.is_empty() {
-                continue;
-            }
-            let supply = if cannot.len() == classes.len() {
-                "nothing in this campaign supplies it at all".to_string()
-            } else {
-                format!(
-                    "its only supply is another class's kit, so {} cannot bring it: {}",
-                    if cannot.len() == 1 {
-                        "one class"
-                    } else {
-                        "those classes"
-                    },
-                    cannot.join(", ")
-                )
-            };
-            d.push(Diagnostic::error(
-                codes::ITEM_GATE_UNBRINGABLE,
-                "quests",
-                format!("/content/quests/{i}/objectives/{j}/requires_item"),
-                format!(
-                    "objective `{}` completes only for a player HOLDING `{raw}`, and {supply}. A \
-                     delve is played by one to four players who each pick one class, so a solo \
-                     player of any class is a party this campaign must be finishable by — and \
-                     this one is assembled unable to finish, which it learns standing at the \
-                     thing it cannot press. Three ways to supply it, and any one is enough: put \
-                     the item in a `collect` objective or a `loot` container on the way to this \
-                     gate; hand it out with a `give-item` effect (its default `carrier` is `all` \
-                     — every party member); or add it to EVERY class kit rather than one. Do not \
-                     drop `requires_item` to silence this — presenting the item is the beat.",
-                    id.as_str()
-                ),
-            ));
-        }
-    }
-}
 
 /// DSL v0.10 runtime-state checks (spec-0031): every reference resolves, every
 /// read has a writer, every datum has a reader, and a `player`-scoped datum is
@@ -3362,203 +2815,6 @@ fn check_player_state_not_scheduled(
     }
 }
 
-/// spec-0084: the half of a `world.textures[]` row that needs neither the
-/// pinned client's census nor the campaign's files — the id (`DW0190`, the rule
-/// a skin's `texture_id` already has), one row per replaced texture (`DW0939`),
-/// and the licence (`DW0741`). The census half (`DW0939`, `DW0940`) and the file
-/// (`DW0309`) are judged where the files are read, `delvec::compiler::textures`.
-fn texture_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let mut ids: BTreeSet<&str> = BTreeSet::new();
-    let mut replaced: BTreeMap<&str, usize> = BTreeMap::new();
-    for (i, t) in c.world.content.textures.iter().enumerate() {
-        if !is_kebab(&t.id) {
-            d.push(Diagnostic::error(
-                codes::SKIN_INVALID,
-                "world",
-                format!("/content/textures/{i}/id"),
-                format!(
-                    "texture `id` `{}` is malformed — it must be a bare kebab token (e.g. \
-                     `red-moon`), matching the `textures/<id>.png` filename",
-                    t.id
-                ),
-            ));
-        } else if !ids.insert(t.id.as_str()) {
-            d.push(Diagnostic::error(
-                codes::SKIN_INVALID,
-                "world",
-                format!("/content/textures/{i}/id"),
-                format!(
-                    "duplicate texture `id` `{}` — each row names its own image; rename one \
-                     (and its `textures/<id>.png`)",
-                    t.id
-                ),
-            ));
-        }
-        if let Some(first) = replaced.insert(t.replaces.as_str(), i) {
-            d.push(Diagnostic::error(
-                codes::TEXTURE_PATH,
-                "world",
-                format!("/content/textures/{i}/replaces"),
-                format!(
-                    "texture `{}` replaces `{}`, which `world.textures[{first}]` already \
-                     replaces — a texture is drawn one way, so remove one of the two rows",
-                    t.id, t.replaces
-                ),
-            ));
-        }
-        for reason in crate::license::image_license_refusals(&t.license) {
-            d.push(Diagnostic::error(
-                codes::LICENSE_REFUSED,
-                "world",
-                format!("/content/textures/{i}/license"),
-                format!("texture `{}` (replaces `{}`): {reason}", t.id, t.replaces),
-            ));
-        }
-    }
-}
-
-/// Stage-1 `horizon`/`boundary` validation (spec-0013), the party size
-/// (spec-0018), the declared difficulty and the declared textures (spec-0084).
-fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    texture_checks(c, d);
-    // spec-0091: the declared view distance's range, and every site-plan line
-    // of sight judged against the radius it serves. The binding it states is
-    // printed by the CLI, which asks for it again without the diagnostics.
-    crate::viewdistance::checks(c, d);
-    // spec-0018: a delve is played by ONE party of 1–4, so a declared
-    // mandatory size outside that range can never be honoured.
-    if let Some(n) = c.world.content.min_players
-        && !(1..=4).contains(&n)
-    {
-        d.push(Diagnostic::error(
-            codes::PARTY_SIZE,
-            "world",
-            "/content/min_players".to_string(),
-            format!(
-                "`min_players` = {n} is out of range — a delve is played by one party of 1–4, \
-                 so set it to a value in 1..=4 (absent = 1, a party of one)"
-            ),
-        ));
-    }
-    // spec-0077 §7: a respawn wait is `1..=120` seconds, and it hangs off the
-    // checkpoint respawn edge, so it needs a checkpoint or bonfire to exist.
-    if let Some(w) = c.world.content.respawn_wait {
-        if !(1..=120).contains(&w.seconds) {
-            d.push(Diagnostic::error(
-                codes::RESPAWN_WAIT_INVALID,
-                "world",
-                "/content/respawn_wait/seconds".to_string(),
-                format!(
-                    "`respawn_wait.seconds` = {} is out of range — a fallen player waits 1 to 120 \
-                     seconds, so set it to a value in 1..=120, or drop `respawn_wait` for no wait",
-                    w.seconds
-                ),
-            ));
-        }
-        if !declares_checkpoint(c) {
-            d.push(Diagnostic::error(
-                codes::RESPAWN_WAIT_INVALID,
-                "world",
-                "/content/respawn_wait".to_string(),
-                "`respawn_wait` is declared but this campaign declares no `set-checkpoint` or \
-                 `bonfire` — the wait begins on the checkpoint respawn edge, so with nothing to \
-                 come back to it never runs. Add the checkpoint or bonfire a fallen player \
-                 returns to, or drop `respawn_wait`."
-                    .to_string(),
-            ));
-        }
-    }
-    // Declared combat difficulty. `peaceful` is the
-    // one keyword the compiler refuses: on peaceful the server discards every
-    // hostile-category mob as it ticks it — summoned, `NoAI` and
-    // `PersistenceRequired` are all irrelevant — so a peaceful delve is one in
-    // which the entire cast of threats quietly does not exist.
-    if matches!(
-        c.world.content.difficulty,
-        Some(crate::WorldDifficulty::Peaceful)
-    ) {
-        d.push(Diagnostic::error(
-            codes::DIFFICULTY_INVALID,
-            "world",
-            "/content/difficulty".to_string(),
-            "`difficulty: \"peaceful\"` is refused: on peaceful the server discards every \
-             hostile-category mob as it ticks it — being `/summon`ed, `NoAI` or \
-             `PersistenceRequired` does not save one — so every wave, hostile actor and \
-             ambush in this campaign would silently cease to exist. Declare `easy`, `normal` \
-             or `hard`; for a delve that is genuinely combat-free, simply omit `difficulty` \
-             (a campaign with no waves already ships peaceful by derivation)"
-                .to_string(),
-        ));
-    }
-    // A horizon whose ambient a body can ENTER needs a return rule. The
-    // question is the ambient's, never the base's name: an ocean is an
-    // infinite swimmable sea, and a valley's gap floor is walkable ground
-    // that runs to the foot of the rim. `void` is the only base a body
-    // cannot enter, because there is nothing out there to stand on.
-    let entered_base = match crate::horizon_base(&c.world.content.horizon) {
-        crate::HorizonBase::Void => None,
-        crate::HorizonBase::Ocean => Some((
-            "ocean",
-            "an infinite swimmable sea with no return rule lets players wander off the map",
-        )),
-        crate::HorizonBase::Valley => Some((
-            "valley",
-            "the gap floor between the map and the rim is walkable ground, and with no \
-             return rule a player who steps off the map is simply outside it",
-        )),
-    };
-    if let Some((base, why)) = entered_base
-        && c.world.content.boundary.is_none()
-    {
-        d.push(Diagnostic::error(
-            codes::OCEAN_NO_BOUNDARY,
-            "world",
-            "/content/horizon".to_string(),
-            format!(
-                "`horizon` base `{base}` needs a `boundary` — {why}. Add a `boundary` (a \
-                 bare `{{}}` uses the default margin), or set `horizon` to `void`"
-            ),
-        ));
-    }
-    // `margin` range check (0..=64).
-    if let Some(b) = &c.world.content.boundary
-        && !(0..=64).contains(&b.margin)
-    {
-        d.push(Diagnostic::error(
-            codes::BOUNDARY_MARGIN,
-            "world",
-            "/content/boundary/margin".to_string(),
-            format!(
-                "`boundary.margin` = {} is out of range — set it to a value in 0..=64 (16 is \
-                 the default)",
-                b.margin
-            ),
-        ));
-    }
-}
-
-/// Per-area `lighting` (spec-0010): `min_light` is range-checked (1..=14,
-/// `DW0196`).
-fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    // Range-check min_light (1..=14) where a lighting block is declared.
-    for (i, area) in c.world.content.areas.iter().enumerate() {
-        if let Some(lighting) = &area.lighting
-            && !(1..=14).contains(&lighting.min_light)
-        {
-            d.push(Diagnostic::error(
-                codes::LIGHTING_RANGE,
-                "world",
-                format!("/content/areas/{i}/lighting/min_light"),
-                format!(
-                    "area `{}` `lighting.min_light` = {} is out of range — set it to a value \
-                     in 1..=14 (7 is the default)",
-                    area.id, lighting.min_light
-                ),
-            ));
-        }
-    }
-}
-
 /// Visit every quest effect **and every transitively-nested effect** (a `sequence`
 /// step, an `on_respawn`/`on_caught`/`on_arrive` bundle) with its relative path
 /// fragment, threading the JSON-pointer path through
@@ -3620,7 +2876,7 @@ fn collected_effect_any(c: &Campaign, pred: impl Fn(&QuestEffect) -> bool) -> bo
     found
 }
 
-fn for_each_effect_deep(q: &crate::Quest, mut f: impl FnMut(String, &QuestEffect)) {
+pub(crate) fn for_each_effect_deep(q: &crate::Quest, mut f: impl FnMut(String, &QuestEffect)) {
     fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
         f(path.clone(), eff);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
@@ -3642,7 +2898,10 @@ fn for_each_effect_deep(q: &crate::Quest, mut f: impl FnMut(String, &QuestEffect
 /// Visit an environment trigger's effects **and every transitively-nested effect**
 /// with a relative path fragment (`effects/<m>`, then nested segments) — the
 /// trigger analogue of [`for_each_effect_deep`].
-fn for_each_trigger_effect_deep(t: &crate::EnvTrigger, mut f: impl FnMut(String, &QuestEffect)) {
+pub(crate) fn for_each_trigger_effect_deep(
+    t: &crate::EnvTrigger,
+    mut f: impl FnMut(String, &QuestEffect),
+) {
     fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
         f(path.clone(), eff);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
@@ -4040,220 +3299,7 @@ fn v06_checks(
         }
     }
 
-    // spec-0016 §1: a campaign that places a bonfire is
-    // a souls campaign, and a souls campaign owes the party a flask. Resting
-    // replenishes every `flask` kit entry to its declared count — with none
-    // declared, "rest and save" and "save only" collapse into the same button and
-    // the recovery economy the bonfire exists to serve does not exist (`DW0476`).
-    // Campaign-global on purpose: the flask is per-class gear, and one class
-    // without a flask is as broken as none, so the requirement is on EVERY class.
-    if has_bonfire {
-        let flaskless: Vec<&str> = c
-            .classes
-            .content
-            .classes
-            .iter()
-            .filter(|cl| !cl.kit.iter().any(|k| k.flask))
-            .map(|cl| cl.id.as_str())
-            .collect();
-        if !flaskless.is_empty() {
-            d.push(Diagnostic::error(
-                codes::BONFIRE_NO_FLASK,
-                "classes",
-                "/content/classes".to_string(),
-                format!(
-                    "this campaign places a `bonfire` but {} no `flask` kit item: {}. \
-                     Resting at a bonfire replenishes every kit entry marked `\"flask\": true` to \
-                     its declared `count` — with none, the rest option recovers nothing and the \
-                     souls loop has no consumable to spend (spec-0016 §1). \
-                     Add a recovery item to each class kit and mark it \
-                     `\"flask\": true` (this needs `dsl_version` 0.8.0 on the classes stage). Do \
-                     NOT drop the bonfire to silence this — the rest point is the design.",
-                    if flaskless.len() == 1 {
-                        "one class declares".to_string()
-                    } else {
-                        format!("{} classes declare", flaskless.len())
-                    },
-                    flaskless.join(", ")
-                ),
-            ));
-        }
-    }
-}
-
-/// spec-0016 §1: **what is actually in the flask.**
-///
-/// The kit `flask` marker landed with no way to say what the bottle pours, so
-/// every flask shipped as `minecraft:potion` with no `minecraft:potion_contents`
-/// component — the Uncraftable Potion, which a player can drink all day for
-/// nothing. `contents` closes that, and these are the two halves of keeping it
-/// honest: `DW0487` refuses the placeholder (a potion-bearing kit item that
-/// declares no contents), `DW0486` refuses contents 1.21.11 cannot pour.
-///
-fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Diagnostic>) {
-    for (i, cl) in c.classes.content.classes.iter().enumerate() {
-        for (k, item) in cl.kit.iter().enumerate() {
-            let bearing = crate::is_potion_bearing_item(&item.item);
-            let path = format!("/content/classes/{i}/kit/{k}");
-            let Some(contents) = &item.contents else {
-                // The placeholder flask, as a build error.
-                if bearing {
-                    d.push(Diagnostic::error(
-                        codes::KIT_POTION_MISSING,
-                        "classes",
-                        format!("{path}/contents"),
-                        format!(
-                            "kit item `{}` declares no `contents`, so it compiles to the \
-                             *Uncraftable Potion* — a bottle with no `minecraft:potion_contents` \
-                             component, which grants nothing when drunk however it is named. \
-                             Declare what is in it: `\"contents\": {{\"potion\": \
-                             \"minecraft:strong_healing\"}}`, or an `\"effects\"` list of \
-                             `{{\"effect\", \"duration\", \"amplifier\"}}`. Do NOT rename the \
-                             bottle instead — semantics never key on player-facing text \
-                             (spec-0016 §1).",
-                            item.item
-                        ),
-                    ));
-                }
-                continue;
-            };
-            // `contents` on an item with no such component: the data would be
-            // dropped on the floor, silently.
-            if !bearing {
-                d.push(Diagnostic::error(
-                    codes::KIT_POTION_INVALID,
-                    "classes",
-                    format!("{path}/contents"),
-                    format!(
-                        "kit item `{}` cannot carry potion `contents` — in 1.21.11 only \
-                         `minecraft:potion`, `minecraft:splash_potion`, \
-                         `minecraft:lingering_potion` and `minecraft:tipped_arrow` carry a \
-                         `minecraft:potion_contents` component, and on anything else the game \
-                         discards it. Put the contents on a potion item, or drop the field.",
-                        item.item
-                    ),
-                ));
-                continue;
-            }
-            if contents.potion.is_none() && contents.effects.is_empty() {
-                d.push(Diagnostic::error(
-                    codes::KIT_POTION_INVALID,
-                    "classes",
-                    format!("{path}/contents"),
-                    "empty potion `contents` — it names no `potion` and lists no `effects`, so \
-                     the bottle still pours nothing. Name a vanilla potion (e.g. \
-                     `\"potion\": \"minecraft:strong_healing\"`) or list at least one effect."
-                        .to_string(),
-                ));
-            }
-            if let Some(p) = &contents.potion
-                && !crate::registry::is_potion_id(p)
-            {
-                d.push(Diagnostic::error(
-                    codes::KIT_POTION_INVALID,
-                    "classes",
-                    format!("{path}/contents/potion"),
-                    format!(
-                        "`{p}` is not in the pinned 1.21.11 `potion` registry — use a real potion \
-                         id (`minecraft:healing`, `minecraft:strong_healing`, \
-                         `minecraft:long_night_vision`, …). Note the 1.20.5+ spelling: strength \
-                         and duration are part of the id (`strong_`/`long_` prefixes), not \
-                         separate fields."
-                    ),
-                ));
-            }
-            if let Some(col) = &contents.color
-                && !is_hex_color(col)
-            {
-                d.push(Diagnostic::error(
-                    codes::KIT_POTION_INVALID,
-                    "classes",
-                    format!("{path}/contents/color"),
-                    format!(
-                        "potion `color` `{col}` is malformed — write the bottle colour as \
-                         `#rrggbb` (e.g. `#ff9c30`), or omit it and take the colour vanilla \
-                         derives from the effects."
-                    ),
-                ));
-            }
-            for (e, eff) in contents.effects.iter().enumerate() {
-                let epath = format!("{path}/contents/effects/{e}");
-                if !effects.contains(&eff.effect) {
-                    d.push(Diagnostic::error(
-                        codes::KIT_POTION_INVALID,
-                        "classes",
-                        format!("{epath}/effect"),
-                        format!(
-                            "potion effect `{}` is not a known 1.21.11 status-effect id — use a \
-                             valid namespaced effect id (e.g. `minecraft:instant_health`).",
-                            eff.effect
-                        ),
-                    ));
-                }
-                if let Some(amp) = eff.amplifier
-                    && amp > crate::MAX_POTION_AMPLIFIER
-                {
-                    d.push(Diagnostic::error(
-                        codes::KIT_POTION_INVALID,
-                        "classes",
-                        format!("{epath}/amplifier"),
-                        format!(
-                            "potion effect `amplifier` {amp} is out of range — vanilla stores it \
-                             in an unsigned byte, so it must be 0–{max} (0 = level I).",
-                            max = crate::MAX_POTION_AMPLIFIER
-                        ),
-                    ));
-                }
-                match (eff.is_instant(), eff.duration) {
-                    // An instantaneous effect is applied once on drinking; a
-                    // duration on it is a sentence the game never reads.
-                    (true, Some(dur)) => d.push(Diagnostic::error(
-                        codes::KIT_POTION_INVALID,
-                        "classes",
-                        format!("{epath}/duration"),
-                        format!(
-                            "`{}` is instantaneous — it lands once, on the tick the potion is \
-                             drunk, so the `duration` of {dur} tick(s) here is never read. Drop \
-                             the field; for healing that ticks over time use \
-                             `minecraft:regeneration`, which does take a duration.",
-                            eff.effect
-                        ),
-                    )),
-                    (false, None) => d.push(Diagnostic::error(
-                        codes::KIT_POTION_INVALID,
-                        "classes",
-                        format!("{epath}/duration"),
-                        format!(
-                            "potion effect `{}` lasts over time and declares no `duration` — \
-                             vanilla would default it to zero ticks, i.e. nothing. Declare the \
-                             duration in ticks (20 = one second).",
-                            eff.effect
-                        ),
-                    )),
-                    (false, Some(dur)) if dur == 0 || dur > crate::MAX_POTION_DURATION_TICKS => {
-                        d.push(Diagnostic::error(
-                            codes::KIT_POTION_INVALID,
-                            "classes",
-                            format!("{epath}/duration"),
-                            format!(
-                                "potion effect `duration` {dur} is out of range — it is in \
-                                 **ticks** (20 = one second) and must be 1–{max} \
-                                 (≈13.9 hours, past the delve ceiling).",
-                                max = crate::MAX_POTION_DURATION_TICKS
-                            ),
-                        ));
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-}
-
-/// True if `s` is a `#rrggbb` colour literal — [`crate::color::is_hex`], the one
-/// rule every hex-colour surface reads.
-fn is_hex_color(s: &str) -> bool {
-    crate::color::is_hex(s)
+    crate::class::bonfire_flask_checks(c, has_bonfire, d);
 }
 
 /// **A firework's shape, at every effect root** (spec-0068 §3.1).
@@ -4601,40 +3647,7 @@ fn anchors_and_items(
         .map(|q| (q.id.as_str(), q.area.as_str()))
         .collect();
 
-    // NPC anchors.
-    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        if let Some(f) = station_kind_diag(
-            &providers,
-            npc.anchor.as_str(),
-            crate::layout::StationKind::Point,
-            "an NPC's station",
-            "npcs",
-            format!("/content/npcs/{i}/anchor"),
-        ) {
-            d.push(f);
-        } else if let Some(set) = providers.for_area(npc.area.as_str())
-            && !set.contains(npc.anchor.as_str())
-        {
-            // The one prefab remedy in this file that names the anchor back, so
-            // it is built before the call rather than passed as a literal.
-            let prefab_remedy = format!(
-                "use an anchor the prefab exposes, or bind a prefab/pool that carries `{}`. \
-                 Anchor names come from prefab metadata; do NOT invent one",
-                npc.anchor
-            );
-            d.push(Diagnostic::error(
-                codes::ANCHOR_UNRESOLVED,
-                "npcs",
-                format!("/content/npcs/{i}/anchor"),
-                format!(
-                    "npc anchor `{}` is not provided by the prefab bound to area `{}` — {}",
-                    npc.anchor,
-                    npc.area,
-                    providers.anchor_remedy(&prefab_remedy),
-                ),
-            ));
-        }
-    }
+    crate::npc::npc_anchor_checks(c, &providers, d);
 
     // Objective / effect anchors, resolved against the quest's planned area.
     for (i, q) in c.quests.content.quests.iter().enumerate() {
@@ -4773,107 +3786,12 @@ fn anchors_and_items(
         }
     }
 
-    // Kit items.
-    for (i, cl) in c.classes.content.classes.iter().enumerate() {
-        for (j, it) in cl.kit.iter().enumerate() {
-            if !items.contains(&it.item) {
-                d.push(Diagnostic::error(
-                    codes::ITEM_UNKNOWN,
-                    "classes",
-                    format!("/content/classes/{i}/kit/{j}/item"),
-                    format!(
-                        "kit item `{}` is not in the pinned 1.21.11 item registry — use a valid \
-                         namespaced item id (e.g. `minecraft:iron_sword`)",
-                        it.item
-                    ),
-                ));
-            }
-        }
-    }
+    crate::class::kit_item_checks(c, items, d);
 }
 
 // ---------------------------------------------------------------------------
 // Rule group 6 — prefab / prefab_pool binding (stage 1)
 // ---------------------------------------------------------------------------
-
-fn prefab_binding(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
-    for (i, a) in c.world.content.areas.iter().enumerate() {
-        // Exactly one of `prefab` / `prefab_pool`.
-        match (&a.prefab, &a.prefab_pool) {
-            (Some(_), Some(_)) => d.push(Diagnostic::error(
-                codes::PREFAB_BINDING,
-                "world",
-                format!("/content/areas/{i}"),
-                format!(
-                    "area `{}` binds both `prefab` and `prefab_pool`; bind exactly one",
-                    a.id
-                ),
-            )),
-            (None, None) => d.push(Diagnostic::error(
-                codes::PREFAB_BINDING,
-                "world",
-                format!("/content/areas/{i}"),
-                format!(
-                    "area `{}` binds neither `prefab` nor `prefab_pool`; bind exactly one",
-                    a.id
-                ),
-            )),
-            _ => {}
-        }
-        // A bound PIECE must resolve against the prefab-metadata surface, on
-        // exactly the terms the pool arm below already demands. The asymmetry
-        // this replaces was not a missing message — it was a missing message
-        // that TOOK A PROOF WITH IT. An area whose prefab the registry does not
-        // hold contributes no set to [`AnchorProviders`], and every per-area
-        // anchor check reads a missing set as *defer to the compiler* and
-        // skips. So one mistyped character in `world.json` turned seven
-        // `DW0142` refusals into silence on the gallery, and left the campaign
-        // green in a way that is strictly less checked than a correct name —
-        // the unbound vacuity mode, one keystroke away.
-        //
-        // `has_prefab` is asked rather than `anchors_for` because only the
-        // first distinguishes *the library does not hold this* from *this
-        // registry cannot say*: a subset registry answers `None` and nothing is
-        // refused on its word.
-        if let Some(prefab) = &a.prefab
-            && prefab.is_valid_syntax()
-            && anchors.has_prefab(prefab) == Some(false)
-        {
-            d.push(Diagnostic::error(
-                codes::PREFAB_UNKNOWN,
-                "world",
-                format!("/content/areas/{i}/prefab"),
-                format!(
-                    "area `{}` binds `prefab` `{prefab}`, which is not declared in the prefab \
-                     metadata — bind a piece that exists in the prefabs dir, or add `{prefab}` \
-                     to the prefab library. This is a prefab-library/naming issue, not a \
-                     quest-logic one. It is refused rather than deferred because an area whose \
-                     piece is absent declares NO anchors, so every anchor a quest in this area \
-                     names would be accepted without being examined — a misspelling here \
-                     switches the anchor proof (`DW0142`) off for the whole area instead of \
-                     failing it",
-                    a.id
-                ),
-            ));
-        }
-        // A bound pool must resolve against the prefab-metadata surface.
-        if let Some(pool) = &a.prefab_pool
-            && pool.is_valid_syntax()
-            && !anchors.has_pool(pool)
-        {
-            d.push(Diagnostic::error(
-                codes::POOL_UNKNOWN,
-                "world",
-                format!("/content/areas/{i}/prefab_pool"),
-                format!(
-                    "area `prefab_pool` `{pool}` is not declared in the prefab metadata — bind a \
-                     pool that exists in the prefabs dir, or add `{pool}` to the prefab library. \
-                     This is a prefab-library/naming issue, not a quest-logic one"
-                ),
-            ));
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Rule group 6 — cross-stage 1:1 (quest plan↔expansion, npc↔dialogue tree)
@@ -5457,36 +4375,7 @@ fn v04_checks(
     let flags = collect_declared_flags(c);
     let declared_waves: BTreeSet<&str> = quests.waves.iter().map(|w| w.id.as_str()).collect();
 
-    // --- skins (spec-0009) ---
-    let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
-    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        if let Some(skin) = &npc.skin {
-            if !is_kebab(&skin.texture_id) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "npcs",
-                    format!("/content/npcs/{i}/skin/texture_id"),
-                    format!(
-                        "skin `texture_id` `{}` is malformed — it must be a bare kebab token \
-                         (e.g. `keeper-armor`), matching the `skins/<texture_id>.png` filename",
-                        skin.texture_id
-                    ),
-                ));
-            }
-            if !seen_skins.insert(skin.texture_id.as_str()) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "npcs",
-                    format!("/content/npcs/{i}/skin/texture_id"),
-                    format!(
-                        "duplicate skin `texture_id` `{}` — each mannequin needs a distinct \
-                         texture; rename one (and its `skins/<id>.png`)",
-                        skin.texture_id
-                    ),
-                ));
-            }
-        }
-    }
+    crate::npc::npc_skin_checks(c, d);
 
     // --- wave-mob effects + attributes ---
     for (i, w) in quests.waves.iter().enumerate() {
@@ -5735,11 +4624,11 @@ fn v04_checks(
     }
 
     // --- dialogue requires_flags resolution + flag-deadlock guard ---
-    dialogue_v04(c, &flags, d);
+    crate::dialogue::dialogue_flag_checks(c, &flags, d);
 
     // --- despawned-npc references (DW0195) ---
-    despawned_ref_check(c, &npc_ids, d);
-    deferred_npc_checks(c, &npc_ids, d);
+    crate::npc::despawned_ref_check(c, &npc_ids, d);
+    crate::npc::deferred_npc_checks(c, &npc_ids, d);
 }
 
 /// Split a block field into its base id and (optional) blockstate suffix,
@@ -7006,227 +5895,9 @@ fn cutscene_style_checks(
     }
 }
 
-/// Dialogue v0.4: option `requires_flags` resolve against declared flags
-/// (`DW0172`); a `talk-to` whose completing options are all flag-gated is a
-/// potential deadlock (`DW0191`, spec-0008 §1).
-fn dialogue_v04(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
-    use crate::DialogueEffect;
-    // Option requires_flags resolution.
-    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
-        for (j, node) in tree.nodes.iter().enumerate() {
-            for (k, opt) in node.options.iter().enumerate() {
-                for (m, f) in opt.requires_flags.iter().enumerate() {
-                    if !flags.contains(f.as_str()) {
-                        d.push(Diagnostic::error(
-                            codes::FLAG_UNKNOWN,
-                            "dialogue",
-                            format!(
-                                "/content/dialogues/{i}/nodes/{j}/options/{k}/requires_flags/{m}"
-                            ),
-                            format!(
-                                "dialogue option `requires_flags` references flag `{f}`, which no \
-                                 `set-flag` effect ever produces — add a `set-flag {{ flag: \
-                                 \"{f}\" }}` effect somewhere, or correct the flag name"
-                            ),
-                        ));
-                    }
-                }
-            }
-        }
-    }
-    // v0.6: dialogue option `forbids_flags` — same unknown-flag treatment as
-    // `requires_flags` (DW0172).
-    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
-        for (j, node) in tree.nodes.iter().enumerate() {
-            for (k, opt) in node.options.iter().enumerate() {
-                for (m, f) in opt.forbids_flags.iter().enumerate() {
-                    if !flags.contains(f.as_str()) {
-                        d.push(Diagnostic::error(
-                            codes::FLAG_UNKNOWN,
-                            "dialogue",
-                            format!(
-                                "/content/dialogues/{i}/nodes/{j}/options/{k}/forbids_flags/{m}"
-                            ),
-                            format!(
-                                "dialogue option `forbids_flags` references flag `{f}`, which no \
-                                 `set-flag` effect ever produces — the gate can never suppress \
-                                 anything; add the producing `set-flag {{ flag: \"{f}\" }}` \
-                                 effect, or correct the flag name"
-                            ),
-                        ));
-                    }
-                }
-            }
-        }
-    }
-    // Per-NPC: objectives completed by an UNGATED option in that npc's tree. An
-    // option gated either way — `requires_flags` (hidden until set) or, v0.6,
-    // `forbids_flags` (hidden once set) — counts as gated: the static analysis
-    // does no temporal reasoning about which flags end up set, so any
-    // conditionally-visible option may be unavailable exactly when needed.
-    let mut ungated_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-    let mut any_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-    for tree in &c.dialogue.content.dialogues {
-        let npc = tree.npc.as_str();
-        for node in &tree.nodes {
-            for opt in &node.options {
-                for eff in &opt.effects {
-                    if let DialogueEffect::CompleteObjective { objective } = eff {
-                        any_completes
-                            .entry(npc)
-                            .or_default()
-                            .insert(objective.as_str());
-                        if opt.requires_flags.is_empty() && opt.forbids_flags.is_empty() {
-                            ungated_completes
-                                .entry(npc)
-                                .or_default()
-                                .insert(objective.as_str());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oi, o) in q.objectives.iter().enumerate() {
-            if let Objective::TalkTo { id, npc, .. } = o {
-                let npc = npc.as_str();
-                let oid = id.as_str();
-                let completed = any_completes.get(npc).is_some_and(|s| s.contains(oid));
-                let ungated = ungated_completes.get(npc).is_some_and(|s| s.contains(oid));
-                // Only when it IS completed somewhere (else DW0123 fires) but every
-                // completing option is flag-gated.
-                if completed && !ungated {
-                    d.push(Diagnostic::error(
-                        codes::DIALOGUE_FLAG_DEADLOCK,
-                        "quests",
-                        format!("/content/quests/{qi}/objectives/{oi}"),
-                        format!(
-                            "`talk-to` objective `{id}` has no ungated completing dialogue option \
-                             in npc `{npc}`'s tree — every completing option is `requires_flags`- \
-                             or `forbids_flags`-gated, so it can be unavailable the moment it is \
-                             needed; keep at least one completing option with no flag gate"
-                        ),
-                    ));
-                }
-            }
-        }
-    }
-}
-
-/// Collect every NPC `e` (or an effect nested inside it) despawns **on every
-/// playthrough that runs `e` at all** — the only despawns `DW0195` may reason
-/// about, because its model is quest-DAG order with no branch semantics.
-///
-/// Two things stop the descent, and each is a real branch rather than a
-/// convenience:
-///
-/// - **A flag gate.** An effect carrying `requires_flags`/`forbids_flags` fires
-///   only when campaign state says so. The island's Perimedes walks out through
-///   the cave mouth and despawns *only* on the flee branch (`flag/flee`); the
-///   `talk-to`s that follow live on the sealed-in branch. Counting that despawn
-///   would reject a perfectly playable delve. Branch-conditional reachability is
-///   the branch-coherent completability proof's job (`DW0204`), not this rule's.
-/// - **A lifecycle reaction bundle.** `set-checkpoint`'s `on_respawn` runs only if
-///   a player dies and `begin-stealth`'s `on_caught` only if one is caught, so
-///   neither is guaranteed. A `sequence` step and a `move-*` `on_arrive` *are*
-///   guaranteed once their parent runs, so the descent continues through them.
-fn unconditional_despawns<'a>(e: &'a QuestEffect, out: &mut Vec<&'a crate::ids::NpcId>) {
-    if !e.requires_flags().is_empty() || !e.forbids_flags().is_empty() {
-        return;
-    }
-    if let Some(npc) = e.despawn_npc() {
-        out.push(npc);
-    }
-    for (_pseg, kseg, list) in e.nested_effect_lists_labeled() {
-        if kseg == "respawn" || kseg == "caught" {
-            continue;
-        }
-        for inner in list {
-            unconditional_despawns(inner, out);
-        }
-    }
-}
-
-/// DW0195: a `talk-to` targeting an NPC despawned by an effect that runs strictly
-/// before it on the quest dependency graph. Conservative: quest-ancestor despawn
-/// (via `on_complete`) or same-quest earlier-objective despawn (via
-/// `on_objective_complete` on a prerequisite `after` objective).
-fn despawned_ref_check(c: &Campaign, _npc_ids: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
-    // Quest transitive ancestors (a quest completes before its dependents start).
-    let deps: BTreeMap<&str, &Vec<crate::ids::QuestId>> = c
-        .quest_plan
-        .content
-        .quests
-        .iter()
-        .map(|q| (q.id.as_str(), &q.depends_on))
-        .collect();
-    let ancestors = |q: &str| -> BTreeSet<&str> {
-        let mut out = BTreeSet::new();
-        let mut stack = vec![q];
-        while let Some(cur) = stack.pop() {
-            if let Some(ds) = deps.get(cur) {
-                for dep in ds.iter() {
-                    if out.insert(dep.as_str()) {
-                        stack.push(dep.as_str());
-                    }
-                }
-            }
-        }
-        out
-    };
-
-    // Where each npc is despawned: quests that despawn it on completion. Deep, but
-    // only through effects that are **certain to run** (see
-    // [`unconditional_despawns`]) — a `despawn-npc` nested one level down in a
-    // `sequence` step removes the NPC exactly as thoroughly as a top-level one, and
-    // the shallow scan this replaces walked straight past it.
-    let mut despawn_quest: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-    for q in &c.quests.content.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            let mut npcs = Vec::new();
-            unconditional_despawns(e, &mut npcs);
-            for npc in npcs {
-                despawn_quest
-                    .entry(npc.as_str())
-                    .or_default()
-                    .insert(q.id.as_str());
-            }
-        }
-    }
-    if despawn_quest.is_empty() {
-        return;
-    }
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        let anc = ancestors(q.id.as_str());
-        for (oi, o) in q.objectives.iter().enumerate() {
-            if let Objective::TalkTo { npc, .. } = o
-                && let Some(dq) = despawn_quest.get(npc.as_str())
-                && dq.iter().any(|dqid| anc.contains(dqid))
-            {
-                d.push(Diagnostic::error(
-                    codes::NPC_DESPAWNED_REF,
-                    "quests",
-                    format!("/content/quests/{qi}/objectives/{oi}/npc"),
-                    format!(
-                        "`talk-to` targets npc `{npc}`, which a prerequisite quest despawns — the \
-                         npc is gone by the time this objective activates; talk to `{npc}` before \
-                         the quest that despawns it, or drop the `despawn-npc`"
-                    ),
-                ));
-            }
-        }
-    }
-}
-
 /// Transitive stage-4 quest ancestors: `q -> {every quest that must complete before
 /// q starts}` (the `depends_on` closure). Acyclicity is guaranteed by `DW0130`.
-fn quest_ancestors(c: &Campaign) -> BTreeMap<&str, BTreeSet<&str>> {
+pub(crate) fn quest_ancestors(c: &Campaign) -> BTreeMap<&str, BTreeSet<&str>> {
     let deps: BTreeMap<&str, &Vec<crate::ids::QuestId>> = c
         .quest_plan
         .content
@@ -7250,146 +5921,6 @@ fn quest_ancestors(c: &Campaign) -> BTreeMap<&str, BTreeSet<&str>> {
         out.insert(q.id.as_str(), anc);
     }
     out
-}
-
-/// `deferred` NPC staging proofs (DSL v0.6), the dual of `despawned_ref_check`:
-///
-/// * `DW0112` — a dialogue `spawn-npc` naming an unknown NPC (the quest-effect form
-///   is covered by `check_effect_v04`).
-/// * `DW0197` — a `deferred: true` NPC that **no** `spawn-npc` anywhere summons: it
-///   never enters the world, so its tree and any `talk-to` on it are dead content.
-/// * `DW0198` — a `talk-to` on a deferred NPC that provably activates before the
-///   NPC exists: every `spawn-npc` for it lives in a quest that is a strict DAG
-///   *descendant* of the objective's quest. Conservative by construction — a spawn
-///   from a trigger, from dialogue, or from the objective's own quest is not
-///   DAG-ordered, so it suppresses the proof rather than risking a false positive.
-fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
-    use crate::DialogueEffect;
-    let deferred: BTreeSet<&str> = c
-        .npcs
-        .content
-        .npcs
-        .iter()
-        .filter(|n| n.deferred)
-        .map(|n| n.id.as_str())
-        .collect();
-
-    // Spawn sites. `quest_spawns`: npc -> quests whose effects spawn it (DAG-ordered).
-    // `loose_spawns`: npcs spawned from a trigger or a dialogue option — sources with
-    // no position on the quest DAG.
-    let mut quest_spawns: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut loose_spawns: BTreeSet<String> = BTreeSet::new();
-    for q in &c.quests.content.quests {
-        let qid = q.id.as_str().to_string();
-        for_each_effect_deep(q, |_path, eff| {
-            if let Some(npc) = eff.spawn_npc() {
-                quest_spawns
-                    .entry(npc.as_str().to_string())
-                    .or_default()
-                    .insert(qid.clone());
-            }
-        });
-    }
-    for t in &c.quests.content.triggers {
-        for_each_trigger_effect_deep(t, |_path, eff| {
-            if let Some(npc) = eff.spawn_npc() {
-                loose_spawns.insert(npc.as_str().to_string());
-            }
-        });
-    }
-    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
-        for (j, node) in tree.nodes.iter().enumerate() {
-            for (k, opt) in node.options.iter().enumerate() {
-                for (m, eff) in opt.effects.iter().enumerate() {
-                    let DialogueEffect::SpawnNpc { npc } = eff else {
-                        continue;
-                    };
-                    if !npc_ids.contains(npc.as_str()) {
-                        d.push(Diagnostic::error(
-                            codes::DANGLING_REF,
-                            "dialogue",
-                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/npc"),
-                            format!(
-                                "dialogue `spawn-npc` references unknown npc `{npc}` — declare it \
-                                 in stage 2 or correct the reference"
-                            ),
-                        ));
-                        continue;
-                    }
-                    loose_spawns.insert(npc.as_str().to_string());
-                }
-            }
-        }
-    }
-
-    // DW0197: deferred but never spawned anywhere.
-    for (i, n) in c.npcs.content.npcs.iter().enumerate() {
-        if !n.deferred {
-            continue;
-        }
-        let id = n.id.as_str();
-        if quest_spawns.contains_key(id) || loose_spawns.contains(id) {
-            continue;
-        }
-        d.push(Diagnostic::error(
-            codes::NPC_NEVER_SPAWNED,
-            "npcs",
-            format!("/content/npcs/{i}/deferred"),
-            format!(
-                "npc `{id}` is `deferred: true` but no `spawn-npc` effect anywhere in the \
-                 campaign summons it — it never enters the world, so its dialogue tree (and any \
-                 `talk-to` on it) is unreachable content. Add a `spawn-npc {{ npc: \"{id}\" }}` \
-                 effect at the beat where the character should walk in, or drop `deferred` so it \
-                 stands at its anchor from world init. Do NOT delete the dialogue tree to silence \
-                 this — every stage-2 npc needs one (`DW0152`)"
-            ),
-        ));
-    }
-    if deferred.is_empty() {
-        return;
-    }
-
-    // DW0198: a `talk-to` on a deferred npc whose every spawn site is a strict DAG
-    // descendant of the objective's quest.
-    let ancestors = quest_ancestors(c);
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oi, o) in q.objectives.iter().enumerate() {
-            let Objective::TalkTo { npc, .. } = o else {
-                continue;
-            };
-            let npc = npc.as_str();
-            if !deferred.contains(npc) || loose_spawns.contains(npc) {
-                continue;
-            }
-            let Some(sqs) = quest_spawns.get(npc) else {
-                continue; // never spawned at all — already DW0197
-            };
-            let all_later = sqs.iter().all(|sq| {
-                sq.as_str() != q.id.as_str()
-                    && ancestors
-                        .get(sq.as_str())
-                        .is_some_and(|anc| anc.contains(q.id.as_str()))
-            });
-            if !all_later {
-                continue;
-            }
-            let names: Vec<&str> = sqs.iter().map(|s| s.as_str()).collect();
-            d.push(Diagnostic::error(
-                codes::NPC_SPAWNED_LATE,
-                "quests",
-                format!("/content/quests/{qi}/objectives/{oi}/npc"),
-                format!(
-                    "`talk-to` targets deferred npc `{npc}`, but every `spawn-npc` for it fires \
-                     in a quest that depends on this one (`{}`) — the objective activates on an \
-                     empty anchor and can never complete. Move the `spawn-npc` to this quest or \
-                     one of its prerequisites, or move the `talk-to` after the entrance. Do NOT \
-                     drop `deferred` just to pass this — that puts the character back on stage \
-                     from minute one",
-                    names.join("`, `")
-                ),
-            ));
-        }
-    }
 }
 
 /// Push `DW0142` if `anchor` is not provided by the quest's (known single-prefab)
