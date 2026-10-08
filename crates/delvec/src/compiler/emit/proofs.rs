@@ -329,6 +329,18 @@ pub(super) fn check_finished_tree(
         return Err(BuildFailure::Validation(errors));
     }
 
+    // ---- one tick's command chain stays under the game's limit (DW0984) ----
+    // Every shipped function, with every function it calls in the same tick,
+    // against `max_command_sequence_length`: past it the server stops the
+    // function part-way and nothing reads the log line. Feature-blind, read off
+    // the finished tree, run on every build.
+    let chains = crate::compiler::chain::check(out).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+    eprintln!("{}", chains.binding());
+    put_json(out, "validation/chain-length.json", &chains.to_json());
+
     // ---- affordance-hardware self-check (DW0420 / DW0421) ----
     // Every right-click target the compiler owns must be VISIBLE in the shipped
     // datapack, and only its own consumption may retire that visibility. Read

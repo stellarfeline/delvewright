@@ -620,7 +620,7 @@ fn arity(node: &Node) -> Arity {
 /// `execute  if …`, `… matches 1 run  say …`, `tp @s 0  64 0` and a tab after
 /// `execute` each fail to load, while `say  hello` and `say hello  world` load).
 /// Whitespace inside a balanced or quoted span is the span's own business.
-fn tokenize(s: &str) -> Result<(Vec<String>, Vec<bool>), String> {
+pub(crate) fn tokenize(s: &str) -> Result<(Vec<String>, Vec<bool>), String> {
     let mut tokens = Vec::new();
     let mut loose = Vec::new();
     // The whitespace run since the last token ended (`None` before the first).
