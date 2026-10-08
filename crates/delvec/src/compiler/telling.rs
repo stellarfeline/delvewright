@@ -365,9 +365,19 @@ fn words_after(text: &str, n: usize) -> Vec<String> {
 }
 
 /// Whether the occurrence at `(s, e)` is a use of the name: written with the
-/// name's own capitalisation, or after an article or a possessive.
-fn is_use(text: &str, core: &str, s: usize, e: usize) -> bool {
-    if &text[s..e] == core && core.chars().next().is_some_and(char::is_uppercase) {
+/// name's own capitalisation, or after an article or a possessive. A name
+/// declared with its article (`The Keep`, `articled`) is written with it, so its
+/// bare word opening a sentence (`Keep your road.`) is a capital, not the name.
+fn is_use(text: &str, core: &str, articled: bool, s: usize, e: usize) -> bool {
+    let opens_sentence = text[..s]
+        .trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '"' | '“' | '\'' | '‘'))
+        .chars()
+        .next_back()
+        .is_none_or(|c| matches!(c, '.' | '!' | '?' | ':' | ';'));
+    if &text[s..e] == core
+        && core.chars().next().is_some_and(char::is_uppercase)
+        && !(articled && opens_sentence)
+    {
         return true;
     }
     // A demonstrative points at what is in front of the player (`this keep`),
@@ -618,7 +628,7 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
             for (i, s, e) in mentions(text, &names) {
                 if introduces(text, s, e) {
                     told[i] = Some(told[i].map_or(at, |t| t.min(at)));
-                } else if is_use(text, &names[i].core, s, e) {
+                } else if is_use(text, &names[i].core, names[i].text != names[i].core, s, e) {
                     shown[i].push((at, Shown::Mention(key.to_string())));
                 }
             }
@@ -631,7 +641,9 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
             let Some(text) = inv.get(*key) else { continue };
             read_dialogue.insert(key.to_string());
             for (i, s, e) in mentions(text, &names) {
-                if !is_use(text, &names[i].core, s, e) || introduces(text, s, e) {
+                if !is_use(text, &names[i].core, names[i].text != names[i].core, s, e)
+                    || introduces(text, s, e)
+                {
                     continue;
                 }
                 all_uses.insert((key.to_string(), i));
@@ -849,7 +861,7 @@ mod tests {
         let t = "The last of the watch goes still.";
         let (s, e) = occurrences(t, "Watch")[0];
         assert!(!introduces(t, s, e));
-        assert!(is_use(t, "Watch", s, e));
+        assert!(is_use(t, "Watch", true, s, e));
     }
 
     #[test]
@@ -875,13 +887,19 @@ mod tests {
     fn a_common_word_is_not_the_name() {
         let t = "I keep watch here.";
         let (s, e) = occurrences(t, "Watch")[0];
-        assert!(!is_use(t, "Watch", s, e));
+        assert!(!is_use(t, "Watch", true, s, e));
         let t = "This keep is mine to guard.";
         let (s, e) = occurrences(t, "Keep")[0];
-        assert!(!is_use(t, "Keep", s, e));
+        assert!(!is_use(t, "Keep", true, s, e));
+        let t = "I run. Keep your road.";
+        let (s, e) = occurrences(t, "Keep")[0];
+        assert!(!is_use(t, "Keep", true, s, e));
+        let t = "My blanket's by the counter. Tallow only.";
+        let (s, e) = occurrences(t, "Tallow")[0];
+        assert!(is_use(t, "Tallow", false, s, e));
         let t = "You pulled the lever at my stand.";
         let (s, e) = occurrences(t, "Stand")[0];
-        assert!(is_use(t, "Stand", s, e));
+        assert!(is_use(t, "Stand", true, s, e));
     }
 
     #[test]
