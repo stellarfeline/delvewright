@@ -98,7 +98,10 @@ esac
 # The heap default and the OOM rule every server this engine starts shares.
 # shellcheck source=tools/lib/server-heap.sh
 . "$here/../tools/lib/server-heap.sh"
-heap_max="$(dw_server_heap_max "$output")"
+# The tree compose boots is `$output` resolved against THIS directory (the
+# compose file's); the heap statement is read from that same tree.
+build_dir="$(dw_compose_build_dir "$here" "$output")" || exit 2
+heap_max="$(dw_server_heap_max "$build_dir")"
 
 export DELVE_OUTPUT="$output"
 cache="${DW_SERVER_CACHE:-$here/server-cache}"

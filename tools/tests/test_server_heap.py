@@ -426,3 +426,31 @@ def test_the_lib_reads_the_pin_it_names():
     res = run_lib("dw_server_heap_env ''")
     assert res.stdout.strip() == f"MAX_MEMORY={pin()}", res
     assert shutil.which("bash")
+
+
+def test_the_packtest_runner_reads_the_tree_compose_boots(tmp_path):
+    """`packtest-run.sh --output ./delve-output-gallery` is resolved by compose
+    against `validation/`; read from the caller's cwd (the repo root, in CI) it
+    named no tree, so the runner expected the pin (4G) while the server booted
+    the build's stated 5G, and the heap binding reddened a run whose heap was
+    right. The runner resolves the tree the way compose does, and refuses a
+    tree that is not there rather than falling back to the pin."""
+    compose_dir = tmp_path / "validation"
+    build = compose_dir / "delve-output-x"
+    (build / "server").mkdir(parents=True)
+    (build / "server" / "resources.properties").write_text("heap-max=5G\n")
+    elsewhere = tmp_path / "repo-root"
+    elsewhere.mkdir()
+    res = run_lib(
+        f'dw_server_heap_max "$(dw_compose_build_dir "{compose_dir}" ./delve-output-x)"; '
+        f'dw_server_heap_max "$(dw_compose_build_dir "{compose_dir}" "{build}")"',
+        elsewhere,
+    )
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.splitlines() == ["5G", "5G"], res.stdout
+    missing = run_lib(f'dw_compose_build_dir "{compose_dir}" ./nope', elsewhere)
+    assert missing.returncode != 0 and "no build tree at" in missing.stderr
+    runner = (ROOT / "validation" / "packtest-run.sh").read_text()
+    assert 'build_dir="$(dw_compose_build_dir "$here" "$output")" || exit 2' in runner
+    assert 'heap_max="$(dw_server_heap_max "$build_dir")"' in runner
+    assert 'dw_server_heap_max "$output"' not in runner

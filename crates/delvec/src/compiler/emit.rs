@@ -6913,6 +6913,102 @@ fn state_drive_lines(plan: &Plan, cmps: &[StateCompare], satisfy: bool) -> Vec<S
         .collect()
 }
 
+/// **Every numeric term of one display condition, satisfied together.**
+///
+/// [`state_drive_value`] answers for one term; a condition can hold several on
+/// one datum (an option's own `at-most 5` beside its objective's `at-most 9`),
+/// and driving each to its own boundary leaves the datum at whichever was
+/// written last. Per datum, the value is the first candidate — each term's own
+/// satisfying value, then each one's boundary neighbourhood, in term order —
+/// that meets every term on it; a break of one term is the first candidate that
+/// violates it and meets the rest, so the negative assert isolates that term.
+/// With one term per datum both are exactly [`state_drive_value`]'s. A datum
+/// no candidate satisfies (a condition that can never hold) keeps the per-term
+/// drive, so the PackTest says the option is never shown.
+struct JointStateDrive<'a> {
+    /// Datum id → every term the condition reads it with, in term order.
+    terms: BTreeMap<&'a str, Vec<&'a StateCompare>>,
+    /// Datum id → the one value meeting all of its terms, where one exists.
+    value: BTreeMap<&'a str, i32>,
+}
+
+impl<'a> JointStateDrive<'a> {
+    fn of(cmps: &[&'a StateCompare]) -> Self {
+        let mut terms: BTreeMap<&str, Vec<&StateCompare>> = BTreeMap::new();
+        for c in cmps {
+            terms.entry(c.state.as_str()).or_default().push(c);
+        }
+        let value = terms
+            .iter()
+            .filter_map(|(datum, on)| {
+                let v = on
+                    .iter()
+                    .map(|c| state_drive_value(c, true))
+                    .chain(on.iter().flat_map(|c| state_candidates(c)))
+                    .find(|v| on.iter().all(|c| c.holds(*v)))?;
+                Some((*datum, v))
+            })
+            .collect();
+        JointStateDrive { terms, value }
+    }
+
+    /// The satisfying value of `c`'s datum: the joint one, else `c`'s own.
+    fn satisfy(&self, c: &StateCompare) -> i32 {
+        self.value
+            .get(c.state.as_str())
+            .copied()
+            .unwrap_or_else(|| state_drive_value(c, true))
+    }
+
+    /// A value that breaks `c` and, where one exists, holds every other term on
+    /// its datum. Terms are compared by value, so an identical twin of `c` is
+    /// broken with it — it is the same condition.
+    fn break_one(&self, c: &StateCompare) -> i32 {
+        let own = state_drive_value(c, false);
+        let on: &[&StateCompare] = self
+            .terms
+            .get(c.state.as_str())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let others: Vec<&&StateCompare> = on.iter().filter(|o| ***o != *c).collect();
+        std::iter::once(own)
+            .chain(on.iter().flat_map(|o| state_candidates(o)))
+            .find(|v| !c.holds(*v) && others.iter().all(|o| o.holds(*v)))
+            .unwrap_or(own)
+    }
+
+    /// The satisfying line of each of `cmps`, and each one's break/restore pair.
+    fn drive(
+        &self,
+        plan: &Plan,
+        cmps: &[StateCompare],
+        satisfied: &mut Vec<String>,
+        terms: &mut Vec<(Vec<String>, Vec<String>)>,
+    ) {
+        let line = |c: &StateCompare, v: i32| {
+            format!(
+                "scoreboard players set {} {} {v}",
+                state_holder(plan, &c.state),
+                plan::state_score(c.state.as_str()),
+            )
+        };
+        for c in cmps {
+            satisfied.push(line(c, self.satisfy(c)));
+        }
+        for c in cmps {
+            terms.push((
+                vec![line(c, self.break_one(c))],
+                vec![line(c, self.satisfy(c))],
+            ));
+        }
+    }
+}
+
+/// The values a term's boundary separates: its value and either neighbour.
+fn state_candidates(c: &StateCompare) -> [i32; 3] {
+    [c.value, c.value.wrapping_add(1), c.value.wrapping_sub(1)]
+}
+
 /// The one deterministic value that satisfies (or violates) a single numeric
 /// term — [`state_drive_lines`]' value column, exposed on its own because the
 /// cast-ladder proof needs the number (to evaluate the ladder model at it)
@@ -24768,13 +24864,23 @@ fn emit_one_dialogue_mask_packtest(
                 vec![format!("scoreboard players set {p} {sc} 0")],
             ));
         }
-        satisfied.extend(state_drive_lines(plan, &o.requires_state, true));
-        for cmp in &o.requires_state {
-            terms.push((
-                state_drive_lines(plan, std::slice::from_ref(cmp), false),
-                state_drive_lines(plan, std::slice::from_ref(cmp), true),
-            ));
-        }
+        // Every numeric term of the WHOLE condition — the option's own and each
+        // completed objective's pending guard — is satisfied at once: two terms on
+        // one datum (`at-most 5` on the option, `at-most 9` on its objective) are
+        // driven to one value meeting both, never each to its own boundary with the
+        // later write undoing the earlier.
+        let all_cmps: Vec<&StateCompare> = o
+            .requires_state
+            .iter()
+            .chain(
+                o.completes
+                    .iter()
+                    .filter_map(|obj| objective_quest(c, obj))
+                    .flat_map(|(_, objective)| objective.requires_state().iter()),
+            )
+            .collect();
+        let joint = JointStateDrive::of(&all_cmps);
+        joint.drive(plan, &o.requires_state, &mut satisfied, &mut terms);
         for obj in &o.completes {
             let Some((qid, objective)) = objective_quest(c, obj) else {
                 continue;
@@ -24820,13 +24926,7 @@ fn emit_one_dialogue_mask_packtest(
                     vec![format!("scoreboard players set {p} {sc} 0")],
                 ));
             }
-            satisfied.extend(state_drive_lines(plan, objective.requires_state(), true));
-            for cmp in objective.requires_state() {
-                terms.push((
-                    state_drive_lines(plan, std::slice::from_ref(cmp), false),
-                    state_drive_lines(plan, std::slice::from_ref(cmp), true),
-                ));
-            }
+            joint.drive(plan, objective.requires_state(), &mut satisfied, &mut terms);
         }
         if terms.is_empty() {
             continue;

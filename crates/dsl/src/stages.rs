@@ -2800,6 +2800,18 @@ pub struct StateCompare {
     pub value: i32,
 }
 
+impl StateCompare {
+    /// Whether a datum holding `v` satisfies this comparison.
+    pub fn holds(&self, v: i32) -> bool {
+        match self.op {
+            CompareOp::Equals => v == self.value,
+            CompareOp::NotEquals => v != self.value,
+            CompareOp::AtLeast => v >= self.value,
+            CompareOp::AtMost => v <= self.value,
+        }
+    }
+}
+
 /// A stage-5 container fill (DSL v0.6, spec-0021): contents for a chest or
 /// barrel the prefab already placed.
 ///

@@ -32,6 +32,25 @@ dw_server_heap_max() {
   python3 "$DW_SERVER_HEAP_REPO_ROOT/tools/lib/versions.py" server.heap_max
 }
 
+# dw_compose_build_dir <compose-dir> <output> -> the build tree a compose
+# `${DELVE_OUTPUT}` names. Compose resolves a relative path against the compose
+# file's directory, never the caller's working directory, so a caller reading
+# the build's statement must resolve it the same way or it reads a different
+# tree than the server boots. Fails when the resolved path is not a directory:
+# a missing tree read as "no statement" would fall back to the pin silently.
+dw_compose_build_dir() {
+  local p
+  case "${2:-}" in
+    /*) p="$2" ;;
+    *) p="$1/$2" ;;
+  esac
+  if [ ! -d "$p" ]; then
+    printf 'no build tree at %s (output %s, resolved against %s as compose resolves it)\n' "$p" "${2:-}" "$1" >&2
+    return 1
+  fi
+  printf '%s\n' "$p"
+}
+
 # dw_server_heap_env [override] [build-dir] -> the one `-e` value for itzg's heap.
 # With an override (an operator's `--memory`), `MEMORY=<override>`: initial and
 # ceiling both, exactly as `-e MEMORY=...` on the delve image. Without one,
