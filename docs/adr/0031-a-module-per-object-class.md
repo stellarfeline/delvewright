@@ -6,7 +6,7 @@
   (CLAUDE.md, "general engine"), carried from the DSL surface to the files
   that hold it. Measured against the engine tree at
   `bba876d1351dd2aeba021c95f435961f2421ff27` (`bba876d13`, the commit that
-  landed the 0.36.0 batch) with `wc -l`, with `git diff --name-only` over
+  landed the last integration batch) with `wc -l`, with `git diff --name-only` over
   every first-parent landing on `main`, with `git merge-tree --write-tree`
   replayed over every merge commit reachable from a remote ref in the three
   months before that commit, and with the GitHub Actions job and step timings
@@ -155,7 +155,7 @@ Over the last forty `ci.yml` runs, per-job medians: `rust (fmt, clippy,
 test)` 25.8 min (its `cargo test` step 19.4 min of a 21.3-min job on `main`),
 `gallery` 10.6 min, `tier 2` 8.7, `published crates` 8.9, `harness` 8.0,
 `gallery bot` 5.7. The gallery job's maximum was 45.0 min; the four runs above
-28 min were all pull-request runs on the 0.36.0 integration branch, three of
+28 min were all pull-request runs on that batch's integration branch, three of
 them red. On `main` the gallery job's steps are: coverage and probes 4.1 min,
 every point served 2.1, baseline 1.3, pieces 1.0, views 0.9, whole map 0.4. The
 job is one required context, so a red in the probes and a red in the baseline
@@ -359,7 +359,7 @@ is sized in §7.
 | Rule | Where the one authority lives after the split |
 |------|------|
 | one markdown parse | `tools/lib/mdtable.py`, unchanged; a reader of a directory concatenates the rows of every page through it, and a row no table contains is still a finding naming its file and line |
-| one DW catalog reader | `tools/lib/dwcatalog.py`: `catalog_rows`, `documented_codes`, `page_for(module)`, moved out of `check-dw-codes.py`; read by `check-dw-codes`, `staging-gate`, `check-diagnostic-messages`, `check-reference-versions`, `check-stated-counts`, `check-skill-page`, `check-numbered-doc-uniqueness`, and their tests |
+| one DW catalog reader | `tools/lib/dwcatalog.py`: `catalog_pages`, `catalog_rows`, `documented_codes`, `mentioned_codes`, `module_of`, `page_for(crate, module)`, moved out of `check-dw-codes.py`; read by `check-dw-codes`, `staging-gate` and `check-reference-versions`, and their tests (`check-diagnostic-messages`, `check-skill-page` and `check-numbered-doc-uniqueness` never read the catalog: the first two name `check-dw-codes` in prose and the skill-page gate reads *declarations* through its `CONST_RE`) |
 | one declaration per code | `dw_code!` in the module that raises it, registered in `DECLARED`, printed by `delvec codes` — unchanged; what changes is that the declaring module is now the object's |
 | one record per code | one catalog row, in the page whose path is the declaring module's path (§4); `check-dw-codes.py` holds row-in-page by the registry's `module` field, so a code whose declaration moves and whose row does not is a red |
 | one test per code | unchanged; resolution is already per module |
@@ -399,15 +399,26 @@ docs/reference/dsl/<object>.md                 mirrors crates/dsl/src/<object>.r
 ```
 
 The mapping is one function: strip the crate root, replace `::` with `/`,
-append `.md`. `check-dw-codes.py` applies it to the declaring module it
-already computes from the source for every constant (`module_of`), cross-checked
-against the registry's `module` field when `--delvec` is given, and requires
-the code's catalog row to be in that page, so
+append `.md`, under `docs/reference/<crate directory>/` (`dsl`, `delvec`); a
+crate root's page is `docs/reference/<crate>.md`, beside the directory, as
+`foo.rs` sits beside `foo/`. The module is the *file's* module: a code declared
+in an inline module (`dsl::diagnostic`'s `pub mod codes { … }`) has its row on
+the file's page, `dsl/diagnostic.md`. `check-dw-codes.py` applies the mapping
+to the declaring module it already computes from the source for every constant
+(`module_of`), cross-checked against the registry's `module` field when
+`--delvec` is given — that field is `module_path!()` and so also names the
+inline module and spells raw identifiers (`compiler::r#loop`); it agrees when
+it is the file's module followed only by inline modules that file declares —
+and requires the code's catalog row to be in that page, so
 the docs split follows the code split one PR at a time without a plan of its
 own: when a code's declaration moves from `compiler::nav` to
 `compiler::timed_gate::check`, its row moves from `nav.md` to
 `timed_gate.md` in the same PR or the gate reds. A page may say more than its
-rows; nothing on it may be a row for another module's code. `check-doc-dupes`
+rows; nothing on it may be a row for another module's code, and a module page
+that mirrors no source file is a red, so a page moves or goes with its module.
+Where one §5 section held rows of several modules, its prose goes to the page
+of the module holding most of its rows, and each other module's page carries
+its own rows under the same heading with a link to that prose. `check-doc-dupes`
 already runs over `docs/**/*.md` and needs no change. The exit-tier table in
 §1 is a census derivable from `delvec codes` and is deleted; the gate already
 holds the registry equal to the declarations by tier.
@@ -458,14 +469,12 @@ compiler receives one `quests.json` exactly as it does today.
 
 | Checker | Reads today | Reads after | Through |
 |---------|-------------|-------------|---------|
-| `check-dw-codes.py` | `compiler.md` §5 | every page under `docs/reference/{delvec,dsl}/` | `dwcatalog.py`; gains row-in-page |
-| `staging-gate.py` | `compiler.md`, `playtest-findings.json` | the catalog directory, the findings directory | `dwcatalog.py`, `findings.py` |
+| `check-dw-codes.py` | `compiler.md` §5 | `compiler.md` and every page under `docs/reference/{delvec,dsl}/` | `dwcatalog.py`; gains row-in-page |
+| `staging-gate.py` | `compiler.md`, `playtest-findings.json` | the catalog pages, the findings directory | `dwcatalog.py`, `findings.py` |
 | `check-gallery-stageable.py` | the findings ledger via `staging-gate` | the findings directory | `findings.py` |
-| `check-diagnostic-messages.py` | `documented_codes` | unchanged call | `dwcatalog.py` |
-| `check-reference-versions.py` | `compiler.md`'s version line and the `DW0102` row | the version line in `compiler.md`; the `DW0102` row in the page of the module that declares it (`dsl/diagnostic.md` until B2 moves the declaration to the envelope) | `dwcatalog.py` |
-| `check-stated-counts.py` | `SITES` rows naming `tools.md`, `grammar.md`, `compiler.md` | the same oracles; `SITES` paths updated | unchanged mechanism |
-| `check-skill-page.py` | `documented_codes` | unchanged call | `dwcatalog.py` |
-| `check-numbered-doc-uniqueness.py` | `documented_codes` | unchanged call | `dwcatalog.py` |
+| `check-reference-versions.py` | `compiler.md`'s version line and the `DW0102` row | the version line in `compiler.md`; the `DW0102` row on whichever catalog page holds it (`dsl/diagnostic.md` until B2 moves the declaration to the envelope); `--write` writes the row where it is | `dwcatalog.py` |
+| `check-stated-counts.py` | `SITES` rows naming `tools.md`, `grammar.md`, `compiler.md` | the same oracles; `SITES` paths updated (the DW02xx emitter-table counts are on `delvec/compiler/analyze.md`) | unchanged mechanism |
+| `check-diagnostic-messages.py`, `check-skill-page.py`, `check-numbered-doc-uniqueness.py` | no catalog read | unchanged | unchanged |
 | `check-doc-dupes.py` | `docs/**/*.md` | unchanged | unchanged |
 | `check-demo-levels.py` | `demo-levels.md` | `docs/demo-levels/*.md` | `mdtable.py` |
 | `check-numbered-doc-index.py` | the two index tables | the same tables, compared to the generator's output | the writer |
@@ -476,7 +485,7 @@ compiler receives one `quests.json` exactly as it does today.
 | `check-structure-emitters.py` | per-file ledger | the same files at their new paths | its ledger, renamed |
 | `check-source-dupes.py` | `crates/**/*.rs` | unchanged | unchanged |
 | `tools/lib/clap_surface.py` | `main.rs` then every crate source | unchanged | unchanged |
-| `tools/lib/version_sites.py` | `compiler.md` as a version site | unchanged (the version line stays there) | unchanged |
+| `tools/lib/version_sites.py` | `compiler.md` as two version sites (the header and the `DW0102` row) | `compiler.md` as one (the header) and `dsl/diagnostic.md` as one (the `DW0102` row) | its rows |
 | `gallery_domain.py`, `gallery-build.py`, `gallery-baseline.py`, `check-gallery-coverage.py` | `gallery/*.json` | the assembled point | `materialise` |
 
 A checker that holds a per-file ledger (`check-capability-ownership`,
@@ -537,12 +546,20 @@ cuts are sequential because they delete from one file.
 
 | Step | What moves | Gate that proves it |
 |------|-----------|---------------------|
-| A1 | `compiler.md` §2/§3/§4-object/§5 → `docs/reference/{delvec,dsl}/<module>.md` at today's module paths; `dwcatalog.py`; the eight readers; row-in-page added to `check-dw-codes` | `check-dw-codes` bidirectional and row-in-page green; `check-doc-dupes`; `staging-gate` tests |
+| A1 | `compiler.md` §5's rows and their sections → `docs/reference/{delvec,dsl}/<module>.md` at today's module paths; `dwcatalog.py`; the three readers; row-in-page added to `check-dw-codes` | `check-dw-codes` bidirectional and row-in-page green; `check-doc-dupes`; `staging-gate` tests |
 | A2 | the findings ledger → one file per finding; `findings.py`; the three readers; `ci-reach.toml` | `test_staging_gate`, `check-gallery-stageable`, `check-json-canonical` |
 | A3 | the demo queue → `docs/demo-levels/`; `check-demo-levels` over a directory | its tests; the zero-rows refusal still fires on an empty directory |
 | A4 | the two index tables generated; the writer; the checker compares | `check-numbered-doc-index` on a planted stale row |
 | A5 | `tools.md` → `docs/reference/tools/`; `SITES`; the class reader | `check-stated-counts` binding counts non-zero; `check-demo-levels` |
 | A6 | `gallery/quests.json` → `gallery/quests/<object>.json`; `materialise` assembles; README cells → `why` | every point's manifest identical; coverage 1037 bound, 7 refusal-proven, 0 unaccounted, unchanged |
+
+A1 moves §5 only. At today's module paths the other per-object prose has no
+object page to go to — every §2 stage-table row documents `dsl::stages`, every
+§3 verb row and most §4 "World / build output" paragraphs document
+`compiler::emit` — so moving it in A1 would move it twice. It moves to its
+object's page in the step that creates that object's module (B1 for the §2
+rows, Phase C for §3 and §4). §1's exit-tier table stays where it is; no step
+here deletes it.
 
 **Phase B — dissolve each pass file** (B1, B3, B4, B5, B6, B7 parallel: they
 are different files and meet only at one `pub mod` line each; B2 after B1):

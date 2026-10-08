@@ -175,12 +175,19 @@ def block_appearance_json(blocks: int = 2) -> str:
     ) + "\n"
 
 
-def compiler_md(rows: str = "3", states: str = "30", blocks: str = "2") -> str:
+def analyze_md(rows: str = "3", states: str = "30") -> str:
+    """The DW02xx catalog section, on `compiler::analyze`'s page."""
     return (
-        "# compiler\n\n"
+        "# `delvec::compiler::analyze`\n\n"
         "### DW02xx light\n\n"
         f"The emitter table rests on a fixture of {rows} rows covering "
-        f"{states} blockstates.\n\n"
+        f"{states} blockstates.\n"
+    )
+
+
+def compiler_md(blocks: str = "2") -> str:
+    return (
+        "# compiler\n\n"
         "### `delvec snapshot`\n\n"
         f"The draft paints from the pinned jar: {blocks} of {blocks} non-air "
         "blocks resolve.\n"
@@ -214,9 +221,11 @@ def build_tree(root: Path, **kw) -> Path:
         "crates/delvec/data/block-appearance-1.21.11.json": block_appearance_json(
             blocks=kw.get("preview_blocks", 2)
         ),
-        "docs/reference/compiler.md": compiler_md(
+        "docs/reference/delvec/compiler/analyze.md": analyze_md(
             rows=kw.get("emission_rows_claim", "3"),
             states=kw.get("emission_states_claim", "30"),
+        ),
+        "docs/reference/compiler.md": compiler_md(
             blocks=kw.get("preview_blocks_claim", "2"),
         ),
     }

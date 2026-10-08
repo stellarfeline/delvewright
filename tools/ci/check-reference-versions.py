@@ -104,7 +104,7 @@ import tomllib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
 
-from lib import mdtable  # noqa: E402
+from lib import dwcatalog  # noqa: E402
 from publishable import DerivationError, readmes  # noqa: E402
 from versions import PinError, minecraft_version  # noqa: E402
 
@@ -144,11 +144,12 @@ RS_DSL_DERIVED_RE = re.compile(
 # The DW0102 catalog row restates the one number by hand:
 #   | `DW0102` | The document's `dsl_version` is not the one this engine accepts, `<X.Y.Z>`. … |
 #
-# It is looked for among the rows a TABLE holds, not anywhere in the file. A
-# blank line ends a pipe table, so a row under one renders as a paragraph of
-# literal pipe characters — it would restate the set for this gate and show a
-# reader nothing. `compiler.md` carried twenty-one such rows at once.
-DOC_DW0102_ROW = re.compile(r"^\|\s*`DW0102`\s*\|")
+# It is looked for among the rows a TABLE holds, on whichever catalog page holds
+# it — the page of the module declaring `DW0102`, which is `check-dw-codes`'
+# rule to hold, read through `tools/lib/dwcatalog.py`. A blank line ends a pipe
+# table, so a row under one renders as a paragraph of literal pipe characters —
+# it would restate the set for this gate and show a reader nothing.
+# `compiler.md` carried twenty-one such rows at once.
 DOC_DW0102_RE = re.compile(
     r"\|\s*`DW0102`\s*\|[^|]*?is not the one this engine accepts, `([^`]+)`"
 )
@@ -199,6 +200,22 @@ VERSION_LITERAL_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)+(?!\w)")
 # reason written down. A stale entry (naming a page no longer scanned) is
 # reported, so this cannot rot into a licence to hardcode.
 UNBOUND_VERSION_LITERALS: dict[tuple[str, str], str] = {}
+
+
+def dw0102_rows() -> tuple[list[dwcatalog.CatalogRow], list[tuple[pathlib.PurePosixPath, int, str]]]:
+    """`(the DW0102 catalog rows, DW0102 rows no table holds)`, every page."""
+    rows, detached = dwcatalog.catalog_rows(REPO_ROOT)
+    return (
+        [r for r in rows if r.code == "DW0102"],
+        [d for d in detached if dwcatalog.CATALOG_ROW_RE.match(d[2]) and "DW0102" in d[2].split("|")[1]],
+    )
+
+
+def dw0102_page() -> pathlib.Path:
+    """The file holding the DW0102 row, or the reference itself when no page
+    does (so a refusal names a file that exists)."""
+    rows, _detached = dw0102_rows()
+    return REPO_ROOT / rows[0].page if rows else DOC
 
 
 def fail_shape(what: str, path: pathlib.Path, knob: str) -> int:
@@ -411,9 +428,12 @@ def write_claims(root: pathlib.Path, real_delvec: str, real_dsl: str, real_mc: s
     doc_text = DOC.read_text(encoding="utf-8")
     doc_text, n = _sub_group(doc_text, DOC_VERSIONS_RE, {1: real_delvec, 2: real_dsl, 3: real_mc})
     moved += n
-    doc_text, n = _sub_group(doc_text, DOC_DW0102_RE, {1: real_dsl})
-    moved += n
     DOC.write_text(doc_text, encoding="utf-8")
+    row_page = dw0102_page()
+    row_text = row_page.read_text(encoding="utf-8")
+    row_text, n = _sub_group(row_text, DOC_DW0102_RE, {1: real_dsl})
+    moved += n
+    row_page.write_text(row_text, encoding="utf-8")
 
     for crate in readmes(root):
         text = crate.readme.read_text(encoding="utf-8")
@@ -523,7 +543,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"      source of truth: {source}"
             )
 
-    catalog_rows, detached_rows = mdtable.rows_matching(doc_text, DOC_DW0102_ROW)
+    catalog_rows, detached_rows = dw0102_rows()
     m = next(
         (
             found
@@ -537,7 +557,7 @@ def main(argv: list[str] | None = None) -> int:
         # regex" and that is the wrong repair here: the pattern is right and the
         # document is broken. A gate that names a remedy owes the RIGHT one.
         lines = "\n".join(
-            f"      {DOC.name}:{lineno}  {line[:88]}" for lineno, line in detached_rows
+            f"      {page}:{lineno}  {line[:88]}" for page, lineno, line in detached_rows
         )
         print(
             "error: the `DW0102` catalog row is in no table:\n"
@@ -555,7 +575,7 @@ def main(argv: list[str] | None = None) -> int:
         return fail_shape(
             "the `DW0102` catalog row's ``is not the one this engine accepts, `…```"
             " clause",
-            DOC,
+            dw0102_page(),
             "DOC_DW0102_RE",
         )
     doc_dw0102 = m.group(1).strip()

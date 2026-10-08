@@ -218,6 +218,10 @@ import sys
 import zipfile
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+
+from lib import dwcatalog  # noqa: E402
+
 DEFAULT_LEDGER = REPO_ROOT / "docs" / "playtest-findings.json"
 
 # Verdicts, in report order. The reds are listed separately rather than as one
@@ -303,9 +307,10 @@ _UNREAD = object()
 def _load_dw_checker():
     """Import `tools/ci/check-dw-codes.py` as a module (its name has a dash).
 
-    That tool is the single authority on which DW codes exist in source, which
-    are documented, and which are asserted by a test. Re-implementing any of
-    those three here would be a second answer to a settled question — the
+    That tool is the single authority on which DW codes exist in source and
+    which are asserted by a test; which are documented is
+    `tools/lib/dwcatalog.py`'s, the catalog's one reader. Re-implementing any of
+    those here would be a second answer to a settled question — the
     private-copy defect CLAUDE.md names, one layer up.
     """
     path = REPO_ROOT / "tools" / "ci" / "check-dw-codes.py"
@@ -324,7 +329,7 @@ class Engine:
         dw = _load_dw_checker()
         self.dw_in_source = dw.source_codes()
         self.dw_tested = dw.tested_codes()
-        self.dw_documented = dw.documented_codes()
+        self.dw_documented = dwcatalog.documented_codes(REPO_ROOT)
         self.dw_allowlisted = set(dw.ALLOWLIST)
         self._rust_text: str | None = None
         self._harness_text: str | None = None
@@ -369,7 +374,10 @@ class Engine:
         if code not in self.dw_in_source:
             return False, f"{code} is not declared anywhere in crates/**/*.rs"
         if code not in self.dw_documented:
-            return False, f"{code} has no diagnostics-catalog row in compiler.md"
+            return False, (
+                f"{code} has no diagnostics-catalog row (docs/reference/<crate>/<module>.md, "
+                "the page of the module declaring it)"
+            )
         if code not in self.dw_tested and code not in self.dw_allowlisted:
             return False, f"{code} is asserted by no test (check-dw-codes coverage gate)"
         return True, ""

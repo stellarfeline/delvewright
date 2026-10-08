@@ -312,7 +312,7 @@ fn pieces_in_the_site_area_are_allocated_rather_than_mated() {
     assert!(
         finding.message.contains("SITE PLAN") && finding.message.contains("DW0836"),
         "and the reader is told where the question went — one line, with the essay in \
-         `compiler.md`'s `DW0781` row: {}",
+         the `DW0781` catalog row: {}",
         finding.message
     );
 

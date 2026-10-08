@@ -1,0 +1,12 @@
+# `delvec::compiler::load`
+
+The reference page for `crates/delvec/src/compiler/load.rs`: the diagnostics-catalog row of every DW code
+this module declares. The catalog's shared rules are in [`compiler.md` §5](../../compiler.md#5-diagnostics-catalog).
+
+## Diagnostics
+
+### DW0874 — a campaign directory part-way through being written (`compiler::load`; error; exit 1)
+
+| Code | Meaning |
+|------|---------|
+| `DW0874` | **A campaign directory is present and does not hold all six stage documents.** `compiler::load` (`missing_stage_documents_diagnostic`), validation tier (exit 1), raised before any document has parsed. The state it names is the ordinary one: a campaign is written a document at a time, and the authoring skill tells an author to stub the stages they have not reached. The message names **every** missing document rather than the first — the loader reads in document order and stops at the first absence, so an author starting from `world.json` alone learned the remaining five filenames by running `validate` five more times — then the whole set of six, what a stub is (`dsl_version`, `campaign_id`, `stage`, and a `content` carrying only the fields its schema requires), and `delvec schema --stage <name>` for each one's exact shape. **The recipe is exact for five of the six and the sixth is named**: `quest-plan.json` requires `finale` as well as `quests`, and `finale` must name a member of `quests`, so the literal recipe is refused by `DW0131` — whose remedy cannot be performed without authoring a quest — and the message gives the smallest stub that satisfies the document's own rule instead, one planned quest with `finale` naming it. It also names `DW0150` beside `DW0100` as an ordinary consequence of stubbing, because a stubbed plan produces one and an author told the recipe was exact would otherwise meet it as a surprise. The optional documents are named as optional, so their absence is not mistaken for the next thing owed. **What it deliberately does not cover**: a path that is not a directory has six absent documents by arithmetic and a remedy that does nothing, so it stays `internal error` at exit 10, as does a document that is there and cannot be opened. Absence is probed by opening and treating only `NotFound` as absent — `is_file()` answers `false` for a directory standing in a document's place, which would call an unreadable document absent. Bound at every verb that reads a campaign directory, which is what `crates/delvec/tests/missing_stage_document.rs` enumerates. |

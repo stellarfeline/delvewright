@@ -132,6 +132,9 @@ def test_a_planner_tool_change_runs_its_tests_and_no_engine_build():
     [
         ("docs/reference/compiler.md", "rust"),  # crates/delvec/tests/hand_camera.rs
         ("docs/reference/compiler.md", "tool-tests"),  # test_check_dw_codes.py, test_staging_gate.py
+        ("docs/reference/dsl/diagnostic.md", "rust"),  # crates/delvec/tests/codes.rs runs check-dw-codes.py
+        ("docs/reference/delvec/compiler/nav.md", "tool-tests"),  # test_check_dw_codes.py's live catalog
+        ("tools/lib/dwcatalog.py", "rust"),  # check-dw-codes.py, run by crates/delvec/tests/codes.rs
         ("docs/playtest-findings.json", "tool-tests"),  # test_staging_gate.py
         ("tools/maintenance/probe-drowned-engagement.py", "rust"),  # engage.rs
         ("tools/creator/i18n-translate.py", "rust"),  # i18n_sidecar.rs, through write_sidecar.py
