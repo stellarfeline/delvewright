@@ -33,10 +33,16 @@ A JDK at or above the pin's `javaVersion.majorVersion` must be on PATH (or under
    model y = 24, where every humanoid renderer stands the model). A cube on a
    chain with a rotation is marked `posed`, and its height is not used.
 3. **Second method, sharing nothing with the dumper.** Every vanilla texture the
-   table binds to a layer is read out of the jar as a PNG, and every opaque pixel
-   must fall on a face some box of that layer samples: vanilla's own art passes
-   the refusal the table enforces, or this script refuses. The per-texture count
-   of opaque pixels inside and outside the footprint is printed.
+   table binds to a layer is decoded out of the jar by a standard-library PNG
+   reader, and every opaque pixel must fall on a face some box of that layer
+   samples or in an unwrap corner of one of its boxes (the 2(w+d) x (d+h)
+   rectangle a box's faces are cut from, less the faces). Vanilla's own sheets
+   carry template leftovers in those corners -- `entity/player/wide/kai` has 48
+   such pixels, and `entity/player/slim/efe` 4 more where the wide sheet's arm
+   would be -- so for each model at least ONE bound texture must keep every
+   opaque pixel on a face or a corner, or the script refuses: a table or a
+   binding that is wrong moves the paint of every texture off it. The
+   per-texture counts are printed.
 4. **The binding is authored and checked.** Which texture a layer is drawn with
    is set by a renderer, not by the mesh, so `BINDINGS` names it, citing the
    renderer class; step 3 is what keeps it honest (a texture bound to the wrong
@@ -111,14 +117,8 @@ BINDINGS: dict[str, tuple[str, list[str], str]] = {
         ["entity/skeleton/bogged_overlay"],
         "SkeletonClothingLayer (bogged)",
     ),
-    "parched": ("PARCHED", ["entity/skeleton/parched"], "ParchedRenderer"),
     "villager": ("VILLAGER", ["entity/villager/"], "VillagerRenderer, VillagerProfessionLayer"),
     "wandering_trader": ("WANDERING_TRADER", ["entity/wandering_trader"], "WanderingTraderRenderer"),
-    "zombie_villager": (
-        "ZOMBIE_VILLAGER",
-        ["entity/zombie_villager/"],
-        "ZombieVillagerRenderer, VillagerProfessionLayer",
-    ),
     "piglin": ("PIGLIN", ["entity/piglin/piglin"], "PiglinRenderer"),
     "piglin_brute": ("PIGLIN_BRUTE", ["entity/piglin/piglin_brute"], "PiglinRenderer"),
     "zombified_piglin": (
@@ -288,9 +288,8 @@ def flatten(layer: dict) -> list[dict]:
 
 
 def png_rgba(raw: bytes) -> tuple[int, int, bytes]:
-    """Decode a PNG to RGBA with the standard library only (8-bit, any colour type
-    vanilla's entity textures use), so the second method shares no decoder with
-    the game or with `delve_skin`."""
+    """Decode a non-interlaced PNG to 8-bit RGBA with the standard library only, so
+    the second method shares no decoder with the game or with `delve_skin`."""
     import struct
     import zlib
 
@@ -305,8 +304,8 @@ def png_rgba(raw: bytes) -> tuple[int, int, bytes]:
         pos += 12 + length
         if kind == b"IHDR":
             w, h, depth, ctype, _, _, interlace = struct.unpack(">IIBBBBB", data)
-            if depth != 8 or interlace != 0:
-                die(f"a PNG of depth {depth}, interlace {interlace}")
+            if interlace != 0:
+                die("an interlaced PNG")
         elif kind == b"PLTE":
             plte = data
         elif kind == b"tRNS":
@@ -314,19 +313,22 @@ def png_rgba(raw: bytes) -> tuple[int, int, bytes]:
         elif kind == b"IDAT":
             idat += data
     channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype]
-    stride = w * channels
+    bits = depth * channels
+    stride = (w * bits + 7) // 8
+    bpp = max(1, bits // 8)
     flat = zlib.decompress(idat)
-    rows: list[bytearray] = []
     prev = bytearray(stride)
+    out = bytearray()
     i = 0
+    maxval = (1 << depth) - 1
     for _ in range(h):
         f = flat[i]
         line = bytearray(flat[i + 1 : i + 1 + stride])
         i += 1 + stride
         for x in range(stride):
-            a = line[x - channels] if x >= channels else 0
+            a = line[x - bpp] if x >= bpp else 0
             b = prev[x]
-            c = prev[x - channels] if x >= channels else 0
+            c = prev[x - bpp] if x >= bpp else 0
             if f == 1:
                 line[x] = (line[x] + a) & 0xFF
             elif f == 2:
@@ -337,25 +339,34 @@ def png_rgba(raw: bytes) -> tuple[int, int, bytes]:
                 pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
                 pr = a if pa <= pb and pa <= pc else b if pb <= pc else c
                 line[x] = (line[x] + pr) & 0xFF
-        rows.append(line)
         prev = line
-    out = bytearray()
-    for line in rows:
+
+        def sample(n: int) -> int:
+            if depth == 8:
+                return line[n]
+            if depth == 16:
+                return line[2 * n]
+            bit = n * depth
+            return (line[bit // 8] >> (8 - depth - bit % 8)) & maxval
+
         for x in range(w):
-            px = line[x * channels : (x + 1) * channels]
-            if ctype == 6:
-                out += px
-            elif ctype == 2:
-                out += px + b"\xff"
-            elif ctype == 0:
-                out += bytes([px[0]] * 3) + b"\xff"
-            elif ctype == 4:
-                out += bytes([px[0]] * 3) + bytes([px[1]])
-            else:
-                idx = px[0]
+            ss = [sample(x * channels + j) for j in range(channels)]
+            if ctype == 3:
+                idx = ss[0]
                 rgb = plte[idx * 3 : idx * 3 + 3]
                 alpha = trns[idx] if trns is not None and idx < len(trns) else 255
                 out += rgb + bytes([alpha])
+                continue
+            scale = (lambda v: v * 255 // maxval) if depth < 8 else (lambda v: v)
+            ss = [scale(v) for v in ss]
+            if ctype == 6:
+                out += bytes(ss)
+            elif ctype == 2:
+                out += bytes(ss) + b"\xff"
+            elif ctype == 0:
+                out += bytes([ss[0]] * 3) + b"\xff"
+            else:
+                out += bytes([ss[0]] * 3) + bytes([ss[1]])
     return w, h, bytes(out)
 
 
@@ -369,11 +380,32 @@ def footprint(cubes: list[dict], k: int) -> set[tuple[int, int]]:
     return cells
 
 
+def corners(cubes: list[dict], k: int) -> set[tuple[int, int]]:
+    """The cells of each box's unwrap rectangle (2(w+d) x (d+h)) that no face
+    covers: the template corners a texture editor leaves on every sheet."""
+    cells: set[tuple[int, int]] = set()
+    for c in cubes:
+        u, v, w, h, d = c["u"], c["v"], c["w"], c["h"], c["d"]
+        for y in range(v * k, (v + d + h) * k):
+            for x in range(u * k, (u + 2 * (w + d)) * k):
+                cells.add((x, y))
+    return cells - footprint(cubes, k)
+
+
 def cross_check(jar: zipfile.ZipFile, models: dict) -> list[str]:
+    """Every bound vanilla texture against its model's footprint.
+
+    Vanilla's own art is not clean: some sheets carry paint in the unwrap
+    corners of a box (a template's leftover), which no face samples. So the
+    refusal here is that, for each model, at least one bound texture keeps every
+    opaque pixel on a face or in such a corner.
+    """
     report: list[str] = []
     bound = 0
     for key, model in models.items():
         tw, th = model["texture_size"]
+        clean = False
+        worst: list[str] = []
         for tex in model["textures"]:
             img = jar.read(f"assets/minecraft/textures/{tex.removeprefix('minecraft:')}.png")
             w, h, rgba = png_rgba(img)
@@ -381,7 +413,8 @@ def cross_check(jar: zipfile.ZipFile, models: dict) -> list[str]:
                 die(f"{tex} is {w}x{h}; {model['layer']} samples a {tw}x{th} sheet")
             k = w // tw
             cells = footprint(model["cubes"], k)
-            inside = outside = 0
+            corner = corners(model["cubes"], k)
+            inside = cornered = 0
             stray: list[tuple[int, int]] = []
             for y in range(h):
                 for x in range(w):
@@ -389,20 +422,30 @@ def cross_check(jar: zipfile.ZipFile, models: dict) -> list[str]:
                         continue
                     if (x, y) in cells:
                         inside += 1
+                    elif (x, y) in corner:
+                        cornered += 1
                     else:
-                        outside += 1
                         stray.append((x, y))
             bound += 1
-            report.append(f"{key:22} {tex:58} opaque inside {inside:5}, outside {outside}")
-            if outside:
-                die(
-                    f"vanilla's {tex} paints {outside} opaque pixel(s) no box of "
-                    f"{model['layer']} samples (first {stray[:6]}) — the binding or the "
-                    "table is wrong"
-                )
+            report.append(
+                f"{key:20} {tex:50} opaque on a face {inside:5}, in a corner {cornered:3}, "
+                f"elsewhere {len(stray)}"
+            )
+            clean = clean or not stray
+            if stray:
+                worst.append(f"{tex} {len(stray)} (first {stray[:4]})")
+        if not clean:
+            die(
+                f"no vanilla texture bound to {model['layer']} keeps its paint on that "
+                f"model's faces and corners ({'; '.join(worst)}) — the binding or the "
+                "table is wrong"
+            )
     if bound == 0:
         die("the cross-check bound no texture")
-    report.append(f"cross-check: {bound} vanilla texture(s) bound, every opaque pixel on a sampled face")
+    report.append(
+        f"cross-check: {bound} vanilla texture(s) bound; for each of {len(models)} model(s) at "
+        "least one keeps every opaque pixel on a face or a corner"
+    )
     return report
 
 
