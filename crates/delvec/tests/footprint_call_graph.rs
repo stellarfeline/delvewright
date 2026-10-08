@@ -59,8 +59,8 @@ fn rig_describe_and_the_strike_check_read_one_footprint() {
     }
     // The printed footprint.
     assert!(body(&rig, "describe").contains("last_frame_footprint(clip, facing)"));
-    let main = read("crates/delvec/src/main.rs");
-    let describe = body(&main, "run_rig_describe");
+    let cli = read("crates/delvec/src/cli/metrics.rs");
+    let describe = body(&cli, "run_rig_describe");
     assert!(
         describe.contains("rig::describe(") && describe.contains("rig::last_frame_footprint("),
         "`delvec rig describe` prints through the dsl's footprint"
@@ -90,11 +90,38 @@ fn rig_describe_and_the_strike_check_read_one_footprint() {
         "the strike rule reads the dsl's per-part cells: {struck}"
     );
     // Neither caller has a footprint of its own.
-    for (file, src) in [("main.rs", &main), ("assembly.rs", &asm)] {
+    for (file, src) in [("cli/metrics.rs", &cli), ("assembly.rs", &asm)] {
         assert!(
             !src.lines()
                 .any(|l| source_scan::fn_name(l).is_some() && l.contains("footprint")),
             "{file} defines a footprint function of its own"
         );
+    }
+}
+
+/// Both scans in this file, and blockout's single-caller scan, read a `fn`
+/// header through the one visibility rule (`common::source_scan::fn_name`): a
+/// definition is recognised at every visibility, and a call or a binding that
+/// merely names the function is not a definition.
+#[test]
+fn a_fn_definition_is_recognised_at_every_visibility() {
+    for (def, name) in [
+        ("fn last_frame_footprint(", "last_frame_footprint"),
+        ("pub fn last_frame_footprint(", "last_frame_footprint"),
+        ("pub(crate) fn last_frame_footprint(", "last_frame_footprint"),
+        ("pub(super) fn last_frame_footprint(", "last_frame_footprint"),
+        ("pub(in crate::cli) fn last_frame_footprint(", "last_frame_footprint"),
+        ("    pub(in crate::compiler::plan) fn build_with(", "build_with"),
+    ] {
+        assert_eq!(source_scan::fn_name(def), Some(name), "{def}");
+    }
+    for not_def in [
+        "rig::last_frame_footprint(clip, facing)",
+        "let footprint = frame_footprint(frame);",
+        "public_fn_footprint()",
+        "Self::build_with(campaign, prefabs, Perturb::none())",
+        "let plan = Plan::build_with(&c, &p, perturb)?;",
+    ] {
+        assert_eq!(source_scan::fn_name(not_def), None, "{not_def}");
     }
 }

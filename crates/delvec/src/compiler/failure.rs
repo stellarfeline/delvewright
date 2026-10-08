@@ -30,7 +30,7 @@
 //! (a failure is an error by construction — that is what makes it a failure),
 //! and it has no document position, because the passes that raise it read the
 //! assembled world, the solved layout and the emitted tree rather than the
-//! campaign's JSON. `main.rs` renders one through `print_build_error`, which is
+//! campaign's JSON. `cli/report.rs` renders one through `print_build_error`, which is
 //! where it acquires the `stage: "build"` a `--json` consumer sees.
 
 use delvewright_dsl::DwCode;

@@ -126,7 +126,7 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// A library file this `delvec` cannot parse fails in a shape that does not
 /// look like what it is. `PrefabRegistry::load_dir` reports a metadata file
 /// this `delvec` cannot parse as `DW0346` in `load_diagnostics()`, and **the
-/// CLI drains that list** (`main::validate_loaded`) so `delvec` users get the
+/// CLI drains that list** (`cli::campaign::validate_loaded`) so `delvec` users get the
 /// real message. Integration tests build a `Plan` directly and never drain it,
 /// so the prefab is simply absent from the registry and the first thing anyone
 /// sees is `DW0300` "no matching prefab metadata" — a message that then states,

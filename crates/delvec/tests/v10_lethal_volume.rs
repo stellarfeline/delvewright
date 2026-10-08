@@ -52,7 +52,7 @@ fn quests_doc(volumes: &str, talk_effects: &str) -> String {
 }
 
 /// Parse, then TAG the campaign's player-visible strings exactly as `delvec build`
-/// does (`main.rs`, spec-0029 i18n v2). Without the tag every emitter lowers a
+/// does (`cli/campaign.rs`, spec-0029 i18n v2). Without the tag every emitter lowers a
 /// bare `{"text": …}` literal, so an untagged test would silently stop proving
 /// that the death wording travels as a translatable component.
 fn parse_hw(quests: &str) -> Campaign {
