@@ -460,8 +460,14 @@ pub struct CheckpointPlan {
     /// `critical_path` step index at which this checkpoint fires (roots DW0315).
     /// For a bonfire this is the step that **arms** the rest affordance — the
     /// earliest beat at which a rest (and therefore a respawn here) is possible,
-    /// so the no-stranding proof stays conservative.
+    /// so the no-stranding proof stays conservative. For a checkpoint a
+    /// **trigger** sets this is `0` — the party's own act, not a beat — and the
+    /// no-stranding proof re-roots it at the earliest configuration in which the
+    /// trigger is reachable (spec-0093 §6.2, `nav::check_checkpoints`).
     pub fire_step: usize,
+    /// The `triggers[]` entry whose bundle sets this checkpoint, when a trigger
+    /// does; `None` for a checkpoint a quest beat or a dialogue option sets.
+    pub trigger: Option<String>,
     /// `true` for a `bonfire` (spec-0016 §1): the checkpoint moves only when the
     /// party rests at the affordance, not when the effect fires. `false` for a
     /// plain `set-checkpoint` (spec-0012), which is immediate.
@@ -1700,6 +1706,10 @@ pub enum Step {
         command: String,
         /// Item required in inventory, if any.
         requires_item: Option<String>,
+        /// **The vanilla block the act uses** (spec-0093 §6.5): the objective's
+        /// `prop` when it is a lever or a button, which the bot right-clicks
+        /// instead of chatting `command`. `None` = the hitbox and the chat.
+        block: Option<String>,
     },
     /// Perform an environment trigger the path depends on: do to its target
     /// what a player does — strike it, use it, walk within `range` of it, or
@@ -1734,6 +1744,10 @@ pub enum Step {
         /// `transport` marker is then the link's `to`. `None` for every trigger
         /// the path performs for its openings or its flags alone.
         stand: Option<[i32; 3]>,
+        /// **The vanilla block the act uses** (spec-0093 §6.5): the trigger's
+        /// `prop` when it is a lever or a button, which the bot right-clicks
+        /// instead of a hitbox. `None` = the hitbox.
+        block: Option<String>,
     },
     /// **Exercise a loop** (spec-0086 §5.2): walk to `pos` on the approach, cross
     /// the slab at `cross`, be moved by exactly `offset`, and repeat `times`
@@ -5304,6 +5318,7 @@ fn build_critical_path(
                         pos,
                         command: format!("/trigger {} set 1", interact_trigger(id.as_str())),
                         requires_item: requires_item.clone(),
+                        block: crate::compiler::pressable::interact_block(obj).map(str::to_string),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
@@ -5564,6 +5579,7 @@ fn build_critical_path(
                     pos: l.body.first().copied().unwrap_or(stand),
                     range: l.range,
                     stand: Some(stand),
+                    block: pressed_block(campaign, &l.trigger_id),
                 });
                 new_transport.push(Some(l.to));
                 new_sneak.push(false);
@@ -5898,6 +5914,7 @@ fn path_triggers(
                     _ => None,
                 },
                 stand: None,
+                block: pressed_block(campaign, t.id.as_str()),
             });
         }
     }
@@ -6191,6 +6208,20 @@ pub(crate) fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usi
         .unwrap_or(0)
 }
 
+/// The block a trigger's act uses, when its `prop` is one a hand presses
+/// (spec-0093 §6.5) — what a `trigger` step hands the harness to right-click.
+fn pressed_block(campaign: &Campaign, trigger_id: &str) -> Option<String> {
+    campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .find(|t| t.id.as_str() == trigger_id)
+        .and_then(|t| t.prop.as_ref())
+        .filter(|p| p.is_hand_pressed())
+        .map(|p| p.block.clone())
+}
+
 /// The `critical_path` step index of the `talk-to` objective that a dialogue tree
 /// belongs to (its NPC's completing beat), rooting a dialogue-hosted
 /// `set-checkpoint`. `0` if none is found (degenerate).
@@ -6227,6 +6258,7 @@ fn collect_v06_effects(
 ) -> (Vec<CheckpointPlan>, Vec<StealthBeat>) {
     let mut c = V06Collector {
         anchors,
+        trigger: None,
         checkpoints: Vec::new(),
         stealth: Vec::new(),
         stealth_ends: Vec::new(),
@@ -6246,13 +6278,16 @@ fn collect_v06_effects(
         }
     }
 
-    // Stage 5 — environment triggers (conservative fire step 0: a trigger fires on
-    // an environmental condition, not a critical beat, so require the checkpoint to
-    // re-reach the whole remaining path).
+    // Stage 5 — environment triggers. Fire step 0 here — a trigger fires on the
+    // party's own act, not at a beat — and the checkpoint remembers which
+    // trigger set it, so the no-stranding proof can re-root it at the earliest
+    // configuration in which the party can reach the trigger (spec-0093 §6.2).
     for t in &campaign.quests.content.triggers {
+        c.trigger = Some(t.id.as_str().to_string());
         for eff in &t.effects {
             c.handle(eff, 0);
         }
+        c.trigger = None;
     }
 
     // Stage 6 — dialogue `set-checkpoint` (rooted at the NPC's talk-to beat).
@@ -6474,6 +6509,8 @@ impl PressAnswer {
         EnvTrigger {
             id: delvewright_dsl::TriggerId(self.trigger_id.clone()),
             at: Some(delvewright_dsl::AnchorId(self.anchor.clone())),
+            // A seal's press answer rides the seal's own bodies; no block.
+            prop: None,
             on: delvewright_dsl::TriggerOn::Use,
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
@@ -7855,6 +7892,9 @@ fn collect_traps(
 /// their anchors (a struct so the collection borrows stay simple).
 struct V06Collector<'a> {
     anchors: &'a BTreeMap<(String, String), ResolvedAnchor>,
+    /// The trigger whose bundle is being walked, so a checkpoint it sets
+    /// records its source (spec-0093 §6.2); `None` outside a trigger's bundle.
+    trigger: Option<String>,
     checkpoints: Vec<CheckpointPlan>,
     stealth: Vec<StealthBeat>,
     /// Firing steps of every `end-stealth`, in content order — closes each beat's
@@ -7885,6 +7925,7 @@ impl V06Collector<'_> {
                 pos,
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
+                trigger: self.trigger.clone(),
                 rest,
                 // Authored strings are ordinary inventoried campaign text; an
                 // unauthored one takes the compiler's chrome default in its tagged

@@ -1977,7 +1977,14 @@ fn candidate(
     let below = [c[0], c[1] - 1, c[2]];
     let above = [c[0], c[1] + 1, c[2]];
     let air = |cell: [i32; 3]| model.block_at(cell) == "minecraft:air";
-    let solid = |cell: [i32; 3]| nav.solid_at(cell);
+    // A fixture is mounted on a block that holds it. Leaves collide and so are
+    // solid to the walker, and they hold no fixture: the pinned server dropped
+    // every lantern this pass hung under `oak_leaves` in the gallery's save on
+    // the first block update (`tools/ci/check-written-world.py`, spec-0089),
+    // so a fixture planned there is light the light proof counts and the game
+    // never shows.
+    let solid =
+        |cell: [i32; 3]| nav.solid_at(cell) && !base_id(model.block_at(cell)).ends_with("_leaves");
     let free = |cell: [i32; 3]| air(cell) && !required.contains(&cell);
     let site = |block: String, colliding: bool| {
         Some(Site {

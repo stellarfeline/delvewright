@@ -1,0 +1,13 @@
+{
+  "code": "DW0956",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/view_distance",
+      "value": 40
+    }
+  ],
+  "units": [],
+  "why": "A view distance the pinned server cannot serve. `world.view_distance` is the server's `view-distance`, in chunks, and vanilla serves at most 32 of them: a campaign that writes 40 is asking for a radius no server boots, and the file would ship a number the server silently clamps. The same refusal meets a number below the engine's floor of 10, which every proof in the engine is written against — a smaller number only takes views away. The primary declares 12, so the unit is bound there; this probe is the range rule, refused where the number is typed."
+}

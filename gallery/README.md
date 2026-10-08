@@ -42,7 +42,7 @@ order a player would:
 | `npcs.json` | four speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
-| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076); the hearth's two buttons, like every shop offer and some dialogue options, hover a tooltip saying what pressing them does (spec-0078) |
+| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076); the hearth's two buttons, like every shop offer and some dialogue options, hover a tooltip saying what pressing them does (spec-0078); and the guidance surface (spec-0093): every objective kind states its `announcement`, the two reach objectives at the end of the hall and over the well are quiet (`announcement: hidden`, the first unmarked too), the ferry deck states both `shown`, and the valley overlay's whole campaign is quiet by `guidance` with its far corner opting its marker back in; the ferry's tiller and the cabin's are levers (`triggers[].prop`), the block the party uses and vanilla reports, so no hitbox stands there; the label under the case is a sign, a visible thing vanilla reports no use of, so its hit area is fitted over the sign; the stone beside the hearth is a stone slab, the thing the `strike` hits |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch |
 | `world-edits.json` | the annex's piece-verb batches, the shards stamped by `fragment`, the barrier course, and the batches that dress the floor, lay the hearth, open the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
@@ -114,8 +114,8 @@ holding them at once.
 | `a-piece-the-library-does-not-hold` | `DW0856` | `validate` | binding the hall to a piece whose name is one letter wrong |
 | `a-gate-two-areas-provide` | `DW0857` | `validate` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
 | `a-question-nobody-answers` | `DW0858` | `validate` | asking the party to talk to somebody the same quest declares silent |
-| `a-walk-of-a-different-whole` | `DW0841` | `validate` | detailing against a walk record of some other map |
-| `detail-without-a-walk` | `DW0841` | `validate` | detailing a place before the whole has been walked |
+| `a-walk-of-a-different-whole` | `DW0974` | `validate` | standing a walk record of some other map beside this one |
+| `a-walk-of-the-blockout` | `DW0974` | `validate` | standing a record of a walk of the blockout beside the detailed build |
 | `a-piece-that-is-not-its-frame` | `DW0843` | `validate` | seating a piece that does not fill the box the map gave it |
 | `a-horizon-with-no-map` | `DW0855` | `validate` | declaring a horizon with nothing for it to ring |
 | `a-clock-nobody-explained` | `DW0860` | `validate` | arming a stealth clock that bites before its own instruction can be read |
@@ -142,9 +142,11 @@ holding them at once.
 | `a-program-that-marks-no-place-to-stand` | `DW0845` | `detail` | removing the program's one `mark`, so nothing answers the anchor the quests bound to the place |
 | `a-program-whose-arch-misses-its-seam` | `DW0844` | `detail` | carving the annex arch one cell along the wall from the seam the plan handed it |
 | `a-reach-that-completes-from-the-floor-below` | `DW0881` | `build` | widening the loft's completion radius to 2, so it completes from the hall floor three courses below |
-| `a-record-that-says-nobody-walked` | `DW0841` | `validate` | detailing against a fresh walk record whose verdict says nobody walked |
 | `a-rim-one-radius-out-of-reach` | `DW0850` | `build` | narrowing the well's completion radius to 2, so no walked cell on the rim reaches it |
 | `a-rocket-under-a-roof` | `DW0899` | `build` | firing a rocket at `anchor/exit`, under the hall's stone ceiling |
+| `a-tiller-pulled-from-the-hall-floor` | `DW0932` | `build` | playing the ferry's cutscene before its carry, so a pull from the open hall floor puts the whole party down there and nobody crosses |
+| `a-bolt-beside-the-arrival` | `DW0958` | `build` | striking a lightning bolt two cells from `anchor/arrival`, where every player first stands |
+| `a-bolt-on-a-copper-tile` | `DW0959` | `build` | laying a waxed copper tile under the exit and striking a bolt on it, so the game would scrape copper along a random walk |
 | `a-row-with-no-picture` | `DW0890` | `validate` | pointing a `design.json` row at a stem no file under `design/concept/` answers |
 | `a-signal-the-floor-does-not-carry` | `DW0891` | `build` | declaring the east strip `shown_by` a cactus that stands in none of its cells |
 | `a-sky-no-picture-shows` | `DW0890` | `validate` | moving the midnight row to `night`, leaving an hour the world reaches that no approved picture shows |
@@ -476,7 +478,7 @@ way in is the ferry. The party boards the deck
 { "id": "trigger/ferry-tiller", "at": "anchor/ferry-tiller", "on": { "on": "use" },
   "once": false, "requires_flags": ["flag/boarded"],
   "effects": [{ "type": "sequence", "steps": [
-    { "at_ticks": 0,  "effects": [{ "type": "cutscene", "seconds": 1, "path": [ … ] }] },
+    { "at_ticks": 23, "effects": [{ "type": "cutscene", "seconds": 1, "path": [ … ] }] },
     { "at_ticks": 22, "effects": [{ "type": "teleport",
         "from": { "anchor": "anchor/ferry-deck", "extent": [1, 1, 1] },
         "to": { "anchor": "anchor/ferry-landing" } }] } ] }] }
@@ -491,9 +493,12 @@ the `DW0311 binding:` line counts the leg as carried by a link. The hall's
 other teleport, on `obj/take-the-bone`'s completion, is a **gather**: whoever is
 in the march's box travels, once, and no proof leans on it.
 
-The cutscene plays first and the teleport fires one tick after it ends: a
-cutscene's end puts every player back where it started, so a carry under the
-open bracket is undone. The layout graph draws the crossing as a `carry` edge
+The teleport fires first and the cutscene plays at the landing one tick
+later. A cutscene's end puts every player on the cell the presser stood on, so
+a carry under the open bracket is undone (`a-crossing-the-cutscene-undoes`),
+and a carry after it takes everyone or no one — which is refused wherever the
+trigger can be pulled from outside the volume, as this tiller can from the open
+hall floor (`a-tiller-pulled-from-the-hall-floor`). The layout graph draws the crossing as a `carry` edge
 from `node/exit` (the deck is its station) to `node/ferry-cabin` (the landing
 is its station), gated on the same flag, and nothing else joins the two.
 
@@ -514,12 +519,23 @@ too, so the final step of the path is a reach a landing completes — the shape
 whose campaign marker is due at the carrying step. `validation/teleport-gate.json`
 reads two links and one gather.
 
-Four probes show what the engine refuses about it:
+Five probes show what the engine refuses about it:
 `a-way-onward-that-fires-once` (the teleport on the cabin beat's own completion
 — a gather, `DW0311` naming it and prescribing the link), `a-lever-outside-its-own-boat`
 (the deck shrunk so no cell inside it reaches the tiller, `DW0932`),
-`a-crossing-the-cutscene-undoes` (the teleport at tick 0, `DW0933`) and
-`a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
+`a-tiller-pulled-from-the-hall-floor` (the cutscene moved before the carry, so the
+carry takes everyone or no one and the tiller can be pulled from the open floor,
+`DW0932`), `a-crossing-the-cutscene-undoes` (the teleport inside the cutscene,
+`DW0933`) and `a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
+
+**Who is in the shot** (spec-0095). The ferry's crossing and the first muster
+cutscene leave a stand-in for every player where they stood, wearing their own
+skin and gear: the party is in its own cutscenes by default, and the ferry
+spells the default out (`"party": "present"`). The second muster
+cutscene, the parade shot style by style, declares `"party": "absent"`: the
+scene is the muster's, and its functions are `cs_muster_3_2_12687a8f_absent`
+with no stand-in line. `validation/stand-in-gate.json` reads two present and
+one absent (`DW0971`).
 
 ## The long gallery
 
@@ -533,12 +549,48 @@ crossing counts 1 and lights a second lamp in every bay and the end room at once
 `obj/walk-the-long-gallery` waits at the gallery's far end, so the critical path
 carries a `loop` step that crosses twice.
 
-The build publishes `validation/loop-gate.json`: one loop, its 15 eyes, a span of
-325 cells closed by geometry, 144 visible cells compared as blocks and as light at
-two skies over 10 configurations, and one exercise step. The eight probes above
+The build publishes `validation/loop-gate.json`. Its row for this loop holds 24
+eyes (the landing's standing eyes and the catch band, where a walking body is
+when the poll finds it), a span of 325 cells, 155 visible cells, all of them in
+the near field and compared as blocks and as light at two skies over 10
+configurations, no far differences, and one exercise step. The eight probes above
 whose names start with a landing, a lamp, a light, a slab, a crossing, a release,
 a figure and a hall are each this gallery plus one edit, and each is refused by
 the rule that edit breaks.
+
+## The long hall
+
+In an area of its own, `area/long-hall` (`prefab/gallery-long-hall`), stands one
+straight hall of identical 6-block bays with no fog. A soul lantern and a pillar
+pair mark every bay, and a glowstone lintel lights the exit into a room at the
+far end. `loop/the-hall-that-runs-on` stands across one bay's mouth and returns
+a crossing body one bay back, so the lit exit, 54 blocks past the slab, stays
+where it was (spec-0090). The gallery's long gallery closes its view inside one
+bay and sees no far field; this hall is where the far field binds. Past the near
+field of a 6-block jump (10.6 blocks), its cells may differ from their images,
+and the build measures how far the jump moves each one on screen against the
+1.2852° threshold. The binding line states the count of far differences admitted
+and the largest shift (0.7574°).
+
+The route runs through it. `quest/long-hall` plays between the near hall and the
+far one: completing the counter in the annex carries the party across to the
+hall's porch (a crossing, one-way by construction), the porch sets the
+checkpoint on arrival (`obj/arrive-at-the-porch`), the party runs the hall
+until the loop has turned it back twice and reaches the lit room
+(`obj/reach-the-hall-end`), and completing that carries it back to the gallery
+hall's arrival, where `obj/back-in-the-hall` sets the hearth again. The layout graph draws both crossings as `carry` edges (`edge/long-hall-in`, `edge/long-hall-out`), which the crossing realises (`DW0934`). The loop is
+exercised on the route, so its binding counts an exercise step. Each seat is
+judged over the area the party can stand in while that seat holds: the stake
+proof (`DW0525`) judges the porch over the hall and the hearth over the gallery
+hall, and the no-stranding proof (`DW0315`) does not ask the hearth to reach the
+hall the porch has already replaced it in.
+
+Two probes show what the far field refuses: `an-exit-too-near-to-hide` (a wall
+across the hall 36 blocks past the slab, so the hall ends in view too near for a
+6-block jump to hide; `DW0947`, raised at the world-edits replay, which prints
+its loop binding first) and `a-figure-down-the-long-hall` (the hall moth posted 16
+blocks past the slab, past the near field but moved too far by the jump;
+`DW0947`).
 
 ## The fight, and the floor it needs
 

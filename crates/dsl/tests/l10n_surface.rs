@@ -169,6 +169,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Forfeit", "kind", Machine),
     ("QuestEffect", "clip", Reference),
     ("StrikeStep", "strike", Reference),
+    ("StrikeLock", "reaches", Reference),
     ("StrikeStep", "windup", Reference),
     ("Shop", "title", Inventoried),
     ("Shop", "marker_item", Reference),

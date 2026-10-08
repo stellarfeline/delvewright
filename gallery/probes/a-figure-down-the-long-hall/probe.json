@@ -1,0 +1,13 @@
+{
+  "code": "DW0947",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/actors/0/anchor",
+      "value": "anchor/long-hall-down-the-hall"
+    }
+  ],
+  "units": [],
+  "why": "The hall moth posted 16 courses down the long hall past its slab: past the near field of a 6-block jump, so it is judged as a far feature rather than refused for being in the span, and the jump moves it across the screen by more than the far-field threshold. The refusal names the body, the eye, its distance and the shift against the threshold. It declares no unit."
+}

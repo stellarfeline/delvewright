@@ -359,7 +359,12 @@ def main() -> int:
             records += 1
             sheet = json.loads(record.read_text())
             dest = work / f"cameras-{label}"
-            r = run([str(delvec), "cameras", str(out), "--campaign", str(src), "-o", str(dest)])
+            # `delvec cameras` plans and assembles the campaign to stand each
+            # camera (spec-0089), so it reads the prefab library the build read.
+            r = run(
+                [str(delvec), "--prefabs", args.prefabs, "cameras", str(out),
+                 "--campaign", str(src), "-o", str(dest)]
+            )
             if r.returncode != 0:
                 findings.append(
                     f"{base} ({label}): `delvec cameras` exited {r.returncode} — "

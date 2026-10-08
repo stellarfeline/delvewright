@@ -2356,22 +2356,23 @@ fn body_traversal_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// they sit together and are checked over the one trigger authority.
 fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, t) in c.quests.content.triggers.iter().enumerate() {
-        if t.addresses_presser() && !matches!(t.on, TriggerOn::Use) {
+        if t.addresses_presser() && !t.attributes_its_actor() {
             d.push(Diagnostic::error(
                 codes::TRIGGER_AUDIENCE_UNATTRIBUTABLE,
                 "quests",
                 format!("/content/triggers/{i}/audience"),
                 format!(
                     "trigger `{}` watches a `{}` and asks for `audience: presser`, but vanilla \
-                     can only attribute a RIGHT-click to a player. \
+                     names the player only for a RIGHT-click and a step. \
                      `minecraft:player_interacted_with_entity` is the one criterion that runs a \
-                     function as the clicker; a left-click is recorded in the interaction \
-                     entity's `attack` NBT, which names a UUID no command can become, and an \
-                     `approach` has no click at all. Guessing — polling the record and hoping the \
-                     nearest player is the striker — is the kind of downstream folklore this \
-                     engine refuses (CLAUDE.md: a capability with no vanilla primitive under it \
-                     is excluded, not faked). Prescription: make it an `on: use` trigger, or drop \
-                     `audience` and let the beat address the party",
+                     function as the clicker, and a step is a player standing in the cell; a \
+                     left-click is recorded in the interaction entity's `attack` NBT, which names \
+                     a UUID no command can become, and an `approach` is not attributed. Guessing \
+                     — polling the record and hoping the nearest player is the striker — is the \
+                     kind of downstream folklore this engine refuses (CLAUDE.md: a capability \
+                     with no vanilla primitive under it is excluded, not faked). Prescription: \
+                     make it an `on: use` or `on: step` trigger, or drop `audience` and let the \
+                     beat address the party",
                     t.id,
                     t.on.kind()
                 ),
@@ -3420,6 +3421,10 @@ fn texture_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// (spec-0018), the declared difficulty and the declared textures (spec-0084).
 fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     texture_checks(c, d);
+    // spec-0091: the declared view distance's range, and every site-plan line
+    // of sight judged against the radius it serves. The binding it states is
+    // printed by the CLI, which asks for it again without the diagnostics.
+    crate::viewdistance::checks(c, d);
     // spec-0018: a delve is played by ONE party of 1–4, so a declared
     // mandatory size outside that range can never be honoured.
     if let Some(n) = c.world.content.min_players
@@ -5509,6 +5514,20 @@ fn v04_checks(
     }
 
     // --- block ids: interact props + set-block effects (quest + trigger) ---
+    // A trigger's `prop` (spec-0093 §6.5) is the same object class as an
+    // interact's and is held to the same registry.
+    for (i, t) in quests.triggers.iter().enumerate() {
+        if let Some(prop) = &t.prop {
+            check_block_field(
+                blocks,
+                &prop.block,
+                format!("/content/triggers/{i}/prop/block"),
+                "triggers[].prop",
+                "minecraft:lever[face=floor,facing=north]",
+                d,
+            );
+        }
+    }
     for (i, q) in quests.quests.iter().enumerate() {
         for (j, o) in q.objectives.iter().enumerate() {
             if let Some(prop) = o.prop() {
@@ -5520,6 +5539,23 @@ fn v04_checks(
                     "minecraft:lever",
                     d,
                 );
+                if crate::stages::fires_on_step(&prop.block) {
+                    d.push(Diagnostic::error(
+                        codes::INTERACT_PROP_STEPPED,
+                        "quests",
+                        format!("/content/quests/{i}/objectives/{j}/prop/block"),
+                        format!(
+                            "`interact` objective `{}` uses `{}` as its prop, a block a player \
+                             fires by stepping on it — but an `interact` completes on a \
+                             right-click, so walking onto it does nothing. Prescription: give the \
+                             objective a block a hand works (a lever, a button), or make the step \
+                             the act: a `trigger` with `on: step` at an anchor whose cell holds the \
+                             plate, whose effects do what completing the objective did",
+                            o.id(),
+                            prop.block
+                        ),
+                    ));
+                }
             }
         }
         for_each_effect_deep(q, |path, eff| {
@@ -5976,6 +6012,15 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                         format!("{at}/strikes/pattern/{j}/strike"),
                         "strike step's `strike`",
                     );
+                    if let Some(lock) = &step.lock {
+                        for (k, reach) in lock.reaches.iter().enumerate() {
+                            need(
+                                reach,
+                                format!("{at}/strikes/pattern/{j}/lock/reaches/{k}"),
+                                "locked strike step's `reaches`",
+                            );
+                        }
+                    }
                     if let Some(t) = step.ticks_per_frame
                         && !(crate::rig::MIN_TICKS_PER_FRAME..=crate::rig::MAX_TICKS_PER_FRAME)
                             .contains(&t)
@@ -6023,6 +6068,29 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                 ),
             ));
         }
+        if let Some(s) = &a.strikes {
+            lock_shape_checks(a, i, s, d);
+            for (j, step) in s.pattern.iter().enumerate() {
+                let Some(lock) = &step.lock else { continue };
+                if providers.resolvable(lock.within.anchor.as_str()) {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("{at}/strikes/pattern/{j}/lock/within/anchor"),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player in a region centred \
+                         on anchor `{}`, which no area's prefab provides — {}",
+                        a.id,
+                        lock.within.anchor,
+                        providers.anchor_remedy(
+                            "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                        ),
+                    ),
+                ));
+            }
+        }
         if let Some(s) = &a.strikes
             && !providers.resolvable(s.while_in.anchor.as_str())
         {
@@ -6042,11 +6110,29 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
             ));
         }
     }
+    // Which declared assemblies strike, for `arm-strikes` (`DW0970`).
+    let strikes: BTreeMap<&str, bool> = quests
+        .assemblies
+        .iter()
+        .map(|a| (a.id.as_str(), a.strikes.is_some()))
+        .collect();
     // Every verb that names an assembly, at every depth of every root.
     crate::stages::for_each_campaign_effect(c, &mut |path, _site, e| {
         let Some((assembly, clip)) = assembly_verb(e) else {
             return;
         };
+        if matches!(e.verb, Verb::ArmStrikes { .. }) && strikes.get(assembly) == Some(&false) {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_ARM_NOTHING,
+                "quests",
+                format!("{path}/assembly"),
+                format!(
+                    "`arm-strikes` re-arms assembly `{assembly}`'s strike pattern, and the \
+                     assembly declares no `strikes` — there is no pattern to re-arm, so the beat \
+                     does nothing. Give the assembly a `strikes` pattern, or drop the effect"
+                ),
+            ));
+        }
         let Some(resolved) = rigs.get(assembly) else {
             d.push(Diagnostic::error(
                 codes::DANGLING_REF,
@@ -6100,7 +6186,91 @@ fn assembly_verb(e: &QuestEffect) -> Option<(&str, Option<&str>)> {
             Some((assembly.as_str(), None))
         }
         Verb::PlayClip { assembly, clip } => Some((assembly.as_str(), Some(clip.as_str()))),
+        Verb::ArmStrikes { assembly } => Some((assembly.as_str(), None)),
         _ => None,
+    }
+}
+
+/// spec-0094 §5.2 (`DW0969`): **a locked step's blow is the lock's to place.**
+/// A locked step lands on the cells its chosen clip comes down on at the turn
+/// it locked to, so a box an author writes cannot be where the blow lands: a
+/// top-level `damage-players` in its `on_land` declares no `in`, no
+/// `damage-players` stands inside another effect's list there, and a pattern
+/// that turns by `aim` has no locked step.
+fn lock_shape_checks(
+    a: &crate::stages::Assembly,
+    i: usize,
+    s: &crate::stages::AssemblyStrikes,
+    d: &mut Vec<Diagnostic>,
+) {
+    fn nested_damage(effs: &[QuestEffect], path: &str, out: &mut Vec<String>) {
+        for (k, e) in effs.iter().enumerate() {
+            let here = format!("{path}/{k}");
+            if matches!(e.verb, Verb::DamagePlayers { .. }) {
+                out.push(here.clone());
+            }
+            for (seg, _, list) in e.nested_effect_lists_labeled() {
+                nested_damage(list, &format!("{here}/{seg}"), out);
+            }
+        }
+    }
+    let at = format!("/content/assemblies/{i}/strikes");
+    for (j, step) in s.pattern.iter().enumerate() {
+        if step.lock.is_none() {
+            continue;
+        }
+        let here = format!("{at}/pattern/{j}");
+        if s.aim.is_some() {
+            d.push(Diagnostic::error(
+                codes::ASSEMBLY_LOCK_SHAPE,
+                "quests",
+                format!("{here}/lock"),
+                format!(
+                    "assembly `{}`'s strike pattern turns by `aim`, and its step {j} declares a \
+                     `lock` — two rules choosing the one turn the assembly strikes from. A locked \
+                     step turns to the cell it locks onto; an aimed pattern turns to one of its \
+                     facings. Drop `aim` from the pattern, or drop `lock` from the step",
+                    a.id
+                ),
+            ));
+        }
+        for (k, e) in step.on_land.iter().enumerate() {
+            let p = format!("{here}/on_land/{k}");
+            if matches!(e.verb, Verb::DamagePlayers { .. }) && e.damage_within().is_some() {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_LOCK_SHAPE,
+                    "quests",
+                    format!("{p}/in"),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player, and its \
+                         `damage-players` ({p}) declares an `in` box. A locked blow lands on the \
+                         cells its clip comes down on at the turn it locked to — the compiler \
+                         derives that area for every cell it can lock, so a written box is a \
+                         second, fixed answer that is wrong at every other cell. Drop the `in`",
+                        a.id
+                    ),
+                ));
+            }
+            let mut deep = Vec::new();
+            for (seg, _, list) in e.nested_effect_lists_labeled() {
+                nested_damage(list, &format!("{p}/{seg}"), &mut deep);
+            }
+            for q in deep {
+                d.push(Diagnostic::error(
+                    codes::ASSEMBLY_LOCK_SHAPE,
+                    "quests",
+                    q.clone(),
+                    format!(
+                        "assembly `{}`'s strike step {j} locks onto a player, and a \
+                         `damage-players` ({q}) stands inside another effect's list. Only a blow \
+                         at the top of a locked step's `on_land` is moved to the cells the clip \
+                         comes down on; this one would land nowhere the lock chose. Move it to the \
+                         top of `on_land` (a `when` on it is kept)",
+                        a.id
+                    ),
+                ));
+            }
+        }
     }
 }
 

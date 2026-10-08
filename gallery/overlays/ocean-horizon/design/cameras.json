@@ -118,6 +118,26 @@
       "spp": 300,
       "width": 1600,
       "yaw": 136.4
+    },
+    {
+      "after": {
+        "step": "obj/clear-the-muster"
+      },
+      "answers": "concept/bay-after-the-muster",
+      "exposure": 1.0,
+      "fov": 46.0,
+      "height": 900,
+      "name": "east-bay-after-the-muster",
+      "pitch": 9.4,
+      "pos": [
+        46.5,
+        74.0,
+        46.5
+      ],
+      "source": "estimated",
+      "spp": 300,
+      "width": 1600,
+      "yaw": 135.0
     }
   ],
   "campaign_id": "gallery"

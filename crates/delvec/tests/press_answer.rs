@@ -388,6 +388,72 @@ fn authored_answer() -> EnvTrigger {
     .expect("the authored answer parses")
 }
 
+/// **A press answer behind its own trigger-level gate dispatches through a line
+/// the pinned server parses.**
+///
+/// `press_<id>` re-states the trigger's `once`, `forbids_flags` and
+/// `requires_flags`/`requires_state` gate, because for a presser trigger it
+/// stands where the tick clause would. The positive half of that gate is built
+/// space-PREFIXED (` if score … matches 1`), and the dispatch spliced it in
+/// front of `run` with no separator, so every gated answer shipped
+/// `… matches 1run function …` — a line 1.21.11 refuses, and on which the
+/// command-tree check refuses the whole build. Nothing compiled the shape until
+/// the gallery's barred side door was gated on `flag/hall-open`.
+///
+/// Each arm states the whole dispatch line, so a separator lost or doubled
+/// anywhere in the guard (`execute  if …`) is a red here, not only the glued
+/// `run` the command tree happens to refuse.
+#[test]
+fn a_gated_press_answer_dispatches_through_a_parseable_line() {
+    for (gate, want) in [
+        (
+            serde_json::json!({ "requires_flags": ["flag/door-tried"] }),
+            "execute if score #party dw.f_door_tried matches 1 run function \
+             {ns}:trig_from_the_wrong_side",
+        ),
+        (
+            serde_json::json!({
+                "once": true,
+                "forbids_flags": ["flag/door-open"],
+                "requires_flags": ["flag/door-tried", "flag/door-seen"],
+            }),
+            "execute unless score #trig_from_the_wrong_side dw.sys matches 1 unless score \
+             #party dw.f_door_open matches 1 if score #party dw.f_door_tried matches 1 if \
+             score #party dw.f_door_seen matches 1 run function {ns}:trig_from_the_wrong_side",
+        ),
+    ] {
+        let mut t = serde_json::to_value(authored_answer()).unwrap();
+        for (k, v) in gate.as_object().unwrap() {
+            t[k] = v.clone();
+        }
+        let mut c = fixture();
+        c.quests.dsl_version = DSL_VERSION.to_string();
+        c.quests
+            .content
+            .triggers
+            .push(serde_json::from_value(t).expect("the gated answer parses"));
+        let out = match try_build(&c) {
+            Ok(out) => out,
+            Err(BuildFailure::Validation(e)) => {
+                panic!("the gated press answer ships a refused command: {e:#?}")
+            }
+            Err(e) => panic!("the gated press answer did not build: {e:?}"),
+        };
+        let press = function(&out, &format!("press_{DOOR_TRIG}"));
+        let mut body = press.lines();
+        let revoke = body.next().unwrap_or_default();
+        let ns = revoke
+            .strip_prefix("advancement revoke @s only ")
+            .and_then(|r| r.strip_suffix(&format!(":press_{DOOR_TRIG}")))
+            .unwrap_or_else(|| panic!("press_ opens with its own revoke: {press}"));
+        assert_eq!(
+            body.next().unwrap_or_default(),
+            want.replace("{ns}", ns),
+            "the gated dispatch line, byte for byte"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The diagnostics the surface needs
 // ---------------------------------------------------------------------------

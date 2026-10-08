@@ -1,0 +1,9 @@
+{
+  "blockout_sha256": "9af485570f28969dbfd7902ed0907529d6d33a6de51607dc26e52639afa7cc48",
+  "detail_sha256": "e7ed439fd926cfdba5e65db4cf268899b833e8c26425369e497bbda3a68a6d60",
+  "engine_revision": "unstamped",
+  "findings": [],
+  "layout_graph_sha256": "64032bb3a01d381693ade8189c9c7d5bd670da3f8be3999d4d2f11c2933ce6a5",
+  "site_plan_sha256": "d499fb8ff3ac7aa91a676f9b313151b7930307a06c92eef30369051d1b790352",
+  "verdict": "passed"
+}

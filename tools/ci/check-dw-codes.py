@@ -9,7 +9,8 @@ test asserting its code.
 
 ## Consistency (bidirectional)
 
-- Any DW code in source but missing from the doc  -> FAIL (undocumented behavior).
+- Any DW code in source with no diagnostics-catalog row -> FAIL (undocumented
+  behavior; `documented_codes()` is the one rule, which the staging gate reads).
 - Any DW code in the doc but absent from source    -> FAIL (stale doc), unless it
   is declared in PENDING below (approved-but-not-yet-landed surface).
 - A PENDING code that has landed in source          -> FAIL (graduate it: turn its
@@ -382,6 +383,18 @@ def catalog_rows() -> tuple[dict[str, int], list[tuple[int, str]]]:
 
 def catalog_row_counts() -> dict[str, int]:
     return catalog_rows()[0]
+
+
+def documented_codes() -> set[str]:
+    """The DW codes `compiler.md` documents: those with a diagnostics-catalog
+    row. The one rule for "documented" — this gate and the staging gate both
+    read it here; a code named only in a heading or prose is undocumented."""
+    return set(catalog_row_counts())
+
+
+def undocumented_source_codes(src: set[str]) -> list[str]:
+    """Source codes with no diagnostics-catalog row, sorted."""
+    return sorted(src - documented_codes())
 
 
 def module_of(rs: pathlib.Path, crate: str) -> str:
@@ -874,11 +887,12 @@ def main(argv: list[str] | None = None) -> int:
 
     errors: list[str] = []
 
-    missing_from_doc = sorted(src - doc)
+    missing_from_doc = undocumented_source_codes(src)
     if missing_from_doc:
         errors.append(
-            "DW codes in crates/**/*.rs but MISSING from docs/reference/compiler.md "
-            f"(document them): {', '.join(missing_from_doc)}"
+            "DW codes in crates/**/*.rs with no diagnostics-catalog row in "
+            "docs/reference/compiler.md (a heading or prose mention is not a row; "
+            f"add one): {', '.join(missing_from_doc)}"
         )
 
     extra_in_doc = sorted(doc - src - PENDING)

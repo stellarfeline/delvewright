@@ -717,7 +717,16 @@ pub fn check_danger_is_visible(
             let caught: Vec<[i32; 3]> = population
                 .iter()
                 .copied()
-                .filter(|c| (0..3).all(|i| klo[i] <= c[i] && c[i] <= khi[i]))
+                // By the body's feet where the model puts them, so a body on a
+                // partial block is caught by a volume in the course it stands on.
+                .filter(|c| {
+                    w.body_can_meet_volume(
+                        *c,
+                        &crate::compiler::nav::Footprint::player(),
+                        v.region.0,
+                        v.region.1,
+                    )
+                })
                 .collect();
             let shown: Vec<[i32; 3]> = caught
                 .iter()

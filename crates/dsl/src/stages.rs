@@ -114,6 +114,19 @@ pub struct WorldContent {
     /// `{base, …params}`; see [`Horizon`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizon: Option<Horizon>,
+    /// **How far a player must be able to see**, in chunks (spec-0091): the
+    /// server's `view-distance`, declared by the campaign whose far views need
+    /// it. A thing farther from a body than the served radius is never sent to
+    /// that body's client, so a landmark meant to be seen from across the map
+    /// is a declaration here, not a hope. Absent = the engine's floor
+    /// ([`crate::viewdistance::FLOOR`], 10 chunks = 160 blocks), which every
+    /// proof in the engine is written against; declared in
+    /// `FLOOR..=CEILING` (vanilla serves at most 32). A camera, a sightline, a
+    /// view or a cutscene shot aimed past the served radius is refused
+    /// (`DW0956`); the build states the heap the declared distance costs the
+    /// host at the player cap, and the hosting side meets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view_distance: Option<u8>,
     /// **The skies a place can stand under** (spec-0080). Each one is declared
     /// once, here, beside `time`, `weather` and `horizon` — the other
     /// statements about the sky the party stands under — and ships as a
@@ -894,6 +907,20 @@ pub struct Boundary {
     /// translated like every other player-facing string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// **Whether the boundary returns a player who leaves it** (spec-0092 §10).
+    /// Default `true`: the per-second clock returns any player outside the region
+    /// to the last checkpoint. `false` keeps the region — every proof that reads
+    /// it reads the same box — and emits no clock: the creator's switch for a
+    /// world nobody can leave, where a return only fights a creator flying out
+    /// to look at a far view. Legal only where the build proves no body can walk
+    /// or swim out of the region (`DW0960`).
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub returns: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's `skip_serializing_if` hands a reference
+fn is_true(b: &bool) -> bool {
+    *b
 }
 
 /// A supplemental-lighting fixture the relight pass may place (DSL v0.5,
@@ -2349,6 +2376,11 @@ pub struct PlannedQuest {
 pub struct QuestsContent {
     /// The expanded quests (1:1 with stage 4).
     pub quests: Vec<Quest>,
+    /// **How loudly the campaign guides** (spec-0093): the default for every
+    /// objective's `marker` and `announcement`. Absent = both `shown`, which is
+    /// what every campaign written before the block existed gets, byte for byte.
+    #[serde(default, skip_serializing_if = "Guidance::is_default")]
+    pub guidance: Guidance,
     /// Combat waves (DSL v0.3). Each wave is spawned by a `spawn-wave` effect and
     /// slain to complete a `kill` objective. Empty/absent in v0.2 campaigns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2467,6 +2499,52 @@ pub struct QuestsContent {
     /// author actually wrote; this flag is what makes a second expansion a no-op.
     #[serde(skip)]
     pub ambushes_expanded: bool,
+}
+
+/// Whether a piece of guidance is put in front of the player (spec-0093).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Visibility {
+    /// Shown — the marker is summoned, the announcement is printed.
+    #[default]
+    Shown,
+    /// Hidden — nothing is summoned or printed; the objective still adjudicates.
+    Hidden,
+}
+
+impl Visibility {
+    /// `true` for [`Visibility::Shown`]. Takes a reference so it doubles as the
+    /// serde skip predicate on [`Guidance`]'s two fields.
+    pub fn is_shown(&self) -> bool {
+        *self == Visibility::Shown
+    }
+}
+
+/// The campaign's guidance defaults (spec-0093): what an objective gets when it
+/// states no `marker` or `announcement` of its own.
+///
+/// Two values, both defaulting to `shown`, so a document that omits the block
+/// is the document every campaign already was. The objective's own field wins
+/// over the campaign's; there is no third level, because a quest is where a
+/// beat is booked and not the object a lantern hangs over.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Guidance {
+    /// The default for every `interact` (without a `prop`) and `reach-anchor`
+    /// objective's glowing marker.
+    #[serde(default, skip_serializing_if = "Visibility::is_shown")]
+    pub markers: Visibility,
+    /// The default for every objective's announcement — the `New objective`
+    /// line, the hint's line, the cue sound and the `Objective complete` line.
+    #[serde(default, skip_serializing_if = "Visibility::is_shown")]
+    pub announcements: Visibility,
+}
+
+impl Guidance {
+    /// Serde skip predicate: both `shown` needs no block on the wire.
+    pub fn is_default(&self) -> bool {
+        *self == Guidance::default()
+    }
 }
 
 impl QuestsContent {
@@ -2722,6 +2800,18 @@ pub struct StateCompare {
     pub value: i32,
 }
 
+impl StateCompare {
+    /// Whether a datum holding `v` satisfies this comparison.
+    pub fn holds(&self, v: i32) -> bool {
+        match self.op {
+            CompareOp::Equals => v == self.value,
+            CompareOp::NotEquals => v != self.value,
+            CompareOp::AtLeast => v >= self.value,
+            CompareOp::AtMost => v <= self.value,
+        }
+    }
+}
+
 /// A stage-5 container fill (DSL v0.6, spec-0021): contents for a chest or
 /// barrel the prefab already placed.
 ///
@@ -2932,6 +3022,37 @@ impl TrapTrigger {
             TrapTrigger::TrappedChest => "a trapped chest (`minecraft:trapped_chest`)",
         }
     }
+}
+
+impl TrapTrigger {
+    /// The trigger kinds a body fires by walking onto them — a plate and a
+    /// tripwire. A trapped chest is opened, not stepped on.
+    pub const STEPPED: [TrapTrigger; 2] = [TrapTrigger::PressurePlate, TrapTrigger::Tripwire];
+}
+
+/// **Every block of the pinned registry that a step fires**, sorted: the
+/// registry's ids that [`TrapTrigger::is_trigger_block`] accepts for a
+/// [`TrapTrigger::STEPPED`] kind. Read from `crates/dsl/data/blocks-1.21.11.json`
+/// rather than listed, so a pin that adds a plate adds it here;
+/// `crates/delvec/tests/stepped_blocks_tag.rs` holds the set equal to vanilla's
+/// own `#pressure_plates` tag plus the tripwire string.
+pub fn stepped_blocks() -> Vec<&'static str> {
+    crate::blocks::BlockRegistry::v1_21_11()
+        .ids()
+        .filter(|id| TrapTrigger::STEPPED.iter().any(|k| k.is_trigger_block(id)))
+        .collect()
+}
+
+/// Whether `block` — an id, bare or namespaced, with or without a blockstate —
+/// is one a step fires ([`stepped_blocks`]).
+pub fn fires_on_step(block: &str) -> bool {
+    let id = block.split('[').next().unwrap_or(block);
+    let id = if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    };
+    stepped_blocks().contains(&id.as_str())
 }
 
 /// What a [`Trap`] does when sprung (DSL v0.6, spec-0011). Externally tagged so a
@@ -3177,6 +3298,9 @@ impl Ambush {
                 crate::l10n::local_id(self.id.as_str())
             )),
             at: Some(self.at.clone()),
+            // An ambush springs on a body's position or a click on open air; it
+            // binds to no pressed block.
+            prop: None,
             on: self.trigger.clone(),
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
@@ -3244,6 +3368,18 @@ pub struct EnvTrigger {
     /// would use. Either mismatch is `DW0194`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<AnchorId>,
+    /// **The visible object the click acts on** (spec-0093 §6.5): for a `use`
+    /// or a `strike` trigger, the block the compiler places at `at` — a lever,
+    /// a bell, a lamp, a stone. A `use` on a block vanilla reports the use of
+    /// (a lever, a button, a bell) fires through vanilla's `default_block_use`
+    /// criterion and summons no hitbox; any other prop, and every `strike`, is
+    /// placed with the `minecraft:interaction` hitbox fitted over it as its hit
+    /// area. A click trigger with no `prop` on open air is refused (`DW0963`):
+    /// the hitbox is invisible and is never the object. A `prop` on an event
+    /// with no cell of its own — an approach, a `strike-npc`, a
+    /// `strike-assembly` — is `DW0964`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prop: Option<Prop>,
     /// The event that fires it.
     pub on: TriggerOn,
     /// Flags that must be set before the trigger can fire (DSL v0.4).
@@ -3300,6 +3436,15 @@ impl EnvTrigger {
     pub fn addresses_presser(&self) -> bool {
         self.audience == TriggerAudience::Presser
     }
+
+    /// Whether vanilla can name the player whose act fired this trigger, which
+    /// is what `audience: presser` needs: a right-click (`use`, through
+    /// `minecraft:player_interacted_with_entity`) and a step (`step`, a player
+    /// in the cell). A left-click is recorded as a UUID no command can become;
+    /// everything else is refused by `DW0427`.
+    pub fn attributes_its_actor(&self) -> bool {
+        matches!(self.on, TriggerOn::Use | TriggerOn::Step)
+    }
 }
 
 /// Who an [`EnvTrigger`]'s effects address (DSL v0.11).
@@ -3309,20 +3454,24 @@ impl EnvTrigger {
 /// player-facing command addresses `@a`. A `presser` trigger is dispatched by a
 /// `minecraft:player_interacted_with_entity` advancement — the one vanilla
 /// primitive that runs a function *as the player who clicked* — so `@s` is the
-/// presser and the bundle addresses them alone.
+/// presser and the bundle addresses them alone. A `presser` trigger `on: step`
+/// is polled as `execute as @a[<the cell>]`, so `@s` is each player who stepped
+/// on, on their own step.
 ///
-/// That primitive exists for **right-clicks only**. Vanilla records a left-click
-/// on an interaction entity in NBT (which names a UUID no command can become) and
-/// offers no criterion for it, so `presser` on a `strike` is refused (`DW0427`)
-/// rather than approximated: per CLAUDE.md's no-hack rule, a capability with no
-/// vanilla primitive under it is excluded, never faked downstream.
+/// The click primitive exists for **right-clicks only**. Vanilla records a
+/// left-click on an interaction entity in NBT (which names a UUID no command can
+/// become) and offers no criterion for it, so `presser` on a `strike` is refused
+/// (`DW0427`) rather than approximated: per CLAUDE.md's no-hack rule, a
+/// capability with no vanilla primitive under it is excluded, never faked
+/// downstream.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TriggerAudience {
     /// The whole party (the default, and what every trigger did before v0.11).
     #[default]
     Party,
-    /// The one player whose click fired it.
+    /// The one player whose press fired it: the right-click of a `use`, the
+    /// step of a `step`.
     Presser,
 }
 
@@ -3347,6 +3496,16 @@ pub enum TriggerOn {
         /// Approach radius (blocks).
         range: u32,
     },
+    /// A player steps onto the anchor's cell, which holds a block a step fires
+    /// — a pressure plate or the tripwire string ([`stepped_blocks`]); the
+    /// piece places it, and a cell that holds anything else is `DW0917`.
+    ///
+    /// Detected as a player whose hitbox is in the cell (the selector a plate
+    /// or tripwire trap fires on), edge-latched so standing on the plate fires
+    /// once. With `audience: presser` each player who steps on is dispatched
+    /// as `@s` on their own step: the act and the actor are the same fact, a
+    /// body in the cell, so no player is inferred after the event.
+    Step,
     /// The player attacks (left-clicks) an **NPC's body** (DSL v0.6).
     ///
     /// The place-based [`TriggerOn::Strike`] cannot express "hit the giant": it
@@ -3378,16 +3537,31 @@ pub enum TriggerOn {
 }
 
 impl TriggerOn {
-    /// The kebab tag (`strike` / `use` / `approach` / `strike-npc` /
+    /// The kebab tag (`strike` / `use` / `approach` / `step` / `strike-npc` /
     /// `strike-assembly`).
     pub fn kind(&self) -> &'static str {
         match self {
             TriggerOn::Strike => "strike",
             TriggerOn::Use => "use",
             TriggerOn::Approach { .. } => "approach",
+            TriggerOn::Step => "step",
             TriggerOn::StrikeNpc { .. } => "strike-npc",
             TriggerOn::StrikeAssembly { .. } => "strike-assembly",
         }
+    }
+
+    /// Whether this event is a click on a `minecraft:interaction` hitbox — a
+    /// `strike`, a `use`, a `strike-npc`, a `strike-assembly`. An `approach`
+    /// and a `step` are a body's position, read on the tick, and have no
+    /// hitbox.
+    pub fn is_click(&self) -> bool {
+        matches!(
+            self,
+            TriggerOn::Strike
+                | TriggerOn::Use
+                | TriggerOn::StrikeNpc { .. }
+                | TriggerOn::StrikeAssembly { .. }
+        )
     }
 
     /// Whether this event needs an `at` anchor — true for everything that
@@ -4288,6 +4462,13 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// The NPC to talk to.
         npc: NpcId,
         /// Prerequisite objectives (intra-quest ordering).
@@ -4328,8 +4509,20 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// The anchor to reach.
         anchor: AnchorId,
+        /// Whether the glowing end-rod marker is summoned at the anchor when this
+        /// objective activates (spec-0093). Absent = the campaign's
+        /// [`Guidance::markers`]. The completion volume is adjudicated either way.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        marker: Option<Visibility>,
         /// Completion radius (blocks).
         radius: u32,
         /// Prerequisite objectives (intra-quest ordering).
@@ -4370,6 +4563,13 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// The wave (stage-5 `waves` ref) whose mobs must be slain.
         wave: WaveId,
         /// Prerequisite objectives.
@@ -4416,6 +4616,13 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// Vanilla item id to collect (validated against the registry).
         item: String,
         /// How many are required.
@@ -4529,8 +4736,22 @@ pub enum Objective {
         /// One-line location/direction hint (v0.3, optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hint: Option<String>,
+        /// Whether this objective is **announced** — the `New objective` line, the
+        /// hint's line, the cue sound and the `Objective complete` line (spec-0093).
+        /// Absent = the campaign's [`Guidance::announcements`]. An objective with
+        /// no `title` is never announced whatever this says; `shown` on one is
+        /// `DW0961`. A hint on an unannounced objective is `DW0862`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        announcement: Option<Visibility>,
         /// The anchor the interaction entity stands at.
         anchor: AnchorId,
+        /// Whether the glowing lantern marker is summoned beside the hitbox when
+        /// this objective activates (spec-0093). Absent = the campaign's
+        /// [`Guidance::markers`]. The `minecraft:interaction` hitbox is summoned
+        /// either way — it is what the player presses. Meaningless beside a
+        /// `prop`, which never had a marker: declaring both is `DW0962`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        marker: Option<Visibility>,
         /// Item the player must be **holding in the main hand** for the
         /// interaction to complete (optional).
         ///
@@ -4588,14 +4809,30 @@ pub enum Objective {
     },
 }
 
-/// A prop block for an `interact` objective (DSL v0.4). The block is the
-/// affordance the player interacts with; its id is validated against the pinned
-/// 1.21.11 block registry (`DW0193`).
+/// A prop block for an `interact` objective or a `use` trigger (DSL v0.4;
+/// spec-0093 §6.5). The block is the affordance the player interacts with; its
+/// id is validated against the pinned 1.21.11 block registry (`DW0193`).
+///
+/// **When the block is one a hand presses** — a lever or a button
+/// ([`crate::blockshape::is_hand_pressed`]) — the block IS the detector: the
+/// compiler summons no `minecraft:interaction` hitbox and the act is vanilla's
+/// own, reported by the `default_block_use` advancement criterion at the
+/// block's cell. Any other block is placed and the invisible hitbox stands in
+/// its cell, because vanilla reports no use of it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Prop {
-    /// Vanilla block id (e.g. `minecraft:lever`).
+    /// Vanilla block id, with an optional blockstate suffix (e.g.
+    /// `minecraft:lever[face=floor,facing=north]`).
     pub block: String,
+}
+
+impl Prop {
+    /// Whether this prop's block is one a hand presses — the block is then the
+    /// act's own detector (spec-0093 §6.5).
+    pub fn is_hand_pressed(&self) -> bool {
+        crate::blockshape::is_hand_pressed(&self.block)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -4724,6 +4961,29 @@ impl Facing {
             Facing::North => "north",
             Facing::West => "west",
             Facing::East => "east",
+        }
+    }
+}
+
+/// Whether a `cutscene` shows the party's bodies (spec-0095).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum CutsceneParty {
+    /// Each player in play is shown by a stand-in where they stood: a
+    /// `minecraft:mannequin` wearing their own profile (skin) and a copy of
+    /// their armour and held items, removed when the cutscene ends.
+    #[default]
+    Present,
+    /// No stand-ins: the bodies leave the scene for the cutscene's length.
+    Absent,
+}
+
+impl CutsceneParty {
+    /// The kebab token (`present` / `absent`).
+    pub fn token(self) -> &'static str {
+        match self {
+            CutsceneParty::Present => "present",
+            CutsceneParty::Absent => "absent",
         }
     }
 }
@@ -4872,11 +5132,70 @@ pub struct StrikeStep {
     /// `hold`; the blow lands one cadence after the strike's last frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ticks_per_frame: Option<u32>,
+    /// A lock (spec-0094): at the start of the wind-up the step picks one
+    /// player in `lock.within` by `lock.pick`, reads the cell their feet stand
+    /// in, turns the assembly to it and strikes it with whichever of `strike`
+    /// and `lock.reaches` the compiler proved comes down there. The blow's area
+    /// is then the cells that clip comes down on, derived by the compiler: a
+    /// `damage-players` in a locked step declares no `in` (`DW0969`). Absent:
+    /// the blow lands where its `on_land` boxes say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock: Option<StrikeLock>,
     /// Effects run, with no acting player, on the tick a client has drawn the
     /// strike clip's last frame whole (one cadence after it is applied). A step
     /// with none is a feint.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_land: Vec<QuestEffect>,
+}
+
+/// A strike step's lock (spec-0094 §3.1): the step strikes where one player
+/// stands, chosen when its wind-up begins.
+///
+/// A display entity cannot bend live to a point: its pose is a keyframe a rig
+/// precomputed. So a lock is two run-time choices among things the compiler
+/// proved — a **turn** of the whole assembly about its mark (any yaw: a `tp` of
+/// the root turns every riding part with it), and a **pose**, the first of
+/// `strike` then `reaches` whose last frame, at that turn, comes down on the
+/// locked cell with its whole blow inside `while_in`. Every standable cell of
+/// `within` owes such a pose, or the build refuses naming the cells (`DW0968`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StrikeLock {
+    /// The region a target is chosen in: an anchor-centred box. The step winds
+    /// up only while some player's body is in it, and every blow it can deal
+    /// lies inside `while_in` (`DW0968`).
+    pub within: StealthZone,
+    /// Which player in `within` the step locks onto.
+    pub pick: LockPick,
+    /// Further strike clips, beyond the step's `strike`, the lock may choose
+    /// among — a limb's blows at other reaches. Tried after `strike`, in the
+    /// order written; the first that comes down on the locked cell is played.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reaches: Vec<String>,
+}
+
+/// Which player a locked strike chooses (spec-0094 §3.1): vanilla's own
+/// selector orders, measured from the assembly's mark.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum LockPick {
+    /// The player nearest the mark (`sort=nearest`).
+    Nearest,
+    /// The player furthest from the mark (`sort=furthest`).
+    Furthest,
+    /// A player chosen at random (`sort=random`).
+    Random,
+}
+
+impl LockPick {
+    /// The `sort=` value of the selector that makes the choice.
+    pub fn sort(self) -> &'static str {
+        match self {
+            LockPick::Nearest => "nearest",
+            LockPick::Furthest => "furthest",
+            LockPick::Random => "random",
+        }
+    }
 }
 
 /// One step of a [`Verb::Sequence`] (DSL v0.6): a group of effects fired at
@@ -4956,6 +5275,59 @@ impl Objective {
             | Objective::Collect { hint, .. }
             | Objective::Interact { hint, .. } => hint,
         }
+    }
+
+    /// The objective's own `announcement`, when it states one (spec-0093).
+    pub fn announcement(&self) -> Option<Visibility> {
+        match self {
+            Objective::TalkTo { announcement, .. }
+            | Objective::ReachAnchor { announcement, .. }
+            | Objective::Kill { announcement, .. }
+            | Objective::Collect { announcement, .. }
+            | Objective::Interact { announcement, .. } => *announcement,
+        }
+    }
+
+    /// The objective's own `marker`, when it is a kind that has one and states
+    /// it (spec-0093). `None` for a `talk-to`, `kill` or `collect`, which carry no
+    /// such field, and for an `interact` or `reach-anchor` that leaves it absent.
+    pub fn marker(&self) -> Option<Visibility> {
+        match self {
+            Objective::ReachAnchor { marker, .. } | Objective::Interact { marker, .. } => *marker,
+            Objective::TalkTo { .. } | Objective::Kill { .. } | Objective::Collect { .. } => None,
+        }
+    }
+
+    /// Whether this objective's kind summons a wayfinding marker at all: a
+    /// `reach-anchor` (its end rod) or an `interact` with no `prop` (its lantern).
+    /// A `collect` places its chest, a `talk-to` has a body, a `kill` has bodies,
+    /// and an `interact` with a `prop` has the prop.
+    pub fn summons_marker(&self) -> bool {
+        match self {
+            Objective::ReachAnchor { .. } => true,
+            Objective::Interact { prop, .. } => prop.is_none(),
+            Objective::TalkTo { .. } | Objective::Kill { .. } | Objective::Collect { .. } => false,
+        }
+    }
+
+    /// **Is this objective marked** (spec-0093): its kind summons a marker and
+    /// its resolved visibility — its own `marker`, else the campaign's
+    /// [`Guidance::markers`] — is `shown`.
+    pub fn marker_shown(&self, guidance: &Guidance) -> bool {
+        self.summons_marker() && self.marker().unwrap_or(guidance.markers).is_shown()
+    }
+
+    /// **Is this objective announced** (spec-0093): it has a `title` and its
+    /// resolved visibility — its own `announcement`, else the campaign's
+    /// [`Guidance::announcements`] — is `shown`. The emitter prints the
+    /// activation and completion lines for exactly these objectives, so every
+    /// rule about what the party is told reads this and nothing else.
+    pub fn announced(&self, guidance: &Guidance) -> bool {
+        self.title().is_some_and(|t| !t.trim().is_empty())
+            && self
+                .announcement()
+                .unwrap_or(guidance.announcements)
+                .is_shown()
     }
 
     /// The flags that must be set before this objective activates (v0.3).
@@ -5515,6 +5887,13 @@ pub enum Verb {
         /// Absent = face along the direction of travel.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         look_at: Option<Mark>,
+        /// Whether the party's bodies stay in the scene while the camera flies
+        /// (spec-0095). Absent = `present`: every player in play is shown by a
+        /// stand-in wearing their own skin and equipment, standing where they
+        /// stood, for the cutscene's whole length. `absent` takes the bodies out
+        /// of the scene: a vision, a memory, a scene somewhere else.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        party: Option<CutsceneParty>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -5725,6 +6104,16 @@ pub enum Verb {
         assembly: AssemblyId,
         /// A clip the assembly's rig declares.
         clip: String,
+    },
+    /// Re-arms an assembly's strike pattern (spec-0094 §3.3). A `play-clip`
+    /// stands the pattern down: the clip it plays completes and holds (or
+    /// loops) whoever stands in `while_in`, and no wind-up begins again until
+    /// this verb runs. The pattern resumes from its first step on the next tick
+    /// some player is in its arming region. Naming an assembly that declares
+    /// no `strikes` is `DW0970`.
+    ArmStrikes {
+        /// The assembly (stage-5 `assemblies` ref) whose pattern is re-armed.
+        assembly: AssemblyId,
     },
     /// A deterministic timeline (DSL v0.6): one schedule chain firing effect groups
     /// at exact tick offsets. Effects are any in the stage-5 set except a nested
@@ -5979,6 +6368,29 @@ pub enum Verb {
         /// Vanilla `<speed>` (default 0).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
+    },
+    /// Strikes a **lightning bolt** at a mark (DSL v0.36, spec-0092) — the
+    /// one-shot point effect beside [`Verb::Firework`] and [`Verb::Particle`].
+    ///
+    /// A real `minecraft:lightning_bolt`: every client in range draws the bolt
+    /// and the sky flash and hears the thunder. It stands at the mark's cell
+    /// centre on the mark's plane, so it strikes the block under the mark. A
+    /// storm of strikes is a [`Verb::Sequence`] of these.
+    ///
+    /// # A bolt hurts, so the compiler asks where it lands
+    ///
+    /// The bolt hits every living body within the reach
+    /// [`crate::lightning::REACH_HORIZONTAL`] / [`crate::lightning::REACH_BELOW`]
+    /// / [`crate::lightning::REACH_ABOVE`] states, and turns a villager into a
+    /// witch; a build refuses a strike in reach of a place the campaign posts a
+    /// body (`DW0958`), and one whose struck block the game would rewrite — a
+    /// lightning rod or weathering copper (`DW0959`). Players are **not**
+    /// posted: a player in reach takes at most
+    /// [`crate::lightning::worst_damage_hp`] HP. It lights no fire: every delve
+    /// seals `fire_spread_radius_around_player` at 0 (spec-0092 §2.3).
+    Lightning {
+        /// The mark the bolt strikes — the cell's centre, at the mark's plane.
+        at: Mark,
     },
 }
 
@@ -6955,7 +7367,9 @@ impl Verb {
             Verb::SpawnAssembly { .. } => "spawn-assembly",
             Verb::DespawnAssembly { .. } => "despawn-assembly",
             Verb::PlayClip { .. } => "play-clip",
+            Verb::ArmStrikes { .. } => "arm-strikes",
             Verb::Particle { .. } => "particle",
+            Verb::Lightning { .. } => "lightning",
         }
     }
 
@@ -7015,12 +7429,15 @@ impl Verb {
             | Verb::Collapse { .. }
             | Verb::Teleport { .. }
             | Verb::Firework { .. }
+            // spec-0092: the thunder is the game's to send; the bolt is a world fact.
+            | Verb::Lightning { .. }
             // spec-0080: a biome repaint is a world fact (`fillbiome`).
             | Verb::SetAtmosphere { .. }
             // spec-0082: an assembly is a world object.
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
-            | Verb::PlayClip { .. } => false,
+            | Verb::PlayClip { .. }
+            | Verb::ArmStrikes { .. } => false,
         }
     }
 }
@@ -7236,8 +7653,12 @@ impl QuestEffect {
             | Verb::SpawnAssembly { .. }
             | Verb::DespawnAssembly { .. }
             | Verb::PlayClip { .. }
+            // spec-0094's `arm-strikes`.
+            | Verb::ArmStrikes { .. }
             // spec-0085's `particle`.
             | Verb::Particle { .. }
+            // spec-0092's `lightning`.
+            | Verb::Lightning { .. }
             | Verb::DropStake { .. } => None,
         }
     }
@@ -7796,6 +8217,8 @@ impl QuestEffect {
             // A firework is launched from a point and seats nothing, so it names
             // a location in the same shape `play-sound` does.
             Verb::Firework { at, .. } => vec![("at/anchor".to_string(), &at.anchor, None)],
+            // A bolt strikes a point and seats nothing, the same shape.
+            Verb::Lightning { at } => vec![("at/anchor".to_string(), &at.anchor, None)],
             // A particle at a mark names a location the same way; at `players`
             // it names none.
             Verb::Particle {
@@ -7938,6 +8361,15 @@ impl QuestEffect {
     pub fn cutscene_look_at(&self) -> Option<&Mark> {
         match &self.verb {
             Verb::Cutscene { look_at, .. } => look_at.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Whether this `cutscene` shows the party's bodies (spec-0095): the stated
+    /// `party`, or `present` when none is stated. `None` for any other effect.
+    pub fn cutscene_party(&self) -> Option<CutsceneParty> {
+        match &self.verb {
+            Verb::Cutscene { party, .. } => Some(party.unwrap_or_default()),
             _ => None,
         }
     }
@@ -9140,9 +9572,19 @@ mod happening_subject_tests {
                 None,
             ),
             (
+                "arm-strikes",
+                serde_json::json!({"type":"arm-strikes","assembly":"assembly/limb"}),
+                None,
+            ),
+            (
                 "particle",
                 serde_json::json!({"type":"particle","particle":"minecraft:soul","at":{"anchor":"anchor/well"}}),
                 Some("anchor/well"),
+            ),
+            (
+                "lightning",
+                serde_json::json!({"type":"lightning","at":{"anchor":"anchor/court"}}),
+                Some("anchor/court"),
             ),
         ];
         // The binding: the table answers for every verb the schema declares, and

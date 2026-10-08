@@ -115,15 +115,21 @@ if [ "$rp" = "true" ] && [ -z "${RESOURCE_PACK_ENFORCE+set}" ]; then
 fi
 # Java heap. itzg's own ceiling is 1G, and a delve's structure templates live on
 # that heap: a campaign of 84 tiles plus 170 horizon templates threw
-# java.lang.OutOfMemoryError at 1G and never finished loading. The default
-# ceiling is versions.toml [server].heap_max (tools/tests/test_server_heap.py
-# holds this literal equal to it); the initial heap stays at itzg's 1G, so a
-# small delve commits only what it uses. An operator who names any of MEMORY,
-# INIT_MEMORY or MAX_MEMORY (`docker run -e MEMORY=2G ...`) is obeyed as given.
+# java.lang.OutOfMemoryError at 1G and never finished loading. The ceiling is
+# what the BUILD states it needs: `heap-max` in server/resources.properties,
+# computed by the compiler for the delve's declared view distance at the player
+# cap (spec-0091) and never below versions.toml [server].heap_max
+# (tools/tests/test_server_heap.py holds the fallback literal below equal to
+# that pin, for a tree with no resources file). The initial heap stays at
+# itzg's 1G, so a small delve commits only what it uses. An operator who names
+# any of MEMORY, INIT_MEMORY or MAX_MEMORY (`docker run -e MEMORY=2G ...`) is
+# obeyed as given.
+resources="${DELVE_RESOURCES_PROPERTIES:-$(dirname "$props")/resources.properties}"
+heap_max=$(sed -n "/^heap-max=/{s///;p;q;}" "$resources" 2>/dev/null || true)
 if [ -z "${MEMORY:-}" ] && [ -z "${INIT_MEMORY:-}" ] && [ -z "${MAX_MEMORY:-}" ]; then
-  export MAX_MEMORY=4G
+  export MAX_MEMORY="${heap_max:-4G}"
 fi
-echo "[init] Java heap: MEMORY=${MEMORY:-} INIT_MEMORY=${INIT_MEMORY:-} MAX_MEMORY=${MAX_MEMORY:-}"
+echo "[init] Java heap: MEMORY=${MEMORY:-} INIT_MEMORY=${INIT_MEMORY:-} MAX_MEMORY=${MAX_MEMORY:-} (the build states heap-max=${heap_max:-<none>})"
 # Offline op seeding. itzg's OPS env resolves EVERY name through Mojang's
 # PlayerDB - even with ONLINE_MODE=FALSE - so an offline-only name (the
 # validation bot) aborts the boot: "Could not resolve user from Playerdb".

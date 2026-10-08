@@ -31,6 +31,15 @@
         "mitigation": "night-vision",
         "name": "The Quay",
         "prefab": "prefab/gallery-quay"
+      },
+      {
+        "id": "area/long-hall",
+        "name": "The Long Hall",
+        "pieces": {
+          "max": 1,
+          "min": 1
+        },
+        "prefab": "prefab/gallery-long-hall"
       }
     ],
     "atmospheres": [
@@ -132,6 +141,6 @@
     "title": "The Gallery",
     "weather": "clear"
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.0",
   "stage": "world"
 }

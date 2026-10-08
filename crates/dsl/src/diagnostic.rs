@@ -805,6 +805,26 @@ pub mod codes {
         pub const ASSEMBLY_RIG: DwCode = DwCode::new("DW0935", ExitTier::Build);
     }
     crate::dw_code! {
+        /// (spec-0094 §5.2) **A locked strike's blow is declared where the lock
+        /// derives it.** A locked step's blow lands on the cells its chosen
+        /// clip comes down on at the locked turn, so a `damage-players` at the
+        /// top of its `on_land` that declares an `in` box, any `damage-players`
+        /// nested inside another effect's list there (it cannot be moved with
+        /// the lock), and a locked step in a pattern that also declares `aim`
+        /// (two rules choosing one turn) are refused, each naming the field.
+        /// Validation-tier (exit 1). Prescription: drop the `in`, lift the
+        /// `damage-players` to the top of `on_land`, or drop `aim` or `lock`.
+        pub const ASSEMBLY_LOCK_SHAPE: DwCode = DwCode::new("DW0969", ExitTier::Build);
+    }
+    crate::dw_code! {
+        /// (spec-0094 §3.3) **An `arm-strikes` names an assembly that never
+        /// strikes.** The assembly declares no `strikes`, so there is no pattern
+        /// to re-arm and the beat does nothing. Validation-tier (exit 1).
+        /// Prescription: give the assembly a `strikes` pattern, or drop the
+        /// effect.
+        pub const ASSEMBLY_ARM_NOTHING: DwCode = DwCode::new("DW0970", ExitTier::Build);
+    }
+    crate::dw_code! {
         /// A `collect` `dropped_by` is not backed by the wave it names:
         /// the wave declares no `{item}` drop of this objective's item, the count
         /// asks for more copies than the wave's mobs can yield, or the objective
@@ -1007,6 +1027,13 @@ pub mod codes {
         /// (v0.4) A `set-block` / `interact.prop` block id is not a known 1.21.11
         /// block id.
         pub const BLOCK_UNKNOWN: DwCode = DwCode::new("DW0193", ExitTier::Build);
+    }
+    crate::dw_code! {
+        /// An `interact` objective's `prop` is a block a step fires — a pressure
+        /// plate or the tripwire string ([`crate::stepped_blocks`]). The
+        /// objective completes on a right-click, so the block invites an act that
+        /// does nothing. A step is a `trigger` with `on: step`.
+        pub const INTERACT_PROP_STEPPED: DwCode = DwCode::new("DW0957", ExitTier::Build);
     }
     crate::dw_code! {
         /// (v0.4) An environment trigger id is malformed (`DW0110`-style) or
@@ -1255,6 +1282,21 @@ pub mod codes {
         pub const RESPAWN_WAIT_INVALID: DwCode = DwCode::new("DW0925", ExitTier::Build);
     }
     crate::dw_code! {
+        /// (spec-0091) **A view aimed past the served view distance.** What a
+        /// body is farther from than the served radius is never sent to its
+        /// client, so a far view is a declaration (`world.view_distance`), and a
+        /// thing aimed past it cannot render. Five shapes of one rule: a declared
+        /// `view_distance` outside `FLOOR..=CEILING` (validation tier, exit 1,
+        /// on `/content/view_distance`); a site-plan sightline or view longer
+        /// than the served radius (validation tier, `crate::viewdistance`); a
+        /// showcase camera whose subject — the first solid cell on its central
+        /// ray, else where that ray enters the loaded scene — is beyond it, and
+        /// a cutscene keyframe farther from its aim than it (both build tier,
+        /// exit 3, against the assembled world). Prescription, in every shape:
+        /// the fewest chunks that serve the distance, or the two ends nearer.
+        pub const VIEW_BEYOND_SERVED: DwCode = DwCode::new("DW0956", ExitTier::Build);
+    }
+    crate::dw_code! {
         /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is
         /// only ever reached from the **scheduler** (`move-npc`/`move-actor`
         /// `on_arrive`, a `sequence` step). `carrier: "one"` means "hand this single
@@ -1434,11 +1476,12 @@ pub mod codes {
     crate::dw_code! {
         /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
         /// A trigger declares `audience: presser` on something other than an
-        /// `on: use`.
+        /// `on: use` or an `on: step`.
         ///
         /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
         /// that runs a function as the player who clicked, and it fires on
-        /// right-clicks alone. A left-click is recorded in the interaction entity's
+        /// right-clicks alone; a step is a player standing in the cell, which a
+        /// positional selector names. A left-click is recorded in the interaction entity's
         /// `attack` NBT — a UUID no command can become — and an `approach` involves no
         /// click at all. Approximating it (polling the record and assuming the nearest
         /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the

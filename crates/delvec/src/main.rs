@@ -258,9 +258,7 @@ enum Command {
     /// Derived from the site plan on every invocation and an input to nothing:
     /// no gate, no build step and no check ever reads what this prints, so a
     /// file made of it is a copy with no consumer and its staleness has no
-    /// vector into the build. It refuses without a passed, fresh walk record,
-    /// because obtaining an allocation is one of the two events that begin
-    /// detail work.
+    /// vector into the build.
     Allocation {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -283,8 +281,7 @@ enum Command {
     ///
     /// Every input but the place is derived: the frame, the datum, the seams,
     /// the owed names, the palette, the piece id, the seed and the row are the
-    /// tool's. Refuses without a passed, fresh walk record (`DW0841`), as
-    /// `allocation` does.
+    /// tool's.
     Detail {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -571,6 +568,53 @@ fn main() -> ExitCode {
             only,
             bracket.as_ref(),
             cli.json,
+        ),
+        Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
+            build_dir,
+            campaign,
+            out,
+            only,
+            bracket,
+            draft,
+            preview: false,
+        }) => delvec::compiler::view::cli::run_cameras(
+            build_dir,
+            campaign,
+            out,
+            cli.json,
+            delvec::compiler::view::camera::EmitOptions {
+                world_paths: Default::default(),
+                only: only.clone(),
+                bracket: *bracket,
+                draft: *draft,
+            },
+            &mut |cams| camera_stands(campaign, &cli.prefabs, cli.json, cams),
+        ),
+        Command::View(delvec::compiler::view::cli::ViewCommand::PlaceCamera {
+            campaign,
+            name,
+            answers,
+            report,
+            slot,
+            fov,
+            candidates,
+            pick,
+            sky,
+            after,
+            delete,
+        }) => delvec::compiler::view::cli::run_place_camera(
+            campaign,
+            name,
+            answers.as_deref(),
+            sky.as_deref(),
+            after.as_deref(),
+            delvec::compiler::view::cli::PlaceFrom {
+                report: report.as_deref().zip(*slot).zip(*fov),
+                candidates: candidates.as_deref().zip(pick.as_deref()),
+                delete: *delete,
+            },
+            cli.json,
+            &mut |cams| camera_stands(campaign, &cli.prefabs, cli.json, cams),
         ),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone()),
@@ -1249,47 +1293,54 @@ fn validate_loaded(
                 examined.push(pbind.line());
                 diags.extend(pd);
             }
-            // spec-0050 (DSL v0.15): the detail plan. `DW0841` (the whole was
-            // walked before any part is detailed), `DW0842`-`DW0845` (the
+            // spec-0050 (DSL v0.15): the detail plan. `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its
             // openings are the plan's seams, its anchors have standing) and
             // `DW0848`'s consumer door. Bound HERE because this is the one
             // funnel every subcommand's validation goes through — `build`
             // included — so a defect cannot reach a datapack by skipping
-            // `delvec validate`. No-op for a campaign with no `detail-plan`,
-            // which is every campaign below 0.15.0, and the binding line states
-            // that zero rather than going quiet.
+            // `delvec validate`. No-op for a campaign with no `detail-plan`, and
+            // the binding line states that zero rather than going quiet.
             {
-                // **The three hashes, printed BEFORE the gate that demands
-                // them** (spec-0050 §2). A walk record names its subject and its
-                // instrument by these numbers, they exist nowhere but this
-                // engine's output — none of the three is a hash of a document —
-                // and `DW0841`'s repair is to copy them out of a build. They
-                // used to be printed by `emit`, which a refusal never reaches,
-                // so the one state that needs them was the one state that could
-                // not get them: a stale record refused the build, the build
-                // printed nothing, and the only way to re-record was to compute
-                // a hash by hand or to revert. Printed here, in the one funnel
-                // every subcommand's validation goes through, so `validate`,
-                // `analyze`, `allocation` and a REFUSED `build` all hand the
-                // creator the numbers. The engine is named by its REVISION,
-                // never by its version string — two engines a hundred commits
-                // apart report the same version.
-                if let Some(h) = delvec::compiler::detail::Hashes::of(&campaign) {
-                    eprintln!("{}", h.line());
-                }
-                let (dd, dbind) = delvec::compiler::detail::check(
-                    &campaign,
-                    &prefabs,
-                    loaded.walk_record.as_deref(),
-                );
+                let (dd, dbind) = delvec::compiler::detail::check(&campaign, &prefabs);
                 if campaign.detail_plan.is_some() || campaign.site_plan.is_some() {
                     examined.push(dbind.line());
                 }
                 diags.extend(dd);
-                diags.extend(delvec::compiler::detail::blockout_drift(
+            }
+            // **The walk** (spec-0049 §5.4): `DW0974`, a walk record that does
+            // not describe this build. The walk is taken on the detailed world,
+            // after detail, so nothing here holds detail work; a record that is
+            // PRESENT must name this build in the grid, the ways and the detail,
+            // or every build refuses it. Absent is the campaign nobody has walked
+            // yet, whose build is the one the walk needs, and it refuses nothing.
+            //
+            // **The hashes, printed BEFORE the check that compares them.** A
+            // walk record names its subject and its instrument by these numbers,
+            // they exist nowhere but this engine's output — none is a hash of a
+            // document — and a record is written by copying them out of the build
+            // that was walked. Printed here, in the one funnel every subcommand's
+            // validation goes through, so `validate`, `analyze` and a REFUSED
+            // `build` all hand the creator the numbers. The engine is named by
+            // its REVISION, never by its version string.
+            {
+                if let Some(h) =
+                    delvec::compiler::walk::Hashes::of(&campaign, &prefabs, prefabs_dir)
+                {
+                    eprintln!("{}", h.line());
+                }
+                let record = loaded.walk_record.as_deref();
+                let (wd, wbind) =
+                    delvec::compiler::walk::check(&campaign, &prefabs, prefabs_dir, record);
+                if campaign.site_plan.is_some() || record.is_some() {
+                    examined.push(wbind.line());
+                }
+                diags.extend(wd);
+                diags.extend(delvec::compiler::walk::drift(
                     &campaign,
-                    loaded.walk_record.as_deref(),
+                    &prefabs,
+                    prefabs_dir,
+                    record,
                 ));
             }
             // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
@@ -1337,6 +1388,9 @@ fn validate_loaded(
             // spec-0081 §5.5: every time value the campaign states, as the clock
             // it resolves to — printed on every run, zeroes included.
             examined.extend(delvec::compiler::clock::binding_lines(&campaign));
+            // spec-0091: the served view distance and the site-plan lines judged
+            // against it (the diagnostics were raised in `validate_campaign_with`).
+            examined.push(delvewright_dsl::viewdistance::checks(&campaign, &mut Vec::new()).line());
             print_diags(&diags, json);
             report_binding_notes(&campaign, &examined);
             Ok(Validated {
@@ -1939,6 +1993,88 @@ fn run_snapshot(
     ExitCode::SUCCESS
 }
 
+/// **Where each camera stands** (spec-0089 §4): the campaign assembled as
+/// `delvec cameras --preview` assembles it, the world given the premises the
+/// build's proofs carry, and every camera's configuration asked of
+/// [`delvec::compiler::view::beat::stands`] — the record's `after` rules
+/// refused under `DW0721` (exit 2). A campaign that does not plan has its
+/// own refusal printed here, and the caller is told only the code.
+fn camera_stands(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+    cameras: &[delvec::compiler::view::camera::Camera],
+) -> Result<
+    delvec::compiler::view::beat::Stood,
+    (Option<delvec::compiler::view::diag::Diagnostic>, u8),
+> {
+    let (campaign, prefabs) =
+        load_for_view(campaign_dir, prefabs_dir, json).map_err(|c| (None, c))?;
+    let plan = match Plan::build(&campaign, &prefabs) {
+        Ok(p) => p,
+        Err(e) => {
+            print_diags(&e.warnings, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
+            return Err((None, 3));
+        }
+    };
+    let structures = read_structures(&plan, &prefabs, prefabs_dir, json).map_err(|c| (None, c))?;
+    let assembled = edited_assembled(&plan, &prefabs, &structures, json).map_err(|c| (None, c))?;
+    let world = camera_world(&plan, &assembled);
+    // The path the build's proofs read: the links the route proof takes
+    // spliced in (spec-0083), so a step is the step `critical-path.json` names.
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            print_build_error(f.code, &f.message, json);
+            return Err((None, 3));
+        }
+    };
+    let plan = relinked.as_ref().unwrap_or(&plan);
+    let base = camera_base(plan, &assembled);
+    let stands =
+        delvec::compiler::view::beat::stands(plan, &world, &base, cameras).map_err(|why| {
+            (
+                Some(delvec::compiler::view::diag::Diagnostic::error(
+                    delvec::compiler::view::camera::DW_RECORD_AT_BUILD.id(),
+                    why,
+                )),
+                2,
+            )
+        })?;
+    let biomes = delvec::compiler::horizon::biome_map(plan);
+    Ok(delvec::compiler::view::beat::Stood {
+        stands,
+        biome: Box::new(move |c| biomes.at(c).0.to_string()),
+        spawn: plan.campaign_start().map_or([0, 64, 0], |(_, p)| p),
+    })
+}
+
+/// The world a camera's configuration is asked of: the assembled occupancy
+/// under the premises the build's proofs carry — the measured world-load
+/// seals among them, which is what makes a gate the prefab built shut a
+/// step-0 write (`nav::Premises::of_plan`).
+fn camera_world(
+    plan: &Plan,
+    assembled: &delvec::compiler::assembled::Assembled,
+) -> delvec::compiler::nav::World {
+    delvec::compiler::nav::World::from_occupancy(
+        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
+        delvec::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
+    )
+}
+
+/// The bytes a camera's world starts from
+/// ([`delvec::compiler::view::beat::picture_base`]): the relight pass is run
+/// as the build runs it, so a fixture the datapack sets is in the picture.
+fn camera_base(
+    plan: &Plan,
+    assembled: &delvec::compiler::assembled::Assembled,
+) -> delvec::compiler::blockstate::BlockMap {
+    let relight = delvec::compiler::light::relight_over(plan, assembled);
+    delvec::compiler::view::beat::picture_base(plan, assembled, &relight.placements)
+}
+
 /// `delvec cameras --preview`: every stated camera of `design/cameras.json` (and
 /// its bracket candidates) drawn by the snapshot rasteriser over the assembled
 /// world — the same world, the same Minecraft camera convention, flat-lit and in
@@ -2013,14 +2149,47 @@ fn run_cameras_preview(
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
-    let grid = snapshot::VoxelGrid::build(&assembled.blocks);
-    snapshot::report_unpainted(&grid);
+    // Each camera is drawn in the configuration it stands in (spec-0089 §4):
+    // one grid per distinct world, the record's `after` rules refused here as
+    // `delvec cameras` refuses them.
+    let world = camera_world(&plan, &assembled);
+    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
+        Ok(r) => r,
+        Err(f) => {
+            print_build_error(f.code, &f.message, json);
+            return ExitCode::from(3);
+        }
+    };
+    let plan = relinked.as_ref().unwrap_or(&plan);
+    let base = camera_base(plan, &assembled);
+    let stood = match delvec::compiler::view::beat::stands(plan, &world, &base, &cameras) {
+        Ok(s) => s,
+        Err(why) => {
+            return delvec::compiler::view::cli::fail(
+                Diagnostic::error(camera::DW_RECORD_AT_BUILD.id(), why),
+                json,
+                2,
+            );
+        }
+    };
+    let grids: BTreeMap<String, snapshot::VoxelGrid> = stood
+        .worlds
+        .iter()
+        .map(|(k, b)| (k.clone(), snapshot::VoxelGrid::build(b)))
+        .collect();
+    for g in grids.values() {
+        snapshot::report_unpainted(g);
+    }
+    for s in &stood.stands {
+        eprintln!("{}", s.line(0));
+    }
     if let Err(e) = std::fs::create_dir_all(out) {
         eprintln!("internal error: mkdir {}: {e}", out.display());
         return ExitCode::from(EXIT_INTERNAL);
     }
     let mut obstructed = 0usize;
-    for cam in &cameras {
+    for (cam, st) in cameras.iter().zip(&stood.stands) {
+        let grid = &grids[&st.key];
         if let Some(cell) = camera::lens_obstruction(cam.pos, |c| grid.solid(c)) {
             obstructed += 1;
             eprintln!(
@@ -2034,7 +2203,7 @@ fn run_cameras_preview(
             );
         }
         let frame = snapshot::render_frame(
-            &grid,
+            grid,
             &snapshot::Camera {
                 pos: cam.pos,
                 yaw: cam.yaw,
@@ -2384,7 +2553,7 @@ fn camera_from_shot(
     // so the camera this returns is the camera the plan states: a shot pulled in
     // out of the rock is pulled in by the same walk here, and a `DW0724` refusal
     // here is one `delvec build` would raise too.
-    let doc = render_plan::render_plan(plan, prefabs, &pov, world)
+    let doc = render_plan::render_plan(plan, prefabs, &pov, world, None)
         .map_err(|e| format!("{}: {}", e.code, e.message))?
         .0;
     let shots = doc["shots"].as_array().cloned().unwrap_or_default();
@@ -3446,17 +3615,6 @@ pub(crate) fn print_one_diag(d: &Diagnostic, json: bool) {
 
 /// `delvec allocation` — the handing (spec-0050 §4).
 ///
-/// Refuses without a passed, fresh walk record, and the refusal is the same
-/// `DW0841` validation raises: the two events that begin detail work are
-/// obtaining an allocation and compiling a binding, and both are bound. There
-/// is no third, because no other verb reads a `detail-plan`.
-/// `delvec allocation` — the handing (spec-0050 §4).
-///
-/// Refuses without a passed, fresh walk record, and the refusal is the same
-/// `DW0841` validation raises: the two events that begin detail work are
-/// obtaining an allocation and compiling a binding, and both are bound. There is
-/// no third, because no other verb reads a `detail-plan`.
-///
 /// **Stdout carries the allocation and nothing else** on the success path, so an
 /// authoring loop can redirect it. What it prints is an input to nothing — see
 /// the note inside.
@@ -3491,25 +3649,6 @@ fn run_allocation(campaign_dir: &Path, place: Option<&str>, all: bool, json: boo
              place, so there is nothing to hand out until the whole exists.",
             campaign_dir.display()
         );
-        return ExitCode::from(1);
-    }
-    // The three hashes, on stderr, before the gate — for the reason
-    // `validate_loaded` prints them there: this verb does not go through that
-    // funnel (see the note above on why it parses rather than validates), so
-    // without this the second of the two doors refuses and hands over nothing
-    // the author can re-record from. stdout stays the machine-readable document
-    // and gains nothing.
-    if let Some(h) = delvec::compiler::detail::Hashes::of(&campaign) {
-        eprintln!("{}", h.line());
-    }
-    // **The gate, at the second of the two events that begin detail work.** It is
-    // asked of the campaign as it stands, so a campaign with no `detail-plan`
-    // yet — which is exactly the campaign asking for its first allocation — is
-    // asked the same question against the plan whose hash it names.
-    if let Some(d) =
-        delvec::compiler::detail::allocation_walk_gate(&campaign, loaded.walk_record.as_deref())
-    {
-        print_one_diag(&d, json);
         return ExitCode::from(1);
     }
     let out = if all {
@@ -3584,7 +3723,7 @@ fn run_schema(stage: &str) -> ExitCode {
         "6" => vec![Stage::Dialogue],
         "7" => vec![Stage::WorldEdits],
         // `walk-record.json` is not a stage document and has no `Stage` — it is
-        // a campaign artifact recording an event (see `detail::walk_record_schema`).
+        // a campaign artifact recording an event (see `walk::walk_record_schema`).
         // It is reachable here anyway because this is the command an author is
         // told to run to see the shape of a document they must write, and the
         // walk record is one of those. The schema says what it is, so the tool
@@ -3592,7 +3731,7 @@ fn run_schema(stage: &str) -> ExitCode {
         "walk-record" => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&delvec::compiler::detail::walk_record_schema())
+                serde_json::to_string_pretty(&delvec::compiler::walk::walk_record_schema())
                     .unwrap()
             );
             return ExitCode::SUCCESS;

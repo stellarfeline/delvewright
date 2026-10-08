@@ -324,7 +324,7 @@ class Engine:
         dw = _load_dw_checker()
         self.dw_in_source = dw.source_codes()
         self.dw_tested = dw.tested_codes()
-        self.dw_documented = set(dw.catalog_row_counts())
+        self.dw_documented = dw.documented_codes()
         self.dw_allowlisted = set(dw.ALLOWLIST)
         self._rust_text: str | None = None
         self._harness_text: str | None = None

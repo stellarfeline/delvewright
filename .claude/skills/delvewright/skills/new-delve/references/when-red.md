@@ -80,7 +80,7 @@ the file, the section, and where the template is. If the campaign already has an
 approved `design/` directory you are on path A and do not need this at all.
 
 **The staging gate refuses with a long UNBOUND list.** Not a defect count — see
-step 9. Read it item by item into the round summary; override deliberately if
+step 13. Read it item by item into the round summary; override deliberately if
 the session needs a red build.
 
 **`delvec metrics` "prints 341 lines of JSON, not a table".** It prints the

@@ -145,6 +145,11 @@ pub struct CameraSheet {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Camera {
+    /// The critical-path step the picture is taken after (spec-0089): the
+    /// world as the region model holds it once that step is played. Absent:
+    /// the world at load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<CameraAfter>,
     /// The `design.json` row whose approved image this camera answers.
     pub answers: String,
     /// The camera's exposure: `1.0` renders the light as the path tracer
@@ -173,6 +178,63 @@ pub struct Camera {
     pub width: u32,
     /// Minecraft yaw, degrees: 0 south, 90 west, 180 north, 270 east.
     pub yaw: f64,
+}
+
+/// The step a camera is taken after (spec-0089 §3): a step of an exported
+/// path, named in the vocabulary `critical-path.json` speaks — an objective id
+/// (`obj/<id>`) or a trigger id (`trigger/<id>`), never an index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CameraAfter {
+    /// The branch id (`validation/branch-plan.json`) whose path the step is
+    /// on. Absent: the critical path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The step's id: `obj/<id>` or `trigger/<id>`.
+    pub step: String,
+}
+
+impl CameraAfter {
+    /// Parse `<step>[@<path>]` — `delvec place-camera --after`'s spelling.
+    pub fn parse(spec: &str) -> Result<CameraAfter, String> {
+        let shape = "an `--after` is `<step>[@<path>]`: an objective id (`obj/<id>`) or a trigger \
+                     id (`trigger/<id>`), and optionally `@` and the branch id whose path it is on \
+                     (`obj/clear-the-muster`, `obj/open-the-vault@branch/skipped`)";
+        let (step, path) = match spec.split_once('@') {
+            Some((s, p)) => (s, Some(p)),
+            None => (spec, None),
+        };
+        let well_formed = |s: &str, prefix: &str| {
+            s.strip_prefix(prefix).is_some_and(|rest| {
+                !rest.is_empty()
+                    && rest.chars().all(|c| {
+                        c.is_ascii_lowercase()
+                            || c.is_ascii_digit()
+                            || matches!(c, '-' | '_' | '/' | '.')
+                    })
+            })
+        };
+        if !(well_formed(step, "obj/") || well_formed(step, "trigger/")) {
+            return Err(format!("`{spec}` is not a step: {shape}"));
+        }
+        if let Some(p) = path
+            && (p.is_empty() || p.contains('@') || p.chars().any(char::is_whitespace))
+        {
+            return Err(format!("`{spec}` names no path after `@`: {shape}"));
+        }
+        Ok(CameraAfter {
+            path: path.map(str::to_string),
+            step: step.to_string(),
+        })
+    }
+
+    /// `obj/x` or `obj/x@branch/y`: the pair as every line prints it.
+    pub fn label(&self) -> String {
+        match &self.path {
+            Some(p) => format!("{}@{p}", self.step),
+            None => self.step.clone(),
+        }
+    }
 }
 
 /// Who placed a camera. A hand camera is final: no estimate is written over it
@@ -952,8 +1014,9 @@ pub struct Emission {
 /// Options for [`emit`].
 #[derive(Debug, Clone, Default)]
 pub struct EmitOptions {
-    /// Absolute path of the world save the scenes load.
-    pub world_path: String,
+    /// Per camera name, the absolute path of the world its scene loads — the
+    /// world written for the configuration it stands in (spec-0089 §5.3).
+    pub world_paths: std::collections::BTreeMap<String, String>,
     /// Only these cameras, by name; empty = every camera.
     pub only: Vec<String>,
     pub bracket: Option<Bracket>,
@@ -1078,11 +1141,21 @@ pub fn emit(
     for c in cameras {
         let sky = resolve_sky(&c, rows).map_err(|why| Diagnostic::error(DW_INPUT, why))?;
         let stem = camera_stem(&plan.campaign_id, &c.name, opts.draft);
+        let world_path = opts.world_paths.get(&c.name).ok_or_else(|| {
+            Diagnostic::error(
+                DW_INPUT,
+                format!(
+                    "camera `{}` stands in no written world: every camera a run frames is asked \
+                     where it stands before a scene is emitted",
+                    c.name
+                ),
+            )
+        })?;
         let scene = world_scene(
             &plan,
             &stem,
             &Frame::of(&c, opts.draft),
-            &opts.world_path,
+            world_path,
             sky.sky.scene(),
         )?;
         out.scenes.push((format!("{stem}.json"), scene.to_bytes()?));
@@ -1138,6 +1211,7 @@ pub fn place(
     name: &str,
     answers: Option<&str>,
     sky: Option<CameraSky>,
+    after: Option<CameraAfter>,
     placement: Placement,
 ) -> Result<(CameraSheet, Placed), Diagnostic> {
     let refuse = |why: String| Diagnostic::error(DW_INPUT, format!("{CAMERAS_FILE}: {why}"));
@@ -1219,6 +1293,7 @@ pub fn place(
                 )));
             };
             Camera {
+                after: None,
                 answers: answers.to_string(),
                 exposure: 1.0,
                 fov: *fov,
@@ -1238,6 +1313,12 @@ pub fn place(
     // (a person placed the pose, not the sky) and an estimate carries its own.
     if sky.is_some() {
         row.sky = sky;
+    }
+    // `--after` states the step the picture is taken after (spec-0089 §3.4);
+    // without it a hand row keeps the step it had and an estimate carries its
+    // own — the overlay cannot read the quest state, so a stamp never carries one.
+    if after.is_some() {
+        row.after = after;
     }
     row.check()
         .map_err(|why| refuse(format!("camera `{name}`: {why}")))?;
@@ -1297,6 +1378,8 @@ pub enum ShowcaseRefusal {
     /// A camera's eye cell holds a block, or its frame holds none of the loaded
     /// world (`DW0724`).
     Camera(String),
+    /// A camera's subject lies past the served view distance (`DW0956`).
+    Beyond(String),
 }
 
 /// **Every showcase camera photographs the scene** — the build's proof over
@@ -1315,10 +1398,18 @@ pub enum ShowcaseRefusal {
 ///    camera looking away from everything the scene loads renders an empty sky
 ///    at exit 0.
 ///
+/// 3. **The subject is served** (spec-0091, `DW0956`): the thing the camera is
+///    aimed at — the first occupied cell on its central ray, else the point
+///    where that ray enters the loaded scene — lies within `served_radius`
+///    blocks of the lens, the radius a player standing at the lens is sent.
+///    A subject past it is never sent to the client, so the picture promises a
+///    view no player gets.
+///
 /// A record for another campaign is refused as `delvec cameras` refuses it.
 pub(crate) fn prove_showcase(
     record: &[u8],
     plan: &RenderPlan,
+    served_radius: f64,
     occupied: impl Fn([i32; 3]) -> bool,
 ) -> Result<usize, ShowcaseRefusal> {
     let sheet = parse_sheet(record).map_err(ShowcaseRefusal::Record)?;
@@ -1366,25 +1457,81 @@ pub(crate) fn prove_showcase(
         }
         let (y, p) = (cam.yaw.to_radians(), cam.pitch.to_radians());
         let dir = [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()];
-        if !ray_meets_box(cam.pos, dir, lo, hi) {
+        let Some((enter, exit)) = ray_meets_box(cam.pos, dir, lo, hi) else {
             return Err(ShowcaseRefusal::Camera(format!(
                 "{CAMERAS_FILE}: {who}: looking along yaw {} pitch {} from {:?}, the view meets \
                  nothing the scene loads — the framed extent is {lmin:?}..{lmax:?} — so the frame \
                  would be empty sky. {remedy}",
                 cam.yaw, cam.pitch, cam.pos
             )));
+        };
+        // The subject: the first occupied cell on the central ray inside the
+        // loaded scene, else where the ray enters it. `dir` is a unit vector, so
+        // a ray parameter is a distance in blocks.
+        let far = [
+            cam.pos[0] + dir[0] * exit,
+            cam.pos[1] + dir[1] * exit,
+            cam.pos[2] + dir[2] * exit,
+        ];
+        let mut first: Option<[i32; 3]> = None;
+        crate::compiler::nav::walk_cells(cam.pos, far, |c| {
+            if occupied(c) {
+                first = Some(c);
+                return true;
+            }
+            false
+        });
+        let (subject, subject_distance) = match first {
+            Some(c) => {
+                let centre = [
+                    f64::from(c[0]) + 0.5,
+                    f64::from(c[1]) + 0.5,
+                    f64::from(c[2]) + 0.5,
+                ];
+                let d = [
+                    centre[0] - cam.pos[0],
+                    centre[1] - cam.pos[1],
+                    centre[2] - cam.pos[2],
+                ];
+                (
+                    format!("the first solid cell on its line of sight, {c:?}"),
+                    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(),
+                )
+            }
+            None => (
+                "where its line of sight enters the loaded scene".to_string(),
+                enter,
+            ),
+        };
+        if subject_distance > served_radius {
+            let chunks = delvewright_dsl::viewdistance::chunks_for(subject_distance);
+            return Err(ShowcaseRefusal::Beyond(format!(
+                "{CAMERAS_FILE}: {who}: its subject — {subject} — is {subject_distance:.1} blocks \
+                 from the lens, and the served view distance reaches {served_radius:.0} blocks \
+                 ({} chunks): a player standing at the lens is never sent what this picture \
+                 shows. Declare `world.view_distance: {chunks}` (the fewest chunks that serve \
+                 it), or stand nearer.",
+                delvewright_dsl::viewdistance::chunks_for(served_radius)
+            )));
         }
     }
     Ok(sheet.cameras.len())
 }
 
-/// Does the ray from `origin` along `dir` (t ≥ 0) meet the box `lo..hi`?
-fn ray_meets_box(origin: [f64; 3], dir: [f64; 3], lo: [f64; 3], hi: [f64; 3]) -> bool {
+/// Where the ray from `origin` along unit `dir` (t ≥ 0) enters and leaves the
+/// box `lo..hi`, as ray parameters; `None` when it misses. An origin inside the
+/// box enters at 0.
+fn ray_meets_box(
+    origin: [f64; 3],
+    dir: [f64; 3],
+    lo: [f64; 3],
+    hi: [f64; 3],
+) -> Option<(f64, f64)> {
     let (mut t0, mut t1) = (0.0f64, f64::INFINITY);
     for a in 0..3 {
         if dir[a].abs() < 1e-12 {
             if origin[a] < lo[a] || origin[a] > hi[a] {
-                return false;
+                return None;
             }
             continue;
         }
@@ -1395,10 +1542,10 @@ fn ray_meets_box(origin: [f64; 3], dir: [f64; 3], lo: [f64; 3], hi: [f64; 3]) ->
         t0 = t0.max(near);
         t1 = t1.min(far);
         if t0 > t1 {
-            return false;
+            return None;
         }
     }
-    true
+    Some((t0, t1))
 }
 
 /// The candidates file: the record format, holding every emitted camera.
@@ -1422,6 +1569,7 @@ mod tests {
 
     fn cam(name: &str) -> Camera {
         Camera {
+            after: None,
             answers: "concept/quay".to_string(),
             exposure: 1.0,
             fov: 50.0,
@@ -1453,8 +1601,18 @@ mod tests {
             .collect()
     }
 
+    /// Emit with every framed camera standing in `/abs/world` unless the
+    /// options say otherwise: these tests are about the scene, not the world.
     fn emit3(plan: &[u8], sheet: &CameraSheet, opts: &EmitOptions) -> Result<Emission, Diagnostic> {
-        emit(plan, sheet, &rows(), opts)
+        let mut o = opts.clone();
+        if o.world_paths.is_empty() {
+            for c in
+                selected(&sheet.campaign_id, sheet, &o.only, o.bracket.as_ref()).unwrap_or_default()
+            {
+                o.world_paths.insert(c.name, "/abs/world".into());
+            }
+        }
+        emit(plan, sheet, &rows(), &o)
     }
 
     fn place5(
@@ -1464,7 +1622,7 @@ mod tests {
         answers: Option<&str>,
         placement: Placement,
     ) -> Result<(CameraSheet, Placed), Diagnostic> {
-        place(sheet, campaign_id, name, answers, None, placement)
+        place(sheet, campaign_id, name, answers, None, None, placement)
     }
 
     fn sheet(id: &str, cams: Vec<Camera>) -> CameraSheet {
@@ -1562,15 +1720,7 @@ mod tests {
     #[test]
     fn a_stated_camera_is_emitted_verbatim() {
         let s = sheet("isle", vec![cam("hero")]);
-        let e = emit3(
-            OCEAN,
-            &s,
-            &EmitOptions {
-                world_path: "/abs/world".into(),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let e = emit3(OCEAN, &s, &EmitOptions::default()).unwrap();
         assert_eq!(e.scenes.len(), 1);
         let (file, bytes) = &e.scenes[0];
         assert_eq!(file, "isle_camera_hero.json");
@@ -1948,7 +2098,10 @@ mod tests {
         let mut down = cam("down");
         down.pos = mid;
         down.pitch = 60.0;
-        assert_eq!(prove_showcase(&record(down.clone()), &plan, nothing), Ok(1));
+        assert_eq!(
+            prove_showcase(&record(down.clone()), &plan, 1e9, nothing),
+            Ok(1)
+        );
         // The same camera with a block at its eye.
         let cell = [
             mid[0].floor() as i32,
@@ -1959,7 +2112,7 @@ mod tests {
             let mut c = down.clone();
             c.source = source;
             let Err(ShowcaseRefusal::Camera(why)) =
-                prove_showcase(&record(c), &plan, |x| x == cell)
+                prove_showcase(&record(c), &plan, 1e9, |x| x == cell)
             else {
                 panic!("{source:?}: an occupied eye is refused");
             };
@@ -1969,7 +2122,8 @@ mod tests {
         // Looking straight up from above the layout: empty sky.
         let mut up = down.clone();
         up.pitch = -60.0;
-        let Err(ShowcaseRefusal::Camera(why)) = prove_showcase(&record(up), &plan, nothing) else {
+        let Err(ShowcaseRefusal::Camera(why)) = prove_showcase(&record(up), &plan, 1e9, nothing)
+        else {
             panic!("a frame of empty sky is refused");
         };
         assert!(why.contains("framed extent"), "{why}");
@@ -1977,19 +2131,72 @@ mod tests {
         let mut high = down;
         high.pos[1] = 400.0;
         assert!(matches!(
-            prove_showcase(&record(high), &plan, nothing),
+            prove_showcase(&record(high), &plan, 1e9, nothing),
             Err(ShowcaseRefusal::Camera(_))
         ));
         // A record for another world, and a record that is not one.
         let other = serde_json::to_vec(&sheet("mini", vec![cam("a")])).unwrap();
         assert!(matches!(
-            prove_showcase(&other, &plan, nothing),
+            prove_showcase(&other, &plan, 1e9, nothing),
             Err(ShowcaseRefusal::Record(_))
         ));
         assert!(matches!(
-            prove_showcase(b"{}", &plan, nothing),
+            prove_showcase(b"{}", &plan, 1e9, nothing),
             Err(ShowcaseRefusal::Record(_))
         ));
+    }
+
+    /// The third shape (spec-0091, `DW0956`): the subject must be within the
+    /// served radius of the lens — where the central ray enters the loaded
+    /// scene when nothing solid stands on it, else the first solid cell.
+    #[test]
+    fn a_showcase_camera_whose_subject_is_past_the_served_radius_is_refused() {
+        let plan = scene::parse_plan(OCEAN).unwrap();
+        let (lmin, lmax) = scene::loaded_extent(&plan.layout_aabb, plan.horizon);
+        let record = |c: Camera| serde_json::to_vec(&sheet("isle", vec![c])).unwrap();
+        let nothing = |_: [i32; 3]| false;
+        // 200 blocks south of the layout's middle, level, looking north at it.
+        let mut far = cam("far");
+        far.pos = [
+            f64::from(lmin[0] + lmax[0]) / 2.0,
+            f64::from(lmax[1]) - 1.0,
+            f64::from(lmax[2]) + 200.0,
+        ];
+        far.yaw = 180.0;
+        far.pitch = 0.0;
+        let Err(ShowcaseRefusal::Beyond(why)) =
+            prove_showcase(&record(far.clone()), &plan, 160.0, nothing)
+        else {
+            panic!("a subject 200 blocks off at a 160-block radius is refused");
+        };
+        assert!(
+            why.contains("`far`") && why.contains("enters the loaded scene"),
+            "{why}"
+        );
+        assert!(why.contains("world.view_distance: 13"), "{why}");
+        // The remedy the message names reaches a different verdict.
+        assert_eq!(
+            prove_showcase(&record(far.clone()), &plan, 13.0 * 16.0, nothing),
+            Ok(1)
+        );
+        // A solid cell 50 blocks along the ray is the subject instead, and is served.
+        let solid = [
+            far.pos[0].floor() as i32,
+            far.pos[1].floor() as i32,
+            (far.pos[2] - 50.0).floor() as i32,
+        ];
+        assert_eq!(
+            prove_showcase(&record(far.clone()), &plan, 160.0, |c| c == solid),
+            Ok(1)
+        );
+        // The same solid cell 170 blocks along the ray is named as the subject.
+        let solid = [solid[0], solid[1], (far.pos[2] - 170.0).floor() as i32];
+        let Err(ShowcaseRefusal::Beyond(why)) =
+            prove_showcase(&record(far), &plan, 160.0, |c| c == solid)
+        else {
+            panic!("a solid subject past the radius is refused");
+        };
+        assert!(why.contains("first solid cell"), "{why}");
     }
 
     #[test]

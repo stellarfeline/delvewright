@@ -263,6 +263,116 @@
             ]
           }
         }
+      },
+      {
+        "at": {
+          "anchor": "anchor/reach",
+          "offset": [
+            -5,
+            0,
+            0
+          ]
+        },
+        "facing": "east",
+        "id": "assembly/arm",
+        "initial": "idle",
+        "rig": "rig/gallery-arm",
+        "strikes": {
+          "pattern": [
+            {
+              "hold": 10,
+              "lock": {
+                "pick": "nearest",
+                "reaches": [
+                  "far"
+                ],
+                "within": {
+                  "anchor": "anchor/reach",
+                  "extent": [
+                    2,
+                    0,
+                    2
+                  ]
+                }
+              },
+              "on_land": [
+                {
+                  "amount": 1,
+                  "type": "damage-players"
+                },
+                {
+                  "at": {
+                    "anchor": "anchor/reach",
+                    "at": "anchor"
+                  },
+                  "sound": "minecraft:block.anvil.land",
+                  "type": "play-sound"
+                }
+              ],
+              "strike": "near",
+              "windup": "windup"
+            },
+            {
+              "hold": 10,
+              "lock": {
+                "pick": "furthest",
+                "reaches": [
+                  "far"
+                ],
+                "within": {
+                  "anchor": "anchor/reach",
+                  "extent": [
+                    2,
+                    0,
+                    2
+                  ]
+                }
+              },
+              "on_land": [
+                {
+                  "amount": 1,
+                  "type": "damage-players"
+                }
+              ],
+              "strike": "near",
+              "windup": "windup"
+            },
+            {
+              "hold": 6,
+              "lock": {
+                "pick": "random",
+                "reaches": [
+                  "far"
+                ],
+                "within": {
+                  "anchor": "anchor/reach",
+                  "extent": [
+                    2,
+                    0,
+                    2
+                  ]
+                }
+              },
+              "on_land": [
+                {
+                  "amount": 1,
+                  "type": "damage-players"
+                }
+              ],
+              "strike": "near",
+              "ticks_per_frame": 3,
+              "windup": "windup"
+            }
+          ],
+          "while_in": {
+            "anchor": "anchor/reach",
+            "extent": [
+              4,
+              1,
+              3
+            ]
+          }
+        }
       }
     ],
     "lethal_volumes": [
@@ -416,6 +526,28 @@
         "to": {
           "anchor": "anchor/long-gallery-landing"
         }
+      },
+      {
+        "counts": "state/long-hall-crossings",
+        "id": "loop/the-hall-that-runs-on",
+        "region": {
+          "anchor": "anchor/long-hall-slab",
+          "extent": [
+            1,
+            1,
+            0
+          ]
+        },
+        "requires_state": [
+          {
+            "op": "at-most",
+            "state": "state/long-hall-crossings",
+            "value": 1
+          }
+        ],
+        "to": {
+          "anchor": "anchor/long-hall-landing"
+        }
       }
     ],
     "loot": [
@@ -550,6 +682,7 @@
         "objectives": [
           {
             "after": [],
+            "announcement": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -578,6 +711,7 @@
               "obj/hear-the-curator"
             ],
             "anchor": "anchor/pedestal",
+            "announcement": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -714,6 +848,10 @@
                     }
                   ]
                 }
+              },
+              {
+                "assembly": "assembly/arm",
+                "type": "arm-strikes"
               }
             ],
             "prompt": "Rest at the hearth",
@@ -851,6 +989,10 @@
             },
             {
               "assembly": "assembly/sentinel",
+              "type": "spawn-assembly"
+            },
+            {
+              "assembly": "assembly/arm",
               "type": "spawn-assembly"
             },
             {
@@ -1334,6 +1476,11 @@
                   "flag/hall-open"
                 ]
               }
+            },
+            {
+              "assembly": "assembly/arm",
+              "clip": "rest",
+              "type": "play-clip"
             }
           ]
         },
@@ -1407,7 +1554,9 @@
         "id": "quest/far-hall",
         "objectives": [
           {
-            "after": [],
+            "after": [
+              "obj/back-in-the-hall"
+            ],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1425,7 +1574,10 @@
             "type": "talk-to"
           },
           {
-            "after": [],
+            "after": [
+              "obj/back-in-the-hall"
+            ],
+            "announcement": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1454,6 +1606,7 @@
               "obj/clear-the-muster"
             ],
             "anchor": "anchor/muster",
+            "announcement": "shown",
             "count": 1,
             "dropped_by": "wave/muster",
             "forbids_flags": [
@@ -1509,12 +1662,14 @@
               "obj/cross-the-strait"
             ],
             "anchor": "anchor/exit",
+            "announcement": "hidden",
             "happening": {
               "subject": "anchor/exit",
               "text": "They come to the end of the hall.",
               "verb": "arrives"
             },
             "id": "obj/reach-the-end",
+            "marker": "hidden",
             "radius": 2,
             "requires_flags": [
               "flag/muster-cleared"
@@ -1535,12 +1690,14 @@
               "obj/climb-the-loft"
             ],
             "anchor": "anchor/ferry-deck",
+            "announcement": "shown",
             "happening": {
               "subject": "anchor/ferry-deck",
               "text": "They step down onto the ferry's deck.",
               "verb": "arrives"
             },
             "id": "obj/board-the-ferry",
+            "marker": "shown",
             "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
@@ -1586,6 +1743,16 @@
             ],
             "stealth": false,
             "title": "Walk the long gallery",
+            "type": "reach-anchor"
+          },
+          {
+            "anchor": "anchor/arrival",
+            "happening": {
+              "text": "the party is set back down in the gallery hall",
+              "verb": "arrives"
+            },
+            "id": "obj/back-in-the-hall",
+            "radius": 2,
             "type": "reach-anchor"
           }
         ],
@@ -1652,6 +1819,16 @@
           }
         ],
         "on_objective_complete": {
+          "obj/back-in-the-hall": [
+            {
+              "anchor": "anchor/hearth",
+              "happening": {
+                "text": "the hearth is where the party comes back to again",
+                "verb": "arrives"
+              },
+              "type": "set-checkpoint"
+            }
+          ],
           "obj/board-the-ferry": [
             {
               "flag": "flag/boarded",
@@ -2095,6 +2272,7 @@
               }
             },
             {
+              "party": "absent",
               "shots": [
                 {
                   "bearing": 45.0,
@@ -2645,6 +2823,10 @@
             {
               "assembly": "assembly/sentinel",
               "type": "despawn-assembly"
+            },
+            {
+              "assembly": "assembly/arm",
+              "type": "despawn-assembly"
             }
           ],
           "obj/take-the-bone": [
@@ -2718,7 +2900,7 @@
           ]
         },
         "trigger": {
-          "quest": "quest/near-hall",
+          "quest": "quest/long-hall",
           "type": "quest-complete"
         }
       },
@@ -2728,6 +2910,11 @@
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
             "doing": "still at the case, not watching the shaft"
+          },
+          "npc/factor": {
+            "at": "anchor/stall",
+            "dialogue": "unchanged",
+            "doing": "minding the counter"
           },
           "npc/marshal": [
             {
@@ -2801,6 +2988,7 @@
               "obj/look-in-the-west-bay"
             ],
             "anchor": "anchor/west-pit",
+            "announcement": "hidden",
             "happening": {
               "subject": "anchor/west-pit",
               "text": "They come to the rim of the well and look down it.",
@@ -2833,6 +3021,113 @@
                   "flag/hall-sealed"
                 ]
               }
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/near-hall",
+          "type": "quest-complete"
+        }
+      },
+      {
+        "cast": {
+          "npc/curator": {
+            "at": "anchor/pedestal",
+            "dialogue": "unchanged",
+            "doing": "waiting by the open case for the party to come back"
+          },
+          "npc/factor": {
+            "at": "anchor/stall",
+            "dialogue": "unchanged",
+            "doing": "minding the counter while the party is away"
+          },
+          "npc/marshal": [
+            {
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
+              "dialogue": "dlg/marshal-read",
+              "doing": "calling the muster to a party that read the label",
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/read-the-label"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/labels-read",
+                  "value": 0
+                }
+              ]
+            },
+            {
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
+              "dialogue": "dlg/marshal-skipped",
+              "doing": "calling the muster to a party that walked straight past",
+              "requires_flags": [
+                "flag/skipped-the-label"
+              ]
+            }
+          ],
+          "npc/warden": {
+            "at": "dead"
+          }
+        },
+        "happening": {
+          "text": "the party learns the hall runs on",
+          "verb": "learns"
+        },
+        "id": "quest/long-hall",
+        "objectives": [
+          {
+            "anchor": "anchor/long-hall-porch",
+            "happening": {
+              "text": "the party arrives on the long hall's porch",
+              "verb": "arrives"
+            },
+            "id": "obj/arrive-at-the-porch",
+            "radius": 2,
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/arrive-at-the-porch"
+            ],
+            "anchor": "anchor/long-hall-end",
+            "happening": {
+              "text": "the party reaches the lit end of the long hall",
+              "verb": "arrives"
+            },
+            "id": "obj/reach-the-hall-end",
+            "radius": 2,
+            "title": "Reach the light",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/arrive-at-the-porch": [
+            {
+              "anchor": "anchor/long-hall-porch",
+              "happening": {
+                "text": "the porch is where the party comes back to",
+                "verb": "arrives"
+              },
+              "type": "set-checkpoint"
             }
           ]
         },
@@ -3145,6 +3440,11 @@
         "id": "state/gallery-crossings",
         "note": "How many times a body has crossed the long gallery's slab.",
         "scope": "party"
+      },
+      {
+        "id": "state/long-hall-crossings",
+        "note": "How many times a body has crossed the long hall's slab: the loop holds while it is at most 1.",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -3315,7 +3615,10 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "prop": {
+          "block": "minecraft:oak_sign[rotation=8]"
+        }
       },
       {
         "at": "anchor/hearth-stone",
@@ -3348,6 +3651,9 @@
         "id": "trigger/strike-the-hearth",
         "on": {
           "on": "strike"
+        },
+        "prop": {
+          "block": "minecraft:smooth_stone_slab[type=bottom]"
         },
         "requires_state": [
           {
@@ -3460,7 +3766,10 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "requires_flags": [
+          "flag/hall-open"
+        ]
       },
       {
         "at": "anchor/annex-second-bay",
@@ -3487,9 +3796,10 @@
           {
             "steps": [
               {
-                "at_ticks": 0,
+                "at_ticks": 23,
                 "effects": [
                   {
+                    "party": "present",
                     "path": [
                       {
                         "anchor": "anchor/ferry-deck",
@@ -3541,6 +3851,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
         "requires_flags": [
           "flag/boarded"
         ]
@@ -3613,6 +3926,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
         "requires_flags": [
           "flag/boarded"
         ]
@@ -3651,6 +3967,22 @@
           "on": "approach",
           "range": 6
         }
+      },
+      {
+        "at": "anchor/march",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The flagstone dips under you, and only you feel it.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/step-on-the-plate",
+        "on": {
+          "on": "step"
+        },
+        "once": false
       }
     ],
     "waves": [
@@ -3794,6 +4126,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.0",
   "stage": "quests"
 }

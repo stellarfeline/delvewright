@@ -45,8 +45,8 @@ def engine(mod, tmp_path_factory):
 def tree(mod, tmp_path, monkeypatch):
     """A working copy of the plugin, with the gate pointed at it.
 
-    `REPO` stays the real repository: it is where the engine at `ref` and the
-    pre-split blob are read from, and both are instruments rather than subjects.
+    `REPO` stays the real repository: it is where the engine at `ref` is read
+    from, and it is an instrument rather than a subject.
     """
     # ONE copy, laid out as the repository lays it out: the marketplace root is
     # `tmp_path`, and the entry's `path` resolves from there to the plugin root
@@ -61,16 +61,12 @@ def tree(mod, tmp_path, monkeypatch):
     market.mkdir(parents=True)
     shutil.copy2(mod.MARKETPLACE, market / "marketplace.json")
 
-    census = tmp_path / "skill-page-headings.json"
-    shutil.copy2(mod.CENSUS, census)
-
     monkeypatch.setattr(mod, "PLUGIN_ROOT", plugin)
     monkeypatch.setattr(mod, "SKILL_ROOT", skill)
     monkeypatch.setattr(mod, "SKILL", skill / "SKILL.md")
     monkeypatch.setattr(mod, "PIN", skill / "versions.toml")
     monkeypatch.setattr(mod, "PLUGIN_JSON", plugin / ".claude-plugin" / "plugin.json")
     monkeypatch.setattr(mod, "MARKETPLACE", market / "marketplace.json")
-    monkeypatch.setattr(mod, "CENSUS", census)
     return skill
 
 
@@ -323,70 +319,19 @@ def test_a_piece_free_subcommand_owes_nothing(mod, tree, engine):
     assert mod.PIECE_FREE_GROUP_VERBS == {("grammar", "list")}
 
 
-# ------------------------------------------------------------ rule 10, the split --
+# ------------------------------------------------------- rule 10, retired --
 
 
-def test_a_section_the_split_dropped_reds(mod, tree, engine):
-    path = tree / "references" / "pitfalls.md"
-    edit(path, "# Reference: authoring pitfalls", "# Pitfalls")
-    rep = run(mod, engine)
-    assert has(rep, "Reference: authoring pitfalls")
-    assert has(rep, "is a heading of no file")
-
-
-def test_a_section_the_split_doubled_reds(mod, tree, engine):
-    path = tree / "references" / "when-red.md"
-    path.write_text(
-        path.read_text(encoding="utf-8") + "\n## Reference: authoring pitfalls\n",
-        encoding="utf-8",
-    )
-    assert has(run(mod, engine), "One section, one home")
-
-
-def test_a_row_claiming_restated_outside_init_reds(mod, tree, engine, monkeypatch):
-    """The opt-out is secured by a property the defect cannot supply.
-
-    `restated` is admissible only for a heading the census MEASURED as living
-    under Init, because spec-0063 §6 restates Init's decomposition and nothing
-    else's. A dropped step heading relabelled `restated` therefore cannot pass:
-    its recorded section is the step, not Init.
-    """
-    census = json.loads(mod.CENSUS.read_text(encoding="utf-8"))
-    for row in census["headings"]:
-        if row["heading"] == "Reference: authoring pitfalls":
-            row["destination"] = mod.RESTATED
-            break
-    else:  # pragma: no cover - the census would have to have lost the row
-        pytest.fail("the census no longer carries the heading this test perturbs")
-    mod.CENSUS.write_text(json.dumps(census, indent=2), encoding="utf-8")
+def test_a_step_heading_is_the_page_s_to_rename(mod, tree, engine):
+    """A step that moves is renamed with it, and no census of an older page
+    holds the old words in place: the steps are an ordering the page owns."""
     edit(
-        tree / "references" / "pitfalls.md",
-        "# Reference: authoring pitfalls",
-        "# Pitfalls",
+        tree / "SKILL.md",
+        "## 12. Visual review",
+        "## 12. Visual review — the POV sequence first",
     )
     rep = run(mod, engine)
-    assert has(rep, "Only a heading UNDER Init may be restated")
-
-
-def test_the_census_is_re_derived_from_the_blob_it_names(mod, tree, engine):
-    """A census that stopped describing the page it names is a red, not a claim."""
-    census = json.loads(mod.CENSUS.read_text(encoding="utf-8"))
-    census["headings"] = census["headings"][:-1]
-    mod.CENSUS.write_text(json.dumps(census, indent=2), encoding="utf-8")
-    assert has(run(mod, engine), "disagrees with the page it names")
-
-
-def test_the_census_names_the_blob_this_repository_carries(mod):
-    """The record is a measurement, so it names what was measured, by hash."""
-    census = json.loads(mod.CENSUS.read_text(encoding="utf-8"))
-    blob = census["source"]["blob"]
-    proc = subprocess.run(
-        ["git", "-C", str(REPO), "cat-file", "-t", blob], capture_output=True, text=True
-    )
-    assert proc.stdout.strip() == "blob", (
-        "the pre-split page's blob is unreachable from this checkout, so rule 10 "
-        "can only run against the frozen record"
-    )
+    assert not has(rep, "Visual review"), rep.findings
 
 
 # ---------------------------------------------------------------- rules 11 and 12 --

@@ -13,10 +13,8 @@
 //! [`census`] reads the shipped datapack and puts every positional player
 //! selector in one of three states: it excludes the observation tag; it stands
 //! at a site [`ALLOWED`] names, with the reason a watcher may be seen there; or
-//! it is unguarded, which refuses the build (`DW0926`). It runs only when the campaign
-//! declares `world.respawn_wait`, the state that puts a watcher outside a
-//! cutscene, and it is feature-blind: an emitter written later is judged by
-//! existing.
+//! it is unguarded, which refuses the build (`DW0926`). It runs on every build
+//! and is feature-blind: an emitter written later is judged by existing.
 //!
 //! "Positional" is a selector whose answer depends on where a player stands:
 //! `@a`/`@r` (or a player-typed `@e`) with a box or `distance` term, and `@p` or
@@ -55,13 +53,12 @@ pub fn check(out: &BuildOutput) -> Result<ObserverCensus, ObserverRefusal> {
             code: DW_OBSERVER_UNGUARDED,
             message: format!(
                 "ENGINE SELF-CHECK FAILED — this is a defect in delvec, not in the campaign; \
-                 report it. The campaign declares `world.respawn_wait`, so a waiting player is a \
-                 spectator who can stand anywhere, and {} positional player selector(s) this \
+                 report it. A player watching a cutscene, or waiting out a declared \
+                 `world.respawn_wait`, is a spectator, and {} positional player selector(s) this \
                  build ships would read them (fire a trigger, halt a patrol, judge them). The \
                  first is `{sel}` in `{name}`: `{line}`. The emitter that wrote it must add \
                  `tag=!{CUTSCENE_TAG}`, or the site must be named with its reason in \
-                 `observer::ALLOWED`. Nothing in the campaign repairs this; do not drop \
-                 `respawn_wait` to get a build.",
+                 `observer::ALLOWED`. Nothing in the campaign repairs this.",
                 c.unguarded.len()
             ),
         });
@@ -82,13 +79,11 @@ pub struct AllowedSite {
 /// The sites where a positional player selector may see a watcher.
 pub const ALLOWED: &[AllowedSite] = &[
     AllowedSite {
-        site: "area night vision",
-        reason: "an area's `night-vision` mitigation gives or clears an effect that only \
-                 changes what a body sees; it asks nothing of a watcher and does not harm one",
-        matches: |_, line| {
-            (line.contains("effect give @a[") || line.contains("effect clear @a["))
-                && line.contains("minecraft:night_vision")
-        },
+        site: "status effect",
+        reason: "a boxed `effect give` / `effect clear` (an area's `night-vision` mitigation, an \
+                 authored `give-effect`) only changes what a body sees or feels and asks nothing \
+                 of a watcher; a status effect is not inherently harm",
+        matches: |_, line| line.contains("effect give @a[") || line.contains("effect clear @a["),
     },
     AllowedSite {
         site: "ladder staged blow",

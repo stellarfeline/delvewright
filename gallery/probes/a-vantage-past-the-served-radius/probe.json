@@ -1,0 +1,17 @@
+{
+  "code": "DW0956",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "replace",
+      "path": "/content/views/0/look_at",
+      "value": [
+        32,
+        68,
+        420
+      ]
+    }
+  ],
+  "units": [],
+  "why": "A declared vantage aimed at something the server never sends. The site plan's `view/the-approach` stands its eye at (32, 88, 60) and looks at the hall; this edit moves what it looks at 360 blocks down the z axis. The gallery declares `world.view_distance: 12`, which serves 192 blocks in every direction, so the thing this view is of is never sent to a client standing at its eye and the picture the walk would judge cannot render. The refusal names the fewest chunks that would serve it (23) — one edit to the one field — and the same rule meets a `sightlines[]` entry longer than the radius, a showcase camera whose subject is past it, and a cutscene keyframe farther from its aim than it."
+}

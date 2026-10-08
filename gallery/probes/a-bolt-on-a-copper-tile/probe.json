@@ -1,0 +1,61 @@
+{
+  "code": "DW0959",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "name": "region/copper-tile",
+        "shape": {
+          "frame": {
+            "anchor": "anchor/exit",
+            "kind": "anchor-relative"
+          },
+          "kind": "box",
+          "max": [
+            0,
+            -1,
+            0
+          ],
+          "min": [
+            0,
+            -1,
+            0
+          ]
+        },
+        "verb": "select"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "recipe": {
+          "blocks": [
+            {
+              "block": "minecraft:waxed_copper_block",
+              "weight": 1.0
+            }
+          ]
+        },
+        "region": "region/copper-tile",
+        "verb": "fill"
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/2/on_complete/-",
+      "value": {
+        "at": {
+          "anchor": "anchor/exit"
+        },
+        "type": "lightning"
+      }
+    }
+  ],
+  "units": [],
+  "why": "A waxed copper tile laid in the floor under `anchor/exit`, and a bolt struck at the exit. The block a bolt strikes is the one under its mark, and when that block is copper the game scrapes it back and walks a random path through the copper beside it scraping more; when it is a lightning rod the game powers it. Either is a world write the game rolls, which no proof of this engine can state. The build names the strike and the block. It declares no unit: `lightning` is bound by the valley-site overlay, whose strike lands on the court's own paving. The remedy is the mark, or a block the bolt leaves alone under it. The vacuous direction: lay stone under the same mark and the gate goes green over the struck block it still reads, which the binding line counts."
+}

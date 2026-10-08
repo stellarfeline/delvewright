@@ -45,7 +45,7 @@
         "act": 2,
         "area": "area/hall",
         "depends_on": [
-          "quest/near-hall"
+          "quest/long-hall"
         ],
         "goal": "Cross the barred wall and clear what is mustered beyond it.",
         "id": "quest/far-hall",
@@ -65,9 +65,20 @@
         "id": "quest/the-reliquary",
         "mandatory": false,
         "npcs": []
+      },
+      {
+        "act": 2,
+        "area": "area/long-hall",
+        "depends_on": [
+          "quest/near-hall"
+        ],
+        "goal": "Run the long hall until it lets the party through.",
+        "id": "quest/long-hall",
+        "mandatory": true,
+        "npcs": []
       }
     ]
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.0",
   "stage": "quest-plan"
 }

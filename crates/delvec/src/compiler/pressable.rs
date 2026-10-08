@@ -77,6 +77,16 @@ pub enum Body {
     /// Unchanged from before this module, so every campaign that only ever
     /// anchored triggers in the air is byte-identical.
     Point([i32; 3]),
+    /// **The vanilla block the player uses** (spec-0093 §6.5): the trigger's or
+    /// objective's `prop` is a lever or a button, placed at `cell`, and vanilla's
+    /// `default_block_use` criterion reports its press. No hitbox is summoned:
+    /// the block is the body.
+    Block {
+        /// The cell the block stands in — the anchor's.
+        cell: [i32; 3],
+        /// The block, as the prop spells it (its blockstate suffix included).
+        block: String,
+    },
     /// Nothing here resolves — `DW0426`.
     Nothing,
 }
@@ -128,12 +138,97 @@ pub fn body_at(plan: &Plan, anchor: &str) -> Body {
     Body::Nothing
 }
 
+/// The body a `use`/`strike` **trigger** is dispatched from: its `prop`'s
+/// block when that block is one a hand presses (spec-0093 §6.5) — the block is
+/// the body and vanilla reports the press — else [`body_at`] its anchor.
+pub fn trigger_body(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Body {
+    let Some(at) = t.at_anchor() else {
+        return Body::Nothing;
+    };
+    // Only a `use` is a right-click vanilla reports (`default_block_use`); a
+    // `strike` on the same bell is a left-click vanilla reports no block for,
+    // so its prop is placed and the hitbox is fitted over it.
+    if matches!(t.on, delvewright_dsl::TriggerOn::Use)
+        && let Some(prop) = &t.prop
+        && prop.is_hand_pressed()
+        && let Some(cell) = plan.point_any(at)
+    {
+        return Body::Block {
+            cell,
+            block: prop.block.clone(),
+        };
+    }
+    body_at(plan, at)
+}
+
+/// **The blocks every trigger's `prop` places at load** (spec-0093 §6.5), as
+/// `(trigger id, placement)` in emitted-trigger order: a click trigger
+/// (`use`/`strike`) at an anchor with a point cell, other than a `strike` on an
+/// NPC's stand anchor (that trigger rides the NPC's hitbox and has no cell of
+/// its own). `setup_finish` writes exactly these, and the world as shipped
+/// ([`crate::compiler::assembled::shipped_blocks`]) lays exactly these, so the
+/// written world and the server's world cannot disagree about a prop.
+pub fn trigger_props(plan: &Plan) -> Vec<(String, crate::compiler::light::Placement)> {
+    let mut out = Vec::new();
+    for t in plan.emitted_triggers_unlocalized() {
+        if !t.on.is_click() {
+            continue;
+        }
+        let Some(at) = t.at_anchor() else {
+            continue;
+        };
+        if matches!(t.on, delvewright_dsl::TriggerOn::Strike) && npc_stands_at(plan, at) {
+            continue;
+        }
+        if let (Some(prop), Some(cell)) = (&t.prop, plan.point_any(at)) {
+            out.push((
+                t.id.as_str().to_string(),
+                crate::compiler::light::Placement {
+                    pos: cell,
+                    block: prop.block.clone(),
+                },
+            ));
+        }
+    }
+    out
+}
+
+/// True when `anchor` is a planned NPC's stand anchor — the cell where that
+/// NPC's interaction hitbox lives, whether summoned at world init or by the
+/// NPC's `spawn-npc` entrance (`deferred`). A strike trigger there rides that
+/// hitbox (`crate::compiler::emit`'s `strike_trigger_tags_at` is its dual).
+pub(crate) fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
+    plan.npcs.iter().any(|n| {
+        plan.campaign.npcs.content.npcs.iter().any(|d| {
+            d.id.as_str() == n.npc_id && d.anchor.as_str() == anchor && d.offset == [0, 0, 0]
+        })
+    })
+}
+
+/// The block an `interact` objective is detected through, when its `prop` is one
+/// a hand presses (spec-0093 §6.5): `Some(block)` means no hitbox is summoned and
+/// the `default_block_use` criterion at the anchor's cell completes it.
+pub fn interact_block(o: &delvewright_dsl::Objective) -> Option<&str> {
+    o.prop()
+        .filter(|p| p.is_hand_pressed())
+        .map(|p| p.block.as_str())
+}
+
+/// The base id of a prop block, its blockstate suffix stripped — what a
+/// `default_block_use` predicate names.
+pub fn block_id(block: &str) -> &str {
+    block.split('[').next().unwrap_or(block)
+}
+
 /// One line of human-readable prose naming what a click at an anchor lands on.
 pub fn describe(body: &Body) -> String {
     match body {
         Body::Rides { owner, tag } => format!("rides the {owner}'s own hitboxes (`{tag}`)"),
         Body::Region(cells) => format!("arms {} clickable cell(s) of the region", cells.len()),
         Body::Point(p) => format!("a 1.0x2.0 body in open air at {p:?}"),
+        Body::Block { cell, block } => {
+            format!("the block `{block}` at {cell:?}, whose own use vanilla reports")
+        }
         Body::Nothing => "nothing — DW0426".to_string(),
     }
 }

@@ -1455,10 +1455,20 @@ impl World {
     /// state (CLAUDE.md): every gate examined, and how many of them the model
     /// treats as shut.
     pub fn gate_seal_ledger(&self) -> serde_json::Value {
-        crate::compiler::assembled::gate_seal_ledger(
+        let mut v = crate::compiler::assembled::gate_seal_ledger(
             &self.world_load_seals,
             self.modelled_seals().count(),
-        )
+        );
+        // Each gate says whether a clock owns its region (spec-0016 §4): its
+        // blocks at any instant are the clock's phase, so a reader comparing a
+        // server's save against the model (`tools/ci/check-written-world.py`)
+        // counts those cells as the clock's, never as the model's.
+        if let Some(gates) = v.get_mut("gates").and_then(|g| g.as_array_mut()) {
+            for (g, s) in gates.iter_mut().zip(&self.world_load_seals) {
+                g["clocked"] = serde_json::json!(self.clocked_gates.contains(&s.region));
+            }
+        }
+        v
     }
 
     /// Whether the layout resolved any gate anchor at all — a campaign with none
@@ -1634,13 +1644,13 @@ impl World {
     /// geometry that was never wrong — the exact failure `lethal_regions` was
     /// carried to prevent.
     fn lethal_volumes_over(&self, cells: &[[i32; 3]]) -> Vec<&str> {
-        let body = delvewright_dsl::metrics::Body::PLAYER;
+        let fp = Footprint::player();
         self.lethal_regions
             .iter()
             .filter(|(_, (lo, hi))| {
                 cells
                     .iter()
-                    .any(|c| delvewright_dsl::metrics::cell_can_meet_volume(*c, body, *lo, *hi))
+                    .any(|c| self.body_can_meet_volume(*c, &fp, *lo, *hi))
             })
             .map(|(id, _)| id.as_str())
             .collect()
@@ -1661,10 +1671,30 @@ impl World {
         if self.lethal_regions.is_empty() {
             return false;
         }
-        let body = fp.body();
         self.lethal_regions
             .iter()
-            .any(|(_, (lo, hi))| delvewright_dsl::metrics::cell_can_meet_volume(c, body, *lo, *hi))
+            .any(|(_, (lo, hi))| self.body_can_meet_volume(c, fp, *lo, *hi))
+    }
+
+    /// **Can a body of this footprint, in cell `c`, meet the volume `lo..=hi`?**
+    /// — [`delvewright_dsl::metrics::feet_can_meet_volume`] with the feet where
+    /// this model puts them ([`World::feet_16_fp`]): on the collision top of the
+    /// block under the cell, which for a partial block is below the cell floor.
+    ///
+    /// The one answer every proof that asks whether a body in a cell is caught
+    /// by a volume takes — the router's keep-out, the reach flood, the
+    /// danger-visibility population and the blind reach — so the height a body
+    /// stands at is read off the block it stands on in all of them, and a body
+    /// on an upward dripstone tip (feet 11/16 into the tip's cell) meets a
+    /// volume drawn in the tip course, as it does in the game.
+    pub fn body_can_meet_volume(
+        &self,
+        c: [i32; 3],
+        fp: &Footprint,
+        lo: [i32; 3],
+        hi: [i32; 3],
+    ) -> bool {
+        delvewright_dsl::metrics::feet_can_meet_volume(c, self.feet_16_fp(c, fp), fp.body(), lo, hi)
     }
 
     /// Build the walkability model from a collision-classified [`Occupancy`] and
@@ -4563,13 +4593,15 @@ pub fn check_cutscenes(
     world: &World,
     moves: &[MovePlan],
     actor_moves: &[ActorMovePlan],
-) -> Result<(), Failure> {
+) -> Result<usize, Failure> {
+    let mut judged = 0usize;
     for (eff, ctx) in crate::compiler::camera::cutscene_units(plan.campaign) {
         let Some(shots) = eff.cutscene_shots() else {
             continue;
         };
         let mut offset: i32 = 0;
         for (si, shot) in shots.iter().enumerate() {
+            judged += 1;
             let ex =
                 crate::compiler::camera::expand_shot(plan, moves, actor_moves, shot, &ctx, offset);
             offset += ex.ticks + 1;
@@ -4603,6 +4635,46 @@ pub fn check_cutscenes(
                     ),
                 });
             }
+            // spec-0091 (`DW0956`): what the shot looks at is served to the
+            // player watching it. Every keyframe is a body's eye for a tick, and
+            // the aim at that tick is what the picture is of.
+            let radius = delvewright_dsl::viewdistance::served_radius_blocks(
+                delvewright_dsl::viewdistance::chunks(plan.campaign),
+            );
+            let mut farthest: Option<(f64, [f64; 3], [f64; 3], i32)> = None;
+            for f in &frames.frames {
+                let aim = match &ex.aim {
+                    crate::compiler::camera::AimTrack::Travel => continue,
+                    crate::compiler::camera::AimTrack::Static(p) => *p,
+                    crate::compiler::camera::AimTrack::Moving(track) => {
+                        let i = (f.tick.max(0) as usize).min(track.len().saturating_sub(1));
+                        track[i]
+                    }
+                };
+                let d = [aim[0] - f.pos[0], aim[1] - f.pos[1], aim[2] - f.pos[2]];
+                let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                if farthest.is_none_or(|(l, ..)| len > l) {
+                    farthest = Some((len, f.pos, aim, f.tick));
+                }
+            }
+            if let Some((len, pos, aim, tick)) = farthest
+                && len > radius
+            {
+                return Err(Failure {
+                    code: delvewright_dsl::codes::VIEW_BEYOND_SERVED,
+                    message: format!(
+                        "cutscene: shot {si} at tick {tick} stands at {:?} looking at {:?}, \
+                         {len:.1} blocks away, and the served view distance reaches {radius:.0} \
+                         blocks ({} chunks): what the shot looks at is never sent to the player \
+                         watching it. Declare `world.view_distance: {}` (the fewest chunks that \
+                         serve it), or bring the camera path nearer its `look_at`/subject",
+                        round3(pos),
+                        round3(aim),
+                        delvewright_dsl::viewdistance::chunks_for(radius),
+                        delvewright_dsl::viewdistance::chunks_for(len),
+                    ),
+                });
+            }
             let rate = ex.max_aim_deg_per_tick();
             if rate > crate::compiler::camera::MAX_AIM_DEG_PER_TICK {
                 return Err(Failure {
@@ -4619,7 +4691,7 @@ pub fn check_cutscenes(
             }
         }
     }
-    Ok(())
+    Ok(judged)
 }
 
 /// The first `(segment index, block cell)` where a camera dolly polyline passes
@@ -6050,6 +6122,86 @@ fn stand_cells(w: &World, l: &crate::compiler::link::LinkPlan) -> Vec<[i32; 3]> 
     out
 }
 
+/// **The cells outside `l`'s volume a body can perform its trigger from**
+/// (spec-0092 §10): standable, in the walk region `reachable`, outside `from`,
+/// and reaching the trigger by the same rule [`stand_cells`] reads — an eye
+/// within a strike of the body's box for a click, and in sight of it
+/// ([`sees_body`]), the trigger's range for an `approach` — in cell order. Searched within five cells of each body cell,
+/// which holds every cell a strike or an approach of five reaches from.
+pub fn press_cells_outside(
+    w: &World,
+    l: &crate::compiler::link::LinkPlan,
+    reachable: &BTreeSet<[i32; 3]>,
+) -> Vec<[i32; 3]> {
+    let reach = 5 + l.range.map_or(0, |r| r as i32);
+    let mut out: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for b in &l.body {
+        for x in b[0] - reach..=b[0] + reach {
+            for y in b[1] - reach..=b[1] + reach {
+                for z in b[2] - reach..=b[2] + reach {
+                    let c = [x, y, z];
+                    if l.contains(c) || !reachable.contains(&c) || !w.is_standable(c) {
+                        continue;
+                    }
+                    let presses = match l.range {
+                        Some(r) => {
+                            let dx = f64::from(c[0]) + 0.5 - f64::from(b[0]);
+                            let dy = w.feet_y(c) - f64::from(b[1]);
+                            let dz = f64::from(c[2]) + 0.5 - f64::from(b[2]);
+                            (dx * dx + dy * dy + dz * dz).sqrt() <= f64::from(r)
+                        }
+                        None => {
+                            crate::compiler::strand::strikes(w, c, *b, 1.0, 1.0)
+                                && sees_body(w, c, *b)
+                        }
+                    };
+                    if presses {
+                        out.insert(c);
+                    }
+                }
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// Whether an eye standing in `p` sees some point of a click body standing on
+/// `m` (its `1 x 2` box) past every solid cell — the box's centre or one of its
+/// eight corners pulled a tenth of a block inward, each sought along the line
+/// from the eye in tenth-of-a-block steps. A press through a wall is no press:
+/// the client's pick stops at the first block it meets.
+fn sees_body(w: &World, p: [i32; 3], m: [i32; 3]) -> bool {
+    use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
+    let eye = [
+        f64::from(p[0]) + 0.5,
+        w.feet_y(p) + PLAYER_EYE_HEIGHT,
+        f64::from(p[2]) + 0.5,
+    ];
+    let (x0, y0, z0) = (f64::from(m[0]), f64::from(m[1]), f64::from(m[2]));
+    let mut targets = vec![[x0 + 0.5, y0 + 1.0, z0 + 0.5]];
+    for dx in [0.1, 0.9] {
+        for dy in [0.1, 1.9] {
+            for dz in [0.1, 0.9] {
+                targets.push([x0 + dx, y0 + dy, z0 + dz]);
+            }
+        }
+    }
+    targets.iter().any(|t| {
+        let d = [t[0] - eye[0], t[1] - eye[1], t[2] - eye[2]];
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        let steps = (len / 0.1).ceil().max(1.0) as i32;
+        (1..steps).all(|i| {
+            let f = f64::from(i) / f64::from(steps);
+            let c = [
+                (eye[0] + d[0] * f).floor() as i32,
+                (eye[1] + d[1] * f).floor() as i32,
+                (eye[2] + d[2] * f).floor() as i32,
+            ];
+            c == p || c == m || c == [m[0], m[1] + 1, m[2]] || !w.solid.contains(&c)
+        })
+    })
+}
+
 /// Whether `l`'s `to` is a cell a body stands on in the world as the link's own
 /// root leaves it at the teleport's tick (spec-0083 §3.6): `st` (the leg's
 /// region state), with the root's writes at an earlier tick applied — forced,
@@ -6980,18 +7132,238 @@ fn judge_leg(
 ///    and prescribes moving the checkpoint or adding a return route (never
 ///    deleting the checkpoint to silence the proof).
 pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
-    let cps: Vec<(String, [i32; 3], usize)> = plan
-        .checkpoints
-        .iter()
-        .map(|c| (c.anchor.clone(), c.pos, c.fire_step))
-        .collect();
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    // A checkpoint a trigger sets is rooted where the party can first reach
+    // the trigger (spec-0093 §6.2), not at the entry; the configurations are
+    // gathered once and only when some checkpoint needs them.
+    let mut configs: Option<Vec<TriggerRootConfig>> = None;
+    let mut cps: Vec<(String, [i32; 3], usize)> = Vec::new();
+    for c in &plan.checkpoints {
+        let mut fire_step = c.fire_step;
+        if let Some(trigger) = &c.trigger {
+            let configs = configs.get_or_insert_with(|| trigger_root_configs(plan, world));
+            if let Some(root) = trigger_root_step(plan, world, configs, trigger) {
+                fire_step = fire_step.max(root.step);
+                eprintln!(
+                    "DW0315: checkpoint `{}` is set by `{trigger}`, which the party can first \
+                     reach {} (root step {}, over {} configuration(s))",
+                    c.anchor,
+                    root.when,
+                    root.step,
+                    configs.len()
+                );
+            }
+        }
+        cps.push((c.anchor.clone(), c.pos, fire_step));
+    }
     verify_checkpoints(
         world,
         &cps,
+        &fixed_checkpoint_fires(plan),
         &critical_positions(plan),
         &plan.region_events,
-        &|g, s| plan.gate_fired_before(g, s),
+        &ancestor,
     )
+}
+
+/// The critical-path steps at which a checkpoint is set **once, by a beat** — a
+/// plain `set-checkpoint` no trigger sets. A bonfire moves only when the party
+/// rests and a trigger's checkpoint whenever its trigger is pressed, so neither
+/// is known to have replaced an earlier seat at any step; only these are.
+/// One answer for the no-stranding proof (`DW0315`) and the stake proof
+/// (`DW0525`), which both ask when a seat stops being in force.
+pub(crate) fn fixed_checkpoint_fires(plan: &Plan) -> Vec<usize> {
+    plan.checkpoints
+        .iter()
+        .filter(|c| c.trigger.is_none() && !c.rest)
+        .map(|c| c.fire_step)
+        .collect()
+}
+
+/// Every critical-path position as `(src_step, cell, carried_in)`, where
+/// `carried_in` marks a position the party is put down at by an inter-area
+/// crossing (not a link, not a loop). For the stake proof, which asks which
+/// areas the party can stand in while a seat is in force.
+pub(crate) fn route_positions(plan: &Plan) -> Vec<(usize, [i32; 3], bool)> {
+    critical_positions(plan)
+        .into_iter()
+        .map(|p| {
+            (
+                p.src_step,
+                p.pos,
+                p.transport_before && !p.by_link && !p.by_loop,
+            )
+        })
+        .collect()
+}
+
+/// One quest configuration as the trigger-root derivation reads it: the world
+/// with that configuration's region writes applied, the first critical step
+/// arriving under it, and the route cells of every leg that does.
+type TriggerRootConfig = (Option<World>, usize, Vec<[i32; 3]>);
+
+/// The configurations `DW0921` judges, gathered for the trigger-root derivation:
+/// the critical route's cells grouped by the region state of their arrival step,
+/// each with the first step arriving under it, in order of that first step.
+fn trigger_root_configs(plan: &Plan, world: &World) -> Vec<TriggerRootConfig> {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut seeds: Vec<(RegionState, usize, BTreeSet<[i32; 3]>)> = Vec::new();
+    for (step, cells) in critical_route_cells(plan, world) {
+        let st = world.region_state_at(&plan.region_events, step, &ancestor);
+        match seeds.iter_mut().find(|(s, _, _)| *s == st) {
+            Some((_, first, set)) => {
+                *first = (*first).min(step);
+                set.extend(cells);
+            }
+            None => seeds.push((st, step, cells.into_iter().collect())),
+        }
+    }
+    seeds.sort_by_key(|(_, first, _)| *first);
+    seeds
+        .into_iter()
+        .map(|(st, first, cells)| {
+            let w = (!st.is_empty()).then(|| world.with_region_state(&st));
+            (w, first, cells.into_iter().collect())
+        })
+        .collect()
+}
+
+/// How far from a `step` trigger's cell a standing body can fire it: a body's
+/// hitbox reaches 0.3 past its own cell, so a body standing in any of the eight
+/// horizontal neighbours can lean into the plate's cell, and the farthest of
+/// them (a corner) is sqrt(2) away. Rooting from more cells roots no later.
+const STEP_REACH: f64 = 1.5;
+
+/// Where a trigger-set checkpoint is rooted (spec-0093 §6.2).
+struct TriggerRoot {
+    /// The critical step the no-stranding proof roots at.
+    step: usize,
+    /// The derivation in words, for the binding line and the message.
+    when: String,
+}
+
+/// **The earliest critical step at which the party can fire `trigger`**: the
+/// step the path performs it at when the path performs it; else `first − 1` for
+/// the earliest configuration whose walkable flood from its route cells meets a
+/// cell the trigger fires from; else `None` — no configuration reaches it, and
+/// the caller keeps the entry.
+///
+/// A trigger fires from every standable cell within its `range` of its anchor
+/// (`approach`), or within [`crate::compiler::crosshair::INTERACTION_REACH`] of
+/// the anchor, the struck NPC's or the struck assembly's cell (`use`, `strike`,
+/// `strike-npc`, `strike-assembly`), or within [`STEP_REACH`] of a plate's cell
+/// (`step`). Flooding from the union of a
+/// configuration's route cells can only root EARLIER than flooding from each
+/// step's own cells, which is the conservative direction: a root too early asks
+/// the checkpoint to re-reach more of the path, never less.
+fn trigger_root_step(
+    plan: &Plan,
+    world: &World,
+    configs: &[TriggerRootConfig],
+    trigger: &str,
+) -> Option<TriggerRoot> {
+    // Performed by the path: rooted at its step, as the region model roots the
+    // trigger's own writes.
+    if let Some(step) = plan
+        .critical_path
+        .iter()
+        .position(|s| s.trigger() == Some(trigger))
+    {
+        return Some(TriggerRoot {
+            step,
+            when: format!("at the path's own `trigger` step #{}", step + 1),
+        });
+    }
+    let c = plan.campaign;
+    let t = c
+        .quests
+        .content
+        .triggers
+        .iter()
+        .find(|t| t.id.as_str() == trigger)?;
+    let (centre, radius) = match &t.on {
+        delvewright_dsl::TriggerOn::Approach { range } => {
+            (plan.point_any(t.at_anchor()?)?, f64::from(*range))
+        }
+        delvewright_dsl::TriggerOn::Strike | delvewright_dsl::TriggerOn::Use => (
+            plan.point_any(t.at_anchor()?)?,
+            crate::compiler::crosshair::INTERACTION_REACH,
+        ),
+        // A step fires on a body whose hitbox is in the plate's cell (the
+        // `dx=0` box of `emit::step_cell_box`): from the cell itself, or from a
+        // horizontal neighbour, edge or corner, whose body leans into it.
+        delvewright_dsl::TriggerOn::Step => (plan.point_any(t.at_anchor()?)?, STEP_REACH),
+        delvewright_dsl::TriggerOn::StrikeNpc { npc } => {
+            let n = c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|n| n.id.as_str() == npc.as_str())?;
+            (
+                plan.body_point(delvewright_dsl::BodyRef::Npc(n))?,
+                crate::compiler::crosshair::INTERACTION_REACH,
+            )
+        }
+        delvewright_dsl::TriggerOn::StrikeAssembly { assembly } => {
+            let decl = c.quests.content.assembly_decl(assembly.as_str())?;
+            let a = plan.point_any(decl.at.anchor.as_str())?;
+            (
+                decl.at.cell(a),
+                crate::compiler::crosshair::INTERACTION_REACH,
+            )
+        }
+    };
+    let r = radius.ceil() as i32;
+    let r2 = radius * radius;
+    let mut fire_cells: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for dx in -r..=r {
+        for dy in -r..=r {
+            for dz in -r..=r {
+                let cell = [centre[0] + dx, centre[1] + dy, centre[2] + dz];
+                let d2 = f64::from(dx * dx + dy * dy + dz * dz);
+                if d2 <= r2 && world.is_standable(cell) {
+                    fire_cells.insert(cell);
+                }
+            }
+        }
+    }
+    if fire_cells.is_empty() {
+        return None;
+    }
+    let first = earliest_reaching_config(configs, world, &fire_cells)?;
+    let step = first.saturating_sub(1);
+    let next = plan
+        .critical_path
+        .get(first)
+        .and_then(|s| s.objective())
+        .map(|o| format!("while `{o}` is next"))
+        .unwrap_or_else(|| format!("from critical step {first}"));
+    Some(TriggerRoot {
+        step,
+        when: format!(
+            "{next} ({} firing cell(s) within {radius} of {centre:?})",
+            fire_cells.len()
+        ),
+    })
+}
+
+/// The pure core of [`trigger_root_step`]: the `first` step of the earliest
+/// configuration (in `first` order) whose walkable flood from its route cells,
+/// over its own world, meets one of `fire_cells`; `None` when no configuration
+/// reaches them. Split out so it is unit-testable over synthetic [`World`]s.
+fn earliest_reaching_config(
+    configs: &[TriggerRootConfig],
+    world: &World,
+    fire_cells: &BTreeSet<[i32; 3]>,
+) -> Option<usize> {
+    configs.iter().find_map(|(w, first, cells)| {
+        let reached = w.as_ref().unwrap_or(world).reachable_walkable(cells);
+        reached
+            .iter()
+            .any(|c| fire_cells.contains(c))
+            .then_some(*first)
+    })
 }
 
 /// The pure core of [`check_checkpoints`] (split out so it is unit-testable
@@ -7000,6 +7372,7 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
 fn verify_checkpoints(
     world: &World,
     checkpoints: &[(String, [i32; 3], usize)],
+    fixed_fires: &[usize],
     positions: &[VisitedPos],
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
@@ -7025,6 +7398,17 @@ fn verify_checkpoints(
         else {
             continue; // nothing left to walk to (checkpoint at/near the finale)
         };
+        // Replaced before that leg is walked: a checkpoint a beat sets
+        // ([`fixed_checkpoint_fires`]) fires after this one and before the
+        // target, so a death on the leg respawns there, not here. This is how a
+        // route that crosses into another area (a one-way carry) and sets a
+        // checkpoint on arrival owes nothing to the seat it left behind.
+        if fixed_fires
+            .iter()
+            .any(|f| *f > *fire_step && *f < target.src_step)
+        {
+            continue;
+        }
         // Seal any gate closed by the time the party reaches the target (the same
         // per-leg gate state DW0311 routes under), so a checkpoint whose forward
         // path is walled off by a `close-gate` strands the party (DSL v0.6).
@@ -7044,11 +7428,15 @@ fn verify_checkpoints(
                 code: DW_CHECKPOINT_STRANDED,
                 message: format!(
                     "checkpoint `{anchor}` (cell {cell:?}) strands the party: the next required \
-                     anchor {:?} is not walkable from it over the assembled geometry (a checkpoint \
-                     behind a one-way drop the forward path can't re-cross after respawn). Move the \
-                     checkpoint to a cell that keeps the remaining path reachable, or add a return \
-                     route back up — do NOT delete the checkpoint to silence this proof.",
-                    target.pos
+                     anchor {:?} (critical step {}) is not walkable from it over the assembled \
+                     geometry (a checkpoint behind a one-way drop the forward path can't re-cross \
+                     after respawn). The proof is rooted at step {fire_step}: a beat's checkpoint \
+                     at the beat, a trigger's at the earliest step the party can reach the trigger \
+                     (the `DW0315:` line above says which), and that is the first required anchor \
+                     after it. Move the checkpoint to a cell that keeps the remaining path \
+                     reachable, or add a return route back up — do NOT delete the checkpoint to \
+                     silence this proof.",
+                    target.pos, target.src_step
                 ),
             });
         }
@@ -7202,6 +7590,52 @@ impl Configuration {
         base: &crate::compiler::blockstate::BlockMap,
     ) -> crate::compiler::blockstate::BlockMap {
         self.state.blocks_over(base)
+    }
+
+    /// How many cells this configuration's bytes ([`Configuration::blocks`]
+    /// over the same base) hold differently from `load` — counted over the
+    /// cells its laid writes reach, which are the only cells
+    /// [`RegionState::blocks_over`] can move (spec-0089 §7's `cells moved from
+    /// load`). Every forced write `load` lays is laid here too or overridden
+    /// by a later write on its region, so no moved cell lies outside.
+    pub fn moved_from(&self, load: &crate::compiler::blockstate::BlockMap) -> usize {
+        let mut over: BTreeMap<[i32; 3], Option<&str>> = BTreeMap::new();
+        for ((lo, hi), block) in &self.state.laid {
+            for c in crate::compiler::assembled::region_cells(*lo, *hi) {
+                over.insert(c, block.as_deref());
+            }
+        }
+        over.iter()
+            .filter(|(c, b)| load.get(*c).map(|s| s.as_str()) != **b)
+            .count()
+    }
+
+    /// How many regions an **unforced** write holds here — writes a beat
+    /// nobody has to play lays, which [`RegionState::blocks_over`] does not lay
+    /// (spec-0089 §7's `unforced write(s) not laid`).
+    pub fn unforced_writes(&self) -> usize {
+        self.state.unforced_regions.len()
+    }
+}
+
+/// **The configuration a path holds on arrival at step `arrival`** — the state
+/// [`World::region_state_at`] gives that arrival over `events` under
+/// `ancestor`, the one every route proof asks. `arrival` may be the path's
+/// length: the end state, every step on the path preceding it.
+///
+/// Public for spec-0089: a showcase camera taken after step `i` stands in the
+/// configuration arriving at `i + 1`, and the plan's POV shots in the one
+/// arriving at their leg.
+pub fn configuration_at(
+    world: &World,
+    events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    arrival: usize,
+) -> Configuration {
+    Configuration {
+        step: arrival,
+        live: world.staged_liveness(events, arrival, ancestor),
+        state: world.region_state_at(events, arrival, ancestor),
     }
 }
 
@@ -7767,10 +8201,13 @@ impl World {
             .iter()
             .map(|(lo, hi)| delvewright_dsl::metrics::keep_out_box(body, *lo, *hi))
             .collect();
+        // Whether a body in `c` is caught: by its feet where this model puts
+        // them, so a body standing on a partial block meets a volume in the
+        // course it stands on.
         let meets = |c: [i32; 3]| -> Option<usize> {
-            keep_outs
+            volumes
                 .iter()
-                .position(|(lo, hi)| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]))
+                .position(|(lo, hi)| self.body_can_meet_volume(c, fp, *lo, *hi))
         };
         // Below this a drop is in no volume's keep-out, so it is not followed.
         let bottom = keep_outs.iter().map(|(lo, _)| lo[1]).min().unwrap_or(0);
@@ -9175,6 +9612,29 @@ fn nearest_offending(
 
 /// Every hostile force in the campaign, in deterministic content order (waves
 /// then actors, each in declaration order).
+/// **A wave's reach**: the radius inside which its bodies acquire a player —
+/// the lane's `aggro_radius`, else the largest `follow_range` any of its mobs
+/// declares, else [`DEFAULT_FOLLOW_RANGE`] — with the words a message names it
+/// by. The one reading `DW0380`, `DW0478` and `DW0863` share: a fight that
+/// starts within this distance of the party finds the party.
+pub(crate) fn wave_aggro_radius(w: &delvewright_dsl::Wave) -> (f64, &'static str) {
+    match &w.lane {
+        Some(l) => (f64::from(l.aggro_radius), "the lane's `aggro_radius`"),
+        None => match w
+            .mobs
+            .iter()
+            .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
+            .fold(None::<f64>, |acc, r| Some(acc.map_or(r, |a| a.max(r))))
+        {
+            Some(r) => (r, "the wave's declared `follow_range`"),
+            None => (
+                f64::from(DEFAULT_FOLLOW_RANGE),
+                "the default `follow_range` (none declared)",
+            ),
+        },
+    }
+}
+
 pub(crate) fn aggro_sources(
     plan: &Plan,
     world: &World,
@@ -9190,21 +9650,7 @@ pub(crate) fn aggro_sources(
             .flatten()
             .map(|p| ("seated spawn cell", *p, 0.0))
             .collect();
-        let (radius, radius_source) = match &w.lane {
-            Some(l) => (f64::from(l.aggro_radius), "the lane's `aggro_radius`"),
-            None => match w
-                .mobs
-                .iter()
-                .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
-                .fold(None::<f64>, |acc, r| Some(acc.map_or(r, |a| a.max(r))))
-            {
-                Some(r) => (r, "the wave's declared `follow_range`"),
-                None => (
-                    f64::from(DEFAULT_FOLLOW_RANGE),
-                    "the default `follow_range` (none declared)",
-                ),
-            },
-        };
+        let (radius, radius_source) = wave_aggro_radius(w);
         if let Some(wps) = lanes.get(w.id.as_str()) {
             cells.extend(
                 lane_march_cells(plan, world, w, wps)
@@ -10773,12 +11219,13 @@ struct SeaBody {
     size: usize,
 }
 
-/// Boundary safety under [`Ambient::Ocean`]: the stranding invariant. See
-/// [`verify_boundary_safety`] for the model this implements.
-fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Result<(), Failure> {
+/// The sea-surface bodies of an ocean world, labelled, with where the walk region
+/// `reachable` enters each and climbs out of it — the one labelling
+/// [`boundary_ocean`] judges stranding over and [`open_sea_entry`] reads.
+fn sea_bodies(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Vec<SeaBody> {
     let level = sea.level;
     let Some(([min_x, min_z], [max_x, max_z])) = ocean_window(world) else {
-        return Ok(()); // nothing placed: open sea everywhere, nothing to strand
+        return Vec::new(); // nothing placed: open sea everywhere, nothing to strand
     };
     let w = (max_x - min_x + 1) as usize;
     let d = (max_z - min_z + 1) as usize;
@@ -10827,7 +11274,7 @@ fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> R
         }
     }
     if bodies.is_empty() {
-        return Ok(());
+        return bodies;
     }
 
     // --- where the walk region touches the water ----------------------------
@@ -10860,6 +11307,35 @@ fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> R
             }
             bodies[id as usize].entries.insert(cell);
         }
+    }
+
+    bodies
+}
+
+/// **Where a body can walk into the open sea** (spec-0092 §10): the first
+/// reachable walkable cell, in cell order, from which a body enters a sea body
+/// that reaches the search window's edge — `None` under a void horizon, or when
+/// every water body the walk region enters is enclosed. Read by `DW0960`: a
+/// boundary that does not return is legal only where this is `None`.
+pub fn open_sea_entry(world: &World, starts: &[AnchorRoot]) -> Option<[i32; 3]> {
+    let Ambient::Ocean(sea) = &world.ambient else {
+        return None;
+    };
+    let reachable = world.reachable_walkable_rooted(starts);
+    sea_bodies(world, &reachable, sea)
+        .iter()
+        .filter(|b| b.open)
+        .flat_map(|b| b.entries.iter().copied())
+        .min()
+}
+
+/// Boundary safety under [`Ambient::Ocean`]: the stranding invariant. See
+/// [`verify_boundary_safety`] for the model this implements.
+fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Result<(), Failure> {
+    let level = sea.level;
+    let bodies = sea_bodies(world, reachable, sea);
+    if bodies.is_empty() {
+        return Ok(());
     }
 
     // Every body that reaches the window edge is the same open sea: one climb-out
@@ -12242,6 +12718,68 @@ mod tests {
     // DW0318 — fluid that leaves the built world
     // -----------------------------------------------------------------------
 
+    /// **A press from outside the volume is found** (spec-0092 §10,
+    /// `DW0932`'s "pressed from outside its volume"): a floor of stone, a lever
+    /// body at x 3, a volume over x 0..=2. Every standable cell in the walk region
+    /// within a strike of the body and outside the volume is a press cell; a cell
+    /// out of the walk region, or beyond a strike, is not.
+    #[test]
+    fn a_press_from_outside_the_volume_is_found() {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..12 {
+            blocks.insert([x, 63, 0], "minecraft:stone".to_string());
+        }
+        let occ = crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new());
+        let w = World::from_occupancy(occ, Premises::geometry_only());
+        let mut link = crate::compiler::link::LinkPlan {
+            trigger_id: "trigger/t".to_string(),
+            on: "use",
+            anchor_id: Some("anchor/a".to_string()),
+            npc_id: None,
+            assembly_id: None,
+            range: None,
+            body: vec![[3, 64, 0]],
+            path: "/content/triggers/0/effects/0".to_string(),
+            from_anchor: "anchor/deck".to_string(),
+            from: ([0, 64, 0], [2, 65, 0]),
+            from_area: "area/a".to_string(),
+            to_anchor: "anchor/landing".to_string(),
+            to_area: "area/a".to_string(),
+            to: [10, 64, 0],
+            tick: 0,
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
+            when_requires: Vec::new(),
+            when_forbids: Vec::new(),
+            writes: Vec::new(),
+            gathered_by: Some("/content/triggers/0/effects/0/steps/0/effects/0".to_string()),
+        };
+        let all: BTreeSet<[i32; 3]> = (0..12).map(|x| [x, 64, 0]).collect();
+        let cells = press_cells_outside(&w, &link, &all);
+        assert!(
+            cells.contains(&[4, 64, 0]),
+            "beside the body, outside the volume: {cells:?}"
+        );
+        assert!(
+            !cells.iter().any(|c| link.contains(*c)),
+            "never a cell inside the volume"
+        );
+        assert!(
+            !cells.contains(&[11, 64, 0]),
+            "eight cells off is beyond a strike"
+        );
+        let only_inside: BTreeSet<[i32; 3]> = (0..3).map(|x| [x, 64, 0]).collect();
+        assert!(
+            press_cells_outside(&w, &link, &only_inside).is_empty(),
+            "a cell the walk does not reach is no press cell"
+        );
+        // Widened over every cell the press reaches from, the volume leaves none.
+        link.from = ([0, 64, 0], [7, 65, 0]);
+        let wide = press_cells_outside(&w, &link, &all);
+        assert!(wide.iter().all(|c| c[0] > 7), "{wide:?}");
+    }
+
     /// A 3x3 solid plate at y=63 with a water source standing on its `+x` edge
     /// column, and a built volume covering exactly the plate. Vanilla runs that
     /// source off the plate and down: the shape of every shoreline piece placed
@@ -12282,6 +12820,7 @@ mod tests {
             when_requires: Vec::new(),
             when_forbids: Vec::new(),
             writes: Vec::new(),
+            gathered_by: None,
         };
         let dead = RegionState::default();
         assert!(
@@ -15522,13 +16061,22 @@ mod tests {
         let positions = vec![at_step([4, 65, 0], 1)];
         // Open gate → reachable.
         assert!(
-            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear).is_ok()
+            verify_checkpoints(
+                &world,
+                &cps,
+                &[],
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
         );
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
         let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = verify_checkpoints(
             &world,
             &cps,
+            &[],
             &positions,
             &RegionEvents::from(vec![close.clone()]),
             &linear,
@@ -15544,9 +16092,118 @@ mod tests {
         let world = split_world(65);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        let err = verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear)
-            .unwrap_err();
+        let err = verify_checkpoints(
+            &world,
+            &cps,
+            &[],
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
+    }
+
+    /// A checkpoint a beat sets after this one, and before the next leg is
+    /// walked, replaces it: a party carried across to the far patch and given
+    /// a checkpoint there does not owe the far patch's anchor from the near
+    /// checkpoint it left. A replacement that fires only AT the target step is
+    /// not before the leg, and the near checkpoint still owes it.
+    #[test]
+    fn a_checkpoint_replaced_before_the_next_leg_owes_it_nothing() {
+        let world = split_world(65);
+        let cps = vec![
+            ("cp/near".to_string(), [0, 65, 1], 0usize),
+            ("cp/far".to_string(), [3, 65, 1], 1usize),
+        ];
+        let positions = vec![at_step([4, 65, 1], 2)];
+        verify_checkpoints(
+            &world,
+            &cps,
+            &[1],
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .expect("the near checkpoint is replaced at step 1, before the leg to step 2");
+        let err = verify_checkpoints(
+            &world,
+            &cps,
+            &[2],
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_STRANDED);
+        assert!(err.message.contains("cp/near"), "{}", err.message);
+    }
+
+    /// A checkpoint a trigger sets is rooted where the party can first reach the
+    /// trigger (spec-0093 §6.2). On the split floor the near patch is walked at
+    /// steps 0–1 and the far patch from step 3; a trigger that fires only from the
+    /// far patch is first reachable in the far configuration, so the checkpoint
+    /// it sets roots at step 2 and owes only the far patch — which it reaches.
+    #[test]
+    fn a_trigger_checkpoint_is_rooted_where_the_trigger_is_first_reachable() {
+        let world = split_world(65);
+        let configs: Vec<TriggerRootConfig> = vec![
+            (None, 0, vec![[0, 65, 1], [1, 65, 1]]),
+            (None, 3, vec![[3, 65, 1], [4, 65, 1]]),
+        ];
+        let far: BTreeSet<[i32; 3]> = [[4, 65, 0]].into_iter().collect();
+        let near: BTreeSet<[i32; 3]> = [[0, 65, 0]].into_iter().collect();
+        assert_eq!(earliest_reaching_config(&configs, &world, &far), Some(3));
+        assert_eq!(earliest_reaching_config(&configs, &world, &near), Some(0));
+        let nowhere: BTreeSet<[i32; 3]> = [[9, 65, 9]].into_iter().collect();
+        assert_eq!(earliest_reaching_config(&configs, &world, &nowhere), None);
+
+        // The proof under each root: rooted at the entry (the old rule) the far
+        // checkpoint strands the party — the near patch is not walkable from it;
+        // rooted at step 2 it owes the far patch's own anchor and passes.
+        let positions = vec![at_step([1, 65, 1], 1), at_step([4, 65, 1], 3)];
+        let early = vec![("cp/far".to_string(), [3, 65, 1], 0usize)];
+        let err = verify_checkpoints(
+            &world,
+            &early,
+            &[],
+            &positions,
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_STRANDED);
+        let rooted = vec![("cp/far".to_string(), [3, 65, 1], 2usize)];
+        assert!(
+            verify_checkpoints(
+                &world,
+                &rooted,
+                &[],
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
+        );
+        // And a trigger the party can reach from the entry keeps the entry root:
+        // the same far checkpoint set from the near patch still strands.
+        let near_first = earliest_reaching_config(&configs, &world, &near).unwrap();
+        let cps = vec![(
+            "cp/far".to_string(),
+            [3, 65, 1],
+            near_first.saturating_sub(1),
+        )];
+        assert!(
+            verify_checkpoints(
+                &world,
+                &cps,
+                &[],
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -15556,7 +16213,15 @@ mod tests {
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
         assert!(
-            verify_checkpoints(&world, &cps, &positions, &RegionEvents::default(), &linear).is_ok()
+            verify_checkpoints(
+                &world,
+                &cps,
+                &[],
+                &positions,
+                &RegionEvents::default(),
+                &linear
+            )
+            .is_ok()
         );
     }
 
@@ -15565,8 +16230,8 @@ mod tests {
         // The checkpoint cell has no standable floor within snap radius.
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
-        let err =
-            verify_checkpoints(&world, &cps, &[], &RegionEvents::default(), &linear).unwrap_err();
+        let err = verify_checkpoints(&world, &cps, &[], &[], &RegionEvents::default(), &linear)
+            .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
     }
 

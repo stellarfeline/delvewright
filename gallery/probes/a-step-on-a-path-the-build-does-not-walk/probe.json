@@ -1,0 +1,15 @@
+{
+  "code": "DW0721",
+  "patch": [
+    {
+      "doc": "design/cameras.json",
+      "op": "add",
+      "path": "/cameras/7/after/path",
+      "value": "branch/nowhere"
+    }
+  ],
+  "units": [
+    "CameraAfter.path"
+  ],
+  "why": "The eighth camera's `after` gains `path: branch/nowhere`, a branch `validation/branch-plan.json` does not declare (the gallery declares `branch/read` and `branch/skipped`). Nothing else moves: `obj/clear-the-muster` is a step of the critical path and of both declared branches' paths. The field names the exported path the step is on, and a path the build does not walk has no step to stand on: `DW0721` refuses it, naming the camera and the branches the build declares. It discharges `CameraAfter.path`: no branch path of the gallery stands in a configuration the critical path does not at any step it carries (measured over all 14 step ids on all three paths, `delvec cameras` over the gallery's build: every branch world's sha-256 equals the critical path's at the same step), so a camera stating a declared branch would picture what a camera with no `path` already pictures — the field is bound by its refusal, as spec-0089 §9.1 provides."
+}

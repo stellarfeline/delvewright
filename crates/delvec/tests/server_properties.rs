@@ -14,7 +14,8 @@
 //! So the assertion here is the whole KEY SET, not the presence of a file: what
 //! is pinned and what is left to the host is a reviewed decision, and adding or
 //! dropping a key has to be written down here to pass. `crates/delvec/src/compiler/
-//! emit.rs` (`DELVE_VIEW_DISTANCE`, `DELVE_SIMULATION_DISTANCE`) carries the
+//! emit.rs` (`DELVE_SIMULATION_DISTANCE`) and `delvewright_dsl::viewdistance`
+//! (the floor a campaign's `view_distance` stands on, spec-0091) carry the
 //! reasoning for the two chunk distances; `docs/reference/compiler.md` carries
 //! the verdict on every key deliberately left unset.
 //!
@@ -29,11 +30,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use delvec::compiler::commands::CommandTree;
-use delvec::compiler::emit::{self, BuildOutput, DELVE_SIMULATION_DISTANCE, DELVE_VIEW_DISTANCE};
+use delvec::compiler::emit::{self, BuildOutput, DELVE_SIMULATION_DISTANCE};
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
+use delvewright_dsl::viewdistance::FLOOR as VIEW_DISTANCE_FLOOR;
 
 /// Exactly the keys a delve pins. Everything else on the pinned server version
 /// is left to the host **on purpose**, with a per-key verdict recorded in
@@ -135,14 +137,15 @@ fn every_campaign_pins_exactly_the_reviewed_key_set() {
     }
 }
 
-/// Both chunk distances are written, with the established values. A test that
+/// Both chunk distances are written, with the established values: a campaign
+/// that declares no `view_distance` is served the engine's floor. A test that
 /// only asserted the keys exist would pass on a host-shaped value.
 #[test]
 fn chunk_distances_carry_their_established_values() {
     let out = build_dir(&common::hello_world_dir());
     assert_eq!(
         value(&out, "view-distance"),
-        DELVE_VIEW_DISTANCE.to_string(),
+        VIEW_DISTANCE_FLOOR.to_string(),
         "view-distance decides what the party can SEE; unwritten, the shipped \
          image takes it from the itzg base's own properties template"
     );
@@ -155,10 +158,11 @@ fn chunk_distances_carry_their_established_values() {
     // 10 chunks = 160 blocks, the radius the horizon dossier and spec-0026 do
     // their vista arithmetic against. If either constant moves, that arithmetic
     // moves with it.
-    assert_eq!(DELVE_VIEW_DISTANCE, 10);
+    assert_eq!(VIEW_DISTANCE_FLOOR, 10);
     assert_eq!(DELVE_SIMULATION_DISTANCE, 10);
     // The two answer different questions; nothing may collapse them into one
-    // knob, but today they agree and the shipped file must say so twice.
+    // knob (spec-0091: a declared view distance moves the first and never the
+    // second), but at the floor they agree and the shipped file says so twice.
     assert_eq!(
         value(&out, "view-distance"),
         value(&out, "simulation-distance")
@@ -190,7 +194,7 @@ fn server_readme_states_the_pinned_distances() {
     let out = build_dir(&common::hello_world_dir());
     let readme = std::str::from_utf8(out.get("server/README.md").expect("README emitted")).unwrap();
     assert!(
-        readme.contains(&format!("`view-distance={DELVE_VIEW_DISTANCE}`")),
+        readme.contains(&format!("`view-distance={VIEW_DISTANCE_FLOOR}`")),
         "server/README.md must state the pinned view distance:\n{readme}"
     );
     assert!(

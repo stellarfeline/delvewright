@@ -18,6 +18,7 @@
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
 //! - [`blockout`]: the derived blockout — the map pipeline's stage nobody authors.
 //! - [`blockstate`]: interned block states — the assembled world's block map holds one handle per cell, not one string.
+//! - [`bound`]: `DW0960` — the boundary and the world agree: every place a body is put lies inside a region that returns, and a region that does not return encloses a world nobody can leave (spec-0092 §10).
 //! - [`branch`]: branch-complete narrative verification (`DW0480`–`DW0485`).
 //! - [`burial`]: is a placed piece's outward solid boundary buried, or declared (`DW0885`)?
 //! - [`calibrate`]: `delvec calibrate` — a harvested rehearsal report turned back into anchor + offset patches.
@@ -54,6 +55,7 @@
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
 //! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.
 //! - [`light`]: the assembled-world lighting model and the deterministic relight pass (`DW0210`/`DW0211`).
+//! - [`lightning`]: `DW0958`/`DW0959` — a bolt strikes clear of every posted body and every block the game would rewrite (spec-0092).
 //! - [`link`]: a teleport the route proof takes as a link — the one enumeration of links and gathers, and the cutscene and carry-edge checks (`DW0932`/`DW0933`/`DW0934`).
 //! - [`load`]: read a campaign directory into the DSL's `RawCampaign`, keeping the raw bytes for input hashing.
 //! - [`r#loop`]: an endless corridor (spec-0086) — the slab, the closed view, identical blocks and light, and the loop's seal and exercise (`DW0945`–`DW0950`).
@@ -78,10 +80,12 @@
 //! - [`respawn`]: what separates a retry from a soft-lock — the evidence `DW0478` accepts.
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
+//! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
 //! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
 //! - [`solver`]: the jigsaw layout solver.
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
 //! - [`stake`]: the recovery stake's compile-time placement table and the proofs it owes.
+//! - [`standin`]: the party is seen in its own cutscenes — the stand-in a cutscene places for each player, and its lifetime proof (`DW0971`, spec-0095).
 //! - [`statepath`]: a numeric gate judged against the writes the path performs before it (`DW0879`).
 //! - [`strand`]: a fight the party must win stays where the party can strike it (`DW0924`).
 //! - [`surround`]: horizon surround generation — the tiles that dress the world outside the placed pieces.
@@ -92,6 +96,7 @@
 //! - [`trap_trigger`]: a trap's trigger cell holds the block its trigger kind names (`DW0917`).
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
 //! - [`view`]: the CPU render surface — the visual channel that ships in the one binary a creator installs.
+//! - [`walk`]: the walk record — the owner walks the detailed build, and the record names it by grid, ways and detail (`DW0974`).
 //! - [`watch`]: runtime-watch coverage of per-object bodies, in two tiers.
 //! - [`waypoints`]: the compiler-proven critical-path waypoint polyline, as validation metadata.
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
@@ -108,6 +113,7 @@ pub mod blind;
 pub mod blocking;
 pub mod blockout;
 pub mod blockstate;
+pub mod bound;
 pub mod branch;
 pub mod burial;
 pub mod calibrate;
@@ -144,6 +150,7 @@ pub mod horizon;
 pub mod integrity;
 pub mod lethal;
 pub mod light;
+pub mod lightning;
 pub mod link;
 pub mod load;
 pub mod r#loop;
@@ -169,10 +176,12 @@ pub mod resourcepack;
 pub mod respawn;
 pub mod seating;
 pub mod seeding;
+pub mod served;
 pub mod snapshot;
 pub mod solver;
 pub mod stairs;
 pub mod stake;
+pub mod standin;
 pub mod statepath;
 pub mod strand;
 pub mod surround;
@@ -183,6 +192,7 @@ pub mod timeline;
 pub mod trap_trigger;
 pub mod traversal;
 pub mod view;
+pub mod walk;
 pub mod watch;
 pub mod waypoints;
 pub mod ways;

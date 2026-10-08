@@ -1,0 +1,13 @@
+{
+  "code": "DW0962",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/objectives/1/marker",
+      "value": "hidden"
+    }
+  ],
+  "units": [],
+  "why": "The case's interact already has a `prop` - the stone button is the affordance, and the compiler summons no lantern beside a prop. Writing `marker` on it declares a value the world will never reflect: `shown` would be a lie and `hidden` is redundant. Either is refused, because a field that binds to nothing is the shape every other probe here exists to catch. It declares no unit: `marker` is bound on the interact-free reaches and on the valley overlay's reach; what must not compile is a marker on a prop."
+}

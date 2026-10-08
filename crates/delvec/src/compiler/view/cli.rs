@@ -74,7 +74,8 @@ pub enum ViewCommand {
     /// Emit a Chunky scene per showcase camera a campaign states in
     /// `design/cameras.json` — a camera on the assembled world, estimated from the
     /// approved image it answers or placed by hand — against a build's
-    /// `render-plan.json`.
+    /// `render-plan.json`, each loading the world the engine writes for the
+    /// configuration the camera stands in (at load, or after its `after` step).
     Cameras {
         /// A `delvec build` output directory (containing `render-plan.json`).
         build_dir: PathBuf,
@@ -82,15 +83,13 @@ pub enum ViewCommand {
         /// camera's `answers` is held to its `design.json`.
         #[arg(long)]
         campaign: PathBuf,
-        /// Output directory for the scene JSONs.
+        /// Output directory for the scene JSONs, and for the worlds they load
+        /// (`<out>/worlds/<key>/`, one per configuration a camera stands in:
+        /// `at-load`, or `after-<step>`). The worlds are written by the engine
+        /// from the campaign and `--prefabs` (spec-0089); no server boot is
+        /// needed.
         #[arg(short, long)]
         out: PathBuf,
-        /// The world save the scenes load (default `<build-dir>/world`, where
-        /// `validation/world-save.sh` writes it). Refused unless it holds
-        /// `level.dat` and a region file; written into the scenes as an absolute
-        /// path.
-        #[arg(long)]
-        world: Option<PathBuf>,
         /// Only this camera, by name (repeatable).
         #[arg(long)]
         only: Vec<String>,
@@ -109,8 +108,8 @@ pub enum ViewCommand {
         /// Write no scene: draw each camera (and candidate) on the CPU, flat-lit,
         /// at half its width and height, as `<stem>_preview.png` — seconds per
         /// frame, for placing a camera before a path tracer is asked about light.
-        /// Reads the campaign and `--prefabs` to assemble the world.
-        #[arg(long, conflicts_with = "world")]
+        /// Draws each camera's own configuration (its `after`).
+        #[arg(long)]
         preview: bool,
     },
     /// Write one row of `design/cameras.json` — the record's one writer: a pose a
@@ -155,6 +154,13 @@ pub enum ViewCommand {
         /// the sky it had, and an estimate carries its own.
         #[arg(long, conflicts_with = "delete")]
         sky: Option<String>,
+        /// The step the picture is taken after, `<step>[@<path>]`: an objective
+        /// id (`obj/<id>`) or a trigger id (`trigger/<id>`) of the critical
+        /// path, or of the branch named after `@`. Held to the campaign's
+        /// planned path (read with `--prefabs`). Without it a hand row keeps the
+        /// step it had and an estimate carries its own.
+        #[arg(long, conflicts_with = "delete")]
+        after: Option<String>,
         /// Remove the row. A hand camera is deleted only when the person who
         /// placed it asks.
         #[arg(long)]
@@ -332,56 +338,11 @@ impl ViewCommand {
                     size: *size,
                 },
             ),
-            ViewCommand::Cameras {
-                build_dir,
-                campaign,
-                out,
-                world,
-                only,
-                bracket,
-                draft,
-                preview,
-            } if !*preview => run_cameras(
-                build_dir,
-                campaign,
-                out,
-                world.as_deref(),
-                json,
-                EmitOptions {
-                    world_path: String::new(),
-                    only: only.clone(),
-                    bracket: *bracket,
-                    draft: *draft,
-                },
-            ),
-            ViewCommand::PlaceCamera {
-                campaign,
-                name,
-                answers,
-                report,
-                slot,
-                fov,
-                candidates,
-                pick,
-                sky,
-                delete,
-            } => run_place_camera(
-                campaign,
-                name,
-                answers.as_deref(),
-                sky.as_deref(),
-                PlaceFrom {
-                    report: report.as_deref().zip(*slot).zip(*fov),
-                    candidates: candidates.as_deref().zip(pick.as_deref()),
-                    delete: *delete,
-                },
-                json,
-            ),
-            ViewCommand::Cameras { .. } => fail(
+            ViewCommand::Cameras { .. } | ViewCommand::PlaceCamera { .. } => fail(
                 Diagnostic::error(
                     DW_INPUT,
-                    "`delvec cameras --preview` assembles the world, and is run by the `delvec` \
-                     binary rather than this arm",
+                    "`delvec cameras` and `delvec place-camera` assemble the world, and are run by \
+                     the `delvec` binary rather than this arm",
                 ),
                 json,
                 exit::INPUT,
@@ -613,7 +574,29 @@ fn run_scene(build_dir: &Path, out: &Path, world: Option<&Path>, vopts: &ViewOpt
         out.display(),
         scene::CHUNKY_CORE
     );
+    eprintln!("{}", review_frame_limit(&bytes));
     ExitCode::SUCCESS
+}
+
+/// The review frames' stated limit (spec-0089 §8): they render the world at
+/// load, and the plan states which POV shots stand in a configuration other
+/// than load (`after.cells_moved` above zero) — counted here so the limit is a
+/// measured one.
+pub fn review_frame_limit(plan_json: &[u8]) -> String {
+    let doc: serde_json::Value = serde_json::from_slice(plan_json).unwrap_or_default();
+    let pov: Vec<&serde_json::Value> = doc["shots"]
+        .as_array()
+        .map(|a| a.iter().filter(|s| s["kind"] == "pov").collect())
+        .unwrap_or_default();
+    let moved = pov
+        .iter()
+        .filter(|s| s["after"]["cells_moved"].as_u64().is_some_and(|n| n > 0))
+        .count();
+    format!(
+        "review frames render the world at load; {moved} of {} POV shots stand in a configuration \
+         other than load",
+        pov.len()
+    )
 }
 
 /// Write scene JSONs into `out`, deleting each one's now-stale Chunky caches
@@ -733,20 +716,48 @@ fn run_panorama(
 }
 
 /// Where `place-camera` takes its row from; clap holds the three exclusive.
-struct PlaceFrom<'a> {
-    report: Option<((&'a Path, u32), f64)>,
-    candidates: Option<(&'a Path, &'a str)>,
-    delete: bool,
+/// Where `delvec place-camera` writes a row from.
+pub struct PlaceFrom<'a> {
+    pub report: Option<((&'a Path, u32), f64)>,
+    pub candidates: Option<(&'a Path, &'a str)>,
+    pub delete: bool,
 }
 
-fn run_place_camera(
+/// How a run that writes or reads the record asks where a camera stands
+/// (spec-0089 §4): the caller assembles the campaign, so this module never
+/// plans one. A refusal is `(diagnostic, exit code)`, or `(None, code)` when
+/// the caller has already printed why.
+pub type StandAsker<'a> = dyn FnMut(&[camera::Camera]) -> Result<crate::compiler::view::beat::Stood, (Option<Diagnostic>, u8)>
+    + 'a;
+
+/// `delvec place-camera`: write one row of the record. `ask` is consulted only
+/// when the written row states an `after`, so a row with none never needs the
+/// campaign to plan.
+#[allow(clippy::too_many_arguments)]
+pub fn run_place_camera(
     campaign: &Path,
     name: &str,
     answers: Option<&str>,
     sky: Option<&str>,
+    after: Option<&str>,
     from: PlaceFrom<'_>,
     json: bool,
+    ask: &mut StandAsker<'_>,
 ) -> ExitCode {
+    // Parsed here rather than by clap, for the reason `--sky` is.
+    let after = match after.map(camera::CameraAfter::parse).transpose() {
+        Ok(a) => a,
+        Err(why) => {
+            return fail(
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!("{}: camera `{name}`: --after {why}", camera::CAMERAS_FILE),
+                ),
+                json,
+                exit::INPUT,
+            );
+        }
+    };
     // Parsed here rather than by clap, so a sky that is not one is refused under
     // the record's own code, as every other rule of the record is.
     let sky = match sky.map(camera::CameraSky::parse).transpose() {
@@ -901,10 +912,11 @@ fn run_place_camera(
         Ok(p) => p,
         Err(d) => return fail(d, json, exit::INPUT),
     };
-    let (written, how) = match camera::place(sheet, &campaign_id, name, answers, sky, placement) {
-        Ok(w) => w,
-        Err(d) => return fail(d, json, exit::INPUT),
-    };
+    let (written, how) =
+        match camera::place(sheet, &campaign_id, name, answers, sky, after, placement) {
+            Ok(w) => w,
+            Err(d) => return fail(d, json, exit::INPUT),
+        };
     let approved =
         match read(&campaign.join("design.json")).and_then(|b| camera::reference_rows(&b)) {
             Ok(r) => r,
@@ -931,6 +943,17 @@ fn run_place_camera(
     if let Some(why) = sky_of_row.refusal {
         return fail(Diagnostic::error(DW_INPUT, why), json, exit::INPUT);
     }
+    // And its `after` rules (spec-0089 §6): the same question `delvec cameras`
+    // and `delvec build` ask, asked of the campaign's own planned path.
+    let stood = if placed_row.iter().any(|c| c.after.is_some()) {
+        match ask(&placed_row) {
+            Ok(s) => Some(s),
+            Err((Some(d), code)) => return fail(d, json, code),
+            Err((None, code)) => return ExitCode::from(code),
+        }
+    } else {
+        None
+    };
     let bytes = match camera::sheet_bytes(&written) {
         Ok(b) => b,
         Err(d) => return fail(d, json, exit::OUTPUT),
@@ -960,19 +983,26 @@ fn run_place_camera(
     for r in &sky_of_row.resolved {
         eprintln!("{}", r.line());
     }
+    for s in stood.iter().flat_map(|s| &s.stands.stands) {
+        eprintln!("{}", s.line(0));
+    }
     // The count a creator is placing cameras to move (spec-0070 §5), so it moves
     // under their hand rather than at the next build.
     eprintln!("{}", answers.line());
     ExitCode::SUCCESS
 }
 
-fn run_cameras(
+/// `delvec cameras`: emit one scene per camera the run frames, each naming the
+/// world the engine writes for the configuration it stands in (spec-0089 §5.3).
+/// `ask` is the caller's assembly of the campaign; it is consulted after every
+/// rule of the record that needs no world has held.
+pub fn run_cameras(
     build_dir: &Path,
     campaign: &Path,
     out: &Path,
-    world: Option<&Path>,
     json: bool,
     mut opts: EmitOptions,
+    ask: &mut StandAsker<'_>,
 ) -> ExitCode {
     let read = |path: PathBuf| {
         std::fs::read(&path)
@@ -1044,10 +1074,65 @@ fn run_cameras(
             exit::INPUT,
         );
     }
-    opts.world_path = match resolve_world(build_dir, world) {
-        Ok(w) => w,
-        Err(d) => return fail(d, json, exit::INPUT),
+    // **The world each camera stands in** (spec-0089 §4, §5): one world per
+    // distinct configuration, written by the engine under `<out>/worlds/`.
+    // Asked of exactly the cameras this run frames — a candidate stands where
+    // its camera does, since it carries the camera's `after`.
+    let stood = match ask(&framed) {
+        Ok(s) => s,
+        Err((Some(d), code)) => return fail(d, json, code),
+        Err((None, code)) => return ExitCode::from(code),
     };
+    let worlds_dir = out.join("worlds");
+    let mut world_lines = Vec::new();
+    let mut paths = std::collections::BTreeMap::new();
+    let mut omitted = std::collections::BTreeMap::new();
+    for (key, blocks) in &stood.stands.worlds {
+        let dir = worlds_dir.join(key);
+        let written =
+            match crate::compiler::view::world::write(blocks, &*stood.biome, stood.spawn, &dir) {
+                Ok(w) => w,
+                Err(e) => {
+                    return fail(
+                        Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())),
+                        json,
+                        exit::OUTPUT,
+                    );
+                }
+            };
+        let abs = match std::path::absolute(&dir) {
+            Ok(a) => a.display().to_string(),
+            Err(e) => {
+                return fail(
+                    Diagnostic::error(DW_OUTPUT, format!("resolve {}: {e}", dir.display())),
+                    json,
+                    exit::OUTPUT,
+                );
+            }
+        };
+        world_lines.push(format!(
+            "world: {key} {} chunk(s), {} cell(s), sha256 {} -> {abs}",
+            written.chunks, written.cells, written.sha256
+        ));
+        omitted.insert(
+            key.clone(),
+            crate::compiler::view::world::block_entities_omitted(blocks),
+        );
+        paths.insert(key.clone(), abs);
+    }
+    for s in &stood.stands.stands {
+        eprintln!("{}", s.line(omitted.get(&s.key).copied().unwrap_or(0)));
+    }
+    for l in &world_lines {
+        eprintln!("{l}");
+    }
+    eprintln!("{}", crate::compiler::view::beat::summary(&stood.stands));
+    opts.world_paths = stood
+        .stands
+        .stands
+        .iter()
+        .map(|s| (s.camera.clone(), paths[&s.key].clone()))
+        .collect();
     let emission = match camera::emit(&plan, &sheet, &rows, &opts) {
         Ok(e) => e,
         Err(d) => return fail(d, json, exit::INPUT),

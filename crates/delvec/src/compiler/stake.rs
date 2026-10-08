@@ -636,6 +636,114 @@ pub fn seats(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Vec<Seat> {
     out
 }
 
+/// **The cells a player can stand on — and so die on — while each seat is in
+/// force** (`DW0525`'s population), one set per seat.
+///
+/// A seat holds from the step it can first be in force until a checkpoint a
+/// beat sets ([`crate::compiler::nav::fixed_checkpoint_fires`]) replaces it; a
+/// bonfire or a trigger's checkpoint can be taken up again wherever the route
+/// stands in its own area, so each such return opens another window. Within a
+/// window the party stands in the areas the route visits, and in an area it
+/// stands anywhere that area's walk region reaches: the entry spawn's for the
+/// area the delve starts in (`from_entry`, the set every seat was judged against
+/// before), and for an area the route is carried into, the walk region from
+/// where the crossing puts it down. The step whose checkpoint ends a window is
+/// walked under the old seat unless the carry onto it completes it on landing
+/// ([`crate::compiler::plan::completed_on_landing`]).
+///
+/// A campaign whose route stays in one area judges every seat against
+/// `from_entry`, exactly as before; a route that crosses areas no longer reads
+/// another area's cells as stranded from a seat that cannot be in force there,
+/// and no longer leaves the cells of an area it was carried into unjudged.
+fn death_cells_per_seat(
+    plan: &Plan,
+    world: &World,
+    seats: &[Seat],
+    from_entry: &BTreeSet<[i32; 3]>,
+) -> Vec<BTreeSet<[i32; 3]>> {
+    let area_of = |c: [i32; 3]| {
+        plan.areas.iter().position(|a| {
+            let (lo, hi) = a.bounds();
+            lo[0] <= c[0] && c[0] <= hi[0] && lo[2] <= c[2] && c[2] <= hi[2]
+        })
+    };
+    let route = crate::compiler::nav::route_positions(plan);
+    let entry_area = seats
+        .first()
+        .filter(|s| s.cp == -1)
+        .and_then(|s| area_of(s.cell));
+    let route_areas: BTreeSet<Option<usize>> = route.iter().map(|(_, p, _)| area_of(*p)).collect();
+    if route_areas.iter().all(|a| *a == entry_area) {
+        return vec![from_entry.clone(); seats.len()];
+    }
+    let mut regions: BTreeMap<usize, BTreeSet<[i32; 3]>> = BTreeMap::new();
+    if let Some(a) = entry_area {
+        regions.insert(a, from_entry.clone());
+    }
+    for (step, pos, carried) in &route {
+        let (true, Some(a)) = (*carried, area_of(*pos)) else {
+            continue;
+        };
+        if Some(a) == entry_area {
+            continue;
+        }
+        if let Some(cell) = world.snap(*pos, crate::compiler::nav::SNAP_RADIUS) {
+            let (_, r) =
+                crate::compiler::nav::reachable_under_every_quest_state(plan, world, cell, *step);
+            regions.entry(a).or_default().extend(r);
+        }
+    }
+    let fixed = crate::compiler::nav::fixed_checkpoint_fires(plan);
+    seats
+        .iter()
+        .map(|seat| {
+            let own = area_of(seat.cell);
+            let once = seat.cp == -1
+                || plan
+                    .checkpoints
+                    .iter()
+                    .any(|c| c.index as i32 == seat.cp && c.trigger.is_none() && !c.rest);
+            let mut starts = vec![seat.from_step];
+            if !once {
+                starts.extend(
+                    route
+                        .iter()
+                        .filter(|(s, p, _)| *s >= seat.from_step && area_of(*p) == own)
+                        .map(|(s, _, _)| *s),
+                );
+            }
+            let mut areas: BTreeSet<usize> = own.into_iter().collect();
+            for s0 in starts {
+                let end = fixed.iter().copied().filter(|f| *f > s0).min();
+                for (s, p, _) in &route {
+                    let within = *s >= s0
+                        && match end {
+                            None => true,
+                            Some(e) if *s < e => true,
+                            Some(e) => {
+                                *s == e
+                                    && !crate::compiler::plan::completed_on_landing(
+                                        &plan.critical_path,
+                                        &plan.critical_path_transport,
+                                        e,
+                                    )
+                            }
+                        };
+                    if within && let Some(a) = area_of(*p) {
+                        areas.insert(a);
+                    }
+                }
+            }
+            areas
+                .iter()
+                .filter_map(|a| regions.get(a))
+                .flatten()
+                .copied()
+                .collect()
+        })
+        .collect()
+}
+
 /// Build the placement table and discharge its proofs.
 ///
 /// Returns `Ok(None)` for a campaign that declares no stake — the whole feature is
@@ -708,9 +816,10 @@ pub fn build(
         Some(s) if s.cp == -1 => reach[0].clone(),
         _ => world.reachable_walkable(&seats.iter().map(|s| s.cell).collect::<Vec<_>>()),
     };
+    let deaths = death_cells_per_seat(plan, world, &seats, &from_entry);
     let mut stranded_cells = 0usize;
     for (i, seat) in seats.iter().enumerate() {
-        let stranded: Vec<[i32; 3]> = from_entry
+        let stranded: Vec<[i32; 3]> = deaths[i]
             .iter()
             .filter(|c| !reach[i].contains(*c))
             .filter(|c| !regions.iter().any(|r| r.holds_no_anchor(**c)))

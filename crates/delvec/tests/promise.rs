@@ -1,4 +1,5 @@
-//! **An objective keeps the promise its prompt makes** (`DW0860`–`DW0863`).
+//! **An objective keeps the promise its prompt makes** (`DW0860`–`DW0862`,
+//! `DW0961`, `DW0962`; `DW0863` needs places and lives in `quiet_guidance.rs`).
 //!
 //! Fixture shape: hello-world's world/classes/npcs/dialogue, plus a two-quest DAG
 //! whose stage-5 document is supplied per test. Every test drives
@@ -67,12 +68,15 @@ static DIALOGUE: LazyLock<String> = LazyLock::new(|| {
 });
 
 /// A two-quest stage-5 document. `second` is `quest/two`'s objective list and
-/// `complete` its `on_complete` bundle, so one fixture serves every rule.
-fn quests(second: &str, complete: &str) -> String {
+/// `complete` its `on_complete` bundle, so one fixture serves every rule — under
+/// a `guidance` block (`guidance` is the
+/// block's JSON followed by a comma, or empty).
+fn quests_under(guidance: &str, second: &str, complete: &str) -> String {
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}", "campaign_id": "hello-world", "stage": "quests",
   "content": {{
+    {guidance}
     "waves": [ {{ "id": "wave/garrison", "anchor": "anchor/exit",
                   "mobs": [ {{ "entity": "minecraft:zombie", "count": 2 }} ] }} ],
     "quests": [
@@ -89,12 +93,16 @@ fn quests(second: &str, complete: &str) -> String {
 }
 
 fn campaign(second: &str, complete: &str) -> Campaign {
+    campaign_under("", second, complete)
+}
+
+fn campaign_under(guidance: &str, second: &str, complete: &str) -> Campaign {
     parse_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: NPCS.to_string(),
         classes: hw("classes.json"),
         quest_plan: QUEST_PLAN.to_string(),
-        quests: quests(second, complete),
+        quests: quests_under(guidance, second, complete),
         dialogue: DIALOGUE.to_string(),
         world_edits: None,
         geometry_brief: None,
@@ -157,51 +165,133 @@ fn an_objective_with_no_prompt_at_all_is_not_dw0862() {
     );
 }
 
-// --- DW0863: a fight nothing points at -------------------------------------
-
-/// A `kill` objective is the one kind the compiler leaves nothing in the world
-/// for, so it owes both lines. Each half is refused on its own.
+/// The same hint under a hidden announcement — the objective's own, or the
+/// campaign's default — is the same unshown prose, and the message says which
+/// hid it. Announced again, it is clean.
 #[test]
-fn a_kill_objective_without_both_lines_is_dw0863() {
-    for (obj, expect) in [
-        (
-            r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison" }"#,
-            "neither a `title` nor a `hint`",
-        ),
-        (
-            r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison", "hint": "They come through the breach." }"#,
-            "no `title`",
-        ),
-        (
-            r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison", "title": "Hold the Breach" }"#,
-            "no `hint`",
-        ),
-    ] {
-        let c = campaign(obj, DONE);
-        let d = promise::check(&c)
-            .0
-            .into_iter()
-            .find(|d| d.code == promise::DW_FIGHT_UNSIGNED)
-            .unwrap_or_else(|| panic!("a kill objective missing {expect} must be DW0863"));
-        assert_eq!(d.code, "DW0863");
-        assert!(d.message.contains(expect), "{}", d.message);
-        assert!(d.message.contains("wave/garrison"), "{}", d.message);
-        assert!(d.message.contains("obj/purge"), "{}", d.message);
-    }
+fn hint_under_a_hidden_announcement_is_dw0862() {
+    let hidden = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+        "radius": 2, "title": "Leave the Keep", "hint": "The gate stands open.",
+        "announcement": "hidden" }"#;
+    let d = promise::check(&campaign(hidden, DONE))
+        .0
+        .into_iter()
+        .find(|d| d.code == promise::DW_PROMPT_UNSHOWN)
+        .expect("a hint under `announcement: hidden` is DW0862");
+    assert!(
+        d.message.contains("states `announcement: hidden`"),
+        "{}",
+        d.message
+    );
+
+    let by_campaign = campaign_under(
+        r#""guidance": { "announcements": "hidden" },"#,
+        CLEAN_REACH,
+        DONE,
+    );
+    let d = promise::check(&by_campaign)
+        .0
+        .into_iter()
+        .find(|d| d.code == promise::DW_PROMPT_UNSHOWN)
+        .expect("a hint under `guidance.announcements: hidden` is DW0862");
+    assert!(
+        d.message.contains("`guidance.announcements: hidden`"),
+        "{}",
+        d.message
+    );
+
+    // Opted back in on the objective, the campaign default no longer hides it.
+    let shown = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+        "radius": 2, "title": "Leave the Keep", "hint": "The gate stands open.",
+        "announcement": "shown" }"#;
+    let c = campaign_under(r#""guidance": { "announcements": "hidden" },"#, shown, DONE);
+    assert!(!codes(&c).iter().any(|c| c == "DW0862"), "{:?}", codes(&c));
 }
 
-/// A `kill` objective carrying both lines is clean — and the same document with
-/// the two lines removed is not. The pair is the perturbation: it shows the rule
-/// is answering about THESE fields rather than passing for some other reason.
+// --- DW0961 / DW0962: a declaration that binds to nothing -------------------
+
+/// `announcement: shown` with no title asks for an announcement nothing can
+/// print; with a title it is an ordinary opt-in.
 #[test]
-fn a_signed_kill_objective_is_clean_and_stripping_it_reds() {
-    let signed = r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison",
-        "title": "Hold the Breach", "hint": "They come up the stair from the muster." }"#;
-    let stripped = r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison" }"#;
-    let clean = codes(&campaign(signed, DONE));
-    let red = codes(&campaign(stripped, DONE));
-    assert!(!clean.iter().any(|c| c == "DW0863"), "{clean:?}");
-    assert!(red.iter().any(|c| c == "DW0863"), "{red:?}");
+fn an_announcement_asked_for_with_no_title_is_dw0961() {
+    let empty = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+        "radius": 2, "announcement": "shown" }"#;
+    let d = promise::check(&campaign(empty, DONE))
+        .0
+        .into_iter()
+        .find(|d| d.code == promise::DW_ANNOUNCEMENT_EMPTY)
+        .expect("`announcement: shown` with no title is DW0961");
+    assert!(d.message.contains("obj/exit"), "{}", d.message);
+    assert!(d.path.ends_with("/announcement"), "{}", d.path);
+    let titled = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+        "radius": 2, "title": "Leave the Keep", "announcement": "shown" }"#;
+    assert!(!codes(&campaign(titled, DONE)).iter().any(|c| c == "DW0961"));
+    // Hidden with no title is quiet on purpose, not a contradiction.
+    let quiet = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+        "radius": 2, "announcement": "hidden" }"#;
+    assert!(!codes(&campaign(quiet, DONE)).iter().any(|c| c == "DW0961"));
+}
+
+/// `marker` beside a `prop` declares nothing: the prop is the affordance and no
+/// marker is ever summoned. Either value is refused; without the prop the field
+/// is the ordinary switch.
+#[test]
+fn a_marker_beside_a_prop_is_dw0962() {
+    for value in ["shown", "hidden"] {
+        let obj = format!(
+            r#"{{ "type": "interact", "id": "obj/lever", "anchor": "anchor/exit",
+                 "title": "Throw the lever", "prop": {{ "block": "minecraft:lever" }},
+                 "marker": "{value}" }}"#
+        );
+        let d = promise::check(&campaign(&obj, DONE))
+            .0
+            .into_iter()
+            .find(|d| d.code == promise::DW_MARKER_INERT)
+            .unwrap_or_else(|| panic!("`marker: {value}` beside a prop is DW0962"));
+        assert!(d.message.contains("minecraft:lever"), "{}", d.message);
+        assert!(d.message.contains(value), "{}", d.message);
+    }
+    let bare = r#"{ "type": "interact", "id": "obj/lever", "anchor": "anchor/exit",
+        "title": "Throw the lever", "marker": "hidden" }"#;
+    assert!(!codes(&campaign(bare, DONE)).iter().any(|c| c == "DW0962"));
+}
+
+/// A `prop` is the visible object a click acts on; on an `approach` nothing reads
+/// the block it would place. The same prop on a `use` or a `strike` is the
+/// ordinary carrier.
+#[test]
+fn a_prop_on_a_trigger_with_no_cell_of_its_own_is_dw0964() {
+    let triggers = |on: &str| {
+        format!(
+            r#""triggers": [ {{ "id": "trigger/the-bell", "at": "anchor/exit", "on": {on},
+                 "prop": {{ "block": "minecraft:bell[attachment=floor,facing=north]" }},
+                 "effects": [ {{ "type": "set-flag", "flag": "flag/rung" }} ] }} ],"#
+        )
+    };
+    let approach = campaign_under(
+        &triggers(r#"{ "on": "approach", "range": 3 }"#),
+        CLEAN_REACH,
+        DONE,
+    );
+    let d = promise::check(&approach)
+        .0
+        .into_iter()
+        .find(|d| d.code == promise::DW_TRIGGER_PROP_INERT)
+        .expect("a prop on an approach is DW0964");
+    assert!(
+        d.message.contains("trigger/the-bell") && d.message.contains("approach"),
+        "{}",
+        d.message
+    );
+    assert!(d.path.ends_with("/prop"), "{}", d.path);
+    for on in [r#"{ "on": "use" }"#, r#"{ "on": "strike" }"#] {
+        let clicked = campaign_under(&triggers(on), CLEAN_REACH, DONE);
+        assert!(
+            !codes(&clicked).iter().any(|c| c == "DW0964"),
+            "{on}: {:?}",
+            codes(&clicked)
+        );
+    }
 }
 
 // --- DW0861: an adopted container nothing distinguishes --------------------
@@ -417,7 +507,8 @@ fn the_binding_counts_what_it_examined() {
         { "type": "narrate", "text": "Hi." }"#;
     let (_, b) = promise::check(&campaign(obj, bundle));
     assert_eq!(b.objectives, 2, "one talk-to and one collect");
-    assert_eq!(b.kill_objectives, 0);
+    assert_eq!(b.announced, 2, "both are titled and the campaign is loud");
+    assert_eq!(b.marked, 0, "neither kind summons a marker");
     assert_eq!(b.adopted_containers, 1);
     assert_eq!(b.failure_clocks, 1);
     assert_eq!(
@@ -433,7 +524,7 @@ fn the_binding_counts_what_it_examined() {
 /// exists to expose, so this counts rather than asserts.
 #[test]
 fn every_rule_fires_on_its_own_perturbation() {
-    let cases: [(&str, &str, &str); 4] = [
+    let cases: [(&str, &str, &str); 5] = [
         (
             "DW0860",
             CLEAN_REACH,
@@ -454,8 +545,16 @@ fn every_rule_fires_on_its_own_perturbation() {
             DONE,
         ),
         (
-            "DW0863",
-            r#"{ "type": "kill", "id": "obj/purge", "wave": "wave/garrison" }"#,
+            "DW0961",
+            r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2,
+                 "announcement": "shown" }"#,
+            DONE,
+        ),
+        (
+            "DW0962",
+            r#"{ "type": "interact", "id": "obj/lever", "anchor": "anchor/exit",
+                 "title": "Throw the lever", "prop": { "block": "minecraft:lever" },
+                 "marker": "hidden" }"#,
             DONE,
         ),
     ];
@@ -466,7 +565,7 @@ fn every_rule_fires_on_its_own_perturbation() {
     assert_eq!(
         fired,
         cases.len(),
-        "each of the four rules must name itself on its own perturbation"
+        "each of the five rules must name itself on its own perturbation"
     );
 
     // ...and the unperturbed document names none of them, so the count above is

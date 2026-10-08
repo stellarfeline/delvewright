@@ -140,6 +140,7 @@ fn with_trigger(on: Value, audience: Option<&str>, effects: Vec<Value>) -> Campa
             "id": "trigger/by-the-door",
             "at": "anchor/exit",
             "on": on,
+            "prop": { "block": "minecraft:oak_sign[rotation=0]" },
             "effects": effects,
         });
         if let Some(a) = audience {
@@ -186,7 +187,7 @@ fn the_surface_is_exported() {
     assert_eq!(audience, ["party", "actor"]);
     let branches = q["oneOf"].as_array().unwrap();
     // The union's size is stated once, by `v29_firework`'s
-    // `the_effect_union_names_forty_three_verbs`.
+    // `the_effect_union_names_forty_five_verbs`.
     let branch = |t: &str| {
         branches
             .iter()
@@ -492,8 +493,17 @@ fn samples() -> Vec<(&'static str, Value)> {
             json!({"type":"play-clip","assembly":"assembly/limb","clip":"idle"}),
         ),
         (
+            "arm-strikes",
+            json!({"type":"arm-strikes","assembly":"assembly/limb"}),
+        ),
+        (
             "particle",
             json!({"type":"particle","particle":"minecraft:soul","at":"players"}),
+        ),
+        // spec-0092: a bolt is a world fact.
+        (
+            "lightning",
+            json!({"type":"lightning","at":{"anchor":"anchor/exit","offset":[0,5,0]}}),
         ),
     ]
 }

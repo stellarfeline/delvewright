@@ -223,6 +223,12 @@ export interface InteractStep extends PresentationMarkers {
   readonly command: string;
   /** Item that must be held for the interaction to complete, or `null`. */
   readonly requiresItem: string | null;
+  /**
+   * The vanilla block the act uses (spec-0093 §6.5): the objective's lever,
+   * button or bell, which the bot right-clicks instead of chatting `command`.
+   * Absent = the hitbox and the chat.
+   */
+  readonly block?: string;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
 }
@@ -249,7 +255,7 @@ export interface RestStep extends PresentationMarkers {
 }
 
 /** The environment-trigger events a `trigger` step performs — the DSL's `on` tags. */
-export const TRIGGER_KINDS = ["strike", "use", "approach", "strike-npc", "strike-assembly"] as const;
+export const TRIGGER_KINDS = ["strike", "use", "approach", "step", "strike-npc", "strike-assembly"] as const;
 
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
@@ -259,6 +265,7 @@ export type TriggerKind = (typeof TRIGGER_KINDS)[number];
  * flag a later step reads, because nothing on the quest DAG makes anybody fire
  * it. The bot does what a player does — a `strike` is a real attack on the
  * target's hitbox, a `use` a real right-click, an `approach` a walk into range,
+ * a `step` a walk onto the plate's own cell,
  * a `strike-npc` an attack on the NPC's own hitbox, a `strike-assembly` an attack
  * on the assembly's own hitbox — and the step passes only on the trigger's own
  * fired marker, never on the click landing. A hit count is N such steps, each
@@ -290,6 +297,11 @@ export interface TriggerStep extends PresentationMarkers {
   readonly stand?: Vec3Tuple;
   /** The link's `to`: where performing this trigger puts the party. */
   readonly transport?: Vec3Tuple;
+  /**
+   * The vanilla block the act uses (spec-0093 §6.5): a `use` trigger's lever
+   * or button, which the bot right-clicks instead of a hitbox.
+   */
+  readonly block?: string;
 }
 
 /**
@@ -860,6 +872,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "pos",
           "command",
           "requires_item",
+          "block",
           "transport",
           "sneak",
           "cutscene_seconds",
@@ -871,6 +884,11 @@ function parseStep(value: unknown, pointer: string): Step {
       if (ri !== null && typeof ri !== "string") {
         fail(`${pointer}/requires_item`, `must be a string or null, got ${describe(ri)}`);
       }
+      const block = obj["block"] ?? null;
+      if (block !== null && (typeof block !== "string" || block.length === 0)) {
+        fail(`${pointer}/block`, `must be a block id or null, got ${describe(block)}`);
+      }
+      const pressed = typeof block === "string" ? { block } : {};
       return {
         action: "interact",
         objective: requireObjectiveId(obj, pointer),
@@ -878,6 +896,7 @@ function parseStep(value: unknown, pointer: string): Step {
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
         requiresItem: ri,
+        ...pressed,
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };
@@ -917,6 +936,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "transport",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "block",
         ],
         pointer,
       );
@@ -993,6 +1013,17 @@ function parseStep(value: unknown, pointer: string): Step {
           );
         }
       }
+      // spec-0093 §6.5: a `use` trigger whose prop a hand presses names the
+      // block; no other event has one.
+      const block = obj["block"];
+      if (block !== undefined) {
+        if (typeof block !== "string" || block.length === 0) {
+          fail(`${pointer}/block`, `must be a block id, got ${describe(block)}`);
+        }
+        if (kind !== "use") {
+          fail(`${pointer}/block`, `only a use trigger presses a block; this is a ${kind}`);
+        }
+      }
       return {
         action: "trigger",
         trigger,
@@ -1005,6 +1036,7 @@ function parseStep(value: unknown, pointer: string): Step {
         ...(stand === undefined ? {} : { stand }),
         ...carried,
         ...presentationFields(obj, pointer),
+        ...(typeof block === "string" ? { block } : {}),
       };
     }
     case "witness-strike": {

@@ -20,7 +20,12 @@ fn fixture_dir() -> std::path::PathBuf {
 
 /// Build the v0.4 showcase, returning the build output.
 fn build_showcase() -> BuildOutput {
-    let dir = fixture_dir();
+    build_dir(&fixture_dir())
+}
+
+/// Build the campaign at `dir` (the showcase or a patched copy of it).
+fn build_dir(dir: &std::path::Path) -> BuildOutput {
+    let dir = dir.to_path_buf();
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("v04-showcase parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -63,6 +68,125 @@ fn build_showcase() -> BuildOutput {
         &skins,
     )
     .expect("every emitted command validates")
+}
+
+/// A dialogue option and the objective it completes can each read the same
+/// datum (the gallery's `Read the label.` is `at-most 5`, its objective's guard
+/// `at-most 9`). The mask PackTest must drive the datum to ONE value meeting
+/// both: driving each term to its own boundary left `labels-read` at 9 — the
+/// objective's line written after the option's — and the template asserted the
+/// option displayed at a value its own `at-most 5` hides.
+///
+/// Judged by a model of the option's condition run over the template's own
+/// writes, never by the expected lines: at every bit-0 assert the asserted bit
+/// must equal "quest active, objective pending, datum <= 5 and <= 9".
+#[test]
+fn dialogue_mask_drives_one_datum_read_by_option_and_objective_jointly() {
+    let dir = std::env::temp_dir().join("dw-v04-mask-joint-datum");
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&fixture_dir(), &dir);
+    common::patch_file(&dir.join("quests.json"), |q| {
+        let c = &mut q["content"];
+        c["state"] = serde_json::json!([{
+            "id": "state/labels-read", "initial": 0, "name": "Labels read",
+            "note": "A datum the option and its objective both read.", "scope": "party"
+        }]);
+        let mut found = 0;
+        let mut found_quest = None;
+        for (quest_idx, quest) in c["quests"].as_array_mut().unwrap().iter_mut().enumerate() {
+            for obj in quest["objectives"].as_array_mut().unwrap() {
+                if obj["id"] == "obj/talk" {
+                    // A write, so the datum is live (`DW0501`).
+                    found_quest = Some(quest_idx);
+                    obj["requires_state"] = serde_json::json!([
+                        {"state": "state/labels-read", "op": "at-most", "value": 9}
+                    ]);
+                    found += 1;
+                }
+            }
+        }
+        assert_eq!(found, 1, "obj/talk patched");
+        let quest = &mut c["quests"][found_quest.unwrap()];
+        if quest["on_objective_complete"].is_null() {
+            quest["on_objective_complete"] = serde_json::json!({});
+        }
+        let on = quest["on_objective_complete"]
+            .as_object_mut()
+            .unwrap()
+            .entry("obj/talk")
+            .or_insert(serde_json::json!([]));
+        on.as_array_mut().unwrap().push(serde_json::json!(
+            {"type": "add-state", "state": "state/labels-read", "amount": 1}
+        ));
+    });
+    common::patch_file(&dir.join("dialogue.json"), |d| {
+        let mut found = 0;
+        for tree in d["content"]["dialogues"].as_array_mut().unwrap() {
+            for node in tree["nodes"].as_array_mut().unwrap() {
+                if node["id"] != "dlg/greet" {
+                    continue;
+                }
+                for opt in node["options"].as_array_mut().unwrap() {
+                    if opt["label"] == "I'll clear the keep." {
+                        opt["requires_state"] = serde_json::json!([
+                            {"state": "state/labels-read", "op": "at-most", "value": 5}
+                        ]);
+                        found += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(found, 1, "the completing option patched");
+    });
+    let out = build_dir(&dir);
+    let pt = std::str::from_utf8(
+        &out["packtest-datapack/data/v04-showcase/test/dlg_mask_keeper_greet.mcfunction"],
+    )
+    .unwrap();
+
+    let mut score: BTreeMap<String, i64> = BTreeMap::new();
+    let mut bit: Option<u32> = None;
+    let mut judged = 0;
+    for line in pt.lines() {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        if let ["scoreboard", "players", "set", holder, obj, v] = w[..] {
+            let v: i64 = v.parse().unwrap();
+            if holder == "#dmlo_keeper_greet" {
+                bit = Some(v.trailing_zeros());
+            } else {
+                score.insert(format!("{holder} {obj}"), v);
+            }
+        }
+        if let [
+            "assert",
+            "score",
+            "#dm_keeper_greet",
+            "dw.sys",
+            "matches",
+            b,
+        ] = w[..]
+        {
+            if bit != Some(0) {
+                continue;
+            }
+            let get = |k: &str| *score.get(k).unwrap_or(&0);
+            let labels = get("#party dw.s_labels_read");
+            let shown = get("#party dw.qa_greet") == 1
+                && get("#party dw.o_talk") == 0
+                && labels <= 5
+                && labels <= 9;
+            assert_eq!(
+                b == "1",
+                shown,
+                "assert #{judged} expects bit {b} at labels-read={labels}: the template \
+                 contradicts the option's condition\n{pt}"
+            );
+            judged += 1;
+        }
+    }
+    // Displayed once, then one break per term: quest active, objective pending,
+    // and the two comparisons on the one datum.
+    assert_eq!(judged, 5, "bit-0 asserts judged:\n{pt}");
 }
 
 fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
@@ -441,18 +565,20 @@ fn completed_objectives_despawn_their_summoned_markers() {
         "talk-to completion emits no marker cleanup: {talk}"
     );
 
-    // Regression PackTest: after activate + complete, the interaction count is 0.
-    let pt = std::str::from_utf8(
-        &out["packtest-datapack/data/v04-showcase/test/v04_interact_cleanup.mcfunction"],
-    )
-    .unwrap();
+    // The door's lever is a block vanilla reports the use of (spec-0093 §6.5):
+    // no hitbox is ever summoned for it, so there is none to clean and the
+    // interact-cleanup PackTest — which asserts a hitbox exists, then is gone —
+    // is not written for this campaign.
     assert!(
-        pt.contains("assert score #before_iclr dw.sys matches 1..")
-            && pt.contains(
-                "execute as @a[tag=dw_t_iclr,limit=1] run function v04-showcase:complete_o_door"
-            )
-            && pt.contains("assert score #after_iclr dw.sys matches 0"),
-        "interact-cleanup PackTest asserts hitbox exists then is gone: {pt}"
+        !out.contains_key(
+            "packtest-datapack/data/v04-showcase/test/v04_interact_cleanup.mcfunction"
+        ),
+        "a block-bound interact owes no hitbox-cleanup PackTest"
+    );
+    let activate = fn_body(&out, "activate_o_door");
+    assert!(
+        activate.contains("setblock") && !activate.contains("summon minecraft:interaction"),
+        "the lever is placed and no hitbox stands in it: {activate}"
     );
 }
 

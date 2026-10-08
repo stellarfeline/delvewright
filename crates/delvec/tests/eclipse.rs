@@ -237,6 +237,7 @@ fn quests_with_trigger(interact_anchor: &str, trigger_anchor: &str) -> String {
         r#"    "triggers": [
       {{ "id": "trigger/read-the-plaque", "at": "{trigger_anchor}",
          "on": {{ "on": "use" }}, "audience": "presser",
+         "prop": {{ "block": "minecraft:oak_sign[rotation=0]" }},
          "effects": [ {{ "type": "narrate", "style": "chat",
                         "text": "The plaque is worn smooth." }} ] }}
     ],

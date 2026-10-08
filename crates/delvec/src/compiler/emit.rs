@@ -529,7 +529,18 @@ pub fn build_with_warnings(
     // container is, so it is proven off the same assembled (or edited) world, in
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
-    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() || !plan.traps.is_empty() {
+    let has_steps = plan
+        .campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
+    if !plan.loot.is_empty()
+        || !plan.collect_fills.is_empty()
+        || !plan.traps.is_empty()
+        || has_steps
+    {
         let blocks = &assembled.blocks;
         // What the world actually HAS, computed once and handed to both proofs.
         // A refusal that tells an author to point at "an anchor whose cell
@@ -561,6 +572,29 @@ pub fn build_with_warnings(
                 code: e.code,
                 message: e.message,
             })?;
+        // DW0917's `step` half: a step trigger's plate is the same hardware.
+        let steps: Vec<crate::compiler::trap_trigger::StepCell<'_>> = plan
+            .campaign
+            .quests
+            .content
+            .triggers
+            .iter()
+            .filter(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step))
+            .filter_map(|t| {
+                let anchor = t.at_anchor()?;
+                Some(crate::compiler::trap_trigger::StepCell {
+                    id: t.id.as_str(),
+                    anchor,
+                    cell: plan.point_any(anchor)?,
+                })
+            })
+            .collect();
+        crate::compiler::trap_trigger::check_step_triggers(blocks, &steps, &plan.anchors).map_err(
+            |e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            },
+        )?;
     }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
@@ -871,6 +905,13 @@ pub fn build_with_warnings(
     // firework — no ledger, no artifact, no byte moved for anybody who has not
     // opted in; a ledger that exists and reports zero columns is a finding.
     let mut firework_gate: Option<crate::compiler::firework::FireworkGate> = None;
+    // spec-0091: how many cutscene shots were judged against the served view
+    // distance, for the binding line printed beside the render plan.
+    let mut cutscene_shots_judged = 0usize;
+    // The strike proofs' binding ledger (`compiler::lightning`, spec-0092 §5),
+    // filled beside the firework's: `None` for a campaign that declares no
+    // strike, so nobody who has not opted in moves a byte.
+    let mut lightning_gate: Option<crate::compiler::lightning::LightningGate> = None;
     // The recovery stake's compile-time placement table (`compiler::stake`), and
     // the ledger of what its proofs looked at. `None` for a campaign that declares
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
@@ -1237,6 +1278,99 @@ pub fn build_with_warnings(
                 message: e.message,
             })?;
 
+            // spec-0092 §10: the boundary and the world agree (`DW0960`) — every
+            // place a body is put stands inside a region that returns, and a
+            // region that does not return encloses a world nobody can leave. The
+            // walk region is computed only for the second shape, which reads it.
+            {
+                let region = playable_region_box(plan);
+                let returns = boundary_returns(plan);
+                let starts = crate::compiler::edit::anchor_starts(plan);
+                let (reachable, sea_entry) = if region.is_some() && !returns {
+                    (
+                        world.reachable_walkable_rooted(&starts),
+                        crate::compiler::nav::open_sea_entry(&world, &starts),
+                    )
+                } else {
+                    (BTreeSet::new(), None)
+                };
+                let (gate, findings) = crate::compiler::bound::judge(
+                    &crate::compiler::bound::places(plan),
+                    region,
+                    returns,
+                    &reachable,
+                    sea_entry,
+                );
+                eprintln!("{}", gate.line());
+                if let Some(first) = findings.first() {
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
+
+            // spec-0092 §10: a link whose root plays a cutscene before the carry
+            // takes everyone or no one — `cs_end` puts every player on the cell the
+            // presser stood on — so a press from a cell outside its volume strands
+            // the whole party (`DW0932`, the fault "pressed from outside its
+            // volume"). The route proof stands one chosen cell inside the volume;
+            // this asks every cell a press reaches from.
+            {
+                let gathered: Vec<&crate::compiler::link::LinkPlan> = plan
+                    .links
+                    .iter()
+                    .filter(|l| l.gathered_by.is_some())
+                    .collect();
+                let reachable = if gathered.is_empty() {
+                    BTreeSet::new()
+                } else {
+                    world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
+                };
+                let mut outside_cells = 0usize;
+                for l in &gathered {
+                    let cells = crate::compiler::nav::press_cells_outside(&world, l, &reachable);
+                    outside_cells += cells.len();
+                    if let Some(first) = cells.first() {
+                        let listed = cells
+                            .iter()
+                            .take(6)
+                            .map(|c| format!("{c:?}"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return Err(BuildFailure::Diagnostic {
+                            code: crate::compiler::plan::DW_TELEPORT_LINK,
+                            message: format!(
+                                "the link `{t}` (`{p}`) carries {b} after the cutscene at `{cs}` \
+                                 ends, and `cs_end` puts every player on the cell the presser \
+                                 stood on — so the carry takes everyone or no one. {n} cell(s) a \
+                                 body can walk to perform the trigger from outside its volume: \
+                                 {listed}{more}. Pressed from {first:?}, the whole party is put \
+                                 down there and nobody is carried. Fault: pressed from outside its \
+                                 volume. Remedy: widen the volume over every cell the press \
+                                 reaches from, or move the trigger's body where it can be reached \
+                                 only from inside the volume — its own cell included, which the \
+                                 volume may not cover (`DW0542`), so the body stands where no \
+                                 body can stand: over a rail, a post or open water.",
+                                t = l.trigger_id,
+                                p = l.path,
+                                b = l.box_words(),
+                                cs = l.gathered_by.as_deref().unwrap_or(""),
+                                n = cells.len(),
+                                more = if cells.len() > 6 { ", …" } else { "" },
+                            ),
+                        });
+                    }
+                }
+                eprintln!(
+                    "link gathering binding: {} link(s) carried after their root's cutscene, {} \
+                     press cell(s) outside their volumes over {} walk cell(s)",
+                    gathered.len(),
+                    outside_cells,
+                    reachable.len()
+                );
+            }
+
             // Seat each wave mob on a validated standable cell near its anchor, in
             // room only (DW0312 if the room lacks the footing) — or, for a
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
@@ -1276,12 +1410,33 @@ pub fn build_with_warnings(
                     });
                 }
             }
+            // **spec-0092: a lightning bolt strikes clear of every posted body and
+            // every block it would rewrite** (`DW0958`, `DW0959`). Asked where the
+            // firework is, for the firework's reason: its reach rule reads
+            // `DW0511`'s enumeration, which is complete only once the seating has
+            // run. The line prints before the verdict, zeroes included.
+            {
+                let (binding, findings) =
+                    crate::compiler::lightning::check(plan, blocks, campaign_spawn(plan), &waves);
+                eprintln!("{}", binding.line());
+                lightning_gate = Some(binding);
+                if let Some((first, rest)) = findings.split_first() {
+                    for extra in rest {
+                        eprintln!("{} [error] build: {}", extra.code, extra.message);
+                    }
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
                 let m = crate::compiler::nav::plan_moves(plan, &world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::compiler::nav::plan_actor_moves(plan, &world)?;
-                crate::compiler::nav::check_cutscenes(plan, &world, &m, &am)?;
+                cutscene_shots_judged =
+                    crate::compiler::nav::check_cutscenes(plan, &world, &m, &am)?;
                 // spec-0031: the one lethal-volume obligation routing cannot see.
                 // A respawn SEAT inside a volume is reached by teleport and routes
                 // perfectly while killing the party on arrival, forever. The wave
@@ -1882,6 +2037,33 @@ pub fn build_with_warnings(
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
+    // DW0863 (spec-0093 §5): a `kill` objective is announced with a hint, or its
+    // wave arrives within reach of the act that spawns it. Judged here, where
+    // the acts have places; the binding is printed whichever way it goes.
+    {
+        let (fights, verdict) = crate::compiler::promise::check_fight_signposts(plan);
+        eprintln!("{}", fights.line());
+        if let Err(f) = verdict {
+            return Err(BuildFailure::Diagnostic {
+                code: f.code,
+                message: f.message,
+            });
+        }
+    }
+    // DW0963 (spec-0093 §7): an unmarked `interact` with no `prop` stands on a
+    // block the piece authored, or the party is asked to press empty space.
+    // Read over the settled bytes, which only an assembled world has.
+    if assembles_world(plan) {
+        let (pressables, verdict) =
+            crate::compiler::promise::check_pressables_visible(plan, &assembled.blocks);
+        eprintln!("{}", pressables.line());
+        if let Err(f) = verdict {
+            return Err(BuildFailure::Diagnostic {
+                code: f.code,
+                message: f.message,
+            });
+        }
+    }
 
     // ---- datapack ----
     put_json(
@@ -1948,6 +2130,12 @@ pub fn build_with_warnings(
     let chrome =
         delvewright_dsl::Chrome::for_build(plan.campaign.world.campaign_id.as_str(), language);
 
+    // spec-0094: what the assembly judgement proved about each locked strike
+    // is what the emitter writes — the plans travel, they are never re-derived.
+    let asm_locks = assembly_binding
+        .as_ref()
+        .map(|b| b.plans.clone())
+        .unwrap_or_default();
     let functions = emit_functions(
         plan,
         &chrome,
@@ -1965,6 +2153,7 @@ pub fn build_with_warnings(
         &payload_plans,
         &branch_transport,
         stake_table.as_ref(),
+        &asm_locks,
     );
     // `DW0852` over the FINAL function list — after every emitter has had its say,
     // so a later pass that rewrote a judge cannot slip past a check that ran
@@ -2036,6 +2225,23 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // spec-0095: the stand-in's profile, filled from the player it stands for.
+    if cutscene_parties(plan)
+        .iter()
+        .any(|(_, p)| *p == delvewright_dsl::CutsceneParty::Present)
+    {
+        insert_unique(
+            &mut out,
+            format!(
+                "datapack/data/{ns}/loot_table/{}.json",
+                crate::compiler::standin::STANDIN_LOOT
+            ),
+            json_bytes(&crate::compiler::standin::loot_table()),
+            "loot table",
+            crate::compiler::standin::STANDIN_LOOT,
+        )?;
+    }
+
     // predicates — currently only the sneak-held gate (see
     // SNEAK_HELD_PREDICATE) the cutscene bounce and the respawn wait's view
     // binding read; a campaign with neither emits none.
@@ -2059,6 +2265,7 @@ pub fn build_with_warnings(
             rings: &wave_rings,
         },
         &payload_plans,
+        &asm_locks,
     );
 
     // ---- creator overlay (playtest-only; spec-0006) ----
@@ -2102,10 +2309,34 @@ pub fn build_with_warnings(
     // proof — every kind, not the one that needed it first. It also states the
     // proof's binding count in the artifact and hands back a warning when that
     // count is zero.
-    let (render_plan_doc, camera_warnings) =
-        crate::compiler::render_plan::render_plan(plan, prefabs, &pov_shots, &world)?;
+    let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
+        plan,
+        prefabs,
+        &pov_shots,
+        &world,
+        Some(&crate::compiler::view::beat::picture_base(
+            plan,
+            assembled,
+            &relight.placements,
+        )),
+    )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
+    // spec-0091: the served view distance, what the build judged against it
+    // (every showcase camera and cutscene shot — a refusal stopped the build
+    // before here), and the cost stated to the host.
+    eprintln!(
+        "{}",
+        crate::compiler::served::Binding {
+            chunks: delvewright_dsl::viewdistance::chunks(plan.campaign),
+            declared: plan.campaign.world.content.view_distance.is_some(),
+            showcase_cameras: render_plan_doc["camera_eye_proof"]["showcase"]
+                .as_u64()
+                .unwrap_or(0) as usize,
+            cutscene_shots: cutscene_shots_judged,
+        }
+        .line()
+    );
 
     // ---- validate every emitted vanilla mcfunction ----
     let mut errors = Vec::new();
@@ -2150,27 +2381,34 @@ pub fn build_with_warnings(
         &fixture_gate.to_json(),
     );
 
-    // ---- a watcher is out of play everywhere (spec-0077 §5, DW0926) ----
-    // A respawn wait holds one player in the observation state while the rest
-    // play on, so a watcher can stand anywhere. Every positional player selector
-    // in the shipped tree must exclude the observation tag or stand at a site
-    // `crate::compiler::observer::ALLOWED` names with its reason (an engine
-    // self-check: see `crate::compiler::observer::check`). Feature-blind and read
-    // off the shipped bytes. Only with a declared wait, so every other
-    // campaign's tree is untouched.
-    if respawn_wait(plan).is_some() {
-        let census =
-            crate::compiler::observer::check(&out).map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            })?;
-        eprintln!("{}", census.binding());
-        put_json(
-            &mut out,
-            "validation/observer-census.json",
-            &census.to_json(),
-        );
+    // ---- the party is seen in its own cutscenes (spec-0095, DW0971) ----
+    // Every cutscene declared `present` places its stand-ins before the party
+    // goes to spectator and removes them at its end; every `absent` one places
+    // none. Read off the shipped tree against the declarations.
+    let parties = cutscene_parties(plan);
+    if !parties.is_empty() {
+        let gate = crate::compiler::standin::check(ns, &parties, &out)?;
+        eprintln!("{}", gate.line());
+        put_json(&mut out, "validation/stand-in-gate.json", &gate.to_json());
     }
+
+    // ---- a watcher is out of play everywhere (spec-0077 §5, DW0926) ----
+    // A cutscene holds every player in the observation state, and a respawn wait
+    // holds one while the rest play on. Every positional player selector in the
+    // shipped tree must exclude the observation tag or stand at a site
+    // `crate::compiler::observer::ALLOWED` names with its reason (an engine
+    // self-check: see `crate::compiler::observer::check`). Feature-blind, read
+    // off the shipped bytes, and run on every build.
+    let census = crate::compiler::observer::check(&out).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+    eprintln!("{}", census.binding());
+    put_json(
+        &mut out,
+        "validation/observer-census.json",
+        &census.to_json(),
+    );
 
     // ---- the effect-root walk's own binding ledger ----
     // Every other proof in this compiler publishes its binding as a
@@ -2475,6 +2713,9 @@ pub fn build_with_warnings(
     }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
+    }
+    if let Some(gate) = lightning_gate.as_ref().filter(|g| g.declared > 0) {
+        put_json(&mut out, "validation/lightning-gate.json", &gate.to_json());
     }
     // The recovery stake's binding ledger (`compiler::stake`, spec-0032 AC10): how
     // many stakes were declared, how many respawn seats and death regions the
@@ -3610,6 +3851,7 @@ fn emit_functions(
     payloads: &PayloadPlans,
     branch_transport: &BranchTransportOverlay,
     stake_table: Option<&crate::compiler::stake::StakeTable>,
+    asm_locks: &crate::compiler::assembly::Locks,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -3827,11 +4069,12 @@ fn emit_functions(
         ));
     }
     // v0.3 objective-activation feedback (M2 fix 4): one "announced" flag per
-    // titled objective. Empty for a v0.2 campaign, so hello-world / keep-crawl
-    // setup stays byte-identical.
+    // ANNOUNCED objective (spec-0093: a title whose resolved `announcement` is
+    // `shown`). Empty for a v0.2 campaign, so hello-world / keep-crawl setup
+    // stays byte-identical.
     for q in &c.quests.content.quests {
         for o in &q.objectives {
-            if o.title().is_some() {
+            if o.announced(&c.quests.content.guidance) {
                 setup.push(format!(
                     "scoreboard objectives add {} dummy",
                     announce_score(o.id().as_str())
@@ -3924,6 +4167,16 @@ fn emit_functions(
     for (min, max) in edit_bounds {
         setup.extend(crate::compiler::commands::forceload_add_lines(
             min[0], min[2], max[0], max[2],
+        ));
+    }
+    // spec-0092: the chunk each lightning strike lands in, held for the session
+    // like an area's claim. A `summon` into a chunk nothing loads is refused by
+    // the server and the beat ships with no bolt, every proof green — the same
+    // silent no-op `DW0929` refuses for a repaint. Empty for a campaign that
+    // declares no strike → setup byte-identical.
+    for cell in crate::compiler::lightning::strike_cells(plan) {
+        setup.extend(crate::compiler::commands::forceload_add_lines(
+            cell[0], cell[2], cell[0], cell[2],
         ));
     }
     setup.push("scoreboard players set #placed dw.sys 0".to_string());
@@ -4218,7 +4471,11 @@ fn emit_functions(
             "data modify storage dw:region bounds set value {}",
             region.bounds_snbt()
         ));
-        setup.push(format!("schedule function {ns}:boundary_tick 20t"));
+        // spec-0092 §10: a boundary that does not return keeps its region and
+        // starts no clock.
+        if boundary_returns(plan) {
+            setup.push(format!("schedule function {ns}:boundary_tick 20t"));
+        }
     }
     // v0.6 night-vision mitigation: start the per-second `effect give` clock for the
     // areas that declare it. Empty otherwise → byte-identical.
@@ -4396,7 +4653,7 @@ fn emit_functions(
     for q in &c.quests.content.quests {
         let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
-            if o.title().is_some() {
+            if o.announced(&c.quests.content.guidance) {
                 tick.push(format!(
                     "execute{} unless score {} {} matches 1 run function {ns}:announce_{}",
                     pending_guard(plan, o, &qa),
@@ -4699,6 +4956,7 @@ fn emit_functions(
     // is an ordinary effect bundle, lowered here under its root's audience.
     fns.extend(crate::compiler::assembly::assembly_functions(
         plan,
+        asm_locks,
         &|e, body| {
             emit_gated_effect(
                 plan,
@@ -4976,14 +5234,15 @@ fn emit_functions(
             for n in &opt.spawns_npcs {
                 body.push(format!("function {ns}:{}", spawn_npc_fn(n)));
             }
+            // The click completes the objective under the same pending guard the
+            // button is drawn under (spec-0093 §6.3): a press that arrives while
+            // the objective is not pending completes nothing.
             for obj in &opt.completes {
-                if let Some((qid, _)) = objective_quest(c, obj) {
+                if let Some((qid, o)) = objective_quest(c, obj) {
                     body.push(format!(
-                        "execute if score {p} {} matches 1 unless score {p} {} matches 1 run function {ns}:complete_{}",
-                        quest_active_score(qid),
-                        obj_score(obj),
+                        "execute{} run function {ns}:complete_{}",
+                        pending_guard(plan, o, &quest_active_score(qid)),
                         safe_obj_fn(obj),
-                        p = plan::PARTY
                     ));
                 }
             }
@@ -5028,8 +5287,11 @@ fn emit_functions(
             }
             // v0.3 objective-activation feedback (M2 fix 4): the announce function
             // shows the title + hint once and plays a subtle sound. Emitted only
-            // for titled objectives (v0.3); nothing for v0.2.
-            if let Some(title) = o.title() {
+            // for ANNOUNCED objectives (spec-0093): a title whose resolved
+            // `announcement` is `shown`. Nothing for v0.2, nothing for a quiet one.
+            if o.announced(&c.quests.content.guidance)
+                && let Some(title) = o.title()
+            {
                 // spec-0018: the objective is the PARTY's, so its title, hint and
                 // cue address `@a` and the once-latch lives on the party holder —
                 // one announcement per objective, heard by everyone, never a
@@ -5099,8 +5361,11 @@ fn emit_functions(
                 })
             ));
             // v0.3 objective-completion feedback (M2 fix 4): a confirmation line +
-            // sound so progress is legible. Titled objectives only; v0.2 unchanged.
-            if let Some(title) = o.title() {
+            // sound so progress is legible. Announced objectives only (spec-0093);
+            // v0.2 unchanged.
+            if o.announced(&c.quests.content.guidance)
+                && let Some(title) = o.title()
+            {
                 body.push(format!(
                     "tellraw @a {}",
                     tr_with(
@@ -6171,6 +6436,9 @@ fn assembles_world(plan: &Plan) -> bool {
         // assembles it — otherwise `DW0899` would be declared, compiled and
         // never asked of exactly the campaign that needs it most.
         || crate::compiler::firework::declares_one(plan)
+        // spec-0092: the struck block and the reach are questions about the
+        // assembled world, for the firework's reason.
+        || crate::compiler::lightning::declares_one(plan)
 }
 
 /// Fail the build if any campaign effect — at **every effect root**, at **any
@@ -6281,6 +6549,15 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
                 "assembly",
                 st.while_in.anchor.as_str().to_string(),
             ));
+            for (j, step) in st.pattern.iter().enumerate() {
+                if let Some(l) = &step.lock {
+                    refs.push((
+                        format!("/content/assemblies/{i}/strikes/pattern/{j}/lock/within/anchor"),
+                        "assembly",
+                        l.within.anchor.as_str().to_string(),
+                    ));
+                }
+            }
         }
     }
     for (path, verb, anchor) in refs {
@@ -6322,14 +6599,28 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
         if let Some(wave) = e.spawn_wave() {
             let id = wave.as_str();
             if seen.insert(id) && wave_spawn_pos(plan, id).is_none() {
+                let multi_area = delvewright_dsl::Placement::of(plan.campaign)
+                    == delvewright_dsl::Placement::Prefabs
+                    && plan.campaign.world.content.areas.len() > 1;
+                let fired_globally = plan::wave_area(plan.campaign, id).is_none()
+                    && fired_only_by_global_roots(plan.campaign, id);
+                let remedy = if multi_area && fired_globally {
+                    "This wave is fired only from a global root (a trigger, a trap payload, an \
+                     actor's kill) in a campaign of several areas, and a global root carries no \
+                     area, so the compiler cannot say which area's assembly must provide the \
+                     anchor. Fire it from a quest booked in the wave's area (its \
+                     `on_objective_complete` or `on_complete`), or make the campaign \
+                     single-area."
+                } else {
+                    "Ensure a quest in the wave's area fires the `spawn-wave`, or that the wave \
+                     `anchor` exists in that area's prefab pool."
+                };
                 return Err(BuildFailure::Diagnostic {
                     code: DW_WAVE_SPAWN_UNRESOLVED,
                     message: format!(
                         "`spawn-wave` references wave `{id}`, but its spawn anchor is \
                          not placed in any assembled area — the emitted \
-                         `spawn_{safe}` call would dangle and the wave never spawn. \
-                         Ensure a quest in the wave's area fires the `spawn-wave`, or \
-                         that the wave `anchor` exists in that area's prefab pool.",
+                         `spawn_{safe}` call would dangle and the wave never spawn. {remedy}",
                         safe = plan::safe_local(id),
                     ),
                 });
@@ -6337,6 +6628,37 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
         }
     }
     Ok(())
+}
+
+/// Whether every site that fires `spawn-wave` for `wave_id` is a root with no
+/// area of its own — a trigger, a trap payload, an actor's `on_kill`, a shop
+/// offer, a shortcut's unlock, `on_death`, an assembly's landing or a loop's
+/// crossing — so that in a campaign of several areas nothing says where the wave
+/// forms up. Read for `DW0310`'s message, so the refusal names the shape.
+fn fired_only_by_global_roots(c: &delvewright_dsl::Campaign, wave_id: &str) -> bool {
+    let mut any = false;
+    let mut all_global = true;
+    delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
+        let mut fires = false;
+        for e in list {
+            e.visit_deep(&mut |x| {
+                if matches!(x.spawn_wave(), Some(w) if w.as_str() == wave_id) {
+                    fires = true;
+                }
+            });
+        }
+        if fires {
+            any = true;
+            if matches!(
+                site.owner,
+                delvewright_dsl::EffectRootOwner::ObjectiveComplete { .. }
+                    | delvewright_dsl::EffectRootOwner::QuestComplete { .. }
+            ) {
+                all_global = false;
+            }
+        }
+    });
+    any && all_global
 }
 
 // ---------------------------------------------------------------------------
@@ -6591,6 +6913,102 @@ fn state_drive_lines(plan: &Plan, cmps: &[StateCompare], satisfy: bool) -> Vec<S
         .collect()
 }
 
+/// **Every numeric term of one display condition, satisfied together.**
+///
+/// [`state_drive_value`] answers for one term; a condition can hold several on
+/// one datum (an option's own `at-most 5` beside its objective's `at-most 9`),
+/// and driving each to its own boundary leaves the datum at whichever was
+/// written last. Per datum, the value is the first candidate — each term's own
+/// satisfying value, then each one's boundary neighbourhood, in term order —
+/// that meets every term on it; a break of one term is the first candidate that
+/// violates it and meets the rest, so the negative assert isolates that term.
+/// With one term per datum both are exactly [`state_drive_value`]'s. A datum
+/// no candidate satisfies (a condition that can never hold) keeps the per-term
+/// drive, so the PackTest says the option is never shown.
+struct JointStateDrive<'a> {
+    /// Datum id → every term the condition reads it with, in term order.
+    terms: BTreeMap<&'a str, Vec<&'a StateCompare>>,
+    /// Datum id → the one value meeting all of its terms, where one exists.
+    value: BTreeMap<&'a str, i32>,
+}
+
+impl<'a> JointStateDrive<'a> {
+    fn of(cmps: &[&'a StateCompare]) -> Self {
+        let mut terms: BTreeMap<&str, Vec<&StateCompare>> = BTreeMap::new();
+        for c in cmps {
+            terms.entry(c.state.as_str()).or_default().push(c);
+        }
+        let value = terms
+            .iter()
+            .filter_map(|(datum, on)| {
+                let v = on
+                    .iter()
+                    .map(|c| state_drive_value(c, true))
+                    .chain(on.iter().flat_map(|c| state_candidates(c)))
+                    .find(|v| on.iter().all(|c| c.holds(*v)))?;
+                Some((*datum, v))
+            })
+            .collect();
+        JointStateDrive { terms, value }
+    }
+
+    /// The satisfying value of `c`'s datum: the joint one, else `c`'s own.
+    fn satisfy(&self, c: &StateCompare) -> i32 {
+        self.value
+            .get(c.state.as_str())
+            .copied()
+            .unwrap_or_else(|| state_drive_value(c, true))
+    }
+
+    /// A value that breaks `c` and, where one exists, holds every other term on
+    /// its datum. Terms are compared by value, so an identical twin of `c` is
+    /// broken with it — it is the same condition.
+    fn break_one(&self, c: &StateCompare) -> i32 {
+        let own = state_drive_value(c, false);
+        let on: &[&StateCompare] = self
+            .terms
+            .get(c.state.as_str())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let others: Vec<&&StateCompare> = on.iter().filter(|o| ***o != *c).collect();
+        std::iter::once(own)
+            .chain(on.iter().flat_map(|o| state_candidates(o)))
+            .find(|v| !c.holds(*v) && others.iter().all(|o| o.holds(*v)))
+            .unwrap_or(own)
+    }
+
+    /// The satisfying line of each of `cmps`, and each one's break/restore pair.
+    fn drive(
+        &self,
+        plan: &Plan,
+        cmps: &[StateCompare],
+        satisfied: &mut Vec<String>,
+        terms: &mut Vec<(Vec<String>, Vec<String>)>,
+    ) {
+        let line = |c: &StateCompare, v: i32| {
+            format!(
+                "scoreboard players set {} {} {v}",
+                state_holder(plan, &c.state),
+                plan::state_score(c.state.as_str()),
+            )
+        };
+        for c in cmps {
+            satisfied.push(line(c, self.satisfy(c)));
+        }
+        for c in cmps {
+            terms.push((
+                vec![line(c, self.break_one(c))],
+                vec![line(c, self.satisfy(c))],
+            ));
+        }
+    }
+}
+
+/// The values a term's boundary separates: its value and either neighbour.
+fn state_candidates(c: &StateCompare) -> [i32; 3] {
+    [c.value, c.value.wrapping_add(1), c.value.wrapping_sub(1)]
+}
+
 /// The one deterministic value that satisfies (or violates) a single numeric
 /// term — [`state_drive_lines`]' value column, exposed on its own because the
 /// cast-ladder proof needs the number (to evaluate the ladder model at it)
@@ -6701,6 +7119,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             // An unresolved box is `DW0142` at validation; emitting a selector with
             // a blank box would be an invalid command rather than a diagnosis.
             match effect_selector(plan, aud.selector(), Some(zone)) {
+                // A box is the bodies standing in it. A player watching a
+                // cutscene is a spectator whose camera may stand anywhere, so the
+                // box excludes the observation tag (`DW0926`) — save for a status
+                // effect, which `observer::ALLOWED` names as asking nothing of a
+                // watcher.
+                Some(sel)
+                    if !matches!(eff.verb, Verb::GiveEffect { .. } | Verb::ClearEffect { .. }) =>
+                {
+                    unwatched(sel)
+                }
                 Some(sel) => sel,
                 None => return,
             }
@@ -6922,7 +7350,8 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             // Shape is policed at validation (`DW0199`); an unshaped cutscene
             // resolves to no shots and emits no call rather than a dangling one.
             if let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) {
-                body.push(format!("function {ns}:{}", cutscene_fn(&shots)));
+                let party = eff.cutscene_party().unwrap_or_default();
+                body.push(format!("function {ns}:{}", cutscene_fn(&shots, party)));
             }
         }
         // --- DSL v0.5 effects (spec-0010) ---
@@ -6974,6 +7403,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             explosions,
         } => {
             emit_firework(plan, at, *flight, explosions, body);
+        }
+        // --- spec-0092: a lightning bolt strikes at a mark ---
+        Verb::Lightning { at } => {
+            emit_lightning(plan, at, body);
         }
         // --- spec-0085: a particle is an effect ---
         Verb::Particle {
@@ -7074,7 +7507,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         }
         // --- spec-0082 assembly verbs: a call into the assembly's own
         // functions (`compiler::assembly`). ---
-        Verb::SpawnAssembly { .. } | Verb::DespawnAssembly { .. } | Verb::PlayClip { .. } => {
+        Verb::SpawnAssembly { .. }
+        | Verb::DespawnAssembly { .. }
+        | Verb::PlayClip { .. }
+        | Verb::ArmStrikes { .. } => {
             body.extend(crate::compiler::assembly::verb_lines(plan, &eff.verb).unwrap_or_default());
         }
         // --- DSL v0.10 status effects (spec-0031) -----------------------------
@@ -7124,6 +7560,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 body.push(format!("function {ns}:{}", teleport_fn(eff)));
             }
         }
+    }
+}
+
+/// `sel` (a player selector ending in its argument list's `]`) with the
+/// observation tag excluded: the one spelling for a box that means the bodies
+/// in it.
+fn unwatched(sel: String) -> String {
+    match sel.strip_suffix(']') {
+        Some(head) => format!("{head},tag=!{CUTSCENE_TAG}]"),
+        None => format!("{sel}[tag=!{CUTSCENE_TAG}]"),
     }
 }
 
@@ -7399,6 +7845,25 @@ fn emit_firework(
     ));
 }
 
+/// Emit a `lightning` effect (DSL v0.36, spec-0092): one `summon` of a
+/// `minecraft:lightning_bolt` at the mark's cell centre, on the mark's plane, so
+/// the block it strikes is the block under the mark — the cell
+/// `compiler::lightning` reads for `DW0959`. Absolute coordinates, like every
+/// point effect: the mark is a cell at build time.
+fn emit_lightning(plan: &Plan, at: &delvewright_dsl::Mark, body: &mut Vec<String>) {
+    let Some(anchor) = anchor_point_any(plan, at.anchor.as_str()) else {
+        return; // unresolved anchor (`DW0360` owns it)
+    };
+    let v = ent_xyz(at.cell(anchor));
+    body.push(format!(
+        "summon {entity} {x} {y} {z}",
+        entity = delvewright_dsl::lightning::BOLT_ENTITY,
+        x = v[0],
+        y = v[1],
+        z = v[2],
+    ));
+}
+
 /// Emit a `damage-players` effect (DSL v0.6). `who` is the audience selector
 /// (spec-0018): `@a` on a party beat — the hazard is a fact about the delve, so
 /// it hits every party member once — and `@s` inside a solo `on_caught` /
@@ -7572,15 +8037,11 @@ fn wipes(plan: &Plan) -> bool {
 
 /// The selector argument that keeps a player who is only watching out of a
 /// positional or health rule ([`CUTSCENE_TAG`]'s staging invariant). Spliced
-/// into the selectors that do not already carry it when the campaign declares a
-/// respawn wait, the one state in which a watcher can stand anywhere outside a
-/// cutscene; empty otherwise, so such a campaign stays byte-identical.
-fn observer_guard(plan: &Plan) -> String {
-    if respawn_wait(plan).is_some() {
-        format!(",tag=!{CUTSCENE_TAG}")
-    } else {
-        String::new()
-    }
+/// into the selectors that do not already carry it. Unconditional: a cutscene
+/// viewer carries the tag in every campaign, and a declared respawn wait only
+/// adds a second state that does.
+fn observer_guard(_plan: &Plan) -> String {
+    format!(",tag=!{CUTSCENE_TAG}")
 }
 
 /// The selector of the living teammate in play a waiting player watches
@@ -8496,10 +8957,9 @@ fn seal_arm_fn(safe: &str) -> String {
 /// entities and [`env_trigger_setup`] summons nothing for it. The consequence is
 /// also its meaning: such a trigger is live exactly while the gate is sealed.
 fn seal_rider_tags(plan: &Plan, chrome: &delvewright_dsl::Chrome, anchor: &str) -> Vec<String> {
-    use delvewright_dsl::TriggerOn;
     plan.emitted_triggers(chrome)
         .iter()
-        .filter(|t| !matches!(t.on, TriggerOn::Approach { .. }))
+        .filter(|t| t.on.is_click())
         .filter(|t| t.at_anchor() == Some(anchor))
         .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
         .collect()
@@ -11140,27 +11600,38 @@ fn npc_summon_commands(
 fn first_strike_trigger_on_npc<'a>(
     plan: &'a Plan,
 ) -> Option<(&'a delvewright_dsl::EnvTrigger, String, String)> {
+    plan.campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .find_map(|t| npc_ridden_by(plan, t).map(|n| (t, n.npc_id.clone(), n.tag.clone())))
+}
+
+/// The planned NPC whose own interaction hitbox carries the left-click trigger
+/// `t` — the one rule, read by the emitter (which then summons no standalone
+/// hitbox) and by the visibility proof (`DW0963`: the NPC's body is the visible
+/// thing the strike sits on). `None` when `t` rides no NPC.
+pub(crate) fn npc_ridden_by<'a>(
+    plan: &'a Plan,
+    t: &delvewright_dsl::EnvTrigger,
+) -> Option<&'a crate::compiler::plan::NpcPlan> {
     let c = plan.campaign;
-    for t in &c.quests.content.triggers {
-        for n in &plan.npcs {
-            let decl = c
-                .npcs
-                .content
-                .npcs
-                .iter()
-                .find(|d| d.id.as_str() == n.npc_id);
-            // A body at an offset does not stand on its anchor's cell, so a
-            // `strike` at that anchor is not on its hitbox (spec-0066).
-            let anchor = decl
-                .filter(|d| d.offset == [0, 0, 0])
-                .map(|d| d.anchor.as_str())
-                .unwrap_or("");
-            if trigger_rides_npc(t, anchor, &n.npc_id) {
-                return Some((t, n.npc_id.clone(), n.tag.clone()));
-            }
-        }
-    }
-    None
+    plan.npcs.iter().find(|n| {
+        let decl = c
+            .npcs
+            .content
+            .npcs
+            .iter()
+            .find(|d| d.id.as_str() == n.npc_id);
+        // A body at an offset does not stand on its anchor's cell, so a
+        // `strike` at that anchor is not on its hitbox (spec-0066).
+        let anchor = decl
+            .filter(|d| d.offset == [0, 0, 0])
+            .map(|d| d.anchor.as_str())
+            .unwrap_or("");
+        trigger_rides_npc(t, anchor, &n.npc_id)
+    })
 }
 
 /// Whether `t` is a left-click trigger carried by the interaction hitbox of the
@@ -11180,19 +11651,6 @@ fn trigger_rides_npc(t: &delvewright_dsl::EnvTrigger, anchor: &str, npc_id: &str
         TriggerOn::Strike => !anchor.is_empty() && t.at_anchor() == Some(anchor),
         _ => false,
     }
-}
-
-/// True when `anchor` is a planned NPC's stand anchor — the cell where that
-/// NPC's interaction hitbox lives, whether summoned at world init or by the
-/// NPC's `spawn-npc` entrance (`deferred`). The suppression dual of
-/// [`strike_trigger_tags_at`]: a strike trigger rides exactly the hitboxes this
-/// predicate says exist.
-fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
-    plan.npcs.iter().any(|n| {
-        plan.campaign.npcs.content.npcs.iter().any(|d| {
-            d.id.as_str() == n.npc_id && d.anchor.as_str() == anchor && d.offset == [0, 0, 0]
-        })
-    })
 }
 
 /// The `dw_trig_<id>` tags every left-click trigger riding this NPC's hitbox
@@ -11361,7 +11819,19 @@ fn mark_key(to: &delvewright_dsl::Mark) -> String {
 /// single shot without `look_at`. The readable prefix keeps generated functions
 /// greppable; the digest makes the key injective, so two cutscenes that share a
 /// first waypoint but differ anywhere later can never collapse onto one function.
-fn cutscene_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
+fn cutscene_fn(
+    shots: &[delvewright_dsl::CameraShot],
+    party: delvewright_dsl::CutsceneParty,
+) -> String {
+    let name = cutscene_shots_fn(shots);
+    match party {
+        delvewright_dsl::CutsceneParty::Present => name,
+        delvewright_dsl::CutsceneParty::Absent => format!("{name}_absent"),
+    }
+}
+
+/// The shot-list half of [`cutscene_fn`]: the name a `present` cutscene keeps.
+fn cutscene_shots_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
     let head = &shots[0];
     let first = head
         .path
@@ -11978,14 +12448,7 @@ const STRIKER_PATH: &str = "player";
 /// Whether `t` is a click trigger (`strike` / `strike-npc` / `use`) — the forms
 /// whose interaction entity records *which player* acted.
 fn trigger_is_click(t: &delvewright_dsl::EnvTrigger) -> bool {
-    use delvewright_dsl::TriggerOn;
-    matches!(
-        t.on,
-        TriggerOn::Strike
-            | TriggerOn::Use
-            | TriggerOn::StrikeNpc { .. }
-            | TriggerOn::StrikeAssembly { .. }
-    )
+    t.on.is_click()
 }
 
 /// The tag of the `minecraft:interaction` a click trigger's record is read off:
@@ -12815,7 +13278,8 @@ fn cutscene_fns(
         // (deterministic — the traversal order is fixed). An author who wants a
         // styled moving-subject cutscene to differ per context gives the shots
         // distinguishing content (e.g. an explicit `seconds`).
-        let start_name = cutscene_fn(&shots);
+        let party = eff.cutscene_party().unwrap_or_default();
+        let start_name = cutscene_fn(&shots, party);
         if !seen.insert(start_name.clone()) {
             continue;
         }
@@ -12872,6 +13336,16 @@ fn cutscene_fns(
         start.push(format!(
             "execute at {marker_at} run summon minecraft:marker ~ ~ ~ {{Tags:[{FIXTURE_NBT}\"dw_csmark_{bare}\"]}}"
         ));
+        // spec-0095: the party stays in the scene. Each player in play leaves a
+        // stand-in where they stand, summoned from the body before spectator
+        // takes it out of the world (`crate::compiler::standin`).
+        if party == delvewright_dsl::CutsceneParty::Present {
+            start.extend(crate::compiler::standin::start_lines(
+                ns,
+                &bare,
+                CUTSCENE_TAG,
+            ));
+        }
         // The cutscene state marker. `gamemode spectator` already takes the
         // players' bodies out of the world; the tag is what campaign machinery
         // reads so it does not keep asking anything of a player who is only
@@ -12972,6 +13446,16 @@ fn cutscene_fns(
             format!("kill @e[tag=dw_cam_{bare}]"),
             format!("kill @e[tag=dw_csmark_{bare}]"),
         ];
+        // spec-0095: the stand-ins leave as the players return, by the engine's
+        // one unseen removal (no death animation where the player now stands).
+        if party == delvewright_dsl::CutsceneParty::Present {
+            end.extend(removal_lines(
+                ns,
+                &crate::compiler::standin::cutscene_tag(&bare),
+                false,
+                Exit::Unseen,
+            ));
+        }
         // Resume: drop the cutscene marker. The stealth judge (zone-presence
         // only — no sneak stat is tracked) needs no re-sync;
         // grace is deliberately NOT reset — it neither accrued nor expired
@@ -12980,6 +13464,33 @@ fn cutscene_fns(
         end.push(format!("scoreboard players set #run_{bare} dw.sys 0"));
         end.push(format!("scoreboard players remove {CS_LIVE} dw.sys 1"));
         out.push((format!("cs_end_{bare}"), lines(&end)));
+    }
+    if cutscene_parties(plan)
+        .iter()
+        .any(|(_, p)| *p == delvewright_dsl::CutsceneParty::Present)
+    {
+        out.push((
+            crate::compiler::standin::STANDIN_FN.to_string(),
+            lines(&crate::compiler::standin::standin_fn_body(ns)),
+        ));
+    }
+    out
+}
+
+/// Every cutscene's start function name with its declared party (spec-0095),
+/// deduplicated exactly as [`cutscene_fns`] deduplicates them.
+fn cutscene_parties(plan: &Plan) -> Vec<(String, delvewright_dsl::CutsceneParty)> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut out = Vec::new();
+    for (eff, _) in crate::compiler::camera::cutscene_units(plan.campaign) {
+        let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let party = eff.cutscene_party().unwrap_or_default();
+        let name = cutscene_fn(&shots, party);
+        if seen.insert(name.clone()) {
+            out.push((name, party));
+        }
     }
     out
 }
@@ -13003,8 +13514,13 @@ fn cutscene_fns(
 fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
     let mut out = Vec::new();
+    let props: BTreeMap<String, crate::compiler::light::Placement> =
+        crate::compiler::pressable::trigger_props(plan)
+            .into_iter()
+            .collect();
     for t in &plan.emitted_triggers(chrome) {
-        if matches!(t.on, TriggerOn::Approach { .. }) {
+        // An `approach` and a `step` read a body's position; nothing is summoned.
+        if !t.on.is_click() {
             continue;
         }
         // `strike-npc` never has a cell of its own; a `strike` on an NPC's stand
@@ -13012,8 +13528,20 @@ fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<Strin
         let Some(at) = t.at_anchor() else {
             continue;
         };
-        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+        if matches!(t.on, TriggerOn::Strike) && crate::compiler::pressable::npc_stands_at(plan, at)
+        {
             continue;
+        }
+        // spec-0093 §6.5: the trigger's `prop` is placed at its cell — a lever
+        // or a button is then the whole body (vanilla reports its press, so
+        // nothing is summoned); any other block stands under the hitbox.
+        // The one list of prop cells ([`crate::compiler::pressable::trigger_props`]),
+        // which the written world lays too.
+        if let Some(p) = props.get(t.id.as_str()) {
+            out.push(format!(
+                "setblock {} {} {} {}",
+                p.pos[0], p.pos[1], p.pos[2], p.block
+            ));
         }
         // Same rule, one layer out: a click trigger anchored on a gate
         // the campaign SEALS rides that seal's own hitboxes — `seal_arm_<safe>`
@@ -13021,7 +13549,9 @@ fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<Strin
         // exactly co-located with them, and the ray-pick tie is what killed the
         // island's boulder hint (`DESIGN.md` round 13). One cell, one hitbox.
         let tag = format!("dw_trig_{}", plan::safe_local(t.id.as_str()));
-        match crate::compiler::pressable::body_at(plan, at) {
+        match crate::compiler::pressable::trigger_body(plan, t) {
+            // The block is the body; vanilla reports its press.
+            crate::compiler::pressable::Body::Block { .. } => {}
             // An existing set covers this anchor; `seal_fns` / `ws_arm_fns` put
             // this trigger's tag on those entities. One cell, one hitbox.
             crate::compiler::pressable::Body::Rides { .. } => {}
@@ -13071,7 +13601,9 @@ fn check_trigger_bodies(
     // and a proof that walked the authored list alone would leave the compiler's
     // own presses unexamined and the ledger's count short of what shipped.
     for t in &plan.emitted_triggers_unlocalized() {
-        if matches!(t.on, TriggerOn::Approach { .. }) {
+        // A position trigger has no body to press; a `step`'s cell is judged by
+        // `DW0917` against the assembled world instead.
+        if !t.on.is_click() {
             continue;
         }
         // A `strike-assembly` (spec-0082) lands on the assembly's own hitbox.
@@ -13099,7 +13631,8 @@ fn check_trigger_bodies(
         let Some(at) = t.at_anchor() else {
             continue;
         };
-        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+        if matches!(t.on, TriggerOn::Strike) && crate::compiler::pressable::npc_stands_at(plan, at)
+        {
             ledger.push(
                 t.id.as_str(),
                 t.on.kind(),
@@ -13108,7 +13641,7 @@ fn check_trigger_bodies(
             );
             continue;
         }
-        let body = crate::compiler::pressable::body_at(plan, at);
+        let body = crate::compiler::pressable::trigger_body(plan, t);
         if body != crate::compiler::pressable::Body::Nothing {
             ledger.push(
                 t.id.as_str(),
@@ -13139,10 +13672,18 @@ fn check_trigger_bodies(
     Ok(ledger)
 }
 
-/// The three gate fragments a polled trigger's tick clause carries: its
+/// The three gate fragments a trigger's dispatch clause carries: its
 /// at-most-once guard, its forbidden flags and its required flags and state.
-/// One authority for [`env_trigger_tick`] and the assembly PackTest that runs
-/// the very clause a blow on a hitbox meets (spec-0082).
+/// One authority for [`env_trigger_tick`], the assembly PackTest that runs the
+/// very clause a blow on a hitbox meets (spec-0082), and [`press_dispatch_fn`],
+/// which re-states the gate for a presser trigger.
+///
+/// **Every fragment is space-TERMINATED** (`unless score … matches 1 `) or
+/// empty, so a caller concatenates them straight in front of the next clause
+/// or `run`. The required half is assembled from [`party_flag_gate`] and
+/// [`state_cond`], which are space-PREFIXED, and re-spaced here once: a caller
+/// that spliced the prefixed form in front of `run` shipped `… matches 1run`
+/// (and `execute  if …`), which 1.21.11 refuses.
 fn trigger_poll_guards(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, String, String) {
     let id = plan::safe_local(t.id.as_str());
     let once_guard = if t.once {
@@ -13153,13 +13694,18 @@ fn trigger_poll_guards(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String,
     // Flags are party state (spec-0018): the gate is a single `#party` read,
     // positive and negative alike. `unless … matches 1` is unset-safe (an
     // uninitialized flag score counts as "not set").
-    let flag_guard = format!(
+    let required = format!(
         "{}{}",
         party_flag_gate(&t.requires_flags),
         // DSL v0.10 (spec-0031). A trigger's arming gate is a party predicate
         // (`DW0503` keeps `player`-scoped data out of it).
         state_cond(plan, &t.requires_state, false)
     );
+    let flag_guard = if required.is_empty() {
+        required
+    } else {
+        format!("{} ", required.trim_start())
+    };
     let forbid_guard: String = t
         .forbids_flags
         .iter()
@@ -13186,20 +13732,54 @@ fn trigger_poll_guards(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String,
 /// gated) the party holds the flags; the clear removes the record. The
 /// carrier is the trigger's own tag, or — for a `strike-assembly` — the
 /// assembly's hitbox (spec-0082 §4.3).
+/// Whether a trigger's body is a block a hand presses (spec-0093 §6.5) — read
+/// from the one authority, [`crate::compiler::pressable::trigger_body`].
+fn trigger_is_block_bound(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> bool {
+    matches!(
+        crate::compiler::pressable::trigger_body(plan, t),
+        crate::compiler::pressable::Body::Block { .. }
+    )
+}
+
+/// The `minecraft:default_block_use` criterion for a press of `block` at `cell`
+/// (spec-0093 §6.5): vanilla's own report that a player used a block with its
+/// default interaction — a lever flipped, a button pressed — held to the block's
+/// id and its exact position, so a lever elsewhere fires nothing here. The
+/// `location` conditions are loot-table predicates, as the pinned format spells
+/// them.
+fn block_use_criterion(block: &str, cell: [i32; 3]) -> serde_json::Value {
+    let id = crate::compiler::pressable::block_id(block);
+    // The criterion hands its predicates the block's CENTRE (`x + 0.5`), so the
+    // range is the whole cell `[x, x + 1]`, which the centre is inside and the
+    // neighbouring cells' centres are not.
+    let cell_span = |v: i32| json!({ "min": v, "max": v + 1 });
+    json!({
+        "trigger": "minecraft:default_block_use",
+        "conditions": {
+            "location": [{
+                "condition": "minecraft:location_check",
+                "predicate": {
+                    "block": { "blocks": [id] },
+                    "position": {
+                        "x": cell_span(cell[0]),
+                        "y": cell_span(cell[1]),
+                        "z": cell_span(cell[2])
+                    }
+                }
+            }]
+        }
+    })
+}
+
 fn click_trigger_poll(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> (String, String) {
     let ns = &plan.namespace;
     let id = plan::safe_local(t.id.as_str());
     let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
     let rec = trigger_record(t);
-    let flag_cond = if flag_guard.is_empty() {
-        String::new()
-    } else {
-        format!("{} ", flag_guard.trim_start())
-    };
     let carrier = trigger_carrier_tag(t);
     (
         format!(
-            "execute {once_guard}{forbid_guard}if entity @e[tag={carrier},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
+            "execute {once_guard}{forbid_guard}if entity @e[tag={carrier},nbt={{{rec}:{{}}}}] {flag_guard}run function {ns}:trig_{id}"
         ),
         format!("execute as @e[tag={carrier}] run data remove entity @s {rec}"),
     )
@@ -13243,7 +13823,18 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
         // is what lets a press answer share one hitbox with a polled trigger and
         // neither eat the other's record (round-8: adjudicate conditionally,
         // consume unconditionally).
+        // A `step` is polled whoever it addresses: a body in the cell is the
+        // event, and with `presser` the same selector names the actor.
+        if matches!(t.on, TriggerOn::Step) {
+            out.extend(step_trigger_poll(plan, t));
+            continue;
+        }
         if t.addresses_presser() {
+            continue;
+        }
+        // spec-0093 §6.5: a block a hand presses is dispatched by its
+        // `default_block_use` advancement, not read off a record on the tick.
+        if trigger_is_block_bound(plan, t) {
             continue;
         }
         let id = plan::safe_local(t.id.as_str());
@@ -13268,15 +13859,105 @@ fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String
                     // party member walked in); the flag gate is a party read
                     // alongside it, no longer merged into the selector.
                     out.push(format!(
-                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}{}]{} run function {ns}:trig_{id}",
-                        p[0], p[1], p[2], observer_guard(plan), flag_guard
+                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}{}] {flag_guard}run function {ns}:trig_{id}",
+                        p[0], p[1], p[2], observer_guard(plan)
                     ));
                 }
             }
+            // Polled above.
+            TriggerOn::Step => {}
         }
     }
     out.extend(clears);
     out
+}
+
+/// The selector terms for a body standing in a step cell: a player whose
+/// hitbox is in the cell, and who is not only watching. One authority for a
+/// plate or tripwire trap's detection ([`trap_fire_tick`]) and a `step`
+/// trigger's ([`step_trigger_poll`]), so the two fire on the same body.
+fn step_cell_terms(c: [i32; 3]) -> String {
+    format!("{},tag=!{CUTSCENE_TAG}", step_cell_box(c))
+}
+
+/// The volume half of [`step_cell_terms`]: the one block at `c`.
+fn step_cell_box(c: [i32; 3]) -> String {
+    format!("x={},dx=0,y={},dy=0,z={},dz=0", c[0], c[1], c[2])
+}
+
+/// The tick clauses of a `step` trigger.
+///
+/// **Party.** Edge-latched on `#stp_<id>`: `step_<id>` sets it when it
+/// dispatches, and it is cleared once no player is in the cell, so a plate
+/// stood on fires once and fires again only after it is stepped off and on —
+/// the shape a plate or tripwire trap's `rearm` has.
+///
+/// **Presser.** The same selector, run `as` each player in the cell who does
+/// not carry `dw_stp_<id>`; `step_<id>` tags that player, and the tag comes off
+/// when they leave the cell. So every player who steps on is dispatched once
+/// per step, as `@s` — the act and the actor are one fact, a body in the cell,
+/// and nothing about who acted is inferred after the event.
+fn step_trigger_poll(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Vec<String> {
+    let ns = &plan.namespace;
+    let id = plan::safe_local(t.id.as_str());
+    let Some(c) = t.at_anchor().and_then(|at| anchor_point_any(plan, at)) else {
+        return Vec::new();
+    };
+    let sel = step_cell_terms(c);
+    if t.addresses_presser() {
+        return vec![
+            format!("execute as @a[{sel},tag=!{STEP_TAG}{id}] run function {ns}:step_{id}"),
+            format!(
+                "execute as @a[tag={STEP_TAG}{id}] unless entity @s[{}] run tag @s remove \
+                 {STEP_TAG}{id}",
+                step_cell_box(c)
+            ),
+        ];
+    }
+    let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
+    vec![
+        format!(
+            "execute {once_guard}{forbid_guard}unless score #stp_{id} dw.sys matches 1 if entity \
+             @a[{sel}] {flag_guard}run function {ns}:step_{id}"
+        ),
+        format!("execute unless entity @a[{sel}] run scoreboard players set #stp_{id} dw.sys 0"),
+    ]
+}
+
+/// The tag a `presser` `step` trigger puts on a player standing in its cell,
+/// suffixed with the trigger's safe id.
+const STEP_TAG: &str = "dw_stp_";
+
+/// The dispatch function of a `step` trigger: `step_<id>`, which latches the
+/// step ([`step_trigger_poll`]) and runs `trig_<id>`.
+///
+/// A party step reaches it from a tick clause that already carries the
+/// trigger's gate. A presser step reaches it once per player who steps on, so
+/// the gate — `once`, the forbidden flags, the required flags and state — is
+/// stated here, spelled by [`trigger_poll_guards`] as the tick spells it.
+fn step_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> (String, String) {
+    let ns = &plan.namespace;
+    if !t.addresses_presser() {
+        return (
+            format!("step_{id}"),
+            lines(&[
+                format!("scoreboard players set #stp_{id} dw.sys 1"),
+                format!("function {ns}:trig_{id}"),
+            ]),
+        );
+    }
+    let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
+    let conds = format!("{once_guard}{forbid_guard}{}", flag_guard.trim_start());
+    let conds = conds.trim_end();
+    let dispatch = if conds.is_empty() {
+        format!("function {ns}:trig_{id}")
+    } else {
+        format!("execute {conds} run function {ns}:trig_{id}")
+    };
+    (
+        format!("step_{id}"),
+        lines(&[format!("tag @s add {STEP_TAG}{id}"), dispatch]),
+    )
 }
 
 /// Environment-trigger effect functions (`trig_<id>`). A trigger is a **party
@@ -13309,7 +13990,9 @@ fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String
     let mut out = Vec::new();
     for t in &plan.emitted_triggers(chrome) {
         let id = plan::safe_local(t.id.as_str());
-        if t.addresses_presser() {
+        if matches!(t.on, delvewright_dsl::TriggerOn::Step) {
+            out.push(step_dispatch_fn(plan, t, &id));
+        } else if t.addresses_presser() || trigger_is_block_bound(plan, t) {
             out.push(press_dispatch_fn(plan, t, &id));
         }
         let mut body: Vec<String> = Vec::new();
@@ -13383,31 +14066,12 @@ fn trigger_audience(t: &delvewright_dsl::EnvTrigger) -> Audience {
 /// first — a wall is not consumed by being asked — and `once`, the flag gate and
 /// the state gate are re-stated here because for a presser trigger this function
 /// takes the place of the tick clause that would otherwise have carried them.
-/// They are the trigger's own, spelled exactly as `env_trigger_tick` spells them,
-/// so the two dispatch routes gate identically.
+/// They are the trigger's own, read from [`trigger_poll_guards`] — the one
+/// authority `env_trigger_tick` reads — so the two dispatch routes gate
+/// identically.
 fn press_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> (String, String) {
     let ns = &plan.namespace;
-    let once_guard = if t.once {
-        format!("unless score #trig_{id} dw.sys matches 1 ")
-    } else {
-        String::new()
-    };
-    let forbid_guard: String = t
-        .forbids_flags
-        .iter()
-        .map(|f| {
-            format!(
-                "unless score {} {} matches 1 ",
-                plan::PARTY,
-                plan::flag_score(f.as_str())
-            )
-        })
-        .collect();
-    let flag_guard = format!(
-        "{}{}",
-        party_flag_gate(&t.requires_flags),
-        state_cond(plan, &t.requires_state, false)
-    );
+    let (once_guard, forbid_guard, flag_guard) = trigger_poll_guards(plan, t);
     // An ungated press answer — which is every one the compiler synthesizes —
     // calls its bundle outright. `execute run function …` is legal and would
     // work, but a conditionless `execute` in shipped output reads as a guard
@@ -14167,11 +14831,7 @@ fn trap_fire_tick(plan: &Plan) -> Vec<String> {
             }
             delvewright_dsl::TrapTrigger::PressurePlate
             | delvewright_dsl::TrapTrigger::Tripwire => {
-                let c = t.trigger_cell;
-                let at = format!(
-                    "x={},dx=0,y={},dy=0,z={},dz=0,tag=!{CUTSCENE_TAG}",
-                    c[0], c[1], c[2]
-                );
+                let at = step_cell_terms(t.trigger_cell);
                 out.push(format!(
                     "execute unless score #trapfire_{id} dw.sys matches 1 {guard}if entity \
                      @a[{at}] run function {ns}:trap_fire_{id}"
@@ -14280,6 +14940,23 @@ impl PlayableRegion {
             self.min[0], self.min[1], self.min[2], self.max[0], self.max[1], self.max[2]
         )
     }
+}
+
+/// Whether the declared boundary returns a player who leaves it (spec-0092 §10):
+/// `boundary.returns`, default `true`; `false` when no boundary is declared.
+fn boundary_returns(plan: &Plan) -> bool {
+    plan.campaign
+        .world
+        .content
+        .boundary
+        .as_ref()
+        .is_some_and(|b| b.returns)
+}
+
+/// The playable region's inclusive corners, for a proof outside this module —
+/// `None` when no `boundary` is declared.
+pub fn playable_region_box(plan: &Plan) -> Option<([i32; 3], [i32; 3])> {
+    playable_region(plan).map(|r| (r.min, r.max))
 }
 
 /// Derive the playable region, or `None` when no `boundary` is declared (the whole
@@ -14490,7 +15167,7 @@ fn has_night_vision_areas(plan: &Plan) -> bool {
 /// return teleports via `dw:cp` (the last checkpoint), so wanderers always land on
 /// the current respawn anchor rather than a fixed point.
 fn boundary_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
-    let Some(region) = playable_region(plan) else {
+    let Some(region) = playable_region(plan).filter(|_| boundary_returns(plan)) else {
         return Vec::new();
     };
     let ns = &plan.namespace;
@@ -14505,7 +15182,8 @@ fn boundary_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, S
         "data modify storage dw:region cp.y set from storage dw:cp pos[1]".to_string(),
         "data modify storage dw:region cp.z set from storage dw:cp pos[2]".to_string(),
         format!(
-            "execute as @a unless entity @s{sel} run function {ns}:boundary_return with storage dw:region cp"
+            "execute as @a[tag=!dw_cutscene,tag=!{free}] unless entity @s{sel} run function {ns}:boundary_return with storage dw:region cp",
+            free = crate::compiler::creator::FREE_TAG,
         ),
         format!("schedule function {ns}:boundary_tick 20t"),
     ];
@@ -14734,6 +15412,16 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
         }
         Objective::Interact { id, anchor, .. } => {
             if let Some(pos) = plan.point(area, anchor.as_str()) {
+                // spec-0093 §6.5: a prop a hand presses IS the thing. The block
+                // is placed and nothing else: no hitbox, no marker — vanilla's
+                // `default_block_use` at this cell completes the objective.
+                if let Some(block) = crate::compiler::pressable::interact_block(o) {
+                    cmds.push(format!(
+                        "setblock {} {} {} {}",
+                        pos[0], pos[1], pos[2], block
+                    ));
+                    return cmds;
+                }
                 let e = ent_xyz(pos);
                 cmds.push(format!(
                     "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{}\"]}}",
@@ -14746,12 +15434,15 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                         "setblock {} {} {} {}",
                         pos[0], pos[1], pos[2], prop.block
                     ));
-                } else {
+                } else if o.marker_shown(&plan.campaign.quests.content.guidance) {
                     // Visible, glowing, adventure-safe marker so a human can find the
                     // interact target (M2 fix 3): an `item_display` has no collision,
                     // so it obstructs neither movement nor the interaction hitbox.
                     // Named from the objective `title`; an untitled objective gets a
                     // nameless (but still glowing) marker rather than a raw-id label.
+                    // Summoned only for a MARKED objective (spec-0093): an objective
+                    // whose `marker` — or the campaign's `guidance.markers` — is
+                    // `hidden` keeps the hitbox and shows nothing.
                     let name_fields = marker_name_fields(o.title());
                     cmds.push(format!(
                         "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
@@ -14772,6 +15463,11 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             // A distinct, thematically neutral `end_rod` (vs. the interact lantern)
             // so a beacon-like light marks a reach destination. Named from the
             // objective `title`; untitled → nameless glow, never a raw-id label.
+            // Summoned only for a MARKED objective (spec-0093); the completion
+            // volume is adjudicated either way.
+            if !o.marker_shown(&plan.campaign.quests.content.guidance) {
+                return cmds;
+            }
             let name_fields = marker_name_fields(o.title());
             let e = ent_xyz(pos);
             cmds.push(format!(
@@ -15055,13 +15751,14 @@ fn option_display_conditions(
     // PLAYER (`dw.dmask`, run `as @s`), so this is the one gate site a
     // `player`-scoped datum reads from `@s` rather than from the party holder.
     cond.push_str(&state_cond(plan, &opt.requires_state, false));
+    // The objective-state axis is the objective's WHOLE pending guard
+    // (spec-0093 §6.3): quest active ∧ every `after` complete ∧ its gate ∧ not
+    // yet complete — the same guard every other objective driver goes through.
+    // A button drawn before its beat is pending is the island's muster/surf
+    // softlock; it is not drawn.
     for obj in &opt.completes {
-        if let Some((qid, _)) = objective_quest(c, obj) {
-            cond.push_str(&format!(
-                " if score {p} {} matches 1 unless score {p} {} matches 1",
-                quest_active_score(qid),
-                obj_score(obj)
-            ));
+        if let Some((qid, o)) = objective_quest(c, obj) {
+            cond.push_str(&pending_guard(plan, o, &quest_active_score(qid)));
         }
     }
     cond
@@ -15700,24 +16397,35 @@ fn emit_advancements(
     // advancement needs to know nothing about seals, doors, or any future
     // pressable object class.
     for t in &plan.emitted_triggers(chrome) {
-        if !t.addresses_presser() {
+        // spec-0093 §6.5: a trigger whose prop a hand presses is dispatched by
+        // vanilla's `default_block_use` at the block's cell, whoever it
+        // addresses — the block is the body and nothing is polled. A presser
+        // `step` is dispatched from the tick (`step_trigger_poll`), and is no
+        // click.
+        let block = match crate::compiler::pressable::trigger_body(plan, t) {
+            crate::compiler::pressable::Body::Block { cell, block } => Some((block, cell)),
+            _ => None,
+        };
+        if block.is_none() && (!t.addresses_presser() || !t.on.is_click()) {
             continue;
         }
         let id = plan::safe_local(t.id.as_str());
+        let criterion = match block {
+            Some((block, cell)) => block_use_criterion(&block, cell),
+            None => json!({
+                "trigger": "minecraft:player_interacted_with_entity",
+                "conditions": {
+                    "entity": {
+                        "type": "minecraft:interaction",
+                        "nbt": format!("{{Tags:[\"dw_trig_{id}\"]}}")
+                    }
+                }
+            }),
+        };
         advs.push((
             format!("press_{id}"),
             json!({
-                "criteria": {
-                    "interact": {
-                        "trigger": "minecraft:player_interacted_with_entity",
-                        "conditions": {
-                            "entity": {
-                                "type": "minecraft:interaction",
-                                "nbt": format!("{{Tags:[\"dw_trig_{id}\"]}}")
-                            }
-                        }
-                    }
-                },
+                "criteria": { "interact": criterion },
                 "rewards": { "function": format!("{ns}:press_{id}") }
             }),
         ));
@@ -15755,22 +16463,30 @@ fn emit_advancements(
     for q in &c.quests.content.quests {
         for o in &q.objectives {
             match o {
-                Objective::Interact { id, .. } => {
+                Objective::Interact { id, anchor, .. } => {
                     let tag = interact_entity_tag(id.as_str());
+                    // spec-0093 §6.5: a block a hand presses is reported by
+                    // vanilla's own `default_block_use` at the block's cell, as
+                    // the player who pressed; everything else rides the hitbox.
+                    let cell = plan
+                        .quest_area(q.id.as_str())
+                        .and_then(|a| plan.point(a, anchor.as_str()));
+                    let criterion = match crate::compiler::pressable::interact_block(o).zip(cell) {
+                        Some((block, cell)) => block_use_criterion(block, cell),
+                        None => json!({
+                            "trigger": "minecraft:player_interacted_with_entity",
+                            "conditions": {
+                                "entity": {
+                                    "type": "minecraft:interaction",
+                                    "nbt": format!("{{Tags:[\"{tag}\"]}}")
+                                }
+                            }
+                        }),
+                    };
                     advs.push((
                         format!("i_{}", plan::safe_local(id.as_str())),
                         json!({
-                            "criteria": {
-                                "interact": {
-                                    "trigger": "minecraft:player_interacted_with_entity",
-                                    "conditions": {
-                                        "entity": {
-                                            "type": "minecraft:interaction",
-                                            "nbt": format!("{{Tags:[\"{tag}\"]}}")
-                                        }
-                                    }
-                                }
-                            },
+                            "criteria": { "interact": criterion },
                             "rewards": { "function": format!("{ns}:i_reward_{}", plan::safe_local(id.as_str())) }
                         }),
                     ));
@@ -15886,6 +16602,7 @@ fn emit_packtest(
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
     waves: &WaveGeometry<'_>,
     payloads: &PayloadPlans,
+    asm_locks: &crate::compiler::assembly::Locks,
 ) {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -16157,7 +16874,7 @@ fn emit_packtest(
 
     // spec-0082: per assembly, the body it spawns, every hit counter that rides
     // its hitbox, and its landing. Emits nothing for a campaign with none.
-    emit_assembly_packtests(plan, out);
+    emit_assembly_packtests(plan, asm_locks, out);
 
     // v0.3: one focused mechanism test per gameplay verb present in the campaign,
     // plus a flag-gate test. Each drives the compiler-generated mechanic functions
@@ -16210,6 +16927,8 @@ fn emit_packtest(
     // a boundary.
     emit_boundary_packtest(plan, out);
     emit_night_vision_packtest(plan, out);
+    emit_lightning_packtests(plan, out);
+    emit_standin_packtest(plan, out);
 
     // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
     // spec-0014). Emits nothing when the campaign uses neither.
@@ -17944,6 +18663,146 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
+/// spec-0092 PackTests: every declared strike, by its own emitted line, puts a
+/// `minecraft:lightning_bolt` at its mark on the tick it runs. The line is the
+/// one `emit_lightning` writes into the beat — never a restatement — and the
+/// chunk is the one setup holds loaded for it. Emits nothing for a campaign
+/// that declares no strike.
+fn emit_lightning_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for (n, (path, at)) in crate::compiler::lightning::declared(plan)
+        .into_iter()
+        .enumerate()
+    {
+        let mut line = Vec::new();
+        emit_lightning(plan, at, &mut line);
+        let Some(summon) = line.first() else {
+            continue; // unresolved mark (`DW0360` owns it)
+        };
+        let Some(anchor) = anchor_point_any(plan, at.anchor.as_str()) else {
+            continue;
+        };
+        let v = ent_xyz(at.cell(anchor));
+        let score = format!("#lb{n}");
+        let mut b = packtest_header(&format!(
+            "{title}: the lightning at {path} strikes {}",
+            at.display()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("scoreboard players set {score} dw.sys 0"));
+        // Setup force-loads the strike's chunk, and a chunk force-loaded on this
+        // tick is not loaded yet: a mark off the placed pieces (a bolt out over
+        // the water) is a summon into nothing on tick 0. The beat fires long
+        // after setup in play; the template waits for the chunk the same way,
+        // by a probe it schedules each tick until `execute if loaded` holds.
+        let cell = at.cell(anchor);
+        let loaded = format!("#lbl{n}");
+        let wait = format!("lightning_wait_{n}");
+        b.push(format!("scoreboard players set {loaded} dw.sys 0"));
+        b.push(format!("function {ns}:{wait}"));
+        b.push(format!("await score {loaded} dw.sys matches 1"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/{wait}.mcfunction"),
+            lines(&[
+                format!(
+                    "execute if loaded {} {} {} run scoreboard players set {loaded} dw.sys 1",
+                    cell[0], cell[1], cell[2]
+                ),
+                format!(
+                    "execute unless loaded {} {} {} run schedule function {ns}:{wait} 1t",
+                    cell[0], cell[1], cell[2]
+                ),
+            ])
+            .into_bytes(),
+        );
+        b.push(summon.clone());
+        let near = format!(
+            "@e[type={},x={},y={},z={},distance=..1]",
+            delvewright_dsl::lightning::BOLT_ENTITY,
+            v[0],
+            v[1],
+            v[2]
+        );
+        b.push(format!(
+            "execute if entity {near} run scoreboard players set {score} dw.sys 1"
+        ));
+        b.push(format!("assert score {score} dw.sys matches 1"));
+        b.push(format!("kill {near}"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/lightning_{n}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+/// spec-0095 PackTest: the stand-in a `present` cutscene places for a player is
+/// that player — the real [`crate::compiler::standin::STANDIN_FN`], run as the
+/// template's own dummy, leaves a mannequin on the dummy's position wearing the
+/// dummy's own profile (its `id` is the dummy's UUID), facing the dummy's yaw,
+/// dressed in a copy of what the dummy wears and holds, and with no head left
+/// over from the profile step where the dummy wears none. Emits nothing for a
+/// campaign with no `present` cutscene.
+fn emit_standin_packtest(plan: &Plan, out: &mut BuildOutput) {
+    use crate::compiler::standin::{STANDIN_ENTITY, STANDIN_FN};
+    if !cutscene_parties(plan)
+        .iter()
+        .any(|(_, p)| *p == delvewright_dsl::CutsceneParty::Present)
+    {
+        return;
+    }
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let mine = format!("@e[type={STANDIN_ENTITY},tag=dw_standin_new,distance=..0.01]");
+    let one = format!("@n[type={STANDIN_ENTITY},tag=dw_standin_new,distance=..0.01]");
+    let mut b = packtest_header(&format!(
+        "{title}: a cutscene's stand-in wears its player's own profile, facing and gear"
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push("execute at @s run tp @s ~ ~ ~ 90 0".to_string());
+    b.push("item replace entity @s armor.chest with minecraft:iron_chestplate".to_string());
+    b.push("item replace entity @s weapon.mainhand with minecraft:stick".to_string());
+    b.push("item replace entity @s armor.head with minecraft:air".to_string());
+    b.push(format!("execute at @s run function {ns}:{STANDIN_FN}"));
+    // 1. one body, where the dummy stands
+    b.push(format!(
+        "execute at @s store success score #sti_body dw.sys if entity {mine}"
+    ));
+    b.push("assert score #sti_body dw.sys matches 1".to_string());
+    // 2. the dummy's own profile: the stand-in's profile id IS the dummy's UUID
+    b.push("data remove storage dw:sti id".to_string());
+    b.push(format!(
+        "execute at @s run data modify storage dw:sti id set from entity {one} profile.id"
+    ));
+    b.push(
+        "execute store success score #sti_other dw.sys run data modify storage dw:sti id set from entity @s UUID"
+            .to_string(),
+    );
+    b.push("assert score #sti_other dw.sys matches 0".to_string());
+    // 3. the dummy's facing
+    b.push(format!(
+        "execute at @s store result score #sti_yaw dw.sys run data get entity {one} Rotation[0] 100"
+    ));
+    b.push("assert score #sti_yaw dw.sys matches 9000".to_string());
+    // 4. a copy of what the dummy wears and holds
+    b.push(format!(
+        "execute at @s store success score #sti_gear dw.sys if entity @e[type={STANDIN_ENTITY},tag=dw_standin_new,distance=..0.01,nbt={{equipment:{{chest:{{id:\"minecraft:iron_chestplate\"}},mainhand:{{id:\"minecraft:stick\"}}}}}}]"
+    ));
+    b.push("assert score #sti_gear dw.sys matches 1".to_string());
+    // 5. the profile head is gone where the dummy wears no helmet
+    b.push(format!(
+        "execute at @s store success score #sti_head dw.sys if entity @e[type={STANDIN_ENTITY},tag=dw_standin_new,distance=..0.01,nbt={{equipment:{{head:{{}}}}}}]"
+    ));
+    b.push("assert score #sti_head dw.sys matches 0".to_string());
+    b.push(format!("execute at @s run kill {mine}"));
+    b.push("item replace entity @s armor.chest with minecraft:air".to_string());
+    b.push("item replace entity @s weapon.mainhand with minecraft:air".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/standin.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 /// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to
 /// the last checkpoint; a player inside is never moved. Drives the real
 /// `boundary_tick` on a dummy — its direct call IS the 1s clock's body, so no
@@ -18092,7 +18951,7 @@ fn emit_class_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
 }
 
 fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
-    let Some(region) = playable_region(plan) else {
+    let Some(region) = playable_region(plan).filter(|_| boundary_returns(plan)) else {
         return;
     };
     let Some(spawn) = campaign_spawn(plan) else {
@@ -18130,7 +18989,7 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
     let mut b = packtest_header(&format!(
         "{title}: a player inside the playable region is never moved"
     ));
-    b.push(seed_cp);
+    b.push(seed_cp.clone());
     b.push(format!("tp @s {in_x} {} {}", spawn[1], spawn[2]));
     // Precondition: the interior cell really is inside the region (else the geometry
     // is too small — fail informatively rather than silently pass).
@@ -18150,6 +19009,36 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/v06_boundary_inside.mcfunction"),
         lines(&b).into_bytes(),
     );
+
+    // Exempt (spec-0092 §10): a player outside the region who is watching a
+    // cutscene (`dw_cutscene`) or flying out of the body with the creator's free
+    // camera (`dw_free`) is never moved — the camera is not the party, and a
+    // creator tool is not fought by the player bound. Each tag is asserted on
+    // its own, so a selector that forgot either reds here.
+    for (n, tag) in ["dw_cutscene", crate::compiler::creator::FREE_TAG]
+        .iter()
+        .enumerate()
+    {
+        let mut b = packtest_header(&format!(
+            "{title}: a player outside the region carrying `{tag}` is never returned"
+        ));
+        b.push(seed_cp.clone());
+        b.push(format!("tp @s {out_x} {} {}", spawn[1], spawn[2]));
+        b.push(format!("tag @s add {tag}"));
+        b.push(format!("function {ns}:boundary_tick"));
+        b.push(format!("tag @s remove {tag}"));
+        b.push(format!(
+            "execute store result score #bx_bex{n} dw.sys run data get entity @s Pos[0] 1"
+        ));
+        b.push(format!("assert score #bx_bex{n} dw.sys matches {out_x}"));
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/boundary_exempt_{}.mcfunction",
+                tag.trim_start_matches("dw_")
+            ),
+            lines(&b).into_bytes(),
+        );
+    }
 }
 
 /// spec-0016 §1 bonfire PackTests. A fake player cannot die and respawn inside a
@@ -19716,7 +20605,11 @@ fn emit_kill_reward_packtests(
 /// A PackTest dummy is permanently undamageable (see `lethal_<id>`'s own
 /// note), so what a landing does to a player's health is the bot tier's to
 /// witness; this suite proves the machine that delivers it.
-fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
+fn emit_assembly_packtests(
+    plan: &Plan,
+    locks: &crate::compiler::assembly::Locks,
+    out: &mut BuildOutput,
+) {
     use crate::compiler::assembly as asm;
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
@@ -19931,6 +20824,135 @@ fn emit_assembly_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
         write(&format!("asm_land_{s}"), b, out);
+
+        // --- asm_hold_<s> (spec-0094 §3.3) ---
+        // A clip the story plays stands the pattern down: with a body in the
+        // region that arms step 0, the real tick begins no wind-up over it;
+        // the real `arm-strikes` re-arms, and the next tick begins one.
+        let Some(arming) = plan.zone_box(&st.while_in) else {
+            continue;
+        };
+        let region = st.pattern[0]
+            .lock
+            .as_ref()
+            .and_then(|l| plan.zone_box(&l.within))
+            .unwrap_or(arming);
+        let Some(cue) = p
+            .decl
+            .initial
+            .as_deref()
+            .and_then(|c| p.rig.clip_index(c))
+            .or_else(|| (!p.rig.clips.is_empty()).then_some(0))
+        else {
+            continue;
+        };
+        let (pin, me) = pin_dummy(&format!("dw_asm_hold_{s}"));
+        let mut b = packtest_header(&format!(
+            "{title}: a clip the story plays on assembly `{id}` holds while a body stands in \
+             its arming region, and only `arm-strikes` begins the next wind-up (spec-0094)"
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.extend(reset.iter().cloned());
+        b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+        b.push(format!(
+            "tp {me} {} {} {}",
+            f64::from(region.0[0] + region.1[0]) / 2.0 + 0.5,
+            region.0[1],
+            f64::from(region.0[2] + region.1[2]) / 2.0 + 0.5
+        ));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            asm::holder(&s, "step")
+        ));
+        b.push(format!("function {ns}:{}", asm::cue_fn(&s, cue)));
+        b.push(format!("function {ns}:{}", asm::tick_fn(&s)));
+        b.push(format!(
+            "assert score {} dw.sys matches 0",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!(
+            "assert score {} dw.sys matches {cue}",
+            asm::holder(&s, "clip")
+        ));
+        b.push(format!("function {ns}:{}", asm::arm_fn(&s)));
+        b.push(format!("function {ns}:{}", asm::tick_fn(&s)));
+        b.push(format!(
+            "assert score {} dw.sys matches 1",
+            asm::holder(&s, "sm")
+        ));
+        b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+        b.push(format!("tag {me} remove dw_asm_hold_{s}"));
+        write(&format!("asm_hold_{s}"), b, out);
+
+        // --- asm_lock_<s>_<j> (spec-0094 §4.2) ---
+        // The lock's dispatch, driven with the cells the plan proved: the
+        // feet cell of the first and of the most turned proved cell, written
+        // where the choice writes it, resolve to that cell — the root turned to
+        // its yaw, the pose and the landing it was proved with.
+        for (j, _) in st.pattern.iter().enumerate() {
+            let Some(lp) = locks.get(&(p.index, j)) else {
+                continue;
+            };
+            let Some(within) = lp.within else { continue };
+            if lp.cells.is_empty() {
+                continue;
+            }
+            let far = (0..lp.cells.len())
+                .max_by(|a, b| {
+                    lp.cells[*a]
+                        .yaw
+                        .abs()
+                        .total_cmp(&lp.cells[*b].yaw.abs())
+                        .then(b.cmp(a))
+                })
+                .unwrap_or(0);
+            let mut b = packtest_header(&format!(
+                "{title}: assembly `{id}`'s strike step {j} turns to the cell it locks onto and \
+                 takes the pose it was proved with there (spec-0094)"
+            ));
+            b.push(format!("function {ns}:setup"));
+            b.extend(reset.iter().cloned());
+            b.push(format!("function {ns}:{}", asm::spawn_fn(&s)));
+            let qs = if far == 0 { vec![0] } else { vec![0, far] };
+            for q in qs {
+                let cell = &lp.cells[q];
+                for (a, axis) in ["l0", "l1", "l2"].iter().enumerate() {
+                    b.push(format!(
+                        "data modify storage {} {s}.{axis} set value {}",
+                        asm::STORAGE,
+                        cell.cell[a] - within.0[a]
+                    ));
+                }
+                b.push(format!(
+                    "function {ns}:asm_lockat_{s}_{j} with storage {} {s}",
+                    asm::STORAGE
+                ));
+                let got = format!("#asmq_{s}");
+                b.push(format!(
+                    "execute store result score {got} dw.sys run data get storage {} {s}.q",
+                    asm::STORAGE
+                ));
+                b.push(format!("assert score {got} dw.sys matches {q}"));
+                let yaw = format!("#asmy_{s}");
+                b.push(format!(
+                    "execute store result score {yaw} dw.sys run data get entity @e[tag={},limit=1] Rotation[0] 10",
+                    asm::root_tag(&s)
+                ));
+                let want = (cell.yaw * 10.0).floor() as i64;
+                b.push(format!(
+                    "assert score {yaw} dw.sys matches {}..{}",
+                    want - 1,
+                    want + 1
+                ));
+            }
+            b.push(format!("function {ns}:{}", asm::despawn_fn(&s)));
+            write(&format!("asm_lock_{s}_{j}"), b, out);
+        }
     }
 }
 
@@ -20362,6 +21384,9 @@ enum ActivationFixture {
     /// The objective's stack in a container slot: the collect path summons
     /// nothing and fills a block instead.
     ContainerSlot { pos: [i32; 3], item: String },
+    /// The objective's prop block alone (spec-0093 §6.5): a block vanilla
+    /// reports the use of summons nothing — the block is the whole affordance.
+    Block { pos: [i32; 3], block: String },
 }
 
 fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
@@ -20383,6 +21408,19 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
             tag,
             count: summons,
         });
+    }
+    // `setblock <x> <y> <z> <block>` and nothing else: a block-bound interact.
+    if let [one] = cmds
+        && let Some(rest) = one.strip_prefix("setblock ")
+    {
+        let f: Vec<&str> = rest.splitn(4, ' ').collect();
+        if let [x, y, z, block] = f.as_slice() {
+            let pos = [x.parse().ok()?, y.parse().ok()?, z.parse().ok()?];
+            return Some(ActivationFixture::Block {
+                pos,
+                block: crate::compiler::pressable::block_id(block).to_string(),
+            });
+        }
     }
     // `item replace block <x> <y> <z> container.<n> with <item>[…] <count>`
     let fill = cmds.iter().find(|c| c.starts_with("item replace block "))?;
@@ -20470,6 +21508,22 @@ fn emit_objective_activation_packtests(plan: &Plan, out: &mut BuildOutput) {
                     b.push(format!(
                         "execute store success score #fx1_{safe} dw.sys if items block {x} {y} {z} \
                          container.0 {item}"
+                    ));
+                    b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
+                }
+                ActivationFixture::Block { pos, block } => {
+                    let (x, y, z) = (pos[0], pos[1], pos[2]);
+                    // Clear the cell first, so the after-read is a fact about this
+                    // activation; the activation puts the block back, which is
+                    // also the cleanup.
+                    b.push(format!("setblock {x} {y} {z} minecraft:air"));
+                    b.push(format!(
+                        "execute store success score #fx0_{safe} dw.sys if block {x} {y} {z} {block}"
+                    ));
+                    b.push(format!("assert score #fx0_{safe} dw.sys matches 0"));
+                    b.push(format!("function {ns}:activate_o_{safe}"));
+                    b.push(format!(
+                        "execute store success score #fx1_{safe} dw.sys if block {x} {y} {z} {block}"
                     ));
                     b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
                 }
@@ -20744,15 +21798,19 @@ fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
     // asks which triggers exist and of what kind, and never reads what they say.
     for t in plan.emitted_triggers_unlocalized() {
         let id = plan::safe_local(t.id.as_str());
-        let presser = t.addresses_presser();
+        // A block-bound trigger (spec-0093 §6.5) is dispatched through its
+        // `press_<id>` advancement exactly as a presser is, so its dispatch half
+        // is driven the same way; the bundle half keeps its own audience.
+        let presser = t.addresses_presser() || trigger_is_block_bound(plan, &t);
+        let step = matches!(t.on, delvewright_dsl::TriggerOn::Step);
         let (pin, sel) = pin_dummy(&format!("dw_t_trg_{id}"));
         let mut b = packtest_header(&format!(
             "{title}: environment trigger `{}` fires its own bundle{}",
             t.id,
-            if presser {
-                ", and its press answer dispatches and re-arms"
-            } else {
-                ""
+            match (presser, step) {
+                (true, false) => ", and its press answer dispatches and re-arms",
+                (true, true) => ", and its step dispatches as the player who stepped",
+                (false, _) => "",
             }
         ));
         b.push(format!("function {ns}:setup"));
@@ -20769,13 +21827,35 @@ fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.extend(packtest_gate_drive(plan, t.gate(), true));
         // 1. The BUNDLE's own body. This is the object's own code — its own
         //    effects, its own gate — and nothing else in the suite runs it.
-        b.push(if presser {
+        b.push(if t.addresses_presser() {
             format!("execute as {sel} run function {ns}:trig_{id}")
         } else {
             format!("function {ns}:trig_{id}")
         });
         b.push(format!("assert score #trig_{id} dw.sys matches 1"));
-        if !presser {
+        if step {
+            // 2. The step's DISPATCH reaches the bundle and latches the step, so
+            //    standing on does not dispatch again: a party step on
+            //    `#stp_<id>`, a presser step on the player in the cell, whom it
+            //    runs as.
+            b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
+            if presser {
+                b.push(format!("execute as {sel} run function {ns}:step_{id}"));
+                b.push(format!("assert score #trig_{id} dw.sys matches 1"));
+                b.push(format!(
+                    "execute as {sel} if entity @s[tag={STEP_TAG}{id}] run scoreboard players \
+                     set #prs_{id} dw.sys 1"
+                ));
+                b.push(format!("assert score #prs_{id} dw.sys matches 1"));
+                b.push(format!("tag {sel} remove {STEP_TAG}{id}"));
+            } else {
+                b.push(format!("scoreboard players set #stp_{id} dw.sys 0"));
+                b.push(format!("function {ns}:step_{id}"));
+                b.push(format!("assert score #trig_{id} dw.sys matches 1"));
+                b.push(format!("assert score #stp_{id} dw.sys matches 1"));
+            }
+        }
+        if !presser || step {
             out.insert(
                 format!("packtest-datapack/data/{ns}/test/env_trigger_{id}.mcfunction"),
                 lines(&b).into_bytes(),
@@ -20844,7 +21924,16 @@ fn env_trigger_watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
             families: vec!["press_".to_string()],
             declared: triggers
                 .iter()
-                .filter(|t| t.addresses_presser())
+                .filter(|t| t.addresses_presser() && t.on.is_click())
+                .map(|t| plan::safe_local(t.id.as_str()))
+                .collect(),
+        },
+        crate::compiler::watch::Claim {
+            mechanic: "step-trigger",
+            families: vec!["step_".to_string()],
+            declared: triggers
+                .iter()
+                .filter(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step))
                 .map(|t| plan::safe_local(t.id.as_str()))
                 .collect(),
         },
@@ -21716,14 +22805,20 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             "{title}: damage-players subtracts {amount} half-hearts ({type_id}) (spec-0014)"
         ));
         t.push(format!("function {ns}:setup"));
-        // A dummy at a fixed cell near origin: NoAI so it never moves, Silent, full
-        // health. `damage` applies synchronously, so a 0-player void still shows it.
-        // Pre-clear the tag first — never assume a fresh world on the shared-batch
-        // server — and kill again on the way out.
+        // A body where this template's own PackTest dummy stands: NoAI so it
+        // never moves, Silent, full health. `damage` applies synchronously, so a
+        // 0-player void still shows it. Summoned at the dummy — the nearest
+        // player on the template's first line, inside its own loaded test
+        // structure — and never at a fixed cell: a fixed cell near origin is
+        // loaded or not by how the batch happens to lay its structures out, and
+        // a batch of 19 left `0 -60 0` where the summon put nothing a `damage`
+        // could find (both reads 0, the drop 0). Pre-clear the tag first —
+        // never assume a fresh world on the shared-batch server — and kill again
+        // on the way out.
         t.push("kill @e[tag=dw_dmgtest]".to_string());
         t.push(
-            "summon minecraft:zombie 0 -60 0 {Tags:[\"dw_dmgtest\"],NoAI:1b,Silent:1b,\
-             PersistenceRequired:1b,Health:20f}"
+            "execute at @p run summon minecraft:zombie ~ ~ ~ {Tags:[\"dw_dmgtest\"],NoAI:1b,\
+             Silent:1b,PersistenceRequired:1b,Health:20f}"
                 .to_string(),
         );
         t.push(
@@ -23250,8 +24345,12 @@ fn emit_v04_packtests(
     'cleanup: for q in &c.quests.content.quests {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         for o in &q.objectives {
+            // A prop vanilla reports the use of summons no hitbox (spec-0093
+            // §6.5), so there is nothing of it to clean; the template is about
+            // the hitbox-carrying kind.
             if let Objective::Interact { id, anchor, .. } = o
                 && plan.point(area, anchor.as_str()).is_some()
+                && crate::compiler::pressable::interact_block(o).is_none()
             {
                 let tag = interact_entity_tag(id.as_str());
                 let (pin, sel) = pin_dummy("dw_t_iclr");
@@ -23760,23 +24859,36 @@ fn emit_one_dialogue_mask_packtest(
                 vec![format!("scoreboard players set {p} {sc} 0")],
             ));
         }
-        satisfied.extend(state_drive_lines(plan, &o.requires_state, true));
-        for cmp in &o.requires_state {
-            terms.push((
-                state_drive_lines(plan, std::slice::from_ref(cmp), false),
-                state_drive_lines(plan, std::slice::from_ref(cmp), true),
-            ));
-        }
+        // Every numeric term of the WHOLE condition — the option's own and each
+        // completed objective's pending guard — is satisfied at once: two terms on
+        // one datum (`at-most 5` on the option, `at-most 9` on its objective) are
+        // driven to one value meeting both, never each to its own boundary with the
+        // later write undoing the earlier.
+        let all_cmps: Vec<&StateCompare> = o
+            .requires_state
+            .iter()
+            .chain(
+                o.completes
+                    .iter()
+                    .filter_map(|obj| objective_quest(c, obj))
+                    .flat_map(|(_, objective)| objective.requires_state().iter()),
+            )
+            .collect();
+        let joint = JointStateDrive::of(&all_cmps);
+        joint.drive(plan, &o.requires_state, &mut satisfied, &mut terms);
         for obj in &o.completes {
-            let Some((qid, _)) = objective_quest(c, obj) else {
+            let Some((qid, objective)) = objective_quest(c, obj) else {
                 continue;
             };
             let qa = quest_active_score(qid);
             let os = obj_score(obj);
             satisfied.push(format!("scoreboard players set {p} {qa} 1"));
             satisfied.push(format!("scoreboard players set {p} {os} 0"));
-            // Two independent ways the objective-state axis hides the option:
-            // the quest is not running, or the objective is already done.
+            // The objective-state axis is the objective's whole pending guard
+            // (spec-0093 §6.3), and every term of it hides the option on its
+            // own: the quest is not running, the objective is already done, a
+            // beat it declares `after` is not done, a flag it requires is unset,
+            // a flag it forbids is set, a datum it reads does not satisfy it.
             terms.push((
                 vec![format!("scoreboard players set {p} {qa} 0")],
                 vec![format!("scoreboard players set {p} {qa} 1")],
@@ -23785,6 +24897,31 @@ fn emit_one_dialogue_mask_packtest(
                 vec![format!("scoreboard players set {p} {os} 1")],
                 vec![format!("scoreboard players set {p} {os} 0")],
             ));
+            for a in objective.after() {
+                let sc = obj_score(a.as_str());
+                satisfied.push(format!("scoreboard players set {p} {sc} 1"));
+                terms.push((
+                    vec![format!("scoreboard players set {p} {sc} 0")],
+                    vec![format!("scoreboard players set {p} {sc} 1")],
+                ));
+            }
+            for f in objective.requires_flags() {
+                let sc = plan::flag_score(f.as_str());
+                satisfied.push(format!("scoreboard players set {p} {sc} 1"));
+                terms.push((
+                    vec![format!("scoreboard players set {p} {sc} 0")],
+                    vec![format!("scoreboard players set {p} {sc} 1")],
+                ));
+            }
+            for f in objective.forbids_flags() {
+                let sc = plan::flag_score(f.as_str());
+                satisfied.push(format!("scoreboard players set {p} {sc} 0"));
+                terms.push((
+                    vec![format!("scoreboard players set {p} {sc} 1")],
+                    vec![format!("scoreboard players set {p} {sc} 0")],
+                ));
+            }
+            joint.drive(plan, objective.requires_state(), &mut satisfied, &mut terms);
         }
         if terms.is_empty() {
             continue;
@@ -24569,10 +25706,20 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         b.extend(packtest_preamble(plan, qid, o, true, &sel));
-        b.push(format!(
-            "scoreboard players set {sel} {} 1",
-            plan::interact_trigger(id.as_str())
-        ));
+        // spec-0093 §6.5: a block a hand presses has no hitbox and no chat
+        // command; its press is the advancement, so the test GRANTS it — which
+        // runs the reward as the dummy — and the reward is what sets the score.
+        if crate::compiler::pressable::interact_block(o).is_some() {
+            b.push(format!(
+                "advancement grant {sel} only {ns}:i_{}",
+                plan::safe_local(id.as_str())
+            ));
+        } else {
+            b.push(format!(
+                "scoreboard players set {sel} {} 1",
+                plan::interact_trigger(id.as_str())
+            ));
+        }
         b.push(format!("function {ns}:tick"));
         b.push(format!(
             "assert score {} {} matches 1",
@@ -24985,34 +26132,23 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     }
 }
 
-/// Shipped `view-distance`, in chunks — **10** = a 160-block render radius.
+/// Shipped `view-distance`, in chunks: **the campaign's declaration**
+/// (`world.view_distance`, spec-0091), or the engine's floor
+/// ([`delvewright_dsl::viewdistance::FLOOR`], 10 chunks = a 160-block radius)
+/// when it declares none. One reading, [`delvewright_dsl::viewdistance::chunks`],
+/// is what the properties file, the far-view refusals and the stated cost all
+/// take.
 ///
-/// What it answers to, in the order the number was established:
+/// The floor answers to the scenes: measured from the `forceload` AABBs the
+/// compiler emits, the largest delve built to date spans 114 × 165 blocks, so
+/// 160 blocks reach the far side of it from any standpoint inside it, and the
+/// horizon library's vista arithmetic is written against it. A campaign whose
+/// far views need more declares more, and the build states what that costs the
+/// host ([`crate::compiler::served`]).
 ///
-/// * **The scenes.** Measured from the `forceload` AABBs the compiler emits for
-///   the shipped campaigns, the largest delve built to date spans 114 × 165
-///   blocks and the next 35 × 115. A 160-block radius therefore reaches the far
-///   side of either from any standpoint inside it, and on an `ocean` horizon it
-///   puts the fog line 160 blocks of open sea past the shore — already all
-///   backdrop. Going up to 12 buys 32 more blocks of empty water or void on
-///   every delve that exists; going down to 8 (128 blocks) would clip the long
-///   axis of the largest scene from a standpoint at either end.
-/// * **The existing record.** `docs/notes/horizon-library-dossier.md` §3–4 and
-///   `docs/specs/spec-0026-horizon-library.md` §6 already do their vista
-///   arithmetic against a shipped `view-distance` of 10 (→ 160 blocks), with 12
-///   reserved as the summit horizon's floor. Writing the key makes that
-///   arithmetic bind to a fact rather than to an assumption about the host.
-/// * **Prod.** Perf is non-gating on the Raspberry Pi,
-///   so the Pi does not push the number DOWN; it is the absence of any delve
-///   content past 160 blocks that stops it going up.
-///
-/// It is also what both boot paths land on today, so pinning it changes no
-/// player-visible behaviour — this is a determinism fix, not a retune.
-pub const DELVE_VIEW_DISTANCE: u32 = 10;
-
-/// Shipped `simulation-distance`, in chunks — **10**, and the same number as
-/// [`DELVE_VIEW_DISTANCE`] for an unrelated reason. The two answer different
-/// questions and are deliberately separate constants.
+/// Shipped `simulation-distance`, in chunks — **10**, and not moved by the
+/// declaration above, for an unrelated reason. The two answer different
+/// questions and are deliberately separate.
 ///
 /// This value is **not** what makes a delve tick. `setup` force-loads every
 /// placed piece and never releases it, so scene chunks are entity-ticking
@@ -25489,9 +26625,10 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // sources happen to agree it is a coincidence of an upstream file we do not
     // own, not an invariant — so a key that matters is pinned, never inherited.
     //
-    // [`DELVE_VIEW_DISTANCE`] / [`DELVE_SIMULATION_DISTANCE`] carry the reasoning
-    // for the two chunk-distance values; `validation/world-settings-entrypoint.sh`
+    // `view-distance` is the campaign's (spec-0091) and `simulation-distance`
+    // is [`DELVE_SIMULATION_DISTANCE`]; `validation/world-settings-entrypoint.sh`
     // derives both from this file, so the image cannot boot a different pair.
+    let view_distance = delvewright_dsl::viewdistance::chunks(plan.campaign);
     let mut props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
         ("difficulty", difficulty.to_string()),
@@ -25507,7 +26644,7 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         ("simulation-distance", DELVE_SIMULATION_DISTANCE.to_string()),
         ("spawn-monsters", "false".to_string()),
         ("spawn-protection", "0".to_string()),
-        ("view-distance", DELVE_VIEW_DISTANCE.to_string()),
+        ("view-distance", view_distance.to_string()),
     ]);
     // spec-0084 §11: a campaign may declare its pack required. Written only when
     // declared, so every campaign that does not is byte-identical; the delve
@@ -25532,6 +26669,12 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         text.push_str(&format!("{k}={v}\n"));
     }
     out.insert("server/server.properties".to_string(), text.into_bytes());
+    // spec-0091 §4: what the declared view distance asks of the host, computed
+    // here and read by the image's entrypoint and the playtest server.
+    out.insert(
+        "server/resources.properties".to_string(),
+        crate::compiler::served::resources_properties(&plan.namespace, view_distance).into_bytes(),
+    );
 
     out.insert(
         "server/eula-note.txt".to_string(),
@@ -25557,8 +26700,16 @@ Level config for campaign `{}`. The world is generated on first server boot\n\
 from `server.properties` (no region files shipped, spec-0002):\n\n\
 {}- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
 - `gamemode=adventure`, `difficulty={}`, no structures/monsters.\n\
-- `view-distance={}` / `simulation-distance={}` (chunks) are pinned here rather\n\
-  than left to the host: the delve renders and ticks the same everywhere.\n\n\
+- `view-distance={vd}` / `simulation-distance={sd}` (chunks) are pinned here rather\n\
+  than left to the host: the delve renders and ticks the same everywhere. The\n\
+  view distance is the campaign's declaration ({how}); a player's client draws\n\
+  the smaller of it and their own render-distance setting, so a player who\n\
+  wants every far view this delve was designed with sets render distance to\n\
+  at least {vd} chunks.\n\
+- `resources.properties` states what this delve asks of its host: `heap-max={heap}`\n\
+  for {players} players at this view distance ({chunks} chunks each). The shipped\n\
+  image and the playtest server start the JVM at that ceiling unless the operator\n\
+  names one.\n\n\
 The compiler-emitted `#minecraft:load` bootstrap (`datapack/`) places each area's\n\
 prefab with `/place template` and summons NPCs; nothing is baked into region\n\
 bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
@@ -25566,8 +26717,16 @@ bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
             horizon_bullet,
             plan.seed,
             difficulty,
-            DELVE_VIEW_DISTANCE,
-            DELVE_SIMULATION_DISTANCE
+            vd = view_distance,
+            sd = DELVE_SIMULATION_DISTANCE,
+            how = if plan.campaign.world.content.view_distance.is_some() {
+                "declared in `world.view_distance`"
+            } else {
+                "the engine's floor, nothing declared"
+            },
+            heap = crate::compiler::served::heap_max_label(view_distance),
+            players = crate::compiler::served::PLAYERS,
+            chunks = crate::compiler::served::sent_chunks(view_distance),
         )
         .into_bytes(),
     );
@@ -25612,12 +26771,52 @@ fn with_bonfire_rest_steps(plan: &Plan, walked: &[plan::Step], steps: Vec<Value>
     if plan.bonfires().next().is_none() {
         return steps;
     }
+    // The area a cell stands in; areas sit `plan::AREA_SPACING` apart, so the
+    // horizontal box decides it.
+    let area_of = |pos: &Value| -> Option<usize> {
+        let c: Vec<i64> = pos.as_array()?.iter().filter_map(Value::as_i64).collect();
+        let (x, z) = (*c.first()? as i32, *c.get(2)? as i32);
+        plan.areas.iter().position(|a| {
+            let (lo, hi) = a.bounds();
+            lo[0] <= x && x <= hi[0] && lo[2] <= z && z <= hi[2]
+        })
+    };
+    let step_area = |st: &Value| st.get("pos").and_then(area_of);
+    // A rest is spliced where the party can walk to the fire: the step that arms
+    // it, unless a crossing carries the party out of the fire's area right after
+    // that step (a crossing is the only move between areas, so the next step then
+    // stands in another area) — then the first later step after which the party
+    // stands in the fire's area again. On a route that stays in one area this is
+    // always the arming step.
+    let rest_after: Vec<(usize, &plan::CheckpointPlan)> = plan
+        .bonfires()
+        .filter_map(|b| {
+            let armed = rest_step_index(plan, walked, b.fire_step)?;
+            let Some(home) = plan.areas.iter().position(|a| {
+                let (lo, hi) = a.bounds();
+                lo[0] <= b.pos[0] && b.pos[0] <= hi[0] && lo[2] <= b.pos[2] && b.pos[2] <= hi[2]
+            }) else {
+                return Some((armed, b));
+            };
+            // Where the party stands after step `i`: the last step at or before
+            // it that names a position; a step that names none (a class pick,
+            // the completion assert) leaves it where it was.
+            let stands_home = |i: usize| {
+                let here = steps[..=i].iter().rev().find_map(step_area);
+                let next = steps[i + 1..].iter().find_map(step_area);
+                here == Some(home) && next.is_none_or(|a| a == home)
+            };
+            let at = (armed..steps.len()).find(|&i| stands_home(i))?;
+            Some((at, b))
+        })
+        .collect();
     let mut out: Vec<Value> = Vec::with_capacity(steps.len());
     for (i, step) in steps.into_iter().enumerate() {
         out.push(step);
-        for bf in plan
-            .bonfires()
-            .filter(|b| rest_step_index(plan, walked, b.fire_step) == Some(i))
+        for bf in rest_after
+            .iter()
+            .filter(|(at, _)| *at == i)
+            .map(|(_, b)| *b)
         {
             let mut rest = json!({
                 "action": "rest",
@@ -25907,15 +27106,16 @@ fn critical_path_json(
                     }
                     v
                 }
-                Step::Interact { objective_id, anchor_id, pos, command, requires_item } => json!({
+                Step::Interact { objective_id, anchor_id, pos, command, requires_item, block } => json!({
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
-                    "pos": pos, "command": command, "requires_item": requires_item
+                    "pos": pos, "command": command, "requires_item": requires_item,
+                    "block": block
                 }),
                 // A path act that proves no objective: it passes on the trigger's
                 // own fired marker (`[dw:complete <campaign> trigger/<id>]`,
                 // broadcast from its bundle), never on the click landing. `anchor`
                 // / `npc` / `range` are present exactly when the kind has one.
-                Step::Trigger { trigger_id, on, anchor_id, npc_id, assembly_id, pos, range, stand } => {
+                Step::Trigger { trigger_id, on, anchor_id, npc_id, assembly_id, pos, range, stand, block } => {
                     let mut v = json!({
                         "action": "trigger", "trigger": trigger_id, "on": on, "pos": pos
                     });
@@ -25937,6 +27137,9 @@ fn critical_path_json(
                         }
                         if let Some(r) = range {
                             obj.insert("range".to_string(), json!(r));
+                        }
+                        if let Some(b) = block {
+                            obj.insert("block".to_string(), json!(b));
                         }
                     }
                     v

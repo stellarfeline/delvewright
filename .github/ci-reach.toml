@@ -57,6 +57,8 @@ inputs = [
   { glob = "tools/tests/fixtures/i18n-sidecar/**", why = "`crates/delvec/tests/i18n_sidecar.rs` runs `write_sidecar.py`" },
   { glob = "tools/maintenance/probe-drowned-engagement.py", why = "`crates/delvec/src/compiler/engage.rs`'s `the_probe_measures_this_table` reads it" },
   { glob = "docs/reference/compiler.md", why = "`crates/delvec/tests/hand_camera.rs` reads the walk-record field paragraph" },
+  { glob = "tools/ci/check-written-world.py", why = "`crates/delvec/tests/post_beat_camera.rs` runs it against perturbed written worlds (`DW0955`)" },
+  { glob = "tools/lib/anvil.py", why = "`crates/delvec/tests/post_beat_camera.rs` reads every written world back through it" },
   { glob = "**/*.json", why = "`tools/ci/check-json-canonical.py` judges every tracked JSON document, and `crates/delvec/tests/fmt.rs` formats every one `git ls-files '*.json'` lists" },
 ]
 
@@ -113,7 +115,7 @@ inputs = [
 name = "tool-tests"
 inputs = [
   { glob = "tools/**", why = "every file this job runs tests a tool under `tools/`, with its fixtures under `tools/tests/`" },
-  { glob = "crates/**", why = "`test_check_dw_codes.py` and `test_check_source_dupes.py` scan the crate sources; `test_staging_gate.py`'s `Engine` reads every DW declaration and test; `test_block_appearance.py` reads crate data; the publish-gate tests copy the crate manifests the version-site rows name" },
+  { glob = "crates/**", why = "`test_check_dw_codes.py` and `test_check_source_dupes.py` scan the crate sources; `test_staging_gate.py`'s `Engine` reads every DW declaration and test; `test_block_appearance.py` reads crate data; `test_far_field.py` reads the far-field threshold in `compiler/loop.rs`; the publish-gate tests copy the crate manifests the version-site rows name" },
   { glob = "Cargo.toml", why = "the publish-gate tests copy the root manifest into their scratch tree" },
   { glob = "prefabs/**", why = "`test_check_generator_preservation.py`; `test_check_source_dupes.py`; `test_staging_gate.py` reads generator invariants as carriers" },
   { glob = "gallery/**", why = "the gallery tests (`test_gallery_coverage.py`, `test_gallery_domain.py`, `test_gallery_not_shippable.py`, `test_check_gallery_stageable.py`) read the gallery campaign" },
@@ -159,7 +161,6 @@ inputs = [
   { glob = "tools/ci/check-skill-page.py", why = "the release-shelf check this job runs" },
   { glob = "tools/ci/check-stated-counts.py", why = "`check-skill-page.py` loads it" },
   { glob = "tools/ci/check-dw-codes.py", why = "`check-skill-page.py` loads it" },
-  { glob = "tools/ci/data/**", why = "`check-skill-page.py` reads its heading census" },
   { glob = "tools/lib/**", why = "the modules both scripts import" },
 ]
 
@@ -195,6 +196,9 @@ inputs = [
   { glob = "validation/**", why = "`server-bootstrap-cache.sh`, `Dockerfile.delve`, `compose.yaml`, `packtest-run.sh`, `packtest-matrix.py`, the world-settings entrypoint" },
   { glob = "harness/**", why = "`validation/compose.yaml` builds its bot service from `../harness`" },
   { glob = "packtest/**", why = "the PackTest template directory" },
+  { glob = "tools/ci/check-written-world.py", why = "the gallery's written-world cross-check (`DW0955`) runs after its world save" },
+  { glob = "tools/lib/anvil.py", why = "`check-written-world.py` reads both worlds through it" },
+  { glob = "tools/lib/rcon.sh", why = "`validation/world-save.sh` polls the placement sentinel through it" },
 ]
 
 [[group]]

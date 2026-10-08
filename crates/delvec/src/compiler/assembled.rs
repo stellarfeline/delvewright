@@ -956,6 +956,70 @@ pub struct Assembled {
     pub gate_seals: Vec<GateSeal>,
 }
 
+/// **The world as shipped, before any runtime write**: the assembled blocks,
+/// every gate the placed world authors shut, the relight fixtures and the
+/// trigger props the datapack sets at setup — the assembly clears a gate's region (the route model
+/// reads the gate through its seal), and the datapack's setup writes the gate's
+/// block back. Clipped to `clip` when one is given (inclusive), so a caller
+/// asking about one box does not copy the map.
+///
+/// The one derivation of those bytes: the loop's tiling (spec-0086) and a
+/// camera's world (spec-0089) both read it.
+pub fn shipped_blocks(
+    plan: &Plan,
+    blocks: &BlockMap,
+    placements: &[crate::compiler::light::Placement],
+    seals: &[GateSeal],
+    clip: Option<([i32; 3], [i32; 3])>,
+) -> BlockMap {
+    let inside = |c: [i32; 3]| {
+        clip.is_none_or(|(lo, hi)| {
+            (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i]))
+        })
+    };
+    let mut m: BlockMap = match clip {
+        Some((lo, hi)) => blocks
+            .range(lo..=hi)
+            .filter(|(c, _)| inside(**c))
+            .map(|(c, b)| (*c, *b))
+            .collect(),
+        None => blocks.clone(),
+    };
+    for s in seals.iter().filter(|s| s.sealed()) {
+        if let Some((from, to, block)) =
+            crate::compiler::plan::gate_region_block_any(&plan.anchors, &s.anchor)
+        {
+            let state = BlockState::new(&block);
+            for c in region_cells(from, to) {
+                if !inside(c) {
+                    continue;
+                }
+                if is_air(&block) {
+                    m.remove(&c);
+                } else {
+                    m.insert(c, state);
+                }
+            }
+        }
+    }
+    // The fixtures last: the datapack sets them in `setup_finish`, after the
+    // world-load seals stand, so a fixture inside a gate's region is what the
+    // server holds there (measured by `tools/ci/check-written-world.py`).
+    for p in placements {
+        if inside(p.pos) {
+            m.insert(p.pos, BlockState::new(&p.block));
+        }
+    }
+    // Then every trigger's prop: `setup_finish` sets them after the relight
+    // fixtures, from the same list ([`crate::compiler::pressable::trigger_props`]).
+    for (_, p) in crate::compiler::pressable::trigger_props(plan) {
+        if inside(p.pos) {
+            m.insert(p.pos, BlockState::new(&p.block));
+        }
+    }
+    m
+}
+
 /// Assemble the world: placed structures + solver seals + gate clears, then
 /// gravity-settle, returning both the settled map and the per-falling-block
 /// outcomes. Shared root for [`assembled_blocks`] and the gravity-despawn check.
@@ -1006,7 +1070,9 @@ const WATER_FLOW_RANGE: u8 = 7;
 /// ([`is_waterlogged`]), and partial floor heights for slabs / snow layers /
 /// paths ([`collision_top_16`]). **Modelled conservatively** (treated as a full
 /// solid cube — may over-block a route, never over-prove one): stairs, doors,
-/// trapdoors, and every other partial-collision block.
+/// trapdoors, and every other partial-collision block whose pinned collision box
+/// is not a floor at a measured height ([`collision_top_16`] reads the rest from
+/// the jar's own table).
 pub struct Occupancy {
     /// Full-cube solid cells: block passage AND are valid floor.
     pub solid: BTreeSet<[i32; 3]>,
@@ -2390,7 +2456,9 @@ mod tests {
             assert_eq!(collision_top_16(id), 0, "{id} must have no collision");
             assert!(is_thin_decoration(id), "{id} is walked through");
         }
-        // The lookalikes that DO collide stay conservative full cubes.
+        // The lookalikes that DO collide keep a collision box a body cannot
+        // walk through: a full cube, or the jar's own floor height (a cactus
+        // at 15, an upward dripstone tip at 11).
         for id in [
             "minecraft:azalea",
             "minecraft:big_dripleaf",
@@ -2400,7 +2468,11 @@ mod tests {
             "minecraft:oak_leaves[persistent=true]",
             "minecraft:sea_pickle",
         ] {
-            assert_eq!(collision_top_16(id), 16, "{id} must keep collision");
+            assert!(
+                collision_top_16(id) >= delvewright_dsl::blockshape::THIN_HEIGHT_16,
+                "{id} must keep collision"
+            );
+            assert!(!is_thin_decoration(id), "{id} is not walked through");
         }
     }
 

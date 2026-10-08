@@ -1,0 +1,28 @@
+{
+  "code": "DW0961",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/objectives/4/title"
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/objectives/4/announcement",
+      "value": "shown"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/obj.far-hall.reach-the-end.title"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/obj.far-hall.reach-the-end.title"
+    }
+  ],
+  "units": [],
+  "why": "The quiet reach at the end of the hall asked to be announced after all, with its title taken away: `announcement: shown` on an objective with no `title` is an announcement with nothing to announce. The emitter prints the title as the `New objective` line, so without one there is no line, no cue and no completion message, and the declaration binds to nothing - which is the vacuous shape, refused rather than ignored. The sidecar follows the title out so the inventory stays exact. It declares no unit: `announcement` and both visibilities are bound in the gallery proper; what must not compile is the combination of an opt-in and nothing to opt into."
+}
