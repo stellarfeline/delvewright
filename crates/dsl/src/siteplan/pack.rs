@@ -1,3 +1,8 @@
+//! Packing (spec-0059 §3): a box is placed by a pin or by a seam that hangs it
+//! off a box that already stands, and the grid is derived (`DW0883`).
+
+use super::*;
+
 // ---------------------------------------------------------------------------
 // Packing — a box is placed by its seam, and the grid is derived (spec-0059 §3)
 // ---------------------------------------------------------------------------
@@ -23,7 +28,7 @@ pub enum Provenance {
 
 impl Provenance {
     /// The words a refusal or the placing line uses.
-    fn describe(&self) -> String {
+    pub(super) fn describe(&self) -> String {
         match self {
             Provenance::Pinned => "pinned".to_string(),
             Provenance::Seam {
@@ -50,19 +55,19 @@ pub struct PackedBox {
 /// The packing of one plan: every corner the pins and seams settle, and the
 /// world anchor of every seam whose two ends stand.
 #[derive(Debug, Default)]
-struct Packed {
+pub(super) struct Packed {
     /// Per `plan.boxes` index; `None` when nothing placed the box.
     boxes: Vec<Option<PackedBox>>,
     /// Per `plan.seams` index: the crossing's low corner on the face's own two
     /// world axes — `[along, sill]` on a wall, `[x, z]` through a floor or
     /// ceiling. `None` when either end is unplaced or a floor is unresolved.
-    seam_at: Vec<Option<[i64; 2]>>,
+    pub(super) seam_at: Vec<Option<[i64; 2]>>,
     /// Seams the packing itself refused; [`seams`] does not judge them twice.
-    refused: BTreeSet<usize>,
+    pub(super) refused: BTreeSet<usize>,
     /// Connected components of the seam graph, over boxes the graph declares.
-    components: usize,
-    pinned: usize,
-    derived: usize,
+    pub(super) components: usize,
+    pub(super) pinned: usize,
+    pub(super) derived: usize,
 }
 
 /// A seam resolved far enough to place a box: its two box indices and its two
@@ -577,7 +582,7 @@ pub fn placements(c: &Campaign) -> Vec<String> {
 /// The corners come from the packing (spec-0059 §3), which runs here so that
 /// every reader of the resolved plan — the checks, the derivation, the battery
 /// — holds one grid.
-fn resolve<'a>(
+pub(super) fn resolve<'a>(
     plan: &'a SitePlanContent,
     graph: &LayoutGraphContent,
     table: &Metrics,

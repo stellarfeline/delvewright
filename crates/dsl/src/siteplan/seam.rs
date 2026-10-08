@@ -1,3 +1,8 @@
+//! Seams, allocated on a face both boxes already have: the shared face, the
+//! opening, the sill, the stair and the drop (`DW0828`–`DW0831`, `DW0876`).
+
+use super::*;
+
 // ---------------------------------------------------------------------------
 // Seams: allocated on a face both boxes already have
 // ---------------------------------------------------------------------------
@@ -5,17 +10,17 @@
 /// The rectangle two boxes have in common on one face, in the face's own two
 /// in-plane world axes, plus the plane the wall between them stands in.
 #[derive(Debug, Clone, Copy)]
-struct SharedFace {
-    plane: i64,
-    u: (i64, i64),
-    v: (i64, i64),
+pub(super) struct SharedFace {
+    pub(super) plane: i64,
+    pub(super) u: (i64, i64),
+    pub(super) v: (i64, i64),
     u_axis: &'static str,
     v_axis: &'static str,
 }
 
 /// Why two boxes do not share the declared face.
 #[derive(Debug, Clone)]
-enum NotShared {
+pub(super) enum NotShared {
     /// They are not neighbours across it: the gap is `gap` cells where the one
     /// wall they would have in common needs exactly 1.
     NotAdjacent { gap: i64 },
@@ -67,7 +72,11 @@ impl PlacedBox {
 }
 
 /// [`shared_face`] over two fully resolved boxes.
-fn shared_face_of(a: &PlacedBox, b: &PlacedBox, face: Face) -> Result<SharedFace, NotShared> {
+pub(super) fn shared_face_of(
+    a: &PlacedBox,
+    b: &PlacedBox,
+    face: Face,
+) -> Result<SharedFace, NotShared> {
     shared_face(a.side(), b.side(), face)
 }
 
@@ -162,7 +171,7 @@ struct SeamCtx<'a> {
 /// `DW0828`–`DW0831`: every seam sits on a face its two boxes share, at cells
 /// that face has, through a standard opening a body can use, and — where the two
 /// places are on different planes — by a climb or a fall the standards allow.
-fn seams(
+pub(super) fn seams(
     plan: &SitePlanContent,
     graph: &LayoutGraphContent,
     placed: &[Placed<'_>],

@@ -1,3 +1,9 @@
+//! The plan resolved once — every box's footprint, plane, headroom and class —
+//! and the resolved plan in world cells that the checks, the derivation and the
+//! battery all read: placed boxes, placed seams, and the stair run.
+
+use super::*;
+
 // ---------------------------------------------------------------------------
 // Resolution — the plan read once, so no check re-derives a number
 // ---------------------------------------------------------------------------
@@ -12,20 +18,20 @@
 /// ladder judges directly (`DW0832`), and two connected places sit exactly
 /// [`SHARED_FACE_GAP_CELLS`] apart on the face they share (`DW0828`).
 #[derive(Debug, Clone)]
-struct Placed<'a> {
-    index: usize,
-    plan: &'a PlanBox,
+pub(super) struct Placed<'a> {
+    pub(super) index: usize,
+    pub(super) plan: &'a PlanBox,
     /// Footprint, inclusive: `[x0, x1, z0, z1]`.
-    foot: [i64; 4],
+    pub(super) foot: [i64; 4],
     /// The walk plane.
-    floor: i64,
+    pub(super) floor: i64,
     /// Cells of headroom over the walk plane, or `None` when the place is
     /// sky-open and its classification did not resolve.
-    clearance: Option<u32>,
+    pub(super) clearance: Option<u32>,
     /// How the place is classified, when the name resolved.
-    class: Option<PlaceClass>,
+    pub(super) class: Option<PlaceClass>,
     /// How its corner was obtained (spec-0059 §3).
-    by: Provenance,
+    pub(super) by: Provenance,
 }
 
 /// **How a place is classified** — the two kinds of standard a box is judged
@@ -37,7 +43,7 @@ struct Placed<'a> {
 /// one that forgot would silently judge a road against nothing — which is the
 /// state this whole surface exists to end, reintroduced one layer down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PlaceClass {
+pub(super) enum PlaceClass {
     /// A rung of the size ladder: both horizontal extents bounded.
     Size(SizeClass),
     /// A way: the cross-section bounded, the run free.
@@ -51,7 +57,7 @@ impl PlaceClass {
     /// box needs no arm: an open place claims exactly its class's minimum
     /// headroom and nothing above it, and that sentence is true of a road as it
     /// is of a hall.
-    fn min_clearance(self) -> u32 {
+    pub(super) fn min_clearance(self) -> u32 {
         match self {
             PlaceClass::Size(c) => c.min_clearance,
             PlaceClass::Way(w) => w.min_clearance,
@@ -60,27 +66,27 @@ impl PlaceClass {
 }
 
 impl Placed<'_> {
-    fn x0(&self) -> i64 {
+    pub(super) fn x0(&self) -> i64 {
         self.foot[0]
     }
-    fn x1(&self) -> i64 {
+    pub(super) fn x1(&self) -> i64 {
         self.foot[1]
     }
-    fn z0(&self) -> i64 {
+    pub(super) fn z0(&self) -> i64 {
         self.foot[2]
     }
-    fn z1(&self) -> i64 {
+    pub(super) fn z1(&self) -> i64 {
         self.foot[3]
     }
 
     /// The inclusive vertical span of the play space, when it is bounded.
-    fn y_span(&self) -> Option<(i64, i64)> {
+    pub(super) fn y_span(&self) -> Option<(i64, i64)> {
         let c = i64::from(self.clearance?);
         Some((self.floor, self.floor + c - 1))
     }
 
     /// The centre of the footprint, in blocks.
-    fn centre_xz(&self) -> (f64, f64) {
+    pub(super) fn centre_xz(&self) -> (f64, f64) {
         (
             (self.x0() as f64 + self.x1() as f64) / 2.0,
             (self.z0() as f64 + self.z1() as f64) / 2.0,
@@ -220,7 +226,7 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
 ///
 /// `None` when the seam names an opening the table does not define — `DW0812`
 /// refused it and there is no rectangle to build or measure.
-fn crossing_rect(
+pub(super) fn crossing_rect(
     s: &Seam,
     at: [i64; 2],
     face: &SharedFace,
@@ -249,7 +255,7 @@ fn crossing_rect(
 /// would give a negative extent, so it is clamped to one cell: the rectangle
 /// stays well-formed and `DW0876` describes it, rather than the arithmetic
 /// producing a rectangle nothing downstream could reason about.
-fn contact_extent(s: &Seam, at: [i64; 2], face: &SharedFace) -> [i64; 2] {
+pub(super) fn contact_extent(s: &Seam, at: [i64; 2], face: &SharedFace) -> [i64; 2] {
     match s.contact.as_ref().and_then(|c| c.extent) {
         Some(e) => [i64::from(e[0].get()), i64::from(e[1].get())],
         None => [(face.u.1 - at[0] + 1).max(1), (face.v.1 - at[1] + 1).max(1)],
@@ -271,7 +277,7 @@ pub fn normal_axis_of(face: Face) -> usize {
 ///
 /// Extracted rather than written twice because [`stair_run`] needs the same
 /// rectangle at validation tier, before any `PlacedSeam` exists.
-fn crossing_aabb(
+pub(super) fn crossing_aabb(
     s: &Seam,
     at: [i64; 2],
     face: &SharedFace,
@@ -617,7 +623,7 @@ fn in_plane_axes(face: Face) -> (usize, usize) {
 
 /// A footprint's inclusive span on one WORLD axis (0 = x, 2 = z). Axis 1 has no
 /// answer here — a footprint is horizontal — and no caller asks for it.
-fn span(foot: [i64; 4], axis: usize) -> (i64, i64) {
+pub(super) fn span(foot: [i64; 4], axis: usize) -> (i64, i64) {
     if axis == 0 {
         (foot[0], foot[1])
     } else {
@@ -626,19 +632,19 @@ fn span(foot: [i64; 4], axis: usize) -> (i64, i64) {
 }
 
 /// Inclusive overlap of two ranges, or `None`.
-fn overlap(a: (i64, i64), b: (i64, i64)) -> Option<(i64, i64)> {
+pub(super) fn overlap(a: (i64, i64), b: (i64, i64)) -> Option<(i64, i64)> {
     let lo = a.0.max(b.0);
     let hi = a.1.min(b.1);
     (lo <= hi).then_some((lo, hi))
 }
 
 /// Is `[lo, hi]` inside `[within_lo, within_hi]`?
-fn within(r: (i64, i64), w: (i64, i64)) -> bool {
+pub(super) fn within(r: (i64, i64), w: (i64, i64)) -> bool {
     r.0 >= w.0 && r.1 <= w.1
 }
 
 /// The region's inclusive span on one axis.
-fn region_span(region: &WorldBox, axis: usize) -> (i64, i64) {
+pub(super) fn region_span(region: &WorldBox, axis: usize) -> (i64, i64) {
     (region.min[axis], region.max()[axis])
 }
 

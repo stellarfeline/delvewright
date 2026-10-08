@@ -1,3 +1,7 @@
+//! Identities: the plan held to the brief's own numbers (`DW0833`, `DW0834`).
+
+use super::*;
+
 // ---------------------------------------------------------------------------
 // Identities: the plan held to the brief's own numbers
 // ---------------------------------------------------------------------------
@@ -22,7 +26,7 @@ enum Measured {
 /// bytes so that a derivation defect which moved a datum cannot hide behind a
 /// plan-time green. That site belongs to the round that builds the blockout;
 /// nothing here approximates it.
-fn identities(
+pub(super) fn identities(
     c: &Campaign,
     plan: &SitePlanContent,
     placed: &[Placed<'_>],

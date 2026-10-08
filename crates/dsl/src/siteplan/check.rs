@@ -1,3 +1,9 @@
+//! The site plan's validation driver and the checks that read the graph and the
+//! plan together: the binding ledger, `DW0824`'s agreement, `DW0839`'s one
+//! placement authority, the stage-6 deferral clause and the lighting range.
+
+use super::*;
+
 // ---------------------------------------------------------------------------
 // The binding ledger's site-plan half
 // ---------------------------------------------------------------------------

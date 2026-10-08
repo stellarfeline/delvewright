@@ -74,6 +74,20 @@ use crate::metrics::{
     passable_clearance_cells, passable_width_cells,
 };
 
+mod check;
+mod measure;
+mod pack;
+mod place;
+mod region;
+mod seam;
+
+pub use check::*;
+use measure::*;
+pub use pack::*;
+pub use place::*;
+use region::*;
+pub use seam::*;
+
 crate::dw_code! {
     /// `DW0824`: the graph and the plan do not agree exactly.
     pub const DW_PLAN_AGREEMENT: DwCode = DwCode::new("DW0824", ExitTier::Build);

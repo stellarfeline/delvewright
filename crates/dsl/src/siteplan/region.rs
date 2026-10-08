@@ -1,5 +1,15 @@
+//! The boxes against the kit grid, the region and each other: `DW0825`,
+//! `DW0826`, `DW0827`, `DW0835` and the size and way classes (`DW0832`).
+
+use super::*;
+
 /// `DW0825`: every box's footprint is a multiple of the kit grid's quantum.
-fn grid(placed: &[Placed<'_>], table: &Metrics, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
+pub(super) fn grid(
+    placed: &[Placed<'_>],
+    table: &Metrics,
+    reads: &mut Reads,
+    d: &mut Vec<Diagnostic>,
+) {
     let Some(grid) = table.grid(reads) else {
         return; // `Metrics::self_check` owns a table that defines no grid.
     };
@@ -34,7 +44,7 @@ fn grid(placed: &[Placed<'_>], table: &Metrics, reads: &mut Reads, d: &mut Vec<D
 /// **`DW0825`'s own test, for one footprint on one axis.** One function so that
 /// a verdict computed from a box can ask the SAME question the refusal asked,
 /// rather than re-deriving the kit-grid rule beside it.
-fn off_grid(extent: u32, quantum: u32) -> bool {
+pub(super) fn off_grid(extent: u32, quantum: u32) -> bool {
     quantum != 0 && !extent.is_multiple_of(quantum)
 }
 
@@ -60,7 +70,7 @@ fn off_grid(extent: u32, quantum: u32) -> bool {
 /// overrun, and prescribes once. A single offender still gets its own line
 /// exactly as before — the fold is reachable only where the copies would have
 /// been.
-fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
+pub(super) fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
     let r = &plan.region;
     let spans = [region_span(r, 0), region_span(r, 1), region_span(r, 2)];
     // How the region reads once, for the folded arms: the per-item clause
@@ -245,7 +255,7 @@ fn named_overruns(items: &[Overrun<'_>]) -> String {
 /// and a shared face is a one-cell gap, not a touch (see [`Placed`]). Two boxes
 /// whose play spaces meet are two authorities over one cell, which the
 /// derivation would have to arbitrate and must never be asked to.
-fn disjoint(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
+pub(super) fn disjoint(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
     for (a_i, a) in placed.iter().enumerate() {
         for b in &placed[a_i + 1..] {
             let (Some(x), Some(z)) = (
@@ -291,7 +301,11 @@ fn disjoint(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
 
 /// `DW0835`: the whole's mass stands beside, under and over places — never
 /// inside one.
-fn volumes_outside_boxes(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
+pub(super) fn volumes_outside_boxes(
+    plan: &SitePlanContent,
+    placed: &[Placed<'_>],
+    d: &mut Vec<Diagnostic>,
+) {
     for (i, v) in plan.volumes.iter().enumerate() {
         let vmax = v.region.max();
         for p in placed {
@@ -354,7 +368,7 @@ fn volumes_outside_boxes(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut 
 ///
 /// There is no maximum run and there is not going to be one: a route's length is
 /// per-campaign geometry, never a standard (spec-0053 §7).
-fn size_classes(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
+pub(super) fn size_classes(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
     for p in placed {
         let Some(class) = p.class else {
             continue; // `DW0812` refused the name.
