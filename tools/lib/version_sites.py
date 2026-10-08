@@ -162,11 +162,19 @@ ROWS: dict[str, list[dict[str, object]]] = {
         },
         {
             "path": "docs/reference/compiler.md",
-            "label": "the version header and the DW0102 row — written by "
+            "label": "the version header — written by "
             "`python3 tools/ci/check-reference-versions.py --write`",
             "kind": "present",
             "shape": "tool-written",
-            "sites": 2,
+            "sites": 1,
+        },
+        {
+            "path": "docs/reference/dsl/diagnostic.md",
+            "label": "the DW0102 catalog row, on the page of the module declaring it — "
+            "written by `python3 tools/ci/check-reference-versions.py --write`",
+            "kind": "present",
+            "shape": "tool-written",
+            "sites": 1,
         },
         {
             "path": "crates/dsl/README.md",

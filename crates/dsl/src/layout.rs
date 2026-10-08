@@ -1725,7 +1725,7 @@ fn pacing(
              {blocks} blocks of route, which at {rate} blocks of route per minute of play \
              projects to about {minutes} minute(s) against this world's `target_minutes` of \
              {target}{un}. It carries no threshold and refuses nothing — see `DW0822` in \
-             `docs/reference/compiler.md` for what the number is worth.",
+             `docs/reference/dsl/layout.md` for what the number is worth.",
             steps = graph.critical_path.len().saturating_sub(1),
             minutes = blocks.div_ceil(rate),
             target = c.world.content.target_minutes,
