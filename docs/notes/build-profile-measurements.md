@@ -287,3 +287,20 @@ takes the extension. It is reachable (a `shroomlight` embeds by replacing a
 nav-solid block, and glass, iron bars and fences are nav-solid while passing
 light) and it is held by three unit tests that go red when it is removed; it is
 simply not a path today's corpus walks.
+
+## The gallery CI jobs stay on the dev profile
+
+The question: would the `delvec binary (one build per run)` job building `--release` pay for itself in the gallery jobs that take its binary?
+
+Measured on a 10-core macOS workstation shared with another worktree's gallery run (load average 6–17), `delvec` 1.9.0, `CARGO_INCREMENTAL=0` as `Swatinem/rust-cache` sets in CI, gallery probes and builds on `DELVEWRIGHT_JOBS=4` to match the four-core runner:
+
+| | dev (`opt-level = 1`) | release |
+|---|---|---|
+| `cargo build -p delvec --bin delvec`, no release artifacts present | — | 127 s |
+| same, dependencies built, both workspace crates rebuilt | 54 s | 64 s, 89 s (two runs) |
+| `check-gallery-coverage.py` (124 probes) | 338 s | 179 s |
+| `gallery-baseline.py` verify (9 builds) | 92 s | 41 s |
+
+Emission is profile-independent: `gallery-baseline.py` verify passes on the release binary (every manifest of the nine builds matches the committed baseline), and the coverage gate's stdout, `--report` JSON and `--index` Markdown are byte-identical between the profiles.
+
+Release is not adopted. On CI run 37841474332 the coverage job finished last (21:20:54, the `rust` job at 21:10:37); with its probes concurrent, the coverage job's estimate is about 9 minutes from its start, so the run's critical path becomes `rust (fmt, clippy, test)` at about 28 minutes, which no `delvec` profile shortens. Release would lengthen the one build every consumer waits for (10–35 s locally, warm), and the Linux half of the cross-OS determinism comparison is a digest of that binary: the macOS half would have to build release too, or the comparison would vary the profile beside the operating system.
