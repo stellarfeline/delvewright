@@ -99,13 +99,6 @@ This module's rows of a section whose prose is on the [`delvec::compiler::nav` p
 | `DW0441` | A payload verb's vanilla id is not in the pinned 1.21.11 registry, or is of the wrong kind: a `volley` `projectile` must be an **entity** id, a `collapse` `falling_block` / `then_floor` a **block** id. Validation-tier (exit 1), `dsl::validate`; mirrors `DW0143`/`DW0341`. |
 | `DW0443` | A `volley`'s `salvos` (1..=16) or `interval` (1..=200 ticks) is out of range. A volley fires its whole kill zone every salvo, so the entity count is `salvos x standable cells`; past the cap that is a server hazard rather than a trap, and salvos spread wider than the interval cap stop reading as one event. Validation-tier (exit 1), `dsl::validate`. |
 
-### DW045x — body clearance and body traversal (`compiler::clearance` + `compiler::traversal` + `dsl::validate`; error + advisory)
-
-This module's rows of a section whose prose is on the [`delvec::compiler::traversal` page](../delvec/compiler/traversal.md#dw045x--body-clearance-and-body-traversal-compilerclearance--compilertraversal--dslvalidate-error--advisory).
-
-| Code | Meaning |
-|------|---------|
-
 ### DW0898 — a piece where the body shows it (`dsl::equipment`; error; exit 1)
 
 The server stores all eight equipment slots on every living entity and a
@@ -211,13 +204,6 @@ This module's rows of a section whose prose is on the [`delvec::compiler::onkill
 | Code | Meaning |
 |------|---------|
 | `DW0919` | **A standing display the sidebar cannot draw as declared** (spec-0076 §7). Three shapes under one rule, the `DW0520` shape: (1) two datums both declare `display: sidebar` — the slot holds one objective, and the refusal names both rather than picking by order, because which purse the party reads between changes is the creator's decision; (2) the datum has no `name` — the slot's heading is the display name, and without one the objective's internal id would stand on every screen, the one thing the slot must never show; (3) the datum is `party`-scoped — its value lives on the `#party` holder, and the sidebar hides every `#`-prefixed holder, so the display would be a heading over nothing; mirroring the value onto a visible fake player is a name a real player could carry under a label the engine would have to invent, and is not done. Path `/content/state/<i>/display`; the message names the datum (both, for shape 1). Prescription: keep one `display`, give the datum a `name`, or declare it `player`-scoped; a `party` purse keeps its announcement and stands nowhere, the recorded gap. Validation tier (exit 1). |
-
-### DW047x — combat winnability (`compiler::combat`; spec-0023)
-
-This module's rows of a section whose prose is on the [`delvec::compiler::combat` page](../delvec/compiler/combat.md#dw047x--combat-winnability-compilercombat-spec-0023).
-
-| Code | Meaning |
-|------|---------|
 
 ### DW048x — branch-complete narrative verification (`compiler::branch`; spec-0025)
 
@@ -823,10 +809,3 @@ This module's rows of a section whose prose is on the [`delvec::admit::diag` pag
 | Code | Tool | Meaning |
 |------|------|---------|
 | `DW0741` | `delvec prefab`, `delvec validate` | An asset's licence is outside the ADR-0013 allowlist, or its record lacks a field the rule for that asset requires: a catalog card, or a `world.textures[]` row's `license` (`dsl::license::image_license_refusals` — `original` needs `source: original`, any other licence a `url`, `CC-BY-*` an `attribution`). Declared once, `dsl::codes::LICENSE_REFUSED`. |
-
-### DW0821/DW0836–DW0839 — the derived blockout (`compiler::blockout`; error + two advisories)
-
-This module's rows of a section whose prose is on the [`delvec::compiler::blockout` page](../delvec/compiler/blockout.md#dw0821dw0836dw0839--the-derived-blockout-compilerblockout-error--two-advisories).
-
-| Code | Rule |
-|---|---|
