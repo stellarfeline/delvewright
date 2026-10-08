@@ -2725,7 +2725,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   positions; a waypoint at each corner/floor-height change **and the corridor commit
   cell one step past each corner**: a wide-room→corridor corner is
   range-1-satisfiable from an off-route pocket beside it, so the post-corner cell
-  gives the harness a close corridor-axis target for its stall-recovery). A leg
+  gives the harness a close corridor-axis target for its stall-recovery). **No
+  waypoint stands inside a timed gate's region** (`waypoints::leg_waypoints`): a
+  gate's two mouths are force-kept, and a corner's commit cell that falls inside
+  the gate is dropped, so a crush crossing is always one mouth-to-mouth hop and no
+  waypoint asks the bot to stand where the fill closes. A leg
   that walks through a closed fence gate carries a `use_gates` array:
   the gate cells the player right-clicks open (an adventure-legal USE), each also
   force-kept as an explicit waypoint (never thinned away mid-run); the field is
