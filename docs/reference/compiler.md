@@ -4181,7 +4181,7 @@ which re-runs the completability proofs after every batch, uses the same set.
 
 A world with no campaign behind it says `nav::Premises::geometry_only` by name,
 with its reason in a comment at the call site, and every production decline is
-enumerated by `nav::tests::premise_declines_are_enumerated`: the stage-5 blockout
+enumerated by `tests/premise_declines.rs`: the stage-5 blockout
 battery's two massing worlds (they carry their own sealing authority, from the
 quest graph's monotone closure) and its stairwell pass (one step between two
 courses of a stair, a question about geometry inside the stair's own box); the

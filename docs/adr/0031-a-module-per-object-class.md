@@ -315,11 +315,18 @@ emit/manifest.rs  emit_manifest, emit_critical_path, critical_path_json
 emit/server.rs    emit_server, lang_assets, the resource pack
 emit/packtest.rs  packtest_header, pin_dummy, packtest_preamble, packtest_guards
                   — the batch model, and nothing about one object
-nav/mod.rs        the ordered list of object proofs over a World
-nav/world.rs      World, Cells, Premises, Footprint, entity_dims, built_volume,
-                  Liveness, StagedVolume, step costs, cell_center
-nav/route.rs      the A* router, LegRoute, RouteBinding, decompose, judge_leg,
-                  route_with_links, critical_route_cells, Configuration, RegionState
+nav/mod.rs        the ordered list of object proofs over a World, and the DW codes
+                  of the world, the router and, until Phase C, every object proof
+nav/world/mod.rs  World, Cells, Premises, the derived worlds, Ambient, Sea,
+                  built_volume, Liveness, StagedVolume
+nav/world/body.rs Footprint, entity_dims, standability, the move model, step
+                  costs, cell_center, walk_cells
+nav/route/mod.rs  the A* router, visited positions, critical_route_cells,
+                  LegRoute, Configuration
+nav/route/region.rs RegionState, the region state a leg is routed under, blame
+nav/route/leg.rs  judge_leg, decompose, route_with_links, RouteBinding
+nav/<object>.rs   one object's proofs over the World, and their tests
+nav/testkit.rs    the synthetic worlds the tests of more than one object share
 <object>/mod.rs       the object's plan record (XPlan) and plan(campaign) -> Vec<XPlan>
 <object>/check.rs     the object's proofs — what nav.rs and the object's own
                       file hold today; its DW codes are declared here
@@ -584,7 +591,7 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
 | B2a–c | `validate.rs` → each object module's checks, in three sequential cuts (world/body/npc/dialogue/class; quest/state/wave/actor/trigger; trap/timed gate/ambush/shortcut/loot/assembly/lethal/loop/economy); the version-named bundles dissolved; `diagnostic::codes` declarations move with their checks; the A1 row-in-page rule moves their catalog rows | three PRs, a few hours each |
 | B3a | `emit.rs` PackTest emitters (lines 16598–26170) → `emit/packtest/<object>.rs`, `emit/packtest.rs` the batch model | one PR |
 | B3b | the rest of `emit.rs` → `emit/<object>.rs` by its own section markers, `emit/{mod,text,functions,manifest,server}.rs` | one PR, after B3a |
-| B4a | `nav.rs` → `nav/{world,route}.rs` and `nav/mod.rs` | one PR |
+| B4a | `nav.rs` → `nav/world/`, `nav/route/` and `nav/mod.rs` | one PR |
 | B4b | the per-object proofs → `nav/<object>.rs` | one PR, after B4a |
 | B5 | `plan.rs` → `plan/{mod,naming,path,anchors,area}.rs` and `plan/<object>.rs` | one PR |
 | B6 | `main.rs` → `cli/*.rs`, view and edit arms to their modules' `cli.rs` | one PR; `clap_surface.py`'s own test and `check-skill-page` prove the surface unchanged |
@@ -771,6 +778,67 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   `pub(super) fn` the same way when B4 or Phase C moves the code they watch:
   `nav.rs`'s callers-of-`liveness_of` test and
   `tests/footprint_call_graph.rs`.
+
+**What B4a found** (corrections to this record, made where B4a touched it):
+
+- The world measured about 2700 lines and the router about 2600, so both are
+  directories under the 1500-line rule, as §2 now shows.
+- Inside one pass directory, an item that was private to the pass file is
+  `pub(in crate::compiler::nav)`, never `pub(crate)`, so its reach stays what it
+  was. `RegionState` and its derivations stay private to `nav` because the point
+  of them is one passability model. `pub(crate)` is for one object reaching
+  another.
+- The router's codes (`DW0311`, `DW0314`, `DW0317`, `DW0510`, `DW0544`,
+  `DW0546`) stay declared in `nav/mod.rs`. Under §4's mapping, a declaration in
+  `compiler::nav::route::leg` has its page at `nav/route/leg.md`, and §4 puts
+  the router on `nav.md`. Every code of the world and the router is therefore
+  declared in `nav/mod.rs`, and B4a moves no catalog row.
+- `walk_cells` and `segment_meets_cell_16` are the world's own geometry, which
+  `World` reads. They move to `nav/world/body.rs` so that the world never
+  imports from the proofs.
+- A module that re-exports its children with `pub use child::*` does not also
+  import a child's item by name. The private import shadows the glob, and the
+  item drops out of the parent's glob.
+- §5 lists no tool ledger that names `nav.rs`. The per-file ledgers over it are
+  Rust tests: `nav::tests::premise_declines_are_enumerated`,
+  `staged_liveness_tests`, and `tests/{teleport_link,post_beat_camera,sculpt}.rs`.
+  The first was keyed by file name. It is now keyed by path under `src/`,
+  because `nav/world/mod.rs` and `sculpt/mod.rs` have the same name.
+
+**What B4b found** (corrections to this record, made where B4b touched it):
+
+- Every DW code stays declared in `nav/mod.rs`, and no `delvec codes` module
+  field moves. A declaration in `compiler::nav::<object>` has its page at
+  `nav/<object>.md` under §4, and Phase C moves it again to
+  `<object>/check.rs`, so every row would move twice. Each object's codes move
+  once, in its Phase C step, from `nav/mod.rs` and `nav.md`.
+- The objects are `actor`, `ambush`, `checkpoint` (with retry cost, whose object
+  is the rest point), `cutscene`, `furniture`, `hazard`, `lane`, `leave`,
+  `lethal` (a body's reach into a volume), `npc`, `respawn`, `sea`, `shortcut`,
+  `stealth`, `timed_gate`, `trap` (volley and collapse included) and `wave`
+  (the optional elite). Three are named differently from §2's list. `horizon`
+  holds `DW0322`, because boundary safety is a property of the world's horizon,
+  not of the playable region `boundary` declares. `view` holds `DW0724`, which
+  judges the render plan's derived cameras. `staging` holds what the `move-npc`
+  and `move-actor` walks share: where a body was left on a branch, the smoothed
+  and resampled polyline, the facing, and the timeline's own seals. Phase C
+  decides whether `staging` folds into `npc` or `actor`, or stays a mechanism
+  both read.
+- `SPRINT_TICKS_PER_BLOCK` is the move model's, and five proofs read it, so it
+  moves to `nav/world/body.rs`.
+- An object's tests live in a `#[cfg(test)] mod tests` at the end of its file.
+  The world's and the router's tests are out-of-line `#[cfg(test)] mod tests;`
+  files (`world/tests.rs`, `route/tests.rs`), because each module with its
+  tests is over 1500 lines. The fixtures that the tests of more than one object
+  share are `nav/testkit.rs`.
+- A source scan reads production through one rule,
+  `crates/delvec/tests/common/source_scan.rs`. It removes only the item that a
+  column-zero `#[cfg(test)]` applies to, and drops the file of an out-of-line
+  test module. The premise scan stopped at the first such attribute and missed
+  production in eight files. It now lives in
+  `tests/premise_declines.rs`, and `teleport_link`'s nav scan reads through the
+  same rule. `check-dw-codes` reads an out-of-line test module's file as test
+  code, as it already read an inline one.
 
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is

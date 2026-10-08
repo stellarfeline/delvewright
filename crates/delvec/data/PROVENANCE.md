@@ -488,7 +488,7 @@ The winnability arithmetic therefore runs its numeric time-to-kill bound **only*
 where the campaign declares `attributes.max_health` on the stack, and says so out
 loud (`DW0475`) rather than inventing a health table. Inventing one is the
 "invented precision" this codebase already refuses for `DEFAULT_FOLLOW_RANGE`
-(`nav.rs`) and `MODEL_MARGIN` (`clearance.rs`).
+(`compiler/nav/mod.rs`) and `MODEL_MARGIN` (`clearance.rs`).
 
 ## Default-font glyph metrics (measured, not vendored)
 

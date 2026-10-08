@@ -285,7 +285,7 @@ fn one_function_lays_a_configuration() {
     // laying. Two readers of one list, one writer.
     assert_eq!(sites.len(), 2, "{sites:?}");
     assert!(
-        sites.iter().all(|s| s.contains("compiler/nav.rs")),
+        sites.iter().all(|s| s.contains("compiler/nav/")),
         "{sites:?}"
     );
 }

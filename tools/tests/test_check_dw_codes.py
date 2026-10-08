@@ -270,6 +270,35 @@ def test_a_unit_test_sees_its_own_module_through_use_super_star(gate):
     assert "DW0710" not in covered
 
 
+def test_an_out_of_line_test_module_is_test_code(gate):
+    """`#[cfg(test)] mod tests;` puts a module's tests in their own file; that
+    file is test code exactly as an inline `mod tests { }` is, and its
+    `use super::*` sees the module that declares it."""
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/route/mod.rs",
+        'pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";\n#[cfg(test)]\nmod tests;\n',
+    )
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/route/tests.rs",
+        "use super::*;\n#[test]\nfn t() { assert_eq!(e.code, DW_CRITICAL_UNROUTABLE); }\n",
+    )
+    _rs(gate, "delvec", "compiler/nav/world/mod.rs", 'pub const DW_OTHER: &str = "DW0399";\n')
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/world/notes.rs",
+        "use super::*;\n#[test]\nfn t() { assert_eq!(e.code, DW_OTHER); }\n",
+    )
+    covered = gate.tested_codes()
+    assert "DW0311" in covered
+    # A file no `#[cfg(test)] mod` declares is not test code, whatever it holds.
+    assert "DW0399" not in covered
+
+
 def test_a_name_nothing_imports_credits_nothing(gate):
     """A bare name with no `use` line, no glob and no path is not in scope; the
     old crate-wide table would have credited it."""

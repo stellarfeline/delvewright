@@ -694,21 +694,47 @@ def strip_cfg_test_bodies(text: str) -> str:
     return out
 
 
-def crate_test_scopes(crate: str) -> list[tuple[str | None, str, str]]:
+# `#[cfg(test)] mod tests;` at column zero: a test module written as its own file.
+OUT_OF_LINE_TEST_MOD_RE = re.compile(
+    r"^#\[cfg\(test\)\]\n(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;", re.MULTILINE
+)
+
+
+def out_of_line_test_files(src_dir: pathlib.Path) -> set[pathlib.Path]:
+    """Every file under `src_dir` that is an out-of-line `#[cfg(test)]` module,
+    or lies under one's directory — test code exactly as an inline module is."""
+    roots: list[pathlib.Path] = []
+    for rs in sorted(src_dir.rglob("*.rs")):
+        here = rs.parent if rs.stem in ("mod", "lib", "main") else rs.with_suffix("")
+        for name in OUT_OF_LINE_TEST_MOD_RE.findall(rs.read_text(encoding="utf-8")):
+            roots += [here / f"{name}.rs", here / name]
+    return {
+        rs
+        for rs in src_dir.rglob("*.rs")
+        if any(rs == r or r in rs.parents for r in roots)
+    }
+
+
+def crate_test_scopes(crate: str) -> list[tuple[str | None, str, str | None]]:
     """Every text that counts as test code for a crate: `(module, body,
     enclosing file without its test bodies)` — module None and file "" for a
     whole file under crates/<crate>/tests/**/*.rs, the declaring module and the
     surrounding file for a `#[cfg(test)]` module body inside
-    crates/<crate>/src/**/*.rs."""
-    scopes: list[tuple[str | None, str, str]] = []
+    crates/<crate>/src/**/*.rs, and the file's own module and None for an
+    out-of-line `#[cfg(test)]` module's whole file."""
+    scopes: list[tuple[str | None, str, str | None]] = []
     tests_dir = CRATES_DIR / crate / "tests"
     if tests_dir.is_dir():
         for rs in sorted(tests_dir.rglob("*.rs")):
             scopes.append((None, rs.read_text(encoding="utf-8"), ""))
     src_dir = CRATES_DIR / crate / "src"
     if src_dir.is_dir():
+        whole = out_of_line_test_files(src_dir)
         for rs in sorted(src_dir.rglob("*.rs")):
             text = rs.read_text(encoding="utf-8")
+            if rs in whole:
+                scopes.append((module_of(rs, crate), text, None))
+                continue
             bodies = cfg_test_module_bodies(text)
             if bodies:
                 outer = strip_cfg_test_bodies(text)
@@ -733,7 +759,7 @@ def tested_codes() -> set[str]:
             names: dict[str, str] = {}
             modules: dict[str, tuple[str, str]] = {}
             context = module
-            if module is not None:
+            if module is not None and outer is not None:
                 # A `#[cfg(test)] mod tests` sits inside the file's module: its
                 # own `use` lines resolve from there (`super` is the file's
                 # module), and the file's top-level imports are visible to it
