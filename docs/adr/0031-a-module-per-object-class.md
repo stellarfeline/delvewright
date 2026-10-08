@@ -477,14 +477,13 @@ compiler receives one `quests.json` exactly as it does today.
 | `check-diagnostic-messages.py` | `documented_codes` | unchanged call | `dwcatalog.py` |
 | `check-reference-versions.py` | `compiler.md`'s version line and the `DW0102` row | the version line in `compiler.md`; the `DW0102` row in the page of the module that declares it (`dsl/diagnostic.md` until B2 moves the declaration to the envelope) | `dwcatalog.py` |
 | `check-stated-counts.py` | `SITES` rows naming `tools.md`, `grammar.md`, `compiler.md` | the same oracles; `SITES` paths updated | unchanged mechanism |
-| `check-skill-page.py` | `documented_codes` | unchanged call | `dwcatalog.py` |
+| `check-skill-page.py` | `documented_codes`; `stages.rs` at the pinned engine | unchanged call; the one declaration of `WorldContent` under `crates/dsl/src/` at the pinned engine, refused when declared twice | `dwcatalog.py`; a declaration search, so an engine pinned before and after B1 both read |
 | `check-numbered-doc-uniqueness.py` | `documented_codes` | unchanged call | `dwcatalog.py` |
 | `check-doc-dupes.py` | `docs/**/*.md` | unchanged | unchanged |
 | `check-demo-levels.py` | `demo-levels.md` | `docs/demo-levels/*.md` | `mdtable.py` |
 | `check-numbered-doc-index.py` | the two index tables | the same tables, compared to the generator's output | the writer |
 | `check-json-canonical.py` | the ledger among its sweep | the ledger directory | its existing sweep |
 | `check-capability-ownership.py` | `STAGES = crates/dsl/src/stages.rs` | the stage-surface modules, a registry (`DSL_STAGE_MODULES`); its per-file `HAPPENING_NONE_ALLOWED` entries name the new files | the registry |
-| `check-skill-page.py` | `stages.rs` at the pinned engine | the one declaration of `WorldContent` under `crates/dsl/src/` at the pinned engine, refused when declared twice | a declaration search, so an engine pinned before and after B1 both read |
 | `check-anchor-providers.py` | `validate.rs` as the one site of the broad question | `validate/mod.rs` | its file rule, renamed |
 | `check-effect-roots.py` | `compiler/plan.rs` in `ALLOWED` | `compiler/plan/anchors.rs` | its ledger, renamed |
 | `check-structure-emitters.py` | per-file ledger | the same files at their new paths | its ledger, renamed |
