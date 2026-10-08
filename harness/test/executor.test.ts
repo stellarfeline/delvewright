@@ -1152,6 +1152,49 @@ test("a crush-gate crossing is staged: fresh window observed BEFORE any entry", 
   assert.deepEqual(gate.presses, [[260, 61, 15]], "the wait leans into the closed gate");
 });
 
+test("a crush crossing clears the bot's reach of hostiles before it waits for its window", async () => {
+  // The gallery death: a re-seated muster body met the bot at a crush gate and its
+  // hit knocked the bot back into the fill as the window closed. The reach is
+  // cleared before every lethal wait, and never for a gate that cannot kill.
+  const events: string[] = [];
+  const crush = {
+    ...fakeGate({ gates: [TIDE], feet: () => [260, 61, 12], onWait: () => events.push("wait") }),
+    clearReach: async () => {
+      events.push("clear");
+    },
+  };
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+  };
+  await within("replayLegWithRecovery(TIDE_GOALS, crush)", replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, crush));
+  const clear = events.indexOf("clear");
+  const wait = events.indexOf("wait");
+  assert.ok(clear >= 0 && clear < wait, `the reach is cleared before the window wait: ${events.join(" | ")}`);
+
+  let cleared = 0;
+  let shut = true;
+  const safe = {
+    ...fakeGate(),
+    clearReach: async () => {
+      cleared++;
+    },
+  };
+  const gotoSafe = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 1/2") && shut) {
+      shut = false;
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await within("replayLegWithRecovery(portcullis)", replayLegWithRecovery(
+    [G(24, 63, -14), G(24, 63, -14, 3)],
+    "anchor anchor/l1a-ward",
+    gotoSafe,
+    undefined,
+    safe,
+  ));
+  assert.equal(cleared, 0, "a gate that cannot crush clears nothing");
+});
+
 test("a crush entry crosses RAW: the dash runs mouth-to-mouth before any pathfinder hop", async () => {
   // The live lesson, round 3: even a fresh-edge pathfinder entry lost the 1.8 s
   // window (start latency + mid-water replans against the flood through the

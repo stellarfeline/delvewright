@@ -442,6 +442,14 @@ export async function replayLegWithRecovery(
  * The bot-facing half of a timed-gate crossing, injected by the executor so the
  * control flow above stays unit-testable without a live server.
  */
+/**
+ * How near a hostile may stand to a bot about to take a crush crossing before it
+ * is staged away (see {@link GateAssist.clearReach}). AUTHORED, not measured: a
+ * margin over what a wave body can close in a 2 s crush window (the muster's
+ * `movement_speed` 0.23, roughly 4.6 blocks, plus its attack reach).
+ */
+const CRUSH_CLEAR_RANGE = 8;
+
 export interface GateAssist {
   /** The gates the compiler proved this leg's route crosses (empty ⇒ no assist). */
   readonly gates: readonly TimedGate[];
@@ -490,6 +498,18 @@ export interface GateAssist {
     to: Vec3Tuple,
     budgetMs: number,
   ) => Promise<boolean>;
+  /**
+   * Before a `crush: true` crossing waits for its window: take out of the run
+   * every hostile within reach of the bot. A body that reaches the bot mid-dash
+   * knocks it back into the fill as the window closes, and the closing edge kills
+   * it — measured on the gallery, where a re-seated muster body met the bot at
+   * `timed-gate/inner-door` and the crossing died two seconds after the window
+   * opened, on a run whose previous ladder had met the same body outside the
+   * window and passed. Staging, not self-defence: the same attributed removal a
+   * hit causes (the wave is read first, the die-retry wave is protected), taken
+   * before the one span where a hit is lethal rather than after it.
+   */
+  readonly clearReach?: () => Promise<void>;
   /** Injectable clock (tests). */
   readonly now?: () => number;
 }
@@ -611,6 +631,7 @@ async function crossTimedGate(
     // cell inside the fill (a range-1 arrival can land one cell into the region;
     // holding there through a crush close is the death itself) — fall back to the
     // proven mouth.
+    if (lethal && gate.clearReach) await gate.clearReach();
     const feetNow = gate.feetCell();
     const holdCell =
       feetNow && !staged.some((g) => insideGate(feetNow, g)) ? feetNow : staging;
@@ -2336,6 +2357,27 @@ export class MineflayerExecutor implements StepExecutor {
       byId.set(entity.id, entity);
     }
     return { candidates, byId };
+  }
+
+  /**
+   * {@link GateAssist.clearReach}: stage away every visible hostile within
+   * {@link CRUSH_CLEAR_RANGE} of the bot, then wait for those removals to land.
+   */
+  private async clearReachBeforeCrush(): Promise<void> {
+    if (this.stagingClosed) return;
+    const { candidates, byId } = this.visibleHostiles();
+    const near = candidates.filter((c) => c.distance <= CRUSH_CLEAR_RANGE);
+    for (const c of near) {
+      process.stderr.write(
+        `[staged] ${byId.get(c.id)?.name ?? "?"}#${c.id} stands ${c.distance.toFixed(1)} block(s) ` +
+          `from a crush crossing the bot is about to take\n`,
+      );
+      await this.stageAway(
+        c.id,
+        "it stands within reach of a crush crossing",
+        byId.get(c.id)?.name,
+      );
+    }
   }
 
   /**
@@ -4678,6 +4720,7 @@ export class MineflayerExecutor implements StepExecutor {
               feetCell: () => this.feetCell(),
               dash: (through, from, to, budgetMs) =>
                 this.raceDeath(() => this.dashThroughGate(through, from, to, budgetMs)),
+              clearReach: () => this.clearReachBeforeCrush(),
             }
           : undefined,
         completion ? () => this.stepSettled(completion) : undefined,
