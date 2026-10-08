@@ -1,5 +1,15 @@
 {
-  "added": [],
+  "added": [
+    "carcass.en:validation/sheet-gate.json",
+    "easy.en:validation/sheet-gate.json",
+    "hard.en:validation/sheet-gate.json",
+    "ocean-horizon.en:validation/sheet-gate.json",
+    "primary.en:validation/sheet-gate.json",
+    "primary.zh-cn:validation/sheet-gate.json",
+    "site-plan.en:validation/sheet-gate.json",
+    "valley-site.en:validation/sheet-gate.json",
+    "void-horizon.en:validation/sheet-gate.json"
+  ],
   "base_commit": "109355653f3743f32370de9d9c194f1d25ae4a57",
   "changed": [
     "easy.en:SKINS.md",
@@ -34,7 +44,7 @@
   "classes": {
     "datapack function": 12,
     "other": 14,
-    "validation ledger": 2
+    "validation ledger": 11
   },
   "removed": []
 }
