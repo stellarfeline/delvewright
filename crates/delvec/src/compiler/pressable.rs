@@ -161,6 +161,50 @@ pub fn trigger_body(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Body {
     body_at(plan, at)
 }
 
+/// **The blocks every trigger's `prop` places at load** (spec-0093 §6.5), as
+/// `(trigger id, placement)` in emitted-trigger order: a click trigger
+/// (`use`/`strike`) at an anchor with a point cell, other than a `strike` on an
+/// NPC's stand anchor (that trigger rides the NPC's hitbox and has no cell of
+/// its own). `setup_finish` writes exactly these, and the world as shipped
+/// ([`crate::compiler::assembled::shipped_blocks`]) lays exactly these, so the
+/// written world and the server's world cannot disagree about a prop.
+pub fn trigger_props(plan: &Plan) -> Vec<(String, crate::compiler::light::Placement)> {
+    let mut out = Vec::new();
+    for t in plan.emitted_triggers_unlocalized() {
+        if !t.on.is_click() {
+            continue;
+        }
+        let Some(at) = t.at_anchor() else {
+            continue;
+        };
+        if matches!(t.on, delvewright_dsl::TriggerOn::Strike) && npc_stands_at(plan, at) {
+            continue;
+        }
+        if let (Some(prop), Some(cell)) = (&t.prop, plan.point_any(at)) {
+            out.push((
+                t.id.as_str().to_string(),
+                crate::compiler::light::Placement {
+                    pos: cell,
+                    block: prop.block.clone(),
+                },
+            ));
+        }
+    }
+    out
+}
+
+/// True when `anchor` is a planned NPC's stand anchor — the cell where that
+/// NPC's interaction hitbox lives, whether summoned at world init or by the
+/// NPC's `spawn-npc` entrance (`deferred`). A strike trigger there rides that
+/// hitbox (`crate::compiler::emit`'s `strike_trigger_tags_at` is its dual).
+pub(crate) fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
+    plan.npcs.iter().any(|n| {
+        plan.campaign.npcs.content.npcs.iter().any(|d| {
+            d.id.as_str() == n.npc_id && d.anchor.as_str() == anchor && d.offset == [0, 0, 0]
+        })
+    })
+}
+
 /// The block an `interact` objective is detected through, when its `prop` is one
 /// a hand presses (spec-0093 §6.5): `Some(block)` means no hitbox is summoned and
 /// the `default_block_use` criterion at the anchor's cell completes it.

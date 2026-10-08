@@ -8209,9 +8209,10 @@ a branch's `Plan::branch_gate_model`), the state the proofs route the leg leavin
 configuration's block map, which `DW0891` reads too — laid over **the world as
 shipped** (`view::beat::picture_base`): the assembly, every gate the placed
 world authors shut written back with its anchor's block (the assembly clears a
-gate's region; the datapack's setup holds it), the relight fixtures last as
-`setup_finish` sets them (`assembled::shipped_blocks`, which the loop's tiling
-reads too), and every gated trap's trigger removed whose gate is shut at load (a
+gate's region; the datapack's setup holds it), the relight fixtures and then every trigger's `prop`
+(`pressable::trigger_props`, the list `setup_finish` writes them from) in the
+order `setup_finish` sets them (`assembled::shipped_blocks`, which the loop's
+tiling reads too), and every gated trap's trigger removed whose gate is shut at load (a
 `requires_flags`, or a `requires_state` term its datum's `initial` fails). An
 unforced write is not laid. The path is the one the build's proofs read, with
 the links the route proof takes spliced in (`nav::with_links_taken`), so a step

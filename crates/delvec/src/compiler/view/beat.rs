@@ -198,7 +198,7 @@ pub struct Stands {
 
 /// **The bytes a picture starts from**: the world as shipped
 /// ([`crate::compiler::assembled::shipped_blocks`] — the assembly, its relight
-/// fixtures and its sealed gates), less every gated trap's trigger whose gate
+/// fixtures, its trigger props and its sealed gates), less every gated trap's trigger whose gate
 /// is shut at load — the datapack's `trap_gate_init` removes it and puts it
 /// back only when the gate opens. A configuration's bytes are
 /// [`Configuration::blocks`] over this map.

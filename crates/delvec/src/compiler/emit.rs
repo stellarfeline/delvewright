@@ -11653,19 +11653,6 @@ fn trigger_rides_npc(t: &delvewright_dsl::EnvTrigger, anchor: &str, npc_id: &str
     }
 }
 
-/// True when `anchor` is a planned NPC's stand anchor — the cell where that
-/// NPC's interaction hitbox lives, whether summoned at world init or by the
-/// NPC's `spawn-npc` entrance (`deferred`). The suppression dual of
-/// [`strike_trigger_tags_at`]: a strike trigger rides exactly the hitboxes this
-/// predicate says exist.
-fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
-    plan.npcs.iter().any(|n| {
-        plan.campaign.npcs.content.npcs.iter().any(|d| {
-            d.id.as_str() == n.npc_id && d.anchor.as_str() == anchor && d.offset == [0, 0, 0]
-        })
-    })
-}
-
 /// The `dw_trig_<id>` tags every left-click trigger riding this NPC's hitbox
 /// contributes, in campaign declaration order (deterministic). Empty for an NPC
 /// no trigger watches, so every campaign without one stays byte-identical.
@@ -13527,6 +13514,10 @@ fn cutscene_parties(plan: &Plan) -> Vec<(String, delvewright_dsl::CutsceneParty)
 fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
     let mut out = Vec::new();
+    let props: BTreeMap<String, crate::compiler::light::Placement> =
+        crate::compiler::pressable::trigger_props(plan)
+            .into_iter()
+            .collect();
     for t in &plan.emitted_triggers(chrome) {
         // An `approach` and a `step` read a body's position; nothing is summoned.
         if !t.on.is_click() {
@@ -13537,16 +13528,19 @@ fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<Strin
         let Some(at) = t.at_anchor() else {
             continue;
         };
-        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+        if matches!(t.on, TriggerOn::Strike) && crate::compiler::pressable::npc_stands_at(plan, at)
+        {
             continue;
         }
         // spec-0093 §6.5: the trigger's `prop` is placed at its cell — a lever
         // or a button is then the whole body (vanilla reports its press, so
         // nothing is summoned); any other block stands under the hitbox.
-        if let (Some(prop), Some(cell)) = (&t.prop, plan.point_any(at)) {
+        // The one list of prop cells ([`crate::compiler::pressable::trigger_props`]),
+        // which the written world lays too.
+        if let Some(p) = props.get(t.id.as_str()) {
             out.push(format!(
                 "setblock {} {} {} {}",
-                cell[0], cell[1], cell[2], prop.block
+                p.pos[0], p.pos[1], p.pos[2], p.block
             ));
         }
         // Same rule, one layer out: a click trigger anchored on a gate
@@ -13637,7 +13631,8 @@ fn check_trigger_bodies(
         let Some(at) = t.at_anchor() else {
             continue;
         };
-        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+        if matches!(t.on, TriggerOn::Strike) && crate::compiler::pressable::npc_stands_at(plan, at)
+        {
             ledger.push(
                 t.id.as_str(),
                 t.on.kind(),

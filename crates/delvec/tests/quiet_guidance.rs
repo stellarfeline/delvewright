@@ -1002,3 +1002,59 @@ fn a_bell_that_plays_a_cutscene_is_rung_by_a_player_and_shows_the_party() {
     assert!(census.unguarded.is_empty(), "{:?}", census.unguarded);
     delvec::compiler::affordance::check_fixtures(&out).expect("DW0545 holds");
 }
+
+/// A trigger's `prop` is placed by `setup_finish`, so it stands in the world the
+/// server builds at load, and the world the engine writes for a camera
+/// ([`delvec::compiler::view::beat::picture_base`]) must hold it too — or every
+/// showcase frame shows air where the game shows the bell (`DW0955`). Judged
+/// over every top-level `setblock` `setup_finish` emits, not over the prop alone:
+/// a block the datapack places at load and the model does not lay is the class.
+#[test]
+fn every_block_setup_places_stands_in_the_picture_base() {
+    let mut q = guided_quests(None, json!({}), json!({}));
+    q["content"]["triggers"] = json!([{
+        "id": "trigger/the-bell", "at": "anchor/exit", "on": { "on": "use" },
+        "prop": { "block": "minecraft:bell[attachment=floor,facing=north]" },
+        "effects": [{ "type": "set-flag", "flag": "flag/rung" }]
+    }]);
+    let dir = variant("picture-base-props", q, dialogue_completing("obj/talk"));
+    let out = build_dir(&dir);
+    let setup = fn_body(&out, "setup_finish").expect("setup_finish");
+
+    let (_, campaign) = load(&dir);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
+    let relight = delvec::compiler::light::relight_over(&plan, &assembled);
+    let base = delvec::compiler::view::beat::picture_base(&plan, &assembled, &relight.placements);
+
+    let mut judged = 0;
+    for line in setup.lines() {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        let ["setblock", x, y, z, block] = w[..] else {
+            continue;
+        };
+        let cell = [x.parse().unwrap(), y.parse().unwrap(), z.parse().unwrap()];
+        let held = base.get(&cell).map(|b| b.as_str());
+        assert_eq!(
+            held,
+            Some(delvec::compiler::blockstate::BlockState::new(block).as_str()),
+            "setup_finish places {block} at {cell:?}; the written world holds {held:?}"
+        );
+        judged += 1;
+    }
+    assert!(
+        setup.contains("minecraft:bell[attachment=floor,facing=north]"),
+        "the prop is placed at setup: {setup}"
+    );
+    assert!(judged >= 1, "setblocks judged: {judged}\n{setup}");
+}

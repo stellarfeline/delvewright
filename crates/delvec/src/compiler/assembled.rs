@@ -957,8 +957,8 @@ pub struct Assembled {
 }
 
 /// **The world as shipped, before any runtime write**: the assembled blocks,
-/// every gate the placed world authors shut, and the relight fixtures the
-/// datapack sets at setup — the assembly clears a gate's region (the route model
+/// every gate the placed world authors shut, the relight fixtures and the
+/// trigger props the datapack sets at setup — the assembly clears a gate's region (the route model
 /// reads the gate through its seal), and the datapack's setup writes the gate's
 /// block back. Clipped to `clip` when one is given (inclusive), so a caller
 /// asking about one box does not copy the map.
@@ -1006,6 +1006,13 @@ pub fn shipped_blocks(
     // world-load seals stand, so a fixture inside a gate's region is what the
     // server holds there (measured by `tools/ci/check-written-world.py`).
     for p in placements {
+        if inside(p.pos) {
+            m.insert(p.pos, BlockState::new(&p.block));
+        }
+    }
+    // Then every trigger's prop: `setup_finish` sets them after the relight
+    // fixtures, from the same list ([`crate::compiler::pressable::trigger_props`]).
+    for (_, p) in crate::compiler::pressable::trigger_props(plan) {
         if inside(p.pos) {
             m.insert(p.pos, BlockState::new(&p.block));
         }
