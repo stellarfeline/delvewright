@@ -81,6 +81,15 @@ each one on the pinned server with a PackTest dummy credited by vanilla's own
 `player_killed_entity`, beside a death nobody is credited with, every compiler
 removal, and a rest.
 
+Three valves stand on the near hall's north wall, levers on the floor, and the
+counter waits on them: `obj/reach-the-counter` reads `state/valve-round at-least
+3`, which only `trigger/valve-first`, `trigger/valve-second` and
+`trigger/valve-third` write. Each answers only in its turn, and the second and
+third put the round back to 0 when pressed out of it. The document declares them
+third, second, first. The plan replays every press the way the datapack runs
+it, line by line, and the path presses first, second, third in front of the
+counter. A gate no press sequence can open is refused (`DW0985`).
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor

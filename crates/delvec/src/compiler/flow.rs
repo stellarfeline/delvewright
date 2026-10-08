@@ -297,13 +297,7 @@ impl Datum {
         let Datum::Known(v) = self else {
             return None;
         };
-        let want = i64::from(cmp.value);
-        Some(match cmp.op {
-            CompareOp::Equals => v == want,
-            CompareOp::NotEquals => v != want,
-            CompareOp::AtLeast => v >= want,
-            CompareOp::AtMost => v <= want,
-        })
+        Some(i32::try_from(v).is_ok_and(|v| cmp.holds(v)))
     }
 
     /// The value after `w` is applied. `initial` is the datum's declared

@@ -2619,9 +2619,29 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   marker `[dw:complete <campaign> trigger/<id>]`, which every trigger whose bundle
   opens a way or sets a flag broadcasts first thing (`plan::trigger_may_be_performed`).
   A path whose trigger gate never holds, or whose target never shares an area
-  with a step, does not perform it, and nothing it opens is credited. Numeric
-  gates (`requires_state`) are not evaluated: a press whose state gate is closed
-  broadcasts no marker and the step fails where it stands.
+  with a step, does not perform it, and nothing it opens is credited. For these
+  two reasons numeric gates (`requires_state`) are not evaluated: a press whose
+  state gate is closed broadcasts no marker and the step fails where it stands.
+  **A numeric gate only presses move is driven** (`plan::path::drive`,
+  `DW0985`). A datum is *driven* when it is declared, no stake forfeits it, no
+  loop counts it, it has one holder on the walk (`party`, or `player` with
+  `min_players` 1), and every write to it anywhere is a top-level effect of a
+  `use` or `strike` trigger on an anchor; such a trigger also broadcasts the
+  fired marker. The plan replays, in path order, every press the path performs
+  — the trigger's own gate (`once`, flags, numeric terms), then each effect in
+  order behind its own `when`, read against the value the earlier lines of the
+  same bundle produced, as the datapack runs them — and at each objective whose
+  `requires_state` reads a driven datum and does not hold, searches
+  breadth-first (candidates in declaration order) for the shortest press
+  sequence that makes every such term hold, bounded at 64 presses and 16384
+  distinct states. The sequence is performed as `trigger` steps directly in
+  front of the objective, after any trigger already due there; the anchor is
+  resolved in the objective's area first, elsewhere only when its name is
+  unique. No sequence within the bound refuses the build with `DW0985`, naming
+  the gate, the presses and every value they reach. A press whose line reads a
+  datum the plan cannot name there is not taken, and a search that skipped one
+  refuses nothing. Terms on data that are not driven are left to the other
+  proofs.
   **`loop` steps** (spec-0086 §5.2, §6). A loop that holds where the forced
   route meets it is **exercised**: in front of the first step whose position is
   beyond the slab along its axis while the party, in the loop's area, is not,

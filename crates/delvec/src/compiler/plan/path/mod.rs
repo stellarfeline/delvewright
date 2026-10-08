@@ -3,6 +3,7 @@
 use super::*;
 
 mod ancestors;
+mod drive;
 mod region;
 mod triggers;
 
@@ -617,7 +618,23 @@ pub(super) fn build_critical_path(
 
     // The environment triggers this path performs, keyed by the path step each
     // is performed in front of. See [`path_triggers`].
-    let due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
+    let mut due = path_triggers(campaign, anchors, flow, path, &flags_at, &begun);
+    // The presses a numeric gate owes (`DW0985`), performed after what is
+    // already due at the same step; the replay is then taken over both.
+    let owed = {
+        let before = path_fired_lines(campaign, flow, path, &due);
+        drive::drive_presses(
+            campaign,
+            anchors,
+            path,
+            &flags_at,
+            &due,
+            &before.data_before,
+        )?
+    };
+    for (si, presses) in owed {
+        due.entry(si).or_default().extend(presses);
+    }
     let replay = path_fired_lines(campaign, flow, path, &due);
     let held_at_end: BTreeSet<String> = flow
         .journal(path)
