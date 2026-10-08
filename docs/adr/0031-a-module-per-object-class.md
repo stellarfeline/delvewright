@@ -1020,6 +1020,28 @@ where the assembly touched it):
   `world::HORIZON_PARAM`. Neither was a textual conflict inside the moved
   file; each was a modify/delete or a conflict in the file the body left.
 
+**What B7 found** (corrections to this record, made where B7 touched it):
+
+- §2 named the six files and not what each holds. `mod.rs` holds the codes,
+  the anchor vocabulary the derivation synthesizes, and the document's types.
+  `place.rs` holds the plan resolved once and the resolved plan in world
+  cells: `Placed`, `PlacedBox`, `PlacedSeam`, `stair_run`, and the pitch
+  searches with their tests. `pack.rs` holds the packing, `placements` and
+  `resolve`. `region.rs` holds the boxes judged against the kit grid, the
+  region and each other: `DW0825`, `DW0826`, `DW0827`, `DW0832` and `DW0835`.
+  `seam.rs` holds the seams. `measure.rs` holds the identities. `check.rs`
+  holds the driver `check`, the binding ledger `PlanBinding`, the graph
+  agreement (`DW0824`), the one placement authority (`DW0839`), the stage-6
+  deferral clause `refused_upstream`, and the lighting range check.
+- Every code stays declared in `siteplan/mod.rs`. The site plan is one object,
+  and its catalog section is one section about it. Declaring each code in the
+  file that raises it would split that section across six pages under §4's
+  mapping, and the §1 rule splits files by size, not objects. `delvec codes`
+  is byte-identical, and no catalog row moves. The page names `siteplan/mod.rs`.
+- No per-file ledger or source scan names `siteplan.rs`.
+  `tools/tests/test_check_anchor_providers.py` writes a fixture by that name
+  into a temporary source root. It is a fixture, and it is unchanged.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,

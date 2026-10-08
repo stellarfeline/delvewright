@@ -1,6 +1,6 @@
 # `delvewright_dsl::siteplan`
 
-The reference page for `crates/dsl/src/siteplan.rs`: the diagnostics-catalog row of every DW code
+The reference page for `crates/dsl/src/siteplan/mod.rs`: the diagnostics-catalog row of every DW code
 this module declares. The catalog's shared rules are in [`compiler.md` §5](../compiler.md#5-diagnostics-catalog).
 
 ## Diagnostics
