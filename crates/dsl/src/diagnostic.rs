@@ -889,6 +889,22 @@ pub mod codes {
         pub const LETHAL_STAGE_GATE: DwCode = DwCode::new("DW0953", ExitTier::Build);
     }
     crate::dw_code! {
+        /// (spec-0096) **Style markup that does not parse.** A player-visible
+        /// string — authored English or any sidecar row — carries a `[[` or `]]`
+        /// that is not one well-formed span `[[<styles>|<text>]]`: an unclosed or
+        /// unopened span, no `|`, no style, an unknown or repeated style, a colour
+        /// that is neither a vanilla name nor `#rrggbb`, empty text, or a nested
+        /// span ([`crate::textstyle::parse`]).
+        pub const INLINE_STYLE_MALFORMED: DwCode = DwCode::new("DW0975", ExitTier::Build);
+    }
+    crate::dw_code! {
+        /// (spec-0096) **A translation whose styled spans are not the English's.**
+        /// A sidecar row drops, adds or restyles a span of the English line it
+        /// renders ([`crate::textstyle::lower_aligned`]): the style rides on the
+        /// component, the translation only places and words each span.
+        pub const INLINE_STYLE_UNMATCHED: DwCode = DwCode::new("DW0976", ExitTier::Build);
+    }
+    crate::dw_code! {
         /// (spec-0031, DSL v0.10) **A grant whose removal is a later effect, not its
         /// own duration.** A `give-effect` is still live at the moment a
         /// `clear-effect` for the same effect fires in the same bundle, so the clear

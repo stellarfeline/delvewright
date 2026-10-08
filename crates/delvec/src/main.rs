@@ -1085,6 +1085,15 @@ fn validate_loaded(
             // could impersonate the key the compiler threads into a text
             // component — and has no glyph in any Minecraft font anyway.
             diags.extend(delvewright_dsl::validate_tr_sigil(&campaign, &sidecars));
+            // spec-0096: inline style markup in every player-facing line — the
+            // English and every sidecar row parse (DW0975), and a translation
+            // carries exactly the English's styled spans (DW0976).
+            diags.extend(delvewright_dsl::textstyle::validate_inline_styles(
+                &campaign, &sidecars,
+            ));
+            examined.push(
+                delvewright_dsl::textstyle::InlineStyleBinding::of(&campaign, &sidecars).line(),
+            );
             // The compiler's own chrome namespace is reserved as well (DW0186):
             // `delvewright.*` keys are the engine's on-screen strings, shipped
             // translated with the compiler, and a sidecar row under that prefix

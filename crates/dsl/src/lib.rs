@@ -55,6 +55,7 @@ pub mod schema;
 pub mod siteplan;
 pub mod split;
 pub mod stages;
+pub mod textstyle;
 pub mod validate;
 
 pub use canonical::to_canonical_string;
