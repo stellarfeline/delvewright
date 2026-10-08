@@ -172,13 +172,43 @@ inputs = [
 ]
 
 [[group]]
-name = "gallery"
+name = "gallery-pieces"
 inputs = [
-  { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, then analyze, build, coverage, render, seating, whole-map, baseline and stageable run it" },
+  { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which `gallery-prefabs.py` runs for `delvec detail` and `delvec sculpt`" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
   { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery's piece and skins" },
-  { glob = "gallery/**", why = "the gallery campaign, its design, skins, render plan and committed baseline" },
-  { glob = "tools/**", why = "the gallery gates (`check-gallery-*.py`, `check-seating-agrees.py`, `check-whole-map-render.py`, `gallery-baseline.py`, `gallery-build.py`, `gallery_domain.py`, `gallery_units.py`, `staging-gate.py`, `check-dw-codes.py`, `tools/lib/*`) and the carrier scripts `staging-gate.py` resolves under `tools/`" },
+  { glob = "gallery/**", why = "the site-plan overlay's programs and detail plan, the forms and form probes, and the design records the generator reads" },
+  { glob = "tools/**", why = "`gallery-prefabs.py`, `gallery-pieces.py`, `gallery_domain.py` and `tools/lib/*` (`delvec_bin.py`)" },
+]
+
+[[group]]
+name = "gallery-coverage"
+inputs = [
+  { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which analyzes and builds the gallery and which the coverage gate runs" },
+  { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
+  { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery's piece and skins this job takes from `gallery-pieces`" },
+  { glob = "gallery/**", why = "the gallery campaign and its probes, whose every declared surface the coverage gate binds" },
+  { glob = "tools/**", why = "`check-gallery-coverage.py`, `gallery_units.py`, `gallery_domain.py` and `tools/lib/*` (`delvec_bin.py`)" },
+]
+
+[[group]]
+name = "gallery-views"
+inputs = [
+  { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which builds the gallery and which the render, seating, whole-map and camera gates run" },
+  { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
+  { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery's piece and skins this job takes from `gallery-pieces`" },
+  { glob = "gallery/**", why = "the gallery campaign, its render plan, overlays and camera record" },
+  { glob = "tools/**", why = "`check-gallery-render.py`, `check-seating-agrees.py`, `check-whole-map-render.py`, `check-gallery-post-beat.py`, `gallery_domain.py` and `tools/lib/*`" },
+]
+
+[[group]]
+name = "gallery-baseline"
+inputs = [
+  { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which the baseline, the rebuild and the stageable gate run" },
+  { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
+  { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery's piece and skins this job takes from `gallery-pieces`" },
+  { glob = "gallery/**", why = "the gallery campaign, its overlays and committed baseline" },
+  { glob = "tools/**", why = "the gallery gates (`gallery-baseline.py`, `gallery-build.py`, `check-gallery-stageable.py`, `gallery_domain.py`, `gallery_units.py`, `staging-gate.py`, `check-dw-codes.py`, `tools/lib/*`) and the carrier scripts `staging-gate.py` resolves under `tools/`" },
   { glob = "harness/**", why = "`staging-gate.py` reads harness carriers" },
   { glob = "packtest/**", why = "`staging-gate.py` resolves packtest carriers" },
   { glob = "validation/**", why = "`gallery-build.py` and `check-gallery-stageable.py` work under `validation/`" },

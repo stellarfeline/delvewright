@@ -60,12 +60,12 @@ def test_the_step_lives_in_a_required_job():
     """A gate in a job nobody requires is advisory, and an advisory gate is unbound."""
     required = (REPO / ".github" / "required-status-checks.txt").read_text()
     ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
-    assert "gallery (coverage + build + baseline)" in required, (
-        "the gallery job is no longer a required status check, so the step this file guards "
+    assert "gallery baseline (emission, warnings, served points)" in required, (
+        "the gallery baseline job is no longer a required status check, so the step this file guards "
         "reds nothing"
     )
-    assert "name: gallery (coverage + build + baseline)" in ci, (
-        "the gallery job's name has moved; the required context above now reports on nothing"
+    assert "name: gallery baseline (emission, warnings, served points)" in ci, (
+        "the gallery baseline job's name has moved; the required context above now reports on nothing"
     )
 
 

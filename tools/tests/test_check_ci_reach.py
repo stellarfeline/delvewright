@@ -97,7 +97,7 @@ def test_a_readme_change_reaches_only_the_whole_tree_readers():
 def test_a_compiler_source_change_reaches_everything_that_builds_the_crates():
     table = ci_reach.load_table()
     got = on(ci_reach.decide(table, "pull_request", ["crates/delvec/src/main.rs"]))
-    assert {"rust", "publishable", "engine-shelf", "mecha-crosscheck", "zone-audit", "tool-tests", "gallery", "tier2-validation"} <= got
+    assert {"rust", "publishable", "engine-shelf", "mecha-crosscheck", "zone-audit", "tool-tests", "gallery-pieces", "gallery-coverage", "gallery-views", "gallery-baseline", "tier2-validation"} <= got
     assert got.isdisjoint({"harness", "skin-tool", "prefab-generators"})
 
 
@@ -340,12 +340,12 @@ def test_the_live_workflow_judges_every_job_on_job_need(capsys):
 
 
 def test_a_needed_job_that_skips_a_consumers_group_is_refused(tmp_path, capsys):
-    """The binary job forgets the gallery's group: a gallery-only pull request
-    would skip the binary job, so Actions would skip `gallery` with it."""
-    wf = perturbed(tmp_path, " || needs.changes.outputs.gallery == 'true' || ", " || ")
+    """The binary job forgets the gallery views' group: a views-only pull request
+    would skip the binary job, so Actions would skip `gallery-views` with it."""
+    wf = perturbed(tmp_path, " || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-baseline == 'true' || needs.changes.outputs.tier2-validation", " || needs.changes.outputs.gallery-baseline == 'true' || needs.changes.outputs.tier2-validation")
     code, out = run_gate(capsys, wf)
     assert code == 1
-    assert "job `gallery` needs `delvec-binary`, which does not run on a pull request that reaches `gallery`'s group `gallery`" in out
+    assert "job `gallery-views` needs `delvec-binary`, which does not run on a pull request that reaches `gallery-views`'s group `gallery-views`" in out
 
 
 def test_a_need_of_a_job_that_does_not_exist_is_refused(tmp_path, capsys):
@@ -357,3 +357,16 @@ def test_a_need_of_a_job_that_does_not_exist_is_refused(tmp_path, capsys):
     code, out = run_gate(capsys, wf)
     assert code == 1
     assert "job `mecha-crosscheck` needs `delvec-binaries`, which is not a job in the workflow" in out
+
+
+def test_a_pieces_job_that_skips_a_consumers_group_is_refused(tmp_path, capsys):
+    """The pieces job forgets the baseline's group: a baseline-only pull request
+    would skip `gallery-pieces`, so Actions would skip `gallery-baseline` with it."""
+    wf = perturbed(
+        tmp_path,
+        " || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-baseline == 'true'\n    runs-on",
+        " || needs.changes.outputs.gallery-views == 'true'\n    runs-on",
+    )
+    code, out = run_gate(capsys, wf)
+    assert code == 1
+    assert "job `gallery-baseline` needs `gallery-pieces`, which does not run on a pull request that reaches `gallery-baseline`'s group `gallery-baseline`" in out
