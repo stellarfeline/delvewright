@@ -87,11 +87,12 @@ pub use ids::{
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
     SoundRef, TR_SIGIL, TextKind, art_narrates, bonfire_option_labels, declared_mc_codes,
-    dialogue_option_labels, each_string, has_tr_sigil, inventory as l10n_inventory, key_kind,
-    key_situations, key_speaker, local_id, localize, namespace_skin_textures, on_screen_narrates,
-    pack_key, pack_namespace, pack_texture_dir, pack_texture_id, plain as l10n_plain,
-    play_sound_actor_refs, sound_refs, tag_translatables, untag as l10n_untag, validate_l10n,
-    validate_l10n_provenance, validate_marker_channel, validate_tr_sigil,
+    dialogue_option_labels, each_string, effect_string_sites, has_tr_sigil,
+    inventory as l10n_inventory, key_kind, key_situations, key_speaker, local_id, localize,
+    namespace_skin_textures, on_screen_narrates, pack_key, pack_namespace, pack_texture_dir,
+    pack_texture_id, plain as l10n_plain, play_sound_actor_refs, sound_refs, tag_translatables,
+    untag as l10n_untag, validate_l10n, validate_l10n_provenance, validate_marker_channel,
+    validate_tr_sigil,
 };
 pub use layout::{
     Beat, BriefFact, Closure, Direction, Edge, EdgeGating, GeometryBriefContent, Grant, Grants,

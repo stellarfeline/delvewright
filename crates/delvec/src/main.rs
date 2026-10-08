@@ -1148,6 +1148,12 @@ fn validate_loaded(
             diags.extend(delvec::compiler::textfit::check_option_labels(
                 &campaign, &sidecars,
             ));
+            // A dialogue option that asks a question leads to a line that can
+            // answer it (DW0981), in the English source and every declared
+            // sidecar. A document fact, refused where the option is written.
+            diags.extend(delvec::compiler::telling::check_questions(
+                &campaign, &sidecars,
+            ));
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.
@@ -1315,6 +1321,16 @@ fn validate_loaded(
                 let (sd, sbind) = delvec::compiler::statepath::check(&campaign);
                 examined.push(sbind.line());
                 diags.extend(sd);
+            }
+            // DW0982: a declared name reaches a dialogue line or option only
+            // after the play order has told the player what it is
+            // (game-writing.md §3 N1/N3). The same walk the replay proves, bound
+            // here beside `statepath` for the same reason: every subcommand's
+            // validation goes through this funnel.
+            {
+                let (nd, nbind) = delvec::compiler::telling::check_names_told_bound(&campaign);
+                examined.push(nbind.line());
+                diags.extend(nd);
             }
             // **`DW0890`: the approved hour is the built hour** (spec-0061).
             // Refused here rather than at the build, on `DW0855`'s precedent

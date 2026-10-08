@@ -1066,6 +1066,20 @@ pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
     out
 }
 
+/// Every effect emission can lower, top-level and nested, as `(stage, JSON
+/// pointer, l10n key base)` in the fixed inventory order: the pointer is what
+/// the replay records as fired (`flow::JournalStep::fired`), and the key base is
+/// what the effect's own strings are keyed under (`<keybase>.narrate`,
+/// `<keybase>.give`, …). The pairing [`each_string`] keys by, exposed so a play
+/// order can place an effect's strings at the step that fires it.
+pub fn effect_string_sites(c: &Campaign) -> Vec<(&'static str, String, String)> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |stage, path, keybase, _eff| {
+        out.push((stage, path.to_string(), keybase.to_string()));
+    });
+    out
+}
+
 /// Every **authored** bonfire rest-dialog label (spec-0016 §1), in the same
 /// fixed effect order the inventory uses. A bonfire's
 /// two options are drawn on exactly the same 150-GUI-px `multi_action` button a
