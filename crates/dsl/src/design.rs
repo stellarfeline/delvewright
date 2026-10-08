@@ -29,7 +29,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::is_kebab;
-use crate::stages::{WorldTime, WorldWeather};
+use crate::{WorldTime, WorldWeather};
 
 /// The directory an approved image of **one scene** lives in, relative to
 /// `design/`.

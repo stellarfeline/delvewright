@@ -167,11 +167,11 @@ chrome! {
     /// no `sealed_hint` (DSL v0.8).
     GATE_SEALED = 9, "delvewright.ui.gate.sealed", 0, "The way is sealed.";
     /// The bonfire rest dialog's title when the effect authors no `prompt`.
-    BONFIRE_TITLE = 10, "delvewright.ui.bonfire.title", 0, crate::stages::BONFIRE_PROMPT_EN;
+    BONFIRE_TITLE = 10, "delvewright.ui.bonfire.title", 0, crate::BONFIRE_PROMPT_EN;
     /// The bonfire's **rest and save** button when no `rest_label` is authored.
-    BONFIRE_REST = 11, "delvewright.ui.bonfire.rest", 0, crate::stages::BONFIRE_REST_LABEL_EN;
+    BONFIRE_REST = 11, "delvewright.ui.bonfire.rest", 0, crate::BONFIRE_REST_LABEL_EN;
     /// The bonfire's **save only** button when no `save_label` is authored.
-    BONFIRE_SAVE = 12, "delvewright.ui.bonfire.save", 0, crate::stages::BONFIRE_SAVE_LABEL_EN;
+    BONFIRE_SAVE = 12, "delvewright.ui.bonfire.save", 0, crate::BONFIRE_SAVE_LABEL_EN;
     /// The countdown a waiting player sees on the action bar
     /// (`world.respawn_wait`, spec-0077). `%s` is the seconds left.
     RESPAWN_WAIT = 13, "delvewright.ui.respawn.wait", 1, "Back in %s";

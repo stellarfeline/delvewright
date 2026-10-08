@@ -69,7 +69,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::Campaign;
 use crate::gate::DatumSet;
-use crate::stages::{CompareOp, QuestEffect, StateCompare, StateWrite};
+use crate::{CompareOp, QuestEffect, StateCompare, StateWrite};
 
 /// One effect list the rule judges, with the gate the thing it hangs off imposes.
 struct EffectList<'a> {

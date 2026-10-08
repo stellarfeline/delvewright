@@ -28,7 +28,7 @@ It greps for the roots it knows, so it cannot see a root that is *not in the
 enumeration at all*: `shortcuts[].on_unlock` was a `Vec<QuestEffect>` emission
 lowered for two versions while every walk, and this file, went green. The gate for
 THAT shape is `tools/ci/check-capability-ownership.py` check E, which enumerates the
-effect-bundle FIELDS out of `stages.rs` and fails on any it cannot account for.
+effect-bundle FIELDS out of the DSL stage modules and fails on any it cannot account for.
 The two are complementary and neither replaces the other: this one catches a walk
 that forgets a known root, that one catches a root nobody knows.
 

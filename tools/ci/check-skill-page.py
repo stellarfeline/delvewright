@@ -647,17 +647,33 @@ def engine_version(cargo_toml: pathlib.Path) -> str:
     return version
 
 
-def struct_fields(stages_rs: pathlib.Path, struct: str) -> list[tuple[str, bool]]:
+def struct_fields(dsl_src: pathlib.Path, struct: str) -> list[tuple[str, bool]]:
     """`(field name, may be omitted)` for one stage `content` struct, in order.
+
+    The struct is found by its declaration anywhere under the DSL crate's
+    sources, because the module that holds it is the object's (ADR-0031) and an
+    older pinned engine holds it elsewhere. A name declared more than once is a
+    candidate, not a match, and is refused.
 
     Optionality is serde's own rule: a field may be omitted exactly when its
     attribute block carries `serde(default…)`, since every stage struct is
     `deny_unknown_fields`. Reading the TYPE instead gets it wrong both ways.
     """
-    src = stages_rs.read_text(encoding="utf-8")
-    m = re.search(rf"^pub struct {re.escape(struct)} \{{$(?P<body>.*?)^\}}$", src, re.S | re.M)
-    if m is None:
+    decl = re.compile(rf"^pub struct {re.escape(struct)} \{{$(?P<body>.*?)^\}}$", re.S | re.M)
+    hits = [
+        (path, m)
+        for path in sorted(dsl_src.rglob("*.rs"))
+        for m in decl.finditer(path.read_text(encoding="utf-8"))
+    ]
+    if len(hits) > 1:
+        raise Unusable(
+            f"`{struct}` is declared {len(hits)} times under {dsl_src.name}/ "
+            f"({', '.join(p.name for p, _ in hits)}); a name declared twice "
+            f"names no one struct."
+        )
+    if not hits:
         return []
+    m = hits[0][1]
     fields: list[tuple[str, bool]] = []
     attrs: list[str] = []
     for line in m.group("body").split("\n"):
@@ -980,8 +996,8 @@ def check(
     # -- 4. every command the page names exists -----------------------------
     main_rs = engine / "crates" / "delvec" / "src" / "main.rs"
     envelope_rs = engine / "crates" / "dsl" / "src" / "envelope.rs"
-    stages_rs = engine / "crates" / "dsl" / "src" / "stages.rs"
-    for path in (main_rs, envelope_rs, stages_rs):
+    dsl_src = engine / "crates" / "dsl" / "src"
+    for path in (main_rs, envelope_rs):
         if not path.is_file():
             raise Unusable(
                 f"the engine at {ref} has no {path.relative_to(engine)}. A file "
@@ -1054,7 +1070,7 @@ def check(
         )
     rep.bind("stage document(s) named", len(stages) - len(unmentioned), len(stages))
 
-    world_fields = struct_fields(stages_rs, "WorldContent")
+    world_fields = struct_fields(dsl_src, "WorldContent")
     if not world_fields:
         raise Unusable(
             f"parsed 0 fields from `WorldContent` at {ref}; the struct this "

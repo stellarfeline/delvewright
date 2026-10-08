@@ -13,7 +13,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, TriggerOn, check_campaign, l10n_inventory, parse_campaign};
+use delvewright_dsl::{RawCampaign, TriggerOn, check_campaign, l10n, parse_campaign};
 use std::sync::LazyLock;
 
 static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
@@ -145,7 +145,7 @@ fn telegraph_strings_enter_the_l10n_inventory() {
         "\"trigger\": { \"on\": \"approach\", \"range\": 3 },\n        \"telegraph\": [ { \"type\": \"narrate\", \"text\": \"Gravel shifts behind you.\", \"style\": \"subtitle\" } ]",
     );
     let campaign = parse_campaign(&campaign_with_quests(&telegraphed)).expect("parses");
-    let inv = l10n_inventory(&campaign);
+    let inv = l10n::inventory(&campaign);
     assert!(
         inv.values().any(|v| v == "Gravel shifts behind you."),
         "the telegraph line must be translatable: {inv:#?}"

@@ -368,7 +368,7 @@ fn a_guard_on_one_verb_round_trips_through_the_one_guard() {
 /// **The gate walk inherits every effect root, including the two `on_death`
 /// added after this surface was written.**
 ///
-/// `for_each_gate`'s effect branch is defined on `stages::for_each_campaign_effect`,
+/// `for_each_gate`'s effect branch is defined on `for_each_campaign_effect`,
 /// which is defined on `effects::for_each_effect_root` — the single enumeration.
 /// So a numeric gate on an effect inside the campaign's `on_death` bundle (root
 /// R7) or inside a `shortcuts[].on_unlock` bundle (root R6) is reached with no

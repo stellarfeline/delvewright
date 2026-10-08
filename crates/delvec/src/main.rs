@@ -1481,7 +1481,7 @@ struct NpcContext<'a> {
 /// `delvec l10n-inventory <campaign-dir> [--lang <code>]` — the l10n key inventory
 /// as JSON on stdout.
 ///
-/// The inventory is [`delvewright_dsl::l10n_inventory`] itself, i.e. **exactly** the
+/// The inventory is [`delvewright_dsl::l10n::inventory`] itself, i.e. **exactly** the
 /// key set `DW0180`/`DW0181` enforce, so a translator (human, in-agent, or an
 /// external API via `tools/creator/i18n-translate.py`) can be handed the work list up front
 /// instead of discovering it by writing an empty sidecar and reading the coverage
@@ -1516,7 +1516,7 @@ fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
     let existing = sidecar.as_ref().map(|d| &d.content);
     let recorded = sidecar.as_ref().map(|d| &d.source);
 
-    let inv = delvewright_dsl::l10n_inventory(&campaign);
+    let inv = delvewright_dsl::l10n::inventory(&campaign);
     let situations = delvewright_dsl::key_situations(&campaign);
     let entries: Vec<InventoryEntry<'_>> = inv
         .iter()
@@ -1658,7 +1658,7 @@ fn run_l10n_apply(campaign_dir: &Path, lang: &str, table_path: &Path, json: bool
         }
     };
 
-    let inventory = delvewright_dsl::l10n_inventory(&campaign);
+    let inventory = delvewright_dsl::l10n::inventory(&campaign);
     let existing = loaded
         .l10n
         .get(lang)

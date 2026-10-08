@@ -3,7 +3,7 @@
 //! [`validate_campaign`] uses the vendored v0 registries; the compiler injects
 //! full registries via [`validate_campaign_with`].
 
-use crate::stages::Verb;
+use crate::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
@@ -15,7 +15,7 @@ use crate::registry::{
     ItemRegistry, VendoredAnchorRegistry, VendoredEffectRegistry, VendoredEntityRegistry,
     VendoredItemRegistry,
 };
-use crate::stages::{
+use crate::{
     EditFrame, EncounterTier, Locomotion, MorphOp, Objective, PlannedQuest, QuestEffect,
     RegionShape, TriggerOn, WorldEdit, body_traversal_sites,
 };
@@ -550,7 +550,7 @@ fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
         return;
     }
     let providers = AnchorProviders::build(c, anchors);
-    let scope_of: BTreeMap<&str, crate::stages::StateScope> = c
+    let scope_of: BTreeMap<&str, crate::StateScope> = c
         .quests
         .content
         .state
@@ -635,7 +635,7 @@ fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
         }
         // …and the release is a fact about the party.
         for (k, cmp) in l.requires_state.iter().enumerate() {
-            if scope_of.get(cmp.state.as_str()) == Some(&crate::stages::StateScope::Player) {
+            if scope_of.get(cmp.state.as_str()) == Some(&crate::StateScope::Player) {
                 d.push(Diagnostic::error(
                     codes::LOOP_GATE,
                     "quests",
@@ -666,7 +666,7 @@ fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
                         counts.as_str()
                     ),
                 )),
-                Some(crate::stages::StateScope::Player) => d.push(Diagnostic::error(
+                Some(crate::StateScope::Player) => d.push(Diagnostic::error(
                     codes::LOOP_GATE,
                     "quests",
                     at("/counts"),
@@ -679,14 +679,14 @@ fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
                         counts.as_str()
                     ),
                 )),
-                Some(crate::stages::StateScope::Party) => {}
+                Some(crate::StateScope::Party) => {}
             }
         }
         // A `teleport` inside `on_cross`, at any nesting depth.
         fn teleports(effs: &[QuestEffect], path: &str, out: &mut Vec<String>) {
             for (j, e) in effs.iter().enumerate() {
                 let here = format!("{path}/{j}");
-                if matches!(e.verb, crate::stages::Verb::Teleport { .. }) {
+                if matches!(e.verb, crate::Verb::Teleport { .. }) {
                     out.push(here.clone());
                 }
                 for (pseg, _k, list) in e.nested_effect_lists_labeled() {
@@ -874,7 +874,7 @@ fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     s.state.as_str()
                 ),
             )),
-            Some(decl) if decl.scope != crate::stages::StateScope::Player => {
+            Some(decl) if decl.scope != crate::StateScope::Player => {
                 d.push(Diagnostic::error(
                     codes::STAKE_STATE_SCOPE,
                     "quests",
@@ -891,7 +891,7 @@ fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
             Some(_) => {}
         }
-        if let Some(crate::stages::Forfeit::Proportion { percent }) = s.forfeit
+        if let Some(crate::Forfeit::Proportion { percent }) = s.forfeit
             && percent > 100
         {
             d.push(Diagnostic::error(
@@ -913,8 +913,8 @@ fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // reference with no declaration is a runtime no-op, and a declaration no beat
     // fires is a whole mechanism that binds to nothing.
     let mut dropped: BTreeSet<String> = BTreeSet::new();
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
-        let crate::stages::Verb::DropStake { stake, .. } = &eff.verb else {
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let crate::Verb::DropStake { stake, .. } = &eff.verb else {
             return;
         };
         if c.quests.content.stake_decl(stake.as_str()).is_none() {
@@ -1507,15 +1507,15 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         }
     }
-    crate::stages::for_each_campaign_effect(c, &mut |path, site, e| {
-        let crate::stages::Verb::SetAtmosphere {
+    crate::for_each_campaign_effect(c, &mut |path, site, e| {
+        let crate::Verb::SetAtmosphere {
             atmosphere, place, ..
         } = &e.verb
         else {
             return;
         };
         let stage = match site {
-            crate::stages::EffectSite::DialogueRespawn { .. } => "dialogue",
+            crate::EffectSite::DialogueRespawn { .. } => "dialogue",
             _ => "quests",
         };
         if let Some(id) = atmosphere {
@@ -1580,7 +1580,7 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 
     for (i, q) in c.quests.content.quests.iter().enumerate() {
-        if let crate::stages::Trigger::QuestComplete { quest } = &q.trigger {
+        if let crate::Trigger::QuestComplete { quest } = &q.trigger {
             dangling(
                 d,
                 expanded_ids.contains(quest.as_str()),
@@ -1594,7 +1594,7 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         let local_objs: BTreeSet<&str> = q.objectives.iter().map(|o| o.id().as_str()).collect();
         for (j, obj) in q.objectives.iter().enumerate() {
-            if let crate::stages::Objective::TalkTo { npc, .. } = obj {
+            if let crate::Objective::TalkTo { npc, .. } = obj {
                 dangling(
                     d,
                     npc_ids.contains(npc.as_str()),
@@ -1640,7 +1640,7 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // ---------------------------------------------------------------------------
 
 fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    use crate::stages::{DialogueEffect, Objective};
+    use crate::{DialogueEffect, Objective};
 
     // Stage-5 objective facts: which are `talk-to`, and (for those) their npc.
     let mut all_objectives: BTreeSet<&str> = BTreeSet::new();
@@ -1757,7 +1757,7 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     continue;
                 }
                 for p in entry.placements() {
-                    if let Some(crate::stages::CastDialogue::Root(r)) = &p.dialogue {
+                    if let Some(crate::CastDialogue::Root(r)) = &p.dialogue {
                         roots.push(r.as_str());
                     }
                 }
@@ -2008,7 +2008,7 @@ fn partition(
         if optional.contains(q.id.as_str()) || !declared.contains(q.id.as_str()) {
             continue;
         }
-        let crate::stages::Trigger::QuestComplete { quest } = &q.trigger else {
+        let crate::Trigger::QuestComplete { quest } = &q.trigger else {
             continue;
         };
         if !optional.contains(quest.as_str()) {
@@ -2061,14 +2061,14 @@ fn mainline_key(c: &Campaign, optional: &BTreeSet<&str>, d: &mut Vec<Diagnostic>
     let mut only_optional: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     let mut disqualified: BTreeSet<&str> = BTreeSet::new();
 
-    crate::stages::for_each_campaign_effect(c, &mut |_path, site, eff| {
+    crate::for_each_campaign_effect(c, &mut |_path, site, eff| {
         let Verb::SetFlag { flag, .. } = &eff.verb else {
             return;
         };
         let flag = flag.as_str();
         let owner = match site {
-            crate::stages::EffectSite::Objective { quest, .. }
-            | crate::stages::EffectSite::QuestComplete { quest } => quest.as_str(),
+            crate::EffectSite::Objective { quest, .. }
+            | crate::EffectSite::QuestComplete { quest } => quest.as_str(),
             // Every other root is ambient or dialogue-hosted: not a quest, so
             // not "optional participation" in this rule's sense.
             _ => {
@@ -2085,7 +2085,7 @@ fn mainline_key(c: &Campaign, optional: &BTreeSet<&str>, d: &mut Vec<Diagnostic>
         for n in &t.nodes {
             for o in &n.options {
                 for e in &o.effects {
-                    if let crate::stages::DialogueEffect::SetFlag { flag } = e {
+                    if let crate::DialogueEffect::SetFlag { flag } = e {
                         disqualified.insert(flag.as_str());
                     }
                 }
@@ -2196,7 +2196,7 @@ fn one_piece_gap(c: &Campaign) -> String {
 }
 
 fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    use crate::stages::{HorizonBase, horizon_defaults};
+    use crate::{HorizonBase, horizon_defaults};
 
     let Some(h) = c.world.content.horizon.as_ref() else {
         return;
@@ -2209,7 +2209,7 @@ fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // for the base beside it. Silently ignoring it is the worse answer: an
     // author who wrote `rim_height` on an `ocean` believes something is being
     // read.
-    if let crate::stages::Horizon::Spec(spec) = h {
+    if let crate::Horizon::Spec(spec) = h {
         let mut foreign: Vec<&str> = Vec::new();
         if !matches!(r.base, HorizonBase::Valley) {
             if spec.ratio.is_some() {
@@ -2432,7 +2432,7 @@ fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // event — the same reason `plan::collect_seal_hints` dedups by anchor and
     // `DW0423` refuses two firings that disagree.
     let mut sealed: BTreeMap<&str, (bool, String)> = BTreeMap::new();
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
         let Some(anchor) = eff.close_gate_anchor() else {
             return;
         };
@@ -2499,7 +2499,7 @@ const RESERVED_TRIGGER_PREFIX: &str = "dw-";
 
 /// Normalise an authored item id to its namespaced form, so `stripped_oak_log`
 /// and `minecraft:stripped_oak_log` are the same item to every comparison here.
-/// Same rule [`crate::stages::is_potion_bearing_item`] applies to its own list.
+/// Same rule [`crate::is_potion_bearing_item`] applies to its own list.
 fn ns_item(id: &str) -> String {
     if id.contains(':') {
         id.to_string()
@@ -2513,11 +2513,11 @@ fn ns_item(id: &str) -> String {
 /// asks.
 ///
 /// The five ways an item enters a player's inventory are the class kit
-/// ([`crate::stages::Class::kit`], which is class-BOUND and therefore
+/// ([`crate::Class::kit`], which is class-BOUND and therefore
 /// deliberately absent here) and these four. They are gathered from the closed
 /// enumerations rather than from a walk of the sites this function's author
 /// happened to remember: effects come through
-/// [`crate::stages::for_each_campaign_effect`], which is
+/// [`crate::for_each_campaign_effect`], which is
 /// [`crate::effects::for_each_effect_root`] underneath — the same eight roots
 /// emission lowers from, and the one `tools/ci/check-effect-roots.py` holds closed.
 ///
@@ -2535,7 +2535,7 @@ fn class_blind_item_sources(c: &Campaign) -> BTreeSet<String> {
     // be had, and treating one as no source at all would red campaigns that are
     // fine. The direction of the approximation is chosen — this check refuses
     // only where NOTHING class-blind supplies the item.
-    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, eff| {
+    crate::for_each_campaign_effect(c, &mut |_path, _site, eff| {
         if let Some(item) = eff.give_item() {
             src.insert(ns_item(item));
         }
@@ -2599,7 +2599,7 @@ fn class_blind_item_sources(c: &Campaign) -> BTreeSet<String> {
 /// The object is an **item gate**: a place where an objective completes only for
 /// a player who holds a named thing. Today the DSL has exactly one such site
 /// ([`Objective::Interact::requires_item`]) — a shop's price is a
-/// [`crate::stages::StateCompare`] over a datum and not an item at all, and no
+/// [`crate::StateCompare`] over a datum and not an item at all, and no
 /// verb removes an item from an inventory. So the enumeration is one arm wide
 /// today and is written as an enumeration anyway, because the second site is
 /// where a rule keyed to the first verb leaves the next author with no surface.
@@ -2702,7 +2702,7 @@ fn item_gate_class_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 ///
 /// The reads come from [`for_each_gate`](crate::gate::for_each_gate) and the
 /// writes from
-/// [`for_each_campaign_effect`](crate::stages::for_each_campaign_effect) — the
+/// [`for_each_campaign_effect`](crate::for_each_campaign_effect) — the
 /// two closed enumerations — so neither side of the ledger can drift narrower
 /// than the surface it polices.
 /// DSL v0.10 status-effect checks (spec-0031): a real effect id, a duration that
@@ -2889,7 +2889,7 @@ fn check_one_status_effect(
     let Some((_, seconds, amplifier, _, _)) = eff.give_effect() else {
         return;
     };
-    if seconds == 0 || seconds > crate::stages::MAX_EFFECT_SECONDS {
+    if seconds == 0 || seconds > crate::MAX_EFFECT_SECONDS {
         d.push(Diagnostic::error(
             codes::EFFECT_GRANT_BOUNDS,
             stage,
@@ -2897,7 +2897,7 @@ fn check_one_status_effect(
             format!(
                 "`give-effect` duration {seconds}s is out of range — it must be between 1 and {} \
                  seconds. {}",
-                crate::stages::MAX_EFFECT_SECONDS,
+                crate::MAX_EFFECT_SECONDS,
                 if seconds == 0 {
                     "Zero grants nothing at all: the effect is applied and gone before the next \
                      tick, so the beat reports green and the player sees nothing."
@@ -2908,7 +2908,7 @@ fn check_one_status_effect(
             ),
         ));
     }
-    if amplifier > crate::stages::MAX_POTION_AMPLIFIER {
+    if amplifier > crate::MAX_POTION_AMPLIFIER {
         d.push(Diagnostic::error(
             codes::EFFECT_GRANT_BOUNDS,
             stage,
@@ -2916,7 +2916,7 @@ fn check_one_status_effect(
             format!(
                 "`give-effect` amplifier {amplifier} is out of range — vanilla stores it in an \
                  unsigned byte, so {} is the end of the field, not a policy",
-                crate::stages::MAX_POTION_AMPLIFIER
+                crate::MAX_POTION_AMPLIFIER
             ),
         ));
     }
@@ -2997,7 +2997,7 @@ fn lethal_stage_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let decls = &c.quests.content.state;
     // --- the declarations themselves ------------------------------------------
-    let mut declared: BTreeMap<&str, &crate::stages::StateDecl> = BTreeMap::new();
+    let mut declared: BTreeMap<&str, &crate::StateDecl> = BTreeMap::new();
     for (i, s) in decls.iter().enumerate() {
         if !s.id.is_valid_syntax() {
             d.push(Diagnostic::error(
@@ -3031,7 +3031,7 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // display name. A declaration the slot cannot draw as written is refused
     // where it is written (`DW0919`), never resolved by order: a silent "first
     // wins" would hide the one decision this field exists to make explicit.
-    let mut standing: Option<&crate::stages::StateDecl> = None;
+    let mut standing: Option<&crate::StateDecl> = None;
     for (i, s) in decls.iter().enumerate() {
         let Some(display) = s.display else {
             continue;
@@ -3052,7 +3052,7 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
-        if s.scope == crate::stages::StateScope::Party {
+        if s.scope == crate::StateScope::Party {
             d.push(Diagnostic::error(
                 codes::STATE_DISPLAY_UNDRAWABLE,
                 "quests",
@@ -3113,7 +3113,7 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     // A loop's gate is refused for a `player` datum by `DW0949`,
                     // which names the release rather than the audience; one
                     // fault, one code.
-                    if decl.scope == crate::stages::StateScope::Player
+                    if decl.scope == crate::StateScope::Player
                         && site.consumer == crate::gate::GateConsumer::LethalVolume
                     {
                         // The same fault as `DW0503` on any other party-read
@@ -3136,7 +3136,7 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                                 cmp.state.as_str()
                             ),
                         ));
-                    } else if decl.scope == crate::stages::StateScope::Player
+                    } else if decl.scope == crate::StateScope::Player
                         && site.consumer.evaluates_per_player() == Some(false)
                         && site.consumer != crate::gate::GateConsumer::Loop
                     {
@@ -3162,7 +3162,7 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
     // --- the writes: every state verb, at every effect root, nesting included -
     let mut written: BTreeSet<String> = BTreeSet::new();
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
         let Some((id, _)) = eff.writes_state() else {
             return;
         };
@@ -3271,7 +3271,7 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// `execute if score`.
 fn check_player_state_not_scheduled(
     effs: &[QuestEffect],
-    declared: &BTreeMap<&str, &crate::stages::StateDecl>,
+    declared: &BTreeMap<&str, &crate::StateDecl>,
     stage: &str,
     path: &str,
     scheduled: bool,
@@ -3280,7 +3280,7 @@ fn check_player_state_not_scheduled(
     let is_player = |id: &str| {
         declared
             .get(id)
-            .is_some_and(|s| s.scope == crate::stages::StateScope::Player)
+            .is_some_and(|s| s.scope == crate::StateScope::Player)
     };
     for e in effs {
         if scheduled {
@@ -3329,7 +3329,7 @@ fn check_player_state_not_scheduled(
         // spec-0085 §3.3: the fourth shape — an actor-addressed effect where
         // emission has no acting player. One rule, *no `@s` where emission has
         // none*, and one remedy.
-        if scheduled && e.audience == Some(crate::stages::EffectAudience::Actor) {
+        if scheduled && e.audience == Some(crate::EffectAudience::Actor) {
             d.push(Diagnostic::error(
                 codes::STATE_SCOPE_UNREACHABLE,
                 stage,
@@ -3475,7 +3475,7 @@ fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // which the entire cast of threats quietly does not exist.
     if matches!(
         c.world.content.difficulty,
-        Some(crate::stages::WorldDifficulty::Peaceful)
+        Some(crate::WorldDifficulty::Peaceful)
     ) {
         d.push(Diagnostic::error(
             codes::DIFFICULTY_INVALID,
@@ -3495,13 +3495,13 @@ fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // infinite swimmable sea, and a valley's gap floor is walkable ground
     // that runs to the foot of the rim. `void` is the only base a body
     // cannot enter, because there is nothing out there to stand on.
-    let entered_base = match crate::stages::horizon_base(&c.world.content.horizon) {
-        crate::stages::HorizonBase::Void => None,
-        crate::stages::HorizonBase::Ocean => Some((
+    let entered_base = match crate::horizon_base(&c.world.content.horizon) {
+        crate::HorizonBase::Void => None,
+        crate::HorizonBase::Ocean => Some((
             "ocean",
             "an infinite swimmable sea with no return rule lets players wander off the map",
         )),
-        crate::stages::HorizonBase::Valley => Some((
+        crate::HorizonBase::Valley => Some((
             "valley",
             "the gap floor between the map and the rim is walkable ground, and with no \
              return rule a player who steps off the map is simply outside it",
@@ -3599,9 +3599,9 @@ pub fn declares_checkpoint(c: &Campaign) -> bool {
 /// nesting depth) satisfy `pred`? The match over the site is exhaustive, so a
 /// new root answers here.
 fn collected_effect_any(c: &Campaign, pred: impl Fn(&QuestEffect) -> bool) -> bool {
-    use crate::stages::EffectSite;
+    use crate::EffectSite;
     let mut found = false;
-    crate::stages::for_each_campaign_effect(c, &mut |_, site, eff| {
+    crate::for_each_campaign_effect(c, &mut |_, site, eff| {
         let collected = match site {
             EffectSite::Objective { .. }
             | EffectSite::QuestComplete { .. }
@@ -3620,7 +3620,7 @@ fn collected_effect_any(c: &Campaign, pred: impl Fn(&QuestEffect) -> bool) -> bo
     found
 }
 
-fn for_each_effect_deep(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEffect)) {
+fn for_each_effect_deep(q: &crate::Quest, mut f: impl FnMut(String, &QuestEffect)) {
     fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
         f(path.clone(), eff);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
@@ -3642,10 +3642,7 @@ fn for_each_effect_deep(q: &crate::stages::Quest, mut f: impl FnMut(String, &Que
 /// Visit an environment trigger's effects **and every transitively-nested effect**
 /// with a relative path fragment (`effects/<m>`, then nested segments) — the
 /// trigger analogue of [`for_each_effect_deep`].
-fn for_each_trigger_effect_deep(
-    t: &crate::stages::EnvTrigger,
-    mut f: impl FnMut(String, &QuestEffect),
-) {
+fn for_each_trigger_effect_deep(t: &crate::EnvTrigger, mut f: impl FnMut(String, &QuestEffect)) {
     fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
         f(path.clone(), eff);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
@@ -3665,7 +3662,7 @@ fn for_each_trigger_effect_deep(
 /// same standing as a quest bundle or a trigger bundle — so every consumer scan
 /// that walks the other two walks this one too. Empty for a pure spec-0011
 /// redstone trap.
-fn for_each_trap_payload_deep(t: &crate::stages::Trap, mut f: impl FnMut(String, &QuestEffect)) {
+fn for_each_trap_payload_deep(t: &crate::Trap, mut f: impl FnMut(String, &QuestEffect)) {
     fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
         f(path.clone(), eff);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
@@ -4096,7 +4093,7 @@ fn v06_checks(
 fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Diagnostic>) {
     for (i, cl) in c.classes.content.classes.iter().enumerate() {
         for (k, item) in cl.kit.iter().enumerate() {
-            let bearing = crate::stages::is_potion_bearing_item(&item.item);
+            let bearing = crate::is_potion_bearing_item(&item.item);
             let path = format!("/content/classes/{i}/kit/{k}");
             let Some(contents) = &item.contents else {
                 // The placeholder flask, as a build error.
@@ -4194,7 +4191,7 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
                     ));
                 }
                 if let Some(amp) = eff.amplifier
-                    && amp > crate::stages::MAX_POTION_AMPLIFIER
+                    && amp > crate::MAX_POTION_AMPLIFIER
                 {
                     d.push(Diagnostic::error(
                         codes::KIT_POTION_INVALID,
@@ -4203,7 +4200,7 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
                         format!(
                             "potion effect `amplifier` {amp} is out of range — vanilla stores it \
                              in an unsigned byte, so it must be 0–{max} (0 = level I).",
-                            max = crate::stages::MAX_POTION_AMPLIFIER
+                            max = crate::MAX_POTION_AMPLIFIER
                         ),
                     ));
                 }
@@ -4233,9 +4230,7 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
                             eff.effect
                         ),
                     )),
-                    (false, Some(dur))
-                        if dur == 0 || dur > crate::stages::MAX_POTION_DURATION_TICKS =>
-                    {
+                    (false, Some(dur)) if dur == 0 || dur > crate::MAX_POTION_DURATION_TICKS => {
                         d.push(Diagnostic::error(
                             codes::KIT_POTION_INVALID,
                             "classes",
@@ -4244,7 +4239,7 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
                                 "potion effect `duration` {dur} is out of range — it is in \
                                  **ticks** (20 = one second) and must be 1–{max} \
                                  (≈13.9 hours, past the delve ceiling).",
-                                max = crate::stages::MAX_POTION_DURATION_TICKS
+                                max = crate::MAX_POTION_DURATION_TICKS
                             ),
                         ));
                     }
@@ -4649,7 +4644,7 @@ fn anchors_and_items(
         let Some(set) = set else { continue };
 
         for (j, obj) in q.objectives.iter().enumerate() {
-            if let crate::stages::Objective::ReachAnchor { anchor, .. } = obj
+            if let crate::Objective::ReachAnchor { anchor, .. } = obj
                 && let Some(f) = station_kind_diag(
                     &providers,
                     anchor.as_str(),
@@ -4660,7 +4655,7 @@ fn anchors_and_items(
                 )
             {
                 d.push(f);
-            } else if let crate::stages::Objective::ReachAnchor { anchor, .. } = obj
+            } else if let crate::Objective::ReachAnchor { anchor, .. } = obj
                 && !set.contains(anchor.as_str())
             {
                 d.push(Diagnostic::error(
@@ -5124,7 +5119,7 @@ fn v03_checks(
     // ([`produced_flags`]); waves spawned by `spawn-wave`.
     let declared_flags: BTreeSet<String> = produced_flags(c);
     let mut spawned_waves: BTreeSet<&str> = BTreeSet::new();
-    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, e| {
+    crate::for_each_campaign_effect(c, &mut |_path, _site, e| {
         if let Some(w) = e.spawn_wave() {
             spawned_waves.insert(w.as_str());
         }
@@ -5539,7 +5534,7 @@ fn v04_checks(
                     "minecraft:lever",
                     d,
                 );
-                if crate::stages::fires_on_step(&prop.block) {
+                if crate::fires_on_step(&prop.block) {
                     d.push(Diagnostic::error(
                         codes::INTERACT_PROP_STEPPED,
                         "quests",
@@ -5840,7 +5835,7 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
     // this campaign produce": three roots and no descent at all, so a `set-flag`
     // in a `sequence` step was invisible to it while the main pass saw it.
     let mut flags: BTreeSet<&str> = BTreeSet::new();
-    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, e| {
+    crate::for_each_campaign_effect(c, &mut |_path, _site, e| {
         if let Some(f) = e.set_flag() {
             flags.insert(f.as_str());
         }
@@ -5900,7 +5895,7 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
         // Still walk the effects: a verb naming an assembly in a campaign that
         // declares none is a dangling reference.
         let mut any = false;
-        crate::stages::for_each_campaign_effect(c, &mut |_, _, e| {
+        crate::for_each_campaign_effect(c, &mut |_, _, e| {
             any |= assembly_verb(e).is_some();
         });
         if !any {
@@ -6117,7 +6112,7 @@ fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
         .map(|a| (a.id.as_str(), a.strikes.is_some()))
         .collect();
     // Every verb that names an assembly, at every depth of every root.
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, e| {
+    crate::for_each_campaign_effect(c, &mut |path, _site, e| {
         let Some((assembly, clip)) = assembly_verb(e) else {
             return;
         };
@@ -6198,9 +6193,9 @@ fn assembly_verb(e: &QuestEffect) -> Option<(&str, Option<&str>)> {
 /// `damage-players` stands inside another effect's list there, and a pattern
 /// that turns by `aim` has no locked step.
 fn lock_shape_checks(
-    a: &crate::stages::Assembly,
+    a: &crate::Assembly,
     i: usize,
-    s: &crate::stages::AssemblyStrikes,
+    s: &crate::AssemblyStrikes,
     d: &mut Vec<Diagnostic>,
 ) {
     fn nested_damage(effs: &[QuestEffect], path: &str, out: &mut Vec<String>) {
@@ -6430,7 +6425,7 @@ fn v06_trap_checks(
                 } => {
                     let proj = projectile
                         .as_deref()
-                        .unwrap_or(crate::stages::DEFAULT_VOLLEY_PROJECTILE);
+                        .unwrap_or(crate::DEFAULT_VOLLEY_PROJECTILE);
                     if !entities.contains(proj) {
                         d.push(Diagnostic::error(
                             codes::TRAP_VERB_ID_UNKNOWN,
@@ -6443,8 +6438,8 @@ fn v06_trap_checks(
                             ),
                         ));
                     }
-                    let n = salvos.unwrap_or(crate::stages::DEFAULT_VOLLEY_SALVOS);
-                    if n == 0 || n > crate::stages::MAX_VOLLEY_SALVOS {
+                    let n = salvos.unwrap_or(crate::DEFAULT_VOLLEY_SALVOS);
+                    if n == 0 || n > crate::MAX_VOLLEY_SALVOS {
                         d.push(Diagnostic::error(
                             codes::VOLLEY_CADENCE,
                             "quests",
@@ -6454,12 +6449,12 @@ fn v06_trap_checks(
                                  its whole kill zone every salvo, so the entity count is \
                                  `salvos x standable cells`; beyond the cap that is a \
                                  server hazard, not a trap",
-                                crate::stages::MAX_VOLLEY_SALVOS
+                                crate::MAX_VOLLEY_SALVOS
                             ),
                         ));
                     }
-                    let iv = interval.unwrap_or(crate::stages::DEFAULT_VOLLEY_INTERVAL);
-                    if iv == 0 || iv > crate::stages::MAX_VOLLEY_INTERVAL {
+                    let iv = interval.unwrap_or(crate::DEFAULT_VOLLEY_INTERVAL);
+                    if iv == 0 || iv > crate::MAX_VOLLEY_INTERVAL {
                         d.push(Diagnostic::error(
                             codes::VOLLEY_CADENCE,
                             "quests",
@@ -6467,7 +6462,7 @@ fn v06_trap_checks(
                             format!(
                                 "volley `interval` is {iv} ticks — must be 1..={}. Salvos \
                                  spaced wider than that stop reading as one trap event",
-                                crate::stages::MAX_VOLLEY_INTERVAL
+                                crate::MAX_VOLLEY_INTERVAL
                             ),
                         ));
                     }
@@ -6480,7 +6475,7 @@ fn v06_trap_checks(
                     let blocks = ItemBackedBlockRegistry::new(items);
                     let fb = falling_block
                         .as_deref()
-                        .unwrap_or(crate::stages::DEFAULT_COLLAPSE_FALLING_BLOCK);
+                        .unwrap_or(crate::DEFAULT_COLLAPSE_FALLING_BLOCK);
                     for (field, id) in [
                         ("falling_block", Some(fb)),
                         ("then_floor", then_floor.as_deref()),
@@ -6757,11 +6752,11 @@ fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut Vec<Diagnost
 /// (`on_arrive`/`on_caught`/`on_respawn`) start a fresh scope — their firing
 /// time is unknowable statically, so motion outside them is never assumed.
 fn cutscene_style_checks(
-    quests: &crate::stages::QuestsContent,
+    quests: &crate::QuestsContent,
     npc_ids: &BTreeSet<&str>,
     d: &mut Vec<Diagnostic>,
 ) {
-    use crate::stages::{CameraSubject, ShotStyle};
+    use crate::{CameraSubject, ShotStyle};
     let actor_ids: BTreeSet<&str> = quests.actors.iter().map(|a| a.id.as_str()).collect();
 
     /// The sibling moves visible to a cutscene: `(is_actor, id)`.
@@ -7015,7 +7010,7 @@ fn cutscene_style_checks(
 /// (`DW0172`); a `talk-to` whose completing options are all flag-gated is a
 /// potential deadlock (`DW0191`, spec-0008 §1).
 fn dialogue_v04(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
-    use crate::stages::DialogueEffect;
+    use crate::DialogueEffect;
     // Option requires_flags resolution.
     for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
         for (j, node) in tree.nodes.iter().enumerate() {
@@ -7269,7 +7264,7 @@ fn quest_ancestors(c: &Campaign) -> BTreeMap<&str, BTreeSet<&str>> {
 ///   from a trigger, from dialogue, or from the objective's own quest is not
 ///   DAG-ordered, so it suppresses the proof rather than risking a false positive.
 fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
-    use crate::stages::DialogueEffect;
+    use crate::DialogueEffect;
     let deferred: BTreeSet<&str> = c
         .npcs
         .content
@@ -7566,7 +7561,7 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
         stage: &str,
         blocks: &dyn BlockRegistry,
         path: &str,
-        recipe: &crate::stages::PaletteRecipe,
+        recipe: &crate::PaletteRecipe,
     ) {
         if recipe.blocks.is_empty() {
             d.push(Diagnostic::error(
@@ -8749,7 +8744,7 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
     let providers = AnchorProviders::build(c, anchors);
 
     for (i, w) in quests.waves.iter().enumerate() {
-        let aggro_edge = w.summon == Some(crate::stages::WaveSummon::AggroEdge);
+        let aggro_edge = w.summon == Some(crate::WaveSummon::AggroEdge);
         if aggro_edge {
             if w.lane.is_some() {
                 d.push(Diagnostic::error(
@@ -8953,11 +8948,11 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
 ///   intention.
 fn check_drops(
     c: &Campaign,
-    quests: &crate::stages::QuestsContent,
+    quests: &crate::QuestsContent,
     items: &dyn ItemRegistry,
     d: &mut Vec<Diagnostic>,
 ) {
-    use crate::stages::{EncounterTier, MobDrop};
+    use crate::{EncounterTier, MobDrop};
 
     // --- the declaration side: waves and actors ---------------------------
     let tiered =
@@ -9143,14 +9138,14 @@ fn check_drops(
 /// registry-valid quest items (`DW0143`). Shared by wave mobs and actors so the
 /// two surfaces cannot drift.
 fn check_drop_list(
-    drops: &[crate::stages::MobDrop],
-    equipment: Option<&crate::stages::MobEquipment>,
+    drops: &[crate::MobDrop],
+    equipment: Option<&crate::MobEquipment>,
     what: &str,
     base_path: &str,
     items: &dyn ItemRegistry,
     d: &mut Vec<Diagnostic>,
 ) {
-    use crate::stages::MobDrop;
+    use crate::MobDrop;
 
     let mut seen_slots: BTreeSet<&'static str> = BTreeSet::new();
     for (n, dr) in drops.iter().enumerate() {
@@ -9217,7 +9212,7 @@ fn check_drop_list(
 /// objective that must complete before it}`. Acyclicity is guaranteed by
 /// `DW0140`; a cyclic quest simply yields a partial set and the cycle's own
 /// diagnostic fires.
-fn objective_ancestors(q: &crate::stages::Quest) -> BTreeMap<&str, BTreeSet<&str>> {
+fn objective_ancestors(q: &crate::Quest) -> BTreeMap<&str, BTreeSet<&str>> {
     let direct: BTreeMap<&str, Vec<&str>> = q
         .objectives
         .iter()
@@ -9253,7 +9248,7 @@ fn objective_ancestors(q: &crate::stages::Quest) -> BTreeMap<&str, BTreeSet<&str
 /// Shared verbatim by wave mobs and actors so the two surfaces cannot drift:
 /// they are the same schema type and therefore must be the same rules.
 fn check_equipment(
-    eq: &crate::stages::MobEquipment,
+    eq: &crate::MobEquipment,
     what: &str,
     base_path: &str,
     items: &dyn ItemRegistry,
@@ -9831,7 +9826,7 @@ fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
     let mut effect_subjects: Vec<(String, String)> = Vec::new();
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
         // The one derivation (spec-0071 §3), read here exactly as the chronicle
         // reads it. Only a **stated** subject is policed: a derived one is the
         // effect's own `anchor`/`npc`/`actor`/`wave` reference, already refused
@@ -9866,7 +9861,7 @@ fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// declaration list — the same rule flags follow.
 pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {
+    crate::for_each_campaign_effect(c, &mut |_p, _site, eff| {
         if let Verb::CampaignComplete {
             ending: Some(e), ..
         } = &eff.verb
@@ -9889,7 +9884,7 @@ pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
 ///
 /// Three producers, and the third is the one a second inventory forgets. A
 /// `set-flag` fires from any effect root at any nesting depth, so the quest-side
-/// walk is [`crate::stages::for_each_campaign_effect`], which inherits both axes
+/// walk is [`crate::for_each_campaign_effect`], which inherits both axes
 /// rather than listing either. A dialogue option's `set-flag` is a flat outcome
 /// of a conversation in the dialogue vocabulary, which that walk neither reaches
 /// nor should. And a **trap's `disarm.sets_flag`** is a flag no effect anywhere
@@ -9900,7 +9895,7 @@ pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
 /// effect ever produces", which it never claimed to be.
 pub fn produced_flags(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {
+    crate::for_each_campaign_effect(c, &mut |_p, _site, eff| {
         if let Verb::SetFlag { flag, .. } = &eff.verb {
             out.insert(flag.as_str().to_string());
         }
@@ -9909,7 +9904,7 @@ pub fn produced_flags(c: &Campaign) -> BTreeSet<String> {
         for n in &t.nodes {
             for o in &n.options {
                 for e in &o.effects {
-                    if let crate::stages::DialogueEffect::SetFlag { flag } = e {
+                    if let crate::DialogueEffect::SetFlag { flag } = e {
                         out.insert(flag.as_str().to_string());
                     }
                 }

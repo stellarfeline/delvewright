@@ -270,7 +270,7 @@ fn quest_item_drop_id_is_registry_checked() {
 fn quest_item_drop_name_is_inventoried() {
     let c = delvewright_dsl::parse_campaign(&campaign_with_quests(QUESTS_V09.as_str()))
         .expect("parses");
-    let inv = delvewright_dsl::l10n_inventory(&c);
+    let inv = delvewright_dsl::l10n::inventory(&c);
     assert!(
         inv.contains_key("wave.gate-boss.mob.0.drop.1.name"),
         "drop display names must be inventoried: {:#?}",

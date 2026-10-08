@@ -224,8 +224,9 @@ keeps that order a fact a reader can see.
 #### `crates/dsl/src/`
 
 ```
-lib.rs            pub mod lines, and one `pub use <object>::*;` per module — no
-                  per-type re-export list anywhere
+lib.rs            pub mod lines, and one `pub use <object>::*;` per module whose
+                  items are in the root namespace — no per-type re-export list
+                  anywhere
 envelope.rs       Campaign and the stage documents (unchanged)
 diagnostic.rs     Diagnostic, DwCode, ExitTier, Subject, DECLARED, dw_code!
                   — the mechanism only; the `codes` module is dissolved
@@ -239,20 +240,32 @@ world.rs          WorldContent, Horizon*, Boundary, Area, AreaLighting, Pieces,
 body.rs           Locomotion, BodyTraversal, BodyRef, Body*Site + body_traversal_checks
 npc.rs            NpcsContent, Npc, NpcSkin, Persona + deferred_npc_checks, despawned_ref_check
 dialogue.rs       DialogueContent, NpcDialogue, DialogueNode/Option/Effect + dialogue checks
-class.rs          ClassesContent, Class, KitItem, PotionContents + kit, item-gate,
+class.rs          ClassesContent, Class, KitItem, Carrier, PotionContents + kit, item-gate,
                   enchantment and equipment checks
 quest_plan.rs     QuestPlanContent, BranchPoint, BranchDecl, Happening, PlannedQuest
                   + plan, partition, mainline_key, branch_point_checks, happening_subject_checks
-quest.rs          QuestsContent, Quest, Objective, Guard, QuestEffect, Verb,
-                  Visibility, Guidance + references, after_ordering, cross_stage
+quest/mod.rs      QuestsContent, Quest, Trigger, Visibility, Guidance + references,
+                  after_ordering, cross_stage
+quest/objective.rs Objective
+quest/verb.rs     Verb, ParticleAt, SoundAt, NarrateStyle, the volley and collapse
+                  defaults
+quest/effect.rs   QuestEffect, Guard, EffectAudience, NestedDispatch, BonfireLabels
 state.rs          StateDecl, StateScope, StateDisplay, CompareOp, StateWrite,
                   StateCompare + state_checks, read_after_write_checks,
                   gate_contradiction_checks — and the one evaluator (§3)
 wave.rs           Wave, WaveMob, WaveLane, WaveSummon, MobEquipment, EquipSlot,
-                  MobDrop, MobAttributes, EncounterTier, OnKill + lane, difficulty,
+                  MobDrop, MobAttributes, EncounterTier + lane, difficulty,
                   drop and equipment checks
-actor.rs          Actor, Facing, CutsceneParty, DespawnStyle, SequenceStep
-                  + the actor and cutscene shape checks now in v06_checks
+onkill.rs         OnKill, KillFires + on_kill_checks (an existing object module)
+actor.rs          Actor, Facing, DespawnStyle, SequenceStep
+                  + the actor shape checks now in v06_checks
+cutscene.rs       CameraShot, ShotStyle, CameraSubject, CutsceneParty + the
+                  cutscene shape checks now in v06_checks
+mark.rs           Mark, offset_cell
+stealth.rs        StealthZone
+effects.rs        the effect roots, EffectSite, for_each_campaign_effect
+serde_fields.rs   the serde defaults and skip predicates the stage types share
+                  (private)
 trigger.rs        EnvTrigger, TriggerOn, TriggerAudience, Prop + press_answer_checks,
                   press_obligation_checks
 trap.rs           Trap, TrapTrigger, TrapEffect, Lethality, TrapReset, TrapDisarm + trap checks
@@ -262,7 +275,7 @@ shortcut.rs       Shortcut + shortcut_checks
 loot.rs           Loot, LootItem + loot_checks, collect_container_claim_checks
 assembly.rs       Assembly, AssemblyHitbox, AssemblyStrikes, Strike* + assembly_checks, lock_shape_checks
 cast.rs           CastEntry, CastAbsence, CastPlace, CastPlacement, CastDialogue, CastBarks
-lethal.rs         the lethal volume + lethal_volume_checks, lethal_stage_checks
+lethal.rs         LethalVolume, DamageKind + lethal_volume_checks, lethal_stage_checks
 loop.rs           the loop + loop_checks
 economy.rs        Shop, Stake, Purchase (absorbs purchase.rs) + economy_checks, shop_anchor_checks
 world_edits.rs    the edit stage's types + world_edits_checks
@@ -470,7 +483,8 @@ compiler receives one `quests.json` exactly as it does today.
 | `check-demo-levels.py` | `demo-levels.md` | `docs/demo-levels/*.md` | `mdtable.py` |
 | `check-numbered-doc-index.py` | the two index tables | the same tables, compared to the generator's output | the writer |
 | `check-json-canonical.py` | the ledger among its sweep | the ledger directory | its existing sweep |
-| `check-capability-ownership.py` | `STAGES = crates/dsl/src/stages.rs` | the DSL object modules (`crates/dsl/src/*.rs`); its per-file `HAPPENING_NONE_ALLOWED` entries name the new files | its existing `rglob` |
+| `check-capability-ownership.py` | `STAGES = crates/dsl/src/stages.rs` | the stage-surface modules, a registry (`DSL_STAGE_MODULES`); its per-file `HAPPENING_NONE_ALLOWED` entries name the new files | the registry |
+| `check-skill-page.py` | `stages.rs` at the pinned engine | the one declaration of `WorldContent` under `crates/dsl/src/` at the pinned engine, refused when declared twice | a declaration search, so an engine pinned before and after B1 both read |
 | `check-anchor-providers.py` | `validate.rs` as the one site of the broad question | `validate/mod.rs` | its file rule, renamed |
 | `check-effect-roots.py` | `compiler/plan.rs` in `ALLOWED` | `compiler/plan/anchors.rs` | its ledger, renamed |
 | `check-structure-emitters.py` | per-file ledger | the same files at their new paths | its ledger, renamed |
@@ -549,7 +563,7 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
 
 | Step | What moves | Size |
 |------|-----------|------|
-| B1 | `stages.rs` → the DSL object modules of §2; `lib.rs` keeps one glob per module and no type list | one worker, mechanical; no call site outside the crate changes |
+| B1 | `stages.rs` → the DSL object modules of §2; `lib.rs` keeps one glob per module and no type list | one worker, mechanical; call sites that named `dsl::stages::` or a root alias change to the root or module path |
 | B2a–c | `validate.rs` → each object module's checks, in three sequential cuts (world/npc/dialogue/class; quest/state/wave/actor/trigger; trap/timed gate/ambush/shortcut/loot/assembly/lethal/loop/economy); the version-named bundles dissolved; `diagnostic::codes` declarations move with their checks; the A1 row-in-page rule moves their catalog rows | three PRs, a few hours each |
 | B3a | `emit.rs` PackTest emitters (lines 16598–26170) → `emit/packtest/<object>.rs`, `emit/packtest.rs` the batch model | one PR |
 | B3b | the rest of `emit.rs` → `emit/<object>.rs` by its own section markers, `emit/{mod,text,functions,manifest,server}.rs` | one PR, after B3a |
@@ -559,6 +573,29 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
 | B6 | `main.rs` → `cli/*.rs`, view and edit arms to their modules' `cli.rs` | one PR; `clap_surface.py`'s own test and `check-skill-page` prove the surface unchanged |
 | B7 | `siteplan.rs` → `siteplan/` | one PR; lowest priority — not measured as conflicting |
 | B8 | `harness/src/executor.ts` → `executor/<object>.ts` | one PR; the harness job |
+
+**What B1 found** (corrections to this record, made where B1 touched it):
+
+- `quest.rs` measured about 3300 lines, so it is the directory `quest/` under the
+  1500-line rule; the types the list above did not place (`Mark`, `StealthZone`,
+  the camera shot, `EffectSite`, the serde helpers) have the modules named in §2.
+- One glob per module is one glob per module *in the root namespace*. The
+  modules reached by path (`blocks`, `blockshape`, `color`, `fluid`, `fmt`,
+  `license`, `lightning`, `metrics`, `perception`, `rig`, `split`,
+  `viewdistance`) take none: globbing them makes nine names ambiguous, `Body`
+  among them, and an ambiguous root name is a removed one.
+- A root alias is a per-item list. `l10n_inventory`, `l10n_plain` and
+  `l10n_untag` are dropped; their callers name `l10n::inventory`, `l10n::plain`
+  and `l10n::untag`.
+- `detailplan::owed_anchors` was a forwarding second home of
+  `siteplan::owed_anchors` and collided with it under the globs; it is deleted.
+- Reading every file under `crates/dsl/src/` in `check-capability-ownership`
+  widens checks C and D past the stage surface and reds on seven matches no
+  ledger holds (`Gate`/`Guard`, `ArtNarrate`/`OptionLabel`, `Body`/`Opening`,
+  `Campaign`/`RawCampaign`, and `Edge.gating`, `Edge.one_way`,
+  `Edge.shortcut`). B1 keeps the population to the stage modules; widening it
+  is its own step, which triages those seven.
+- `purchase.rs` carries checks, so its absorption into `economy.rs` is B2's.
 
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is

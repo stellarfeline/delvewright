@@ -5,7 +5,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, parse_campaign};
+use delvewright_dsl::{RawCampaign, check_campaign, l10n, parse_campaign};
 use std::sync::LazyLock;
 
 /// A v0.8 quests document that seals `anchor/door` with an authored answer.
@@ -76,7 +76,7 @@ fn sealed_hint_validates_clean_at_0_8() {
 #[test]
 fn an_authored_hint_is_inventoried() {
     let c = parse_campaign(&campaign_with_quests(QUESTS_V08.as_str())).expect("campaign parses");
-    let inv = l10n_inventory(&c);
+    let inv = l10n::inventory(&c);
     assert_eq!(
         inv.get("fx.open-the-door.done.0.sealed_hint")
             .map(|s| s.as_str()),
@@ -96,7 +96,7 @@ fn an_unauthored_hint_is_not_inventoried() {
     );
     let c = parse_campaign(&campaign_with_quests(&plain)).expect("campaign parses");
     assert!(
-        !l10n_inventory(&c)
+        !l10n::inventory(&c)
             .keys()
             .any(|k| k.ends_with("sealed_hint")),
         "an unauthored seal answer must not appear in the inventory"

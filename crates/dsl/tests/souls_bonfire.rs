@@ -10,7 +10,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n_inventory, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
 use std::sync::LazyLock;
 
 /// A v0.6 quests document with a bonfire (with an `on_rest` narrate) and a wave
@@ -145,7 +145,7 @@ fn respawns_on_rest_without_a_bonfire_is_dw0356() {
 #[test]
 fn on_rest_strings_enter_the_l10n_inventory() {
     let campaign = parse_campaign(&campaign_with_quests(QUESTS_V06.as_str())).expect("parses");
-    let inv = l10n_inventory(&campaign);
+    let inv = l10n::inventory(&campaign);
     let key = inv
         .iter()
         .find(|(_, v)| v.as_str() == "The fire steadies you.")
@@ -155,7 +155,11 @@ fn on_rest_strings_enter_the_l10n_inventory() {
         key.contains(".rest."),
         "the on_rest key must carry the `rest` nesting segment, got `{key}`"
     );
-    assert_eq!(inv, l10n_inventory(&campaign), "inventory is deterministic");
+    assert_eq!(
+        inv,
+        l10n::inventory(&campaign),
+        "inventory is deterministic"
+    );
 }
 
 // ---------------------------------------------------------------------------

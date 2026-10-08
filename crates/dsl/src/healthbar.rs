@@ -31,10 +31,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::EncounterTier;
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::Campaign;
 use crate::fight::{Fight, FightKind, fights, unleashed_actors};
-use crate::stages::EncounterTier;
 
 /// The smallest `range` a bar may declare, in blocks — the same bound
 /// `lane.aggro_radius` carries.

@@ -66,7 +66,7 @@
 
 use crate::envelope::Campaign;
 use crate::fight::Fight;
-use crate::stages::{Assembly, EnvTrigger, Loop, Quest, QuestEffect, Shop, Shortcut, Trap};
+use crate::{Assembly, EnvTrigger, Loop, Quest, QuestEffect, Shop, Shortcut, Trap};
 
 /// The local part of a type-prefixed id (`npc/keeper` → `keeper`), the segment
 /// every l10n key is built from. Duplicated from `l10n::local` deliberately: this
@@ -957,6 +957,219 @@ pub fn for_each_effect_root_mut<'a>(c: &'a mut Campaign, f: &mut RootVisitorMut<
         assembly_owner: |_m| (),
         loop_owner: |_l| (),
     );
+}
+
+/// Where in the campaign one effect sits — the attribution every per-branch
+/// proof and the branch chronicle need (spec-0025).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EffectSite {
+    /// A quest's `on_objective_complete[<objective>]` bundle.
+    Objective {
+        /// The owning quest.
+        quest: String,
+        /// The objective whose completion fires the bundle.
+        objective: String,
+    },
+    /// A quest's `on_complete` bundle.
+    QuestComplete {
+        /// The owning quest.
+        quest: String,
+    },
+    /// An environment trigger's `effects` bundle — ambient, no DAG position.
+    Trigger {
+        /// The trigger id.
+        trigger: String,
+    },
+    /// A trap's spec-0022 `payload` bundle — ambient, no DAG position.
+    Trap {
+        /// The trap id.
+        trap: String,
+    },
+    /// A **dialogue option's** `set-checkpoint` `on_respawn` bundle — ambient, no
+    /// DAG position, and the only site that does not live in the quests stage.
+    ///
+    /// This variant did not exist until the effect-root sweep, and its absence was
+    /// load-bearing: `EffectSite` had no way to *represent* a dialogue-hosted
+    /// bundle, so the four proofs that walk [`for_each_campaign_effect`]
+    /// (`combat::actor_beats`, `validate::difficulty_checks`,
+    /// `daylight::fightable_actor`, `nav::actor_fights`) could not have seen root 5
+    /// even if their authors had thought of it. Widening the type is what let the
+    /// walk widen.
+    DialogueRespawn {
+        /// The NPC whose dialogue tree hosts the option.
+        npc: String,
+        /// The node the option sits under.
+        node: String,
+    },
+    /// A `shortcuts[].on_unlock` bundle (spec-0016 §2) — ambient, no DAG
+    /// position, and the sixth root: representable here only since spec-0031, for
+    /// exactly the reason [`EffectSite::DialogueRespawn`] records above.
+    ShortcutUnlock {
+        /// The shortcut id.
+        shortcut: String,
+    },
+    /// A `shops[].offers[].effects` bundle (DSL v0.10, spec-0032) — ambient, no
+    /// DAG position: nobody is forced to buy anything.
+    ShopOffer {
+        /// The shop id.
+        shop: String,
+        /// The offer's index within that shop, which is also its button order.
+        offer: usize,
+    },
+    /// The campaign's `on_death` bundle (spec-0031) — ambient, no DAG position,
+    /// and no owning object: there is one per campaign.
+    OnDeath,
+    /// A wave's or an actor's `on_kill` bundle (spec-0074) — ambient, no DAG
+    /// position: nobody is forced to be credited with a kill.
+    OnKill {
+        /// The fight's id (`wave/<kebab>` or `actor/<kebab>`).
+        fight: String,
+    },
+    /// An assembly strike step's `on_land` bundle (spec-0082) — ambient, no
+    /// DAG position: nobody is forced to stand where a blow lands.
+    AssemblyLand {
+        /// The assembly id.
+        assembly: String,
+        /// The step's index within the pattern.
+        step: usize,
+    },
+    /// A loop's `on_cross` bundle (spec-0086) — no DAG position of its own: it
+    /// runs when a body crosses the holding slab.
+    LoopCross {
+        /// The loop id (`loop/<kebab>`).
+        r#loop: String,
+    },
+}
+
+impl EffectSite {
+    /// The quest this site belongs to, if it has a DAG position at all.
+    ///
+    /// **This `Option` is the capability, and it is on the enum rather than on the
+    /// variants that happen to have a quest.** Only two of the eight sites name a
+    /// quest, because only two of the eight roots HAVE a DAG position: an ambient
+    /// root — a trigger, a trap payload, a dialogue `on_respawn`, a shortcut's
+    /// `on_unlock`, the campaign's `on_death`, a shop offer — fires at a moment no
+    /// static model can order, and inventing a quest for one would be exactly the
+    /// over-attribution the completability model must not make. Asking the question
+    /// of every variant and getting an honest `None` is the lift;
+    /// `tools/ci/check-capability-ownership.py` check D asked for it while the field
+    /// was still cross-cutting, and spec-0032's eighth site took it below that
+    /// threshold, so the reasoning lives here now rather than in an exemption.
+    pub fn quest(&self) -> Option<&str> {
+        match self {
+            EffectSite::Objective { quest, .. } | EffectSite::QuestComplete { quest } => {
+                Some(quest)
+            }
+            EffectSite::Trigger { .. }
+            | EffectSite::Trap { .. }
+            | EffectSite::DialogueRespawn { .. }
+            | EffectSite::ShortcutUnlock { .. }
+            | EffectSite::ShopOffer { .. }
+            | EffectSite::OnDeath
+            | EffectSite::OnKill { .. }
+            | EffectSite::AssemblyLand { .. }
+            | EffectSite::LoopCross { .. } => None,
+        }
+    }
+}
+
+/// Visit **every** effect the compiler can lower — at every one of the five
+/// effect roots, top-level and transitively nested — in a fixed deterministic
+/// order, invoking `f(json_pointer, site, effect)`.
+///
+/// The roots come from [`crate::effects::for_each_effect_root`], the single
+/// enumeration; nesting is descended through the single
+/// [`QuestEffect::nested_effect_lists_labeled`] authority. Neither axis is
+/// enumerated here, which is the point: this walk used to hand-list four of the
+/// five roots (it had no `EffectSite` variant for the fifth), so every proof
+/// defined in terms of it inherited that blind spot.
+pub fn for_each_campaign_effect<'a>(
+    c: &'a crate::envelope::Campaign,
+    f: &mut dyn FnMut(&str, &EffectSite, &'a QuestEffect),
+) {
+    crate::effects::for_each_effect_root(c, &mut |root, list| {
+        let site = match root.owner {
+            crate::effects::EffectRootOwner::ObjectiveComplete { quest, objective } => {
+                EffectSite::Objective {
+                    quest: quest.id.as_str().to_string(),
+                    objective: objective.to_string(),
+                }
+            }
+            crate::effects::EffectRootOwner::QuestComplete { quest } => EffectSite::QuestComplete {
+                quest: quest.id.as_str().to_string(),
+            },
+            crate::effects::EffectRootOwner::Trigger(t) => EffectSite::Trigger {
+                trigger: t.id.as_str().to_string(),
+            },
+            crate::effects::EffectRootOwner::TrapPayload(t) => EffectSite::Trap {
+                trap: t.id.as_str().to_string(),
+            },
+            crate::effects::EffectRootOwner::DialogueRespawn => {
+                // The npc and node are in the root's path; parse them back rather
+                // than widening the root walk's owner for one consumer.
+                let seg = |n: usize| -> String {
+                    root.path.split('/').nth(n).unwrap_or_default().to_string()
+                };
+                EffectSite::DialogueRespawn {
+                    npc: seg(3),
+                    node: seg(5),
+                }
+            }
+            crate::effects::EffectRootOwner::ShortcutUnlock(s) => EffectSite::ShortcutUnlock {
+                shortcut: s.id.as_str().to_string(),
+            },
+            crate::effects::EffectRootOwner::OnDeath => EffectSite::OnDeath,
+            crate::effects::EffectRootOwner::ShopOffer(h) => EffectSite::ShopOffer {
+                shop: h.id.as_str().to_string(),
+                // The offer index is in the root's path
+                // (`/content/shops/<h>/offers/<i>/effects`), parsed back rather
+                // than widening the owner for one consumer — the same call the
+                // dialogue arm above makes. Segment 5 is the index: segment 4 is
+                // the literal `offers`, which parses as nothing and reported
+                // every offer as the shop's first.
+                offer: root
+                    .path
+                    .split('/')
+                    .nth(5)
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0),
+            },
+            crate::effects::EffectRootOwner::OnKill(f) => EffectSite::OnKill {
+                fight: f.id().to_string(),
+            },
+            crate::effects::EffectRootOwner::AssemblyLand(m) => EffectSite::AssemblyLand {
+                assembly: m.id.as_str().to_string(),
+                // `/content/assemblies/<m>/strikes/pattern/<s>/on_land`: segment
+                // 6 is the step index, parsed back as the shop arm does.
+                step: root
+                    .path
+                    .split('/')
+                    .nth(6)
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0),
+            },
+            crate::effects::EffectRootOwner::LoopCross(l) => EffectSite::LoopCross {
+                r#loop: l.id.as_str().to_string(),
+            },
+        };
+        for (i, eff) in list.iter().enumerate() {
+            campaign_effect_deep(eff, &format!("{}/{i}", root.path), &site, f);
+        }
+    });
+}
+
+fn campaign_effect_deep<'a>(
+    eff: &'a QuestEffect,
+    path: &str,
+    site: &EffectSite,
+    f: &mut dyn FnMut(&str, &EffectSite, &'a QuestEffect),
+) {
+    f(path, site, eff);
+    for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+        for (j, inner) in list.iter().enumerate() {
+            campaign_effect_deep(inner, &format!("{path}/{pseg}/{j}"), site, f);
+        }
+    }
 }
 
 #[cfg(test)]

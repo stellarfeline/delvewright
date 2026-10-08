@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 
 use crate::envelope::Campaign;
 use crate::healthbar::HealthBar;
-use crate::stages::{
+use crate::{
     Actor, EncounterTier, Objective, OnKill, QuestEffect, Verb, Wave, for_each_campaign_effect,
 };
 

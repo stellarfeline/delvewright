@@ -8,10 +8,10 @@ mod common;
 use std::fs;
 
 use delvewright_dsl::envelope::Envelope;
-use delvewright_dsl::stages::{
+use delvewright_dsl::to_canonical_string;
+use delvewright_dsl::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
 };
-use delvewright_dsl::to_canonical_string;
 use serde::{Serialize, de::DeserializeOwned};
 
 fn roundtrip<T: DeserializeOwned + Serialize>(name: &str) {

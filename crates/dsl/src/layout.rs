@@ -59,11 +59,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::Objective;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
 use crate::ids::{AnchorId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId};
 use crate::metrics::{MetricKind, Metrics, Reads};
-use crate::stages::Objective;
 
 crate::dw_code! {
     /// `DW0814`: the layout graph is not a graph — a duplicate id, an endpoint
@@ -1558,7 +1558,7 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
 }
 
 /// The index of a quest in the stage-5 document, for a diagnostic's path.
-fn quest_index(c: &Campaign, q: &crate::stages::Quest) -> usize {
+fn quest_index(c: &Campaign, q: &crate::Quest) -> usize {
     c.quests
         .content
         .quests

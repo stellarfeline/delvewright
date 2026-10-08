@@ -41,9 +41,9 @@
 //! Determinism (ADR-0006): iteration is over slices and `BTreeMap` keys, in a
 //! fixed order that is part of this module's contract.
 
+use crate::StateCompare;
 use crate::envelope::Campaign;
 use crate::ids::FlagId;
-use crate::stages::StateCompare;
 
 /// A gate, as one value: everything that decides whether the thing carrying it
 /// may happen.
@@ -109,7 +109,7 @@ impl<'a> Gate<'a> {
 // here is a consumer no proof written against `Gate` can see — which is exactly
 // the shape `crates/dsl/tests/gate_consumers.rs` fails on.
 
-impl crate::stages::Objective {
+impl crate::Objective {
     /// This objective's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -120,7 +120,7 @@ impl crate::stages::Objective {
     }
 }
 
-impl crate::stages::QuestEffect {
+impl crate::QuestEffect {
     /// This effect's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -131,7 +131,7 @@ impl crate::stages::QuestEffect {
     }
 }
 
-impl crate::stages::EnvTrigger {
+impl crate::EnvTrigger {
     /// This trigger's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -142,7 +142,7 @@ impl crate::stages::EnvTrigger {
     }
 }
 
-impl crate::stages::Trap {
+impl crate::Trap {
     /// This trap's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -153,7 +153,7 @@ impl crate::stages::Trap {
     }
 }
 
-impl crate::stages::DialogueOption {
+impl crate::DialogueOption {
     /// This option's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -164,7 +164,7 @@ impl crate::stages::DialogueOption {
     }
 }
 
-impl crate::stages::CastPlacement {
+impl crate::CastPlacement {
     /// This placement's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -175,7 +175,7 @@ impl crate::stages::CastPlacement {
     }
 }
 
-impl crate::stages::ShopOffer {
+impl crate::ShopOffer {
     /// This offer's whole gate, as one value (DSL v0.10, spec-0032) — a **price
     /// is a gate**, so a shop declares no comparison surface of its own.
     ///
@@ -190,7 +190,7 @@ impl crate::stages::ShopOffer {
     }
 }
 
-impl crate::stages::Loop {
+impl crate::Loop {
     /// This loop's whole gate, as one value (spec-0086): the loop **holds** while
     /// it is open and stands down while it is shut.
     pub fn gate(&self) -> Gate<'_> {
@@ -202,11 +202,11 @@ impl crate::stages::Loop {
     }
 }
 
-impl crate::stages::LethalVolume {
+impl crate::LethalVolume {
     /// This volume's whole gate, as one value (spec-0088) — the [`Guard`]
     /// under `when`, or the always-open gate when it declares none.
     ///
-    /// [`Guard`]: crate::stages::Guard
+    /// [`Guard`]: crate::Guard
     pub fn gate(&self) -> Gate<'_> {
         match &self.when {
             Some(g) => Gate::of(&g.requires_flags, &g.forbids_flags, &g.requires_state),
@@ -402,7 +402,7 @@ impl GateBinding {
 /// `f(&site, gate)`.
 ///
 /// Order: every objective (quest order, objective order); every effect (via
-/// [`crate::stages::for_each_campaign_effect`], which inherits the single effect-root
+/// [`crate::for_each_campaign_effect`], which inherits the single effect-root
 /// enumeration and descends nesting); every trigger; every trap; every dialogue
 /// option; every cast placement; every shop offer; every lethal volume.
 ///
@@ -472,7 +472,7 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
     }
     // C2 effects — every root, top-level and nested, from the single enumeration.
     enumerated[slot_of(GateConsumer::Effect)] = true;
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
         visit(
             GateConsumer::Effect,
             format!("{path}/when"),
@@ -654,8 +654,8 @@ impl DatumSet {
     }
 
     /// Intersect with the values that SATISFY `op value`.
-    pub fn require(&mut self, op: crate::stages::CompareOp, value: i32) {
-        use crate::stages::CompareOp::*;
+    pub fn require(&mut self, op: crate::CompareOp, value: i32) {
+        use crate::CompareOp::*;
         match op {
             Equals => match self.pin {
                 Some(p) if p != value => self.contra = true,
@@ -672,8 +672,8 @@ impl DatumSet {
     /// Intersect with the values that VIOLATE `op value` — the negation of
     /// [`DatumSet::require`], spelled once so the two can never disagree about
     /// what a term means.
-    pub fn forbid(&mut self, op: crate::stages::CompareOp, value: i32) {
-        use crate::stages::CompareOp::*;
+    pub fn forbid(&mut self, op: crate::CompareOp, value: i32) {
+        use crate::CompareOp::*;
         match op {
             Equals => self.require(NotEquals, value),
             NotEquals => self.require(Equals, value),
@@ -847,7 +847,7 @@ mod tests {
         }
     }
 
-    use crate::stages::CompareOp::*;
+    use crate::CompareOp::*;
 
     #[test]
     fn datum_set_picks_within_bounds_and_around_holes() {
@@ -935,8 +935,8 @@ mod tests {
 
     #[test]
     fn gate_contradiction_answers_per_axis() {
+        use crate::StateCompare;
         use crate::ids::FlagId;
-        use crate::stages::StateCompare;
         let f: Vec<FlagId> = vec![FlagId("flag/paid".to_string())];
         let g = Gate::of(&f, &f, &[]);
         assert_eq!(
@@ -969,8 +969,8 @@ mod tests {
     /// still both hold.
     #[test]
     fn exclusions_are_the_conjunctions_contradictions() {
+        use crate::StateCompare;
         use crate::ids::{FlagId, StateId};
-        use crate::stages::StateCompare;
         let x = vec![FlagId("flag/x".to_string())];
         let y = vec![FlagId("flag/y".to_string())];
         let requires_x = Gate::of(&x, &[], &[]);

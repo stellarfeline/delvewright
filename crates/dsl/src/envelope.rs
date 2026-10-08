@@ -9,7 +9,7 @@ use crate::diagnostic::{Diagnostic, codes};
 use crate::ids::CampaignId;
 use crate::layout::{GeometryBriefContent, LayoutGraphContent};
 use crate::siteplan::SitePlanContent;
-use crate::stages::{
+use crate::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
     WorldEditsContent,
 };

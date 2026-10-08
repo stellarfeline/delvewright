@@ -63,7 +63,7 @@ hole rather than a design. `MODIFIER_MIN_SHARE` is that line.
 
 A/B are text scans of the compiler; a private interaction body built through a
 helper that hides the `summon`, or a default string assembled at runtime from
-fragments, is invisible here. C/D parse `stages.rs` structurally but only see what
+fragments, is invisible here. C/D parse the stage-surface modules structurally but only see what
 `pub` fields and variant blocks look like textually. This gate makes the KNOWN
 shapes un-addable-in-silence. It does not certify that none remain.
 
@@ -247,7 +247,48 @@ BAKED_CONST = re.compile(
 # Checks C/D — the DSL surface
 # ---------------------------------------------------------------------------
 
-STAGES = "crates/dsl/src/stages.rs"
+# The DSL stage surface: the modules that hold the stage documents' types, one
+# per object class (ADR-0031). A registry, read in this order; a module that
+# stops existing is a refusal, never a smaller population.
+DSL_STAGE_MODULES = (
+    "crates/dsl/src/world.rs",
+    "crates/dsl/src/body.rs",
+    "crates/dsl/src/npc.rs",
+    "crates/dsl/src/dialogue.rs",
+    "crates/dsl/src/class.rs",
+    "crates/dsl/src/quest_plan.rs",
+    "crates/dsl/src/quest/mod.rs",
+    "crates/dsl/src/quest/objective.rs",
+    "crates/dsl/src/quest/verb.rs",
+    "crates/dsl/src/quest/effect.rs",
+    "crates/dsl/src/state.rs",
+    "crates/dsl/src/loot.rs",
+    "crates/dsl/src/trap.rs",
+    "crates/dsl/src/timed_gate.rs",
+    "crates/dsl/src/ambush.rs",
+    "crates/dsl/src/shortcut.rs",
+    "crates/dsl/src/trigger.rs",
+    "crates/dsl/src/wave.rs",
+    "crates/dsl/src/onkill.rs",
+    "crates/dsl/src/cast.rs",
+    "crates/dsl/src/actor.rs",
+    "crates/dsl/src/cutscene.rs",
+    "crates/dsl/src/assembly.rs",
+    "crates/dsl/src/stealth.rs",
+    "crates/dsl/src/lethal.rs",
+    "crates/dsl/src/loop.rs",
+    "crates/dsl/src/economy.rs",
+    "crates/dsl/src/mark.rs",
+    "crates/dsl/src/world_edits.rs",
+    "crates/dsl/src/effects.rs",
+    "crates/dsl/src/serde_fields.rs",
+)
+
+
+def dsl_sources(root: pathlib.Path) -> list:
+    """The stage-surface modules, in registry order."""
+    return [root / rel for rel in DSL_STAGE_MODULES]
+
 
 STRUCTURAL_TWINS = {
     ("TimedGateDisarm", "TrapDisarm"): (
@@ -383,10 +424,12 @@ EFFECT_BUNDLE_FIELD = re.compile(r"^\s*(?:pub )?([a-z0-9_]+):\s*(?:Vec<QuestEffe
 
 def check_effect_bundles(root):
     found, fails = {}, []
-    for i, line in enumerate((root / STAGES).read_text(encoding="utf-8").split("\n")):
-        m = EFFECT_BUNDLE_FIELD.match(line)
-        if m:
-            found.setdefault(m.group(1), f"{STAGES}:{i + 1}")
+    for path in dsl_sources(root):
+        rel = path.relative_to(root).as_posix()
+        for i, line in enumerate(path.read_text(encoding="utf-8").split("\n")):
+            m = EFFECT_BUNDLE_FIELD.match(line)
+            if m:
+                found.setdefault(m.group(1), f"{rel}:{i + 1}")
     for name, site in sorted(found.items()):
         if name not in EFFECT_BUNDLES:
             fails.append(
@@ -452,18 +495,21 @@ STORY_NODE_CTORS = (
 # is precisely how this class survives: the exemption is written for one
 # construction and silently covers every later one beside it.
 HAPPENING_NONE_ALLOWED = {
-    "crates/dsl/src/stages.rs": (
-        2,
-        "Two sites, named individually so a THIRD is still a failure. (1) "
+    "crates/dsl/src/quest/effect.rs": (
+        1,
         "`impl From<Verb> for QuestEffect` — the one definition of 'this verb, "
         "unguarded, with no story note'. It is where the words `happening: None` "
         "are written down, not a place a beat is generated; every caller that "
-        "reaches it is counted at its own `.into()`. (2) `Ambush::to_trigger`, "
-        "the CONTINUATION beat: an ambush is one story node, so its single "
-        "declaration is stamped on the first generated `spawn-actor` and the "
-        "matching `unleash-actor` deliberately carries none — repeating it would "
-        "pad the chronicle and trip `DW0485`. A further site here is a second "
-        "desugarer, and it owes its own author-facing field.",
+        "reaches it is counted at its own `.into()`. A further site here is a "
+        "second desugarer, and it owes its own author-facing field.",
+    ),
+    "crates/dsl/src/ambush.rs": (
+        1,
+        "`Ambush::to_trigger`, the CONTINUATION beat: an ambush is one story "
+        "node, so its single declaration is stamped on the first generated "
+        "`spawn-actor` and the matching `unleash-actor` deliberately carries "
+        "none — repeating it would pad the chronicle and trip `DW0485`. A further "
+        "site here is a second desugarer, and it owes its own author-facing field.",
     ),
 }
 
@@ -640,7 +686,9 @@ def check_baked(root):
 
 def parse_stages(root):
     """`{struct: [fields]}, {enum: {variant: [fields]}}` from the DSL surface."""
-    lines = (root / STAGES).read_text(encoding="utf-8").split("\n")
+    lines = []
+    for path in dsl_sources(root):
+        lines += path.read_text(encoding="utf-8").split("\n")
     structs, enums = {}, {}
     i = 0
     while i < len(lines):
@@ -778,8 +826,10 @@ def stated_bindings(root: pathlib.Path) -> tuple[dict[str, int], list[str]]:
 
 def main() -> int:
     root = repo_root()
-    if not (root / STAGES).exists():
-        print(f"FAIL: {STAGES} not found — the DSL surface moved.")
+    missing = [p for p in dsl_sources(root) if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"FAIL: {p.relative_to(root).as_posix()} not found — the DSL surface moved.")
         return 1
 
     structs, enums = parse_stages(root)
