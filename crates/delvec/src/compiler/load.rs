@@ -408,7 +408,7 @@ fn load_skins_dir(dir: &Path) -> std::io::Result<BTreeMap<String, Vec<u8>>> {
         if !path.is_file() {
             continue;
         }
-        let bytes = std::fs::read(&path).map_err(|e| named(&format!("skins/{name}"), e))?;
+        let bytes = std::fs::read(&path).map_err(|e| named(format!("skins/{name}"), e))?;
         out.insert(stem.to_string(), bytes);
     }
     Ok(out)

@@ -3843,19 +3843,19 @@ fn v06_checks(
                 ),
             ));
         }
-        if let Some(skin) = &a.skin {
-            if !is_kebab(&skin.texture_id) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "quests",
-                    format!("/content/actors/{i}/skin/texture_id"),
-                    format!(
-                        "actor skin `texture_id` `{}` is malformed — it must be a bare kebab token \
-                         (e.g. `giant-idle`), matching the `skins/<texture_id>.png` filename",
-                        skin.texture_id
-                    ),
-                ));
-            }
+        if let Some(skin) = &a.skin
+            && !is_kebab(&skin.texture_id)
+        {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "quests",
+                format!("/content/actors/{i}/skin/texture_id"),
+                format!(
+                    "actor skin `texture_id` `{}` is malformed — it must be a bare kebab token \
+                     (e.g. `giant-idle`), matching the `skins/<texture_id>.png` filename",
+                    skin.texture_id
+                ),
+            ));
         }
         if let Some(f) = station_kind_diag(
             &providers,
@@ -5479,19 +5479,19 @@ fn v04_checks(
     // ride the body, not the file (spec-0097 §4.3). So only the id's shape is
     // refused here.
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        if let Some(skin) = &npc.skin {
-            if !is_kebab(&skin.texture_id) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "npcs",
-                    format!("/content/npcs/{i}/skin/texture_id"),
-                    format!(
-                        "skin `texture_id` `{}` is malformed — it must be a bare kebab token \
-                         (e.g. `keeper-armor`), matching the `skins/<texture_id>.png` filename",
-                        skin.texture_id
-                    ),
-                ));
-            }
+        if let Some(skin) = &npc.skin
+            && !is_kebab(&skin.texture_id)
+        {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "npcs",
+                format!("/content/npcs/{i}/skin/texture_id"),
+                format!(
+                    "skin `texture_id` `{}` is malformed — it must be a bare kebab token \
+                     (e.g. `keeper-armor`), matching the `skins/<texture_id>.png` filename",
+                    skin.texture_id
+                ),
+            ));
         }
     }
 
