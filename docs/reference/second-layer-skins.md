@@ -55,7 +55,7 @@ These are the six player overlay parts. Each one is a child of its base part, so
 
 The mannequin renders through the same model. `ClientMannequin` extends `Mannequin` and implements `ClientAvatarEntity`, and `EntityRenderers.createAvatarRenderers` builds an `AvatarRenderer` for each `PlayerModelType`. `AvatarRenderer.extractRenderState` sets `showHat`, `showJacket`, `showLeftSleeve`, `showRightSleeve`, `showLeftPants` and `showRightPants` from `Avatar.isModelPartShown(PlayerModelPart.*)`, and `PlayerModel.setupAnim` reads those six flags.
 
-The `Mannequin` constructor sets the customisation byte to `ALL_LAYERS`. `Mannequin.readAdditionalSaveData` reads `hidden_layers`, a list of `PlayerModelPart` ids, through `LAYERS_CODEC`, and falls back to `ALL_LAYERS`. **So a mannequin summoned without `hidden_layers` draws all six overlay parts.** The exact bit combinator in `LAYERS_CODEC` was not traced instruction by instruction, but the field name, the fallback and the `(byte & mask)` filter all agree with this reading.
+The `Mannequin` constructor sets the customisation byte to `ALL_LAYERS`. `Mannequin.readAdditionalSaveData` reads `hidden_layers`, a list of `PlayerModelPart` ids, through `LAYERS_CODEC`, and falls back to `ALL_LAYERS`. **So a mannequin summoned without `hidden_layers` draws all six overlay parts.** The codec's arithmetic is settled by running it (`tools/maintenance/extract-model-parts.py`, recorded in `crates/delvec/data/model-parts-1.21.11.json`): `ALL_LAYERS` is 127, a one-element list `["<id>"]` decodes to `127 & ~mask(<id>)` for each of the seven ids (`cape`, `jacket`, `left_sleeve`, `right_sleeve`, `left_pants_leg`, `right_pants_leg`, `hat`), and 127 encodes as `[]`. The list is the layers the mannequin does not draw; `NpcSkin.hidden_layers` emits it (spec-0097).
 
 ### Zombie and husk: `HumanoidModel.createMesh(NONE, 0)`, 64×64
 
@@ -143,13 +143,11 @@ So a retexture **is** the second layer exactly when the target model already has
 
 A sheet painted in the player layout on a model that does not have the player layout is the defect class: the paint goes to UVs that no cube samples.
 
-## What the toolchain draws today (cited from the tree)
+## What the toolchain draws (cited from the tree)
 
-- `delve_skin` composes **one 64×64 wide-model player skin** per cast entry. It addresses the six base parts through skinpy-extended 1.0.1, whose `skin.py` carries `# TODO: Second layer` and defines parts only at the base origins (`0,0`, `16,16`, `40,16`, `32,48`, `0,16`, `16,48`).
-- Measured on the three goldens in `tools/creator/skin/tests/fixtures/golden/`: every base region is fully opaque and every overlay region (`32,0`, `16,32`, `40,32`, `48,48`, `0,32`, `0,48`) has **0** opaque pixels.
-- The skin is worn by a **mannequin**. `crates/delvec/src/compiler/emit.rs` summons `minecraft:mannequin` with `profile:{texture:"delvewright:npc/<id>/<texture_id>",model:"<wide|slim>"}`, for a skinned NPC and for an actor body. It emits no `hidden_layers`. The cast entry's `hidden_layers` reaches only the catalog card (`catalog.py`).
-- So each shipped NPC draws all six overlay boxes, and every one samples transparent pixels. The overlay is **present and empty**. Filling it needs no engine change: the same PNG carries it.
-- Mob textures (`world.textures[]`, spec-0084) are drawn outside this toolchain, by campaign-side scripts.
+- `delve_skin` composes both layers on the boxes of the model the sheet is for, read from the model-part table: a 64×64 wide-model mannequin skin, or a mob sheet for a model whose parts are the player's size (`entity`). skinpy-extended 1.0.1 defines parts only at the base origins, so the composer builds each box as a skinpy `BodyPart` at the table's own `texOffs`; the shell features (beard, hair, hood, high collar) follow recommendation 3 below (spec-0097).
+- The mannequin is summoned with `profile:{texture:"delvewright:npc/<id>/<texture_id>",model:"<wide|slim>"}`, for a skinned NPC and for an actor body, plus `hidden_layers:[…]` when the skin hides any layer.
+- `python -m delve_skin parts <model>` prints any model's boxes for a sheet drawn by hand.
 
 ## Recommendation (authored)
 
@@ -161,7 +159,7 @@ A sheet painted in the player layout on a model that does not have the player la
    - Hood: every hat face except an opening on the front face (the face rows stay transparent), with the hood's fall continuing on the jacket's top face and the upper rows of its back.
    - Collar: the jacket's top face around its rim and the top one or two rows of its four sides. A closed collar can also take the hat's bottom face at the neck line.
 4. **For a mob with an overlay, the table is per model, never the player table.** Zombie and husk: the hat only, in the same sheet. Villager: hat 8×10×8 and the 8×20×6 robe at 0,38. Piglin: jacket, sleeves and pants at the player positions, and no hat. Drowned, stray and bogged: a separate sheet whose overlay is a grown copy of the **base** positions, drawn as a second base skin, not as an overlay layout. Derive each table from the pinned client the same way as the player table.
-5. **Refuse paint no cube samples.** A sheet with opaque pixels outside its target model's footprint is the Stranding defect. A sheet whose opaque pixels fall only on faces a standing player cannot see (the tops of grown hats) is its milder form. Both are decidable from the derived part table and the unwrap. Refusing them at the point where a texture is declared is a toolchain or compiler obligation for a later spec. This round does not build it.
+5. **Refuse paint no cube samples.** A sheet with opaque pixels outside its target model's footprint is the Stranding defect. A sheet whose opaque pixels fall only on faces a standing player cannot see (the tops of grown hats) is its milder form. Both are decidable from the derived part table and the unwrap, and the compiler refuses both where a sheet enters a delve: `DW0978` and `DW0979` (spec-0097).
 
 ## Cross-check
 
@@ -184,7 +182,7 @@ Mojang's own `drowned_outer_layer.png` paints only the base positions and nothin
 
 ## Not established
 
-- The `Mannequin.LAYERS_CODEC` bit arithmetic, read from its shape rather than traced instruction by instruction (see the mannequin section).
+- The parched (its one sheet carries 100 opaque pixels no box of `PARCHED` reaches, face or unwrap corner) and the zombie villager (its profession sheets carry the villager's crossed-arms region, which its own model does not build): the extractor's cross-check could not reconcile either, so neither is in the table.
 - The render type `AvatarRenderer` uses for overlay alpha on a resource-pack mannequin texture.
 - `BoggedModel.createBodyLayer`, the bogged base, was not read. Only `BOGGED_OUTER_LAYER` was.
 - Nothing on this page was observed in a running client. Every claim is read from the jar's bytecode and textures.
