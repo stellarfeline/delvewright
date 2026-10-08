@@ -127,6 +127,7 @@ commonest legitimate update look vacuous.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import re
@@ -140,6 +141,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 import gallery_domain  # noqa: E402
 from gallery_domain import build_id, overlays  # noqa: E402
+import parallel  # noqa: E402
 from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
@@ -281,8 +283,14 @@ def materialise(overlay: str | None, dest: Path) -> None:
     gallery_domain.materialise(dest, GALLERY / "overlays" / overlay if overlay else None)
 
 
-def build_one(delvec: Path, prefabs: Path, overlay: str | None, lang: str, work: Path):
-    """One build of the domain: `(manifest, warning rows)`."""
+def run_build(
+    delvec: Path, prefabs: Path, overlay: str | None, lang: str, work: Path
+) -> tuple[Path, subprocess.CompletedProcess]:
+    """Materialise one point and compile it, into directories no other build uses.
+
+    The half of a build that takes the time and says nothing, so it may run on a
+    worker of the shared pool (`tools/lib/parallel.py`); `read_build` judges it.
+    """
     src = work / f"src-{overlay or 'primary'}-{lang}"
     out = work / f"out-{overlay or 'primary'}-{lang}"
     materialise(overlay, src)
@@ -291,6 +299,11 @@ def build_one(delvec: Path, prefabs: Path, overlay: str | None, lang: str, work:
         capture_output=True,
         text=True,
     )
+    return out, r
+
+
+def read_build(overlay: str | None, out: Path, r: subprocess.CompletedProcess):
+    """`(manifest, warning rows)` of one finished build, or the refusal it earns."""
     if r.returncode != 0:
         die(
             f"build `{overlay or 'primary'}` in `{lang}` exited {r.returncode}. "
@@ -517,10 +530,17 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="gallery-baseline-"))
     manifests, warnings = {}, {}
     try:
-        for overlay, lang in builds:
-            m, rows = build_one(delvec, prefabs, overlay, lang, work)
-            manifests[build_id(overlay, lang)] = m
-            warnings[build_id(overlay, lang)] = rows
+        # The builds share nothing but their read-only inputs, so they run on
+        # the shared pool and are READ in the order listed: the first refusal,
+        # and every row, are the serial walk's.
+        runs = parallel.ordered(
+            lambda b: run_build(delvec, prefabs, b[0], b[1], work), builds
+        )
+        with contextlib.closing(runs):
+            for (overlay, lang), outcome in zip(builds, runs):
+                m, rows = read_build(overlay, *outcome.get())
+                manifests[build_id(overlay, lang)] = m
+                warnings[build_id(overlay, lang)] = rows
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

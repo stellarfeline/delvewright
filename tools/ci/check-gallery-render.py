@@ -45,12 +45,14 @@ is vacuous, not a pass.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+import parallel  # noqa: E402
 from delvec_bin import resolve as resolve_delvec  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
@@ -168,49 +170,64 @@ def main() -> int:
     # ------------------------------------------------------------ produce ----
     frames.mkdir(parents=True, exist_ok=True)
     produced, refused, findings = 0, [], []
-    for v in sorted(committed, key=lambda v: v["id"]):
-        png = frames / f"{safe(v['id'])}.png"
-        r = subprocess.run(
+    def shoot(v: dict) -> subprocess.CompletedProcess:
+        return subprocess.run(
             [
                 str(delvec), "--prefabs", args.prefabs, "snapshot", str(GALLERY),
-                "--shot", v["id"], "-o", str(png),
+                "--shot", v["id"], "-o", str(frames / f"{safe(v['id'])}.png"),
             ],
             capture_output=True,
             text=True,
         )
-        if r.returncode != 0:
-            # A refusal is legitimate — it is the loud half of "produced or
-            # refused". What is not legitimate is silence, so it is recorded by
-            # name with the renderer's own reason.
-            refused.append((v["id"], (r.stderr or r.stdout).strip().splitlines()[-1:] or [""]))
-            continue
-        produced += 1
-        man = png.with_suffix("").with_suffix(".manifest.json")
-        if not man.is_file():
-            man = Path(str(png)[: -len(".png")] + ".manifest.json")
-        if not man.is_file():
-            findings.append(f"{v['id']}: produced a frame and no manifest — nothing states what it shows")
-            continue
-        doc = json.loads(man.read_text())
-        frame = doc.get("frame")
-        if frame is None:
-            die(
-                f"{man} carries no `frame` block. The producer states the verdict; a "
-                "consumer computing its own would be a second authority on it."
-            )
-        if frame.get("featureless") is not None:
-            findings.append(
-                f"{v['id']}: the frame is FEATURELESS "
-                f"({frame['featureless']['distinct_colors']} distinct colours) — it "
-                "shows no scene at all, and a blank rectangle must not count as a shot "
-                "of a room"
-            )
-        if frame.get("targets_in_frame", 0) == 0:
-            findings.append(
-                f"{v['id']}: the view manifest binds ZERO targets — the camera framed "
-                "nothing the campaign declares, so nothing about this shot is checked "
-                "by having taken it (DW0726 discipline)"
-            )
+
+    # Every view is its own frame and manifest, so the shots run on the shared
+    # pool (`tools/lib/parallel.py`) and are READ in id order, as the serial walk
+    # read them.
+    views = sorted(committed, key=lambda v: v["id"])
+    files = [safe(v["id"]) for v in views]
+    if len(set(files)) != len(files):
+        die(
+            "two declared views write the same frame file ("
+            + ", ".join(sorted({f for f in files if files.count(f) > 1}))
+            + "), so one shot's frame would be judged as the other's."
+        )
+    with contextlib.closing(parallel.ordered(shoot, views)) as shots:
+        for v, outcome in zip(views, shots):
+            png = frames / f"{safe(v['id'])}.png"
+            r = outcome.get()
+            if r.returncode != 0:
+                # A refusal is legitimate — it is the loud half of "produced or
+                # refused". What is not legitimate is silence, so it is recorded by
+                # name with the renderer's own reason.
+                refused.append((v["id"], (r.stderr or r.stdout).strip().splitlines()[-1:] or [""]))
+                continue
+            produced += 1
+            man = png.with_suffix("").with_suffix(".manifest.json")
+            if not man.is_file():
+                man = Path(str(png)[: -len(".png")] + ".manifest.json")
+            if not man.is_file():
+                findings.append(f"{v['id']}: produced a frame and no manifest — nothing states what it shows")
+                continue
+            doc = json.loads(man.read_text())
+            frame = doc.get("frame")
+            if frame is None:
+                die(
+                    f"{man} carries no `frame` block. The producer states the verdict; a "
+                    "consumer computing its own would be a second authority on it."
+                )
+            if frame.get("featureless") is not None:
+                findings.append(
+                    f"{v['id']}: the frame is FEATURELESS "
+                    f"({frame['featureless']['distinct_colors']} distinct colours) — it "
+                    "shows no scene at all, and a blank rectangle must not count as a shot "
+                    "of a room"
+                )
+            if frame.get("targets_in_frame", 0) == 0:
+                findings.append(
+                    f"{v['id']}: the view manifest binds ZERO targets — the camera framed "
+                    "nothing the campaign declares, so nothing about this shot is checked "
+                    "by having taken it (DW0726 discipline)"
+                )
 
     print(
         f"gallery render: {len(committed)} view(s) declared, {produced} produced, "
