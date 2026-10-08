@@ -594,13 +594,27 @@ impl LightModel {
         true
     }
 
+    /// The inclusive box the light field covers: the model's box and the layer
+    /// of air directly above it.
+    ///
+    /// Nothing is above the box, so that layer is open air under the sky, and it
+    /// holds the cell a body stands in on the tallest block. The faces below and
+    /// beside the box need no such layer: a standing cell is directly above its
+    /// floor, which is inside the box.
+    fn field_box(&self) -> ([i32; 3], [i32; 3]) {
+        let mut max = self.max;
+        max[1] += 1;
+        (self.min, max)
+    }
+
     /// Place / replace a block at a cell (relight fixture emission).
     fn set(&mut self, c: [i32; 3], block: &str) {
         self.blocks
             .insert(c, crate::compiler::blockstate::BlockState::new(block));
     }
 
-    /// Flood the assembled light field and return per-cell light within the AABB.
+    /// Flood the assembled light field and return per-cell light within the
+    /// [`Self::field_box`].
     /// Block light is seeded at every emitter; sky light is seeded at every
     /// sky-open light-passing cell at `effective_sky`. Both propagate −1 per step
     /// through light-passing cells; a cell's value is the max reached. A seed cell
@@ -631,7 +645,7 @@ const P_SKY: u8 = 0b0100_0000;
 const P_EMISSION: u8 = 0b0000_1111;
 
 /// The flooded light field of a [`LightModel`], **densely indexed** over the
-/// model's AABB.
+/// model's [`LightModel::field_box`].
 ///
 /// # Why this exists rather than a map
 ///
@@ -662,13 +676,12 @@ const P_EMISSION: u8 = 0b0000_1111;
 /// # The border
 ///
 /// The array is padded by one cell on every face, and the padding is
-/// permanently non-passing. That is what the AABB test used to do — light does
-/// not flow out of the assembled bounds — expressed as data, so the frontier
-/// walk needs no bounds test at all.
+/// permanently non-passing: light does not flow out of the field box, and
+/// that is expressed as data, so the frontier walk needs no bounds test at all.
 struct LightField {
-    /// The model AABB's lower corner (the cell at padded index `[1, 1, 1]`).
+    /// The field box's lower corner (the cell at padded index `[1, 1, 1]`).
     min: [i32; 3],
-    /// Padded dimensions, `dim[a] = max[a] - min[a] + 3`.
+    /// Padded dimensions of the field box, `dim[a] = max[a] - min[a] + 3`.
     dim: [usize; 3],
     /// One step along z, `dim[0]`. (One step along x is 1.)
     stride_z: usize,
@@ -685,14 +698,15 @@ struct LightField {
 impl LightField {
     /// Build and flood the field of `model` under `effective_sky`.
     fn new(model: &LightModel, effective_sky: u8) -> Self {
+        let (min, max) = model.field_box();
         let dim = [
-            (model.max[0] - model.min[0]) as usize + 3,
-            (model.max[1] - model.min[1]) as usize + 3,
-            (model.max[2] - model.min[2]) as usize + 3,
+            (max[0] - min[0]) as usize + 3,
+            (max[1] - min[1]) as usize + 3,
+            (max[2] - min[2]) as usize + 3,
         ];
         let cells = dim[0] * dim[1] * dim[2];
         let mut f = LightField {
-            min: model.min,
+            min,
             dim,
             stride_z: dim[0],
             stride_y: dim[0] * dim[2],
@@ -736,7 +750,7 @@ impl LightField {
         }
     }
 
-    /// The padded index of a world cell, or `None` when it is outside the AABB.
+    /// The padded index of a world cell, or `None` when it is outside the field box.
     fn index(&self, c: [i32; 3]) -> Option<usize> {
         let mut off = [0usize; 3];
         for a in 0..3 {
@@ -854,7 +868,7 @@ impl LightField {
         }
     }
 
-    /// The flooded light at a world cell (0 outside the AABB, as the map form's
+    /// The flooded light at a world cell (0 outside the field box, as the map form's
     /// `unwrap_or(0)` readers already treat it).
     fn light_at(&self, c: [i32; 3]) -> u8 {
         self.index(c).map(|i| self.light[i]).unwrap_or(0)
@@ -2316,12 +2330,16 @@ mod tests {
     /// arithmetic and drains its frontier brightest-first; none of that is
     /// visible here, so the two share no premise beyond the rule the spec states.
     fn reference_flood(model: &LightModel, effective_sky: u8) -> BTreeMap<[i32; 3], u8> {
-        let in_aabb = |c: [i32; 3]| in_bounds(c, model.min, model.max);
+        // The occupied box and the open air above it, written out rather than
+        // read from `field_box`.
+        let (lo, mut hi) = (model.min, model.max);
+        hi[1] += 1;
+        let in_aabb = |c: [i32; 3]| in_bounds(c, lo, hi);
         let mut light: BTreeMap<[i32; 3], u8> = BTreeMap::new();
         let mut queue: VecDeque<([i32; 3], u8)> = VecDeque::new();
-        for y in model.min[1]..=model.max[1] {
-            for z in model.min[2]..=model.max[2] {
-                for x in model.min[0]..=model.max[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                for x in lo[0]..=hi[0] {
                     let c = [x, y, z];
                     let mut seed = emission(model.block_at(c));
                     if effective_sky > 0 && model.passes(c) && model.sky_open(c) {
@@ -2498,6 +2516,118 @@ mod tests {
                 "a shroomlight over a light-passing solid (sky {sky})"
             );
         }
+    }
+
+    /// A floor with a glowstone standing on it as the tallest block, and an unlit
+    /// stone beside it at the same height. The cell a body stands in on top of
+    /// either is one above the occupied box.
+    fn lamp_on_top() -> BTreeMap<[i32; 3], String> {
+        let mut m = BTreeMap::new();
+        for x in 0..3 {
+            for z in 0..3 {
+                m.insert([x, 0, z], "minecraft:stone".to_string());
+            }
+        }
+        m.insert([1, 1, 1], "minecraft:glowstone".to_string());
+        m.insert([2, 1, 2], "minecraft:stone".to_string());
+        m
+    }
+
+    #[test]
+    fn the_cell_on_the_tallest_block_reads_the_light_it_has() {
+        let model = LightModel::from_blocks(lamp_on_top());
+        let on_lamp = [1, 2, 1];
+        let on_stone = [2, 2, 2];
+        // Block light only: the glowstone below lights the cell on it to 14, and
+        // the cell on the stone beside it, three steps away through air, to 12.
+        let field = LightField::new(&model, 0);
+        assert_eq!(field.light_at(on_lamp), 14, "the cell on the glowstone");
+        assert_eq!(
+            field.light_at(on_stone),
+            12,
+            "the cell on the stone beside it"
+        );
+        let flooded = model.flood(0);
+        assert_eq!(flooded.get(&on_lamp).copied(), Some(14));
+        assert_eq!(flooded.get(&on_stone).copied(), Some(12));
+        // Sky light: the top of the build is open sky.
+        for sky in [4u8, 15] {
+            let field = LightField::new(&model, sky);
+            assert_eq!(field.light_at(on_stone), sky.max(12), "sky {sky}");
+            assert_eq!(field.light_at(on_lamp), sky.max(14), "sky {sky}");
+        }
+        // The brightness survey DW0211 reads finds neither cell dark.
+        let cells = BTreeSet::from([on_lamp, on_stone]);
+        let s = DarkSurvey::measure(&model, &cells, 0, 12);
+        assert_eq!(s.examined, 2);
+        assert!(s.dark.is_empty(), "{:?}", s.dark);
+        // …and the dense field still agrees with the spec flood, top layer included.
+        for sky in [0u8, 4, 15] {
+            assert_eq!(model.flood(sky), reference_flood(&model, sky), "sky {sky}");
+        }
+    }
+
+    #[test]
+    fn a_dark_cell_on_an_unlit_tallest_block_still_reads_dark() {
+        // A floor twenty-five long with a glowstone at one end and a stone pillar,
+        // the tallest block, at the other: the cell on the pillar is 26 steps from
+        // the source, beyond the reach of any light.
+        let mut m = BTreeMap::new();
+        for x in 0..25 {
+            m.insert([x, 0, 0], "minecraft:stone".to_string());
+        }
+        m.insert([0, 1, 0], "minecraft:glowstone".to_string());
+        m.insert([24, 1, 0], "minecraft:stone".to_string());
+        m.insert([24, 2, 0], "minecraft:stone".to_string());
+        let model = LightModel::from_blocks(m);
+        let on_pillar = [24, 3, 0];
+        let field = LightField::new(&model, 0);
+        assert_eq!(field.light_at(on_pillar), 0);
+        assert_eq!(model.flood(0).get(&on_pillar), None);
+        let s = DarkSurvey::measure(&model, &BTreeSet::from([on_pillar]), 0, 1);
+        assert_eq!(s.dark.get(&on_pillar).copied(), Some(0));
+        // Nothing above the field is invented: two above the box is outside it.
+        assert_eq!(field.light_at([24, 4, 0]), 0);
+        assert_eq!(model.flood(0), reference_flood(&model, 0));
+    }
+
+    #[test]
+    fn the_lowest_and_side_faces_of_the_box_read_their_light() {
+        // A glowstone in each bottom corner of the box and one on each x/z face:
+        // every one of those boundary cells is inside the field and reads its own
+        // emission, and its in-box neighbour reads one less.
+        let mut m = BTreeMap::new();
+        for x in 0..5 {
+            for z in 0..5 {
+                m.insert([x, 0, z], "minecraft:stone".to_string());
+            }
+        }
+        let lamps = [
+            [0, 0, 0],
+            [4, 0, 4],
+            [0, 1, 2],
+            [4, 1, 2],
+            [2, 1, 0],
+            [2, 1, 4],
+        ];
+        for c in lamps {
+            m.insert(c, "minecraft:glowstone".to_string());
+        }
+        let model = LightModel::from_blocks(m);
+        assert_eq!((model.min, model.max), ([0, 0, 0], [4, 1, 4]));
+        let field = LightField::new(&model, 0);
+        for c in lamps {
+            assert_eq!(field.light_at(c), 15, "the glowstone at {c:?}");
+        }
+        assert_eq!(field.light_at([1, 1, 2]), 14, "beside the x-min face lamp");
+        assert_eq!(field.light_at([3, 1, 2]), 14, "beside the x-max face lamp");
+        assert_eq!(field.light_at([2, 1, 1]), 14, "beside the z-min face lamp");
+        assert_eq!(field.light_at([2, 1, 3]), 14, "beside the z-max face lamp");
+        // Outside the box on the bottom and side faces is not the world.
+        for c in [[2, -1, 2], [-1, 1, 2], [5, 1, 2], [2, 1, -1], [2, 1, 5]] {
+            assert_eq!(field.light_at(c), 0, "{c:?} is outside the field");
+        }
+        assert_eq!(model.flood(0), reference_flood(&model, 0));
     }
 
     #[test]
