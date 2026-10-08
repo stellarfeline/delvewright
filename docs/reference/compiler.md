@@ -1313,7 +1313,7 @@ No generated PackTest asserts on rendered text at all.
 
 ## 3. Verb → emission mapping
 
-Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit.rs`.
+Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit/`, one file per object.
 
 | Verb / effect | Emitted mechanism |
 |---------------|-------------------|

@@ -218,7 +218,7 @@ INTERACTION_SITES = {
 }
 
 INTERACTION_SUMMON = re.compile(r'"(?:execute [^"]*run )?summon minecraft:interaction ')
-FN_DEF = re.compile(r"^\s*(?:pub(?:\(crate\))?\s+)?fn\s+([a-z0-9_]+)")
+FN_DEF = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+([a-z0-9_]+)")
 TEST_MOD = re.compile(r"^\s*mod tests\b")
 
 # ---------------------------------------------------------------------------

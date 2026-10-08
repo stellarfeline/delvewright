@@ -628,6 +628,46 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   step moves into a directory. `tests/atmosphere.rs`'s one-biome-reader scan
   was one; it walks the tree now.
 
+**What B3b found** (corrections to this record, made where B3b touched it):
+
+- Two functions were each over the 1500-line rule on their own, so a move
+  alone could not meet it. `build_with_warnings` (2410 lines) keeps the
+  order of its passes and calls four of them as functions: the assemblies,
+  the blockout battery, the declaration proofs and the checks read off the
+  finished tree in `emit/proofs.rs`, and the world block in `emit/routes.rs`,
+  which returns its routes and ledgers as one `WorldProofs`. The world block
+  belongs to `nav/` (§2); it waits in `emit/routes.rs` because B4 holds
+  `nav.rs`. `emit_functions` (2138 lines) keeps its setup and tick bodies
+  inline and calls its six per-object blocks as `<object>_fns` in `class`,
+  `dialogue`, `quest` (two), `wave` and `objective`, in the same place and
+  order.
+- The twelve codes `emit.rs` declared stay declared in `emit/mod.rs`, which
+  is the module `emit.rs` was, so `delvec codes` is byte-identical and no
+  catalog row moves. They move with their checks in Phase C.
+- `emit/mod.rs` re-exports each file with one glob, at the visibility of the
+  file's most visible item, so `crate::compiler::emit::X` names the same item
+  for every caller inside and outside the crate; `nav.rs`, `plan.rs` and the
+  tests are not touched. Phase C changes those paths as each object folds.
+- Files §2's list does not name: `proofs` and `routes` (above),
+  `advancement` (one emitter over every right-clickable object, moved whole
+  like `emit_v06_packtests`; Phase C splits it), `affordance`, `coords` (the
+  cell-to-entity conversion, facing yaw, box selectors), `equipment` (the
+  DSL's `equipment` object), `removal` (how a removed body leaves), `piece`
+  (sentinels, template extents, chunk spans), `world`, `effect` and
+  `tests.rs`.
+- The text authority `DW0185` allows is `emit/text.rs`: `tr`, `tr_with`,
+  `snbt_component`, `snbt_text_component`, and the scan
+  `check_untranslated_literals`.
+- `check-capability-ownership` names a summon's enclosing function with a
+  pattern that accepted `pub` and `pub(crate)` only. Every private item that
+  moved became `pub(super)`, so the checker lost the function of every
+  interaction summon in `emit/` and crashed. It accepts any restricted
+  visibility now; a planted unledgered `pub(super) fn` summon reds it. Two
+  Rust source scans spell the same grammar as prefixes and will miss a
+  `pub(super) fn` the same way when B4 or Phase C moves the code they watch:
+  `nav.rs`'s callers-of-`liveness_of` test and
+  `tests/footprint_call_graph.rs`.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,

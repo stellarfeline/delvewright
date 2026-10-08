@@ -289,3 +289,62 @@ pub(super) fn emit_restore_function(plan: &Plan) -> Option<(String, String)> {
     }
     Some(("bonfire_restore".to_string(), lines(&body)))
 }
+
+/// Each class's `class_apply_<c>`: reset the trigger, hand the kit, start the campaign's opening quests, teleport to the entry point.
+pub(super) fn class_apply_fns(plan: &Plan) -> Vec<(String, String)> {
+    let c = plan.campaign;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    let campaign_start = campaign_start_quests(c);
+    for (i, class) in c.classes.content.classes.iter().enumerate() {
+        let plan_class = &plan.classes[i];
+        let mut body: Vec<String> = Vec::new();
+        body.push("scoreboard players reset @s dw.class".to_string());
+        for (k, item) in class.kit.iter().enumerate() {
+            let give = format!(
+                "give @s {}{} {}",
+                item.item,
+                kit_item_components(item),
+                item.count
+            );
+            // A class kit is per-player gear by construction. `carrier: "one"`
+            // (v0.6, spec-0018) marks a **party-unique** kit item — exactly one
+            // copy enters the party, to the first player who takes this class —
+            // latched on its own `dw.sys` sentinel so a second taker gets the rest
+            // of the kit but not the singleton. Absent `carrier` → unchanged.
+            if matches!(item.carrier, Some(delvewright_dsl::Carrier::One)) {
+                let latch = format!("#kit_{}_{k}", plan_class.safe);
+                body.push(format!(
+                    "execute unless score {latch} dw.sys matches 1 run {give}"
+                ));
+                body.push(format!("scoreboard players set {latch} dw.sys 1"));
+            } else {
+                body.push(give);
+            }
+        }
+        // spec-0016 §1: a bonfire rest refills the resting player's OWN flask, so
+        // the pack has to remember which class they took — `dw.class` is a trigger
+        // this function resets and `dw.classed` records only that a class was
+        // taken. Emitted only when the campaign declares a flask, so every other
+        // campaign's class apply is byte-identical.
+        if !plan.flasks().is_empty() {
+            body.push(format!("tag @s add {}", class_tag(&plan_class.safe)));
+        }
+        body.push("scoreboard players set @s dw.classed 1".to_string());
+        // Party state (spec-0018): the campaign-start quests activate for the
+        // PARTY the moment any player takes a class, so a second player who is
+        // still on the class screen is not behind on the quest state.
+        for qid in &campaign_start {
+            body.push(format!(
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
+                quest_active_score(qid)
+            ));
+        }
+        // teleport to the first area's spawn anchor
+        if let Some(pos) = campaign_spawn(plan) {
+            body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
+        }
+        fns.push((format!("class_apply_{}", plan_class.safe), lines(&body)));
+    }
+    fns
+}

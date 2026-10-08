@@ -392,3 +392,347 @@ pub(super) fn wave_machinery_waves<'a>(
         .iter()
         .filter(move |w| wave_placements.contains_key(w.id.as_str()) && plan::wave_total(w) >= 1)
 }
+
+/// Every wave's spawn function, its lane and kill-reward functions, and its `on_kill`.
+pub(super) fn wave_fns(
+    plan: &Plan,
+    wave_placements: &WavePlacements,
+    lane_routes: &crate::compiler::nav::LaneRoutes,
+    item_combat: &crate::compiler::registry::ItemCombatRegistry,
+) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for w in &c.quests.content.waves {
+        // Compiler-validated standable spawn cells near the wave anchor, in the
+        // anchor's own room, one per mob. A wave whose spawn anchor
+        // resolves in no assembled area gets no entry here and is skipped exactly
+        // as before — DW0310 (check_wave_spawns) catches a dangling spawn-wave.
+        let Some(cells) = wave_placements.get(w.id.as_str()) else {
+            continue;
+        };
+        let mut body: Vec<String> = Vec::new();
+        // spec-0016 §1: mark the wave as seated, so a bonfire rest only re-seats
+        // waves the party has actually met. Emitted only for a `respawns_on_rest`
+        // wave — every other campaign's `spawn_<wave>` is byte-identical.
+        if w.respawns_on_rest {
+            body.push(format!(
+                "scoreboard players set {} dw.sys 1",
+                wave_seated_holder(w.id.as_str())
+            ));
+        }
+        body.push(format!(
+            "scoreboard players set {} {} {}",
+            plan::wave_counter(w.id.as_str()),
+            plan::WAVE_OBJECTIVE,
+            plan::wave_total(w)
+        ));
+        // A fresh seating starts a fresh attribution ([`wave_credited_holder`]):
+        // the credited-kill ledger is about THIS cohort, so a re-seat's own
+        // `kill @e[tag=…]` sweep — which credits nobody — must not be carried into
+        // the count of what the party felled afterwards.
+        body.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_credited_holder(w.id.as_str())
+        ));
+        // spec-0016 §6: a lane wave spawns as a Raider PATROL SQUAD — one leader,
+        // everyone `Patrolling:1b` and pointed at the first proven waypoint. The
+        // squad's own march clock starts with it. Empty for every other wave, so
+        // pre-§6 `spawn_<wave>` output is byte-identical.
+        let lane = w.lane.as_ref().zip(lane_routes.get(w.id.as_str()));
+        let mut idx = 0i32;
+        for (k, mob) in w.mobs.iter().enumerate() {
+            // CustomName as a plain SNBT text component (M2 fix 1). Waves are
+            // v0.3-only, so no v0.2 byte-identity concern.
+            let name = match &mob.name {
+                Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)),
+                None => String::new(),
+            };
+            // Equipment: v0.6 explicit slots merged over the armed-mob default
+            // (M2 fix 5: a summoned wither_skeleton/skeleton otherwise had no
+            // weapon and was trivial). Every slot the v0.9 `drops[]` list does
+            // not name keeps drop chance 0 — rank-and-file gear is never
+            // lootable.
+            let equip = wave_equipment(&mob.entity, mob.equipment.as_ref(), &mob.drops)
+                .map(|e| format!(",{e}"))
+                .unwrap_or_default();
+            // v0.9: a declared quest-item drop rides the mob's own
+            // death loot table. Absent on every other mob, so a wave that
+            // declares no item drop keeps vanilla's own table and its exact
+            // pre-0.9 summon string.
+            let loot = if has_item_drop(&mob.drops) {
+                format!(
+                    ",DeathLootTable:\"{}\"",
+                    death_loot_table(
+                        ns,
+                        Some(drop_loot_path("wave", &format!("{}-{k}", w.id.as_str()))),
+                    )
+                )
+            } else {
+                String::new()
+            };
+            // v0.4 attribute overrides (spec-0008 §4), emitted as 1.21.11
+            // attribute components in the summon NBT. Empty for a plain mob. A
+            // lane mob's `follow_range` is FORCED to the lane's `aggro_radius`:
+            // release radius and perception radius must be the same number, or a
+            // patrolling raider targets a player it cannot engage and holds
+            // ground mid-lane (`DW0381` rejects a contradicting override).
+            let effective_attrs = match lane {
+                Some((l, _)) => Some(lane_attributes(mob.attributes, l.aggro_radius)),
+                None => mob.attributes,
+            };
+            let attrs = attributes_snbt(effective_attrs.as_ref());
+            // v0.4 permanent ambient effects: applied to this stack via a temp tag
+            // after summon, so they land on exactly this mob type (not the whole
+            // wave). Empty for a plain mob.
+            let has_effects = !mob.effects.is_empty();
+            let tmp = if has_effects { ",\"dw_tmp\"" } else { "" };
+            for _ in 0..mob.count {
+                // Each mob takes the next validated standable cell (ascending BFS
+                // distance from the anchor); `cells` has exactly one per mob. AI is
+                // left enabled (no NoAI) so the mobs fight.
+                let cell = cells[idx as usize];
+                let c = ent_xyz(cell);
+                // spec-0016 §6 patrol NBT. `patrol_target` is the **snake_case
+                // int-array** form and nothing else: 1.21.11's strict codec
+                // silently DROPS the legacy `PatrolTarget:{X,Y,Z}` compound, and
+                // the squad then patrols to vanilla-rolled random points — the
+                // working-but-drunk failure the spike caught live. `Patrolling`
+                // and `PatrolLeader` keep their camelCase names.
+                let patrol = match lane {
+                    Some((_, wps)) => {
+                        let t = wps[0];
+                        let leader = if idx == 0 { ",PatrolLeader:1b" } else { "" };
+                        format!(
+                            ",Patrolling:1b{leader},patrol_target:[I;{},{},{}]",
+                            t[0], t[1], t[2]
+                        )
+                    }
+                    None => String::new(),
+                };
+                let lead_tag = match lane {
+                    Some(_) if idx == 0 => {
+                        format!(",\"{}\"", lane_leader_tag(w.id.as_str()))
+                    }
+                    _ => String::new(),
+                };
+                body.push(format!(
+                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{loot}{attrs}{patrol}}}",
+                    mob.entity,
+                    c[0],
+                    c[1],
+                    c[2],
+                    plan::wave_tag(w.id.as_str())
+                ));
+                idx += 1;
+            }
+            if has_effects {
+                for eff in &mob.effects {
+                    body.push(format!(
+                        "effect give @e[tag=dw_tmp] {} infinite {} true",
+                        eff.effect, eff.amplifier
+                    ));
+                }
+                body.push("tag @e[tag=dw_tmp] remove dw_tmp".to_string());
+            }
+        }
+        // spec-0016 §6: the squad marches from waypoint 0 and its clock starts
+        // with it. `schedule … <n>t` is replace-mode, so a re-seat (spec-0016 §1)
+        // can never double the clock up.
+        if let Some((_, _)) = lane {
+            let safe = plan::safe_local(w.id.as_str());
+            body.push(format!(
+                "scoreboard players set {} dw.sys 0",
+                lane_index_holder(w.id.as_str())
+            ));
+            body.push(format!(
+                "schedule function {ns}:lane_tick_{safe} {LANE_PERIOD_TICKS}t"
+            ));
+        }
+        // spec-0073: the bar's max follows the bodies this function just put in
+        // the world. Absent without a bar → byte-identical.
+        if let Some(bar) = crate::compiler::healthbar::wave_bar(c, w.id.as_str()) {
+            body.push(bar.capture_call(ns));
+        }
+        fns.push((
+            format!("spawn_{}", plan::safe_local(w.id.as_str())),
+            lines(&body),
+        ));
+        if let Some((l, wps)) = lane {
+            fns.push(lane_tick_fn(ns, w, l, wps, &observer_guard(plan)));
+        }
+        // spec-0016 §1: the re-seat — clear survivors, then re-run the wave's own
+        // spawn (same authored composition, same proven cells). Emitted for a
+        // `respawns_on_rest` wave and for a billed elite/boss wave (whose rest
+        // dispatch is guarded on the wave still standing — the undefeated
+        // refresh), and for nothing else → byte-identical.
+        if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id) {
+            let safe = plan::safe_local(w.id.as_str());
+            // The standing bodies leave unseen through [`removal_lines`]: a
+            // re-seat is a reset, not a death the party watches at the fire, and
+            // not a kill the party earned — a declared drop is stripped first.
+            let mut reseat = removal_lines(
+                ns,
+                &plan::wave_tag(w.id.as_str()),
+                wave_declares_drops(w),
+                Exit::Unseen,
+            );
+            reseat.push(format!("function {ns}:spawn_{safe}"));
+            fns.push((format!("wave_reseat_{safe}"), lines(&reseat)));
+        }
+        // --- The wave CENSUS probe surface ---
+        //
+        // The live ladder used to answer "what is standing at this encounter?" by
+        // silhouette: every entity mineflayer tracked, no distance filter, any mob
+        // taller than half a block. On the drowned bell that counted five ambush
+        // actors and a neighbouring wave as members of whichever wave was being
+        // measured, and — since they were alive on both sides of a scripted death
+        // — reported them as survivors the re-seat had failed to remove.
+        // The wave tag is the only exact answer to that question and the compiler
+        // owns it, so the compiler owns the census too: the harness asks these
+        // functions and reads numbers, instead of guessing from shapes.
+        //
+        // Emitted for EVERY wave — the probe is how the ladder counts any
+        // encounter, not only a re-seating one. A campaign with no waves emits
+        // nothing here and is byte-identical.
+        {
+            let safe = plan::safe_local(w.id.as_str());
+            let tag = plan::wave_tag(w.id.as_str());
+            let brand = plan::wave_brand_tag(w.id.as_str());
+            let wid = w.id.as_str();
+            // Brand / unbrand: stamp this life's mobs, and clear the stamp. The
+            // unbrand selects the BRAND, not the wave, so a mob that somehow
+            // outlived its wave tag still gets cleaned up.
+            fns.push((
+                format!("wave_brand_{safe}"),
+                lines(&[format!("tag @e[tag={tag}] add {brand}")]),
+            ));
+            fns.push((
+                format!("wave_unbrand_{safe}"),
+                lines(&[format!("tag @e[tag={brand}] remove {brand}")]),
+            ));
+            // Per-mob accumulation, run `as` each tagged mob. Health and its
+            // maximum both come from vanilla primitives — `data get entity @s
+            // Health` and `attribute @s max_health get` — so "damaged" is a fact
+            // the server states, never a table the compiler invents (DW0475) and
+            // never a value the client happened to be sent (a live 1.21.11 server
+            // does not put an unmodified max health on the wire at all, which is
+            // why the silhouette probe had to guess it from the highest health it
+            // had ever seen).
+            //
+            // Scale 100: two decimal places carried as integers, so positions and
+            // health cross the chat channel exactly, with no float formatting to
+            // parse. The holders are shared across waves, which is safe because a
+            // census is one atomic function call.
+            fns.push((
+                format!("wave_census_one_{safe}"),
+                lines(&[
+                    "scoreboard players add #wcen_n dw.sys 1".to_string(),
+                    format!(
+                        "execute if entity @s[tag={brand}] run scoreboard players add #wcen_b \
+                         dw.sys 1"
+                    ),
+                    "execute store result score #wcen_h dw.sys run data get entity @s Health 100"
+                        .to_string(),
+                    "execute store result score #wcen_m dw.sys run attribute @s \
+                     minecraft:max_health get 100"
+                        .to_string(),
+                    "execute if score #wcen_h dw.sys < #wcen_m dw.sys run scoreboard players add \
+                     #wcen_d dw.sys 1"
+                        .to_string(),
+                    "execute store result score #wcen_x dw.sys run data get entity @s Pos[0] 100"
+                        .to_string(),
+                    "execute store result score #wcen_y dw.sys run data get entity @s Pos[1] 100"
+                        .to_string(),
+                    "execute store result score #wcen_z dw.sys run data get entity @s Pos[2] 100"
+                        .to_string(),
+                    format!("tellraw @a {}", census_mob_component(ns, wid)),
+                ]),
+            ));
+            // The census itself: zero the accumulators, walk the tag, then state
+            // the totals. `#wcen_seq` counts censuses so the harness can tell this
+            // answer from a stale one — it never has to write a delve score to ask
+            // a question.
+            fns.push((
+                format!("wave_census_{safe}"),
+                lines(&[
+                    "scoreboard players add #wcen_seq dw.sys 1".to_string(),
+                    "scoreboard players set #wcen_n dw.sys 0".to_string(),
+                    "scoreboard players set #wcen_b dw.sys 0".to_string(),
+                    "scoreboard players set #wcen_d dw.sys 0".to_string(),
+                    format!("execute as @e[tag={tag}] run function {ns}:wave_census_one_{safe}"),
+                    format!("tellraw @a {}", census_summary_component(ns, wid)),
+                ]),
+            ));
+        }
+        // --- The wave MUSTER probe, and the staged removal ---
+        //
+        // The census counts bodies; the muster READS them. Every number a wave
+        // declares — health, damage, armour, the gear it wears, the name over its
+        // head — is written into one `summon` line and, until this probe, never
+        // looked at again: 1.21.11 has twice silently dropped a field this
+        // compiler wrote (`HandItems`, the legacy `PatrolTarget`), and both times
+        // the delve booted green over a body that was not what the document said.
+        // `crate::compiler::muster` derives the questions from the same
+        // resolution the summon is written from, so the probe cannot verify a
+        // copy of the declaration instead of the emitted one.
+        //
+        // `wave_strike_*` and `wave_chip_*` ride with it: the ladder does not
+        // fight, it reads the bodies and then removes them, attributed to the
+        // party so the wiring the kill drives actually fires.
+        {
+            let m = crate::compiler::muster::muster(
+                w,
+                &|mob| {
+                    wave_equipment_slots(&mob.entity, mob.equipment.as_ref())
+                        .into_iter()
+                        .map(|(slot, item, _)| (slot, item.to_string()))
+                        .collect()
+                },
+                item_combat,
+                &|name| snbt_component(name),
+            );
+            for (name, body) in crate::compiler::muster::functions(ns, &m) {
+                fns.push((name, lines(&body)));
+            }
+        }
+        // kill reward: each slain wave mob decrements the countdown, records that
+        // a PLAYER was credited with the death ([`wave_credited_holder`]), then
+        // re-arms. The advancement's trigger is `player_killed_entity` over this
+        // wave's tag, so reaching here IS the credit — nothing else can.
+        fns.push((
+            format!("k_reward_{}", plan::safe_local(w.id.as_str())),
+            lines(
+                &[
+                    format!(
+                        "scoreboard players remove {} {} 1",
+                        plan::wave_counter(w.id.as_str()),
+                        plan::WAVE_OBJECTIVE
+                    ),
+                    format!(
+                        "scoreboard players add {} dw.sys 1",
+                        wave_credited_holder(w.id.as_str())
+                    ),
+                ]
+                .into_iter()
+                // spec-0074: the wave's `on_kill` pays between the ledger and the
+                // re-arm, as the credited player. Absent → byte-identical.
+                .chain(
+                    w.on_kill
+                        .as_ref()
+                        .map(|ok| on_kill_call(ns, delvewright_dsl::Fight::Wave(w), ok)),
+                )
+                .chain(std::iter::once(format!(
+                    "advancement revoke @s only {ns}:k_{}",
+                    plan::safe_local(w.id.as_str())
+                )))
+                .collect::<Vec<_>>(),
+            ),
+        ));
+        if let Some(ok) = &w.on_kill {
+            let fight = delvewright_dsl::Fight::Wave(w);
+            fns.push((on_kill_function(fight), on_kill_body(plan, fight, ok)));
+        }
+    }
+    fns
+}

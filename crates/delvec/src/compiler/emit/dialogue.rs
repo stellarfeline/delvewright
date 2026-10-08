@@ -437,3 +437,140 @@ pub(super) fn build_node_dialog(
         })
     }
 }
+
+/// Every NPC's dialog option handlers, its talk dispatch, its cast selector and barks, and its gated-node choosers.
+pub(super) fn dialog_handler_fns(
+    plan: &Plan,
+    casts: &std::collections::BTreeMap<String, crate::compiler::cast::NpcCast>,
+) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for npc in &plan.npcs {
+        for opt in &npc.options {
+            let mut body: Vec<String> = Vec::new();
+            body.push(format!(
+                "scoreboard players reset @s {}",
+                npc.trigger_objective
+            ));
+            // Re-arm the trigger IN THIS FUNCTION, immediately after consuming it.
+            //
+            // `reset` both clears the score and re-locks the trigger, and the only
+            // other re-enable is the per-tick `scoreboard players enable @a` at the
+            // top of `tick`. On a dedicated server that is invisible: the handler
+            // runs inside tick N, the next tick re-enables, and the player's next
+            // click lands in tick N+1 or later. On the **integrated (singleplayer)
+            // server** it is a real hole — 1.21.9+ freezes the integrated server
+            // while a screen is open, and the last thing this handler does is show
+            // the next dialog node. So: tick N re-enables, dispatches here, we lock
+            // the trigger, we open the next screen, ticking STOPS. The player's
+            // click is queued and executed the instant ticking resumes — before the
+            // tick function's re-enable — and vanilla rejects it ("You can't
+            // trigger this objective yet"), silently swallowing one dialogue
+            // choice. A dedicated server never pauses, so no rung of the validation
+            // ladder can reproduce it.
+            //
+            // Placed here rather than at the end of the body on purpose: the
+            // flag-gate below can `return fail`, and an end-of-body re-enable would
+            // be skipped on exactly the path that consumed the trigger without
+            // doing anything. Nothing below re-locks it, so this position strictly
+            // dominates. `enable` on an unset score initialises it to 0, which
+            // matches no dispatch guard (option values are 1-based).
+            //
+            // The per-tick `enable @a` stays as belt-and-braces.
+            body.push(format!(
+                "scoreboard players enable @s {}",
+                npc.trigger_objective
+            ));
+            // v0.4: a flag-gated option is inert until its flags are set — so a
+            // direct `/trigger` (the bot's path, which bypasses the UI variant
+            // hiding) cannot fire it early. `return fail` short-circuits the rest.
+            // The story flags are party state (spec-0018): what one player learned
+            // from an NPC opens the option for whoever next speaks to them.
+            for f in &opt.requires_flags {
+                body.push(format!(
+                    "execute unless score {} {} matches 1 run return fail",
+                    plan::PARTY,
+                    plan::flag_score(f)
+                ));
+            }
+            // v0.6: the negative gate — a `forbids_flags`-suppressed option is
+            // equally inert to a direct `/trigger` once any listed flag is set.
+            for f in &opt.forbids_flags {
+                body.push(format!(
+                    "execute if score {} {} matches 1 run return fail",
+                    plan::PARTY,
+                    plan::flag_score(f)
+                ));
+            }
+            // v0.10: the numeric gate, made inert to a direct `/trigger` the same
+            // way. One `return fail` per term — any single comparison failing
+            // shuts the option — which is what `negate` spells.
+            for clause in state_clauses(plan, &opt.requires_state, true) {
+                body.push(format!("execute {clause} run return fail"));
+            }
+            // v0.4: set any flags this option declares (dialogue `set-flag`).
+            for f in &opt.sets_flags {
+                body.push(format!(
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
+                    plan::flag_score(f)
+                ));
+            }
+            // v0.5: world time / weather cuts this option declares (dialogue
+            // `set-time`/`set-weather`, spec-0010). Dimension-global instant cuts.
+            for t in &opt.sets_time {
+                let world = c.world.content.time;
+                body.push(format!(
+                    "time set {}",
+                    t.token(t.clock(delvewright_dsl::TimeSite::Cut, world))
+                ));
+            }
+            for w in &opt.sets_weather {
+                body.push(format!("weather {}", w.token()));
+            }
+            // v0.6: party-wide respawn checkpoints this option sets (dialogue
+            // `set-checkpoint`, spec-0012).
+            for (anchor, on_respawn) in &opt.sets_checkpoints {
+                emit_set_checkpoint(plan, anchor, on_respawn, &mut body);
+            }
+            // v0.6: deferred NPCs this option brings into the world (dialogue
+            // `spawn-npc`) — a character walking in mid-conversation.
+            for n in &opt.spawns_npcs {
+                body.push(format!("function {ns}:{}", spawn_npc_fn(n)));
+            }
+            // The click completes the objective under the same pending guard the
+            // button is drawn under (spec-0093 §6.3): a press that arrives while
+            // the objective is not pending completes nothing.
+            for obj in &opt.completes {
+                if let Some((qid, o)) = objective_quest(c, obj) {
+                    body.push(format!(
+                        "execute{} run function {ns}:complete_{}",
+                        pending_guard(plan, o, &quest_active_score(qid)),
+                        safe_obj_fn(obj),
+                    ));
+                }
+            }
+            if let Some(next) = &opt.next {
+                body.push(show_node_cmd(plan, npc, next));
+            }
+            fns.push((format!("dlg_{}_{}", npc.safe, opt.n), lines(&body)));
+        }
+        // keeper interaction reward: consume the interaction record, then show
+        // whatever the cast ledger says this NPC's right-click offers right now
+        // (spec-0020). With no ledger this is the single root line it always was.
+        let mut talk = vec![format!(
+            "advancement revoke @s only {ns}:{}_interact",
+            npc.safe
+        )];
+        talk.extend(cast_dispatch(plan, npc, casts));
+        fns.push((format!("talk_{}", npc.safe), lines(&talk)));
+        fns.extend(cast_selector_fn(plan, npc, casts));
+        fns.extend(cast_bark_fns(plan, npc, casts));
+        // v0.4: flag-gate chooser functions for gated nodes.
+        for func in gated_node_choosers(plan, npc) {
+            fns.push(func);
+        }
+    }
+    fns
+}

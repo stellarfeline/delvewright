@@ -205,3 +205,54 @@ pub(super) fn interact_objectives(c: &delvewright_dsl::Campaign) -> Vec<(String,
     }
     out
 }
+
+/// The `interact` and `collect` reward functions their advancements run.
+pub(super) fn reward_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for q in &c.quests.content.quests {
+        let qa = quest_active_score(q.id.as_str());
+        for o in &q.objectives {
+            match o {
+                Objective::Interact { id, .. } => {
+                    // Human click path: the interaction advancement sets the same
+                    // trigger the bot chats; the per-tick handler applies guards.
+                    fns.push((
+                        format!("i_reward_{}", plan::safe_local(id.as_str())),
+                        lines(&[
+                            format!(
+                                "advancement revoke @s only {ns}:i_{}",
+                                plan::safe_local(id.as_str())
+                            ),
+                            format!(
+                                "scoreboard players set @s {} 1",
+                                plan::interact_trigger(id.as_str())
+                            ),
+                        ]),
+                    ));
+                }
+                Objective::Collect { id, .. } => {
+                    // inventory_changed reward: complete (if the quest/after/flags
+                    // guards hold), then re-arm.
+                    fns.push((
+                        format!("c_reward_{}", plan::safe_local(id.as_str())),
+                        lines(&[
+                            format!(
+                                "execute{} run function {ns}:complete_{}",
+                                pending_guard(plan, o, &qa),
+                                safe_obj_fn(id.as_str())
+                            ),
+                            format!(
+                                "advancement revoke @s only {ns}:c_{}",
+                                plan::safe_local(id.as_str())
+                            ),
+                        ]),
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+    fns
+}
