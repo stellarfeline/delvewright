@@ -511,7 +511,7 @@ pub(super) fn drive_presses(
                          lines before it produced — never satisfies the gate: {bound}, and the \
                          values reached were {reach}. The delve cannot be finished. Look for a \
                          bundle whose own write is followed by a line gated on the value it \
-                         just produced (`DW0527` names each one): move every reading effect \
+                         just produced (the shape `DW0527` describes): move every reading effect \
                          ahead of the write, or change the gate",
                         st.objective
                     ),

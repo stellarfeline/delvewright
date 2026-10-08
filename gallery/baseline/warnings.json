@@ -133,9 +133,24 @@
       "stage": "quests"
     },
     {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/12/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
     },
     {
       "code": "DW0330",
@@ -300,9 +315,24 @@
       "stage": "quests"
     },
     {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/12/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
     },
     {
       "code": "DW0330",
@@ -467,9 +497,24 @@
       "stage": "quests"
     },
     {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/12/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
     },
     {
       "code": "DW0330",
@@ -634,9 +679,24 @@
       "stage": "quests"
     },
     {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/12/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
     },
     {
       "code": "DW0330",
@@ -801,9 +861,24 @@
       "stage": "quests"
     },
     {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/12/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
     },
     {
       "code": "DW0330",
@@ -1037,9 +1112,24 @@
       "stage": "quests"
     },
     {
+      "code": "DW0527",
+      "pointer": "/content/triggers/11/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/triggers/12/effects/2/when/requires_state",
+      "stage": "quests"
+    },
+    {
       "code": "DW0822",
       "pointer": "/content/critical_path",
       "stage": "layout-graph"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
     },
     {
       "code": "DW0330",

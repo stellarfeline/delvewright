@@ -68,6 +68,8 @@
     "fx.trig.shortcut-door-barred.0.narrate": "侧门从另一侧上了闩。",
     "fx.trig.skip-the-label.0.narrate": "守望者不回应一记打击。",
     "fx.trig.step-on-the-plate.0.narrate": "脚下的石板微微一沉，只有你察觉到了。",
+    "fx.trig.valve-second.0.narrate": "拧错了阀门。管道咚地一响，又归于沉寂。",
+    "fx.trig.valve-third.0.narrate": "拧错了阀门。管道咚地一响，又归于沉寂。",
     "fx.trig.west-bay.0.narrate": "梁上有什么动了一下。",
     "lethal.east-pit.message": "北墙边的空气与你不合。",
     "lethal.lid-pit.message": "台地上那片地原来只是坑上的盖板——盖板一落，掉进坑里就别想活着上来。",
