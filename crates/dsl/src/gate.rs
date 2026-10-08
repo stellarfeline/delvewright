@@ -775,24 +775,56 @@ impl Gate<'_> {
     /// on both lists, or one datum's terms intersect to the empty set. Terms on
     /// distinct flags/datums are independent and cannot contradict each other.
     pub fn contradiction(&self) -> Option<GateContradiction> {
-        for f in self.requires_flags {
-            if self.forbids_flags.iter().any(|g| g == f) {
-                return Some(GateContradiction::Flag(f.as_str().to_string()));
+        conjunction_contradictions(&[*self]).into_iter().next()
+    }
+
+    /// **Every reason this gate and `other` can never both hold** against one
+    /// reading of the campaign's flags and data — empty when some state
+    /// satisfies both.
+    ///
+    /// Two gates are mutually exclusive exactly when their conjunction is a
+    /// gate that can never open, so this is [`Gate::contradiction`]'s
+    /// arithmetic asked of the two together: a flag one requires and the other
+    /// forbids, or a datum whose terms across both intersect to the empty set.
+    /// Nothing else proves exclusivity — two gates on distinct flags or data
+    /// can both hold, however unlikely the author meant that to be. The answer
+    /// is about ONE reading: a caller whose two gates are tested at different
+    /// moments must also show that no write to the named flag or datum falls
+    /// between them. Every reason is returned, not the first, so that caller
+    /// can find one nothing writes.
+    pub fn exclusions(&self, other: &Gate<'_>) -> Vec<GateContradiction> {
+        conjunction_contradictions(&[*self, *other])
+    }
+}
+
+/// Every flag and every datum on which the conjunction of `gates` is empty, in
+/// a fixed order: flags in first-required order, then data by id (ADR-0006).
+/// The one arithmetic behind [`Gate::contradiction`] and [`Gate::exclusions`].
+fn conjunction_contradictions(gates: &[Gate<'_>]) -> Vec<GateContradiction> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for g in gates {
+        for f in g.requires_flags {
+            let forbidden = gates.iter().any(|h| h.forbids_flags.contains(f));
+            if forbidden && seen.insert(f.as_str()) {
+                out.push(GateContradiction::Flag(f.as_str().to_string()));
             }
         }
-        let mut per: std::collections::BTreeMap<&str, DatumSet> = std::collections::BTreeMap::new();
-        for t in self.requires_state {
+    }
+    let mut per: std::collections::BTreeMap<&str, DatumSet> = std::collections::BTreeMap::new();
+    for g in gates {
+        for t in g.requires_state {
             per.entry(t.state.as_str())
                 .or_default()
                 .require(t.op, t.value);
         }
-        for (state, set) in per {
-            if set.pick().is_none() {
-                return Some(GateContradiction::Datum(state.to_string()));
-            }
-        }
-        None
     }
+    for (state, set) in per {
+        if set.pick().is_none() {
+            out.push(GateContradiction::Datum(state.to_string()));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -929,5 +961,62 @@ mod tests {
             Some(GateContradiction::Datum("state/toll".to_string()))
         );
         assert_eq!(Gate::OPEN.contradiction(), None);
+    }
+
+    /// Two gates exclude each other exactly when their conjunction cannot open:
+    /// a flag one requires and the other forbids, or one datum's terms across
+    /// both meeting in the empty set. Distinct flags, and overlapping ranges,
+    /// still both hold.
+    #[test]
+    fn exclusions_are_the_conjunctions_contradictions() {
+        use crate::ids::{FlagId, StateId};
+        use crate::stages::StateCompare;
+        let x = vec![FlagId("flag/x".to_string())];
+        let y = vec![FlagId("flag/y".to_string())];
+        let requires_x = Gate::of(&x, &[], &[]);
+        let forbids_x = Gate::of(&[], &x, &[]);
+        let forbids_y = Gate::of(&[], &y, &[]);
+        assert_eq!(
+            forbids_x.exclusions(&requires_x),
+            vec![GateContradiction::Flag("flag/x".to_string())]
+        );
+        assert_eq!(
+            requires_x.exclusions(&forbids_x),
+            forbids_x.exclusions(&requires_x),
+            "exclusion is symmetric"
+        );
+        assert!(
+            requires_x.exclusions(&forbids_y).is_empty(),
+            "distinct flags can both hold"
+        );
+        assert!(requires_x.exclusions(&requires_x).is_empty());
+        assert!(requires_x.exclusions(&Gate::OPEN).is_empty());
+        let cmp = |op, value| StateCompare {
+            state: StateId("state/tide".to_string()),
+            op,
+            value,
+        };
+        let high = [cmp(AtLeast, 5)];
+        let low = [cmp(AtMost, 4)];
+        let mid = [cmp(AtMost, 5)];
+        assert_eq!(
+            Gate::of(&[], &[], &high).exclusions(&Gate::of(&[], &[], &low)),
+            vec![GateContradiction::Datum("state/tide".to_string())]
+        );
+        assert!(
+            Gate::of(&[], &[], &high)
+                .exclusions(&Gate::of(&[], &[], &mid))
+                .is_empty(),
+            "ranges meeting at 5 both hold at 5"
+        );
+        // Every reason is named, so a caller can pick one nothing writes.
+        let both = Gate::of(&x, &[], &high);
+        assert_eq!(
+            both.exclusions(&Gate::of(&[], &x, &low)),
+            vec![
+                GateContradiction::Flag("flag/x".to_string()),
+                GateContradiction::Datum("state/tide".to_string()),
+            ]
+        );
     }
 }

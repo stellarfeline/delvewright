@@ -31,6 +31,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use delvewright_dsl::gate::GateContradiction;
 use delvewright_dsl::{
     Campaign, CompareOp, Diagnostic, QuestEffect, StateCompare, TriggerOn, Verb,
 };
@@ -215,12 +216,20 @@ fn zone(anchors: &AnchorTable, z: &delvewright_dsl::StealthZone) -> Option<([i32
 }
 
 /// One effect of a root's timeline: the effect, its tick, the guards on the
-/// way down to it, and its JSON pointer.
+/// way down to it, its JSON pointer, and the index of the effect of the
+/// line's own list it sits under (itself, or the `sequence` carrying it).
 struct Timed<'a> {
     eff: &'a QuestEffect,
     tick: u32,
     guards: Vec<&'a delvewright_dsl::Guard>,
     path: String,
+    top: usize,
+}
+
+/// One timeline: the effect list whose firing starts it, and its effects.
+struct Line<'a> {
+    list: &'a [QuestEffect],
+    timed: Vec<Timed<'a>>,
 }
 
 /// A root list's own timeline: its flat effects at tick `0`, and every effect
@@ -228,19 +237,23 @@ struct Timed<'a> {
 /// another moment (`on_respawn`, `on_rest`, `on_caught`, `on_arrive`) is its own
 /// timeline, returned beside this one so nothing is lost and nothing is
 /// misdated.
-fn timelines<'a>(list: &'a [QuestEffect], path: &str) -> Vec<Vec<Timed<'a>>> {
-    let mut out: Vec<Vec<Timed<'a>>> = vec![Vec::new()];
+fn timelines<'a>(list: &'a [QuestEffect], path: &str) -> Vec<Line<'a>> {
+    let mut out: Vec<Line<'a>> = vec![Line {
+        list,
+        timed: Vec::new(),
+    }];
     for (i, eff) in list.iter().enumerate() {
         let p = format!("{path}/{i}");
         let mut guards = Vec::new();
         if let Some(g) = &eff.when {
             guards.push(g);
         }
-        out[0].push(Timed {
+        out[0].timed.push(Timed {
             eff,
             tick: 0,
             guards: guards.clone(),
             path: p.clone(),
+            top: i,
         });
         match &eff.verb {
             Verb::Sequence { steps } => {
@@ -251,11 +264,12 @@ fn timelines<'a>(list: &'a [QuestEffect], path: &str) -> Vec<Vec<Timed<'a>>> {
                         if let Some(g) = &inner.when {
                             g2.push(g);
                         }
-                        out[0].push(Timed {
+                        out[0].timed.push(Timed {
                             eff: inner,
                             tick: st.at_ticks,
                             guards: g2,
                             path: ip.clone(),
+                            top: i,
                         });
                         for (pseg, _, nested) in inner.nested_effect_lists_labeled() {
                             out.extend(timelines(nested, &format!("{ip}/{pseg}")));
@@ -316,6 +330,7 @@ pub fn collect(campaign: &Campaign, anchors: &AnchorTable) -> (Vec<LinkPlan>, Ve
     for_each_effect_root(campaign, &mut |site, list| {
         let lines = timelines(list, &site.path);
         for (k, line) in lines.iter().enumerate() {
+            let line = &line.timed;
             let writes: Vec<RootWrite> = line
                 .iter()
                 .filter_map(|t| {
@@ -454,29 +469,95 @@ pub fn cutscene_end_offset(eff: &QuestEffect) -> Option<u32> {
     Some(total.max(0) as u32)
 }
 
+/// The flag or datum one effect writes itself, as the key a
+/// [`delvewright_dsl::gate::GateContradiction`] names.
+fn own_write(eff: &QuestEffect) -> Option<GateContradiction> {
+    if let Some(f) = eff.set_flag() {
+        return Some(GateContradiction::Flag(f.as_str().to_string()));
+    }
+    eff.writes_state()
+        .map(|(s, _)| GateContradiction::Datum(s.as_str().to_string()))
+}
+
+/// Every flag and datum `eff` or anything nested under it writes, at any
+/// moment — the over-approximation for a bundle whose timing is not read here.
+fn subtree_writes(eff: &QuestEffect, out: &mut Vec<GateContradiction>) {
+    out.extend(own_write(eff));
+    for (_, _, nested) in eff.nested_effect_lists_labeled() {
+        for e in nested {
+            subtree_writes(e, out);
+        }
+    }
+}
+
+/// Every flag and datum written while `list`'s own body runs: each effect's
+/// own write, a `sequence`'s tick-0 steps (called inline by its start), and
+/// every other nested bundle whole. A `sequence` step at a later tick is not
+/// part of the pass.
+fn pass_writes(list: &[QuestEffect]) -> Vec<GateContradiction> {
+    let mut out = Vec::new();
+    for eff in list {
+        out.extend(own_write(eff));
+        match &eff.verb {
+            Verb::Sequence { steps } => {
+                for e in steps
+                    .iter()
+                    .filter(|st| st.at_ticks == 0)
+                    .flat_map(|st| &st.effects)
+                {
+                    subtree_writes(e, &mut out);
+                }
+            }
+            _ => {
+                for (_, _, nested) in eff.nested_effect_lists_labeled() {
+                    for e in nested {
+                        subtree_writes(e, &mut out);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Whether `a` and `b` can never both fire in one firing of `line`'s list:
+/// the `when` gates of the list effects they sit under exclude each other
+/// ([`delvewright_dsl::Gate::exclusions`]) on a flag or datum the list's own
+/// pass never writes. Those two gates are tested in the one body that pass
+/// runs, so with that key unwritten they read one state, and a contradiction
+/// between them is a proof. Gates tested anywhere else — a `sequence` step's
+/// own `when`, run when the step runs — are never read as exclusive here.
+fn exclusive(line: &Line<'_>, writes: &[GateContradiction], a: &Timed<'_>, b: &Timed<'_>) -> bool {
+    let (ga, gb) = (line.list[a.top].gate(), line.list[b.top].gate());
+    ga.exclusions(&gb).iter().any(|k| !writes.contains(k))
+}
+
 /// `DW0933` (spec-0083 §3.5): a `teleport` — link or gather — that fires at or
 /// before the tick its root's `cutscene` ends. `cs_end` puts every player back
 /// on the marker saved at the cutscene's start, so a teleport under an open
-/// bracket is undone for everyone the moment the camera returns.
+/// bracket is undone for everyone the moment the camera returns. A cutscene
+/// and a teleport whose gates exclude each other ([`exclusive`]) never play in
+/// one firing, so they never overlap.
 pub fn check_teleport_under_cutscene(campaign: &Campaign) -> Vec<Diagnostic> {
     let mut d = Vec::new();
     for_each_effect_root(campaign, &mut |site, list| {
         for line in timelines(list, &site.path) {
+            let writes = pass_writes(line.list);
             let scenes: Vec<(&Timed<'_>, u32)> = line
+                .timed
                 .iter()
                 .filter_map(|t| cutscene_end_offset(t.eff).map(|off| (t, t.tick + off)))
                 .collect();
             if scenes.is_empty() {
                 continue;
             }
-            for t in &line {
+            for t in &line.timed {
                 if t.eff.teleport().is_none() {
                     continue;
                 }
-                let Some((scene, end)) = scenes
-                    .iter()
-                    .find(|(s, end)| s.tick <= t.tick && t.tick <= *end)
-                else {
+                let Some((scene, end)) = scenes.iter().find(|(s, end)| {
+                    s.tick <= t.tick && t.tick <= *end && !exclusive(&line, &writes, s, t)
+                }) else {
                     continue;
                 };
                 let flat = t.tick == 0 && scene.tick == 0 && !t.path.contains("/steps/");
@@ -541,7 +622,7 @@ fn doc_links(campaign: &Campaign) -> Vec<DocLink<'_>> {
             return;
         }
         let lines = timelines(list, &site.path);
-        for t in lines.first().into_iter().flatten() {
+        for t in lines.first().into_iter().flat_map(|l| &l.timed) {
             if let Some((from, to)) = t.eff.teleport() {
                 out.push(DocLink {
                     trigger: trig.id.as_str(),

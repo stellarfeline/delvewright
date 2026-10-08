@@ -412,6 +412,57 @@ fn a_teleport_under_its_roots_cutscene_is_dw0933_at_the_emitted_tick() {
     assert!(line.contains("one flat bundle"), "{line}");
 }
 
+/// Two `when`-gated sequences of the one trigger: the first plays the cutscene
+/// under `forbids flag/crossed` and sets that flag at `set_at`; the second
+/// carries at tick 0 under `teleport_when`.
+fn branched(q: &mut Value, set_at: u32, teleport_when: Value) {
+    trigger_mut(q)["effects"] = json!([
+        {"type": "sequence", "when": {"forbids_flags": ["flag/crossed"]}, "steps": [
+            {"at_ticks": 0, "effects": [cutscene()]},
+            {"at_ticks": set_at, "effects": [{"type": "set-flag", "flag": "flag/crossed"}]}
+        ]},
+        {"type": "sequence", "when": teleport_when, "steps": [
+            {"at_ticks": 0, "effects": [teleport()]}
+        ]}
+    ]);
+}
+
+#[test]
+fn a_teleport_whose_gate_excludes_the_cutscenes_is_not_dw0933() {
+    // The cutscene plays only while `flag/crossed` is unset, the carry only once
+    // it is set, and nothing in the press sets it before both gates are read:
+    // one press plays one branch, so the carry never fires under the camera.
+    let run = build(&campaign("cs-exclusive", |q| {
+        branched(q, 40, json!({"requires_flags": ["flag/crossed"]}));
+    }));
+    assert!(
+        !run.stderr.contains("DW0933"),
+        "exclusive gates refused:\n{}",
+        run.stderr
+    );
+    run.green();
+}
+
+#[test]
+fn gates_that_can_both_hold_under_the_cutscene_are_still_dw0933() {
+    // Distinct flags: `forbids flag/crossed` and `requires flag/paid` both hold
+    // once the toll is paid, so both branches can play in one press.
+    let run = build(&campaign("cs-distinct", |q| {
+        branched(q, 40, json!({"requires_flags": ["flag/paid"]}));
+        q["content"]["triggers"][0]["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "set-flag", "flag": "flag/paid"}));
+    }));
+    run.refused("DW0933");
+    // The cutscene's branch sets `flag/crossed` at tick 0, inside the press
+    // itself, so the carry's gate reads it set: both branches play at once.
+    let run = build(&campaign("cs-self-opened", |q| {
+        branched(q, 0, json!({"requires_flags": ["flag/crossed"]}));
+    }));
+    run.refused("DW0933");
+}
+
 // ---------------------------------------------------------------------------
 // Criterion 11 — the binding line and the ledger.
 // ---------------------------------------------------------------------------
