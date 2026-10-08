@@ -1039,6 +1039,34 @@ def test_fact_check_refuses_a_lost_placeholder():
     assert any("placeholders" in f for f in failures), failures
 
 
+SPANNED = "The ledger is kept by [[obfuscated|someone else]] at [[italic,color=dark_purple|night]]."
+
+
+def test_fact_check_passes_a_translation_that_moves_a_span():
+    row = _row("cast.q.n.0.bark.2", SPANNED, kind="bark")
+    zh = "[[italic,color=dark_purple|入夜]]以后，账本由[[obfuscated|别的什么人]]记。"
+    assert t.check_row(row, zh, NAMES, "zh-cn") == []
+
+
+@pytest.mark.parametrize(
+    "zh",
+    [
+        "[[italic,color=dark_purple|入夜]]以后，账本由别的什么人记。",  # opener and closer lost
+        "[[italic,color=dark_purple|入夜]]以后，账本由[[bold|别的什么人]]记。",  # restyled
+        "[[italic,color=dark_purple|入夜]]以后，账本由[[obfuscated|别的什么人记。",  # unclosed
+    ],
+)
+def test_fact_check_refuses_a_translation_that_loses_a_span(zh):
+    row = _row("cast.q.n.0.bark.2", SPANNED, kind="bark")
+    failures = t.check_row(row, zh, NAMES, "zh-cn")
+    assert any("span markers" in f for f in failures), failures
+
+
+def test_every_prompt_tells_the_writer_to_keep_spans():
+    for prompt in (t.SYSTEM_PROMPT, t.FIX_PROMPT, t.IMPROVEMENT_PROMPT):
+        assert "span" in prompt
+
+
 @pytest.mark.parametrize(
     ("en", "zh", "lost"),
     [
