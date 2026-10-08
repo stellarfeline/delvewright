@@ -1616,7 +1616,7 @@
     "void-horizon.en:validation/observer-census.json",
     "void-horizon.en:validation/stand-in-gate.json"
   ],
-  "base_commit": "4885a47dec8eb8f8eea5e211b2f3b0fdee2402a9",
+  "base_commit": "109355653f3743f32370de9d9c194f1d25ae4a57",
   "changed": [
     "carcass.en:creator-datapack/layout.json",
     "carcass.en:critical-path.json",
