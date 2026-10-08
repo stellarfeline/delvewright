@@ -783,20 +783,20 @@ fn the_parameterised_derivation_has_exactly_one_production_caller() {
             if t.contains("Perturb") {
                 named_perturb.insert(name.clone());
             }
-            if t.contains("build_with(") && !t.starts_with("pub fn") && !t.starts_with("fn") {
+            if t.contains("build_with(") && !is_fn_definition(t) {
                 callers.push((name.clone(), t.to_string()));
             }
         }
     }
 
-    // `plan.rs` calls it from `Plan::build` with the literal that asks for
+    // `plan/mod.rs` calls it from `Plan::build` with the literal that asks for
     // nothing; the binary's `main.rs` calls it from the `--perturb` arm.
     // Nothing else may.
     let sites: Vec<&str> = callers.iter().map(|(f, _)| f.as_str()).collect();
     assert_eq!(
         sites,
         vec![
-            "crates/delvec/src/compiler/plan.rs",
+            "crates/delvec/src/compiler/plan/mod.rs",
             "crates/delvec/src/main.rs"
         ],
         "the parameterised derivation acquired a caller: {callers:#?}"
@@ -813,13 +813,43 @@ fn the_parameterised_derivation_has_exactly_one_production_caller() {
         named_perturb.iter().map(String::as_str).collect::<Vec<_>>(),
         vec![
             "crates/delvec/src/compiler/blockout.rs",
-            "crates/delvec/src/compiler/plan.rs",
+            "crates/delvec/src/compiler/plan/mod.rs",
             "crates/delvec/src/main.rs",
         ],
         "binding: {} source file(s) scanned, {} call site(s) found",
         files.len(),
         callers.len()
     );
+}
+
+/// Whether a trimmed source line opens a `fn` item, at any visibility: none,
+/// `pub`, or a restricted `pub(crate)` / `pub(super)` / `pub(in path)`.
+fn is_fn_definition(t: &str) -> bool {
+    let rest = if let Some(r) = t.strip_prefix("pub(") {
+        r.split_once(") ").map_or(r, |(_, after)| after)
+    } else {
+        t.strip_prefix("pub ").unwrap_or(t)
+    };
+    rest.starts_with("fn ")
+}
+
+#[test]
+fn a_fn_definition_is_recognised_at_every_visibility() {
+    for def in [
+        "fn build_with(",
+        "pub fn build_with(",
+        "pub(crate) fn build_with(",
+        "pub(super) fn build_with(",
+        "pub(in crate::compiler::plan) fn build_with(",
+    ] {
+        assert!(is_fn_definition(def), "{def}");
+    }
+    for call in [
+        "Self::build_with(campaign, prefabs, Perturb::none())",
+        "let plan = Plan::build_with(&c, &p, perturb)?;",
+    ] {
+        assert!(!is_fn_definition(call), "{call}");
+    }
 }
 
 /// Recursively collect `*.rs` under `dir`.
