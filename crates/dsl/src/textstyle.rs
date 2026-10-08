@@ -566,6 +566,22 @@ mod tests {
         }
     }
 
+    /// `l10n::plain` — what every named exclusion reads — is the visible text,
+    /// tagged or not (spec-0096 §3.4).
+    #[test]
+    fn plain_reads_the_visible_text() {
+        let tagged = crate::l10n::tag("cast.q.n.0.bark.2", BARK);
+        assert_eq!(
+            crate::l10n::plain(&tagged),
+            "The ledger is kept by someone else at night."
+        );
+        assert_eq!(
+            crate::l10n::plain(BARK),
+            "The ledger is kept by someone else at night."
+        );
+        assert!(!crate::l10n::plain(&tagged).contains("[["));
+    }
+
     #[test]
     fn the_visible_text_drops_the_markup() {
         assert_eq!(
