@@ -1,5 +1,5 @@
 //! Suite-wide PackTest batch-model invariants (task: total conversion of the
-//! generated templates; see `pin_dummy` in `emit.rs` and the "PackTest batch
+//! generated templates; see `pin_dummy` in `emit/packtest.rs` and the "PackTest batch
 //! model" section of `docs/reference/compiler.md`).
 //!
 //! PackTest runs the whole generated suite as ONE batch on one shared server:

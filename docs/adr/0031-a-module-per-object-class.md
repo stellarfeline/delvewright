@@ -596,6 +596,38 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   is its own step, which triages those seven.
 - `purchase.rs` carries checks, so its absorption into `economy.rs` is B2's.
 
+**What B3a found** (corrections to this record, made where B3a touched it):
+
+- The suite is not one range. In `emit.rs` at `fb2042b30` it runs from the
+  section header at line 16587 to the end of `emit_verb_packtests` at 26134,
+  plus `emit_seal_packtest` (9028–9101, in the seal section) and the
+  atmosphere templates with their four helpers and `CellBox` (26184–26424).
+  All three moved.
+- Three functions inside that range are read by emission outside the suite
+  and stay in `emit.rs` for B3b: `campaign_complete_tail` and
+  `quests_ending_tail` (the critical-path manifest) and `wave_machinery_waves`
+  (the wave machinery).
+- `emit_packtest` was not only a list: it wrote the campaign, sealed-state,
+  declared-difficulty and hand-camera templates inline, and
+  `emit_v06_packtests` ended by calling five other objects' emitters. The
+  four bodies became functions in `packtest/{quest,world,creator}.rs` and the
+  five calls moved into the driver, in the same order. `packtest/world.rs`
+  and `packtest/creator.rs` are objects §2's list does not name.
+- Three moved functions bundle several objects under a version or verb name
+  and moved whole: `emit_v06_packtests` (checkpoint, stealth, cutscene freeze,
+  `damage-players`) into `checkpoint.rs`, `emit_v04_packtests` (prop, NPC
+  despawn and move, the dialogue-mask walk) into `npc.rs`, and
+  `emit_verb_packtests` (one template per gameplay verb) into `objective.rs`.
+  Phase C splits them by object.
+- §5 names no per-file ledger that holds `emit.rs`.
+  `check-structure-emitters` lists files that name `fastnbt::to_bytes`, and
+  `emit.rs` names none; `check-effect-roots` allows `plan.rs` and `effects.rs`
+  only; the `DW0185` scan reads emitted bytes, not source paths. No DW code is
+  declared in the moved code, so no catalog row moves.
+- A source scan that reads only the top level of `compiler/` loses whatever a
+  step moves into a directory. `tests/atmosphere.rs`'s one-biome-reader scan
+  was one; it walks the tree now.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,
