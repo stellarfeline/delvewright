@@ -56,6 +56,7 @@ that examined nothing is not a pass.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
 import json
 import subprocess
@@ -63,6 +64,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+import parallel  # noqa: E402
 from gallery_domain import GALLERY, build_id, overlays  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
@@ -153,12 +156,17 @@ def token_in_tree(out: Path) -> bool:
     return (out / ADMISSION).is_file()
 
 
-def build_point(delvec: Path, prefabs: Path, work: Path, point: str, lang: str) -> tuple[Path, Path]:
+def run_build(
+    delvec: Path, prefabs: Path, work: Path, point: str, lang: str
+) -> tuple[Path, Path, subprocess.CompletedProcess]:
     """Materialise and compile one point, through the one tool that owns that act.
+
+    It says nothing, so it may run on a worker of the shared pool; `built` reads it.
 
     `--src`/`--out` are named rather than defaulted because the default carries
     the point and not the language, so `primary.en` and `primary.zh-cn` would
-    compile over each other and this gate would judge one tree twice.
+    compile over each other and this gate would judge one tree twice. The same
+    naming is what gives every concurrent point directories of its own.
     """
     src = work / f"gallery-src-{point}-{lang}"
     out = work / f"delve-output-gallery-{point}-{lang}"
@@ -182,6 +190,11 @@ def build_point(delvec: Path, prefabs: Path, work: Path, point: str, lang: str) 
         capture_output=True,
         text=True,
     )
+    return src, out, r
+
+
+def built(point: str, lang: str, src: Path, out: Path, r: subprocess.CompletedProcess) -> tuple[Path, Path]:
+    """`(src, out)` of a finished build, or the refusal a failed one earns."""
     if r.returncode != 0:
         sys.stderr.write(r.stderr)
         die(
@@ -192,13 +205,15 @@ def build_point(delvec: Path, prefabs: Path, work: Path, point: str, lang: str) 
     return src, out
 
 
-def judge(ledger: Path, work: Path, point: str, lang: str, src: Path, out: Path) -> dict:
-    """Run the staging gate on one built point and return what it decided."""
+def run_judge(
+    ledger: Path, work: Path, point: str, lang: str, src: Path, out: Path
+) -> subprocess.CompletedProcess:
+    """The staging gate's run on one point, saying nothing; its files are named by the point."""
     key = build_id(None if point == PRIMARY else point, lang)
     admit = admission_path(work, key)
     report = work / "reports" / f"{key}.md"
     verdicts = work / "reports" / f"{key}.json"
-    r = subprocess.run(
+    return subprocess.run(
         [
             sys.executable,
             str(STAGING_GATE),
@@ -218,6 +233,14 @@ def judge(ledger: Path, work: Path, point: str, lang: str, src: Path, out: Path)
         capture_output=True,
         text=True,
     )
+
+
+def judged(work: Path, out: Path, point: str, lang: str, r: subprocess.CompletedProcess) -> dict:
+    """What the staging gate decided for one point, read from what it wrote."""
+    key = build_id(None if point == PRIMARY else point, lang)
+    admit = admission_path(work, key)
+    report = work / "reports" / f"{key}.md"
+    verdicts = work / "reports" / f"{key}.json"
     if r.returncode == 2:
         sys.stderr.write(r.stderr)
         die(f"the staging gate could not read `{key}` at all (exit 2), so it judged nothing")
@@ -292,19 +315,32 @@ def main() -> int:
         flush=True,
     )
 
+    def run_point(row: tuple[str, str]):
+        point, lang = row
+        src, out, b = run_build(delvec, prefabs, work, point, lang)
+        if b.returncode != 0:
+            return src, out, b, None
+        return src, out, b, run_judge(args.ledger, work, point, lang, src, out)
+
+    # Each point builds and is judged on the shared pool (`tools/lib/parallel.py`)
+    # in directories named for it, and is READ in the ledger's order, so every
+    # line and the first refusal are the serial walk's.
     results = []
-    for point, lang in rows:
-        src, out = build_point(delvec, prefabs, work, point, lang)
-        r = judge(args.ledger, work, point, lang, src, out)
-        results.append(r)
-        mark = "REFUSED" if r["exit"] != 0 else "stageable"
-        print(
-            f"  {r['key']:<22} {mark:<10} {len(r['reds'])} red / {r['findings']} finding(s), "
-            f"{r['inapplicable']} inapplicable",
-            flush=True,
-        )
-        for red in r["reds"]:
-            print(f"      {red}", flush=True)
+    runs = parallel.ordered(run_point, rows)
+    with contextlib.closing(runs):
+        for (point, lang), outcome in zip(rows, runs):
+            src, out, b, j = outcome.get()
+            built(point, lang, src, out, b)
+            r = judged(work, out, point, lang, j)
+            results.append(r)
+            mark = "REFUSED" if r["exit"] != 0 else "stageable"
+            print(
+                f"  {r['key']:<22} {mark:<10} {len(r['reds'])} red / {r['findings']} finding(s), "
+                f"{r['inapplicable']} inapplicable",
+                flush=True,
+            )
+            for red in r["reds"]:
+                print(f"      {red}", flush=True)
 
     if len(results) != len(rows):
         die(f"judged {len(results)} point(s) of {len(rows)} — the walk did not finish")
