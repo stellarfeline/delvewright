@@ -1407,7 +1407,7 @@ pub fn pack_texture_id(campaign_id: &str, texture_id: &str) -> String {
 ///
 /// **The creator's key space does not move.** `texture_id` is what a creator
 /// writes in `npcs.json`/`quests.json` and names `skins/<texture_id>.png` after,
-/// and `DW0190` (malformed or duplicate id) and `DW0309` (missing PNG) both read it
+/// and `DW0190` (malformed id) and `DW0309` (missing PNG) both read it
 /// as authored — every one of them runs on the campaign *before* this rewrite, and
 /// `validate`/`analyze`, which never emit, never reach it at all.
 ///

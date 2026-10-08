@@ -104,6 +104,31 @@ fn malformed_skin_texture_id_is_dw0190() {
     );
 }
 
+/// spec-0097 §4.3: a `texture_id` names a file, and two bodies may wear it —
+/// a twin that hides her hat stands beside her sister in the same face.
+#[test]
+fn two_mannequins_may_wear_one_texture() {
+    let npcs = common::patch_doc(&valid_npcs_v04(), |d| {
+        let npcs = d["content"]["npcs"].as_array_mut().unwrap();
+        npcs[0]["skin"] = serde_json::json!({ "texture_id": "keeper", "model": "wide" });
+        let mut twin = npcs[0].clone();
+        twin["id"] = serde_json::json!("npc/keeper-twin");
+        twin["skin"] = serde_json::json!({
+            "texture_id": "keeper", "model": "wide", "hidden_layers": ["hat"]
+        });
+        npcs.push(twin);
+    });
+    let diags = check_campaign(&campaign_with(
+        &npcs,
+        QUESTS_BASE.as_str(),
+        &valid_dialogue_v04(),
+    ));
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0190"),
+        "one file, two bodies is not a malformed id: {diags:#?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // DW0980 — a mannequin layer hidden twice (spec-0097 §5)
 // ---------------------------------------------------------------------------

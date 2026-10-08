@@ -3830,7 +3830,6 @@ fn v06_checks(
     let providers = AnchorProviders::build(c, anchors);
 
     // Actor declarations: entity id, skin, spawn anchor.
-    let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
     for (i, a) in quests.actors.iter().enumerate() {
         if !entities.contains(&a.entity) {
             d.push(Diagnostic::error(
@@ -3853,17 +3852,6 @@ fn v06_checks(
                     format!(
                         "actor skin `texture_id` `{}` is malformed — it must be a bare kebab token \
                          (e.g. `giant-idle`), matching the `skins/<texture_id>.png` filename",
-                        skin.texture_id
-                    ),
-                ));
-            } else if !seen_skins.insert(skin.texture_id.as_str()) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "quests",
-                    format!("/content/actors/{i}/skin/texture_id"),
-                    format!(
-                        "duplicate actor skin `texture_id` `{}` — each mannequin needs a distinct \
-                         texture; rename one (and its `skins/<id>.png`)",
                         skin.texture_id
                     ),
                 ));
@@ -5453,7 +5441,7 @@ fn v03_checks(
 
 /// The v0.4 semantic checks (run only for `dsl_version` 0.4.0):
 ///
-/// - mannequin skins: `texture_id` syntax + uniqueness (`DW0190`);
+/// - mannequin skins: `texture_id` syntax (`DW0190`); two bodies may wear one file;
 /// - wave-mob `effects[].effect` ids in the effect registry (`DW0192`);
 /// - `set-block` / `interact.prop` block ids in the block registry (`DW0193`);
 /// - environment triggers: id syntax + uniqueness (`DW0194`), `at` anchor
@@ -5484,7 +5472,12 @@ fn v04_checks(
     let declared_waves: BTreeSet<&str> = quests.waves.iter().map(|w| w.id.as_str()).collect();
 
     // --- skins (spec-0009) ---
-    let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
+    //
+    // A `texture_id` names a FILE, and two bodies may wear one file: the bake
+    // reads it once and both summons point at the one pack texture
+    // (`read_skins`), and a skin's per-body choices (`model`, `hidden_layers`)
+    // ride the body, not the file (spec-0097 §4.3). So only the id's shape is
+    // refused here.
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
         if let Some(skin) = &npc.skin {
             if !is_kebab(&skin.texture_id) {
@@ -5495,18 +5488,6 @@ fn v04_checks(
                     format!(
                         "skin `texture_id` `{}` is malformed — it must be a bare kebab token \
                          (e.g. `keeper-armor`), matching the `skins/<texture_id>.png` filename",
-                        skin.texture_id
-                    ),
-                ));
-            }
-            if !seen_skins.insert(skin.texture_id.as_str()) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "npcs",
-                    format!("/content/npcs/{i}/skin/texture_id"),
-                    format!(
-                        "duplicate skin `texture_id` `{}` — each mannequin needs a distinct \
-                         texture; rename one (and its `skins/<id>.png`)",
                         skin.texture_id
                     ),
                 ));

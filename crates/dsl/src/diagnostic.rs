@@ -986,9 +986,10 @@ pub mod codes {
         pub const L10N_PROVENANCE_MISSING: DwCode = DwCode::new("DW0188", ExitTier::Build);
     }
     crate::dw_code! {
-        /// (v0.4, widened by spec-0084) An image id a campaign declares — a body's
-        /// `skin.texture_id` or a `world.textures[]` row's `id` — is malformed (not a bare kebab
-        /// token) or duplicated among the images of its kind (spec-0009). A missing `model` is a
+        /// (v0.4, widened by spec-0084, narrowed by spec-0097) An image id a campaign
+        /// declares is malformed (not a bare kebab token) — a body's `skin.texture_id`
+        /// or a `world.textures[]` row's `id` — or a `world.textures[]` row's `id` is
+        /// duplicated. A skin's `texture_id` names a file two bodies may both wear. A missing `model` is a
         /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).
         pub const SKIN_INVALID: DwCode = DwCode::new("DW0190", ExitTier::Build);
     }
