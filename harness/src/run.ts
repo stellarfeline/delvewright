@@ -1,7 +1,7 @@
 // Harness entrypoint: `node src/run.ts <critical-path.json>`.
 // Loads and validates the compiler's critical-path contract (spec-0002), connects
 // a mineflayer bot to the server (connection details from the environment — see
-// executor.ts), executes the critical path under a hard wall-clock budget, and
+// executor/connection.ts), executes the critical path under a hard wall-clock budget, and
 // exits 0 on success / 1 on any failure (parse error, ordering violation, a failed
 // step, or timeout). No campaign knowledge lives here (spec-0003): everything
 // comes from critical-path.json.

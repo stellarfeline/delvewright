@@ -179,9 +179,10 @@ test("no harness bot is made except by createHarnessBot", async () => {
   const offenders: string[] = [];
   let scanned = 0;
   for (const dir of ["src", "probe"]) {
-    for (const name of await readdir(nodePath.join(HARNESS, dir))) {
+    // Recursive: `src/executor/` holds one file per object the executor acts on.
+    for (const name of await readdir(nodePath.join(HARNESS, dir), { recursive: true })) {
       if (!/\.(ts|mts|js|mjs)$/.test(name)) continue;
-      const rel = `${dir}/${name}`;
+      const rel = `${dir}/${name.split(nodePath.sep).join("/")}`;
       scanned += 1;
       const text = await readFile(nodePath.join(HARNESS, rel), "utf8");
       if (/\bcreateBot\s*\(/.test(text) && !MAY_CALL_CREATEBOT.has(rel)) offenders.push(rel);
