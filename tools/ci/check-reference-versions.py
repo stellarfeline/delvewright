@@ -34,7 +34,7 @@ neither stale-older nor prematurely-newer:
   `dsl_version` the engine accepts (ADR-0024)
 - `mc <Z>`      == `versions.toml` `[minecraft] version`
 - the `DW0102` catalog row names the same one number, because `DW0102` fires
-  on exactly `version != DSL_VERSION` (`crates/dsl/src/validate.rs`) and its
+  on exactly `version != DSL_VERSION` (`crates/dsl/src/validate/mod.rs`) and its
   row restates that number by hand
 
 That last one is a second instance of the same defect, found while fixing the
@@ -584,7 +584,7 @@ def main(argv: list[str] | None = None) -> int:
             "  the `DW0102` catalog row restates the accepted dsl_version and it "
             "disagrees with\n"
             "      crates/dsl/src/envelope.rs DSL_VERSION (DW0102 fires on exactly\n"
-            "      `version != DSL_VERSION` — crates/dsl/src/validate.rs)\n"
+            "      `version != DSL_VERSION` — crates/dsl/src/validate/mod.rs)\n"
             f"      row:   {doc_dw0102}\n"
             f"      build: {real_dsl}"
         )

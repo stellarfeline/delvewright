@@ -60,7 +60,8 @@ def gate(tmp_path, monkeypatch):
     src = tmp_path / "crates" / "dsl" / "src"
     src.mkdir(parents=True)
     (src / "registry.rs").write_text(REGISTRY_RS, encoding="utf-8")
-    (src / "validate.rs").write_text(GOOD_VALIDATE_RS, encoding="utf-8")
+    (src / "validate").mkdir()
+    (src / "validate" / "mod.rs").write_text(GOOD_VALIDATE_RS, encoding="utf-8")
     (src / "lib.rs").write_text("pub mod validate;\n", encoding="utf-8")
 
     monkeypatch.setattr(module, "REPO", tmp_path)
@@ -80,7 +81,7 @@ def test_one_authority_passes(gate, capsys):
 
 def test_a_second_walk_in_validate_is_a_finding(gate, capsys):
     """The twelfth copy — the whole reason this gate exists."""
-    (gate.SRC / "validate.rs").write_text(
+    (gate.SRC / "validate" / "mod.rs").write_text(
         GOOD_VALIDATE_RS
         + """
 fn loot_checks(c: &Campaign, anchors: &dyn AnchorRegistry) {
@@ -112,9 +113,22 @@ def test_a_walk_in_any_other_file_is_a_finding(gate, capsys):
     assert "will then be quietly wrong about a whole class of campaign" in err
 
 
+def test_the_authority_is_a_path_not_a_file_name(gate, capsys):
+    """Another `mod.rs` holding the same shape is still a second walk.
+
+    The authority is `validate/mod.rs` relative to the crate's source root; a
+    rule keyed on the bare name `mod.rs` would excuse every directory module.
+    """
+    (gate.SRC / "quest").mkdir()
+    (gate.SRC / "quest" / "mod.rs").write_text(GOOD_VALIDATE_RS, encoding="utf-8")
+    assert gate.main() == 1
+    err = capsys.readouterr().err
+    assert "crates/dsl/src/quest/mod.rs calls `anchors_for`" in err
+
+
 def test_the_authority_going_missing_is_a_finding(gate, capsys):
-    """A call in `validate.rs` with no `AnchorProviders` is a walk by definition."""
-    (gate.SRC / "validate.rs").write_text(
+    """A call in `validate/mod.rs` with no `AnchorProviders` is a walk by definition."""
+    (gate.SRC / "validate" / "mod.rs").write_text(
         "fn f(anchors: &dyn AnchorRegistry) { anchors.anchors_for(p); }\n",
         encoding="utf-8",
     )
@@ -125,7 +139,7 @@ def test_the_authority_going_missing_is_a_finding(gate, capsys):
 def test_zero_call_sites_is_a_failure_not_a_pass(gate, capsys):
     """A renamed trait method would leave this gate guarding nothing, green."""
     (gate.SRC / "registry.rs").write_text("// the method moved\n", encoding="utf-8")
-    (gate.SRC / "validate.rs").write_text("impl AnchorProviders {}\n", encoding="utf-8")
+    (gate.SRC / "validate" / "mod.rs").write_text("impl AnchorProviders {}\n", encoding="utf-8")
     assert gate.main() == 1
     err = capsys.readouterr().err
     assert "found 0 `anchors_for` call sites" in err
