@@ -1,7 +1,10 @@
 # Step 9 — detail
 
 
-Optional. A blockout is walkable and legible and made of concrete; detailing
+Required before hand-over: the staging gate refuses a site-plan build with no
+detail plan, since a campaign is staged only once detailed. Places are detailed
+one at a time, and not every place has to be. A blockout is walkable and legible
+and made of concrete; detailing
 replaces one place's massing with a real building, one place at a time — every
 unbound box is still massed, so the map builds, walks and renders at every point
 between none detailed and all of them.

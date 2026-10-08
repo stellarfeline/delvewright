@@ -354,14 +354,15 @@ hand, in the running game, is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`
 
 ## 9. Detail — site-plan campaigns only
 
-Optional. **Needs**:
+Required on a site-plan campaign: the staging gate at step 13 refuses a build
+with no detail plan. **Needs**:
 step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`.
 
 ## 10. The machine ladder
 
-**Needs**: step 9 done, or skipped. **Produces**: PackTest and bot runs at exit
+**Needs**: step 9 done, or not a site-plan campaign. **Produces**: PackTest and bot runs at exit
 0, plus a branch run per branch whenever the build emitted
 `validation/branch-plan.json` — on the build that ships. **Read**:
 `references/ladder.md`; on a red, `references/when-red.md`.

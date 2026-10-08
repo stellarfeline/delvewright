@@ -397,50 +397,17 @@ label buys nothing; the gate checks the justification is there and says
 something. Their count is in the headline because rule 4 makes each a standing
 risk item at that staging review.
 
-**The second is not an escape either — it is a different subject.**
-`OUT-OF-STAGE` exists because the map pipeline (spec-0049) made staging a
-series of events over a growing artifact: the whole-map blockout is walked
-before any content exists, and on that walk the zero-binding verdicts redded
-precisely *because* no content exists — no green state, and the remedy each
-red named (author the content) is the one thing the pipeline's ordering
-forbids doing first. When one gate's prescription is another gate's refusal,
-the defect belongs to the pair; this verdict is the pair's repair, and it is
-determined by the object, never declared by the operator:
-
-- the subject is a **pre-detail blockout** — its campaign places by site plan
-  (`site-plan.json`; DW0839 makes the placement authorities exclusive), the
-  build's **compiler-written manifest** lists the site plan among its inputs,
-  and no `detail-plan.json` exists in campaign or manifest; any disagreement
-  is not a blockout (fail closed);
-- the row's class **measures zero twice**, by either instrument above: the
-  binding probe counted zero, and the precondition counted zero. Any non-file
-  path matching a `campaign` glob withdraws the self-measuring claim and reds,
-  because `is_file()` answers an honest `False` for a directory standing where
-  the file belongs. A binding whose zero is ambiguous and whose row declares no
-  `applies_when` reaches nothing here: it stays `UNBOUND`, blockout or not,
-  because a stage cannot answer a question nobody asked.
-
-What the opt-out demands, the defect cannot supply: *a build whose combat went
-missing* fails at least one measurement — declared objects make the binding
-non-zero, a declared precondition surface (a flask nothing refills) reds
-`UNBOUND`, a declared-but-unemitted validation ledger reds `MISSING-CHECK`,
-and an assembled or detailed campaign cannot present the blockout record at
-all. The storybook clause is the same shape: *release notes that advertise a
-delve the campaign does not have* need a storybook to be rendered from, and a
-campaign that has one measures non-zero. Zero storybooks is what a blockout
-looks like because the storybook is written at
-`skill-workflow.md` step 14 and the blockout is walked at step 9 — so the
-walk that is a site-plan campaign's first gate is exactly the staging at which
-no campaign can carry one. `OUT-OF-STAGE` rows are counted in the headline, listed in their own
-section, named by id in the admission token, and announced by the boot banner
-— the owner is told, per class, what her walk is not protected from, which is
-rule 4's obligation kept rather than folded away. The moment the campaign
-gains a detail-plan document, every one of these rows is adjudicated afresh
-with no blockout allowance — the same measured double zero is then the counted
-`INAPPLICABLE`, out of the boot banner and out of `--strict`'s reach. The
-verdict is a statement about one staging of one stage, never a standing
-exemption. `--strict` fails on these rows, because a stage CLAIM is exactly
-what a reviewer at the floor wants re-examined.
+**A pre-detail blockout is not a subject at all.** A campaign is staged only
+once detailed: the first time a player meets it is its finished first version,
+so a site-plan campaign whose only geometry is the derived massing (spec-0049)
+is never handed to one. The gate refuses such a subject before any row is
+adjudicated, with or without `--strict`, and `--stage-anyway` does not reach
+the refusal, because the override admits a red list and this is not one. The
+subject is a blockout when EITHER instrument says so — the campaign places by
+site plan (`site-plan.json`; DW0839 makes the placement authorities exclusive)
+with no `detail-plan.json`, or the build's **compiler-written manifest** lists
+the site plan among its inputs and no detail plan — so a build compiled before
+the campaign was detailed is refused too.
 
 One consequence, stated because it is measured rather than hidden: an
 unemitted validation artifact whose row declares an `applies_when` that
@@ -472,8 +439,7 @@ every one of those campaigns fails to build — no build tree, no manifest, and
 `--build` is mandatory. The defect cannot present this witness.
 
 The zero this produces is adjudicated by the rules above and by nothing else:
-the counted `INAPPLICABLE` on an assembled campaign, and `OUT-OF-STAGE` only
-where the twice-measured blockout determination already grants it. No verdict,
+the counted `INAPPLICABLE`. No verdict,
 row field, disposition or operator flag is added anywhere. Its cost is one obligation the ledger now
 carries: a `dsl` probe may only name a document this gate reads, refused at
 load time, because a mistyped filename appears in no manifest and would

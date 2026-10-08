@@ -186,6 +186,10 @@ It is not optional and not skippable by going around it: `owner-play.yaml` is
 the only file that publishes 25565, and it refuses to start the server without
 a token the gate minted for *that exact build tree*.
 
+**A site-plan build with no place detailed is refused outright** — with or
+without `--strict`, and out of `--stage-anyway`'s reach. A campaign is staged
+only once detailed; step 9 is what makes it so.
+
 **A red gate is not a defect count.** It is the list of defect classes a
 player is not protected from, drawn from every finding ever reported on any
 campaign — so a campaign that contains none of the objects a row is about shows
@@ -194,9 +198,8 @@ the list, put it in the report by class, and never backfill a weak check to turn
 a row green.
 
 **A class this build cannot exercise is not in the red list at all.** A row
-whose class measured zero across the whole declared design is `INAPPLICABLE` —
-or `OUT-OF-STAGE` on a site-plan build with no place detailed — and is printed
-in its own section. Those rows still go into the report, by class; they do not
+whose class measured zero across the whole declared design is `INAPPLICABLE`,
+and is printed in its own section. Those rows still go into the report, by class; they do not
 refuse the build. A row in the RED list is worth stopping for.
 
 To go in anyway on a build you know is red:

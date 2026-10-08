@@ -50,7 +50,7 @@ with its own schema:
 |---|---|
 | `geometry-brief.json` · `layout-graph.json` · `site-plan.json` | a site-plan campaign — step 2B; a site-plan campaign has no `areas[]` |
 | `design.json` | step 4, the moment the user approves the reference images — one row per approved picture, and the only home the approved sky has |
-| `detail-plan.json` | step 9, optional |
+| `detail-plan.json` | step 9, required before a site-plan campaign is staged |
 | `world-edits.json` | whenever the map editor was used to fix terrain — see *Reference: tools by symptom* |
 
 ## The envelope, and the number in it
