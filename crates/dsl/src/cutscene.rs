@@ -285,10 +285,38 @@ impl CameraShot {
 // Validation — the checks `dsl::validate` runs over this object (ADR-0031)
 // ---------------------------------------------------------------------------
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::{QuestEffect, Verb};
 use std::collections::BTreeSet;
+
+crate::dw_code! {
+    /// (v0.6) A `cutscene` effect's shape is invalid: it mixes the multi-shot
+    /// `shots` list with the single-shot `path`/`seconds` fields, gives neither,
+    /// or declares a shot with an empty camera `path`. A cutscene must resolve to
+    /// at least one shot, and every shot to at least one camera position.
+    pub const CUTSCENE_SHAPE: DwCode = DwCode::new("DW0199", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) A `shot_style` declaration is semantically invalid (spec-0015 shot
+    /// grammar): a styled shot with no `subject`; style-only fields (`subject`,
+    /// `subject_b`, `dist`, `degrees`, `bearing`) on an unstyled shot; a
+    /// `subject_b` on a style other than `two-shot` (or a `two-shot` without
+    /// one); `degrees` off `orbit-arc` or outside `45..=120`; `dist` outside
+    /// `1..=48`; or `bearing` outside `-360..=360`. Validation-tier (exit 1).
+    pub const SHOT_STYLE_INVALID: DwCode = DwCode::new("DW0348", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) A `side-track` / `low-follow` shot whose subject has no
+    /// compiler-known motion: those styles dolly *with* a moving subject, so the
+    /// subject must be an NPC/actor with a matching `move-npc`/`move-actor` in
+    /// the same effect group or the same `sequence` timeline (an `anchor`
+    /// subject can never move). Validation-tier (exit 1). Use `locked-off` /
+    /// `push-in` for a static subject instead.
+    pub const SHOT_SUBJECT_UNMOVED: DwCode = DwCode::new("DW0349", ExitTier::Build);
+}
 
 /// `cutscene` shape (`DW0199`): a cutscene is written either multi-shot
 /// (`shots: [...]`, DSL v0.6) or single-shot (`path` + `seconds`, DSL v0.4) —
@@ -309,7 +337,7 @@ pub(crate) fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut V
     let single = !path.is_empty() || seconds.is_some();
     let err = |d: &mut Vec<Diagnostic>, field: &str, msg: String| {
         d.push(Diagnostic::error(
-            codes::CUTSCENE_SHAPE,
+            CUTSCENE_SHAPE,
             "quests",
             format!("{base_path}/{field}"),
             msg,
@@ -455,7 +483,7 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             let spath = format!("{path}/shots/{i}");
             let err = |d: &mut Vec<Diagnostic>, field: &str, msg: String| {
                 d.push(Diagnostic::error(
-                    codes::SHOT_STYLE_INVALID,
+                    SHOT_STYLE_INVALID,
                     "quests",
                     format!("{spath}/{field}"),
                     msg,
@@ -558,7 +586,7 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 };
                 if !moved {
                     d.push(Diagnostic::error(
-                        codes::SHOT_SUBJECT_UNMOVED,
+                        SHOT_SUBJECT_UNMOVED,
                         "quests",
                         format!("{spath}/subject"),
                         format!(

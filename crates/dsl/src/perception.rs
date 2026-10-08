@@ -139,9 +139,45 @@ pub fn reach_moves(seconds: u32, forbids_sprint: bool) -> usize {
 // Validation — the checks `dsl::validate` runs over this object (ADR-0031)
 // ---------------------------------------------------------------------------
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::{QuestEffect, Verb};
+
+crate::dw_code! {
+    /// (spec-0085 §4.3) **A particle the game does not draw from a bare id.** A
+    /// `particle` effect names an id the pinned registry
+    /// (`crates/dsl/data/particles-1.21.11.json`) does not hold, or one whose
+    /// type takes options (`dust`, `block`, `item`, …) — which the verb cannot
+    /// carry, so the emitted command would be refused by the game.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_UNKNOWN_PARTICLE: DwCode = DwCode::new("DW0941", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0085 §3.3) **An audience on a party fact.** An effect states the
+    /// envelope's `audience` or `in` on a verb the emitter fires once for the
+    /// world ([`crate::Verb::addresses_players`] answers `false`) — a
+    /// flag, a gate, a block, a region, a timeline, a rocket. A box has no party
+    /// and a world fact has no audience; a `sequence`'s steps each state their
+    /// own.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_AUDIENCE_ON_A_PARTY_FACT: DwCode = DwCode::new("DW0942", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0085 §5.3) **A sight effect that ends under a camera.** In one
+    /// timeline, a `give-effect` of a sight effect
+    /// ([`crate::perception::SIGHT`]) overlaps a `cutscene` step and ends inside
+    /// it, or within the effect's wind-down after it, so the effect starts
+    /// ramping down on screen. The `give-effect` half of the findings-ledger
+    /// row whose general form is that a granted sight effect outlasts any
+    /// authored camera it can overlap.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const PERCEPTION_SIGHT_UNDER_A_CAMERA: DwCode = DwCode::new("DW0944", ExitTier::Build);
+}
 
 /// **The perception surface, at every effect root** (spec-0085).
 ///
@@ -188,7 +224,7 @@ fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Ve
     {
         match perception::particle_takes_options(particle) {
             None => d.push(Diagnostic::error(
-                codes::PERCEPTION_UNKNOWN_PARTICLE,
+                PERCEPTION_UNKNOWN_PARTICLE,
                 stage,
                 format!("{path}/particle"),
                 format!(
@@ -199,7 +235,7 @@ fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Ve
                 ),
             )),
             Some(true) => d.push(Diagnostic::error(
-                codes::PERCEPTION_UNKNOWN_PARTICLE,
+                PERCEPTION_UNKNOWN_PARTICLE,
                 stage,
                 format!("{path}/particle"),
                 format!(
@@ -230,7 +266,7 @@ fn perception_one(stage: &'static str, path: &str, eff: &QuestEffect, d: &mut Ve
         ] {
             if present {
                 d.push(Diagnostic::error(
-                    codes::PERCEPTION_AUDIENCE_ON_A_PARTY_FACT,
+                    PERCEPTION_AUDIENCE_ON_A_PARTY_FACT,
                     stage,
                     format!("{path}/{field}"),
                     format!(
@@ -306,7 +342,7 @@ fn sight_under_camera(
                 let overlaps = begin < c1 && end > c0;
                 if overlaps && end < c1 + wind {
                     d.push(Diagnostic::error(
-                        codes::PERCEPTION_SIGHT_UNDER_A_CAMERA,
+                        PERCEPTION_SIGHT_UNDER_A_CAMERA,
                         stage,
                         format!("{list_path}/{ei}"),
                         format!(

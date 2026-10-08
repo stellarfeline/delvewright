@@ -359,6 +359,16 @@ crate::dw_code! {
     pub const DIALOGUE_FLAG_DEADLOCK: DwCode = DwCode::new("DW0191", ExitTier::Build);
 }
 
+crate::dw_code! {
+    /// Stage-2 NPC has no stage-6 dialogue tree.
+    pub const NPC_WITHOUT_TREE: DwCode = DwCode::new("DW0152", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Stage-6 dialogue tree references an NPC not declared in stage 2.
+    pub const TREE_WITHOUT_NPC: DwCode = DwCode::new("DW0153", ExitTier::Build);
+}
+
 pub(crate) fn dialogue_graph_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::{DialogueEffect, Objective};
 
@@ -664,7 +674,7 @@ pub(crate) fn npc_tree_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
         if !tree_npcs.contains(npc.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::NPC_WITHOUT_TREE,
+                NPC_WITHOUT_TREE,
                 "dialogue",
                 format!("/content/npcs/{i}"),
                 format!(
@@ -678,7 +688,7 @@ pub(crate) fn npc_tree_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
         if !npc_ids.contains(tree.npc.as_str()) {
             d.push(Diagnostic::error(
-                codes::TREE_WITHOUT_NPC,
+                TREE_WITHOUT_NPC,
                 "dialogue",
                 format!("/content/dialogues/{i}/npc"),
                 format!(

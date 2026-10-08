@@ -651,6 +651,55 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   until the cut that moves their last caller.
 - `purchase.rs` → `economy.rs` belongs to B2c, the cut that holds `economy`.
 
+**What B2b found** (corrections to this record, made where B2b touched it):
+
+- `quest/mod.rs` with the quest's checks would pass 1500 lines, so they are
+  `quest/check.rs` (`dsl::quest::check`, page `dsl/quest/check.md`), split one
+  level down by the §1 rule. It is a `pub` module: the codes it declares were
+  public in `diagnostic::codes` and stay public.
+- `cross_stage` is two checks: a planned quest against its expansion is the
+  quest's; an NPC against its dialogue tree is the dialogue's
+  (`dialogue::npc_tree_checks`).
+- The verb rules that no object module owns — `give-effect`/`clear-effect`
+  (`DW0540`/`DW0541`), the `sequence` nesting rule (`DW0329`), a
+  `carrier: "one"` give (`DW0357`), `give-item` enchantments and the per-effect
+  block/NPC/cutscene references — go with the quest's checks, beside
+  `quest/verb.rs`, where those verbs are declared. `firework_checks` and
+  `perception_checks`, in no cut, go to the existing `firework` and `perception`
+  modules; the cutscene's shape and shot-style checks to `cutscene`.
+- `v06_checks` walks a quest's or a trigger's bundle once for actor references
+  and the `sequence` nesting rule together, so that walk is one function of the
+  actor (`actor::actor_checks`) that calls `quest::check::check_no_nested_sequence`;
+  splitting it would reorder diagnostics within a group.
+- Equipment is the wave's type (`MobEquipment`), so `check_equipment` and the
+  drops checks are `wave.rs`'s and the actor calls them. `check_enchantments`
+  reads an item stack — an equipped piece, a `give-item`, a `loot` stack — and
+  no object module holds the item stack, so it stays in `validate/mod.rs` with
+  `DW0433`/`DW0434` in `diagnostic::codes` until B2c moves `loot`, its last
+  other caller.
+- Codes raised from two modules after this cut stay in `diagnostic::codes`:
+  `DW0110`–`DW0112`, `DW0142`, `DW0143`, `DW0170`, `DW0172`, `DW0173`,
+  `DW0190`, `DW0192`, `DW0196`, `DW0432`, `DW0500`, `DW0953`. Codes declared in
+  `diagnostic::codes` but raised from one object module outside the three cuts
+  (`equipment`, `purchase`, `healthbar`, `onkill`, `celestial`, `l10n`,
+  `chrome`, `viewdistance`) are in no B2 step; dissolving `diagnostic::codes`
+  needs a step that moves them.
+- `world_edits_checks` is in no cut; B2c takes it with `split_blockstate`, the
+  last caller of which it is.
+- A catalog section whose rows split keeps its prose on the page holding most
+  of its rows (§4): `DW050x` moves to `dsl/state.md` with `DW0500`'s row left
+  on `dsl/diagnostic.md` under a pointer, and the status-effect section
+  (`DW0540`–`DW0545`) to `dsl/quest/check.md`, where two of its four rows are.
+- A private copy the split made visible: two inventories of "which flags
+  exist". `produced_flags` (`set-flag`, dialogue, trap disarm) answers
+  `DW0172` for objectives, effects and branch points; `collect_declared_flags`
+  (the same, plus a timed gate's disarm) answers it for triggers, dialogue and
+  traps. A flag only a timed-gate disarm sets is therefore refused on an
+  objective and accepted on a trigger's own `requires_flags` (reproduced on the
+  gallery: `flag/gate-jammed` planted on both raises one `DW0172`, at the
+  objective). B2b moves both unchanged; the merge is its own step, proven by a
+  test that plants that flag on both sites.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,

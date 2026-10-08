@@ -213,9 +213,105 @@ impl StateCompare {
 // ---------------------------------------------------------------------------
 
 use crate::QuestEffect;
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use std::collections::{BTreeMap, BTreeSet};
+
+crate::dw_code! {
+    /// (spec-0076 §7) **A standing display the sidebar cannot draw as declared.**
+    /// A `state[]` datum declares `display: sidebar` and the slot cannot show
+    /// what it is handed: a second datum already asks for the one slot (the
+    /// sidebar holds one objective, and "first wins" would hide a decision the
+    /// creator has to make); the datum has no `name` (the slot's heading is the
+    /// display name, and without one the objective's id would stand on screen);
+    /// or the datum is `party`-scoped (its value lives on `#party`, and the
+    /// sidebar hides every `#`-prefixed holder, so the display would be an empty
+    /// heading). One rule about what the slot can draw, three ways to ask for
+    /// what it cannot — the `DW0520` shape. Validation-tier (exit 1).
+    /// Prescription: keep one `display`, give the datum a `name`, or declare it
+    /// `player`-scoped; a `party` purse keeps its announcement and stands nowhere.
+    pub const STATE_DISPLAY_UNDRAWABLE: DwCode = DwCode::new("DW0919", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.10, spec-0031) A gate's `requires_state` reads a declared datum that
+    /// **no verb anywhere in the campaign ever writes**. The datum can only ever
+    /// hold its declared `initial`, so the comparison's answer was decided at
+    /// authoring time and the gate is a constant wearing a condition's clothes.
+    ///
+    /// This is the vacuity rule at the level of one datum (CLAUDE.md: *a green
+    /// gate that binds to nothing is vacuous, not a pass*) — the numeric
+    /// equivalent of the bot's combat floor examining zero enemies for nineteen
+    /// rounds. Validation-tier (exit 1). Prescription: write the datum somewhere
+    /// (`set-state`/`add-state`/`clear-state`), or drop the comparison and say
+    /// what you meant unconditionally.
+    pub const STATE_NEVER_WRITTEN: DwCode = DwCode::new("DW0501", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.10, spec-0031) A declared datum that **no gate anywhere in the
+    /// campaign ever reads**. Either some verb writes it and nothing ever asks
+    /// (the write is inert — a counter nobody consults), or nothing touches it at
+    /// all (a dead declaration). Runtime state exists to be compared against; a
+    /// datum with no reader is bookkeeping no player can ever observe.
+    /// Validation-tier (exit 1). Prescription: gate something on it with
+    /// `requires_state`, or delete the declaration and its writes.
+    pub const STATE_NEVER_READ: DwCode = DwCode::new("DW0502", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.10, spec-0031) A `player`-scoped datum is referenced where emission
+    /// has no acting player to read or write it against.
+    ///
+    /// Two such places exist, and both are properties of the SITE, not of the
+    /// verb: a scheduler-only bundle (a `sequence` step, a `move-npc` /
+    /// `move-actor` `on_arrive`) runs with the server command source — the same
+    /// seam `DW0357` polices for `carrier: "one"` — and the gates emission
+    /// evaluates against the party holder rather than against a player (an
+    /// objective's activation guard, a trigger's arming gate, a trap's arming
+    /// gate) have no `@s` either. Validation-tier (exit 1). Prescription: declare
+    /// the datum `party`-scoped if the whole party shares it, or move the
+    /// read/write onto a site a player drives (a dialogue option, a cast
+    /// placement, an effect on a beat a player completes).
+    pub const STATE_SCOPE_UNREACHABLE: DwCode = DwCode::new("DW0503", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.10, spec-0032) **A comparison read after the bundle has already changed
+    /// what it compares.** An effect's `requires_state` names a datum that an
+    /// EARLIER effect in the same bundle writes, so the gate is evaluated against
+    /// the post-write value, not the value the beat started with.
+    ///
+    /// Found in the emitted output of spec-0032's own first shop. The authored
+    /// shape a shop wants is "the purchase behind `at-least 1`, the apology behind
+    /// `at-most 0`" — and written in that order, buying your LAST ember prints both:
+    /// the debit runs, the balance falls to 0, and the apology's gate — evaluated
+    /// after it — now holds. Vanilla evaluates each `execute` when it reaches it,
+    /// which is the whole reason a per-effect gate is useful, so this is not a bug
+    /// to fix in emission: it is an ordering hazard that only reading the generated
+    /// function reveals. The fix is always the same and always local — **put the
+    /// reading effect before the writing one** — which is why this is a warning
+    /// naming the earlier write rather than a refusal.
+    ///
+    /// Warning-tier (exit 0). Prescription: move the gated effect ahead of the
+    /// write, or gate it on something the bundle does not itself change.
+    pub const STATE_READ_AFTER_WRITE: DwCode = DwCode::new("DW0527", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A gate contradicts itself, so it can NEVER open: a flag on both its
+    /// `requires_flags` and `forbids_flags`, or `requires_state` terms on one
+    /// datum that no integer satisfies (`at-least 5` with `at-most 3`, two
+    /// different `equals`). The thing carrying it — objective, effect, trigger,
+    /// trap, dialogue option, cast placement, shop offer — is authored content
+    /// that provably never happens, which is a defect in what the document
+    /// SAYS, not a stylistic lint. One rule over the whole closed consumer set
+    /// ([`crate::gate::for_each_gate`]), because satisfiability is a property
+    /// of the gate, never of the verb that first needed the question answered.
+    ///
+    /// Error tier, validation (exit 1).
+    pub const GATE_NEVER_OPENS: DwCode = DwCode::new("DW0847", ExitTier::Build);
+}
 
 /// DSL v0.10 runtime-state checks (spec-0031): every reference resolves, every
 /// read has a writer, every datum has a reader, and a `player`-scoped datum is
@@ -279,7 +375,7 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         let path = format!("/content/state/{i}/display");
         if s.name.is_none() {
             d.push(Diagnostic::error(
-                codes::STATE_DISPLAY_UNDRAWABLE,
+                STATE_DISPLAY_UNDRAWABLE,
                 "quests",
                 path.clone(),
                 format!(
@@ -293,7 +389,7 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         if s.scope == crate::StateScope::Party {
             d.push(Diagnostic::error(
-                codes::STATE_DISPLAY_UNDRAWABLE,
+                STATE_DISPLAY_UNDRAWABLE,
                 "quests",
                 path.clone(),
                 format!(
@@ -309,7 +405,7 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         match standing {
             None => standing = Some(s),
             Some(first) => d.push(Diagnostic::error(
-                codes::STATE_DISPLAY_UNDRAWABLE,
+                STATE_DISPLAY_UNDRAWABLE,
                 "quests",
                 path,
                 format!(
@@ -380,7 +476,7 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         && site.consumer != crate::gate::GateConsumer::Loop
                     {
                         d.push(Diagnostic::error(
-                            codes::STATE_SCOPE_UNREACHABLE,
+                            STATE_SCOPE_UNREACHABLE,
                             stage,
                             path,
                             format!(
@@ -460,7 +556,7 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         if read.contains(id) && !written.contains(id) {
             d.push(Diagnostic::error(
-                codes::STATE_NEVER_WRITTEN,
+                STATE_NEVER_WRITTEN,
                 "quests",
                 format!("/content/state/{i}"),
                 format!(
@@ -480,7 +576,7 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "nothing touches it at all"
             };
             d.push(Diagnostic::error(
-                codes::STATE_NEVER_READ,
+                STATE_NEVER_READ,
                 "quests",
                 format!("/content/state/{i}"),
                 format!(
@@ -526,7 +622,7 @@ fn check_player_state_not_scheduled(
             for cmp in e.requires_state() {
                 if is_player(cmp.state.as_str()) {
                     d.push(Diagnostic::error(
-                        codes::STATE_SCOPE_UNREACHABLE,
+                        STATE_SCOPE_UNREACHABLE,
                         stage,
                         path.to_string(),
                         format!(
@@ -549,7 +645,7 @@ fn check_player_state_not_scheduled(
             && is_player(id.as_str())
         {
             d.push(Diagnostic::error(
-                codes::STATE_SCOPE_UNREACHABLE,
+                STATE_SCOPE_UNREACHABLE,
                 stage,
                 path.to_string(),
                 format!(
@@ -570,7 +666,7 @@ fn check_player_state_not_scheduled(
         // none*, and one remedy.
         if scheduled && e.audience == Some(crate::EffectAudience::Actor) {
             d.push(Diagnostic::error(
-                codes::STATE_SCOPE_UNREACHABLE,
+                STATE_SCOPE_UNREACHABLE,
                 stage,
                 path.to_string(),
                 format!(
@@ -632,7 +728,7 @@ pub(crate) fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     continue;
                 };
                 d.push(Diagnostic::warning(
-                    codes::STATE_READ_AFTER_WRITE,
+                    STATE_READ_AFTER_WRITE,
                     site.stage,
                     format!("{}/{i}/when/requires_state", site.path),
                     format!(
@@ -694,7 +790,7 @@ pub(crate) fn gate_contradiction_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             ),
         };
         d.push(Diagnostic::error(
-            codes::GATE_NEVER_OPENS,
+            GATE_NEVER_OPENS,
             site.consumer.stage(),
             site.path.clone(),
             format!(

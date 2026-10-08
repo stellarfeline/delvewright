@@ -16,3 +16,5 @@ This module's rows of a section whose prose is on the [`delvewright_dsl::diagnos
 | `DW0122` | Dialogue effect targets an objective unknown / not `talk-to` / on a different NPC. |
 | `DW0123` | A `talk-to` has no reachable completing option in its tree, measured from the stage-6 `root` and every `cast` ledger root at once (static half of `DW0203`). Whether that option is what right-click opens during the beat that needs it is `DW0858`. |
 | `DW0191` | A `talk-to` has no **ungated** completing option (all `requires_flags`-gated → deadlock risk). |
+| `DW0152` | Stage-2 NPC has no stage-6 tree. |
+| `DW0153` | Stage-6 tree references an NPC not in stage 2. |

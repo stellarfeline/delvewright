@@ -991,7 +991,7 @@ pub enum EffectSite {
     /// This variant did not exist until the effect-root sweep, and its absence was
     /// load-bearing: `EffectSite` had no way to *represent* a dialogue-hosted
     /// bundle, so the four proofs that walk [`for_each_campaign_effect`]
-    /// (`combat::actor_beats`, `validate::difficulty_checks`,
+    /// (`combat::actor_beats`, `wave::difficulty_checks`,
     /// `daylight::fightable_actor`, `nav::actor_fights`) could not have seen root 5
     /// even if their authors had thought of it. Widening the type is what let the
     /// walk widen.

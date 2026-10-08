@@ -4,7 +4,7 @@
 //! `sequence` nesting rule, a `carrier: "one"` give, `give-item` enchantments).
 
 use crate::cutscene::check_cutscene_shape;
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::registry::{AnchorRegistry, BlockRegistry, EffectRegistry, ItemRegistry};
 use crate::validate::{
@@ -13,6 +13,86 @@ use crate::validate::{
 };
 use crate::{Objective, PlannedQuest, QuestEffect, Verb};
 use std::collections::{BTreeMap, BTreeSet};
+
+crate::dw_code! {
+    /// Objective `after` cycle.
+    pub const AFTER_CYCLE: DwCode = DwCode::new("DW0140", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// An `interact` declares `missing_item_hint` without a `requires_item`: the
+    /// hint answers a gate that does not exist, so it could never narrate.
+    pub const MISSING_ITEM_HINT_WITHOUT_ITEM: DwCode = DwCode::new("DW0437", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Planned quest (stage 4) has no expansion in stage 5.
+    pub const QUEST_NOT_EXPANDED: DwCode = DwCode::new("DW0150", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Stage-5 quest is not planned in stage 4.
+    pub const QUEST_NOT_PLANNED: DwCode = DwCode::new("DW0151", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.3) A declared wave is referenced by a `kill` objective but is never
+    /// spawned by any `spawn-wave` effect (referenced-but-never-spawned). A wave
+    /// must be spawned by some effect before its kill objective is reachable.
+    pub const WAVE_NEVER_SPAWNED: DwCode = DwCode::new("DW0171", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0031, DSL v0.10) **A grant whose removal is a later effect, not its
+    /// own duration.** A `give-effect` is still live at the moment a
+    /// `clear-effect` for the same effect fires in the same bundle, so the clear
+    /// — not the duration — is what ends it.
+    ///
+    /// A bundle that does not reach its end leaves the effect on the player: a
+    /// logout, a crash, a death mid-chain, a `sequence` whose remaining
+    /// `schedule` never runs. A duration expires with no cooperation from
+    /// anything, which is why `seconds` is mandatory and why vanilla's `infinite`
+    /// is absent from this surface — this diagnostic is what stops the same
+    /// hazard being rebuilt out of two effects that are individually fine.
+    pub const EFFECT_CLEARED_LIVE: DwCode = DwCode::new("DW0540", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0031, DSL v0.10) A `give-effect`'s `seconds` is zero or beyond
+    /// [`crate::MAX_EFFECT_SECONDS`], or its `amplifier` is beyond
+    /// [`crate::MAX_POTION_AMPLIFIER`].
+    ///
+    /// Zero is the grant that never happens — the unbound-vacuity class as a
+    /// number. The ceilings are vanilla's own field widths, so a duration typed
+    /// in ticks or milliseconds is caught instead of silently overflowing.
+    pub const EFFECT_GRANT_BOUNDS: DwCode = DwCode::new("DW0541", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// An `interact` objective's `prop` is a block a step fires — a pressure
+    /// plate or the tripwire string ([`crate::stepped_blocks`]). The
+    /// objective completes on a right-click, so the block invites an act that
+    /// does nothing. A step is a `trigger` with `on: step`.
+    pub const INTERACT_PROP_STEPPED: DwCode = DwCode::new("DW0957", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
+    /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
+    /// (spec-0014). Flatten the inner steps into the outer timeline.
+    pub const NESTED_SEQUENCE: DwCode = DwCode::new("DW0329", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is
+    /// only ever reached from the **scheduler** (`move-npc`/`move-actor`
+    /// `on_arrive`, a `sequence` step). `carrier: "one"` means "hand this single
+    /// quest prop to the player whose action earned it"; a scheduled bundle runs
+    /// with the server command source and has no acting player, so there is no
+    /// defensible recipient. Give it to the whole party (drop `carrier`), or move
+    /// the hand-off onto the beat that a player completes. Validation-tier (exit 1).
+    pub const PARTY_CARRIER_SCHEDULED: DwCode = DwCode::new("DW0357", ExitTier::Build);
+}
 
 pub(crate) fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, q) in c.quests.content.quests.iter().enumerate() {
@@ -33,7 +113,7 @@ pub(crate) fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
         let nodes: Vec<&str> = q.objectives.iter().map(|o| o.id().as_str()).collect();
         if graph_has_cycle(&nodes, &edges) {
             d.push(Diagnostic::error(
-                codes::AFTER_CYCLE,
+                AFTER_CYCLE,
                 "quests",
                 format!("/content/quests/{i}/objectives"),
                 format!(
@@ -183,7 +263,7 @@ fn check_grant_removal(
             continue;
         }
         d.push(Diagnostic::error(
-            codes::EFFECT_CLEARED_LIVE,
+            EFFECT_CLEARED_LIVE,
             stage,
             g_path.clone(),
             format!(
@@ -236,7 +316,7 @@ fn check_one_status_effect(
     };
     if seconds == 0 || seconds > crate::MAX_EFFECT_SECONDS {
         d.push(Diagnostic::error(
-            codes::EFFECT_GRANT_BOUNDS,
+            EFFECT_GRANT_BOUNDS,
             stage,
             format!("{path}/seconds"),
             format!(
@@ -255,7 +335,7 @@ fn check_one_status_effect(
     }
     if amplifier > crate::MAX_POTION_AMPLIFIER {
         d.push(Diagnostic::error(
-            codes::EFFECT_GRANT_BOUNDS,
+            EFFECT_GRANT_BOUNDS,
             stage,
             format!("{path}/amplifier"),
             format!(
@@ -292,7 +372,7 @@ pub(crate) fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut
                     for inner in &s.effects {
                         if reaches_sequence(inner) {
                             d.push(Diagnostic::error(
-                                codes::NESTED_SEQUENCE,
+                                NESTED_SEQUENCE,
                                 "quests",
                                 path.to_string(),
                                 "a `sequence` effect is nested inside another `sequence` — \
@@ -340,7 +420,7 @@ fn check_carrier_one_not_scheduled(
     for e in effs {
         if !has_actor && !top && e.gives_to_one() {
             d.push(Diagnostic::error(
-                codes::PARTY_CARRIER_SCHEDULED,
+                PARTY_CARRIER_SCHEDULED,
                 "quests",
                 path.to_string(),
                 "a `give-item` with `carrier: \"one\"` sits in a bundle only the scheduler ever \
@@ -529,7 +609,7 @@ fn anchor_resolves(
 ///
 /// So what changes is what the refusal SAYS, never whether it refuses. A plan
 /// with no expansion emits nothing and cannot build, so the error and the exit
-/// stand exactly as before; this is [`crate::diagnostic::codes::QUEST_NOT_EXPANDED`]
+/// stand exactly as before; this is [`crate::diagnostic::QUEST_NOT_EXPANDED`]
 /// telling the truth about where the author is standing. It is grouped into one
 /// diagnostic for the same reason `DW0874` names all five missing documents in
 /// one run: N copies of a sentence about one state is a count the reader has to
@@ -541,7 +621,7 @@ fn plan_awaiting_expansion(unexpanded: &[&PlannedQuest]) -> Diagnostic {
         .collect::<Vec<_>>()
         .join(", ");
     Diagnostic::error(
-        codes::QUEST_NOT_EXPANDED,
+        QUEST_NOT_EXPANDED,
         "quest-plan",
         "/content/quests",
         format!(
@@ -600,7 +680,7 @@ pub(crate) fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
         for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
             if !expanded_ids.contains(q.id.as_str()) {
                 d.push(Diagnostic::error(
-                    codes::QUEST_NOT_EXPANDED,
+                    QUEST_NOT_EXPANDED,
                     "quest-plan",
                     format!("/content/quests/{i}"),
                     format!(
@@ -619,7 +699,7 @@ pub(crate) fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         if !planned_ids.contains(q.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::QUEST_NOT_PLANNED,
+                QUEST_NOT_PLANNED,
                 "quests",
                 format!("/content/quests/{i}"),
                 format!(
@@ -821,7 +901,7 @@ pub(crate) fn quest_reference_checks(
                         ));
                     } else if !spawned_waves.contains(wave.as_str()) {
                         d.push(Diagnostic::error(
-                            codes::WAVE_NEVER_SPAWNED,
+                            WAVE_NEVER_SPAWNED,
                             "quests",
                             format!("/content/quests/{i}/objectives/{j}/wave"),
                             format!(
@@ -924,7 +1004,7 @@ pub(crate) fn quest_reference_checks(
                     // the authored line would be dead content that never fires.
                     if missing_item_hint.is_some() && requires_item.is_none() {
                         d.push(Diagnostic::error(
-                            codes::MISSING_ITEM_HINT_WITHOUT_ITEM,
+                            MISSING_ITEM_HINT_WITHOUT_ITEM,
                             "quests",
                             format!("/content/quests/{i}/objectives/{j}/missing_item_hint"),
                             "`interact.missing_item_hint` narrates the click that arrives \
@@ -1071,7 +1151,7 @@ pub(crate) fn quest_prop_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mu
                 );
                 if crate::fires_on_step(&prop.block) {
                     d.push(Diagnostic::error(
-                        codes::INTERACT_PROP_STEPPED,
+                        INTERACT_PROP_STEPPED,
                         "quests",
                         format!("/content/quests/{i}/objectives/{j}/prop/block"),
                         format!(

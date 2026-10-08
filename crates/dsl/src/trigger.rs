@@ -279,7 +279,7 @@ impl Prop {
 // Validation — the checks `dsl::validate` runs over this object (ADR-0031)
 // ---------------------------------------------------------------------------
 
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::quest::check::check_effect_v04;
 use crate::registry::{AnchorRegistry, BlockRegistry};
@@ -287,6 +287,71 @@ use crate::validate::{
     AnchorProviders, check_block_field, for_each_trigger_effect_deep, station_kind_diag,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+crate::dw_code! {
+    /// (v0.4) An environment trigger id is malformed (`DW0110`-style) or
+    /// duplicated within the stage-5 `triggers` namespace.
+    pub const TRIGGER_INVALID: DwCode = DwCode::new("DW0194", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.4, added round-6) A `use` trigger anchored where an NPC stands.
+    /// Right-click on an NPC already belongs to its dialogue advancement; a
+    /// second interaction hitbox in the same cell makes the client's entity
+    /// ray-pick ambiguous, and whichever entity loses the tie is silently dead
+    /// — the round-6 island soft-lock class (an exactly co-located hitbox
+    /// starved the giant's dialogue of every right-click). `strike` triggers
+    /// are exempt: a left-click has no dialogue meaning, so the compiler rides
+    /// the trigger's tag on the NPC's own hitbox instead of summoning a second
+    /// one. Validation-tier (exit 1).
+    pub const USE_TRIGGER_ON_NPC: DwCode = DwCode::new("DW0350", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
+    /// A trigger declares `audience: presser` on something other than an
+    /// `on: use` or an `on: step`.
+    ///
+    /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
+    /// that runs a function as the player who clicked, and it fires on
+    /// right-clicks alone; a step is a player standing in the cell, which a
+    /// positional selector names. A left-click is recorded in the interaction entity's
+    /// `attack` NBT — a UUID no command can become — and an `approach` involves no
+    /// click at all. Approximating it (polling the record and assuming the nearest
+    /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
+    /// capability is refused rather than faked.
+    pub const TRIGGER_AUDIENCE_UNATTRIBUTABLE: DwCode = DwCode::new("DW0427", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.11) **A trigger id in the compiler's reserved `dw-` namespace.** The
+    /// compiler synthesizes triggers of its own — today the press answer every
+    /// sealed gate and shortcut door gives (`trigger/dw-press-…`) — and two
+    /// triggers sharing an id would share one `dw_trig_…` tag and one emitted
+    /// function, so one of them would silently disappear. Reserving the prefix
+    /// makes the collision impossible by construction instead of improbable.
+    pub const TRIGGER_ID_RESERVED: DwCode = DwCode::new("DW0428", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.11) **A sealed body with no press answer**, uniformly over the
+    /// pressable class. A `shortcuts[]` door or
+    /// a `close-gate`'s wall is sealed, and nothing says what it answers when the
+    /// party presses it — no `use` trigger anchored on it, and (for a
+    /// `close-gate`) no authored `sealed_hint`.
+    ///
+    /// The compiler deliberately does **not** fill that silence. A baked default
+    /// is the compiler making a design statement — about tone, about what this
+    /// specific door is — on the author's behalf, and then never telling them it
+    /// did; an error makes the author say it. Same rule as "no hacks at any
+    /// layer": if content needs a thing, the DSL exposes it and the author
+    /// declares it, rather than a lower layer inventing it.
+    ///
+    /// One rule for the whole pressable class: two objects of the same class do
+    /// not get two defaulting policies, which would be the "capability keyed to
+    /// the verb" defect this very surface is CLAUDE.md's worked example of.
+    pub const SEALED_BODY_UNANSWERED: DwCode = DwCode::new("DW0429", ExitTier::Build);
+}
 
 /// `DW0427`/`DW0428`: the two ways a trigger's **press answer** surface can be
 /// declared wrong (DSL v0.11).
@@ -297,7 +362,7 @@ pub(crate) fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, t) in c.quests.content.triggers.iter().enumerate() {
         if t.addresses_presser() && !t.attributes_its_actor() {
             d.push(Diagnostic::error(
-                codes::TRIGGER_AUDIENCE_UNATTRIBUTABLE,
+                TRIGGER_AUDIENCE_UNATTRIBUTABLE,
                 "quests",
                 format!("/content/triggers/{i}/audience"),
                 format!(
@@ -320,7 +385,7 @@ pub(crate) fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         let local = crate::l10n::local_id(t.id.as_str());
         if local.starts_with(RESERVED_TRIGGER_PREFIX) {
             d.push(Diagnostic::error(
-                codes::TRIGGER_ID_RESERVED,
+                TRIGGER_ID_RESERVED,
                 "quests",
                 format!("/content/triggers/{i}/id"),
                 format!(
@@ -385,7 +450,7 @@ pub(crate) fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             continue;
         }
         d.push(Diagnostic::error(
-            codes::SEALED_BODY_UNANSWERED,
+            SEALED_BODY_UNANSWERED,
             "quests",
             path,
             format!(
@@ -409,7 +474,7 @@ pub(crate) fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             continue;
         }
         d.push(Diagnostic::error(
-            codes::SEALED_BODY_UNANSWERED,
+            SEALED_BODY_UNANSWERED,
             "quests",
             format!("/content/shortcuts/{i}"),
             format!(
@@ -578,7 +643,7 @@ pub(crate) fn trigger_decl_checks(
     for (i, t) in quests.triggers.iter().enumerate() {
         if !t.id.is_valid_syntax() {
             d.push(Diagnostic::error(
-                codes::TRIGGER_INVALID,
+                TRIGGER_INVALID,
                 "quests",
                 format!("/content/triggers/{i}/id"),
                 format!(
@@ -590,7 +655,7 @@ pub(crate) fn trigger_decl_checks(
         }
         if !seen_triggers.insert(t.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::TRIGGER_INVALID,
+                TRIGGER_INVALID,
                 "quests",
                 format!("/content/triggers/{i}/id"),
                 format!(
@@ -604,7 +669,7 @@ pub(crate) fn trigger_decl_checks(
         // ignored anchor would read as meaningful and silently do nothing).
         match (t.on.needs_anchor(), t.at_anchor()) {
             (true, None) => d.push(Diagnostic::error(
-                codes::TRIGGER_INVALID,
+                TRIGGER_INVALID,
                 "quests",
                 format!("/content/triggers/{i}/at"),
                 format!(
@@ -618,7 +683,7 @@ pub(crate) fn trigger_decl_checks(
                 ),
             )),
             (false, Some(at)) => d.push(Diagnostic::error(
-                codes::TRIGGER_INVALID,
+                TRIGGER_INVALID,
                 "quests",
                 format!("/content/triggers/{i}/at"),
                 format!(
@@ -669,7 +734,7 @@ pub(crate) fn trigger_decl_checks(
             && *range == 0
         {
             d.push(Diagnostic::error(
-                codes::TRIGGER_INVALID,
+                TRIGGER_INVALID,
                 "quests",
                 format!("/content/triggers/{i}/on/range"),
                 "`approach` trigger `range` must be > 0 — set a positive block radius (e.g. 3)"
@@ -686,7 +751,7 @@ pub(crate) fn trigger_decl_checks(
                 .find(|n| n.anchor.as_str() == at && n.offset == [0, 0, 0])
         {
             d.push(Diagnostic::error(
-                codes::USE_TRIGGER_ON_NPC,
+                USE_TRIGGER_ON_NPC,
                 "quests",
                 format!("/content/triggers/{i}/at"),
                 format!(

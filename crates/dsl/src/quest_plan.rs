@@ -269,9 +269,57 @@ pub struct PlannedQuest {
 // ---------------------------------------------------------------------------
 
 use crate::Verb;
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::validate::{declared_endings, graph_has_cycle, produced_flags};
+
+crate::dw_code! {
+    /// Quest dependency cycle.
+    pub const PLAN_CYCLE: DwCode = DwCode::new("DW0130", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `finale` is not a declared quest.
+    pub const FINALE_UNKNOWN: DwCode = DwCode::new("DW0131", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `finale` is not the convergent sink of the plan: some declared quest is
+    /// not a transitive dependency of it.
+    ///
+    /// **The name deliberately does not contain `FINALE_UNREACHABLE`, which
+    /// belongs to `DW0201`.** That code says the finale can never complete; this
+    /// one says nothing at all about the finale being reachable — in the fixture
+    /// that raises it the finale completes perfectly well and a side trip hangs
+    /// off the plan. Both are `DwCode`, so nothing but the name distinguishes
+    /// them at a call site, and `tools/ci/check-dw-codes.py` credits a bare
+    /// constant name mentioned in a crate's tests to **that crate's** code — so
+    /// one shared name would buy coverage for whichever rule the file happens to
+    /// sit next to.
+    pub const PLAN_NOT_CONVERGENT: DwCode = DwCode::new("DW0132", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// An optional quest inside the finale's dependency closure (spec-0051
+    /// §8.1) — including a finale that declares itself optional.
+    pub const OPTIONAL_ON_SPINE: DwCode = DwCode::new("DW0866", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A mandatory quest whose `depends_on` edge or stage-5 `quest-complete`
+    /// trigger names an optional quest (spec-0051 §8.2).
+    pub const MANDATORY_ON_OPTIONAL: DwCode = DwCode::new("DW0867", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A mandatory objective gated on a flag only an optional quest produces
+    /// (spec-0051 §8.3) — the mainline key behind participation.
+    ///
+    /// The participation-minimal replay (`DW0204`) is the compensating stronger
+    /// check behind it; this one refuses at the edge so the message can name
+    /// the strand.
+    pub const MAINLINE_KEY_OPTIONAL: DwCode = DwCode::new("DW0868", ExitTier::Build);
+}
 
 pub(crate) fn plan_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let plan = &c.quest_plan.content;
@@ -300,7 +348,7 @@ pub(crate) fn plan_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
     if graph_has_cycle(&nodes, &edges) {
         d.push(Diagnostic::error(
-            codes::PLAN_CYCLE,
+            PLAN_CYCLE,
             "quest-plan",
             "/content/quests",
             "stage-4 quest `depends_on` graph contains a cycle — the plan must be a DAG; remove a \
@@ -312,7 +360,7 @@ pub(crate) fn plan_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // Finale must be declared.
     if !planned_ids.contains(plan.finale.as_str()) {
         d.push(Diagnostic::error(
-            codes::FINALE_UNKNOWN,
+            FINALE_UNKNOWN,
             "quest-plan",
             "/content/finale",
             format!(
@@ -351,7 +399,7 @@ pub(crate) fn plan_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
         if !reach.contains(q.id.as_str()) {
             d.push(Diagnostic::error(
-                codes::PLAN_NOT_CONVERGENT,
+                PLAN_NOT_CONVERGENT,
                 "quest-plan",
                 format!("/content/quests/{i}"),
                 format!(
@@ -402,7 +450,7 @@ fn partition(
             format!("finale `{}` transitively depends on it", plan.finale)
         };
         d.push(Diagnostic::error(
-            codes::OPTIONAL_ON_SPINE,
+            OPTIONAL_ON_SPINE,
             "quest-plan",
             format!("/content/quests/{i}/mandatory"),
             format!(
@@ -430,7 +478,7 @@ fn partition(
                 continue;
             }
             d.push(Diagnostic::error(
-                codes::MANDATORY_ON_OPTIONAL,
+                MANDATORY_ON_OPTIONAL,
                 "quest-plan",
                 format!("/content/quests/{i}/depends_on/{j}"),
                 format!(
@@ -463,7 +511,7 @@ fn partition(
             continue;
         }
         d.push(Diagnostic::error(
-            codes::MANDATORY_ON_OPTIONAL,
+            MANDATORY_ON_OPTIONAL,
             "quests",
             format!("/content/quests/{i}/trigger/quest"),
             format!(
@@ -562,7 +610,7 @@ fn mainline_key(c: &Campaign, optional: &BTreeSet<&str>, d: &mut Vec<Diagnostic>
                 };
                 let names = producers.iter().copied().collect::<Vec<_>>().join("`, `");
                 d.push(Diagnostic::error(
-                    codes::MAINLINE_KEY_OPTIONAL,
+                    MAINLINE_KEY_OPTIONAL,
                     "quests",
                     format!("/content/quests/{i}/objectives/{j}/requires_flags/{m}"),
                     format!(
