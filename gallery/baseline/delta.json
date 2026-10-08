@@ -1340,6 +1340,7 @@
     "valley-site.en:datapack/data/gallery/function/activate_o_the_corner_stone.mcfunction",
     "valley-site.en:datapack/data/gallery/function/complete_o_the_corner_stone.mcfunction",
     "valley-site.en:datapack/data/gallery/function/i_reward_the_corner_stone.mcfunction",
+    "valley-site.en:packtest-datapack/data/gallery/function/lightning_wait_0.mcfunction",
     "valley-site.en:packtest-datapack/data/gallery/test/boundary_exempt_cutscene.mcfunction",
     "valley-site.en:packtest-datapack/data/gallery/test/boundary_exempt_free.mcfunction",
     "valley-site.en:packtest-datapack/data/gallery/test/lightning_0.mcfunction",
@@ -2356,7 +2357,7 @@
     "void-horizon.en:validation/ways.json"
   ],
   "classes": {
-    "PackTest": 226,
+    "PackTest": 227,
     "creator overlay": 23,
     "datapack function": 1900,
     "other": 28,
