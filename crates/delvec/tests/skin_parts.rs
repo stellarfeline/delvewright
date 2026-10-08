@@ -76,11 +76,20 @@ fn every_composed_golden_is_a_sheet_the_compiler_admits() {
         }
     }
     assert!(
-        judged >= 7,
-        "{judged} golden sheet(s) judged; the fixtures hold seven"
+        judged >= 11,
+        "{judged} golden sheet(s) judged; the fixtures hold eleven"
     );
     assert!(
-        models.contains("zombie") && models.contains("drowned_outer_layer"),
+        [
+            "zombie",
+            "drowned_outer_layer",
+            "villager",
+            "piglin",
+            "player_slim",
+            "skeleton"
+        ]
+        .iter()
+        .all(|m| models.contains(*m)),
         "the goldens reach a mob model and an outer layer: {models:?}"
     );
 }

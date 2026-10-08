@@ -161,13 +161,23 @@ def _reads_another(bs: List[Box], box: Box) -> bool:
 
 @dataclass(frozen=True)
 class Layout:
-    """Which box each composer part paints, base and shell, on one model."""
+    """Which box each composer part paints, base and shell, on one model, and
+    the boxes the model builds beyond them."""
 
     key: str
     size: Tuple[int, int]
     outer: bool
     base: Dict[str, Optional[Box]]
     shell: Dict[str, Optional[Box]]
+    #: A composer part whose box is a mirror of another part's UV -> that part.
+    mirror_of: Dict[str, str]
+    #: Boxes no composer part paints (a nose, a snout, ears, crossed arms, a
+    #: brim, mushrooms), excluding a mirror of a box already painted.
+    extras: Tuple[Box, ...]
+
+
+def _same_uv(a: Box, b: Box) -> bool:
+    return (a.u, a.v, a.w, a.h, a.d) == (b.u, b.v, b.w, b.h, b.d)
 
 
 @lru_cache(maxsize=None)
@@ -177,44 +187,51 @@ def layout(key: str) -> Layout:
     names = part_names()
     base: Dict[str, Optional[Box]] = {}
     shell: Dict[str, Optional[Box]] = {}
+    own: Dict[str, Optional[Box]] = {}
     for pid, name in names.items():
+        box = _own_box(bs, name, grown=outer)
+        own[pid] = box
+        live = None if box is None or _reads_another(bs, box) else box
         if outer:
-            own = _own_box(bs, name, grown=True)
-            base[pid] = None
-            shell[pid] = None if own is None or _reads_another(bs, own) else own
+            base[pid], shell[pid] = None, live
             continue
-        own = _own_box(bs, name, grown=False)
-        base[pid] = None if own is None or _reads_another(bs, own) else own
+        base[pid] = live
+        # A shell is a grown child box of the part's width and depth; it may
+        # hang longer than the part (a villager's robe over its legs).
         kids = [
             b for b in bs
-            if b.part.startswith(name + "/") and b.part.count("/") == 1 and b.grow > 0
-            and own is not None and (b.w, b.h, b.d) == (own.w, own.h, own.d)
+            if box is not None and b.part.startswith(name + "/") and b.part.count("/") == 1
+            and b.grow > 0 and (b.w, b.d) == (box.w, box.d) and b.h >= box.h
         ]
-        shell[pid] = kids[0] if kids and base[pid] is not None else None
-    return Layout(key=key, size=texture_size(key), outer=outer, base=base, shell=shell)
+        shell[pid] = kids[0] if kids and live is not None else None
+    mirror_of: Dict[str, str] = {}
+    for pid, box in own.items():
+        if box is not None and _reads_another(bs, box):
+            src = [q for q, o in own.items() if q != pid and o is not None
+                   and not o.mirror and _same_uv(o, box)]
+            if src:
+                mirror_of[pid] = src[0]
+    used = [b for b in list(base.values()) + list(shell.values()) + list(own.values()) if b is not None]
+    extras = tuple(
+        b for b in bs
+        if not any(b is u for u in used) and not any(_same_uv(b, u) for u in used)
+        and not (b.mirror and any(_same_uv(b, o) for o in bs if o is not b and not o.mirror))
+    )
+    return Layout(key=key, size=texture_size(key), outer=outer, base=base, shell=shell,
+                  mirror_of=mirror_of, extras=extras)
 
 
 @lru_cache(maxsize=1)
 def dressable() -> Tuple[str, ...]:
-    """The models the composer's wardrobe fits: every part the player's size.
-
-    Derived, not listed: a model qualifies when each composer part's own box
-    (its base, or on an outer layer its grown box) has the player's base box's
-    dimensions.
-    """
-    player = layout("player")
+    """The models the composer dresses: every model in the table with a head and
+    a torso box of its own (base, or on an outer layer its grown box) -- which,
+    at the pinned client, is every one of them. The wardrobe's rows are counted
+    from the chin, the crown and the shoulder, and its columns centred, so a
+    taller head or a deeper torso keeps each feature where it belongs."""
     out = []
     for key in model_keys():
-        bs = boxes(key)
-        outer = not any(b.grow == 0 for b in bs)
-        ok = True
-        for pid, name in part_names().items():
-            own = _own_box(bs, name, grown=outer)
-            want = player.base[pid]
-            if own is None or (own.w, own.h, own.d) != (want.w, want.h, want.d):
-                ok = False
-                break
-        if ok:
+        L = layout(key)
+        if (L.base["head"] or L.shell["head"]) and (L.base["torso"] or L.shell["torso"]):
             out.append(key)
     return tuple(out)
 
@@ -235,6 +252,7 @@ class Canvas:
         player = layout("player")
         self.base = {pid: self._part(pid, self.layout.base[pid], player.base[pid]) for pid in PART_IDS}
         self.shell = {pid: self._part(pid, self.layout.shell[pid], player.base[pid]) for pid in PART_IDS}
+        self.extras = [(b, self._part(b.part, b, b)) for b in self.layout.extras]
 
     def _part(self, pid: str, box: Optional[Box], shape: Box) -> BodyPart:
         target, b = (self.image, box) if box is not None else (self.sink, shape)

@@ -41,6 +41,7 @@ from delve_skin.wardrobe import (
     HAIR,
     HOOD,
     LEGS,
+    OVERCOAT,
     SLEEVES,
     Wardrobe,
 )
@@ -73,8 +74,9 @@ def _entry_surface_help() -> str:
         "cast-entry fields:",
         "  " + ", ".join(ENTRY_KEYS),
         "",
-        "entity -- the body the sheet is drawn to (default 'mannequin', which needs",
-        "'model' wide|slim; a mob has one model and refuses 'model'):",
+        "entity -- the body the sheet is drawn to, on that model's own boxes (default",
+        "'mannequin', which needs 'model' wide|slim; a mob has one model and",
+        "refuses 'model'):",
         "  " + ", ".join(entities()),
         "",
         "hidden_layers -- a mannequin's overlay layers it does not draw:",
@@ -112,6 +114,11 @@ def _entry_surface_help() -> str:
         + ", ".join(HOOD)
         + ". 'up' covers the head's overlay shell but for the face and falls"
         + " onto the shoulders. Painted in 'hood', its rim in 'hood_shadow'.",
+        f"  overcoat    (default {d.overcoat!r}) -- "
+        + ", ".join(OVERCOAT)
+        + ". A coat on the torso's and sleeves' overlay shells, open down the"
+        + " front; 'long_coat' also over the thighs. On a villager it is the robe."
+        + " Painted in 'coat', its opening and hem in 'coat_shadow'.",
         f"  greying     (default {d.greying!r}) -- "
         + ", ".join(GREYING)
         + ". Streaks 'hair_grey' / 'beard_grey' through whichever it names."

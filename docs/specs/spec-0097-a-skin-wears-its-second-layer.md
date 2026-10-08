@@ -5,7 +5,7 @@
 - **What it is for**: an NPC with a beard that stands half a texel proud of the jaw, hair with a lip at the fringe, a hood that frames the face, a collar that rings the neck; and a mob retexture that lands on the boxes the mob actually builds. The Stranding's first `drowned_outer_layer` was painted in the player's overlay layout on a model that samples the base layout, and drew a two-pixel stripe on the top of the crown and nothing else; nothing refused it.
 - **Research**: §2 is this spec's record. Each statement is **cited** (the research page, the pinned client read by the extractor of §3, or a line of the tree) or **authored** (this spec chooses).
 - **Numbers**: spec `0097`. Three diagnostics: `DW0978` (paint no box samples, §4.1), `DW0979` (paint only on faces a body standing level with the model cannot see, §4.2), `DW0980` (a mannequin layer hidden twice, §5). One DSL surface change, `NpcSkin.hidden_layers` (§5); this spec states no version literal — the `dsl_version` bump it owes is assembled with the others into the next minor.
-- **Non-goals**: new model geometry (a brim, a crest, a bun, a cloak, a jutting beard — the overlay is a shell and stays one, §2.1); slim composition (`model: slim` is still refused by the composer); a composer for models whose base boxes differ from the player's (villager, piglin, the skeleton family — they get a part table and the refusal, not a wardrobe, §6.4); the zombie villager and the parched, whose vanilla sheets the extractor's cross-check could not reconcile with their models (§3.3).
+- **Non-goals**: new model geometry (a brim, a crest, a bun, a cloak, a jutting beard — the overlay is a shell and stays one, §2.1); a measured face for a mob head that is not 8×8 (§6.3 places the player's measured face on it by an authored rule); the zombie villager and the parched, whose vanilla sheets the extractor's cross-check could not reconcile with their models (§3.3), and which are therefore neither in the table nor dressed.
 
 ## 1. The thing, and the object it belongs to
 
@@ -94,7 +94,15 @@ A feature that needs a shell its model does not build is refused by name (a `hig
 
 ### 6.3 Which models it dresses
 
-A cast entry gains `entity`: `mannequin` (default; `model` required as before) or a mob model the wardrobe fits (`model` refused: a mob has one shape). **Authored**: the wardrobe is written for a body whose head, torso and limbs are the player's size, so the set is derived from the table — every model whose composer parts' own boxes (base, or on an outer layer its grown box) have the player's base dimensions. At the pinned client that is `zombie`, `husk`, `drowned`, `drowned_outer_layer`, `stray_outer_layer` and `bogged_outer_layer`. Any other table key is refused by name, pointing at `python -m delve_skin parts <model>`. A cast entry's `hidden_layers` is a mannequin's and is refused on a mob.
+A cast entry gains `entity`: `mannequin` (default; `model` required, `wide` or `slim`, each composed on its own model's boxes) or any mob model in the table (`model` refused: a mob has one shape) — every model whose overlay boxes vanilla draws, because the toolchain makes full use of what vanilla provides for the second layer: the villager's hat and its 8×20×6 robe at `0,38`, the piglin family's jacket, sleeves and pants, the zombie's, husk's and skeleton family's hats, and the outer layers. Leaving a model out takes a measured reason; the only two are the parched and the zombie villager (§3.3), which are not in the table and are refused by name. A cast entry's `hidden_layers` is a mannequin's and is refused on a mob.
+
+**Authored**, how the wardrobe fits a body that is not the player's:
+
+- A composer part maps to the model's part of the same name (derived from the `player` table by matching skinpy's layout, §6.1). A torso shell is a grown child of the torso's width and depth that may hang longer than the torso — the villager's robe.
+- The face is measured on an 8×8 head (`docs/reference/face-craft.md`). On another head its rows stay counted from the chin, the hair's rows from the crown, and its columns are centred; the torso shell's rows are counted from the shoulder. On every player box these offsets are 0, so no player sheet moves.
+- The boxes a model builds beyond head, torso and limbs are painted by part: a nose, a snout, tusks and ears in `skin` with their undersides in `skin_shadow`; a villager's crossed arms as sleeves in `tunic` and the hands bar in `skin`; a villager's hat brim and a bogged's mushrooms are left clear. Flat fills, consuming no stream.
+- A feature that exists only on a shell the model lacks is refused by name: `hood: up` on a piglin (no hat), `collar: high` or an `overcoat` on a zombie (no torso shell).
+- A new axis `overcoat` (`none`, `coat`, `long_coat`; palette `coat`, `coat_shadow`) dresses the torso and sleeve shells, and with `long_coat` the pants shells over the thighs; on a villager it is the robe to its hem.
 
 ### 6.4 Every model's table, for a sheet drawn elsewhere
 
@@ -102,7 +110,7 @@ A cast entry gains `entity`: `mannequin` (default; `model` required as before) o
 
 ### 6.5 Previews
 
-The four previews flatten each shell's opaque pixels onto the base face beneath before projecting, so a reviewer sees what the shell covers. The stand-off itself is not drawn; the README says so.
+The four previews flatten each shell's opaque pixels onto the base face beneath before projecting, so a reviewer sees what the shell covers. The stand-off itself is not drawn; the README says so. A part a model builds as a mirror of another (a zombie's left arm and leg) is drawn from that part, reflected, with its side faces exchanged; a villager's crossed arm block is shown on both preview arms, top-aligned. No other extra box is projected.
 
 ## 7. The gallery's obligation, and the demo level
 
@@ -122,8 +130,9 @@ The four previews flatten each shell's opaque pixels onto the base face beneath 
 3. The refusal is a compiler diagnostic at both entry points (§4.3).
 4. `hidden_layers` is a list on `NpcSkin`, the object it configures; a duplicate is `DW0980`.
 5. The composer's overlay is automatic for every beard and every head of hair; a creator who wants a flat head hides `hat` on the mannequin.
-6. `parched` and `zombie_villager` are left out of the table until a second method reconciles them.
-7. A skin's `texture_id` names a file two bodies may wear — a twin who hides her hat beside her sister in one face. `DW0190` is narrowed to a malformed id (and to two `world.textures[]` rows sharing an id): its refusal of a second body in one list naming one file protected nothing the bake needs, since `read_skins` reads a file once and `model` and `hidden_layers` ride each body. This is a declared loosening.
+6. Every model in the table is dressed (§6.3); a mob's face is the player's measured face, placed by an authored rule, to be judged at playable scale.
+7. `parched` and `zombie_villager` are left out of the table until a second method reconciles them.
+8. A skin's `texture_id` names a file two bodies may wear — a twin who hides her hat beside her sister in one face. `DW0190` is narrowed to a malformed id (and to two `world.textures[]` rows sharing an id): its refusal of a second body in one list naming one file protected nothing the bake needs, since `read_skins` reads a file once and `model` and `hidden_layers` ride each body. This is a declared loosening.
 
 ## Acceptance criteria
 
@@ -134,7 +143,7 @@ The four previews flatten each shell's opaque pixels onto the base face beneath 
 5. `NpcSkin.hidden_layers: ["hat", "jacket"]` emits `hidden_layers:["hat","jacket"]` in the staged NPC's and the actor's mannequin summon; an absent or empty list emits no `hidden_layers`; `["cape","cape"]` fails `delvec validate` with `DW0980`; a test holds the `SkinLayer` tokens equal to the table's `mannequin.layers`.
 6. `pytest tools/creator/skin` passes; the three goldens are regenerated and the commit body attributes every moved byte to the overlay regions — their base regions are byte-identical to `109355653`'s.
 7. The composer's tests read each feature back through the shell's own face addressing: a beard on the hat front's chin row, a fringe on its top row, `long` on the jacket back's shoulder rows, a hood leaving the face rows of the hat front transparent, `high` on the jacket sides' top two rows; and every fixture's composed PNG, judged by the compiler's rule through `delvec`'s own test fixture, draws neither `DW0978` nor `DW0979`.
-8. `entity: zombie` composes a sheet with no opaque pixel at `32,48` or `16,48` and paint on the hat; `entity: drowned_outer_layer` paints at the base positions and nothing at the player overlay positions; `entity: villager` and `collar: high` with `entity: zombie` are refused by name; `python -m delve_skin parts piglin` names no `hat`.
+8. `entity: zombie` composes a sheet with no opaque pixel at `32,48` or `16,48` and paint on the hat; `entity: drowned_outer_layer` paints at the base positions and nothing at the player overlay positions; `entity: villager` with `overcoat: coat` paints all 20 rows of the robe's front and the nose; `entity: piglin` with `overcoat: long_coat` paints the jacket, sleeves and pants; `model: slim` paints a 3-pixel arm; `entity: zombie_villager`, `hood: up` on a piglin and `collar: high` on a zombie are refused by name; `python -m delve_skin parts piglin` names no `hat`; a zombie's preview draws both arms and both legs.
 9. The overlay's opaque pixels per part on each golden are counted by a reader that does not import `delve_skin` and recorded in a commit body.
 10. `docs/reference/compiler.md` has rows for `DW0978`, `DW0979`, `DW0980` and the `hidden_layers` field; `docs/reference/tools.md` lists `extract-model-parts.py` and no longer claims the overlay would give a hair silhouette; the skill page that tells the agent how to author NPC skins describes the shell features, `hood`, `collar: high`, `entity` and `hidden_layers` without naming an unreleased DW code; `docs/demo-levels.md` carries the queued row of §7.
 11. `delvec validate` and `delvec build` print a `sheet binding:` line stating sheets judged of declared, skins and texture rows separately, per model, and refused; the build writes `validation/sheet-gate.json` with the same counts; on the gallery it reads 3 of 3 (player 1, player_slim 1, drowned_outer_layer 1), and the coverage gate reds when `examined` is 0. `crates/delvec/tests/skin_parts.rs` asserts 1 of 1 on `player` for the `v04-showcase` fixture.

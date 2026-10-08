@@ -49,6 +49,7 @@ from delve_skin.wardrobe import (  # noqa: E402
     HAIR,
     HOOD,
     LEGS,
+    OVERCOAT,
     SHOULDER_HAIR,
     SLEEVES,
     Wardrobe,
@@ -138,10 +139,13 @@ def test_bad_model_rejected():
         CastEntry.from_dict({"texture_id": "x", "model": "chunky", "palette": {}})
 
 
-def test_slim_not_silently_distorted():
+def test_slim_is_drawn_to_the_slim_arms():
+    """A slim skin is composed on `player_slim`'s boxes: 3-pixel arms, so the
+    wide arm's fourth column and back-face tail stay clear."""
     e = CastEntry.from_dict({"texture_id": "x", "model": "slim", "palette": {}})
-    with pytest.raises(NotImplementedError):
-        compose_skin(e)
+    px = compose_skin(e).load()
+    assert px[44 + 2, 25][3] and not px[55, 25][3], "the slim arm ends at 54"
+    assert e.model_key() == "player_slim"
 
 
 # --- the pixels every fixture sheet composes are pinned ---------------------
@@ -178,7 +182,7 @@ def test_every_fixture_sheet_composes_its_golden_file():
                 "a different file -- the encoder moved"
             )
             checked += 1
-    assert checked == 7, f"expected 7 pinned entries, pinned {checked}"
+    assert checked == 11, f"expected 11 pinned entries, pinned {checked}"
 
 
 def test_the_png_file_is_byte_stable_within_one_run():
@@ -711,7 +715,7 @@ def test_help_names_every_axis_value_and_every_key():
     for axis in (SLEEVES, LEGS, FOOTWEAR, HAIR):
         for value in axis:
             assert value in help_text, f"--help does not name wardrobe value {value!r}"
-    for group in (FACIAL_HAIR, COLLAR, HOOD, GREYING):
+    for group in (FACIAL_HAIR, COLLAR, HOOD, OVERCOAT, GREYING):
         for value in group:
             assert value in help_text, f"--help does not name wardrobe value {value!r}"
 
@@ -723,7 +727,7 @@ def test_readme_documents_every_axis_value_and_palette_key():
     axes = (
         ("sleeves", SLEEVES), ("legs", LEGS), ("footwear", FOOTWEAR),
         ("hair", HAIR), ("facial_hair", FACIAL_HAIR), ("collar", COLLAR),
-        ("hood", HOOD), ("greying", GREYING),
+        ("hood", HOOD), ("overcoat", OVERCOAT), ("greying", GREYING),
     )
     for name, axis in axes:
         assert f"`{name}`" in readme, f"README does not document wardrobe.{name}"
@@ -743,6 +747,7 @@ def test_catalog_card_records_the_wardrobe():
         "facial_hair": "none",
         "collar": "open",
         "hood": "none",
+        "overcoat": "none",
         "greying": "none",
     }
 
@@ -884,9 +889,12 @@ def test_an_outer_layer_is_painted_at_the_base_positions():
 
 
 def test_a_body_the_wardrobe_does_not_fit_is_refused_by_name():
-    row = {"texture_id": "v", "entity": "villager", "palette": {}}
-    with pytest.raises(ValueError, match="parts villager"):
+    row = {"texture_id": "v", "entity": "zombie_villager", "palette": {}}
+    with pytest.raises(ValueError, match="could not be measured"):
         CastEntry.from_dict(row)
+    with pytest.raises(ValueError, match="head's overlay shell"):
+        CastEntry.from_dict({"texture_id": "p", "entity": "piglin", "palette": {},
+                             "wardrobe": {"hood": "up"}})
     with pytest.raises(ValueError, match="torso's overlay shell"):
         CastEntry.from_dict({"texture_id": "z", "entity": "zombie", "palette": {},
                              "wardrobe": {"collar": "high"}})
@@ -894,7 +902,7 @@ def test_a_body_the_wardrobe_does_not_fit_is_refused_by_name():
         CastEntry.from_dict({"texture_id": "z", "entity": "zombie", "model": "wide",
                              "palette": {}})
     assert "player" not in entities() and "mannequin" in entities()
-    assert set(entities()) >= {"zombie", "husk", "drowned", "drowned_outer_layer"}
+    assert set(entities()) == {"mannequin"} | set(models.model_keys()) - {"player", "player_slim"}
 
 
 def test_hidden_layers_are_the_jars_and_named_once():
@@ -926,3 +934,30 @@ def test_the_preview_shows_what_the_shell_covers():
     assert _near(tuple(int(c) for c in head.get_color(3, 3)), hood, tol=8)
     for e in _entries(OVERLAY_FIXTURE):
         assert compose_preview_skin(e).size == (64, 64), e.texture_id
+
+
+def test_a_villager_wears_its_robe_and_a_piglin_its_jacket():
+    """spec-0097 §6.3: the vanilla overlay boxes of every model are dressed —
+    the villager's 8x20x6 robe at 0,38, the piglin's jacket, sleeves and pants."""
+    v = _sheet(CastEntry.from_dict({"texture_id": "v", "entity": "villager", "palette": {},
+                                    "wardrobe": {"overcoat": "coat", "hair": "short"}}))
+    robe = v.shell["torso"].get_face_for_id("front")
+    assert robe.shape == (8, 20)
+    assert all(_opaque(tuple(int(c) for c in robe.get_color(0, y))) for y in range(20)), "to the hem"
+    assert _opaque(_shell_at(v, "head", "up", 3, 3)), "hair on the villager's hat shell"
+    nose = next(part for box, part in v.extras if box.part == "head/nose")
+    assert _opaque(tuple(int(c) for c in nose.get_face_for_id("front").get_color(0, 0)))
+    pg = _sheet(CastEntry.from_dict({"texture_id": "p", "entity": "piglin", "palette": {},
+                                     "wardrobe": {"overcoat": "long_coat", "sleeves": "long"}}))
+    for part, (x, y) in (("torso", (0, 6)), ("left_arm", (0, 6)), ("left_leg", (0, 8))):
+        assert _opaque(_shell_at(pg, part, "front", x, y)), part
+    assert pg.layout.shell["head"] is None, "a piglin has no hat"
+
+
+def test_a_zombies_preview_draws_both_arms_and_both_legs():
+    """The mirrored limbs a zombie's model reads from the right ones are drawn in
+    the preview, reflected — not left empty."""
+    flat = Skin.from_image(compose_preview_skin(_overlay("zombie-farmer")))
+    for pid in ("left_arm", "right_arm", "left_leg", "right_leg"):
+        face = flat.get_body_part_for_id(pid).get_face_for_id("front")
+        assert all(face.get_color(x, y)[3] for x in range(4) for y in range(12)), pid

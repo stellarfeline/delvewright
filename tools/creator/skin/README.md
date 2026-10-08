@@ -3,9 +3,10 @@
 Given a **cast-sheet entry** (character brief + palette + `wide`/`slim` model),
 compose an **original 64×64 Minecraft player skin** deterministically — both
 layers: the base, and the overlay shell over it — and render headless
-multi-angle previews for human review. The same wardrobe dresses a mob whose
-body is the player's size (a zombie, a drowned, a drowned's outer layer), drawn
-to that mob's own boxes (spec-0097).
+multi-angle previews for human review. The same wardrobe dresses every humanoid
+mob the model-part table carries — a zombie, a villager in its robe, a piglin in
+its jacket, a skeleton, a drowned's outer layer — drawn to that mob's own boxes
+(spec-0097).
 
 Skins are **original artwork composed pixel-by-pixel** from the brief
 (ADR-0013) — never downloaded from skin sites (those are unlicensed user
@@ -57,14 +58,22 @@ Every sheet is drawn to the boxes of the model that wears it, read from the
 model-part table the compiler judges every sheet by
 (`crates/delvec/data/model-parts-1.21.11.json`, measured from the pinned client
 by `tools/maintenance/extract-model-parts.py`). A part has a **base** box and,
-on most models, a **shell** over it: the same box grown half a pixel a side on
-the head and a quarter on the torso and limbs. A player-model mannequin has a
-shell on every part (`hat`, `jacket`, both sleeves, both pants). A zombie or a
-husk has only the hat. A drowned's, stray's or bogged's outer layer is a sheet
-of its own whose boxes sit at the **base** positions, grown — on such a model
-the composer paints the shell features onto those boxes and leaves the base
-empty. `python -m delve_skin parts <model>` prints any model's table, so a sheet
-drawn by hand for a villager, a piglin or a skeleton is drawn to its own layout.
+on most models, a **shell** over it: a box grown half a pixel a side on the head
+and a quarter on the torso and limbs. A player-model mannequin has a shell on
+every part (`hat`, `jacket`, both sleeves, both pants). A zombie, a husk or a
+skeleton has only the hat. A villager has a hat and a robe that hangs past its
+hips; a piglin a jacket, sleeves and pants and no hat. A drowned's, stray's or
+bogged's outer layer is a sheet of its own whose boxes sit at the **base**
+positions, grown — on such a model the composer paints the shell features onto
+those boxes and leaves the base empty. Every model is dressed on its own boxes:
+the face's rows are counted from the chin, the hair's from the crown and the
+garment's from the shoulder, and the face is centred, so a villager's taller
+head and a piglin's wider one keep each feature where it belongs. A model's
+other boxes are painted by part — a nose, a snout, tusks and ears in skin, a
+villager's crossed arms as sleeves with the hands in skin — and a villager's
+hat brim and a bogged's mushrooms are left clear. A mirrored limb (a zombie's
+left arm) reads the right one's pixels, so it is not painted twice.
+`python -m delve_skin parts <model>` prints any model's table.
 
 The composer never paints a pixel outside a model's boxes; the compiler refuses
 a sheet that does.
@@ -76,7 +85,7 @@ a sheet that does.
 | field | required | meaning |
 |---|---|---|
 | `texture_id` | yes | kebab id; PNG basename and resource-pack texture segment |
-| `entity` | no | the body: `mannequin` (default), or a mob model whose head, torso and limbs are the player's size — `zombie`, `husk`, `drowned`, `drowned_outer_layer`, `stray_outer_layer`, `bogged_outer_layer` (`--help` lists them from the table). Any other model is refused by name |
+| `entity` | no | the body: `mannequin` (default), or any mob model in the table — `zombie`, `husk`, `drowned`, `drowned_outer_layer`, `skeleton`, `wither_skeleton`, `stray`, `stray_outer_layer`, `bogged`, `bogged_outer_layer`, `villager`, `wandering_trader`, `piglin`, `piglin_brute`, `zombified_piglin` (`--help` lists them from the table). The parched and the zombie villager are not in the table, and are refused by name |
 | `model` | **yes**, for a mannequin | `wide` or `slim`. **Never omit** — an omitted model renders slim, distorting a wide skin (spec-0009). A mob has one model, and refuses this field. |
 | `palette` | yes | `#rrggbb` colours — see below (a missing key derives a shade) |
 | `wardrobe` | no | how the character is dressed — see below (an absent block dresses them in the defaults) |
@@ -105,6 +114,7 @@ enumerated from the constants the parser validates against.
 | `sandal` | the footwear, whatever kind it is |
 | `eye` | the pupils — one pixel each, with a lightened `skin` pixel outboard standing in for the white |
 | `hood`, `hood_shadow` | a hood, and its rim round the face. `hood` defaults to `tunic` |
+| `coat`, `coat_shadow` | a coat on the overlay shell, and its opening and hem. `coat` defaults to `tunic` a step darker |
 
 ### Wardrobe
 
@@ -122,6 +132,7 @@ composed before this block existed.
 | `hair` | `bald`, `crop`, `short` (default), `jaw`, `long` | how far hair comes down the 8 px sides of the head: none, 2, 3, 6 and 8 rows. The crown, the back of the head and the brow fringe come with every length. Past the ear it also **frames the face** down its outer columns and takes a cut line in `hair_shadow`; `long` falls across the top of the torso back as well |
 | `facial_hair` | `none`, `moustache`, `beard` (default) | `moustache` is the lip row; `beard` adds the mouth and chin rows, the sides of the jaw and the chin underside. `none` is a modelled face, not a blank one — see [the face at 8×8](../../../docs/reference/face-craft.md) |
 | `collar` | `open` (default), `closed`, `high` | `open` leaves the V of bare skin a tunic or an unbuttoned shirt has at the throat; `closed` takes it away, which is the only way to get a jacket that fastens — the V is painted from `skin` itself, so no palette key can reach it; `high` is `closed` with a collar ring on the torso's shell, its top two rows all the way round. A model with no torso shell refuses `high` |
+| `overcoat` | `none` (default), `coat`, `long_coat` | a coat on the torso's shell all round, open down the front, with sleeves on the sleeves' shells over the sleeve's span (a short sleeve's over a bare arm); `long_coat` also hangs over the thighs on the pants' shells. On a villager the torso shell is the 20-row robe at 0,38, so the coat is the robe to its hem. A model with no torso shell refuses it |
 | `hood` | `none` (default), `up` | `up` covers the head's shell but for the face — the brow row and the outer columns frame it, the face rows stay open — and falls onto the torso shell's top and upper back. It replaces the hair's shell; the hair painted on the skull still shows round the face |
 | `greying` | `none` (default), `hair`, `beard`, `both` | streaks `hair_grey` / `beard_grey` through whatever it names. `features.greying` is the older spelling of `beard` and still means exactly that; a sheet carrying **both** is refused rather than resolved by a precedence rule |
 
@@ -216,9 +227,7 @@ prefab renderer, cannot render player models — do not use it here.)
 
 ## Limitations
 
-- **`slim` geometry** is validated and emitted as metadata but not yet composed:
-  the wide-only `skinpy-extended` layout would distort it. A `slim` entry raises
-  rather than silently emit a distorted texture.
+- **`slim`** is composed on `player_slim`'s boxes: the arms are 3 pixels wide.
 - **Nothing stands proud of the body by more than the shell.** An open coat, a
   hat with a brim, a cloak, a beard that juts and hair with volume need model
   geometry, which no skin has, and are refused rather than approximated.
@@ -226,13 +235,13 @@ prefab renderer, cannot render player models — do not use it here.)
   ponytail, a fringe that falls, a parting and any silhouette that is not the
   cube do not exist. `long` reads at playing distance, and it is not the same
   thing as hair.
-- **A figure cannot be made to read as a woman.** On a player model that is the
-  `slim` arm geometry (unsupported here) and face detail finer than the 8×8 the
-  head gives; the shell adds depth, not a silhouette, so hair length on a cube
-  stays androgynous. Write the character so the writing carries it.
-- **Mobs of another shape** — villager, piglin, the skeleton family — have a
-  part table (`parts`) and the compiler's refusal, not a wardrobe: their heads
-  and limbs are not the player's size.
+- **A figure reads as a woman** mostly through the `slim` arm geometry and face
+  detail finer than the 8×8 the head gives; the shell adds depth, not a
+  silhouette. Choose `slim` where the character is one, and let the writing
+  carry the rest.
+- **A mob's face is the player's face, measured on an 8×8 head**, placed on a
+  taller or wider head by the rule above. Whether that reads on a villager or a
+  piglin is judged at playable scale, not measured.
 - **A limb is 4 px around and a torso 8 px.** A lapel, a cuff, a buckle or a seam
   narrower than a pixel does not exist, and a belt is the finest horizontal band
   there is at 2 px on a 12 px torso.

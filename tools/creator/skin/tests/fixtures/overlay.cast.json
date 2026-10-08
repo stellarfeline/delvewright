@@ -111,6 +111,114 @@
         "facial_hair": "beard",
         "hair": "long"
       }
+    },
+    {
+      "entity": "villager",
+      "features": {
+        "quality": 3,
+        "style": "cleric"
+      },
+      "palette": {
+        "coat": "#6c4870",
+        "hair": "#6b5a48",
+        "legwear": "#3d3248",
+        "skin": "#bd8b6a",
+        "tunic": "#5a3c5e"
+      },
+      "role": "villager",
+      "seed": 4105,
+      "style_brief": "A village cleric: short grey-brown hair on the hat shell and a purple robe to the hem.",
+      "texture_id": "robed-villager",
+      "wardrobe": {
+        "collar": "high",
+        "facial_hair": "none",
+        "footwear": "shoe",
+        "hair": "short",
+        "legs": "full",
+        "overcoat": "coat",
+        "sleeves": "long"
+      }
+    },
+    {
+      "entity": "piglin",
+      "features": {
+        "quality": 3,
+        "style": "guard"
+      },
+      "palette": {
+        "beard": "#3a2a20",
+        "coat": "#5a3a1a",
+        "hair": "#3a2a20",
+        "legwear": "#4a3a2a",
+        "skin": "#e2a59a",
+        "tunic": "#7a5a2a"
+      },
+      "role": "piglin",
+      "seed": 4106,
+      "style_brief": "A piglin gatekeeper in a long leather coat over his jerkin, sleeves to the wrist.",
+      "texture_id": "piglin-gatekeeper",
+      "wardrobe": {
+        "facial_hair": "none",
+        "footwear": "boot",
+        "hair": "crop",
+        "legs": "full",
+        "overcoat": "long_coat",
+        "sleeves": "long"
+      }
+    },
+    {
+      "features": {
+        "quality": 4,
+        "style": "archivist"
+      },
+      "hidden_layers": [],
+      "model": "slim",
+      "palette": {
+        "hair": "#8a3b1f",
+        "hair_shadow": "#5e2714",
+        "legwear": "#2a2d33",
+        "sandal": "#2a221d",
+        "skin": "#e9c2a0",
+        "tunic": "#2f5d50"
+      },
+      "role": "archivist",
+      "seed": 4107,
+      "style_brief": "An archivist with long auburn hair, a green coat over a fitted shirt, slim build.",
+      "texture_id": "slim-archivist",
+      "wardrobe": {
+        "collar": "closed",
+        "facial_hair": "none",
+        "footwear": "shoe",
+        "hair": "long",
+        "legs": "full",
+        "overcoat": "coat",
+        "sleeves": "long"
+      }
+    },
+    {
+      "entity": "skeleton",
+      "features": {
+        "quality": 3,
+        "style": "bones"
+      },
+      "palette": {
+        "hair": "#5a5040",
+        "legwear": "#d6d2c4",
+        "sandal": "#bdb8a8",
+        "skin": "#d6d2c4",
+        "tunic": "#d6d2c4"
+      },
+      "role": "skeleton",
+      "seed": 4108,
+      "style_brief": "A skeleton with a few strands of hair left on its hat shell.",
+      "texture_id": "skeleton-strands",
+      "wardrobe": {
+        "facial_hair": "none",
+        "footwear": "none",
+        "hair": "crop",
+        "legs": "bare",
+        "sleeves": "bare"
+      }
     }
   ]
 }

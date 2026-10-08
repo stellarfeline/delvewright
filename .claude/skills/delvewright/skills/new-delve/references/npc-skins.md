@@ -65,6 +65,7 @@ said.
 | `hair` | `bald`, `crop`, `short`, `jaw`, `long` | how far hair comes down the sides of the head. Past the ear it frames the face and takes a cut line in `hair_shadow`; `long` also falls onto the shoulders. **`short` is a short back and sides** — set this whenever the character is not one |
 | `facial_hair` | `none`, `moustache`, `beard` | painted in `beard`. `moustache` is the lip row, `beard` the mouth and chin rows plus the sides of the jaw. **`none` is a face, not a blank** — the composer models the mouth, chin and jaw for everyone, so pick grooming for the character and nothing else |
 | `collar` | `open`, `closed`, `high` | `closed` is the only way to fasten a garment at the throat — the open V is painted from `skin`, so no colour can close it. `high` is `closed` plus a collar ring standing off the neck |
+| `overcoat` | `none`, `coat`, `long_coat` | a coat standing off the garment on the overlay shell, open down the front, its sleeves over the sleeve's span; `long_coat` also over the thighs. On a villager it is the robe to the hem. Painted in `coat` (defaults to `tunic` a step darker), opening and hem in `coat_shadow` |
 | `hood` | `none`, `up` | `up` puts a hood over the head, open at the face, falling onto the shoulders. Painted in `hood` (defaults to `tunic`), its rim in `hood_shadow` |
 | `greying` | `none`, `hair`, `beard`, `both` | streaks `hair_grey` / `beard_grey` through what it names. Keep those two colours **close together**: a wide gap reads as lichen on a rock, not as a greying head |
 
@@ -117,15 +118,19 @@ sleeves and pants but no hat; a drowned's, stray's or bogged's outer layer is a
 player's overlay positions. Paint drawn to another model's layout lands nowhere,
 and the build refuses it.
 
-- To dress a mob whose body is the player's size, give the cast entry an
-  `entity` instead of a `model`: `zombie`, `husk`, `drowned`,
-  `drowned_outer_layer`, `stray_outer_layer`, `bogged_outer_layer` (`--help`
+- To dress a mob, give the cast entry an `entity` instead of a `model` — any
+  humanoid mob the table carries: `zombie`, `husk`, `drowned`,
+  `drowned_outer_layer`, the skeletons and their outer layers, `villager`,
+  `wandering_trader`, `piglin`, `piglin_brute`, `zombified_piglin` (`--help`
   lists them). The composer paints the same wardrobe onto that model's own
-  boxes; an outer layer gets the hair, beard, hood and collar at its base
-  positions and nothing else. The PNG is a `world.textures[]` row, below — not
-  a mannequin skin.
-- For any other mob, `python -m delve_skin parts <model>` prints its boxes and
-  every face rectangle. Draw the sheet to exactly those rectangles.
+  boxes: a villager's `overcoat` is its robe, a piglin's coat goes on its
+  jacket, sleeves and pants, an outer layer gets the hair, beard, hood and
+  collar at its base positions. A feature with no box on that model is refused
+  by name (a piglin has no hat, so no hood). The PNG is a `world.textures[]`
+  row, below — not a mannequin skin. The zombie villager and the parched are
+  not dressable.
+- `python -m delve_skin parts <model>` prints any model's boxes and every face
+  rectangle, for a sheet you draw by hand.
 
 ## What the model cannot wear
 
@@ -140,10 +145,9 @@ contrasting one.
 
 **Hair is a lip of paint half a pixel off the skull** — no bun, braid, ponytail,
 parting or silhouette off the cube. And on this model **a figure cannot be made
-to read as a woman**: what does it on a player skin is the `slim` arm geometry
-(which this composer refuses) and face detail finer than 8×8; the shell adds
-depth, not a silhouette. Hair length is the only lever left and on a cube it is
-androgynous. So write a woman
+to read as a woman** by the skin alone: the `slim` arm geometry helps — choose
+`model: slim` where the character is one — but face detail finer than 8×8 does
+not exist, and the shell adds depth, not a silhouette. So write a woman
 in the **dialogue and the brief**, dress the figure well, and do not expect the
 skin to carry the reading on its own — and never quietly recast a character
 because the texture will not say it.

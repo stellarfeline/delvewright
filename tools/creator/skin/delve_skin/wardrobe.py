@@ -109,6 +109,13 @@ COLLAR = ("open", "closed", "high")
 #: shell, and the hair painted on the skull still shows round the face.
 HOOD = ("none", "up")
 
+#: A coat on the overlay shell, over whatever the base garment is. ``coat`` is
+#: the torso's shell all round, open down the front, and the sleeves' shells
+#: over the sleeve's span; ``long_coat`` also hangs over the thighs on the
+#: pants' shells. On a model whose torso shell is a robe that hangs past the
+#: hips (a villager's), the coat is that robe.
+OVERCOAT = ("none", "coat", "long_coat")
+
 #: What is going grey. ``features.greying`` is the older spelling of ``beard``;
 #: a sheet carrying both is refused -- see ``Wardrobe.from_dict``.
 GREYING = ("none", "hair", "beard", "both")
@@ -121,6 +128,7 @@ _AXES: Dict[str, Tuple[str, ...]] = {
     "facial_hair": FACIAL_HAIR,
     "collar": COLLAR,
     "hood": HOOD,
+    "overcoat": OVERCOAT,
     "greying": GREYING,
 }
 
@@ -136,6 +144,7 @@ class Wardrobe:
     facial_hair: str = "beard"
     collar: str = "open"
     hood: str = "none"
+    overcoat: str = "none"
     greying: str = "none"
 
     @staticmethod
@@ -210,9 +219,21 @@ class Wardrobe:
     def collar_ring(self) -> bool:
         return self.collar == "high"
 
-    def needs_body_shell(self) -> list[str]:
-        """The declared features that exist only on the torso's overlay shell."""
-        return ["collar: high"] if self.collar_ring() else []
+    def needs_shells(self) -> list[tuple[str, str]]:
+        """The declared features that exist only on an overlay shell, with the
+        composer part whose shell each one needs."""
+        out = []
+        if self.collar_ring():
+            out.append(("collar: high", "torso"))
+        if self.hooded():
+            out.append(("hood: up", "head"))
+        if self.overcoat != "none":
+            out.append((f"overcoat: {self.overcoat}", "torso"))
+        return out
+
+    def coat_sleeve_default(self) -> Tuple[int, int]:
+        """The span a coat's sleeve covers over a bare arm: a short sleeve's."""
+        return SLEEVES["short"]
 
     def greys_hair(self) -> bool:
         return self.greying in ("hair", "both")
@@ -240,5 +261,6 @@ class Wardrobe:
             "facial_hair": self.facial_hair,
             "collar": self.collar,
             "hood": self.hood,
+            "overcoat": self.overcoat,
             "greying": self.greying,
         }
