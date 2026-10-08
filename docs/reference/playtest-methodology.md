@@ -546,7 +546,7 @@ step earlier.
 The subject a push HAS is the gallery: engine-owned, built by every revision,
 holding one instance of every surface the DSL declares (spec-0039). So
 `tools/ci/check-gallery-stageable.py` runs this gate on **every point of the gallery
-domain**, as a step of the `gallery (coverage + build + baseline)` job. The points
+domain**, as a step of the `gallery baseline (emission, warnings, served points)` job. The points
 are enumerated from `gallery/baseline/manifests.json`, the ladder's own build
 ledger, and cross-checked against the gallery directory; judging fewer points
 than the ladder builds is the `unbound` vacuity, so a disagreement between the

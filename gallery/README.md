@@ -680,9 +680,9 @@ would be twice over: the generator cannot see the campaign's own `extent`
 values, so its constants state that half as a premise, and it compares anchor
 to anchor where the real question is hitbox to box.
 
-## Why the job gates
+## Why the jobs gate
 
-The gallery job is a required status check. `tools/ci/check-required-contexts.py`
+The gallery's four jobs — pieces, coverage, views, baseline — are each a required status check. `tools/ci/check-required-contexts.py`
 holds the manifest and `ci.yml` in lockstep, and it reads the coverage count out
 of `gallery/baseline/header.json` and the render findings out of
 `gallery/render-plan.json` — both committed by the tools that measure them, so

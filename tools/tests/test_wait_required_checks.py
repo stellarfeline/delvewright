@@ -67,7 +67,7 @@ def test_a_missing_check_is_waited_for_then_times_out():
 def test_a_running_check_is_waited_for():
     calls = {"n": 0}
     done = _world()
-    running = _world({"gallery (coverage + build + baseline)": ("in_progress", None)})
+    running = _world({"gallery coverage (every surface written or refused)": ("in_progress", None)})
 
     def fetch(path):
         calls["n"] += 1

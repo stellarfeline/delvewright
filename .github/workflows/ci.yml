@@ -67,7 +67,10 @@ jobs:
       line-endings: ${{ steps.reach.outputs.line-endings }}
       pin-drift: ${{ steps.reach.outputs.pin-drift }}
       zone-audit: ${{ steps.reach.outputs.zone-audit }}
-      gallery: ${{ steps.reach.outputs.gallery }}
+      gallery-pieces: ${{ steps.reach.outputs.gallery-pieces }}
+      gallery-coverage: ${{ steps.reach.outputs.gallery-coverage }}
+      gallery-views: ${{ steps.reach.outputs.gallery-views }}
+      gallery-baseline: ${{ steps.reach.outputs.gallery-baseline }}
       tier2-validation: ${{ steps.reach.outputs.tier2-validation }}
       gallery-bot: ${{ steps.reach.outputs.gallery-bot }}
     steps:
@@ -215,7 +218,7 @@ jobs:
     needs: changes
     # Every consumer's group, so it runs whenever any consumer does
     # (`check-ci-reach.py` refuses a consumer this would not reach).
-    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.mecha-crosscheck == 'true' || needs.changes.outputs.zone-audit == 'true' || needs.changes.outputs.gallery == 'true' || needs.changes.outputs.tier2-validation == 'true' || needs.changes.outputs.gallery-bot == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.mecha-crosscheck == 'true' || needs.changes.outputs.zone-audit == 'true' || needs.changes.outputs.gallery-pieces == 'true' || needs.changes.outputs.gallery-coverage == 'true' || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-baseline == 'true' || needs.changes.outputs.tier2-validation == 'true' || needs.changes.outputs.gallery-bot == 'true'
     runs-on: ubuntu-latest
     outputs:
       sha256: ${{ steps.hash.outputs.sha256 }}
@@ -1192,7 +1195,7 @@ jobs:
   # prove compatibility, and no gate, exclusion list or migration exists for
   # that. Compatibility between an engine change and content is the gallery's
   # job — the engine's OWN campaign, built fresh by every engine revision in
-  # the `gallery` job below.
+  # the gallery jobs below.
   #
   # What this job checks: each pin into our own history is measured against
   # what it names — has content `main` moved past the content pin unnoticed,
@@ -1335,27 +1338,27 @@ jobs:
   # lands in the same pull request as the surface it covers.
   #
   # Needs no content checkout, deliberately (§6): its one piece and its two skins
-  # are generated here by the engine's own generator, so the whole job runs from
-  # this repository alone — which is the creator-machine floor CLAUDE.md requires,
-  # not a convenience.
-  gallery:
-    name: gallery (coverage + build + baseline)
+  # are generated here by the engine's own generator, so every gallery job runs
+  # from this repository alone — which is the creator-machine floor CLAUDE.md
+  # requires, not a convenience.
+  #
+  # ADR-0031 §6: four jobs, four required contexts, so a red in one class of
+  # gate is a red in one context. `gallery-pieces` generates the pieces once and
+  # hands them down as an artifact checked against its sha256
+  # (`.github/actions/gallery-pieces`), the way `delvec-binary` hands down the
+  # engine; the other three take that copy and generate nothing.
+  gallery-pieces:
+    name: gallery pieces (generator output)
     needs: [changes, delvec-binary]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery == 'true'
+    # Every consumer's group, so it runs whenever any consumer does
+    # (`check-ci-reach.py` refuses a consumer this would not reach).
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-pieces == 'true' || needs.changes.outputs.gallery-coverage == 'true' || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-baseline == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # `gallery-baseline.py` classifies a manifest mismatch partly by what the
-          # diff touches, and that needs the merge base rather than a shallow head.
-          # Which verdicts it can reach is its own business and is not listed here.
-          #
-          # It also RECOMPUTES the review delta from the commit that artifact names
-          # (spec-0039 §5), which reads `gallery/baseline/manifests.json` at an
-          # ancestor commit. A shallow checkout would not have it, and the tool
-          # refuses rather than treating an unreachable commit as an empty
-          # baseline — so this depth is load-bearing for a second gate now, not
-          # only for the classifier.
           fetch-depth: 0
       # The cache serves `prefabs/gallery-generator`, which `gallery-prefabs.py`
       # compiles: a different workspace from the engine, built for its own sake.
@@ -1363,9 +1366,9 @@ jobs:
         with: { key: gallery }
       - uses: ./.github/actions/delvec-binary
         with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
-      # The piece and the skins, generated — never committed (§6). Doing this
-      # before anything else means a generator that stopped producing a piece
-      # fails in a step named for the generator, not inside one named for a gate.
+      # The piece and the skins, generated — never committed (§6). Doing this in
+      # a job of its own means a generator that stopped producing a piece fails
+      # in a context named for the generator, not inside one named for a gate.
       # The gallery's prefab directory is made by TWO committed acts: the
       # generator for the hand-built pieces and the skins, and `delvec detail
       # --all` over the site-plan point for the program-detailed place
@@ -1376,11 +1379,44 @@ jobs:
         run: |
           python3 tools/ci/gallery-prefabs.py \
             --delvec target/debug/delvec --out gallery-prefabs
+      # Everything the generation wrote that git does not track, build caches
+      # excepted and counted — packed by what is on disk, never by a typed list
+      # of roots, so a generator that starts writing somewhere new is handed
+      # down with no edit here.
+      - name: the pieces, packed for the jobs that read them
+        id: pack
+        run: |
+          set -euo pipefail
+          python3 tools/ci/gallery-pieces.py --out "$RUNNER_TEMP/gallery-pieces/gallery-pieces.tar"
+          sum="$(sha256sum "$RUNNER_TEMP/gallery-pieces/gallery-pieces.tar" | cut -d' ' -f1)"
+          echo "sha256=$sum" >> "$GITHUB_OUTPUT"
+          echo "gallery-pieces.tar sha256 $sum"
+      # Consumed inside this run and nowhere else, so it is kept one day.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gallery-pieces
+          path: ${{ runner.temp }}/gallery-pieces/gallery-pieces.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  gallery-coverage:
+    name: gallery coverage (every surface written or refused)
+    needs: [changes, delvec-binary, gallery-pieces]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-coverage == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
+      - uses: ./.github/actions/gallery-pieces
+        with: { sha256: "${{ needs.gallery-pieces.outputs.sha256 }}" }
       # `analyze` is the reachability half of the ladder (spec-0039 §4.2) and
       # `build --lang en` is the tree the coverage gate reads its binding ledgers
       # from. Every OTHER language, and every overlay, is built by the baseline
-      # step below — which walks the whole domain by construction, so this job
-      # never carries a hand-written list of languages to go stale.
+      # job's first step — which walks the whole domain by construction, so no
+      # gallery job carries a hand-written list of languages to go stale.
       - name: the gallery analyzes green and builds
         run: |
           set -euo pipefail
@@ -1397,6 +1433,43 @@ jobs:
             --build-out gallery-out-en \
             --report gallery-coverage.json \
             --index gallery-coverage.md
+      # §6: the numbers are reported from day one, and no wall-clock value gates
+      # — a timing red on a shared runner is an intermittent red, and the debug
+      # doctrine forbids re-running those.
+      - name: job summary
+        if: always()
+        run: |
+          {
+            echo "## Gallery"
+            echo
+            sed -n '1,12p' gallery-coverage.md 2>/dev/null || echo "(coverage report not produced)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-coverage
+          path: |
+            gallery-coverage.json
+            gallery-coverage.md
+
+  gallery-views:
+    name: gallery views (render plan, whole map, cameras)
+    needs: [changes, delvec-binary, gallery-pieces]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-views == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
+      - uses: ./.github/actions/gallery-pieces
+        with: { sha256: "${{ needs.gallery-pieces.outputs.sha256 }}" }
+      # The `--lang en` tree the render and camera gates read, built by the same
+      # command `gallery coverage` builds it with. Its `analyze` half stays
+      # there: this is the build those gates read, not a second judgement of it.
+      - name: the build the views read
+        run: target/debug/delvec build gallery -o gallery-out-en --prefabs gallery-prefabs
       # spec-0039 §7. CI rendered nothing until this ran. The CPU arms only —
       # they need no GPU, no client jar and no `nucleation`, so the whole step
       # runs on an ordinary runner. Whether the GPU arms can be driven here
@@ -1451,7 +1524,36 @@ jobs:
           python3 tools/ci/check-gallery-post-beat.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs \
             --build-out gallery-out-en --work gallery-post-beat
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-frames
+          path: |
+            gallery-frames/
 
+  gallery-baseline:
+    name: gallery baseline (emission, warnings, served points)
+    needs: [changes, delvec-binary, gallery-pieces]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-baseline == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `gallery-baseline.py` classifies a manifest mismatch partly by what the
+          # diff touches, and that needs the merge base rather than a shallow head.
+          # Which verdicts it can reach is its own business and is not listed here.
+          #
+          # It also RECOMPUTES the review delta from the commit that artifact names
+          # (spec-0039 §5), which reads `gallery/baseline/manifests.json` at an
+          # ancestor commit. A shallow checkout would not have it, and the tool
+          # refuses rather than treating an unreachable commit as an empty
+          # baseline — so this depth is load-bearing for a second gate now, not
+          # only for the classifier.
+          fetch-depth: 0
+      - uses: ./.github/actions/delvec-binary
+        with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
+      - uses: ./.github/actions/gallery-pieces
+        with: { sha256: "${{ needs.gallery-pieces.outputs.sha256 }}" }
       - name: emission baseline + expected-warnings ledger
         if: '!cancelled()'
         run: |
@@ -1463,8 +1565,7 @@ jobs:
       # directory: the bot ladder walked it and the run was reported against a
       # tree no committed act could bring back. This is that act, and it runs
       # here so it cannot rot — a script nothing invokes is UNRUN exactly as a
-      # gate nothing invokes is. A step of an existing job, deliberately: every
-      # job name is a required status context.
+      # gate nothing invokes is.
       #
       # It reproduces rather than merely compiling: the tree it writes must carry
       # the manifest `gallery/baseline/` already recorded for this point, so a
@@ -1486,11 +1587,8 @@ jobs:
       # from a list typed here, because a job that judges fewer points than the
       # ladder builds is the `unbound` vacuity wearing a green tick.
       #
-      # A step of the gallery job rather than a job of its own: every job name is
-      # a required status context, so adding one is a branch-protection change in
-      # its own right (`.github/required-status-checks.txt`), and this needs
-      # exactly what the job already has — the engine built, the gallery's piece
-      # generated, and the full history the baseline comparison reads.
+      # It needs exactly what this job already has — the engine, the gallery's
+      # pieces, and the full history the baseline comparison reads.
       #
       # The gallery is still never STAGED (spec-0039 §2): every admission token
       # this writes goes to the work directory, never into a build tree, and the
@@ -1501,25 +1599,6 @@ jobs:
           python3 tools/ci/check-gallery-stageable.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs \
             --work validation/gallery-stageable
-      # §6: the numbers are reported from day one, and no wall-clock value gates
-      # — a timing red on a shared runner is an intermittent red, and the debug
-      # doctrine forbids re-running those.
-      - name: job summary
-        if: always()
-        run: |
-          {
-            echo "## Gallery"
-            echo
-            sed -n '1,12p' gallery-coverage.md 2>/dev/null || echo "(coverage report not produced)"
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: gallery-coverage
-          path: |
-            gallery-coverage.json
-            gallery-coverage.md
-            gallery-frames/
 
   # spec-0039: the gallery is the engine's test surface, and the bot is the one
   # instrument that walks it the way a player does. Every gate in the `gallery`
@@ -1554,7 +1633,7 @@ jobs:
       - uses: ./.github/actions/delvec-binary
         with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
       # The two committed acts that make the gallery's prefab directory, the
-      # same ones the `gallery` job runs.
+      # same ones the `gallery-pieces` job runs.
       - name: generate the gallery's pieces and skins
         run: |
           python3 tools/ci/gallery-prefabs.py \
