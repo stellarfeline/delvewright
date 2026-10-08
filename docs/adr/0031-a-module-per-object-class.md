@@ -6,7 +6,7 @@
   (CLAUDE.md, "general engine"), carried from the DSL surface to the files
   that hold it. Measured against the engine tree at
   `bba876d1351dd2aeba021c95f435961f2421ff27` (`bba876d13`, the commit that
-  landed the 0.36.0 batch) with `wc -l`, with `git diff --name-only` over
+  landed the integration batch before this record) with `wc -l`, with `git diff --name-only` over
   every first-parent landing on `main`, with `git merge-tree --write-tree`
   replayed over every merge commit reachable from a remote ref in the three
   months before that commit, and with the GitHub Actions job and step timings
@@ -155,7 +155,7 @@ Over the last forty `ci.yml` runs, per-job medians: `rust (fmt, clippy,
 test)` 25.8 min (its `cargo test` step 19.4 min of a 21.3-min job on `main`),
 `gallery` 10.6 min, `tier 2` 8.7, `published crates` 8.9, `harness` 8.0,
 `gallery bot` 5.7. The gallery job's maximum was 45.0 min; the four runs above
-28 min were all pull-request runs on the 0.36.0 integration branch, three of
+28 min were all pull-request runs on that batch's integration branch, three of
 them red. On `main` the gallery job's steps are: coverage and probes 4.1 min,
 every point served 2.1, baseline 1.3, pieces 1.0, views 0.9, whole map 0.4. The
 job is one required context, so a red in the probes and a red in the baseline
