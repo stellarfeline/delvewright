@@ -8,15 +8,9 @@
 //! That is what makes *blockout before site plan* **uncompilable** rather than
 //! merely forbidden (spec-0049 §7.2) — there is nothing to author early.
 //!
-//! Both authored documents are named because both reach the bytes, and the
-//! consequence is a gate rather than a footnote: a seam is cut to air or filled
-//! with the bar by its edge's `class`, and a sky-open box takes its headroom
-//! from its node's `size_class`. The walk record's freshness key is therefore in
-//! two halves, the derived grid and the ways a body moves by
-//! (`walk::walked_grid`, `walk::walked_ways`), and every consequence either
-//! document has on the bytes below lands in one of them; a key over the plan
-//! alone let a graph-only edit move the walked massing under a record that went
-//! on reading as fresh.
+//! Both authored documents are named because both reach the bytes: a seam is
+//! cut to air or filled with the bar by its edge's `class`, and a sky-open box
+//! takes its headroom from its node's `size_class`.
 //!
 //! # Where it enters the build
 //!
@@ -558,38 +552,7 @@ pub fn derive_with(
     reads: &mut Reads,
     perturb: Perturb,
 ) -> Option<(AreaPlacement, Blockout)> {
-    derive_bound(c, reads, perturb, &delvewright_dsl::bound_places(c))
-}
-
-/// **The massing the WALK judged** — the derivation with nothing bound.
-///
-/// This is what `blockout_sha256` hashes, and the choice is *nothing bound*
-/// rather than *the massing as written*: had the hash been taken over the
-/// massing as actually written, binding the first place would have moved it, and
-/// the drift warning would have fired on every detailed campaign — a warning
-/// that always fires is a warning nobody reads.
-///
-/// So the hash names the object a walker walked. What that object is a function
-/// of is **the site plan, the layout graph, the metrics table and the engine** —
-/// the graph included, because a seam is air or bar by its edge's `class` and a
-/// sky-open box takes its headroom from its node's `size_class`. Everything this
-/// function reads out of those two documents is in `DW0974`'s key
-/// (`walk::walked_grid`, `walk::walked_ways`), which is what leaves
-/// *toolchain movement* as the only thing spec-0050 §2's drift advisory can be
-/// reporting.
-#[must_use]
-pub fn walked_massing(c: &Campaign, reads: &mut Reads) -> Option<Vec<SealFill>> {
-    derive_bound(c, reads, Perturb::none(), &BTreeSet::new()).map(|(a, _)| a.mass)
-}
-
-/// [`derive_with`] over an explicit set of bound places — see
-/// [`walked_massing`] for the second caller and why it exists.
-fn derive_bound(
-    c: &Campaign,
-    reads: &mut Reads,
-    perturb: Perturb,
-    bound: &BTreeSet<String>,
-) -> Option<(AreaPlacement, Blockout)> {
+    let bound = &delvewright_dsl::bound_places(c);
     c.site_plan.as_ref()?;
     let plan = &c.site_plan.as_ref()?.content;
     let table = Metrics::table();

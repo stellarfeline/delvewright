@@ -11,7 +11,7 @@ flowchart LR
     S["1 · 准备<br/>插件及其工具链"] --> D["2 · 设计<br/>摆放、故事、<br/>设计关卡 🖐"]
     D --> B["3 · 内容与构建<br/>quests、dialogue、<br/>delvec build"]
     B --> V["4 · 细化与验证阶梯<br/>delvec detail、PackTest、<br/>机器人阶梯"]
-    V --> R["5 · 审查、实地行走与交付<br/>Chunky 渲染、实地行走 🖐、<br/>storybook"]
+    V --> R["5 · 审查与交付<br/>Chunky 渲染、storybook、<br/>第一次游玩 🖐"]
     R --> P["6 · 发布<br/>GitHub Actions、GHCR"]
     P --> H["7 · 托管<br/>生产主机"]
     E["引擎自身的流水线<br/>CI、发布"] -.->|"delvec、插件、镜像"| S
@@ -138,9 +138,9 @@ flowchart TD
 
 机器人的 `die-retry` 阶段在每场战斗中故意死亡，再从检查点走回来；`death-loop` 走进构建声明的每一个致死区域。两者都不真正战斗：一场战斗能不能打赢，是留给人的问题。
 
-## 5 · 审查、实地行走与交付
+## 5 · 审查与交付
 
-人最后才走，走的是细化完成的世界，所有机器都已经先玩过一遍：站在 blockout 里，几乎看不出什么。代价也摆在明面上：实地行走时发现的路线问题要在细化之后才修，所以除了改 site plan 或 layout graph，还要把细化重做一遍。
+人第一次玩到的，就是这个 delve 完成的第一版。交付之前，机器要先把它从头玩一遍，智能体也要先替玩家看过一遍：要交出去的那次构建在验证阶梯上全绿，然后按路线顺序逐帧审查玩家视角画面。这两关没过，什么都不交。
 
 ```mermaid
 flowchart TD
@@ -151,18 +151,15 @@ flowchart TD
     VR -.->|"发现问题"| BACK(["回到文档"])
     VR --> SG["staging gate<br/>tools/creator/staging-gate.py 读取<br/>docs/playtest-findings.json 中的每一类问题，<br/>为这棵确切的树签发准入令牌"]
     SG --> UP["tools/creator/playtest-server.sh up<br/>构建 · 关卡 · localhost:25565 上一个用完即弃的 itzg 容器<br/>通过 rcon 确认 datapack 已加载"]
-    UP --> WALK{{"🖐 13 · 实地行走<br/>你用 Minecraft 1.21.11 客户端玩细化完成的世界<br/>并说出你看到了什么"}}:::human
-    WALK -.->|"尺度、路线或轮廓不对"| REDO(["回到 site plan、layout graph 或某个地点的程序，<br/>然后重新细化、重跑阶梯、再走一遍"])
-    WALK -->|"读得懂"| WR["walk-record.json<br/>记下这一次构建：grid、ways、detail；<br/>改动之后的每次构建都会拒绝它"]
-    WR --> HO["14 · storybook<br/>campaigns/‹id›/README.md，不剧透，附插图<br/>tools/creator/check-storybook-version.py"]
-    HO --> OUT(["交付<br/>文档、storybook，<br/>一条构建、检查并运行服务器的命令"])
-    OUT -.-> PLAY{{"🖐 可选的试玩<br/>playtest profile，游戏内 /trigger dw.note<br/>→ delvec harvest → playtest-report.json"}}:::human
-    PLAY -.->|"发现问题"| BACK
+    UP --> HO["13 · storybook<br/>campaigns/‹id›/README.md，不剧透，附插图<br/>tools/creator/check-storybook-version.py"]
+    HO --> OUT(["交付<br/>文档、storybook、关卡查不到的问题类别，<br/>一条构建、检查并运行服务器的命令"])
+    OUT -.-> PLAY{{"🖐 第一次游玩——就是完成的第一版<br/>playtest profile，游戏内 /trigger dw.note<br/>→ delvec harvest → playtest-report.json"}}:::human
+    PLAY -.->|"发现问题，进入下一轮"| BACK
 
     classDef human fill:#ffd76e,stroke:#a9761a,color:#241a00
 ```
 
-staging gate 握着游玩端口唯一的钥匙：`validation/owner-play.yaml` 是唯一发布 25565 端口的文件，它拒绝启动没有为之签发令牌的构建树。红色的关卡结果逐项列出行走者尚未受到保护的缺陷类别，这样实地行走的时间就不会花在这些问题上。
+staging gate 握着游玩端口唯一的钥匙：`validation/owner-play.yaml` 是唯一发布 25565 端口的文件，它拒绝启动没有为之签发令牌的构建树。红色的关卡结果逐项列出玩家尚未受到保护的缺陷类别，交付时一类一类点明，第一次游玩的时间就不会耗在这些问题上。
 
 草图来自 CPU 渲染器（`delvec snapshot`、`delvec viewer`、`delvec contact-sheet`）和 GPU 渲染（`delvec render`）；每一张必须看起来像 Minecraft 的图都是 Chunky 渲染的。文档是记录在案的产物：完成的 delve 能从它们逐字节相同地重建出来，整个过程不需要模型。
 
@@ -243,15 +240,15 @@ flowchart TD
 | 组成部分 | 它是什么 | 作用于哪个阶段 | 由谁运行 |
 |---|---|---|---|
 | [Claude Code](https://claude.com/claude-code) | 智能体的运行时 | 创作者机器上的每个阶段 | 智能体 |
-| [`/new-delve`](../.claude/skills/delvewright/skills/new-delve/SKILL.md) | skill 页面：Init 加十四个步骤，每步一个参考文件 | 1–5 | 智能体 |
-| 分阶段的 JSON 文档 | `world` · `npcs` · `classes` · `quest-plan` · `quests` · `dialogue`，以及 `geometry-brief` · `layout-graph` · `site-plan` · `detail-plan` · `design` · `walk-record` | 2–5 | 由智能体编写 |
+| [`/new-delve`](../.claude/skills/delvewright/skills/new-delve/SKILL.md) | skill 页面：Init 加十三个步骤，每步一个参考文件 | 1–5 | 智能体 |
+| 分阶段的 JSON 文档 | `world` · `npcs` · `classes` · `quest-plan` · `quests` · `dialogue`，以及 `geometry-brief` · `layout-graph` · `site-plan` · `detail-plan` · `design` | 2–5 | 由智能体编写 |
 | `delvec` | Rust 引擎，一个二进制：`schema` · `validate` · `analyze` · `build` · `fmt` · `metrics` · `allocation` · `detail` · `l10n-inventory` · `l10n-apply` | 2–4 | 智能体 |
 | `delvec` 渲染表面 | `snapshot` · `blocking-chart` · `viewer` · `palette` · `scene` · `panorama` · `cameras` · `place-camera` · `contact-sheet` · `index`（CPU），`render`（GPU，经由 Nucleation 和 wgpu） | 3、5 | 智能体 |
 | `delvec` 构件 | `grammar`（box-split 语法） · `prefab`（收录、jigsaw 接口、锚点、照明） · `schem`（外部 schematic） | 2、4 | 智能体 |
 | `delvec harvest` · `calibrate` | 把游戏内笔记和手动放置的镜头转回报告和补丁 | 5 | 人玩过之后由智能体运行 |
 | `tools/creator/refimg.py` | 由配置的图像服务生成概念图 | 2 | 智能体；由人评判 |
 | `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | 基于问题台账的关卡；游玩端口唯一的钥匙 | 5 | 智能体 |
-| `tools/creator/playtest-server.sh` | `localhost:25565` 上一个用完即弃的本地 itzg 服务器 | 5 | 智能体启动；人来走 |
+| `tools/creator/playtest-server.sh` | `localhost:25565` 上一个用完即弃的本地 itzg 服务器 | 5 | 智能体启动；人来玩 |
 | `tools/creator/skin`、`i18n-translate.py`、`block-appearance.py`、`refscore.py` | NPC 面孔、翻译、按外观选方块、候选评分 | 3、5 | 智能体 |
 | `tools/creator/check-storybook-version.py` | storybook 的引擎版本标记 | 5、6 | 智能体和该战役的发布流程 |
 | `validation/` Docker Compose 装置 | 带 `play`、`playtest`、`validate`、`packtest` profile 的 `compose.yaml`；`owner-play.yaml` | 4–6 | 智能体和 CI |

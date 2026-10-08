@@ -101,10 +101,10 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
         out.extend(delvewright_dsl::placements(campaign));
         if b.plan.views == 0 {
             out.push(
-                "site-plan binding 0: this plan names no view, so the walk has no declared \
-                 vantage to judge the silhouette from and the render beside the reference sheet \
-                 has nothing to frame. The plan still builds; what is missing is the picture the \
-                 whole was supposed to be looked at in."
+                "site-plan binding 0: this plan names no view, so the visual review has no \
+                 declared vantage to judge the silhouette from and the render beside the reference \
+                 sheet has nothing to frame. The plan still builds; what is missing is the picture \
+                 the whole was supposed to be looked at in."
                     .to_string(),
             );
         }

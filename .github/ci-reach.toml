@@ -60,7 +60,7 @@ inputs = [
   { glob = "tools/creator/i18n-translate.py", why = "`crates/delvec/tests/i18n_sidecar.rs` runs the fixture driver, which loads this tool's writer" },
   { glob = "tools/tests/fixtures/i18n-sidecar/**", why = "`crates/delvec/tests/i18n_sidecar.rs` runs `write_sidecar.py`" },
   { glob = "tools/maintenance/probe-drowned-engagement.py", why = "`crates/delvec/src/compiler/engage.rs`'s `the_probe_measures_this_table` reads it" },
-  { glob = "docs/reference/compiler.md", why = "`crates/delvec/tests/hand_camera.rs` reads the walk-record field paragraph" },
+  { glob = "docs/reference/compiler.md", why = "`crates/delvec/tests/hand_camera.rs` reads the camera record's field paragraph" },
   { glob = "tools/ci/check-written-world.py", why = "`crates/delvec/tests/post_beat_camera.rs` runs it against perturbed written worlds (`DW0955`)" },
   { glob = "tools/lib/anvil.py", why = "`crates/delvec/tests/post_beat_camera.rs` reads every written world back through it" },
   { glob = "**/*.json", why = "`tools/ci/check-json-canonical.py` judges every tracked JSON document, and `crates/delvec/tests/fmt.rs` formats every one `git ls-files '*.json'` lists" },

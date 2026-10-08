@@ -76,6 +76,46 @@ fn edits_copy(name: &str) -> PathBuf {
 }
 
 /// Overwrite the copy's `world-edits.json` content with the given batches.
+/// The world build a build output runs, step by step: `place_verify` enters
+/// `world_build`, each step schedules the next a tick later, and the last
+/// schedules `setup_finish`. Returns the steps' commands in run order, the
+/// latch and the scheduling lines excluded, and panics on any other shape.
+fn world_build(out: &Path) -> Vec<String> {
+    let fnpath = |n: &str| out.join(format!("datapack/data/hello-world/function/{n}.mcfunction"));
+    let verify = std::fs::read_to_string(fnpath("place_verify")).expect("place_verify");
+    assert!(
+        verify
+            .lines()
+            .last()
+            .is_some_and(|l| l.ends_with("run function hello-world:world_build")),
+        "place_verify enters the world build:\n{verify}"
+    );
+    let mut writes = Vec::new();
+    let mut name = "world_build".to_string();
+    loop {
+        let body = std::fs::read_to_string(fnpath(&name))
+            .unwrap_or_else(|_| panic!("step `{name}` emitted"));
+        let mut lines: Vec<&str> = body.lines().collect();
+        let last = lines.pop().expect("a step has a body");
+        if name == "world_build" {
+            assert_eq!(
+                lines.first().copied(),
+                Some("scoreboard players set #placed dw.sys 2")
+            );
+            lines.remove(0);
+        }
+        writes.extend(lines.iter().map(|l| l.to_string()));
+        let next = last
+            .strip_prefix("schedule function hello-world:")
+            .and_then(|t| t.strip_suffix(" 1t"))
+            .unwrap_or_else(|| panic!("`{name}` ends by scheduling the next: `{last}`"));
+        if next == "setup_finish" {
+            return writes;
+        }
+        name = next.to_string();
+    }
+}
+
 fn set_batches(dir: &Path, batches: serde_json::Value) {
     let doc = serde_json::json!({
         "dsl_version": DSL_VERSION,
@@ -124,12 +164,13 @@ fn v06_edits_double_build_is_byte_identical() {
     }
 }
 
-/// The runtime materialization contract: the edited build emits a
-/// `world_edits` function (coalesced `fill`/`setblock` lines only), calls it
-/// from `setup_finish` BEFORE the relight fixtures, and hashes the stage-7
-/// script into the manifest inputs.
+/// The runtime materialization contract: the edited build runs its writes
+/// (coalesced `fill`/`setblock` lines only) as the world build, which
+/// `setup_finish` follows a tick after its last step — so every relight
+/// fixture, summon and piece of hardware lands on the edited world — and hashes
+/// the stage-7 script into the manifest inputs.
 #[test]
-fn edited_build_emits_world_edits_function_and_hashes_the_script() {
+fn edited_build_runs_its_writes_as_the_world_build_and_hashes_the_script() {
     let dir = edits_fixture_dir();
     let out = tmp("edits-emit");
     let r = delvec(&[
@@ -142,15 +183,12 @@ fn edited_build_emits_world_edits_function_and_hashes_the_script() {
     ]);
     assert!(r.status.success(), "build failed");
 
-    let body = std::fs::read_to_string(
-        out.join("datapack/data/hello-world/function/world_edits.mcfunction"),
-    )
-    .expect("world_edits.mcfunction emitted");
-    assert!(!body.trim().is_empty(), "has commands");
-    for line in body.lines() {
+    let writes = world_build(&out);
+    assert!(!writes.is_empty(), "has commands");
+    for line in &writes {
         assert!(
             line.starts_with("fill ") || line.starts_with("setblock "),
-            "world_edits holds only block writes, got: {line}"
+            "the world build holds only block writes, got: {line}"
         );
     }
 
@@ -158,29 +196,20 @@ fn edited_build_emits_world_edits_function_and_hashes_the_script() {
         out.join("datapack/data/hello-world/function/setup_finish.mcfunction"),
     )
     .expect("setup_finish emitted");
-    // ORDER, not mere presence (map-editor audit nit). The runtime order is a
-    // load-bearing contract: `world_edits` must land AFTER the socket seals
-    // (which overwrite raw structure blocks) and BEFORE the relight fixtures
-    // (measured over the edited world) and every entity/hardware setup step —
-    // that ordering is exactly what makes an edit over a trap's dispenser
-    // (`DW0352`) silently fatal. A `contains` assertion proved none of it.
+    // ORDER, not mere presence (map-editor audit nit). The edits must land
+    // BEFORE the relight fixtures (measured over the edited world) and every
+    // entity/hardware setup step — that ordering is exactly what makes an edit
+    // over a trap's dispenser (`DW0352`) silently fatal. `setup_finish` runs a
+    // tick after the world build's last step and writes none of its blocks.
+    assert!(
+        !setup_finish.contains("world_build") && !setup_finish.contains("world_edits"),
+        "setup_finish runs no block build of its own:\n{setup_finish}"
+    );
     let lines: Vec<&str> = setup_finish.lines().collect();
     let at = |pred: &dyn Fn(&str) -> bool| lines.iter().position(|l| pred(l));
-    let edits = at(&|l: &str| l == "function hello-world:world_edits")
-        .expect("setup_finish calls world_edits");
     let summon = at(&|l: &str| l.starts_with("summon ")).expect("the fixture summons the keeper");
     let release = at(&|l: &str| l.starts_with("forceload remove "))
         .expect("out-of-bbox edit chunks released");
-    assert_eq!(
-        edits, 0,
-        "world_edits is the first write of setup_finish — it must land on the \
-         raw placed structures, after the socket seals (none in this \
-         single-piece fixture) and before every later pass:\n{setup_finish}"
-    );
-    assert!(
-        edits < summon,
-        "world_edits runs BEFORE anything is summoned into the edited geometry:\n{setup_finish}"
-    );
     assert!(
         summon < release,
         "the one-shot edit forceloads are released only after every write:\n{setup_finish}"
@@ -198,11 +227,10 @@ fn edited_build_emits_world_edits_function_and_hashes_the_script() {
     );
 }
 
-/// An unedited campaign stays on the pre-stage-7 path: no `world_edits`
-/// function, no call from `setup_finish` (byte-identity for every existing
-/// campaign is separately proven by the pre-existing double-build gates).
+/// A campaign with no edit, mass or seal write has no world build:
+/// `place_verify` calls `setup_finish` directly.
 #[test]
-fn unedited_campaign_emits_no_world_edits_function() {
+fn unedited_campaign_emits_no_world_build() {
     let out = tmp("edits-none");
     let r = delvec(&[
         "build",
@@ -214,15 +242,26 @@ fn unedited_campaign_emits_no_world_edits_function() {
     ]);
     assert!(r.status.success(), "hello-world build failed");
     assert!(
-        !out.join("datapack/data/hello-world/function/world_edits.mcfunction")
+        !out.join("datapack/data/hello-world/function/world_build.mcfunction")
             .exists(),
-        "no edit script → no world_edits function"
+        "no block write → no world build"
+    );
+    let verify = std::fs::read_to_string(
+        out.join("datapack/data/hello-world/function/place_verify.mcfunction"),
+    )
+    .expect("place_verify emitted");
+    assert!(
+        verify
+            .lines()
+            .last()
+            .is_some_and(|l| l.ends_with("run function hello-world:setup_finish")),
+        "{verify}"
     );
     let setup_finish = std::fs::read_to_string(
         out.join("datapack/data/hello-world/function/setup_finish.mcfunction"),
     )
     .expect("setup_finish emitted");
-    assert!(!setup_finish.contains("world_edits"));
+    assert!(!setup_finish.contains("world_build"));
 }
 
 /// Boundary safety (spec-0017 invariant 4, `DW0322`): carving a walkable
@@ -864,7 +903,7 @@ fn snapshot_renders_the_edited_world() {
     );
 }
 
-/// The L1 verbs materialize through the same `world_edits` function: the
+/// The L1 verbs materialize through the same world build: the
 /// scatter's dressing, the planted oak (logs + persistent leaves), the
 /// stamped fragment and the baked relight torch all lower to `fill`/`setblock`
 /// lines — and `setup` forceloads every batch's write AABB so a write that
@@ -888,10 +927,7 @@ fn pr2_verbs_materialize_and_their_bounds_are_forceloaded() {
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
-    let body = std::fs::read_to_string(
-        out.join("datapack/data/hello-world/function/world_edits.mcfunction"),
-    )
-    .expect("world_edits.mcfunction emitted");
+    let body = world_build(&out).join("\n");
     assert!(body.contains("minecraft:oak_log[axis=y]"), "plant: trunk");
     assert!(
         body.contains("minecraft:oak_leaves[persistent=true]"),
@@ -1070,7 +1106,7 @@ fn combined(r: &Output) -> String {
     )
 }
 
-/// **Finding 1 (`DW0352`).** `setup_finish` runs `world_edits` BEFORE
+/// **Finding 1 (`DW0352`).** The world build runs BEFORE `setup_finish`'s
 /// `trap_setup`, so a batch that carves a trap's trigger/dispenser cell lands
 /// first and the trap is then loaded into a block that is no longer there:
 /// vanilla's `item replace block … container.0` on a non-container fails with
@@ -1143,30 +1179,34 @@ fn edit_over_trap_hardware_is_dw0352() {
     ]);
     assert!(r.status.success(), "clear of the trap:\n{}", combined(&r));
     // …and the ordering the finding is about is pinned here: the trap hardware
-    // is loaded strictly AFTER `world_edits` has run, which is precisely why a
-    // colliding edit is silently fatal and must be a build error.
+    // is loaded strictly AFTER the edits have run — they are the world build,
+    // and `setup_finish`, which loads the dispenser, is what its last step
+    // schedules — which is precisely why a colliding edit is silently fatal
+    // and must be a build error.
+    let writes = world_build(&out);
+    assert!(
+        writes.iter().any(|l| l.ends_with("minecraft:air")),
+        "the carve is a world-build write: {writes:?}"
+    );
     let finish = std::fs::read_to_string(
         out.join("datapack/data/hello-world/function/setup_finish.mcfunction"),
     )
     .unwrap();
-    let lines: Vec<&str> = finish.lines().collect();
-    let edits = lines
-        .iter()
-        .position(|l| *l == "function hello-world:world_edits")
-        .expect("world_edits called");
-    let hardware = lines
-        .iter()
-        .position(|l| l.starts_with("item replace block ") && l.contains("container.0"))
-        .expect("trap dispenser loaded");
     assert!(
-        edits < hardware,
-        "world_edits runs BEFORE trap_setup:\n{finish}"
+        finish
+            .lines()
+            .any(|l| l.starts_with("item replace block ") && l.contains("container.0")),
+        "trap dispenser loaded in setup_finish:\n{finish}"
+    );
+    assert!(
+        !finish.contains("world_build"),
+        "setup_finish writes no block of the build:\n{finish}"
     );
 }
 
 /// **Finding 2 + 6.** An edit AABB outside every piece bbox gets its own
 /// per-chunk `execute if loaded` convergence sentinel folded into `#placeok`
-/// (so `setup_finish` — and therefore the one-shot `world_edits` — cannot run
+/// (so the one-shot world build cannot run
 /// into a still-loading chunk and lose those writes forever), and the chunks it
 /// forceloaded are released at the END of `setup_finish` once the writes have
 /// landed. Piece forceloads are never released: the gameplay tick machinery
@@ -1237,19 +1277,15 @@ fn out_of_bbox_edit_chunks_converge_then_release() {
         ],
         "the one-shot edit chunks are released"
     );
-    let lines: Vec<&str> = finish.lines().collect();
-    let first_remove = lines
-        .iter()
-        .position(|l| l.starts_with("forceload remove "))
-        .unwrap();
-    let write = lines
-        .iter()
-        .position(|l| l.contains("hello-world:world_edits"))
-        .unwrap();
+    // The writes are the world build, which `setup_finish` follows a tick
+    // after its last step: the release happens after the writes.
     assert!(
-        write < first_remove,
-        "release happens after the writes:\n{finish}"
+        world_build(&out)
+            .iter()
+            .any(|l| l.contains("minecraft:iron_bars")),
+        "the far annex is a world-build write"
     );
+    let lines: Vec<&str> = finish.lines().collect();
     assert_eq!(
         lines.last().copied(),
         Some("scoreboard players set #placed dw.sys 1"),
@@ -1474,10 +1510,7 @@ fn fragment_stamps_preserve_blockstate() {
         &prefabs_arg(),
     ]);
     assert!(r.status.success(), "build failed:\n{}", combined(&r));
-    let body = std::fs::read_to_string(
-        out.join("datapack/data/hello-world/function/world_edits.mcfunction"),
-    )
-    .unwrap();
+    let body = world_build(&out).join("\n");
     assert!(
         body.contains("minecraft:lantern[hanging=true]"),
         "the stamped lantern keeps `hanging=true`:\n{body}"

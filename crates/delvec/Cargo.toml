@@ -46,11 +46,11 @@ clap = { version = "4", features = ["derive"] }
 # derives from a place's node id (spec-0058 §2.4). MIT/Apache-2.0.
 sha2 = "0.10"
 
-# `walk-record.json` is the one document a campaign author writes by hand that
-# is not a stage document, so it has no `Stage` and cannot reach
-# `delvewright_dsl::schema`. It gets its schema derived from its own struct
-# here instead — the same crate the rest of the DSL's schemas come from, so
-# there is no second schema generator and no hand-written copy of the form.
+# The documents a creator's tools write that are not stage documents — the
+# showcase camera record and a `delvec sculpt` form — have no `Stage` and cannot
+# reach `delvewright_dsl::schema`. Each gets its schema derived from its own
+# struct here instead — the same crate the rest of the DSL's schemas come from,
+# so there is no second schema generator and no hand-written copy of the form.
 # MIT.
 schemars = "1"
 

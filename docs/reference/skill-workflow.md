@@ -74,7 +74,7 @@ nothing else, so it carries no model tiers, no subagent dispatch and no worker
 roles — §2 below is that material, and it is a description of how an agent
 driving the skill splits the work, never a step on the page.
 
-**The page's spine is fourteen numbered steps in one contiguous block**, printed
+**The page's spine is thirteen numbered steps in one contiguous block**, printed
 in the order they are performed, with every reference section behind them. The
 numbers used throughout this file are those. Two branches are decided before
 step 1 — `areas[]` or a site plan, and whether the campaign already carries an
@@ -120,15 +120,11 @@ flowchart TD
     F --> A["7 · delvec analyze<br/>reachability / deadlock / dark mitigation"]
     A --> B["8 · delvec build -o validation/delve-output<br/>must exit 0"]
     B --> CAM["8b · showcase cameras<br/>one per approved image"]
-    CAM --> D["9 · detail plan — site plan only,<br/>nothing waits on a walk"]
+    CAM --> D["9 · detail plan — site plan only"]
     D --> G8{{"10 · MACHINE LADDER<br/>PackTest / bot / branch runs"}}
     G8 --> G7{{"11 · BRANCH CHRONICLE<br/>only when branch_points exist"}}
     G7 --> G9{{"12 · VISUAL REVIEW<br/>POV sequence first"}}
-    G9 --> W{{"13 · WALK IT — the detailed world<br/>staging gate, then localhost:25565"}}
-    W --> G10([14 · storybook + play commands<br/>on a passed walk record of this build])
-
-    W -.finding.-> P2
-    W -.finding.-> D
+    G9 --> G10([13 · storybook, staging gate, play commands<br/>the first play is the finished first version])
     G7 -.finding.-> C
     G8 -.content bug.-> C
     G8 -.toolchain bug.-> ESC[[STOP and escalate<br/>never work around]]
@@ -218,8 +214,7 @@ something it does not check is how a green run ships a broken delve.
 | 11 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
 | 10 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that a wave IS what the document says — read `encounters[].declared_facts` and `muster_findings` in the run report. `declared_facts: 0` over a campaign with waves means the muster asked nothing of any body, which is not a pass; an empty `muster_findings` beside a non-zero count is. The ladder asserts nothing about whether a fight can be won — that is the owner's hour |
 | 12 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — an inside-out cinematic is fully DW-green |
-| 13 | the walk | somebody has stood in the DETAILED world, after detail, the ladder and the visual review — scale, route legibility, silhouette, on the buildings that ship; on a site-plan campaign, `walk-record.json` names that build by its grid, ways and detail hashes, and every later build refuses a record of a different build (`DW0974`); a route problem found here costs a detail rework as well as the plan or graph edit; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled |
-| 14 | storybook marker | the host is told which engine they need, and the player which Minecraft to install | verified by `tools/creator/check-storybook-version.py`, which is the thing that stops a stale marker |
+| 13 | hand-over — staging gate and storybook marker | the staging gate has run on the build being handed over, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree; hand-over follows steps 10–12 green, so the first play is the finished first version; and the storybook's engine-version marker tells the host which engine they need, and the player which Minecraft to install | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled. The marker is verified by `tools/creator/check-storybook-version.py`, which is the thing that stops a stale one |
 
 Step 11 exists because of the **decompilation principle** (spec-0025): the
 compiler renders the compiled DSL *back into natural language*
@@ -230,7 +225,7 @@ with like — NL against NL. Nobody mentally compiles DSL.
 
 Each renders **compiled reality back into the reviewer's own medium**, and the
 review compares like with like: prose against prose for the chronicle, frames
-against the walk for the visual tier, a scene walkthrough against the design for
+against the route for the visual tier, a scene walkthrough against the design for
 the Artifact. The test to apply before adding any review step — *what does the
 compiler emit that shows the reviewer the compiled reality in their medium?* If
 the answer is "they read the DSL", the step is designed wrong, because nobody —
@@ -250,7 +245,7 @@ forbidden zone). `campaigns/` is a symlink to a `delvewright-campaigns` checkout
 
 | File | What it is |
 |---|---|
-| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one), the optional map-pipeline documents a campaign planned as a whole map carries (`geometry-brief.json`, `layout-graph.json`, `site-plan.json`, and `detail-plan.json` after the walk), and `design.json` once a design is approved; `delvec validate` covers every stage document a campaign directory holds | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
+| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one), the optional map-pipeline documents a campaign planned as a whole map carries (`geometry-brief.json`, `layout-graph.json`, `site-plan.json`, and `detail-plan.json`), and `design.json` once a design is approved; `delvec validate` covers every stage document a campaign directory holds | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
 | `DESIGN.md` | the single authoritative design document; every round conformance-reviews against it |
 | `GENERATION.md` | prompt verbatim, date, `dsl_version`, decisions, the **posture note**, the chronicle citation table, the **findings ledger** |
 | `README.md` | the storybook — reader-facing, background only, opens with the engine-version marker |

@@ -221,8 +221,7 @@ pub(crate) fn schema_stage_help() -> String {
         .map(|s| format!("`{}`", s.name()))
         .collect();
     format!(
-        "Which document: a campaign stage `1`..`7` or any stage by name ({}); `walk-record` \
-         for the hand-written walk record (a campaign artifact, not a stage document); \
+        "Which document: a campaign stage `1`..`7` or any stage by name ({}); \
          `prefab-metadata` for a prefab library asset's sibling `<prefab-id>.json` (a \
          library asset, not a stage document); `cameras` for the showcase camera record \
          `design/cameras.json` (a campaign artifact, not a stage document); `sculpt-form` for \
@@ -259,23 +258,10 @@ pub(crate) fn run_schema(stage: &str) -> ExitCode {
         "5" => vec![Stage::Quests],
         "6" => vec![Stage::Dialogue],
         "7" => vec![Stage::WorldEdits],
-        // `walk-record.json` is not a stage document and has no `Stage` — it is
-        // a campaign artifact recording an event (see `walk::walk_record_schema`).
-        // It is reachable here anyway because this is the command an author is
-        // told to run to see the shape of a document they must write, and the
-        // walk record is one of those. The schema says what it is, so the tool
-        // and the reference document agree rather than the flag's name deciding.
-        "walk-record" => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&delvec::compiler::walk::walk_record_schema())
-                    .unwrap()
-            );
-            return ExitCode::SUCCESS;
-        }
-        // `<prefab-id>.json` is not a stage document either — it is a library
-        // ASSET's metadata, reachable here for the same reason the walk record
-        // is. Deliberately absent from `all`: the gallery's coverage gate
+        // `<prefab-id>.json` is not a stage document — it is a library ASSET's
+        // metadata, reachable here because this is the command an author is told
+        // to run to see the shape of a document they must write. Deliberately
+        // absent from `all`: the gallery's coverage gate
         // enumerates its units from that export, and a library-asset document
         // folded into it would demand a stage-document binding for every field
         // of a file no stage document contains (`PrefabMeta::schema`'s note).
@@ -289,7 +275,7 @@ pub(crate) fn run_schema(stage: &str) -> ExitCode {
         }
         // `design/cameras.json` is not a stage document either — it is the showcase
         // camera record (spec-0069), a campaign artifact `delvec place-camera`
-        // writes. Exported for the reason the walk record is, and absent from
+        // writes. Exported for the reason prefab metadata is, and absent from
         // `all` for the reason prefab metadata is; the export names the file it
         // lives at, which is how the gallery's coverage gate finds the document
         // it binds the record's units against (spec-0079 §7).
@@ -321,9 +307,8 @@ pub(crate) fn run_schema(stage: &str) -> ExitCode {
                 .collect();
             eprintln!(
                 "unknown document `{other}`. Want `1`..`7` (the campaign DSL's numbered \
-                 stages), any stage by name — {names} — `walk-record` for the hand-written \
-                 walk record, `prefab-metadata` for a prefab library asset's sibling \
-                 `<prefab-id>.json`, `cameras` for the showcase camera record \
+                 stages), any stage by name — {names} — `prefab-metadata` for a prefab \
+                 library asset's sibling `<prefab-id>.json`, `cameras` for the showcase camera record \
                  `design/cameras.json`, `sculpt-form` for a `delvec sculpt` form, or `all` for \
                  every stage document at once.",
                 names = names.join(", "),

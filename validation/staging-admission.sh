@@ -101,15 +101,6 @@ CAMPAIGN="$(printf '%s\n' "$TOKEN_TEXT" | sed -nE 's/.*"campaign": "([^"]*)".*/\
 OVERRIDDEN="$(printf '%s\n' "$TOKEN_TEXT" | sed -nE 's/.*"overridden": (true|false).*/\1/p')"
 [ -n "$OVERRIDDEN" ] || die "token at $TOKEN records no \`overridden\` flag (corrupt or hand-written)"
 
-# A pre-detail blockout's token names the finding classes its walk cannot
-# exercise. Announce them at boot for the same reason the override banner
-# exists: the session's scope is stated where the session starts, never
-# remembered. Printed before the override branch so an overridden blockout
-# still announces its stage. Both keys are scalars on their own lines
-# (`json.dumps(indent=2)`).
-PRE_DETAIL="$(printf '%s\n' "$TOKEN_TEXT" | sed -nE 's/.*"pre_detail": (true|false).*/\1/p')"
-OOS_COUNT="$(printf '%s\n' "$TOKEN_TEXT" | sed -nE 's/.*"out_of_stage_count": ([0-9]+).*/\1/p')"
-
 # The classes this campaign contains no object of. A build passes with these
 # counted rather than refused — absence of an OPTIONAL surface is a design
 # choice, and a required one cannot be absent from a build that compiled — so
@@ -121,19 +112,6 @@ if [ -n "$INAP_COUNT" ] && [ "$INAP_COUNT" != "0" ]; then
   echo "staging-admission: $CAMPAIGN contains no object of $INAP_COUNT past finding class(es);" >&2
   echo "  this session cannot meet them (the token names each one). A pass is admission," >&2
   echo "  never coverage — carry the list into the round summary." >&2
-fi
-
-if [ "$PRE_DETAIL" = "true" ]; then
-  echo "========================================================================" >&2
-  echo "BLOCKOUT WALK — campaign: $CAMPAIGN" >&2
-  echo "This build is a pre-detail blockout: derived massing, no detail, staged" >&2
-  echo "for the walk that judges scale, pacing, routes and silhouette." >&2
-  echo "  finding classes this walk cannot exercise: ${OOS_COUNT:-0}" >&2
-  echo "" >&2
-  echo "Those classes measured zero objects on this build (the token lists" >&2
-  echo "them); each is re-adjudicated as a red the moment this campaign" >&2
-  echo "leaves the blockout stage." >&2
-  echo "========================================================================" >&2
 fi
 
 if [ "$OVERRIDDEN" = "true" ]; then

@@ -529,7 +529,7 @@ still owed, not four hours later.
 player-POV review shots, the storybook art, the whole-map panorama. It is a
 separate program: `delvec` writes the scene, Chunky renders it. Step 12 installs
 it, at the moment the first frame is wanted, by building the pinned core from
-Chunky's source, and step 14 reuses that install.
+Chunky's source, and step 13 reuses that install.
 
 ```sh
 git ls-remote --exit-code "$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/lib/versions.py" render.chunky_source)" HEAD >/dev/null

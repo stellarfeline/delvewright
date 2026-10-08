@@ -25,6 +25,7 @@
 //! - [`camera`]: cutscene camera geometry: the eased dolly and the `shot_style` expansion, shared by emission and validation.
 //! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
 //! - [`cellset`]: copy-on-write cell sets and maps for the nav model, a bitset when dense, and a flood's visited set.
+//! - [`chain`]: a tick's command chain stays under the game's limit, and one-shot work is split across ticks (`DW0984`).
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
 //! - [`clock`]: the clock binding line — every time value the campaign states, as the clock it resolves to (spec-0081 §5.5).
@@ -96,7 +97,6 @@
 //! - [`trap_trigger`]: a trap's trigger cell holds the block its trigger kind names (`DW0917`).
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
 //! - [`view`]: the CPU render surface — the visual channel that ships in the one binary a creator installs.
-//! - [`walk`]: the walk record — the owner walks the detailed build, and the record names it by grid, ways and detail (`DW0974`).
 //! - [`watch`]: runtime-watch coverage of per-object bodies, in two tiers.
 //! - [`waypoints`]: the compiler-proven critical-path waypoint polyline, as validation metadata.
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
@@ -120,6 +120,7 @@ pub mod calibrate;
 pub mod camera;
 pub mod cast;
 pub mod cellset;
+pub mod chain;
 pub mod claims;
 pub mod clearance;
 pub mod clock;
@@ -192,7 +193,6 @@ pub mod timeline;
 pub mod trap_trigger;
 pub mod traversal;
 pub mod view;
-pub mod walk;
 pub mod watch;
 pub mod waypoints;
 pub mod ways;

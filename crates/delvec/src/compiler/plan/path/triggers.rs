@@ -251,13 +251,7 @@ fn fires_needed(campaign: &Campaign, t: &delvewright_dsl::EnvTrigger) -> usize {
                     return false;
                 };
                 let v = i64::from(decl.initial) + n * step;
-                let want = i64::from(c.value);
-                match c.op {
-                    delvewright_dsl::CompareOp::Equals => v == want,
-                    delvewright_dsl::CompareOp::NotEquals => v != want,
-                    delvewright_dsl::CompareOp::AtLeast => v >= want,
-                    delvewright_dsl::CompareOp::AtMost => v <= want,
-                }
+                i32::try_from(v).is_ok_and(|v| c.holds(v))
             })
         };
         if let Some(n) = (1..=64).find(|n| holds(*n)) {
@@ -269,8 +263,10 @@ fn fires_needed(campaign: &Campaign, t: &delvewright_dsl::EnvTrigger) -> usize {
 
 /// Whether a critical path could ever perform this trigger — its bundle opens a
 /// way or sets a flag, the only two things [`path_triggers`] performs a trigger
-/// for, or it hosts a **link** (a repeatable trigger carrying a `teleport`,
-/// spec-0083 §3.1), which the route proof performs where a walk fails. The
+/// for; it hosts a **link** (a repeatable trigger carrying a `teleport`,
+/// spec-0083 §3.1), which the route proof performs where a walk fails; or it is
+/// pressed by hand and writes a datum, which a numeric gate may owe
+/// (`super::drive`). The
 /// emitter broadcasts a fired marker from exactly these, so every `trigger`
 /// step has a line to pass on and no other trigger prints one.
 pub(crate) fn trigger_may_be_performed(t: &delvewright_dsl::EnvTrigger) -> bool {
@@ -282,6 +278,10 @@ pub(crate) fn trigger_may_be_performed(t: &delvewright_dsl::EnvTrigger) -> bool 
         })
     }
     if !t.once && carries(&t.effects) {
+        return true;
+    }
+    // A press that moves a datum: a numeric gate may owe it (`DW0985`).
+    if super::drive::pressable(t) && super::drive::writes_state_at_top(t) {
         return true;
     }
     fn deep(effs: &[QuestEffect]) -> bool {

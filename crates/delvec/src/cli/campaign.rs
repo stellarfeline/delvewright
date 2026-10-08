@@ -240,6 +240,8 @@ pub(super) fn validate_loaded(
                 // charges it counts, the `(list, datum)` pairs they bind, and the
                 // effect lists walked as the denominator.
                 delvewright_dsl::PurchaseBinding::of(&campaign).line(),
+                // `DW0527`: bundles and effects the read-after-write rule walked.
+                delvewright_dsl::ReadAfterWriteBinding::of(&campaign).line(),
                 // spec-0073: what the health-bar rules (`DW0909`/`DW0910`/`DW0912`,
                 // raised inside `validate_campaign_with` above) examined — fights
                 // carrying a bar over fights declared, zeroes included.
@@ -446,41 +448,6 @@ pub(super) fn validate_loaded(
                     examined.push(dbind.line());
                 }
                 diags.extend(dd);
-            }
-            // **The walk** (spec-0049 §5.4): `DW0974`, a walk record that does
-            // not describe this build. The walk is taken on the detailed world,
-            // after detail, so nothing here holds detail work; a record that is
-            // PRESENT must name this build in the grid, the ways and the detail,
-            // or every build refuses it. Absent is the campaign nobody has walked
-            // yet, whose build is the one the walk needs, and it refuses nothing.
-            //
-            // **The hashes, printed BEFORE the check that compares them.** A
-            // walk record names its subject and its instrument by these numbers,
-            // they exist nowhere but this engine's output — none is a hash of a
-            // document — and a record is written by copying them out of the build
-            // that was walked. Printed here, in the one funnel every subcommand's
-            // validation goes through, so `validate`, `analyze` and a REFUSED
-            // `build` all hand the creator the numbers. The engine is named by
-            // its REVISION, never by its version string.
-            {
-                if let Some(h) =
-                    delvec::compiler::walk::Hashes::of(&campaign, &prefabs, prefabs_dir)
-                {
-                    eprintln!("{}", h.line());
-                }
-                let record = loaded.walk_record.as_deref();
-                let (wd, wbind) =
-                    delvec::compiler::walk::check(&campaign, &prefabs, prefabs_dir, record);
-                if campaign.site_plan.is_some() || record.is_some() {
-                    examined.push(wbind.line());
-                }
-                diags.extend(wd);
-                diags.extend(delvec::compiler::walk::drift(
-                    &campaign,
-                    &prefabs,
-                    prefabs_dir,
-                    record,
-                ));
             }
             // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
             // declared branch is enumerated and every static proof re-run under

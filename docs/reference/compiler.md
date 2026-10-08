@@ -41,7 +41,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 
 | # | Pass | Crate/module | Fails with |
 |---|------|--------------|-----------|
-| 1 | Load campaign dir (6 required stage docs + the 5 optional documents + `walk-record.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10), **naming the document that could not be read** |
+| 1 | Load campaign dir (6 required stage docs + the 5 optional documents + `l10n/` sidecars) | `compiler::load` | internal (≥10), **naming the document that could not be read** |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1); also `DW0455`, a body-family code refused at declaration time |
 | 4 | l10n sidecar coverage + reserved channels + language-code mapping | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184` (exit 1) |
@@ -52,8 +52,8 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
 | 10 | Nav checks (**the ambient sea inside the built volume** (`DW0851`) and **boundary safety over the finished world** (`DW0322`, error tier) for every campaign that assembles one — the floor under the per-batch stage-8 call, which an edit-free campaign never reached; then A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space; talk-to endpoint snap; waypoint self-check (critical path + per branch); v0.6 checkpoint no-stranding/placement + no place a body gets into and not out of (`DW0921`) + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0318`/`DW0322`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0851`/`DW0921` (exit 3; `DW0342` → exit 2) |
 | 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body, destination or cast row stands at a mark whose offset leaves its anchor's piece (`DW0897`, `compiler::mark`), no two bodies whose lifetimes overlap are declared on one cell (`DW0896`, `compiler::cohabit`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make and no body's `traversal` declaration goes unexercised (`DW0452`/`DW0453`/`DW0454`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky in an hour and weather it can stand in that burn it (`DW0496`, `compiler::daylight`, measured off the seated wave cells), no body whose AI takes no land target while the level is bright is staged as a fight that is bright until its `kill` completes with no water for the party's feet in reach (`DW0920`, `compiler::engage`, the same seated cells and the same clock; prints `engagement binding:`) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496`/`DW0896`/`DW0920` (exit 3); advisory `DW0359`/`DW0451`/`DW0453`/`DW0489` |
-| 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack, and the visual tier's `render-plan.json` — whose every camera is stood up in open air and then proven clear-eyed against the assembled world, `DW0724`) | `compiler::emit`, `compiler::render_plan` | `DW0300`+/`DW0724` (exit 3) |
-| 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), no engine fixture is reachable by a box-narrowed selector (`DW0545`), the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) — and the score reads are closed: no `if score` / `unless score` / `scores={…}` reads a scoreboard entry the pack never creates (`DW0495`) | `compiler::affordance` + `compiler::integrity` + `compiler::seeding` | `DW0420`/`DW0421`/`DW0495`/`DW0497`/`DW0545` (exit 3) |
+| 12 | Emit (datapack incl. the world build — the mass, seal and stage-7 writes in steps across ticks, packtest, server, critical-path, resourcepack, and the visual tier's `render-plan.json` — whose every camera is stood up in open air and then proven clear-eyed against the assembled world, `DW0724`) | `compiler::emit`, `compiler::render_plan` | `DW0300`+/`DW0724` (exit 3) |
+| 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), no engine fixture is reachable by a box-narrowed selector (`DW0545`), the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) — and the score reads are closed: no `if score` / `unless score` / `scores={…}` reads a scoreboard entry the pack never creates (`DW0495`) — and no shipped function's command chain, with every function it calls in the same tick, can pass the game's `max_command_sequence_length` (`DW0984`, `compiler::chain`) | `compiler::affordance` + `compiler::integrity` + `compiler::seeding` + `compiler::chain` | `DW0420`/`DW0421`/`DW0495`/`DW0497`/`DW0545`/`DW0984` (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
   short-circuits (exit 1) before analysis; analysis failure (exit 2) before build.
@@ -616,10 +616,7 @@ bytes runs through the compiler computing the frame from the site plan inside
 is the same tooth the blockout's is: inversion is not forbidden, it is
 uncompilable. The escalation path a part that wants different *space* takes is
 a **site-plan revision**; a part that wants different *traversal* revises the
-**layout graph**. Detail is not held behind a walk: the walk is taken on the
-detailed world, after detail (*The walk record* below), so either revision
-before the walk costs a re-detail and nothing else, and after it the record no
-longer names the build (`DW0974`).
+**layout graph**, and either revision costs a re-detail (`delvec detail --all`).
 
 **The frame** a piece must exactly fill is the box's play space grown one course
 downward — the walk plane's own floor. Everything else the derivation writes
@@ -655,82 +652,6 @@ lofts and pits inside a place, its materials and its light. What is not: the
 seams, their cells, their rises, and the absence of any way out the plan did not
 allocate.
 
-**The walk record** — `walk-record.json` (`compiler::walk`). The owner walks
-the DETAILED world, after detail, with its real buildings and materials; a
-blockout somebody stood in tells them almost nothing. So nothing about detail
-asks for a walk record, and the record names the build that was walked.
-
-It is a campaign artifact, not a stage document — no `dsl_version`, no
-`campaign_id`, no `stage`, because it records an event rather than being
-authored against a schema. Its form is
-`{site_plan_sha256, layout_graph_sha256, detail_sha256, blockout_sha256,
-engine_revision, verdict, findings[]}`, and every run that validates a
-site-plan campaign prints all four hashes with the engine's **revision** beside
-them, so a record can name its subject and its instrument literally.
-
-**The key is three halves, each over what the engine DERIVES and none over a
-document's bytes.** `site_plan_sha256` is the **grid** — every placed box's
-corner, extent, floor and headroom, every placed seam's cells, crossing and
-rise, the whole's own volumes and the region they stand in.
-`layout_graph_sha256` is the **ways** a body moves by — every edge whole, the
-entry, the goal, the critical path, the beats and every station.
-`detail_sha256` is **what stands in the whole** — per bound place, in place
-order: the piece, the sha256 of each of its templates' `.nbt` bytes as they lie
-in the prefab directory, with the template's offset and size, and the cell and
-facing of each piece anchor an owed name is re-bound to. The `palette` is not in
-it: it is handed to a program and never placed. A build that binds no place has
-a detail half too — the hash of `detail 0 row(s)` — so a record taken on a
-blockout names the blockout. `sha256sum site-plan.json` produces none of them;
-the run's own output is the only place they exist, which is why they are printed
-at **validation**, refused runs included. A `dsl_version` bump, a reformat, a
-reworded note, a renamed intent, a reordered `details[]` or a palette change
-moves no half; a box moved one block, a way changed, or a place bound, unbound
-or re-made does. `blockout_sha256` is the massing with nothing bound, which the
-drift advisory reads; it is not in the key.
-
-**`DW0974` holds the record to the build beside it.** A record that is present
-must parse and name this build in all three halves, at every validation —
-`build` included — or the run refuses, naming the half that moved with both
-hashes, and naming a blockout record beside a detailed build as exactly that. An
-absent record refuses nothing: it is the campaign nobody has walked yet, and its
-build is the one the walk needs. The remedy is to walk this build and re-record,
-or to remove the record, which describes a build that no longer exists. **The
-trade-off is stated, not hidden:** a route problem the walk finds is now repaired
-after detail, so it costs a detail rework (`delvec detail --all`) as well as the
-plan or graph edit, and a fresh walk.
-
-**`verdict` is one of three, and the third is `unwalked`.** `passed` — the build
-was walked and may ship. `findings` — the build was walked and something must
-change first. `unwalked` — nobody walked it: a build stood up and taken down, a
-walk abandoned, a walk cut short. With only the first two every legal record
-asserted a walk; `unwalked` lets the document state its own subject rather than
-put the truth in `findings[]` prose nothing reads. `DW0974` refuses on presence,
-never on the verdict — a `findings` or `unwalked` record of this build is a true
-statement about it — and the binding line names the verdict it read
-("a record of THIS build, verdict `passed`"). No engine check reads the verdict
-further; `/new-delve`'s hand-over ships a build only beside a `passed` record of
-it. A
-record that does not parse is told the whole set, read off `Verdict`'s own schema
-(`Verdict::tokens`), never off a literal. Nothing here decides whether a body was
-in the world: that a human walked is the record author's assertion, held by
-operating practice.
-
-It is hand-authored and refused when it is wrong, so it is schema-exportable
-like everything else a person writes: `delvec schema --stage walk-record`,
-derived from the same struct `DW0974` parses. The record is not a build input: a
-re-recorded walk moves no emitted byte.
-
-**The engine revision** is stamped into the binary at compile time by
-`crates/delvec/build.rs`. A source build reads it out of the checkout it is
-built from — suffixed `-dirty` when that tree carries uncommitted changes, since
-a build behind an uncommitted edit is not a build of that revision. A release
-recipe or container build that has the revision and no `.git` passes
-`DELVEC_ENGINE_REVISION` in the environment and that wins unchanged. Where
-neither can be established — a source tarball such as crates.io serves — the
-engine prints `unstamped` rather than claiming a revision it does not have. The
-stamp reaches stderr and diagnostic text only and no emitted byte, so two
-binaries differing only in it compile a campaign to identical output.
-
 ### Stage 7 — `world-edits` (optional; spec-0017)
 
 The map editor's edit script (`world-edits.json`), the artifact of record for
@@ -753,13 +674,13 @@ from l10n (no stage-7 string is player-visible).
 | `relight` | Run the spec-0010 fixture-placement pass over ONE region and **bake** the fixtures into the edit script's writes — authorial control of where fixtures land (the whole-area relight still re-proves after every batch). Fixture/target default to the area's declared `lighting`; `fixture` + `min_light` (1..=14) override, and are **required** when the area declares none (`DW0162`). An unlightable region is the area pass's own `DW0211`, batch-attributed; a region with no reachable walkable cell is `DW0323`. |
 | L2 massing verbs | `swap-piece` (replace a piece with a library prefab that re-mates every mated socket at its exact world pose, any rotation, overlap-checked), `insert-piece` (attach at a specific **unmated** socket — the targeted form of the solver's frontier attach), `remove-piece` (a **leaf** only — exactly one mated socket, never the entry; the neighbour's socket unmates and re-seals), `rewire-socket` (`sealed` **unmates the doorway pair** — a graph operation: both planes wall up and the DW0306 connectivity proof loses the edge; `open` clears an unmated socket's fill — deliberately without granting the proof an edge, conservative), `reseed-piece` (seeded weighted re-pick among the area pool's compatible members, current excluded — a reseed always changes the piece or errors). All carry the `piece` index + `prefab` drift guard. Applied at **plan** time (`compiler::massing`, inside `Plan::build` right after `solve_area`): seals are regenerated from the massaged mated flags (`seal_layout`), and anchors, gate reachability, waterline, assembly, relight, nav and the L3 replay all run over the massaged layout — the full assembly validation re-runs by construction. Massing verbs live in **massing-only** batches ordered before every detailing batch (`DW0162`); an inapplicable verb is `DW0324`. `resize-piece` from the spec's initial list is **excluded**: the library has no size-parameterized piece primitive to express it through (no-hack doctrine); `swap-piece` covers the different-sized-variant case. |
 | Seeding | Every seeded verb streams from `stream_seed(campaign_seed, "edits/<batch-id>/<edit-index>")` — renaming a batch (or moving an edit) deliberately reseeds it; nothing else does (ADR-0006). |
-| Emission | The replay lowers to a `world_edits` function (x-run-coalesced `fill`/`setblock`), called from `setup_finish` after the socket seals and before the relight fixtures — the exact model order, and the reason `DW0352` exists (`trap_setup` runs later). `setup` additionally forceloads every batch's write AABB (an edit may write outside the piece bboxes — a leaning canopy, a stamped fragment — and a `setblock` on an unloaded chunk silently fails); those chunks then follow the **forceload lifecycle** below. `world-edits.json` is hashed into `manifest.json` inputs. |
+| Emission | The replay lowers to x-run-coalesced `fill`/`setblock` lines at the end of the **world build** (§4 *One tick's command chain stays under the game's limit*), after the socket seals and before `setup_finish`'s relight fixtures — the exact model order, and the reason `DW0352` exists (`trap_setup` runs later). `setup` additionally forceloads every batch's write AABB (an edit may write outside the piece bboxes — a leaning canopy, a stamped fragment — and a `setblock` on an unloaded chunk silently fails); those chunks then follow the **forceload lifecycle** below. `world-edits.json` is hashed into `manifest.json` inputs. |
 
 ### The design record — `design` (optional; spec-0061)
 
 `design.json`, the machine half of an approved look. **Optional**: absent = a
 campaign that has not approved a design, which validation measures and prints
-as a zero and which `tools/creator/staging-gate.py` refuses — a build the owner walks
+as a zero and which `tools/creator/staging-gate.py` refuses — a build the owner plays
 carries an approved design or is not staged. Present = parsed, validated and
 hashed into `manifest.json` inputs like any other stage document. Nothing in it
 is player-visible, so nothing in it is l10n-inventoried.
@@ -860,9 +781,9 @@ common.
 | `volumes[]` | `{id: volume/<kebab>, region, role, note?}` — the mass the WHOLE owns: `massif` (the mountain a cave system is inside), `ground` (the plane under a village), `clearance` (the sky a silhouette needs kept empty). They stand beside places, under them and over them, never inside one (`DW0835`), and they answer to the region like anything else the plan places (`DW0826`). |
 | `identities[]` | `{fact, measure, cmp}` — guarded comparisons binding the plan to the geometry brief's written numbers. `cmp` is `eq`/`lt`/`le`/`gt`/`ge`. `measure` is a tagged union over a **small fixed vocabulary**, not a parsed string: `{"of":"region-extent","axis":x\|y\|z}`, `{"of":"box-extent","node":…,"axis":x\|z}`, `{"of":"box-height","node":…}`, `{"of":"distance-xz","from":…,"to":…}` (Euclidean between footprint centres), `{"of":"datum-y","datum":…}`. An unknown measure is an ordinary `DW0100` and a node it names is checked like any other reference. **Marked judgement**: the vocabulary will grow, and the falsifier is the first brief fact a campaign cannot bind with it — at which point the missing measure is added as a variant, never worked around by binding a different fact. |
 | `sightlines[]` | `{edge, from, to}` — **one per `vision` edge** (`DW0824`), the segment the stage-5 battery walks. A vision edge carries a sightline rather than a seam because a vista's two ends are routinely not adjacent — a tower seen from a shore shares no face with it — so the seam construct cannot state the one thing it asserts. Each end must lie inside the place its connection names (`DW0824`): the proof walks exactly this segment, so ends elsewhere would prove a different claim, green or red. |
-| `views[]` | `{id: view/<kebab>, eye, look_at, note?}` — the named exterior vantages the walk judges the silhouette from, rendered beside the stage-2 reference sheet. Optional; a plan with zero views has that zero stated in the binding line. |
+| `views[]` | `{id: view/<kebab>, eye, look_at, note?}` — the named exterior vantages the silhouette is judged from, rendered beside the stage-2 reference sheet. Optional; a plan with zero views has that zero stated in the binding line. |
 | `lighting` | `{fixture, min_light}` applied to every enclosed box, so a blockout interior is walkable at night without per-box surface. **The engine's existing area-lighting object**, not a twin of it, so it answers the same range rule with the same code (`DW0196`). |
-| Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared** (with how many are pinned, how many derived, and in how many components), seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views — then one **placing** line per box with its corner and how it was obtained (spec-0059). Two zeroes are called out as findings rather than counted: a plan with no view (the walk has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
+| Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared** (with how many are pinned, how many derived, and in how many components), seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views — then one **placing** line per box with its corner and how it was obtained (spec-0059). Two zeroes are called out as findings rather than counted: a plan with no view (the visual review has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
 
 ### The horizon's surround (spec-0026)
 
@@ -1003,8 +924,7 @@ derived — a pure function of the site plan, the layout graph, the metrics tabl
 and the engine — so there is nothing an author writes here and nothing an author
 can get wrong here. Both authored documents reach it: the plan states where the
 boxes and the seams' cells are, the graph states what those seams are and what
-headroom a sky-open place claims, which is why the walk record's key holds a
-half for each. What a reader needs to know
+headroom a sky-open place claims. What a reader needs to know
 about it is what it BUILDS, which is fixed:
 
 | Thing | What the derivation makes of it |
@@ -1423,6 +1343,13 @@ datapack predicate `<ns>:sneak_held` (the cutscene bounce's re-attach gate, §4)
 ---
 
 ## 4. Hard invariants
+
+### One tick's command chain stays under the game's limit
+
+The pinned server runs a function, and every function it calls in the same tick, inside one execution context whose command quota is the `max_command_sequence_length` gamerule (65,536 by default); past it the server logs `Command execution stopped due to limit` and drops the rest, and nothing reads the log. Each root — a `#minecraft:tick`/`#minecraft:load` entry, a scheduled function, an advancement reward — has its own context. How the quota is charged, and the cost model, are on [`delvec/compiler/chain.md`](delvec/compiler/chain.md).
+
+- **The world build.** The world's own block writes — each area's derived mass and socket seals, then the stage-7 edit script's writes, in the compile-time model's order — grow with the campaign (one sculpted stamp is tens of thousands of lines), so they run as steps: `world_build`, `world_build_2`, …, each at most `chain::SETUP_STEP_BUDGET` (a quarter of the limit). `place_verify` enters `world_build` once every sentinel reports; its first line latches `#placed dw.sys` at **2**, and the tick's `place_all`/`place_verify` run only while `#placed` is **0**, so no template is placed back over a write. Each step ends `schedule function <ns>:<next> 1t`; the last schedules `setup_finish`, which latches `#placed` at **1** as its last line. A campaign with no mass, seal or edit write has no step, and `place_verify` calls `setup_finish` directly. Every reader of setup completion reads `#placed` = 1: `join_place`'s gate, `validation/world-save.sh` and `validation/reset-when-empty-run.sh` over rcon, and the bot through `join_place`. A generated PackTest that re-runs `setup_finish` re-runs no block build.
+- **The refusal (`DW0984`).** After emission, over the finished tree, every shipped function's chain is measured and a build where any could pass the limit — or that reaches a call cycle no count bounds — is refused. `validation/chain-length.json` is its ledger.
 
 ### One `dsl_version` (ADR-0024)
 
@@ -2699,9 +2626,29 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   marker `[dw:complete <campaign> trigger/<id>]`, which every trigger whose bundle
   opens a way or sets a flag broadcasts first thing (`plan::trigger_may_be_performed`).
   A path whose trigger gate never holds, or whose target never shares an area
-  with a step, does not perform it, and nothing it opens is credited. Numeric
-  gates (`requires_state`) are not evaluated: a press whose state gate is closed
-  broadcasts no marker and the step fails where it stands.
+  with a step, does not perform it, and nothing it opens is credited. For these
+  two reasons numeric gates (`requires_state`) are not evaluated: a press whose
+  state gate is closed broadcasts no marker and the step fails where it stands.
+  **A numeric gate only presses move is driven** (`plan::path::drive`,
+  `DW0985`). A datum is *driven* when it is declared, no stake forfeits it, no
+  loop counts it, it has one holder on the walk (`party`, or `player` with
+  `min_players` 1), and every write to it anywhere is a top-level effect of a
+  `use` or `strike` trigger on an anchor; such a trigger also broadcasts the
+  fired marker. The plan replays, in path order, every press the path performs
+  — the trigger's own gate (`once`, flags, numeric terms), then each effect in
+  order behind its own `when`, read against the value the earlier lines of the
+  same bundle produced, as the datapack runs them — and at each objective whose
+  `requires_state` reads a driven datum and does not hold, searches
+  breadth-first (candidates in declaration order) for the shortest press
+  sequence that makes every such term hold, bounded at 64 presses and 16384
+  distinct states. The sequence is performed as `trigger` steps directly in
+  front of the objective, after any trigger already due there; the anchor is
+  resolved in the objective's area first, elsewhere only when its name is
+  unique. No sequence within the bound refuses the build with `DW0985`, naming
+  the gate, the presses and every value they reach. A press whose line reads a
+  datum the plan cannot name there is not taken, and a search that skipped one
+  refuses nothing. Terms on data that are not driven are left to the other
+  proofs.
   **`loop` steps** (spec-0086 §5.2, §6). A loop that holds where the forced
   route meets it is **exercised**: in front of the first step whose position is
   beyond the slab along its axis while the party, in the loop's area, is not,
@@ -2995,6 +2942,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   most campaigns bind the class and not the clause (`nobodys-cave-island`
   declares no region verb at all — 47 fixtures, 5 borne, 0 box selectors), and a
   bare `true` over 47 examined objects is how a reader learns to skip the field.
+- `<out>/validation/chain-length.json`: the `DW0984` **binding ledger** (`compiler::chain`). `limit` (the pinned default of `max_command_sequence_length`), `step_budget`, `examined` (shipped functions measured, every datapack of the tree), `counted_loops`, `steps` (the world-build steps the delve's datapack ships), `longest` (`function`, `chain`), `refused` (empty on any build that wrote the file) and the `quantifier` the counts hold under: per executing source. The build prints `chain binding: …` before the verdict.
 - `<out>/validation/observer-census.json`: the `DW0926` **binding ledger** (`compiler::observer`, spec-0077 §5). `functions_read`, `positional_player_selectors`, `exclude_observation_tag`, `allowed` (one row per `observer::ALLOWED` site: its count and its reason) and `unguarded` (0 on every build that ships, since one unguarded selector refuses it). Emitted on every build: a cutscene viewer carries the tag in any campaign, and a declared `world.respawn_wait` adds a second state that does.
 - `<out>/validation/placement-gate.json`: the `DW0864` **binding ledger** (`compiler::edit`). One row per `scatter`/`plant` verb the build replayed — its batch, its index in that batch, what it `declared` (a `plant` count, or `null` where the verb states only a density), what it `delivered`, the `domain` of cells the author's region selected, and how many of those the verb could `act on` at all (`usable`). Rows are written whether or not any of them is short, because a rule that speaks only when it fires reads exactly like a rule that never looked. `binding` carries `verbs`, `scatter`, `plant`, `short`, `domain_cells` and `delivered`, every one of them derived from the rows rather than written beside them. Absent for a campaign with no edit script.
 - `<out>/validation/piece-mating.json`: the `DW0780`/`DW0781` **binding ledger**
@@ -4645,8 +4593,8 @@ world. Invariants:
   `after world-edits batch `<id>``, and every violation of a run is aggregated
   into one report (bounded listing + total), never just the first.
 - **Trap-hardware integrity (`DW0352`).** No batch write may land on a trap's
-  trigger/hazard cell, dispenser socket or disarm-affordance cell. `setup_finish`
-  runs `world_edits` **before** `trap_setup`, so a colliding edit lands first and
+  trigger/hazard cell, dispenser socket or disarm-affordance cell. The world build
+  runs **before** `setup_finish`'s `trap_setup`, so a colliding edit lands first and
   the trap is then wired into a block that is gone — vanilla's `item replace
   block … container.0` on a non-container fails with **no output**, shipping a
   dead trap while every geometry proof stays green (`DW0342` proves the *planned*
@@ -4762,11 +4710,11 @@ world. Invariants:
 - **Forceload lifecycle.** `setup` forceloads every piece bbox *and* every edit
   AABB. Each edit chunk that no piece bbox covers gets its own convergence
   sentinel in `place_verify` (`execute if loaded <cell>` folded into `#placeok`),
-  so `setup_finish` — and therefore the one-shot `world_edits` — cannot run into
-  a still-loading chunk and lose those writes forever; the tick retry loop
+  so the one-shot world build cannot run into a still-loading chunk and lose
+  those writes forever; the tick retry loop
   converges on them exactly as it does on piece placement. Those same chunks are
-  then released (`forceload remove`) at the very **end** of `setup_finish`, after
-  every other write in the function. **Piece forceloads are never released** —
+  then released (`forceload remove`) at the very **end** of `setup_finish`, which
+  runs after the world build's last step and after every other write of its own. **Piece forceloads are never released** —
   the gameplay tick machinery (gate fills, wave spawns, checkpoint and trap block
   reads) keeps addressing those chunks for the whole session.
   **A span is split, never refused.** Every `forceload add` this compiler emits —

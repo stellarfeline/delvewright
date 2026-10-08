@@ -328,7 +328,7 @@ pub(super) fn emit_functions(
     }
     // Stage-7 edit writes may land outside the piece bboxes (a leaning canopy,
     // a fragment stamped beside a piece) — forceload each batch's write AABB
-    // too, or the `world_edits` setblocks would silently fail on unloaded
+    // too, or the edit setblocks would silently fail on unloaded
     // chunks (the same pitfall the piece forceloads exist for). Empty for a
     // campaign without an edit script → setup byte-identical.
     for (min, max) in edit_bounds {
@@ -349,9 +349,9 @@ pub(super) fn emit_functions(
     setup.push("scoreboard players set #placed dw.sys 0".to_string());
 
     // The edit-script chunk ledger (map-editor audit, findings 2 + 6): which
-    // chunks the `world_edits` writes need loaded, and which of those the piece
+    // chunks the edit writes need loaded, and which of those the piece
     // forceloads do NOT already cover. `forceload add` only MARKS a chunk — the
-    // very reason placement is retried — so `world_edits` needs the same
+    // very reason placement is retried — so the world build needs the same
     // load-convergence gate (`place_verify` below) and, being one-shot, may
     // release its own chunks afterwards.
     let piece_chunks: BTreeSet<(i32, i32)> = plan
@@ -416,16 +416,78 @@ pub(super) fn emit_functions(
     }
     fns.push(("place_all".to_string(), lines(&place_all)));
 
+    // --- world_build: the world's own block writes, split across ticks ---
+    // Every block write the world is built from, in the order the compile-time
+    // model applied them: each area's derived mass and socket seals, then the
+    // stage-7 edit script (spec-0017) — after the seals, which overwrite raw
+    // structure blocks, and before `setup_finish`'s relight fixtures, which
+    // were measured over the edited world. The sequence grows with the
+    // campaign (a sculpted stamp is tens of thousands of lines), and one tick
+    // stops a chain at `max_command_sequence_length`, so it ships as steps of
+    // at most `chain::SETUP_STEP_BUDGET` each, one per tick: `world_build`
+    // runs the first from `place_verify` and latches `#placed` at 2, so the
+    // tick stops re-placing templates over the writes; each step schedules
+    // the next, and the last schedules `setup_finish`, which latches 1. Empty
+    // for a campaign with no mass, seal or edit → no step, and `place_verify`
+    // calls `setup_finish` directly.
+    let mut build: Vec<String> = Vec::new();
+    // seal/clear sockets: open sockets get a wall fill; mated sockets get their
+    // jigsaw block cleared to air, leaving a clean 3×3 passage (keep-socket-v1).
+    // Runs after placement so it overwrites the raw structure blocks. Empty for
+    // an area whose prefab declares no connector — including every single-prefab
+    // area binding one, whose lone piece has all its sockets unmated and so gets
+    // a wall fill per connector.
+    for area in &plan.areas {
+        // The area's own mass first — a derived blockout's blocks (spec-0049 §5)
+        // arrive as region writes rather than in a `.nbt`, in the same order the
+        // compile-time model applied them (`crate::compiler::assembled::placed_blocks`), so
+        // the world the server builds is the world every proof was taken over.
+        // Empty for every prefab-placed area → byte-identical setup.
+        //
+        // Each write is already inside vanilla's `/fill` cap: the derivation
+        // splits at the point of writing, because a `fill` the server refuses
+        // fails in a function nobody reads.
+        for m in area.mass.iter().chain(&area.seals) {
+            build.push(format!(
+                "fill {} {} {} {} {} {} {}",
+                m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
+            ));
+        }
+    }
+    build.extend(world_edits.iter().cloned());
+    let build_steps =
+        crate::compiler::chain::steps(&build, crate::compiler::chain::SETUP_STEP_BUDGET);
+    let step_name = crate::compiler::chain::build_step_fn;
+    for (k, step) in build_steps.iter().enumerate() {
+        let mut body: Vec<String> = Vec::new();
+        if k == 0 {
+            body.push("scoreboard players set #placed dw.sys 2".to_string());
+        }
+        body.extend(step.iter().cloned());
+        let next = if k + 1 < build_steps.len() {
+            step_name(k + 1)
+        } else {
+            "setup_finish".to_string()
+        };
+        body.push(format!("schedule function {ns}:{next} 1t"));
+        fns.push((step_name(k), lines(&body)));
+    }
+    let after_verify = if build_steps.is_empty() {
+        "setup_finish".to_string()
+    } else {
+        step_name(0)
+    };
+
     // --- place_verify: sentinel check per piece + per edit chunk; all present
-    // → setup_finish ---
+    // → the world build (or `setup_finish`, when there is none) ---
     let mut place_verify: Vec<String> = Vec::new();
     place_verify.push("scoreboard players set #placeok dw.sys 0".to_string());
     let mut sentinel_count = 0u32;
     // Edit-script chunks that no piece bbox covers get their OWN convergence
-    // sentinel (map-editor audit finding 2). Without it `setup_finish` could
-    // fire the moment the pieces verify, run `world_edits` into a still-loading
+    // sentinel (map-editor audit finding 2). Without it the world build could
+    // start the moment the pieces verify, run the edits into a still-loading
     // chunk, and lose those writes permanently — vanilla `setblock` into an
-    // unloaded chunk fails with no output, and `world_edits` runs exactly once.
+    // unloaded chunk fails with no output, and the world build runs exactly once.
     // Folding them into `#placeok` reuses the placement retry loop verbatim:
     // the tick function re-runs `place_verify` until every sentinel AND every
     // edit chunk reports in. Empty for a campaign whose edits stay inside the
@@ -468,7 +530,7 @@ pub(super) fn emit_functions(
         }
     }
     place_verify.push(format!(
-        "execute if score #placeok dw.sys matches {sentinel_count} run function {ns}:setup_finish"
+        "execute if score #placeok dw.sys matches {sentinel_count} run function {ns}:{after_verify}"
     ));
     fns.push(("place_verify".to_string(), lines(&place_verify)));
 
@@ -486,29 +548,6 @@ pub(super) fn emit_functions(
         }));
         Vec::<String>::new()
     };
-    // seal/clear sockets: open sockets get a wall fill; mated sockets get their
-    // jigsaw block cleared to air, leaving a clean 3×3 passage (keep-socket-v1).
-    // Runs after placement so it overwrites the raw structure blocks. Empty for
-    // an area whose prefab declares no connector — including every single-prefab
-    // area binding one, whose lone piece has all its sockets unmated and so gets
-    // a wall fill per connector.
-    for area in &plan.areas {
-        // The area's own mass first — a derived blockout's blocks (spec-0049 §5)
-        // arrive as region writes rather than in a `.nbt`, in the same order the
-        // compile-time model applied them (`crate::compiler::assembled::placed_blocks`), so
-        // the world the server builds is the world every proof was taken over.
-        // Empty for every prefab-placed area → byte-identical setup.
-        //
-        // Each write is already inside vanilla's `/fill` cap: the derivation
-        // splits at the point of writing, because a `fill` the server refuses
-        // fails in a function nobody reads.
-        for m in area.mass.iter().chain(&area.seals) {
-            setup.push(format!(
-                "fill {} {} {} {} {} {} {}",
-                m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
-            ));
-        }
-    }
     // **The horizon's biome paint** (spec-0026): `/fillbiome` over the
     // surround's columns.
     //
@@ -571,17 +610,6 @@ pub(super) fn emit_functions(
             ATMOSPHERE_BOOTSTRAP_FN.to_string(),
             lines(&atmosphere_bootstrap),
         ));
-    }
-    // Stage-7 world edits (spec-0017): the edit script's runtime materialization,
-    // applied after the socket seals and before the relight fixtures — the exact
-    // order the compile-time model replayed them in (the relight pass measured
-    // the EDITED world, so its fixtures must land after the edits). One function
-    // call keeps setup_finish readable; the coalesced `fill`/`setblock` body
-    // lives in `world_edits.mcfunction`. Empty for a campaign without an edit
-    // script → setup_finish byte-identical to pre-stage-7.
-    if !world_edits.is_empty() {
-        setup.push(format!("function {ns}:world_edits"));
-        fns.push(("world_edits".to_string(), lines(world_edits)));
     }
     // Relight fixtures (spec-0010): supplemental lighting placed after the world is
     // fully assembled (structures placed + sockets sealed), so the block writes
@@ -671,7 +699,7 @@ pub(super) fn emit_functions(
     setup.extend(shop_setup(plan));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
-    // `world_edits` writes land — and `place_verify` above has now proven every
+    // edit writes land — and `place_verify` above has now proven every
     // one of those chunks loaded. Release the ones no piece bbox covers, at the
     // very END of `setup_finish` so every other write in this function (relight
     // fixtures, NPC summons, trap hardware) has already run against loaded
@@ -691,13 +719,15 @@ pub(super) fn emit_functions(
     // --- tick ---
     let mut tick: Vec<String> = Vec::new();
     // Placement retry loop: until every sentinel verifies, re-place and re-check
-    // each tick (idempotent; `setup_finish` fires exactly once, gated by
-    // `#placed`). Converges as soon as the forceloaded chunks finish loading.
+    // each tick (idempotent). Gated on `#placed` 0: the world build latches it
+    // at 2 while its steps run, so no template is placed back over a write, and
+    // `setup_finish` latches 1. Converges as soon as the forceloaded chunks
+    // finish loading.
     tick.push(format!(
-        "execute if score #init dw.sys matches 1 unless score #placed dw.sys matches 1 run function {ns}:place_all"
+        "execute if score #init dw.sys matches 1 if score #placed dw.sys matches 0 run function {ns}:place_all"
     ));
     tick.push(format!(
-        "execute if score #init dw.sys matches 1 unless score #placed dw.sys matches 1 run function {ns}:place_verify"
+        "execute if score #init dw.sys matches 1 if score #placed dw.sys matches 0 run function {ns}:place_verify"
     ));
     // Datapack-owned FIRST-JOIN placement (singleplayer parity). A joining player
     // is placed by the datapack, never by the server's interpretation of the

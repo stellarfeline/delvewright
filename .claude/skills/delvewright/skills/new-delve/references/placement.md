@@ -232,8 +232,8 @@ form and the commands are in *Reference: drawing the map's reference*.
    whole map's one box, in world coordinates), `datums` (named ground planes),
    **one `boxes[]` entry per node**, **one `seams[]` entry per traversal edge**,
    `volumes[]` for mass the whole owns (the mountain a cave is inside), a
-   `sightlines[]` entry per `vision` edge, optional `views[]` for the walk to
-   judge the silhouette from, and `identities[]` binding the plan back to the
+   `sightlines[]` entry per `vision` edge, optional `views[]` to judge the
+   silhouette from, and `identities[]` binding the plan back to the
    brief's facts.
    - **Extent flows down.** The region comes from the brief and the boxes
      partition it. A box is never grounds to grow the region (`DW0826`): shrink

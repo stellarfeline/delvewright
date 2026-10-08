@@ -74,6 +74,10 @@ pub fn validate_campaign_with(
     // and over the whole closed consumer set — an ungated site contributes no
     // terms and cannot contradict.
     crate::state::gate_contradiction_checks(c, &mut d);
+    // `DW0527`: a gate read after a bundle's own conditional write. Over every
+    // effect root of every campaign — not inside `economy_checks`, whose early
+    // return on a campaign with no stakes and no shops would skip it.
+    crate::state::read_after_write_checks(c, &mut d);
     crate::lethal::lethal_stage_checks(c, &mut d);
     // spec-0031: the status-effect verbs. Every walk inside is empty for a
     // campaign that declares neither verb. The status-effect registry is the

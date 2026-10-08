@@ -41,7 +41,7 @@ JSON file per stage (`world.json`, `npcs.json`, `classes.json`,
 `quest-plan.json`, `quests.json`, `dialogue.json`), optionally a `world-edits.json`
 edit script, the map-pipeline documents (`geometry-brief.json`,
 `layout-graph.json`, `site-plan.json`, `detail-plan.json`), a `design.json`
-design record, a `walk-record.json`, and an `l10n/<code>.json` sidecar per
+design record, and an `l10n/<code>.json` sidecar per
 translated language.
 
 Rooms come from a prefab library — Minecraft structure `.nbt` files plus JSON
@@ -54,7 +54,7 @@ one with `--prefabs <dir>`.
 | `analyze` | Reachability and dialogue deadlocks. |
 | `build` | The full deterministic build. |
 | `fmt` | Rewrite authored JSON in canonical form; `--check` reports instead. |
-| `schema` | Export a document's JSON Schema (`--stage` takes `1`–`7`, `geometry-brief`, `layout-graph`, `site-plan`, `detail-plan`, `walk-record`, `prefab-metadata`, or `all`). |
+| `schema` | Export a document's JSON Schema (`--stage` takes `1`–`7`, `geometry-brief`, `layout-graph`, `site-plan`, `detail-plan`, `prefab-metadata`, `cameras`, `sculpt-form`, or `all`). |
 | `l10n-inventory` | The translatable-string inventory as JSON. |
 | `l10n-apply` | Write a language sidecar from a table of English → translation. |
 | `metrics` | The metrics standard — player facts and building standards — as JSON. |

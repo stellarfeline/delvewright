@@ -53,11 +53,11 @@ is the design. **None of them shows the blockout**, and none is drawn to: the
 massing is not authored, it is derived from the plan and the metrics table at
 step 8, so a picture of it could only be made by inventing what the derivation is
 going to do, and it would carry a picture's authority while doing it. So this
-gate confirms the design and stops there. **The built map is judged at step 13,
-in the walk** — on the detailed world, with its real buildings and materials,
-where scale, pacing, route legibility and the silhouette from the declared
-`views[]` are settled by somebody standing in it. Never send anyone to compare the built map against a reference
-image of the built map; there is not one.
+gate confirms the design and stops there. **The built map is judged on the
+build itself** — by the ladder at step 10 and by your POV review at step 12, on
+the detailed world with its real buildings and materials. Never send anyone to
+compare the built map against a reference image of the built map; there is not
+one.
 
 - On path A of Init I7, the images are already in
   `campaigns/<id>/design/concept/` and already approved, with `design/README.md`

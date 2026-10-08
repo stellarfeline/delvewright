@@ -584,3 +584,34 @@ fn an_effect_site_names_the_offer_it_stands_in() {
         "each offer's effects know their own index"
     );
 }
+
+/// `DW0527` runs on every campaign, not only one that declares a stake or a shop.
+/// The valve shape: a press increments a counter behind a gate on it, then resets it
+/// behind a gate on the NEW value, so every press returns the counter to 0 and the
+/// puzzle cannot be solved. The campaign has no stakes and no shops.
+#[test]
+fn dw0527_runs_on_a_campaign_with_no_stakes_and_no_shops() {
+    let valve = r#",
+    "state": [ { "id": "state/valve", "scope": "party", "initial": 0 } ],
+    "triggers": [
+      { "id": "trigger/press", "at": "anchor/door", "on": { "on": "use" },
+        "effects": [
+          { "type": "add-state", "state": "state/valve", "amount": 1,
+            "when": { "requires_state": [ { "state": "state/valve", "op": "at-most", "value": 2 } ] } },
+          { "type": "set-state", "state": "state/valve", "value": 0,
+            "when": { "requires_state": [ { "state": "state/valve", "op": "at-least", "value": 1 } ] } }
+        ] }
+    ]"#;
+    let c = campaign(valve);
+    assert!(
+        c.quests.content.stakes.is_empty() && c.quests.content.shops.is_empty(),
+        "the campaign has no economy"
+    );
+    assert!(
+        codes(&c).contains(&"DW0527".to_string()),
+        "the reset reads the datum the increment just moved"
+    );
+    let b = delvewright_dsl::ReadAfterWriteBinding::of(&c);
+    assert_eq!((b.gated_writes, b.refused), (2, 1), "{}", b.line());
+    assert!(b.bundles > 0 && b.effects >= 2, "{}", b.line());
+}

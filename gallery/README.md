@@ -81,6 +81,15 @@ each one on the pinned server with a PackTest dummy credited by vanilla's own
 `player_killed_entity`, beside a death nobody is credited with, every compiler
 removal, and a rest.
 
+Three valves stand on the near hall's north wall, levers on the floor, and the
+counter waits on them: `obj/reach-the-counter` reads `state/valve-round at-least
+3`, which only `trigger/valve-first`, `trigger/valve-second` and
+`trigger/valve-third` write. Each answers only in its turn, and the second and
+third put the round back to 0 when pressed out of it. The document declares them
+third, second, first. The plan replays every press the way the datapack runs
+it, line by line, and the path presses first, second, third in front of the
+counter. A gate no press sequence can open is refused (`DW0985`).
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor
@@ -114,8 +123,6 @@ holding them at once.
 | `a-piece-the-library-does-not-hold` | `DW0856` | `validate` | binding the hall to a piece whose name is one letter wrong |
 | `a-gate-two-areas-provide` | `DW0857` | `validate` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
 | `a-question-nobody-answers` | `DW0858` | `validate` | asking the party to talk to somebody the same quest declares silent |
-| `a-walk-of-a-different-whole` | `DW0974` | `validate` | standing a walk record of some other map beside this one |
-| `a-walk-of-the-blockout` | `DW0974` | `validate` | standing a record of a walk of the blockout beside the detailed build |
 | `a-piece-that-is-not-its-frame` | `DW0843` | `validate` | seating a piece that does not fill the box the map gave it |
 | `a-horizon-with-no-map` | `DW0855` | `validate` | declaring a horizon with nothing for it to ring |
 | `a-clock-nobody-explained` | `DW0860` | `validate` | arming a stealth clock that bites before its own instruction can be read |
@@ -213,7 +220,7 @@ quietly changing what it is about; `add` and `replace` are separate verbs so
 that a key the primary GAINS is that same red rather than a silent overwrite.
 
 A probe may ship a whole document, and several do: `site-plan.json`,
-`detail-plan.json`, `walk-record.json` and a `programs/` directory are documents
+`detail-plan.json` and a `programs/` directory are documents
 the primary cannot carry at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
 there is nothing for them to be a copy of. A file that shadows a primary
 document is refused. A probe may instead declare its edit against an

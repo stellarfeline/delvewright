@@ -795,6 +795,11 @@
                 "op": "at-most",
                 "state": "state/labels-read",
                 "value": 9
+              },
+              {
+                "op": "at-least",
+                "state": "state/valve-round",
+                "value": 3
               }
             ],
             "stealth": false,
@@ -3445,6 +3450,12 @@
         "id": "state/long-hall-crossings",
         "note": "How many times a body has crossed the long hall's slab: the loop holds while it is at most 1.",
         "scope": "party"
+      },
+      {
+        "id": "state/valve-round",
+        "initial": 0,
+        "note": "How many of the north wall's valves the party has turned in order. Only the three valve triggers write it, a valve out of turn puts it back to 0, and the counter waits on 3: a numeric gate only presses move, whose order the plan finds (DW0985 when none opens it).",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -3983,6 +3994,143 @@
           "on": "step"
         },
         "once": false
+      },
+      {
+        "at": "anchor/valve-third",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "Wrong valve. The pipes knock and fall quiet.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/valve-round",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "state": "state/valve-round",
+            "type": "set-state",
+            "value": 0,
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/valve-round",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "state": "state/valve-round",
+            "type": "set-state",
+            "value": 3,
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/valve-round",
+                  "value": 2
+                }
+              ]
+            }
+          }
+        ],
+        "id": "trigger/valve-third",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=south]"
+        }
+      },
+      {
+        "at": "anchor/valve-second",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "Wrong valve. The pipes knock and fall quiet.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/valve-round",
+                  "value": 2
+                }
+              ]
+            }
+          },
+          {
+            "state": "state/valve-round",
+            "type": "set-state",
+            "value": 0,
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/valve-round",
+                  "value": 2
+                }
+              ]
+            }
+          },
+          {
+            "state": "state/valve-round",
+            "type": "set-state",
+            "value": 2,
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/valve-round",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        ],
+        "id": "trigger/valve-second",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=south]"
+        }
+      },
+      {
+        "at": "anchor/valve-first",
+        "effects": [
+          {
+            "state": "state/valve-round",
+            "type": "set-state",
+            "value": 1,
+            "when": {
+              "requires_state": [
+                {
+                  "op": "equals",
+                  "state": "state/valve-round",
+                  "value": 0
+                }
+              ]
+            }
+          }
+        ],
+        "id": "trigger/valve-first",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=south]"
+        }
       }
     ],
     "waves": [
