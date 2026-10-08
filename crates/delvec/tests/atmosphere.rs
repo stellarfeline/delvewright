@@ -512,11 +512,25 @@ fn one_writer_of_fillbiome() {
 fn the_biome_map_is_the_one_reader_of_which_biome_is_where() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/compiler");
     let mut readers = Vec::new();
-    for entry in std::fs::read_dir(&src).unwrap() {
-        let p = entry.unwrap().path();
-        if p.extension().is_none_or(|e| e != "rs") {
-            continue;
+    // Every source under `compiler/`, nested modules included: an object's
+    // module is a directory (ADR-0031), and a reader inside one is still a reader.
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let p = entry.unwrap().path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|e| e == "rs") {
+                files.push(p);
+            }
         }
+    }
+    assert!(
+        files.iter().any(|p| p.ends_with("emit/packtest.rs")),
+        "the walk reaches the nested modules"
+    );
+    for p in files {
         let text = std::fs::read_to_string(&p).unwrap();
         for (i, line) in text.lines().enumerate() {
             // `emit_ground_biome` writes the biome files from the map's own
