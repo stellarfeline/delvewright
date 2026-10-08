@@ -132,6 +132,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from lib import dwcatalog, mdtable  # noqa: E402
+from lib.rust_source import VISIBILITY  # noqa: E402
 
 CODE_RE = dwcatalog.CODE_RE
 # A diagnostic-code constant, in either shape the workspace uses:
@@ -486,7 +487,7 @@ def join_module(module: str, *more: str) -> str:
 # `use a::b::c;`, `pub use a::b::{c, d as e, self, *};` — the path and, when
 # braced, the leaf list. Nested braces are not read (the tree writes none).
 USE_RE = re.compile(
-    r"^\s*(pub(?:\([^)]*\))?\s+)?use\s+([\w:]+?)(?:::(?:\{([^}]*)\}|(\*)))?\s*;",
+    rf"^\s*({VISIBILITY})use\s+([\w:]+?)(?:::(?:\{{([^}}]*)\}}|(\*)))?\s*;",
     re.MULTILINE,
 )
 
@@ -696,7 +697,7 @@ def strip_cfg_test_bodies(text: str) -> str:
 
 # `#[cfg(test)] mod tests;` at column zero: a test module written as its own file.
 OUT_OF_LINE_TEST_MOD_RE = re.compile(
-    r"^#\[cfg\(test\)\]\n(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;", re.MULTILINE
+    rf"^#\[cfg\(test\)\]\n{VISIBILITY}mod\s+(\w+)\s*;", re.MULTILINE
 )
 
 

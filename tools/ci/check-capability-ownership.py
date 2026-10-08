@@ -83,6 +83,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from lib import mdtable  # noqa: E402
+from lib.rust_source import VISIBILITY  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Check A — interaction bodies
@@ -218,7 +219,7 @@ INTERACTION_SITES = {
 }
 
 INTERACTION_SUMMON = re.compile(r'"(?:execute [^"]*run )?summon minecraft:interaction ')
-FN_DEF = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+([a-z0-9_]+)")
+FN_DEF = re.compile(rf"^\s*{VISIBILITY}fn\s+([a-z0-9_]+)")
 TEST_MOD = re.compile(r"^\s*mod tests\b")
 
 # ---------------------------------------------------------------------------

@@ -145,6 +145,25 @@ fn is_ident(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// `line`, from its first non-blank character, without the visibility it
+/// opens with: `pub`, `pub(crate)`, `pub(super)`, `pub(in …)` or none. The one
+/// rule every source scan reads an item header through, so an item moved
+/// behind a restricted visibility is still the item it was.
+pub fn unscoped(line: &str) -> &str {
+    let t = line.trim_start();
+    match t.strip_prefix("pub") {
+        Some(r) if r.starts_with('(') => r.find(')').map_or(r, |i| &r[i + 1..]).trim_start(),
+        Some(r) if r.starts_with(char::is_whitespace) => r.trim_start(),
+        _ => t,
+    }
+}
+
+/// The name of the function whose header `line` is, at any visibility.
+pub fn fn_name(line: &str) -> Option<&str> {
+    let rest = unscoped(line).strip_prefix("fn ")?;
+    rest.split(['(', '<']).next()
+}
+
 /// `Some(name)` when `item` is `mod name;` (after its attributes and docs).
 fn out_of_line_module(item: &str) -> Option<String> {
     let line = item
@@ -152,11 +171,7 @@ fn out_of_line_module(item: &str) -> Option<String> {
         .map(str::trim)
         .find(|l| !l.is_empty() && !l.starts_with("//") && !l.starts_with("#["))?;
     let decl = line.strip_suffix(';')?;
-    let decl = match decl.strip_prefix("pub") {
-        Some(rest) => rest.trim_start_matches(|c| c != ' ').trim_start(),
-        None => decl,
-    };
-    let name = decl.strip_prefix("mod ")?.trim();
+    let name = unscoped(decl).strip_prefix("mod ")?.trim();
     name.chars().all(is_ident).then(|| name.to_string())
 }
 

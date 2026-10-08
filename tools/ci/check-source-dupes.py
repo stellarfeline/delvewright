@@ -42,6 +42,10 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
+from lib.rust_source import VISIBILITY  # noqa: E402
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 #: Directories the sweep never descends into.
@@ -63,7 +67,7 @@ HEADER = re.compile(r"^\s*//+ *-{2,} *(?P<title>.*?) *-{2,} *$")
 #: item sits at column 0 and its closing brace is a lone `}` at column 0, so the
 #: test module's extent is exact rather than inferred.
 CFG_TEST = re.compile(r"^#\[cfg\(test\)\]\s*$")
-TEST_MOD = re.compile(r"^(?:pub(?:\([^)]*\))? )?mod \w+ \{\s*$")
+TEST_MOD = re.compile(rf"^{VISIBILITY}mod \w+ \{{\s*$")
 
 #: Entries are `(path, header title)` and suppress ONE repeated title in ONE
 #: file. Empty, and a stale entry is an error rather than a licence: the rule

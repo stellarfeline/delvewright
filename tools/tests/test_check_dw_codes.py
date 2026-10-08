@@ -299,6 +299,26 @@ def test_an_out_of_line_test_module_is_test_code(gate):
     assert "DW0399" not in covered
 
 
+def test_an_out_of_line_test_module_at_a_restricted_visibility_is_test_code(gate):
+    """The `mod` an out-of-line test module is declared by is read through the
+    one visibility rule (`tools/lib/rust_source.py`), so `pub(in …)` and
+    `pub(super)` declare it as `mod` alone does."""
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/route/mod.rs",
+        'pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";\n'
+        "#[cfg(test)]\npub(in crate::compiler::nav) mod tests;\n",
+    )
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/route/tests.rs",
+        "use super::*;\n#[test]\nfn t() { assert_eq!(e.code, DW_CRITICAL_UNROUTABLE); }\n",
+    )
+    assert "DW0311" in gate.tested_codes()
+
+
 def test_a_name_nothing_imports_credits_nothing(gate):
     """A bare name with no `use` line, no glob and no path is not in scope; the
     old crate-wide table would have credited it."""

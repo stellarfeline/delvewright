@@ -840,6 +840,24 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   same rule. `check-dw-codes` reads an out-of-line test module's file as test
   code, as it already read an inline one.
 
+**What assembling B2, B3 and B4 found** (corrections to this record, made where
+the assembly touched it):
+
+- B3b and B4b each repaired a visibility-prefix scan separately, so the rule
+  had five spellings in Python and four in Rust. It has one in each now:
+  `tools/lib/rust_source.py`'s `VISIBILITY`, read by
+  `check-capability-ownership`, `check-dw-codes` (`use` lines and out-of-line
+  test modules), `check-demo-levels` and `check-source-dupes`; and
+  `crates/delvec/tests/common/source_scan.rs`'s `unscoped` and `fn_name`, read
+  by `footprint_call_graph.rs` and by the callers-of-`liveness_of` test, which
+  leaves `nav/world/tests.rs` for `tests/liveness_of_callers.rs` so that it can
+  read production through the same rule. `footprint_call_graph`'s "no
+  footprint function of its own" scan still listed `fn`, `pub fn` and
+  `pub(crate) fn`; through the rule, a `pub(super) fn` naming a footprint reds
+  it.
+- A page names the file its module is: `delvec/compiler/emit.md` and
+  `delvec/compiler/nav.md` name `emit/mod.rs` and `nav/mod.rs`.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,

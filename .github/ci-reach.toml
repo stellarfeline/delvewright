@@ -54,6 +54,7 @@ inputs = [
   { glob = "tools/ci/check-dw-codes.py", why = "`crates/delvec/tests/codes.rs` runs it against the built binary's `delvec codes`" },
   { glob = "tools/lib/mdtable.py", why = "`check-dw-codes.py`, which `crates/delvec/tests/codes.rs` runs, reads the catalog through it" },
   { glob = "tools/lib/dwcatalog.py", why = "`check-dw-codes.py`, which `crates/delvec/tests/codes.rs` runs, reads the catalog through it" },
+  { glob = "tools/lib/rust_source.py", why = "`check-dw-codes.py`, which `crates/delvec/tests/codes.rs` runs, reads Rust visibility through it" },
   { glob = "docs/reference/delvec/**", why = "the catalog pages of the `delvec` crate's modules, which `check-dw-codes.py` (run by `crates/delvec/tests/codes.rs`) holds to the declarations" },
   { glob = "docs/reference/dsl/**", why = "the catalog pages of the `dsl` crate's modules, which `check-dw-codes.py` (run by `crates/delvec/tests/codes.rs`) holds to the declarations" },
   { glob = "tools/creator/i18n-translate.py", why = "`crates/delvec/tests/i18n_sidecar.rs` runs the fixture driver, which loads this tool's writer" },

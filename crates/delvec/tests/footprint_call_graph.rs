@@ -14,6 +14,9 @@
 //! own. Both reach the one per-part cell set, `Transform::cells`, through
 //! `frame_footprint_turned`.
 
+mod common;
+
+use common::source_scan;
 use std::path::Path;
 
 fn read(rel: &str) -> String {
@@ -33,12 +36,8 @@ fn body<'a>(src: &'a str, name: &str) -> &'a str {
         .unwrap_or_else(|| panic!("no `fn {name}`"));
     let rest = &src[sig..];
     let starts_item = |line: &str| {
-        let unscoped = match line.strip_prefix("pub") {
-            Some(r) if r.starts_with('(') => r.find(')').map_or(r, |i| &r[i + 1..]).trim_start(),
-            Some(r) if r.starts_with(' ') => r.trim_start(),
-            _ => line,
-        };
-        unscoped.starts_with("fn ") || line.starts_with("#[cfg(test)]")
+        (!line.starts_with(char::is_whitespace) && source_scan::fn_name(line).is_some())
+            || line.starts_with("#[cfg(test)]")
     };
     let end = rest
         .match_indices('\n')
@@ -93,13 +92,8 @@ fn rig_describe_and_the_strike_check_read_one_footprint() {
     // Neither caller has a footprint of its own.
     for (file, src) in [("main.rs", &main), ("assembly.rs", &asm)] {
         assert!(
-            !src.lines().any(|l| {
-                let t = l.trim_start();
-                (t.starts_with("fn ")
-                    || t.starts_with("pub fn ")
-                    || t.starts_with("pub(crate) fn "))
-                    && t.contains("footprint")
-            }),
+            !src.lines()
+                .any(|l| source_scan::fn_name(l).is_some() && l.contains("footprint")),
             "{file} defines a footprint function of its own"
         );
     }
