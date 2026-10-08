@@ -8,6 +8,8 @@
 //!   `DW0979` — so the composer cannot produce either refusal, and the claim is
 //!   checked through the rule rather than a second copy of it.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -80,5 +82,38 @@ fn every_composed_golden_is_a_sheet_the_compiler_admits() {
     assert!(
         models.contains("zombie") && models.contains("drowned_outer_layer"),
         "the goldens reach a mob model and an outer layer: {models:?}"
+    );
+}
+
+/// The sheet judgement states what it bound (spec-0097 §4.3): `validate` names
+/// how many sheets it judged, of how many, against which model. On a campaign
+/// with one skinned NPC that is one of one, on `player` — and a skin judged by
+/// nothing would read zero here before it read green anywhere.
+#[test]
+fn validate_states_how_many_sheets_it_judged() {
+    let campaign = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/v04-showcase");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .args([
+            "validate",
+            campaign.to_str().unwrap(),
+            "--prefabs",
+            common::prefabs_dir().to_str().unwrap(),
+        ])
+        .output()
+        .expect("run delvec");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("sheet binding: "))
+        .unwrap_or_else(|| panic!("no sheet binding line:\n{text}"));
+    assert!(
+        line.starts_with("sheet binding: 1 of 1 sheet(s) judged")
+            && line.contains("by model: player 1;")
+            && line.ends_with("0 refused (DW0978/DW0979)"),
+        "{line}"
     );
 }

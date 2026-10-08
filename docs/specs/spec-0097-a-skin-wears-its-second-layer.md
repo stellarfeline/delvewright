@@ -64,7 +64,8 @@ A sheet whose every opaque pixel lies on the footprint, at least one does, and e
 ### 4.3 Where it runs, and why the compiler
 
 - A `world.textures[]` row whose `replaces` is bound in the table: in `textures::resolve`, after `DW0940`, validation tier — so `delvec validate` and every build refuse it.
-- A mannequin skin: in `read_skins`, against `player` for `model: wide` and `player_slim` for `slim`, build tier, beside `DW0309` — so `build` and `edit`'s build-tier proof refuse it. A texture two bodies name under two models is judged against both.
+- A mannequin skin: in `skinparts::check_skins`, against `player` for `model: wide` and `player_slim` for `slim`, at validation tier over the loader's `skins/` map, and again in the build over the bytes the pack bakes. A texture two bodies name under two models is judged against both.
+- Both entry points state their binding: one `sheet binding:` line under what the run examined, and `validation/sheet-gate.json` in the build, which the gallery coverage gate reds on at `examined: 0`.
 
 **Authored**: a compiler diagnostic, not a tool check, because the compiler is the one place every sheet passes on its way into a delve — a skin the composer never touched, a mob sheet drawn campaign-side — and the table it judges by is the compiler's vendored data. The composer cannot produce either refusal by construction (§6.1), and its tests assert that through the compiler's own rule rather than a second copy of it (§8).
 
@@ -111,7 +112,7 @@ The four previews flatten each shell's opaque pixels onto the base face beneath 
 - `world.json` gains a row replacing `minecraft:entity/zombie/drowned_outer_layer` with a generated sheet painted at the base positions of the outer model.
 - `probes/a-texture-drawn-to-another-model`: that row pointed at a generated sheet painted in the player's overlay layout — `DW0978`.
 - `probes/a-texture-painted-on-the-crown`: that row pointed at a generated sheet painted only on the top face of the outer hat — `DW0979`.
-- `probes/a-skin-painted-off-its-boxes`: a skinned NPC pointed at a generated skin carrying paint in a head-unwrap corner — `DW0978`, build tier.
+- `probes/a-skin-painted-off-its-boxes`: a skinned NPC pointed at a generated skin carrying paint in a head-unwrap corner — `DW0978`, validation tier.
 - `docs/demo-levels.md` gains a queued row: four NPCs (a beard, long hair, a hood, a high collar) and one mob of each overlay kind — a zombie with a hat shell, a villager with a robe, a piglin with a jacket, a drowned with an outer layer — judged at playable scale.
 
 ## 8. Decisions
@@ -122,16 +123,18 @@ The four previews flatten each shell's opaque pixels onto the base face beneath 
 4. `hidden_layers` is a list on `NpcSkin`, the object it configures; a duplicate is `DW0980`.
 5. The composer's overlay is automatic for every beard and every head of hair; a creator who wants a flat head hides `hat` on the mannequin.
 6. `parched` and `zombie_villager` are left out of the table until a second method reconciles them.
+7. A skin's `texture_id` names a file two bodies may wear — a twin who hides her hat beside her sister in one face. `DW0190` is narrowed to a malformed id (and to two `world.textures[]` rows sharing an id): its refusal of a second body in one list naming one file protected nothing the bake needs, since `read_skins` reads a file once and `model` and `hidden_layers` ride each body. This is a declared loosening.
 
 ## Acceptance criteria
 
 1. `crates/delvec/data/model-parts-1.21.11.json` exists, states `client_jar_sha256` equal to `versions.toml` `[render] textures_sha256`, an `instrument.revision` that is a commit touching `tools/maintenance/extract-model-parts.py` or `tools/maintenance/modelparts/ModelPartDump.java`, and the 17 model keys of §3.1; a `delvec` unit test asserts the `player` model's six overlay boxes at `32,0`, `16,32`, `40,32`, `48,48`, `0,32`, `0,48` with grows 0.5 and 0.25, the `zombie` model's only grown box at `32,0`, and the `drowned_outer_layer` model's boxes at the base positions.
 2. The extractor refuses unless, for each of the 17 models, at least one bound vanilla texture keeps every opaque pixel on a face or an unwrap corner, and prints every bound texture's counts; the table's commit body carries the run (59 textures).
 3. A `world.textures[]` row replacing `minecraft:entity/zombie/drowned_outer_layer` with a sheet painted in the player's overlay layout fails `delvec validate` with `DW0978`; one painted only on the outer hat's top face fails with `DW0979`; one painted at the base positions passes. Each is a committed gallery probe and a unit test.
-4. A mannequin skin with one opaque pixel in the head unwrap's top-left corner fails `delvec build` with `DW0978`; a slim skin is judged against `player_slim` (a pixel on the last column of the wide arm's back face refused, the same skin under `wide` admitted).
+4. A mannequin skin with one opaque pixel in the head unwrap's top-left corner fails `delvec validate` with `DW0978`; a slim skin is judged against `player_slim` (a pixel on the last column of the wide arm's back face refused, the same skin under `wide` admitted).
 5. `NpcSkin.hidden_layers: ["hat", "jacket"]` emits `hidden_layers:["hat","jacket"]` in the staged NPC's and the actor's mannequin summon; an absent or empty list emits no `hidden_layers`; `["cape","cape"]` fails `delvec validate` with `DW0980`; a test holds the `SkinLayer` tokens equal to the table's `mannequin.layers`.
 6. `pytest tools/creator/skin` passes; the three goldens are regenerated and the commit body attributes every moved byte to the overlay regions — their base regions are byte-identical to `109355653`'s.
 7. The composer's tests read each feature back through the shell's own face addressing: a beard on the hat front's chin row, a fringe on its top row, `long` on the jacket back's shoulder rows, a hood leaving the face rows of the hat front transparent, `high` on the jacket sides' top two rows; and every fixture's composed PNG, judged by the compiler's rule through `delvec`'s own test fixture, draws neither `DW0978` nor `DW0979`.
 8. `entity: zombie` composes a sheet with no opaque pixel at `32,48` or `16,48` and paint on the hat; `entity: drowned_outer_layer` paints at the base positions and nothing at the player overlay positions; `entity: villager` and `collar: high` with `entity: zombie` are refused by name; `python -m delve_skin parts piglin` names no `hat`.
 9. The overlay's opaque pixels per part on each golden are counted by a reader that does not import `delve_skin` and recorded in a commit body.
 10. `docs/reference/compiler.md` has rows for `DW0978`, `DW0979`, `DW0980` and the `hidden_layers` field; `docs/reference/tools.md` lists `extract-model-parts.py` and no longer claims the overlay would give a hair silhouette; the skill page that tells the agent how to author NPC skins describes the shell features, `hood`, `collar: high`, `entity` and `hidden_layers` without naming an unreleased DW code; `docs/demo-levels.md` carries the queued row of §7.
+11. `delvec validate` and `delvec build` print a `sheet binding:` line stating sheets judged of declared, skins and texture rows separately, per model, and refused; the build writes `validation/sheet-gate.json` with the same counts; on the gallery it reads 3 of 3 (player 1, player_slim 1, drowned_outer_layer 1), and the coverage gate reds when `examined` is 0. `crates/delvec/tests/skin_parts.rs` asserts 1 of 1 on `player` for the `v04-showcase` fixture.

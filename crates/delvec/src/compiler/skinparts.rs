@@ -29,7 +29,7 @@ delvewright_dsl::dw_code! {
     /// `world.textures[]` row against the model the replaced texture is drawn
     /// with. The message names the model, the count, the first pixels, and the
     /// model whose layout the stray paint fits, where one does. Validation tier
-    /// for a texture row; build tier for a skin, beside `DW0309`.
+    /// for a texture row and a skin alike, and again in the build.
     pub const DW_SKIN_UNSAMPLED: DwCode = DwCode::new("DW0978", ExitTier::Build);
 }
 
@@ -289,6 +289,156 @@ fn other_layouts(key: &str, model: &Model, stray: &[(u32, u32)], k: u32) -> Vec<
         })
         .map(|(other, _)| other.as_str())
         .collect()
+}
+
+/// What the sheet judgement bound, for the run's binding line (spec-0097 §4.3):
+/// how many sheets were declared that a model's boxes can judge, how many were
+/// judged, against which model, and how many were refused.
+#[derive(Debug, Clone, Default)]
+pub struct Binding {
+    /// Distinct `(texture_id, model)` pairs the campaign's bodies wear.
+    pub skins_declared: usize,
+    /// Of those, the ones whose `skins/<id>.png` decoded and was judged.
+    pub skins_judged: usize,
+    /// `world.textures[]` rows whose replaced texture the table binds to a model.
+    pub rows_declared: usize,
+    /// Of those, the ones that reached the model judgement (past `DW0939`,
+    /// `DW0309` and `DW0940`).
+    pub rows_judged: usize,
+    /// Sheets judged per model key.
+    pub by_model: BTreeMap<String, usize>,
+    /// Sheets refused with `DW0978` or `DW0979`.
+    pub refused: usize,
+    /// The first skin refusal, for a build that reaches the bake unvalidated.
+    pub first_refusal: Option<(DwCode, String)>,
+}
+
+impl Binding {
+    /// `validation/sheet-gate.json`: the same counts, so a gate reading the
+    /// build sees a judgement that stopped binding (`examined: 0`).
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "examined": self.skins_judged + self.rows_judged,
+            "declared": self.skins_declared + self.rows_declared,
+            "skins_declared": self.skins_declared,
+            "skins_judged": self.skins_judged,
+            "rows_declared": self.rows_declared,
+            "rows_judged": self.rows_judged,
+            "by_model": self.by_model,
+            "refused": self.refused,
+            "table": format!("model-parts-{}.json", table().minecraft),
+            "instrument_revision": table().instrument.revision,
+        })
+    }
+
+    /// The line `delvec validate` and `delvec build` print under "what this run
+    /// examined".
+    pub fn line(&self) -> String {
+        let models: Vec<String> = self
+            .by_model
+            .iter()
+            .map(|(k, n)| format!("{k} {n}"))
+            .collect();
+        format!(
+            "sheet binding: {} of {} sheet(s) judged against their model's boxes — {} of {} \
+             mannequin skin(s), {} of {} `world.textures[]` row(s) an entity model is drawn \
+             with; by model: {}; {} refused (DW0978/DW0979)",
+            self.skins_judged + self.rows_judged,
+            self.skins_declared + self.rows_declared,
+            self.skins_judged,
+            self.skins_declared,
+            self.rows_judged,
+            self.rows_declared,
+            if models.is_empty() {
+                "none".to_string()
+            } else {
+                models.join(", ")
+            },
+            self.refused
+        )
+    }
+}
+
+/// Judge every mannequin skin the campaign's bodies wear (spec-0097 §4.3) —
+/// against `player` for `wide`, `player_slim` for `slim` — once per
+/// `(texture_id, model)` pair. `skins` maps an authored `texture_id` to the bytes
+/// of `skins/<id>.png`; a missing file is `DW0309`'s at build and is counted
+/// declared, not judged. Validation tier.
+pub fn check_skins(
+    campaign: &delvewright_dsl::Campaign,
+    skins: &BTreeMap<String, Vec<u8>>,
+    binding: &mut Binding,
+) -> Vec<delvewright_dsl::Diagnostic> {
+    let mut seen: BTreeSet<(String, &'static str)> = BTreeSet::new();
+    let mut out = Vec::new();
+    for site in delvewright_dsl::body_skin_sites(campaign) {
+        let (key, model) = model_for_skin(site.skin.model);
+        if !seen.insert((site.skin.texture_id.clone(), key)) {
+            continue;
+        }
+        binding.skins_declared += 1;
+        let Some(bytes) = skins.get(&site.skin.texture_id) else {
+            continue;
+        };
+        let Ok(img) = image::load_from_memory_with_format(bytes, image::ImageFormat::Png) else {
+            continue;
+        };
+        binding.skins_judged += 1;
+        *binding.by_model.entry(key.to_string()).or_default() += 1;
+        if let Err(r) = judge(key, model, &img.to_rgba8()) {
+            binding.refused += 1;
+            if binding.first_refusal.is_none() {
+                binding.first_refusal = Some((
+                    r.code,
+                    format!(
+                        "skin `{}` on `{}`: {}",
+                        site.skin.texture_id,
+                        site.body.id(),
+                        r.reason
+                    ),
+                ));
+            }
+            out.push(delvewright_dsl::Diagnostic::error(
+                r.code,
+                site.body.stage(),
+                format!("{}/texture_id", site.path),
+                format!(
+                    "skin `skins/{}.png` — `{}` wears it on the `{}` model — {}",
+                    site.skin.texture_id,
+                    site.body.id(),
+                    site.skin.model.token(),
+                    r.reason
+                ),
+            ));
+        }
+    }
+    out
+}
+
+/// Count the `world.textures[]` half of the binding from what
+/// [`crate::compiler::textures::resolve`] returned: a row bound to a model was
+/// judged when it resolved or was refused by the model judgement itself.
+pub fn count_texture_rows(
+    campaign: &delvewright_dsl::Campaign,
+    resolved: &[crate::compiler::textures::Resolved],
+    findings: &[crate::compiler::textures::Finding],
+    binding: &mut Binding,
+) {
+    for (i, row) in campaign.world.content.textures.iter().enumerate() {
+        let Some((key, _)) = model_for_texture(&row.replaces) else {
+            continue;
+        };
+        binding.rows_declared += 1;
+        let pointer = format!("/content/textures/{i}/id");
+        let refused = findings.iter().any(|f| {
+            f.path == pointer && (f.code == DW_SKIN_UNSAMPLED || f.code == DW_SKIN_UNSEEN)
+        });
+        if refused || resolved.iter().any(|r| r.id == row.id) {
+            binding.rows_judged += 1;
+            binding.refused += usize::from(refused);
+            *binding.by_model.entry(key.to_string()).or_default() += 1;
+        }
+    }
 }
 
 /// The model keys the table carries, sorted.

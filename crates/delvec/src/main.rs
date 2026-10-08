@@ -9,7 +9,7 @@
 //! analysis failure · `3` build failure · `≥10` internal error. A mounted
 //! surface keeps its own exit-code table, documented on its `cli` module.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -1120,6 +1120,22 @@ fn validate_loaded(
                 campaign.world.content.textures.len(),
                 delvec::compiler::textures::census().textures.len()
             ));
+            // spec-0097: every sheet a model's boxes can judge — the mannequin
+            // skins the bodies wear, and the texture rows an entity model is
+            // drawn with — and the one line saying how many were judged.
+            let mut sheets = delvec::compiler::skinparts::Binding::default();
+            diags.extend(delvec::compiler::skinparts::check_skins(
+                &campaign,
+                &loaded.skins,
+                &mut sheets,
+            ));
+            delvec::compiler::skinparts::count_texture_rows(
+                &campaign,
+                &texture_rows,
+                &texture_diags,
+                &mut sheets,
+            );
+            examined.push(sheets.line());
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
             // (DW0326), the unsupported `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source
@@ -2935,11 +2951,8 @@ pub(crate) fn read_skins(
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    let mut judged: BTreeSet<(String, &'static str)> = BTreeSet::new();
     for site in delvewright_dsl::body_skin_sites(campaign) {
-        if let Some(bytes) = skins.get(&site.skin.texture_id) {
-            // Read once, but judged once per model it is worn on (spec-0097 §4.3).
-            judge_skin(campaign_dir, sources, &site, bytes, &mut judged, json)?;
+        if skins.contains_key(&site.skin.texture_id) {
             continue;
         }
         // Total by construction: both callers rewrite before they read. The
@@ -2952,7 +2965,6 @@ pub(crate) fn read_skins(
         let path = campaign_dir.join("skins").join(format!("{authored}.png"));
         match std::fs::read(&path) {
             Ok(bytes) => {
-                judge_skin(campaign_dir, sources, &site, &bytes, &mut judged, json)?;
                 skins.insert(site.skin.texture_id.clone(), bytes);
             }
             Err(e) => {
@@ -2978,51 +2990,6 @@ pub(crate) fn read_skins(
         }
     }
     Ok(skins)
-}
-
-/// Hold one mannequin skin to the player model it is worn on (spec-0097 §4):
-/// `DW0978` for paint no box samples, `DW0979` for paint only on faces nobody
-/// standing level with it sees. Judged once per `(texture, model)` pair, so a
-/// texture two bodies wear under two models is held to both.
-fn judge_skin(
-    campaign_dir: &Path,
-    sources: &BTreeMap<String, String>,
-    site: &delvewright_dsl::BodySkinSite<'_>,
-    bytes: &[u8],
-    judged: &mut BTreeSet<(String, &'static str)>,
-    json: bool,
-) -> Result<(), u8> {
-    let (key, model) = delvec::compiler::skinparts::model_for_skin(site.skin.model);
-    if !judged.insert((site.skin.texture_id.clone(), key)) {
-        return Ok(());
-    }
-    let Ok(img) = image::load_from_memory_with_format(bytes, image::ImageFormat::Png) else {
-        return Ok(());
-    };
-    let Err(refusal) = delvec::compiler::skinparts::judge(key, model, &img.to_rgba8()) else {
-        return Ok(());
-    };
-    let authored = sources
-        .get(&site.skin.texture_id)
-        .map(String::as_str)
-        .unwrap_or(site.skin.texture_id.as_str());
-    print_build_error(
-        refusal.code,
-        &format!(
-            "skin `{}` — `{}` declares it at `{}` `{}`, worn on the `{}` model — {}",
-            campaign_dir
-                .join("skins")
-                .join(format!("{authored}.png"))
-                .display(),
-            site.body.id(),
-            site.body.stage(),
-            site.path,
-            site.skin.model.token(),
-            refusal.reason
-        ),
-        json,
-    );
-    Err(3)
 }
 
 /// `delvec edit apply|preview` (spec-0017): the edit → replay → snapshot loop.
