@@ -22,6 +22,8 @@ mod common;
 
 use std::collections::BTreeMap;
 
+use common::source_scan;
+
 use delvec::compiler::blockout::{self, Perturb};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
@@ -783,7 +785,7 @@ fn the_parameterised_derivation_has_exactly_one_production_caller() {
             if t.contains("Perturb") {
                 named_perturb.insert(name.clone());
             }
-            if t.contains("build_with(") && !is_fn_definition(t) {
+            if t.contains("build_with(") && source_scan::fn_name(t).is_none() {
                 callers.push((name.clone(), t.to_string()));
             }
         }
@@ -822,17 +824,9 @@ fn the_parameterised_derivation_has_exactly_one_production_caller() {
     );
 }
 
-/// Whether a trimmed source line opens a `fn` item, at any visibility: none,
-/// `pub`, or a restricted `pub(crate)` / `pub(super)` / `pub(in path)`.
-fn is_fn_definition(t: &str) -> bool {
-    let rest = if let Some(r) = t.strip_prefix("pub(") {
-        r.split_once(") ").map_or(r, |(_, after)| after)
-    } else {
-        t.strip_prefix("pub ").unwrap_or(t)
-    };
-    rest.starts_with("fn ")
-}
-
+/// The scan above reads a definition through the one visibility rule
+/// (`common::source_scan`), so a `build_with` moved behind a restricted
+/// visibility is still its definition and never a caller.
 #[test]
 fn a_fn_definition_is_recognised_at_every_visibility() {
     for def in [
@@ -842,13 +836,13 @@ fn a_fn_definition_is_recognised_at_every_visibility() {
         "pub(super) fn build_with(",
         "pub(in crate::compiler::plan) fn build_with(",
     ] {
-        assert!(is_fn_definition(def), "{def}");
+        assert_eq!(source_scan::fn_name(def), Some("build_with"), "{def}");
     }
     for call in [
         "Self::build_with(campaign, prefabs, Perturb::none())",
         "let plan = Plan::build_with(&c, &p, perturb)?;",
     ] {
-        assert!(!is_fn_definition(call), "{call}");
+        assert_eq!(source_scan::fn_name(call), None, "{call}");
     }
 }
 
