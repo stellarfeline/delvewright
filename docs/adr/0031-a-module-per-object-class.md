@@ -315,11 +315,16 @@ emit/manifest.rs  emit_manifest, emit_critical_path, critical_path_json
 emit/server.rs    emit_server, lang_assets, the resource pack
 emit/packtest.rs  packtest_header, pin_dummy, packtest_preamble, packtest_guards
                   — the batch model, and nothing about one object
-nav/mod.rs        the ordered list of object proofs over a World
-nav/world.rs      World, Cells, Premises, Footprint, entity_dims, built_volume,
-                  Liveness, StagedVolume, step costs, cell_center
-nav/route.rs      the A* router, LegRoute, RouteBinding, decompose, judge_leg,
-                  route_with_links, critical_route_cells, Configuration, RegionState
+nav/mod.rs        the ordered list of object proofs over a World, and the DW codes
+                  of the world and the router
+nav/world/mod.rs  World, Cells, Premises, the derived worlds, Ambient, Sea,
+                  built_volume, Liveness, StagedVolume
+nav/world/body.rs Footprint, entity_dims, standability, the move model, step
+                  costs, cell_center, walk_cells
+nav/route/mod.rs  the A* router, visited positions, critical_route_cells,
+                  LegRoute, Configuration
+nav/route/region.rs RegionState, the region state a leg is routed under, blame
+nav/route/leg.rs  judge_leg, decompose, route_with_links, RouteBinding
 <object>/mod.rs       the object's plan record (XPlan) and plan(campaign) -> Vec<XPlan>
 <object>/check.rs     the object's proofs — what nav.rs and the object's own
                       file hold today; its DW codes are declared here
@@ -566,7 +571,7 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
 | B2a–c | `validate.rs` → each object module's checks, in three sequential cuts (world/npc/dialogue/class; quest/state/wave/actor/trigger; trap/timed gate/ambush/shortcut/loot/assembly/lethal/loop/economy); the version-named bundles dissolved; `diagnostic::codes` declarations move with their checks; the A1 row-in-page rule moves their catalog rows | three PRs, a few hours each |
 | B3a | `emit.rs` PackTest emitters (lines 16598–26170) → `emit/packtest/<object>.rs`, `emit/packtest.rs` the batch model | one PR |
 | B3b | the rest of `emit.rs` → `emit/<object>.rs` by its own section markers, `emit/{mod,text,functions,manifest,server}.rs` | one PR, after B3a |
-| B4a | `nav.rs` → `nav/{world,route}.rs` and `nav/mod.rs` | one PR |
+| B4a | `nav.rs` → `nav/world/`, `nav/route/` and `nav/mod.rs` | one PR |
 | B4b | the per-object proofs → `nav/<object>.rs` | one PR, after B4a |
 | B5 | `plan.rs` → `plan/{mod,naming,path,anchors,area}.rs` and `plan/<object>.rs` | one PR |
 | B6 | `main.rs` → `cli/*.rs`, view and edit arms to their modules' `cli.rs` | one PR; `clap_surface.py`'s own test and `check-skill-page` prove the surface unchanged |
@@ -595,6 +600,32 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   `Edge.shortcut`). B1 keeps the population to the stage modules; widening it
   is its own step, which triages those seven.
 - `purchase.rs` carries checks, so its absorption into `economy.rs` is B2's.
+
+**What B4a found** (corrections to this record, made where B4a touched it):
+
+- The world measured about 2700 lines and the router about 2600, so both are
+  directories under the 1500-line rule, as §2 now shows.
+- Inside one pass directory, an item that was private to the pass file is
+  `pub(in crate::compiler::nav)`, never `pub(crate)`, so its reach stays what it
+  was. `RegionState` and its derivations stay private to `nav` because the point
+  of them is one passability model. `pub(crate)` is for one object reaching
+  another.
+- The router's codes (`DW0311`, `DW0314`, `DW0317`, `DW0510`, `DW0544`,
+  `DW0546`) stay declared in `nav/mod.rs`. Under §4's mapping, a declaration in
+  `compiler::nav::route::leg` has its page at `nav/route/leg.md`, and §4 puts
+  the router on `nav.md`. Every code of the world and the router is therefore
+  declared in `nav/mod.rs`, and B4a moves no catalog row.
+- `walk_cells` and `segment_meets_cell_16` are the world's own geometry, which
+  `World` reads. They move to `nav/world/body.rs` so that the world never
+  imports from the proofs.
+- A module that re-exports its children with `pub use child::*` does not also
+  import a child's item by name. The private import shadows the glob, and the
+  item drops out of the parent's glob.
+- §5 lists no tool ledger that names `nav.rs`. The per-file ledgers over it are
+  Rust tests: `nav::tests::premise_declines_are_enumerated`,
+  `staged_liveness_tests`, and `tests/{teleport_link,post_beat_camera,sculpt}.rs`.
+  The first was keyed by file name. It is now keyed by path under `src/`,
+  because `nav/world/mod.rs` and `sculpt/mod.rs` have the same name.
 
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
