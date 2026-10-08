@@ -316,7 +316,7 @@ emit/server.rs    emit_server, lang_assets, the resource pack
 emit/packtest.rs  packtest_header, pin_dummy, packtest_preamble, packtest_guards
                   — the batch model, and nothing about one object
 nav/mod.rs        the ordered list of object proofs over a World, and the DW codes
-                  of the world and the router
+                  of the world, the router and, until Phase C, every object proof
 nav/world/mod.rs  World, Cells, Premises, the derived worlds, Ambient, Sea,
                   built_volume, Liveness, StagedVolume
 nav/world/body.rs Footprint, entity_dims, standability, the move model, step
@@ -325,6 +325,8 @@ nav/route/mod.rs  the A* router, visited positions, critical_route_cells,
                   LegRoute, Configuration
 nav/route/region.rs RegionState, the region state a leg is routed under, blame
 nav/route/leg.rs  judge_leg, decompose, route_with_links, RouteBinding
+nav/<object>.rs   one object's proofs over the World, and their tests
+nav/testkit.rs    the synthetic worlds the tests of more than one object share
 <object>/mod.rs       the object's plan record (XPlan) and plan(campaign) -> Vec<XPlan>
 <object>/check.rs     the object's proofs — what nav.rs and the object's own
                       file hold today; its DW codes are declared here
@@ -626,6 +628,41 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   `staged_liveness_tests`, and `tests/{teleport_link,post_beat_camera,sculpt}.rs`.
   The first was keyed by file name. It is now keyed by path under `src/`,
   because `nav/world/mod.rs` and `sculpt/mod.rs` have the same name.
+
+**What B4b found** (corrections to this record, made where B4b touched it):
+
+- Every DW code stays declared in `nav/mod.rs`, and no `delvec codes` module
+  field moves. A declaration in `compiler::nav::<object>` has its page at
+  `nav/<object>.md` under §4, and Phase C moves it again to
+  `<object>/check.rs`, so every row would move twice. Each object's codes move
+  once, in its Phase C step, from `nav/mod.rs` and `nav.md`.
+- The objects are `actor`, `ambush`, `checkpoint` (with retry cost, whose object
+  is the rest point), `cutscene`, `furniture`, `hazard`, `lane`, `leave`,
+  `lethal` (a body's reach into a volume), `npc`, `respawn`, `sea`, `shortcut`,
+  `stealth`, `timed_gate`, `trap` (volley and collapse included) and `wave`
+  (the optional elite). Three are named differently from §2's list. `horizon`
+  holds `DW0322`, because boundary safety is a property of the world's horizon,
+  not of the playable region `boundary` declares. `view` holds `DW0724`, which
+  judges the render plan's derived cameras. `staging` holds what the `move-npc`
+  and `move-actor` walks share: where a body was left on a branch, the smoothed
+  and resampled polyline, the facing, and the timeline's own seals. Phase C
+  decides whether `staging` folds into `npc` or `actor`, or stays a mechanism
+  both read.
+- `SPRINT_TICKS_PER_BLOCK` is the move model's, and five proofs read it, so it
+  moves to `nav/world/body.rs`.
+- An object's tests live in a `#[cfg(test)] mod tests` at the end of its file.
+  The world's and the router's tests are out-of-line `#[cfg(test)] mod tests;`
+  files (`world/tests.rs`, `route/tests.rs`), because each module with its
+  tests is over 1500 lines. The fixtures that the tests of more than one object
+  share are `nav/testkit.rs`.
+- A source scan reads production through one rule,
+  `crates/delvec/tests/common/source_scan.rs`. It removes only the item that a
+  column-zero `#[cfg(test)]` applies to, and drops the file of an out-of-line
+  test module. The premise scan stopped at the first such attribute and missed
+  production in eight files. It now lives in
+  `tests/premise_declines.rs`, and `teleport_link`'s nav scan reads through the
+  same rule. `check-dw-codes` reads an out-of-line test module's file as test
+  code, as it already read an inline one.
 
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is

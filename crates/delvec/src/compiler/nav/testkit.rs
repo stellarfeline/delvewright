@@ -46,11 +46,9 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             lava: BTreeSet::new(),
         },
         // The premises spelled out rather than derived from
-        // `Premises::geometry_only()`, for two reasons that both matter.
-        // `premise_declines_are_enumerated` counts that call in this file's
-        // production half and would count this one; and a struct literal is
-        // what makes a premise added later break THIS helper's compilation,
-        // which is the visibility the type exists for.
+        // `Premises::geometry_only()`: a struct literal is what makes a
+        // premise added later break THIS helper's compilation, which is the
+        // visibility the type exists for.
         Premises {
             ambient: Ambient::Void,
             // A synthetic world declares nothing, so it is what a campaign
