@@ -159,7 +159,7 @@ fn keep_crawl_critical_path_crosses_pieces_and_areas() {
         "talk teleports the player to the keep entry spawn:\n{complete_talk}"
     );
 
-    // place_all places every pool piece; setup_finish clears mated sockets.
+    // place_all places every pool piece; the world build clears mated sockets.
     let place_all = text(
         &out,
         "datapack/data/keep-crawl/function/place_all.mcfunction",
@@ -169,12 +169,12 @@ fn keep_crawl_critical_path_crosses_pieces_and_areas() {
         .filter(|l| l.starts_with("place template keep-crawl:keep-"))
         .count();
     assert!(places >= 4, "multiple pool pieces placed, saw {places}");
-    let finish = text(
+    let build = text(
         &out,
-        "datapack/data/keep-crawl/function/setup_finish.mcfunction",
+        "datapack/data/keep-crawl/function/world_build.mcfunction",
     );
     assert!(
-        finish.contains("minecraft:air"),
+        build.contains("minecraft:air"),
         "mated jigsaw sockets cleared to air"
     );
 }
@@ -624,8 +624,8 @@ fn a_single_prefab_areas_lone_piece_seals_the_sockets_it_cannot_mate() {
     // closes.
     let out = build_campaign(&dir);
     let setup = std::str::from_utf8(
-        out.get("datapack/data/hello-world/function/setup_finish.mcfunction")
-            .expect("setup_finish is emitted"),
+        out.get("datapack/data/hello-world/function/world_build.mcfunction")
+            .expect("the world build is emitted"),
     )
     .unwrap();
     for seal in &cove.seals {
@@ -635,7 +635,7 @@ fn a_single_prefab_areas_lone_piece_seals_the_sockets_it_cannot_mate() {
         );
         assert!(
             setup.lines().any(|l| l == line),
-            "expected `{line}` in setup_finish:\n{setup}"
+            "expected `{line}` in the world build:\n{setup}"
         );
     }
 

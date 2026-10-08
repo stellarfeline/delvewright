@@ -25,6 +25,7 @@
 //! - [`camera`]: cutscene camera geometry: the eased dolly and the `shot_style` expansion, shared by emission and validation.
 //! - [`cast`]: the NPC scene ledger (`DW0460`–`DW0467`).
 //! - [`cellset`]: copy-on-write cell sets and maps for the nav model, a bitset when dense, and a flood's visited set.
+//! - [`chain`]: a tick's command chain stays under the game's limit, and one-shot work is split across ticks (`DW0984`).
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
 //! - [`clock`]: the clock binding line — every time value the campaign states, as the clock it resolves to (spec-0081 §5.5).
@@ -119,6 +120,7 @@ pub mod calibrate;
 pub mod camera;
 pub mod cast;
 pub mod cellset;
+pub mod chain;
 pub mod claims;
 pub mod clearance;
 pub mod clock;

@@ -773,6 +773,11 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
                         zeroes.append(f"{f.name}: `{row.get('id')}.{k}` is 0")
                 if not row.get("exercise"):
                     zeroes.append(f"{f.name}: `{row.get('id')}` has no exercise step")
+        # The gallery writes world edits, so its world is built in steps across
+        # ticks; a chain ledger counting no step is a world build that stopped
+        # being emitted, or a measure that stopped seeing it.
+        if f.name == "chain-length.json" and not doc.get("steps"):
+            zeroes.append(f"{f.name}: `steps` is 0")
     # …and a path that exercises a loop with no loop ledger beside it is a build
     # that crossed a slab nothing judged.
     path = out / "critical-path.json"
