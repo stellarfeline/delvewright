@@ -73,7 +73,7 @@ pub fn strait_anchors() -> Value {
     json!({
         "spawn": { "pos": [1, 3, 1], "facing": "south", "role": "entry" },
         "anchor/boat": { "pos": [3, 3, 4] },
-        "anchor/tiller": { "pos": [7, 3, 4] },
+        "anchor/tiller": { "pos": [7, 4, 4] },
         "anchor/far-landing": { "pos": [13, 3, 4] },
         "anchor/far-shore": { "pos": [18, 3, 6] },
         "anchor/far-tiller": { "pos": [9, 3, 4] },

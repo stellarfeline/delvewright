@@ -28,7 +28,7 @@ use serde::Deserialize;
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::Campaign;
 use crate::registry::{ItemRegistry, entity_in_tag, entity_tags, namespaced_entity};
-use crate::stages::{BodyRef, EquipSlot, MobEquipment};
+use crate::{BodyRef, EquipSlot, MobEquipment};
 
 /// The kind of piece an item is, derived from its `equippable` component and
 /// the equipment asset it draws through (spec-0067 §4.1). The kind decides

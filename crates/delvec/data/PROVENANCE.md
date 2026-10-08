@@ -174,6 +174,33 @@ not third-party reconstructions.
   script pins and checks the source SHA-256 and the block count, and refuses a
   default that is not one of its own property's legal values.
 
+- **`collision-tops-1.21.11.tsv`** (in `crates/dsl/data/`) — the vertical extent
+  of every 1.21.11 blockstate's **collision box**: the bottom and top, in
+  sixteenths above the cell floor (`-` for an empty box), of what the game's own
+  `BlockState.getCollisionShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)` returns
+  inside the pinned server jar (`versions.toml` `[minecraft]`
+  `server_jar_sha256` `f83b8e09…1726`; server mappings sha1
+  `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`, both recorded in the file's
+  header). 29,671 states collapse onto the properties that move the extent: 5,724
+  rows, each naming only those properties. A bound that is not a whole sixteenth
+  (a chain's 6.5) is written as a reduced fraction, never rounded.
+  **Why it exists**: where a body standing on a partial block has its feet is
+  the block's collision top, and the nav model used to treat every block it had
+  no hand-written height for as a full cube — so a body on an upward dripstone
+  tip stood a course above where vanilla puts it (0.6875 into the tip's cell),
+  and a killing volume in the tip course was reached by no body. Consumed by
+  `delvewright_dsl::blockshape::measured_collision`, which gives every block no
+  hand rule names its measured floor height when the box rests on the cell floor
+  and tops out at 8–15/16, and by
+  `blockshape::tests::every_height_is_the_jars_or_the_full_cube_default`, which
+  holds every hand-written height against it.
+  **Reproduce it**: `python3 tools/maintenance/dump-collision-tops.py [--check]
+  [--work DIR]` (JDK ≥ 21 on `PATH`, network for the mappings). It refuses a jar
+  whose sha256 is not the pin, resolves every class and member from the mappings
+  (`tools/maintenance/collision/CollisionTopDump.java` names none), asserts the
+  dumper's state count equals the rows' coverage, and `--check` diffs against the
+  committed file; two runs of one jar give the same bytes.
+
 - **`block-renames-1.21.11.json`** (in `crates/dsl/data/`) — the block-id
   **renames** the pinned game's DataFixerUpper applies on load: an id 1.21.11
   does not have → the id it becomes, with the greatest `DataVersion` at which
@@ -461,7 +488,7 @@ The winnability arithmetic therefore runs its numeric time-to-kill bound **only*
 where the campaign declares `attributes.max_health` on the stack, and says so out
 loud (`DW0475`) rather than inventing a health table. Inventing one is the
 "invented precision" this codebase already refuses for `DEFAULT_FOLLOW_RANGE`
-(`nav.rs`) and `MODEL_MARGIN` (`clearance.rs`).
+(`compiler/nav/mod.rs`) and `MODEL_MARGIN` (`clearance.rs`).
 
 ## Default-font glyph metrics (measured, not vendored)
 
@@ -515,6 +542,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `block-defaults-1.21.11.json` | `98ba9886b8bdf648e8ff74ffe8c817932e987037111427343613eefa1c37da3d` |
 | `block-renames-1.21.11.json` | `255937f801a71bb38fe92e7a5c16da74de934b88311b7ba68b62a0929e6756b5` |
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
+| `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
 
 ## Not committed

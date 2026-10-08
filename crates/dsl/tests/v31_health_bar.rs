@@ -23,8 +23,8 @@ mod common;
 
 use delvewright_dsl::envelope::Stage;
 use delvewright_dsl::{
-    DSL_VERSION, Diagnostic, HealthBarBinding, RawCampaign, Severity, check_campaign,
-    l10n_inventory, parse_campaign, stage_schema,
+    DSL_VERSION, Diagnostic, HealthBarBinding, RawCampaign, Severity, check_campaign, l10n,
+    parse_campaign, stage_schema,
 };
 use serde_json::Value;
 
@@ -411,7 +411,7 @@ fn dw0912_is_silent_on_a_boss_with_a_bar_and_an_elite_without() {
 #[test]
 fn a_stated_title_is_inventoried_and_a_derived_one_is_not() {
     let c = parse_campaign(&raw(quests(&format!("[{LANE}, {CHOIR}]"), "[]", &[], &[]))).unwrap();
-    let inv = l10n_inventory(&c);
+    let inv = l10n::inventory(&c);
     assert_eq!(
         inv.get("wave.choir.health_bar.title").map(String::as_str),
         Some("The Drowned Choir")

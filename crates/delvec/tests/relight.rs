@@ -137,7 +137,7 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
 /// Build `campaign` against a synthetic dark structure the way `delvec build
 /// --lang <lang>` does: determine the night-vision `DW0210` verdict on the
 /// **canonical English** campaign first, then localize a clone with `translations`
-/// (the l10n sidecar swap) before planning + emitting. This mirrors `main.rs` so a
+/// (the l10n sidecar swap) before planning + emitting. This mirrors `cli/campaign.rs` so a
 /// test can prove the lighting gate reaches the same verdict in every language.
 fn build_localized(
     campaign_en: &Campaign,
@@ -521,7 +521,7 @@ fn dw0210_night_vision_verdict_is_language_independent() {
     );
 
     // Identity translation for the whole inventory, so localize runs cleanly.
-    let tr: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(&c).into_iter().collect();
+    let tr: BTreeMap<String, String> = delvewright_dsl::l10n::inventory(&c).into_iter().collect();
     assert!(
         passes_dw0210(build_localized(&c, dark, "zh-cn", &tr)),
         "the same declaration must satisfy DW0210 in the zh-cn build"
@@ -542,7 +542,7 @@ fn dw0210_fires_in_every_language_without_night_vision() {
         other => panic!("en: expected DW0210, got {other:?}"),
     }
     // Identity translation for the (unchanged) inventory, so localize runs cleanly.
-    let tr: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(&c).into_iter().collect();
+    let tr: BTreeMap<String, String> = delvewright_dsl::l10n::inventory(&c).into_iter().collect();
     match build_localized(&c, dark, "zh-cn", &tr).unwrap_err() {
         BuildFailure::Diagnostic { code, .. } => assert_eq!(code, "DW0210"),
         other => panic!("zh-cn: expected DW0210, got {other:?}"),

@@ -67,6 +67,17 @@ for key in difficulty:DIFFICULTY level-seed:SEED level-type:LEVEL_TYPE \
   fi
 done
 
+# 1c) ...and the heap ceiling from the build's resources.properties (spec-0091):
+#     the compiler states what the declared view distance costs at the player
+#     cap, and an entrypoint that stopped reading it would boot every delve at
+#     the pin's floor, which a far-view delve exhausts.
+if grep -q '^heap_max=$(sed -n "/^heap-max=/{s///;p;q;}" "$resources" 2>/dev/null || true)' "$SCRIPT" \
+   && grep -q 'export MAX_MEMORY="${heap_max:-' "$SCRIPT"; then
+  pass "entrypoint derives MAX_MEMORY from the build's \`heap-max\` (server/resources.properties)"
+else
+  fail "entrypoint must read \`heap-max\` from server/resources.properties and export MAX_MEMORY - without it the pin's floor decides, and a delve whose declared view distance costs more runs out of heap"
+fi
+
 # 2) The PackTest runner runs that same script as its entrypoint, over the build's
 #    server.properties. The output tree is selectable (`DELVE_OUTPUT`, so CI can run
 #    the profile a second time over a campaign whose generated templates hello-world

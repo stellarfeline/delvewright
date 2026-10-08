@@ -1,0 +1,17 @@
+{
+  "code": "DW0968",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/assemblies/1/strikes/pattern/0/lock/within/extent",
+      "value": [
+        2,
+        0,
+        4
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The arm's first step locks onto a player in a region stretched one row past each end of its arming region `while_in`. A player standing in that row was never in the arming region, so a blow locked onto them would be a blow never wound up for anybody they could see arming it. It declares no unit: the region is the primary's `lock.within`, and what is refused is one reaching outside `while_in`. The remedy is to keep the lock region inside `while_in`, or widen `while_in`."
+}

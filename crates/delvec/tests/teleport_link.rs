@@ -356,10 +356,22 @@ fn teleport() -> Value {
     })
 }
 
+/// The carry over the whole west room's floor (x 1..=7, z 1..=7, y 3): after a
+/// cutscene the carry takes everyone or no one, so every cell the tiller —
+/// hung on the wall at y 4, where nobody stands — is pulled from must lie
+/// inside the volume (spec-0092 §10, `DW0932`).
+fn teleport_whole_room() -> Value {
+    json!({
+        "type": "teleport",
+        "from": {"anchor": "anchor/boat", "extent": [4, 0, 3]},
+        "to": {"anchor": "anchor/far-landing"}
+    })
+}
+
 fn cutscene_then_teleport(q: &mut Value, tick: u32) {
     trigger_mut(q)["effects"] = json!([{"type": "sequence", "steps": [
         {"at_ticks": 0, "effects": [cutscene()]},
-        {"at_ticks": tick, "effects": [teleport()]}
+        {"at_ticks": tick, "effects": [teleport_whole_room()]}
     ]}]);
 }
 
@@ -412,6 +424,57 @@ fn a_teleport_under_its_roots_cutscene_is_dw0933_at_the_emitted_tick() {
     assert!(line.contains("one flat bundle"), "{line}");
 }
 
+/// Two `when`-gated sequences of the one trigger: the first plays the cutscene
+/// under `forbids flag/crossed` and sets that flag at `set_at`; the second
+/// carries at tick 0 under `teleport_when`.
+fn branched(q: &mut Value, set_at: u32, teleport_when: Value) {
+    trigger_mut(q)["effects"] = json!([
+        {"type": "sequence", "when": {"forbids_flags": ["flag/crossed"]}, "steps": [
+            {"at_ticks": 0, "effects": [cutscene()]},
+            {"at_ticks": set_at, "effects": [{"type": "set-flag", "flag": "flag/crossed"}]}
+        ]},
+        {"type": "sequence", "when": teleport_when, "steps": [
+            {"at_ticks": 0, "effects": [teleport()]}
+        ]}
+    ]);
+}
+
+#[test]
+fn a_teleport_whose_gate_excludes_the_cutscenes_is_not_dw0933() {
+    // The cutscene plays only while `flag/crossed` is unset, the carry only once
+    // it is set, and nothing in the press sets it before both gates are read:
+    // one press plays one branch, so the carry never fires under the camera.
+    let run = build(&campaign("cs-exclusive", |q| {
+        branched(q, 40, json!({"requires_flags": ["flag/crossed"]}));
+    }));
+    assert!(
+        !run.stderr.contains("DW0933"),
+        "exclusive gates refused:\n{}",
+        run.stderr
+    );
+    run.green();
+}
+
+#[test]
+fn gates_that_can_both_hold_under_the_cutscene_are_still_dw0933() {
+    // Distinct flags: `forbids flag/crossed` and `requires flag/paid` both hold
+    // once the toll is paid, so both branches can play in one press.
+    let run = build(&campaign("cs-distinct", |q| {
+        branched(q, 40, json!({"requires_flags": ["flag/paid"]}));
+        q["content"]["triggers"][0]["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "set-flag", "flag": "flag/paid"}));
+    }));
+    run.refused("DW0933");
+    // The cutscene's branch sets `flag/crossed` at tick 0, inside the press
+    // itself, so the carry's gate reads it set: both branches play at once.
+    let run = build(&campaign("cs-self-opened", |q| {
+        branched(q, 0, json!({"requires_flags": ["flag/crossed"]}));
+    }));
+    run.refused("DW0933");
+}
+
 /// The carrying step's `cutscene_seconds` covers the cutscene its `sequence`
 /// plays, read against the tick the emitted driver calls `cs_end` at: a
 /// cutscene on the sequence's first step, and one on a later step that starts
@@ -426,7 +489,7 @@ fn the_carrying_step_waits_out_a_cutscene_its_sequence_plays() {
         trigger_mut(q)["effects"] = json!([{"type": "sequence", "steps": [
             {"at_ticks": 0, "effects": [{"type": "narrate", "text": "The tiller creaks."}]},
             {"at_ticks": 30, "effects": [cutscene()]},
-            {"at_ticks": 52, "effects": [teleport()]}
+            {"at_ticks": 52, "effects": [teleport_whole_room()]}
         ]}]);
     });
 }
@@ -662,31 +725,49 @@ fn the_seal_lifting_list_is_gone_and_one_function_marks_a_ride() {
     }
     // Every place a visited position is MARKED as arrived at by a ride — a
     // `transport_before:` field set to anything but `false` — is inside
-    // `positions_of`, in the non-test half of `nav.rs`.
-    let (_, nav) = all
+    // `positions_of`, in the production text of the `nav` module: every file
+    // under `compiler/nav/`, the only module that can build a visited position,
+    // read through the one rule of what is production (`common::source_scan`).
+    let prod =
+        common::source_scan::production_sources(&common::repo_root().join("crates/delvec/src"));
+    let navs: Vec<(String, &str)> = prod
         .iter()
-        .find(|(p, _)| p.ends_with("compiler/nav.rs"))
-        .expect("nav.rs");
-    let body = nav.split("#[cfg(test)]\nmod tests").next().unwrap();
-    let start = body.find("\nfn positions_of(").expect("positions_of");
+        .filter(|(rel, _)| rel.starts_with("compiler/nav/"))
+        .map(|(rel, body)| (rel.clone(), body.as_str()))
+        .collect();
+    assert!(
+        navs.len() >= 2,
+        "the nav module read {} file(s)",
+        navs.len()
+    );
+    let homes: Vec<&(String, &str)> = navs
+        .iter()
+        .filter(|(_, b)| b.contains("fn positions_of("))
+        .collect();
+    assert_eq!(homes.len(), 1, "positions_of is defined once");
+    let (home, body) = homes[0];
+    let start = body.find("fn positions_of(").expect("positions_of");
     let end = start + body[start..].find("\n}\n").expect("its end");
     let mut marks = 0usize;
-    for (i, _) in body.match_indices("transport_before:") {
-        let rest = &body[i + "transport_before:".len()..];
-        let value = rest.trim_start().split([',', '\n']).next().unwrap().trim();
-        if value == "false" || value == "bool" {
-            continue;
+    for (path, text) in &navs {
+        for (i, _) in text.match_indices("transport_before:") {
+            let rest = &text[i + "transport_before:".len()..];
+            let value = rest.trim_start().split([',', '\n']).next().unwrap().trim();
+            if value == "false" || value == "bool" {
+                continue;
+            }
+            marks += 1;
+            assert!(
+                path == home && (start..end).contains(&i),
+                "a ride is marked outside `positions_of`, in {path}: `transport_before: {value}`"
+            );
         }
-        marks += 1;
-        assert!(
-            (start..end).contains(&i),
-            "a ride is marked outside `positions_of`: `transport_before: {value}`"
-        );
     }
     assert!(
         marks >= 2,
         "positions_of marks a crossing and a link ({marks} found)"
     );
+    let body = navs.iter().map(|(_, b)| *b).collect::<Vec<_>>().join("\n");
     // The four readers all enumerate through it.
     for reader in [
         "pub fn check_critical_path_bound(",
@@ -755,6 +836,7 @@ fn pit_campaign(who: &str, gate: &str) -> PathBuf {
         campaign(who, move |q| {
             q["content"]["triggers"].as_array_mut().unwrap().push(json!({
             "id": "trigger/rescue", "at": "anchor/rescue", "on": {"on": "use"}, "once": false,
+            "prop": {"block": "minecraft:oak_sign[rotation=0]"},
             "requires_flags": [gate],
             "effects": [{"type": "teleport",
                          "from": {"anchor": "anchor/pit", "extent": [0, 0, 0]},
@@ -929,6 +1011,7 @@ fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
         hold["objectives"][1]["anchor"] = json!("spawn");
         q["content"]["triggers"] = json!([{
             "id": "trigger/vault", "at": "spawn", "on": {"on": "use"}, "once": false,
+            "prop": {"block": "minecraft:oak_sign[rotation=0]"},
             "requires_flags": [gate],
             "effects": [{"type": "teleport",
                          "from": {"anchor": "anchor/keeper-stand", "extent": [1, 1, 1]},

@@ -575,10 +575,13 @@ fn the_sculpt_judges_pockets_with_the_relation_dw0921_floods() {
     flooders.sort();
     assert_eq!(
         callers,
-        vec!["compiler/nav.rs".to_string(), "sculpt/mod.rs".to_string()],
+        vec![
+            "compiler/nav/leave.rs".to_string(),
+            "sculpt/mod.rs".to_string()
+        ],
         "the leave judgement's callers"
     );
-    assert_eq!(flooders, vec!["compiler/nav.rs".to_string()]);
+    assert_eq!(flooders, vec!["compiler/nav/leave.rs".to_string()]);
 }
 
 #[test]

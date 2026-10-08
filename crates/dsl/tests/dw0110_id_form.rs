@@ -2,7 +2,7 @@
 //!
 //! # The gap this closes
 //!
-//! One macro in `validate::syntax` is the single path every id type's syntax
+//! One macro, `ids::id_syntax!`, is the single path every id type's syntax
 //! refusal goes through, and it used to answer all of them with the same
 //! sentence and the same three examples — `area/keep`, `npc/keeper`,
 //! `quest/find-key`. A dialogue node id written `dlg/<npc>/<name>` was refused

@@ -169,6 +169,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Forfeit", "kind", Machine),
     ("QuestEffect", "clip", Reference),
     ("StrikeStep", "strike", Reference),
+    ("StrikeLock", "reaches", Reference),
     ("StrikeStep", "windup", Reference),
     ("Shop", "title", Inventoried),
     ("Shop", "marker_item", Reference),
@@ -447,7 +448,7 @@ fn the_classification_is_well_formed() {
 #[test]
 fn the_inventoried_fields_reach_the_inventory() {
     let campaign = fixture_with_actors();
-    let inv = delvewright_dsl::l10n_inventory(&campaign);
+    let inv = delvewright_dsl::l10n::inventory(&campaign);
     assert!(!inv.is_empty(), "binding: the fixture inventories nothing");
 
     // Each row is `(what, key prefix, key suffix)` — the inventory names emitted

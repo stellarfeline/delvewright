@@ -61,8 +61,8 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
        headings; no reference links to another. RED: a chain two deep
     9  every piece-reading `delvec` span carries `--prefabs "$DELVEWRIGHT_PREFABS"`.
                                                RED: a bare `delvec analyze`
-   10  every heading of the page at the revision the split moved from is a
-       heading of exactly one file.            RED: a section dropped or doubled
+   10  retired: it held the page's headings to a frozen census of the page
+       before it was split, so no step could ever be renamed or reordered.
    11  `plugin.json` parses; `name` is kebab-case; `version` is semver; a diff
        against the base does not move `version`, unless it is the plugin
        release workflow's own commit (ADR-0028 §5).
@@ -181,25 +181,7 @@ name is a closed set — a name one document leaves open is a candidate, not a
 match. A behaviour the page describes (a refusal, an emitted key of a build
 output) is not a name and neither rule sees it.
 
-RULE 10 AND THE ONE THING IT CANNOT ASSERT
-
-The split moved the page out of one file into twenty-five, and rule 10 is what
-says nothing was dropped on the way. Its denominator is a frozen census of the
-pre-split page's headings — `tools/ci/data/skill-page-headings.json`, written by
-`--freeze` and never by hand — which records, per heading, the file that now
-carries it.
-
-Eleven of those headings are not carried by any file, and they are the ones
-spec-0063 §6 RESTATES: Init's own sub-sections, which the spec replaces with
-I0-I8. A row may declare `restated` only when the census records its section as
-Init, so a dropped STEP heading cannot claim it — the object decides the kind,
-not the author. That is the exception's whole extent, and it is narrower than it
-sounds only because the census is a measurement: when this repository can still
-serve the pre-split blob, the census is RE-DERIVED from it and held byte-equal
-to the committed file, so a row nobody measured is a red rather than a claim.
-
     python3 tools/ci/check-skill-page.py [--online] [--base origin/main]
-    python3 tools/ci/check-skill-page.py --freeze --from <the pre-split page>
 
 Exit 0 = every rule holds, 1 = a finding, 2 = something this gate reads is
 unusable and it checked nothing.
@@ -230,7 +212,6 @@ SKILL = SKILL_ROOT / "SKILL.md"
 PIN = SKILL_ROOT / "versions.toml"
 PLUGIN_JSON = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
 MARKETPLACE = REPO / ".claude-plugin" / "marketplace.json"
-CENSUS = REPO / "tools" / "ci" / "data" / "skill-page-headings.json"
 STATED_COUNTS = REPO / "tools" / "ci" / "check-stated-counts.py"
 DW_CODES = REPO / "tools" / "ci" / "check-dw-codes.py"
 
@@ -287,9 +268,6 @@ BUNDLED_PATH_RE = re.compile(r"(?:references|scripts)/[A-Za-z0-9._-]+")
 PIECE_FREE = {"fmt", "schema", "metrics"}
 PIECE_FREE_GROUP_VERBS = {("grammar", "list")}
 PREFABS_ARGUMENT = '"$DELVEWRIGHT_PREFABS"'
-
-RESTATED = "restated"
-RESTATED_SECTION = "Init — build the toolchain before you author anything"
 
 # --- rule 14: an unsubstituted template placeholder --------------------------
 #
@@ -669,17 +647,33 @@ def engine_version(cargo_toml: pathlib.Path) -> str:
     return version
 
 
-def struct_fields(stages_rs: pathlib.Path, struct: str) -> list[tuple[str, bool]]:
+def struct_fields(dsl_src: pathlib.Path, struct: str) -> list[tuple[str, bool]]:
     """`(field name, may be omitted)` for one stage `content` struct, in order.
+
+    The struct is found by its declaration anywhere under the DSL crate's
+    sources, because the module that holds it is the object's (ADR-0031) and an
+    older pinned engine holds it elsewhere. A name declared more than once is a
+    candidate, not a match, and is refused.
 
     Optionality is serde's own rule: a field may be omitted exactly when its
     attribute block carries `serde(default…)`, since every stage struct is
     `deny_unknown_fields`. Reading the TYPE instead gets it wrong both ways.
     """
-    src = stages_rs.read_text(encoding="utf-8")
-    m = re.search(rf"^pub struct {re.escape(struct)} \{{$(?P<body>.*?)^\}}$", src, re.S | re.M)
-    if m is None:
+    decl = re.compile(rf"^pub struct {re.escape(struct)} \{{$(?P<body>.*?)^\}}$", re.S | re.M)
+    hits = [
+        (path, m)
+        for path in sorted(dsl_src.rglob("*.rs"))
+        for m in decl.finditer(path.read_text(encoding="utf-8"))
+    ]
+    if len(hits) > 1:
+        raise Unusable(
+            f"`{struct}` is declared {len(hits)} times under {dsl_src.name}/ "
+            f"({', '.join(p.name for p, _ in hits)}); a name declared twice "
+            f"names no one struct."
+        )
+    if not hits:
         return []
+    m = hits[0][1]
     fields: list[tuple[str, bool]] = []
     attrs: list[str] = []
     for line in m.group("body").split("\n"):
@@ -848,44 +842,6 @@ def parenthetical_flags(markdown: str) -> list[tuple[str, list[str], str, bool]]
     return out
 
 
-# -------------------------------------------------------------- the census --
-
-
-def census_rows(source: str, destinations: dict[str, str]) -> list[dict[str, str]]:
-    """One row per heading of the pre-split page: its text, section and home."""
-    rows: list[dict[str, str]] = []
-    section = ""
-    fence = False
-    for line in source.split("\n"):
-        if FENCE_RE.match(line):
-            fence = not fence
-            continue
-        if fence:
-            continue
-        m = HEADING_RE.match(line)
-        if m is None:
-            continue
-        text = m.group(1).strip()
-        level = len(line) - len(line.lstrip("#"))
-        if level <= 2:
-            section = text
-        rows.append(
-            {
-                "heading": text,
-                "section": section,
-                "destination": destinations.get(text, ""),
-            }
-        )
-    return rows
-
-
-def source_blob(sha: str) -> str | None:
-    proc = subprocess.run(
-        ["git", "-C", str(REPO), "cat-file", "blob", sha], capture_output=True
-    )
-    return proc.stdout.decode("utf-8") if proc.returncode == 0 else None
-
-
 # ---------------------------------------------------------------- the rules --
 
 
@@ -1040,8 +996,8 @@ def check(
     # -- 4. every command the page names exists -----------------------------
     main_rs = engine / "crates" / "delvec" / "src" / "main.rs"
     envelope_rs = engine / "crates" / "dsl" / "src" / "envelope.rs"
-    stages_rs = engine / "crates" / "dsl" / "src" / "stages.rs"
-    for path in (main_rs, envelope_rs, stages_rs):
+    dsl_src = engine / "crates" / "dsl" / "src"
+    for path in (main_rs, envelope_rs):
         if not path.is_file():
             raise Unusable(
                 f"the engine at {ref} has no {path.relative_to(engine)}. A file "
@@ -1114,7 +1070,7 @@ def check(
         )
     rep.bind("stage document(s) named", len(stages) - len(unmentioned), len(stages))
 
-    world_fields = struct_fields(stages_rs, "WorldContent")
+    world_fields = struct_fields(dsl_src, "WorldContent")
     if not world_fields:
         raise Unusable(
             f"parsed 0 fields from `WorldContent` at {ref}; the struct this "
@@ -1268,9 +1224,6 @@ def check(
 
     # -- 21. every engine path the page names, the tree it ships from has ----
     engine_paths_rule(rep, rev, ref, tag_exists)
-
-    # -- 10. the split dropped nothing ---------------------------------------
-    heading_rule(rep)
 
     # -- 11/12. the manifests ------------------------------------------------
     manifest_rules(rep, base, repo, ref)
@@ -2287,93 +2240,6 @@ def runner(binary: pathlib.Path):
     return run
 
 
-def heading_rule(rep: Report) -> None:
-    try:
-        census = json.loads(CENSUS.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise Unusable(
-            f"{CENSUS} is unusable: {exc}. It is the denominator for the "
-            f"heading-preservation rule — the frozen census of the pre-split "
-            f"page — and without it rule 10 is silent about every section at once."
-        ) from exc
-
-    rows = census["headings"]
-    dividers = set(census["dividers"])
-
-    # The census is a MEASUREMENT, so it is re-derived whenever this repository
-    # can still serve the blob it names, and held byte-equal to the committed
-    # file. A row nobody measured is then a red rather than a claim.
-    source = source_blob(census["source"]["blob"])
-    if source is not None:
-        derived = census_rows(
-            source, {row["heading"]: row["destination"] for row in rows}
-        )
-        if derived != rows:
-            rep.find(
-                f"{rel(CENSUS)} disagrees with the page it names "
-                f"(blob {census['source']['blob'][:8]}). It is a frozen "
-                f"measurement, not a hand-written list: regenerate it with "
-                f"`--freeze`."
-            )
-        print(f"  ok   census re-derived from blob {census['source']['blob'][:8]}")
-    else:
-        print(
-            f"  --   census NOT re-derived: this checkout cannot serve blob "
-            f"{census['source']['blob'][:8]}. Rule 10 runs against the frozen "
-            f"record alone."
-        )
-
-    where: dict[str, list[str]] = {}
-    for path in page_files():
-        for h in headings(path.read_text(encoding="utf-8")):
-            where.setdefault(h, []).append(str(path.relative_to(SKILL_ROOT)))
-
-    bound = restated = 0
-    for row in rows:
-        heading, destination = row["heading"], row["destination"]
-        if heading in dividers:
-            continue
-        homes = where.get(heading, [])
-        if destination == RESTATED:
-            if row["section"] != RESTATED_SECTION:
-                rep.find(
-                    f"the census marks {heading!r} `{RESTATED}`, and its section is "
-                    f"{row['section']!r}. Only a heading UNDER Init may be restated "
-                    f"— spec-0063 §6 replaces Init's decomposition with I0-I8 and "
-                    f"nothing else's. The object decides the kind, not the author."
-                )
-            elif homes:
-                rep.find(
-                    f"{heading!r} is marked `{RESTATED}` and is a heading of "
-                    f"{', '.join(homes)}. Say which file carries it."
-                )
-            else:
-                restated += 1
-            continue
-        if not homes:
-            rep.find(
-                f"{heading!r} was a section of the page and is a heading of no file "
-                f"of the split. The split moves sections; it drops none."
-            )
-        elif len(homes) > 1:
-            rep.find(
-                f"{heading!r} is a heading of {len(homes)} files "
-                f"({', '.join(homes)}). One section, one home."
-            )
-        elif homes[0] != destination:
-            rep.find(
-                f"{heading!r} is in {homes[0]} and the census says {destination}."
-            )
-        else:
-            bound += 1
-    rep.bind(
-        "pre-split heading(s) carried",
-        bound,
-        len(rows) - len(dividers & {r["heading"] for r in rows}) - restated,
-    )
-    rep.bind("pre-split heading(s) restated by spec-0063 §6", restated, len(rows))
-
-
 def manifest_rules(rep: Report, base: str | None, pin_repo: str, ref: str) -> None:
     try:
         plugin = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
@@ -2748,60 +2614,6 @@ def online(
     rep.bind("shelf archive(s) held to the pin", len(targets) - len(missing), len(targets))
 
 
-# ------------------------------------------------------------------- freeze --
-
-# Where each heading of the pre-split page went. Written once, by the split, and
-# consumed by `--freeze`; the census file is what the gate reads afterwards.
-DESTINATIONS: dict[str, str] = {}
-
-
-def freeze(source_path: pathlib.Path, repo: str, revision: str) -> int:
-    source = source_path.read_text(encoding="utf-8")
-    where: dict[str, list[str]] = {}
-    for path in page_files():
-        for h in headings(path.read_text(encoding="utf-8")):
-            where.setdefault(h, []).append(str(path.relative_to(SKILL_ROOT)))
-    destinations = {}
-    for h in headings(source):
-        homes = where.get(h, [])
-        destinations[h] = homes[0] if len(homes) == 1 else RESTATED
-    blob = subprocess.run(
-        ["git", "hash-object", str(source_path)], capture_output=True, text=True, check=True
-    ).stdout.strip()
-    import hashlib
-
-    raw = source_path.read_bytes()
-    census = {
-        "source": {
-            "note": (
-                "The `/new-delve` page as it stood before spec-0063 §10 split it. "
-                "This census is the denominator of check-skill-page.py's "
-                "heading-preservation rule and is written by `--freeze`, never by "
-                "hand."
-            ),
-            "repo": repo,
-            "revision": revision,
-            "path": ".claude/skills/new-delve/SKILL.md",
-            "blob": blob,
-            "sha256": hashlib.sha256(raw).hexdigest(),
-            "lines": len(raw.decode("utf-8").split("\n")),
-            "bytes": len(raw),
-        },
-        "dividers": ["The steps", "Reference"],
-        "headings": census_rows(source, destinations),
-    }
-    CENSUS.parent.mkdir(parents=True, exist_ok=True)
-    # Canonical form on the way out — object keys sorted, two-space indent,
-    # non-ASCII raw, one trailing newline — so a re-freeze does not red the
-    # repository's own JSON sweep, and a `--freeze` diff is only what moved.
-    CENSUS.write_text(
-        json.dumps(census, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    print(f"froze {len(census['headings'])} heading(s) into {rel(CENSUS)}")
-    return 0
-
-
 # --------------------------------------------------------------------- main --
 
 
@@ -2816,33 +2628,7 @@ def main(argv: list[str] | None = None) -> int:
             "rule (e.g. origin/main). Omitted, that one rule does not run and says so."
         ),
     )
-    ap.add_argument("--freeze", action="store_true", help="rewrite the heading census")
-    ap.add_argument("--from", dest="source", type=pathlib.Path, help="with --freeze: the pre-split page")
-    ap.add_argument(
-        "--source-repo",
-        default="stellarfeline/delvewright-campaigns",
-        help="with --freeze: the repository the pre-split page was moved from",
-    )
-    ap.add_argument(
-        "--source-revision",
-        default=None,
-        help=(
-            "with --freeze: the revision it was moved from. Required, and never "
-            "defaulted to a literal in this file: a revision written into a tool "
-            "is a pin outside the registry's reach."
-        ),
-    )
     args = ap.parse_args(argv)
-
-    if args.freeze:
-        if args.source is None or args.source_revision is None:
-            print(
-                "--freeze needs --from <the pre-split page> and --source-revision "
-                "<the revision it was moved from>",
-                file=sys.stderr,
-            )
-            return 2
-        return freeze(args.source, args.source_repo, args.source_revision)
 
     print(f"== check-skill-page — {rel(SKILL)} ==")
     rep = Report()

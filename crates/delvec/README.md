@@ -102,7 +102,7 @@ behind the verbs above, and `grammar`, `schem`, `admit`, `orchestrator` and
 
 ```toml
 [dependencies]
-delvec = "1.8"
+delvec = "1.9"
 ```
 
 ```rust
@@ -112,7 +112,7 @@ use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 ## Compatibility
 
 - **Minecraft**: Java Edition 1.21.11. Output targets that version and no other.
-- **Campaign format**: `dsl_version` `0.35.1`, the one number this engine accepts.
+- **Campaign format**: `dsl_version` `0.36.1`, the one number this engine accepts.
 - **Rust**: 1.97.1 or newer.
 - The binary is self-contained: no JVM, no runtime dependencies.
 

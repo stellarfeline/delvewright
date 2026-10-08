@@ -159,10 +159,10 @@ impl LethalGate {
 ///
 /// One code, three shapes, one rule — *a killing volume and what shows it
 /// agree*. The full derivation is on
-/// [`delvewright_dsl::codes::LETHAL_INVISIBLE`], which is where the code itself
+/// [`delvewright_dsl::lethal::LETHAL_INVISIBLE`], which is where the code itself
 /// is declared: the document arm lives in `dsl::validate`, so a second constant
 /// here would be one number for two rules.
-pub const DW_LETHAL_INVISIBLE: DwCode = delvewright_dsl::codes::LETHAL_INVISIBLE;
+pub const DW_LETHAL_INVISIBLE: DwCode = delvewright_dsl::lethal::LETHAL_INVISIBLE;
 
 /// What `DW0891` examined for one volume in one configuration (spec-0062 §5,
 /// spec-0088 §5) — one row of the ledger per (volume, configuration) pair.
@@ -717,7 +717,16 @@ pub fn check_danger_is_visible(
             let caught: Vec<[i32; 3]> = population
                 .iter()
                 .copied()
-                .filter(|c| (0..3).all(|i| klo[i] <= c[i] && c[i] <= khi[i]))
+                // By the body's feet where the model puts them, so a body on a
+                // partial block is caught by a volume in the course it stands on.
+                .filter(|c| {
+                    w.body_can_meet_volume(
+                        *c,
+                        &crate::compiler::nav::Footprint::player(),
+                        v.region.0,
+                        v.region.1,
+                    )
+                })
                 .collect();
             let shown: Vec<[i32; 3]> = caught
                 .iter()

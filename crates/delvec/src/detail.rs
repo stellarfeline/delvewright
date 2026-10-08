@@ -46,10 +46,11 @@ use delvewright_dsl::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::{
-    EXIT_INTERNAL, has_error, load_or_refuse, print_build_error, print_diags, print_one_diag,
-    read_skins, read_structures, validate_stage,
+use crate::EXIT_INTERNAL;
+use crate::cli::campaign::{
+    has_error, load_or_refuse, read_skins, read_structures, validate_stage,
 };
+use crate::cli::report::{print_build_error, print_diags, print_one_diag};
 
 delvewright_dsl::dw_code! {
     /// `DW0882`: **the program asks for a value the whole does not hand.** A
@@ -114,13 +115,6 @@ fn run(
         );
         return Err(1);
     }
-    // **The walk gate, before the program is opened.** The same `DW0841`
-    // `allocation` and validation raise: detail work begins here too.
-    if let Some(d) = engine::allocation_walk_gate(&campaign, loaded.walk_record.as_deref()) {
-        print_one_diag(&d, json);
-        return Err(1);
-    }
-
     let targets = targets(campaign_dir, &campaign, place, all)?;
 
     if let Err(e) = std::fs::create_dir_all(prefabs_dir) {
@@ -143,15 +137,7 @@ fn run(
 
     let mut done: Vec<String> = Vec::new();
     for node in &targets {
-        let written = detail_one(
-            campaign_dir,
-            &campaign,
-            loaded.walk_record.as_deref(),
-            &library,
-            prefabs_dir,
-            node,
-            json,
-        )?;
+        let written = detail_one(campaign_dir, &campaign, &library, prefabs_dir, node, json)?;
         done.push(written);
     }
     eprintln!(
@@ -300,7 +286,6 @@ fn handed(a: &Allocation) -> BTreeMap<String, i64> {
 fn detail_one(
     campaign_dir: &Path,
     campaign: &Campaign,
-    walk_record: Option<&str>,
     library: &PrefabRegistry,
     prefabs_dir: &Path,
     node: &NodeId,
@@ -494,7 +479,7 @@ fn detail_one(
     let mut registry = library.clone();
     registry.insert(meta.clone());
     let judged = with_row(campaign, &row);
-    let (diags, binding) = engine::check(&judged, &registry, walk_record);
+    let (diags, binding) = engine::check(&judged, &registry);
     let errors: Vec<&Diagnostic> = diags
         .iter()
         .filter(|d| d.severity == delvewright_dsl::Severity::Error)

@@ -902,6 +902,7 @@ mod tests {
     fn checkpoint(on_respawn: Vec<QuestEffect>) -> CheckpointPlan {
         CheckpointPlan {
             index: 0,
+            trigger: None,
             anchor: "anchor/alcove".into(),
             pos: [0, 64, 0],
             on_respawn,

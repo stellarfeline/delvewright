@@ -12,6 +12,8 @@ pub mod corridor;
 pub mod ferry;
 pub mod pinned;
 pub mod sculpt;
+pub mod source_scan;
+pub mod station4;
 
 /// The six stage filenames (matching `delvec::compiler::load::STAGE_FILES`).
 pub const STAGE_FILES: [&str; 6] = [
@@ -124,7 +126,7 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// A library file this `delvec` cannot parse fails in a shape that does not
 /// look like what it is. `PrefabRegistry::load_dir` reports a metadata file
 /// this `delvec` cannot parse as `DW0346` in `load_diagnostics()`, and **the
-/// CLI drains that list** (`main::validate_loaded`) so `delvec` users get the
+/// CLI drains that list** (`cli::campaign::validate_loaded`) so `delvec` users get the
 /// real message. Integration tests build a `Plan` directly and never drain it,
 /// so the prefab is simply absent from the registry and the first thing anyone
 /// sees is `DW0300` "no matching prefab metadata" — a message that then states,
@@ -912,17 +914,20 @@ pub fn campaign_at(dir: &Path) -> delvewright_dsl::Campaign {
     delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses")
 }
 
-/// Write the record a passed walk of THIS plan would have produced — the two
-/// freshness hashes and the blockout hash taken off the campaign as it stands.
-pub fn record_walk(dir: &Path) {
-    use delvec::compiler::detail;
+/// Write the record a passed walk of THIS build would have produced — every
+/// hash taken off the campaign as it stands, over the pieces in `prefabs`.
+pub fn record_walk(dir: &Path, prefabs: &Path) {
+    use delvec::compiler::walk;
     let c = campaign_at(dir);
-    let h = detail::Hashes::of(&c).expect("a site-plan campaign hashes");
+    let reg = delvec::compiler::registry::PrefabRegistry::load_dir(prefabs)
+        .expect("the piece library loads");
+    let h = walk::Hashes::of(&c, &reg, prefabs).expect("a site-plan campaign hashes");
     let rec = serde_json::json!({
         "site_plan_sha256": h.site_plan,
         "layout_graph_sha256": h.layout_graph,
+        "detail_sha256": h.detail,
         "blockout_sha256": h.blockout,
-        "engine_revision": detail::engine_revision(),
+        "engine_revision": walk::engine_revision(),
         "verdict": "passed",
         "findings": [],
     });

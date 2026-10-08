@@ -192,6 +192,9 @@ _LIBRARY_MOD = "crates/delvec/src/grammar/library/mod.rs"
 _GRAMMAR_MD = "docs/reference/grammar.md"
 _INDEX_SECTION = r"^## 2c\. "
 _COMPILER_MD = "docs/reference/compiler.md"
+# The DW02xx catalog section's prose, emitter table included, is on the page of
+# the module holding most of its rows (`compiler::analyze`).
+_ANALYZE_MD = "docs/reference/delvec/compiler/analyze.md"
 _DW02XX_SECTION = r"^### DW02xx "
 _SNAPSHOT_SECTION = r"^### `delvec snapshot`"
 
@@ -432,8 +435,8 @@ SITES: list[dict] = [
     # The emitter table's own size. Scoped to the DW02xx section, because
     # "N rows" and "N blockstates" are ordinary English and would otherwise
     # bind sentences about some other table on a 4000-line page.
-    {"oracle": "emission-fixture-rows", "path": _COMPILER_MD, "section": _DW02XX_SECTION},
-    {"oracle": "emission-fixture-states", "path": _COMPILER_MD, "section": _DW02XX_SECTION},
+    {"oracle": "emission-fixture-rows", "path": _ANALYZE_MD, "section": _DW02XX_SECTION},
+    {"oracle": "emission-fixture-states", "path": _ANALYZE_MD, "section": _DW02XX_SECTION},
     # The vendored preview colour table's own size, scoped to the snapshot
     # section: the number moves at a pin bump, and the page that tells a
     # creator what the draft can paint must move with it.

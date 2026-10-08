@@ -1588,13 +1588,13 @@
       },
       "campaign": "nobodys-cave-island",
       "carrier": {
-        "code": "DW0205",
-        "kind": "dw"
+        "kind": "invariant",
+        "test": "the_completing_button_carries_its_objectives_pending_guard"
       },
       "finding": "an optional side encounter gated the mainline, so skipping it soft-locked the delve",
       "general_form": "the button that completes a mainline objective is not already on screen at an earlier point of the participation-minimal walk",
       "id": "isl-55",
-      "note": "applies_when added: the button DW0205 walks is a dialogue option, so the binding is declaration-shaped and the precondition is the dialogue nodes those options live in. Nodes with no labelled option = UNBOUND; no dialogue node anywhere = the class measures zero, and a campaign whose objectives complete without a button cannot carry this defect.",
+      "note": "The general form is now an emission invariant rather than a diagnostic (spec-0093 §6.3): the dialogue button that completes an objective is drawn, and its click completes the objective, under the objective's whole pending guard — quest active, every `after` complete, its flag and numeric gate, not yet complete — exactly as every other objective driver. A button that would walk the party past a load-bearing beat is therefore never on screen, and the rule that reported one (DW0205) is retired because its class cannot exist. The named test builds the island's muster/surf structure and asserts the emitted availability bit and the click handler both carry the `after` term and the flag term. applies_when kept: the button is a dialogue option, so the binding is declaration-shaped and the precondition is the dialogue nodes those options live in.",
       "round": 16,
       "triage": "capability"
     },
@@ -1993,8 +1993,11 @@
         ],
         "kind": "dsl",
         "match": {
-          "prefix": {
-            "id": "trigger/"
+          "in": {
+            "on": [
+              "use",
+              "strike"
+            ]
           }
         }
       },
@@ -2017,7 +2020,7 @@
     },
     {
       "applies_when": {
-        "contains": "minecraft:mannequin",
+        "contains": "profile:{texture:\"delvewright:npc/",
         "glob": "**",
         "kind": "out"
       },
@@ -2040,7 +2043,7 @@
       "finding": "an NPC's skin rendered as a different person entirely from the one the fiction described",
       "general_form": "a declared skin texture is baked and served, and a mannequin declaring a texture id without a source file is refused",
       "id": "bell-12",
-      "note": "The binding stays `npcs.json` on purpose, and the precondition is deliberately wider than it. `skin` is declared on exactly two object classes -- `Npc` (npcs.json) and `Actor` (quests.json), per the compiler's own `schema --stage all` export -- but DW0309 is raised by `compiler::main::read_skins`, which walks `campaign.npcs.content.npcs` only. The binding counts what the carrier quantifies over, so widening it to `quests.json` would report BOUND over actor mannequins nothing reads: coverage asserted, not held. `applies_when` instead counts the mannequin bodies the COMPILER put in this build -- a witness an author cannot write -- so a campaign whose mannequins DW0309 cannot see reds UNBOUND with the gap named, while a campaign with no mannequin at all measures a real zero. Open capability gap: an `Actor` skin is neither baked into `resourcepack.zip` nor refused when its `skins/<texture_id>.png` is absent, so the general form's `is baked and served` half does not yet reach actors. The glob is the whole build tree on purpose: a mannequin that reaches a world as NBT rather than as a `summon` line must still count, and this probe's two failure directions are not symmetric -- over-counting reds a campaign that has to be looked at, under-counting goes quiet.",
+      "note": "The binding stays `npcs.json` on purpose, and the precondition is deliberately wider than it. `skin` is declared on exactly two object classes -- `Npc` (npcs.json) and `Actor` (quests.json), per the compiler's own `schema --stage all` export -- but DW0309 is raised by `compiler::main::read_skins`, which walks `campaign.npcs.content.npcs` only. The binding counts what the carrier quantifies over, so widening it to `quests.json` would report BOUND over actor mannequins nothing reads: coverage asserted, not held. `applies_when` instead counts the mannequin bodies the COMPILER put in this build wearing a declared texture (`profile:{texture:\"delvewright:npc/...` is the one spelling the compiler writes a skinned body with) -- a witness an author cannot write -- so a campaign whose mannequins DW0309 cannot see reds UNBOUND with the gap named, while a campaign with no mannequin at all measures a real zero. Open capability gap: an `Actor` skin is neither baked into `resourcepack.zip` nor refused when its `skins/<texture_id>.png` is absent, so the general form's `is baked and served` half does not yet reach actors. The glob is the whole build tree on purpose: a mannequin that reaches a world as NBT rather than as a `summon` line must still count, and this probe's two failure directions are not symmetric -- over-counting reds a campaign that has to be looked at, under-counting goes quiet. A cutscene's stand-in (spec-0095) is a mannequin too, but it wears the player's own profile and no declared texture, so it is outside DW0309's class and outside this witness; counting every `minecraft:mannequin` made every campaign with a cutscene read UNBOUND here.",
       "round": 6,
       "triage": "capability"
     },
@@ -2095,17 +2098,6 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has": [
-            "mobs"
-          ]
-        }
-      },
       "binding": {
         "files": [
           "quests.json"
@@ -2125,7 +2117,7 @@
       "finding": "a defence wave gave the party no guidance to where the attackers were, so the fight could not be found",
       "general_form": "a mandatory encounter is discoverable from the objective that requires it",
       "id": "bell-14",
-      "note": "DW0863 refuses a `kill` objective without both a `title` and a `hint`. The ground is a fact about emission rather than a taste about prose: a fight is the one objective kind the compiler puts nothing in the world for - `activation_commands` emits no command for it, no marker, no prop, no name, and the render plan falls back to the literal phrase `the fight` because none exists - while every other kind leaves something standing. So the objective's own two lines are the only thing that can say where the wave arrives. Weaker than the general form in one respect, stated: it proves guidance was written, not that it is sufficient. What bounds that is the sibling rule - DW0862 refuses a prompt that reaches no player - and the author's own words.",
+      "note": "DW0863 refuses a `kill` objective the party cannot find: one that is neither announced with a `title` and a `hint` nor found by the party — every site that fires its wave a placed act within the wave's reach of the wave's anchor (spec-0093 §5). The ground is a fact about emission rather than a taste about prose: a fight is the one objective kind the compiler puts nothing in the world for — `activation_commands` emits no command for it, no marker, no prop, no name, and the render plan falls back to the literal phrase `the fight` because none exists — so either the objective's own two lines say where the wave arrives, or the wave arrives where the party already stands and the bodies acquire the party by vanilla's own follow range. Weaker than the general form in one respect, stated: the announced arm proves guidance was written, not that it is sufficient; what bounds that is the sibling rule — DW0862 refuses a prompt that reaches no player — and the author's own words. Binding: `kill` objectives, the class the general form names (an encounter is mandatory when an objective requires it), identity-shaped and therefore self-measuring: a campaign that declares no `kill` objective measures INAPPLICABLE. The row used to declare `applies_when: has mobs`, a precondition over a different class — waves — which read a campaign with waves and no kill objective as UNBOUND; spec-0093 §6.4 removes it and states the loosening in those words: a wave nothing requires the party to win is not an encounter the party must find, and such a campaign's fights are judged by DW0380 and DW0376.",
       "round": 6,
       "triage": "capability"
     },
@@ -2326,11 +2318,11 @@
       },
       "campaign": "gallery",
       "carrier": {
-        "code": "DW0841",
+        "code": "DW0974",
         "kind": "dw"
       },
       "finding": "the walk record's freshness key was taken over the canonical bytes of the site plan and the layout graph, and the canonical writer stamps the engine's own format number into every document it writes, so each format bump re-opened DW0841 on every walked campaign at once with no box, seam or edge moved; the repair the refusal prescribes is to walk the whole again, which cannot be performed honestly for a change that cannot have changed the walk, and what happened instead was the record edited by hand twice and reverted once, leaving the gate red",
-      "general_form": "the walk record's freshness key is over what the walk depends on and nothing else — the derived grid (every placed box's corner, extent, floor and headroom, every placed seam's cells, crossing and rise, the whole's volumes and region) and the ways a body moves by (every edge whole, the entry, the goal, the critical path, the beats, the stations) — so a dsl_version bump, a reformat, a reworded note or a renamed intent leaves both halves unchanged and a box moved one block moves the grid; and the hashes the refusal tells the author to copy are printed at validation, refused runs included, so the remedy is reachable from the state that needs it",
+      "general_form": "the walk record's freshness key is over what the walk depends on and nothing else — the derived grid (every placed box's corner, extent, floor and headroom, every placed seam's cells, crossing and rise, the whole's volumes and region) and the ways a body moves by (every edge whole, the entry, the goal, the critical path, the beats, the stations) and what detail put in the whole (every bound place, its piece's template bytes, where its owed names are re-bound) — so a dsl_version bump, a reformat, a reworded note or a renamed intent leaves both halves unchanged and a box moved one block moves the grid; and the hashes the refusal tells the author to copy are printed at validation, refused runs included, so the remedy is reachable from the state that needs it",
       "id": "gal-01",
       "note": "Reproduced before repair: with the engine at 0.21.0 and the gallery's 34 documents bumped with it, `delvec build site-plan` exited 1 at DW0841 and tools/ci/gallery-build.py refused, so no committed act could produce the tree a re-walk needs. Denominator: one walk-record.json per walked campaign, and 3 of 3 records in this tree (the site-plan overlay and the two probes that carry one) were re-keyed by the instrument with their verdicts unchanged. This row declares NO `applies_when`, and that is the measurement rather than the absence of one: the binding is a campaign-source glob with no `contains`, so the file IS the object and the probe is self-measuring, exactly the shape `probe_is_self_measuring` recognises. The precondition it used to declare — `site-plan.json` has a node — counts a population one step behind nothing: the objects that carry this defect are walk records, and a site plan with nodes cannot carry it until one exists. That precondition therefore reported UNBOUND on every site-plan campaign's FIRST staging, which is the staging whose whole purpose is the walk that writes the record, and `references/walk.md` forbids writing the record before that walk — a red no creator could clear, on a gate whose only route through was the deliberate override. Measured with the precondition removed: 0 binding, 0 precondition, OUT-OF-STAGE on a pre-detail blockout and INAPPLICABLE elsewhere, and BOUND from the second staging onward, when a record exists for DW0841's key to be over.",
       "round": null,
@@ -2362,7 +2354,7 @@
     },
     {
       "applies_when": {
-        "glob": "world.json",
+        "glob": "design/*",
         "kind": "campaign"
       },
       "binding": {
@@ -2419,7 +2411,7 @@
     },
     {
       "applies_when": {
-        "glob": "world.json",
+        "glob": "design/*",
         "kind": "campaign"
       },
       "binding": {

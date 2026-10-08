@@ -149,7 +149,7 @@ are looking at.** Neither answer is "make a prefab now".
   point, a room whose chest a `collect` has to adopt, a shape the pools do not
   hold. Then you owe a piece, and you build it **after the design gate at step 4
   and before step 5**, entering *Reference: when the prefab library has no piece
-  you need* at that point. That is the section's second entrance; step 13.3 is
+  you need* at that point. That is the section's second entrance; step 9.2 is
   the other.
 
 **After the gate, for the gate's own reason.** Step 4 confirms the design on
@@ -295,6 +295,12 @@ form and the commands are in *Reference: drawing the map's reference*.
    - `delvec validate` prints every box's derived corner and which seam placed
      it. Read your `volumes[]`, `sightlines[]` and `views[]` against that
      output — they are still world coordinates.
+   - **A sightline or a view is only as long as the served view distance**:
+     `16 × world.view_distance` blocks, 160 at the floor, and the build refuses
+     a longer one. A vista
+     longer than that declares the distance it needs (the refusal names the
+     fewest chunks), because what its far end looks at is never sent to a
+     client standing at its near end.
 
 **A site-plan campaign has one area, `area/site`.** Quests, NPCs and waves name
 it; `world.json`'s `areas[]` is empty, and declaring both authorities is

@@ -76,11 +76,28 @@
         "node": "node/long-gallery",
         "objective": "obj/walk-the-long-gallery",
         "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/reach-the-hall-end",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/long-hall",
+        "objective": "obj/arrive-at-the-porch",
+        "quest": "quest/long-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/back-in-the-hall",
+        "quest": "quest/far-hall"
       }
     ],
     "critical_path": [
       "node/near-hall",
       "node/annex",
+      "node/long-hall",
+      "node/near-hall",
       "node/far-hall",
       "node/long-gallery",
       "node/far-hall",
@@ -228,6 +245,26 @@
         },
         "id": "edge/ferry-back",
         "one_way": "a-to-b"
+      },
+      {
+        "a": "node/annex",
+        "b": "node/long-hall",
+        "class": "carry",
+        "gating": {
+          "quest": "quest/near-hall"
+        },
+        "id": "edge/long-hall-in",
+        "one_way": "a-to-b"
+      },
+      {
+        "a": "node/long-hall",
+        "b": "node/near-hall",
+        "class": "carry",
+        "gating": {
+          "quest": "quest/long-hall"
+        },
+        "id": "edge/long-hall-out",
+        "one_way": "a-to-b"
       }
     ],
     "entry": "node/near-hall",
@@ -297,9 +334,15 @@
         "intent": "side-gallery",
         "note": "The long gallery on the hall's roof, up a stair from the far hall: three identical bays a body is returned through until it has crossed enough (spec-0086).",
         "size_class": "room"
+      },
+      {
+        "id": "node/long-hall",
+        "intent": "side-gallery",
+        "note": "Station 4's hall in its own area: the party is carried in at the porch and runs until the loop lets it go.",
+        "size_class": "hall"
       }
     ]
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.1",
   "stage": "layout-graph"
 }

@@ -64,7 +64,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::{LegRoute, SNAP_RADIUS, World};
 use crate::compiler::plan::{Plan, ResolvedAnchor, Step};
-use delvewright_dsl::stages::Objective;
+use delvewright_dsl::Objective;
 use delvewright_dsl::{DwCode, ExitTier};
 
 delvewright_dsl::dw_code! {

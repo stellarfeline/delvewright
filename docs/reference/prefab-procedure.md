@@ -91,9 +91,8 @@ class it must be answered with, the owed anchor names and the whole's
 palette; the piece is authored against that and nothing else, and must be
 exactly the handed extent — `DW0843` refuses undersize exactly as oversize.
 The output is derived from the site plan on every invocation and is an input
-to nothing; ask again whenever it is wanted. It refuses without a passed,
-fresh `walk-record.json` (`DW0841`), so the whole is walked before this step
-can begin. The program that answers it is written at `programs/<place
+to nothing; ask again whenever it is wanted. It asks for no walk record: the
+walk is taken on the detailed world, after this step. The program that answers it is written at `programs/<place
 stem>.json` inside the campaign, reading the handed values through
 parameters under the `handed/` prefix, and is expanded, judged, frozen and
 bound by **one verb**, `delvec detail <campaign-dir> <place>` (spec-0058;

@@ -9,7 +9,7 @@ data — an item's `minecraft:attribute_modifiers` component carries its
 `attack_damage`, `attack_speed`, `armor` and `armor_toughness` contributions —
 so the table is EXTRACTED, never hand-maintained. A hand-typed weapon table is
 exactly the "invented precision" this codebase refuses (see `DEFAULT_FOLLOW_RANGE`
-in `nav.rs` and `MODEL_MARGIN` in `clearance.rs` for the same discipline).
+in `compiler/nav/wave.rs` and `MODEL_MARGIN` in `clearance.rs` for the same discipline).
 
 Deterministic, offline once the source is fetched, no dependencies (Python 3
 stdlib). Same shape and provenance discipline as `extract-item-stack-sizes.py`.

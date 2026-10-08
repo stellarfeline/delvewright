@@ -1,5 +1,5 @@
 //! DSL v0.4 (spec-0008 + addendum, spec-0009) negative tests for the v0.4-only
-//! semantic checks (`v04_checks` in `validate.rs`): mannequin skins, wave-mob
+//! semantic checks (`dsl::validate`, run from each object's module): mannequin skins, wave-mob
 //! `effects`, `set-block` block ids, environment triggers, and the
 //! despawned-npc `talk-to` guard. Each test bumps only the stage(s) that carry
 //! the v0.4 construct under test to `dsl_version 0.4.0` (avoiding an incidental

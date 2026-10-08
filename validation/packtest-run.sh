@@ -98,7 +98,10 @@ esac
 # The heap default and the OOM rule every server this engine starts shares.
 # shellcheck source=tools/lib/server-heap.sh
 . "$here/../tools/lib/server-heap.sh"
-heap_max="$(dw_server_heap_max)"
+# The tree compose boots is `$output` resolved against THIS directory (the
+# compose file's); the heap statement is read from that same tree.
+build_dir="$(dw_compose_build_dir "$here" "$output")" || exit 2
+heap_max="$(dw_server_heap_max "$build_dir")"
 
 export DELVE_OUTPUT="$output"
 cache="${DW_SERVER_CACHE:-$here/server-cache}"
@@ -194,9 +197,10 @@ case "$boot_log" in
     ;;
 esac
 # BINDING: the heap the JVM actually got, in itzg's own words. The ceiling comes
-# from the shared entrypoint (versions.toml [server].heap_max); a server that
-# reports anything else was not given it, and a pass on itzg's 1G is a pass that
-# the next larger campaign turns into a hang.
+# from the shared entrypoint (the build's server/resources.properties heap-max,
+# never below versions.toml [server].heap_max); a server that reports anything
+# else was not given it, and a pass on itzg's 1G is a pass that the next larger
+# campaign turns into a hang.
 case "$boot_log" in
   *"and max to $heap_max"*) : ;;
   *)

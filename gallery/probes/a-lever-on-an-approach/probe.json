@@ -1,0 +1,15 @@
+{
+  "code": "DW0964",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/3/prop",
+      "value": {
+        "block": "minecraft:lever[face=floor,facing=north]"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The vantage's approach trigger given a lever: a prop is the visible object a click acts on at its own cell, and an approach is a body's position - the lever would be placed and nothing would ever read it. Refused rather than ignored, because a field that binds to nothing is the shape every other probe here exists to catch. It declares no unit: `prop` on a trigger is bound by the ferry's tiller (a `use`, whose flip vanilla reports) and by the hearth's stone (a `strike`, whose hit area is fitted over the stone)."
+}

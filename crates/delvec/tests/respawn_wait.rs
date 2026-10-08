@@ -97,6 +97,13 @@ fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
     .unwrap()
 }
 
+fn text_lines(out: &BuildOutput) -> Vec<&str> {
+    out.iter()
+        .filter(|(p, _)| p.starts_with("datapack/") && p.ends_with(".mcfunction"))
+        .flat_map(|(_, b)| std::str::from_utf8(b).unwrap().lines())
+        .collect()
+}
+
 fn datapack_text(out: &BuildOutput) -> String {
     out.iter()
         .filter(|(p, _)| p.starts_with("datapack/"))
@@ -105,14 +112,13 @@ fn datapack_text(out: &BuildOutput) -> String {
         .join("\n")
 }
 
-/// Absent, nothing of the wait is emitted: no `rw_*` function, no clock, no
-/// census ledger, and the respawn edge fires `cp_respawn_fire` directly.
+/// Absent, nothing of the wait is emitted: no `rw_*` function, no clock, and the
+/// respawn edge fires `cp_respawn_fire` directly.
 #[test]
 fn absent_emits_nothing_of_the_wait() {
     let out = build(&fixture());
     assert!(!out.keys().any(|p| p.contains("/function/rw_")));
     assert!(!datapack_text(&out).contains("dw.rwait"));
-    assert!(!out.contains_key("validation/observer-census.json"));
     assert!(
         fn_body(&out, "cp_respawn_check").contains(&format!("run function {NS}:cp_respawn_fire"))
     );
@@ -523,4 +529,88 @@ fn the_answer_lock_check_finds_each_hole() {
     });
     assert_eq!(late.late_enables.len(), 1, "{late:?}");
     assert!(!late.holds());
+}
+
+/// A cutscene viewer is out of play whether or not the campaign declares a wait:
+/// every positional player selector excludes the tag (or stands at an allowed
+/// site), the census binds, and an approach trigger carries the exclusion.
+#[test]
+fn a_campaign_with_no_wait_guards_every_positional_selector() {
+    let out = build(&fixture());
+    let c = observer::census(&out);
+    assert!(c.selectors > 0 && c.guarded > 0, "{c:?}");
+    assert!(c.unguarded.is_empty(), "{:?}", c.unguarded);
+    let ledger = out
+        .get("validation/observer-census.json")
+        .expect("the census ledger ships with every build");
+    let ledger: serde_json::Value = serde_json::from_slice(ledger).unwrap();
+    assert_eq!(ledger["unguarded"], 0);
+    let approach: Vec<&str> = text_lines(&out)
+        .into_iter()
+        .filter(|l| l.contains("if entity @a[distance=..") && l.contains(":trig_"))
+        .collect();
+    assert!(!approach.is_empty(), "the fixture has no approach trigger");
+    for l in approach {
+        assert!(l.contains("tag=!dw_cutscene"), "{l}");
+    }
+}
+
+/// spec-0085's `in` box meets the unconditional census (`DW0926`): a boxed
+/// message, sound or item is addressed to the bodies standing in the box, so
+/// its selector excludes a cutscene watcher, while a boxed status effect stays
+/// at the allowed `status effect` site. Without the exclusion every build that
+/// narrates into a box fails the engine's own self-check.
+#[test]
+fn a_boxed_audience_excludes_the_watcher_but_a_boxed_status_effect_is_allowed() {
+    use delvewright_dsl::{StealthZone, Verb};
+    let mut c = fixture();
+    let zone: StealthZone =
+        serde_json::from_value(serde_json::json!({ "anchor": "anchor/gate", "extent": [2, 1, 2] }))
+            .unwrap();
+    let beat = c.quests.content.quests[0]
+        .on_objective_complete
+        .values_mut()
+        .next()
+        .unwrap();
+    let mut boxed = 0;
+    for e in beat.iter_mut() {
+        if matches!(e.verb, Verb::Narrate { .. } | Verb::GiveItem { .. }) {
+            e.within = Some(zone.clone());
+            boxed += 1;
+        }
+    }
+    assert_eq!(boxed, 2, "the fixture's beat narrates and gives an item");
+    let mut blind: delvewright_dsl::QuestEffect = serde_json::from_value(serde_json::json!({
+        "type": "give-effect", "effect": "minecraft:slowness", "seconds": 3,
+        "in": { "anchor": "anchor/gate", "extent": [2, 1, 2] }
+    }))
+    .unwrap();
+    blind.within = Some(zone);
+    beat.push(blind);
+    let out = build(&c);
+    let census = observer::census(&out);
+    assert!(census.unguarded.is_empty(), "{:?}", census.unguarded);
+    let lines = text_lines(&out);
+    let subtitle = lines
+        .iter()
+        .find(|l| l.contains(" subtitle ") && l.contains("dx="))
+        .unwrap_or_else(|| panic!("the boxed narrate"));
+    assert!(subtitle.contains(",tag=!dw_cutscene]"), "{subtitle}");
+    let give = lines
+        .iter()
+        .find(|l| l.starts_with("give @a[") && l.contains("dx="))
+        .unwrap_or_else(|| panic!("the boxed give-item"));
+    assert!(give.contains(",tag=!dw_cutscene]"), "{give}");
+    let effect = lines
+        .iter()
+        .find(|l| l.contains("effect give @a[") && l.contains("minecraft:slowness"))
+        .unwrap_or_else(|| panic!("the boxed status effect"));
+    assert!(
+        !effect.contains("dw_cutscene"),
+        "the allowed site: {effect}"
+    );
+    assert!(
+        census.allowed.get("status effect").copied().unwrap_or(0) > 0,
+        "{census:?}"
+    );
 }

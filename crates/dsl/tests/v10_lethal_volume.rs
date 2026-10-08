@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n_inventory, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(
@@ -122,7 +122,7 @@ fn id_and_anchor_defects_are_reported() {
 #[test]
 fn the_message_is_inventoried() {
     let c = parse_campaign(&raw(quests_doc(GOOD))).expect("parses");
-    let inv: BTreeMap<String, String> = l10n_inventory(&c);
+    let inv: BTreeMap<String, String> = l10n::inventory(&c);
     assert_eq!(
         inv.get("lethal.the-drop.message").map(String::as_str),
         Some("The undertow takes you."),

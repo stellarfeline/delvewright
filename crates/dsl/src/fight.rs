@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 
 use crate::envelope::Campaign;
 use crate::healthbar::HealthBar;
-use crate::stages::{
+use crate::{
     Actor, EncounterTier, Objective, OnKill, QuestEffect, Verb, Wave, for_each_campaign_effect,
 };
 
@@ -212,6 +212,12 @@ fn fires_wave<'a>(effs: impl IntoIterator<Item = &'a QuestEffect>, wave_id: &str
 /// objective references the wave (defensive fallback for a wave declared with a
 /// kill but no explicit spawn). `None` if nothing spawns it.
 ///
+/// "Single-area" is the placement authority's answer ([`crate::placement::Placement`],
+/// spec-0093 §6.1): a site-plan campaign declares no `areas[]` and has exactly
+/// one area, [`crate::siteplan::SITE_AREA`]. Counting `areas[]` alone called the
+/// one kind of campaign that is always single-area multi-area, and refused every
+/// trigger-fired wave on a site plan as unplaceable.
+///
 /// **Every root is walked DEEP** (`fires_wave`), through
 /// [`QuestEffect::nested_effect_lists`] — the DSL's single authority on effect
 /// nesting, and the same authority `emit::all_campaign_effects` walks to decide
@@ -254,8 +260,19 @@ fn wave_area_seen<'a>(
             return quest_area(campaign, q.id.as_str());
         }
     }
-    let single_area = campaign.world.content.areas.len() == 1;
-    let sole_area = || campaign.world.content.areas.first().map(|a| a.id.as_str());
+    // Which campaigns are single-area is the placement authority's to say
+    // (spec-0093 §6.1): a site plan has exactly one area, `SITE_AREA`, and an
+    // empty `areas[]`; a prefab campaign is single-area when it declares one.
+    let (single_area, sole_area): (bool, Option<&str>) =
+        match crate::placement::Placement::of(campaign) {
+            crate::placement::Placement::SitePlan => (true, Some(crate::siteplan::SITE_AREA)),
+            crate::placement::Placement::Prefabs => (
+                campaign.world.content.areas.len() == 1,
+                campaign.world.content.areas.first().map(|a| a.id.as_str()),
+            ),
+            crate::placement::Placement::NoMap => (false, None),
+        };
+    let sole_area = || sole_area;
     // 2. An environment trigger or trap payload that fires it. Both are global
     //    effect roots carrying no area of their own; in a single-area campaign the
     //    sole area is unambiguous. (Multi-area trigger-only waves are not

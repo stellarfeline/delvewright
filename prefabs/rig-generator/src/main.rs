@@ -22,7 +22,11 @@
 //! clips — `rise` (36 frames at 5 ticks, out of a pit), `idle` (60 at 5, a
 //! looping sway), `windup` (4 at 3, a lean back of its upper body: 10 ticks),
 //! `strike` (8 at 2, a slam: 17 ticks until the last frame is drawn) and
-//! `retract` (`rise` reversed, back into the pit).
+//! `retract` (`rise` reversed, back into the pit) — and two more slams at
+//! other reaches, `strike-near` and `strike-far`, for a strike that locks
+//! where a player stands (spec-0094): a display entity cannot bend live to a
+//! point, so a limb that reaches a player at any distance is a set of slams a
+//! lock chooses among.
 //!
 //! The slam's last frame is built joint by joint: the base stands straight up
 //! out of the pit for five segments, arches forward over head height, comes
@@ -179,17 +183,25 @@ fn lean(bend: f64) -> Vec<f64> {
         .collect()
 }
 
-/// The slam's joints, negative bending toward the blow: up out of the pit,
-/// over head height, down, along the floor, and the tip curled up.
-fn slam() -> Vec<f64> {
+/// The segments the slam carries across over head height before it comes
+/// down: the reach `strike` lands at; `strike-near` stands taller and comes
+/// down sooner, `strike-far` spends the tail on a longer reach.
+const ACROSS: usize = 8;
+const NEAR: (usize, usize) = (5, 3);
+const FAR: (usize, usize) = (0, 12);
+
+/// The slam's joints, negative bending toward the blow: up out of the pit
+/// (`up` segments above the base), over head height (`across` segments),
+/// down, along the floor, and the tip curled up.
+fn slam(up: usize, across: usize) -> Vec<f64> {
     let q = PI / 2.0;
     let mut j: Vec<f64> = Vec::with_capacity(N_SEG);
     let mut run = |n: usize, each: f64| j.extend(std::iter::repeat_n(each, n));
-    run(BASE_SEGS - 1, 0.0); // straight up; the last base joint starts the arch
+    run(BASE_SEGS - 1 + up, 0.0); // straight up; the last joint starts the arch
     run(3, -q / 3.0); // over, to horizontal
-    run(8, 0.0); // across, over head height
+    run(across, 0.0); // across, over head height
     run(3, -q / 3.0); // down
-    run(1, 0.0);
+    run(1 + up, 0.0); // as far down as it went up
     run(3, q / 3.0); // along the floor
     run(4, 0.0); // the club, on the floor
     run(2, q / 2.5); // the tip curls up and back
@@ -260,19 +272,23 @@ fn tentacle() -> Rig {
         })
         .collect();
     let back = lean(WINDUP_BEND);
-    let down = slam();
-    let strike: Vec<Vec<Transform>> = (0..STRIKE)
-        .map(|f| {
-            let p = (f + 1) as f64 / STRIKE as f64;
-            let e = p * p;
-            let joints = back
-                .iter()
-                .zip(&down)
-                .map(|(a, b)| a + (b - a) * e)
-                .collect();
-            pose(D_UP, 0.0, 0.0, 0.0, Profile::Joints(joints))
-        })
-        .collect();
+    let strike_to = |down: Vec<f64>| -> Vec<Vec<Transform>> {
+        (0..STRIKE)
+            .map(|f| {
+                let p = (f + 1) as f64 / STRIKE as f64;
+                let e = p * p;
+                let joints = back
+                    .iter()
+                    .zip(&down)
+                    .map(|(a, b)| a + (b - a) * e)
+                    .collect();
+                pose(D_UP, 0.0, 0.0, 0.0, Profile::Joints(joints))
+            })
+            .collect()
+    };
+    let strike = strike_to(slam(0, ACROSS));
+    let strike_near = strike_to(slam(NEAR.0, NEAR.1));
+    let strike_far = strike_to(slam(FAR.0, FAR.1));
     let mut retract = rise.clone();
     retract.reverse();
     let mut clips = BTreeMap::new();
@@ -280,6 +296,14 @@ fn tentacle() -> Rig {
     clips.insert("idle".to_string(), clip(CADENCE, true, idle));
     clips.insert("windup".to_string(), clip(WINDUP_CADENCE, false, windup));
     clips.insert("strike".to_string(), clip(STRIKE_CADENCE, false, strike));
+    clips.insert(
+        "strike-near".to_string(),
+        clip(STRIKE_CADENCE, false, strike_near),
+    );
+    clips.insert(
+        "strike-far".to_string(),
+        clip(STRIKE_CADENCE, false, strike_far),
+    );
     clips.insert("retract".to_string(), clip(CADENCE, false, retract));
     Rig {
         rig_version: rig::RIG_VERSION,
@@ -364,6 +388,27 @@ mod tests {
             .collect();
         assert!(floor.len() >= 7, "{last:?}");
         assert!(last.iter().all(|c| c[2] >= -3), "{last:?}");
+    }
+
+    /// The three slams land at three reaches along the floor in front: the
+    /// near one's nearest floor cell is nearer than the middle one's, the far
+    /// one's furthest further, and each lays a run of floor cells.
+    #[test]
+    fn three_slams_land_at_three_reaches() {
+        let r = tentacle();
+        let floor = |clip: &str| -> Vec<i32> {
+            rig::last_frame_footprint(&r.clips[clip], Facing::South)
+                .iter()
+                .filter(|c| c[0] == 0 && (0..=1).contains(&c[1]) && c[2] > 2)
+                .map(|c| c[2])
+                .collect()
+        };
+        let (near, mid, far) = (floor("strike-near"), floor("strike"), floor("strike-far"));
+        for f in [&near, &mid, &far] {
+            assert!(f.len() >= 5, "{f:?}");
+        }
+        assert!(near.iter().min() < mid.iter().min(), "{near:?} {mid:?}");
+        assert!(far.iter().max() > mid.iter().max(), "{far:?} {mid:?}");
     }
 
     /// The base holds its pose through the wind-up's end and the whole strike.

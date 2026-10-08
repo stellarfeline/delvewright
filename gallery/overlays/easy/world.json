@@ -25,6 +25,15 @@
           "min": 3
         },
         "prefab_pool": "pool/gallery-annex"
+      },
+      {
+        "id": "area/long-hall",
+        "name": "The Long Hall",
+        "pieces": {
+          "max": 1,
+          "min": 1
+        },
+        "prefab": "prefab/gallery-long-hall"
       }
     ],
     "atmospheres": [
@@ -125,6 +134,6 @@
     "title": "The Gallery",
     "weather": "clear"
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.1",
   "stage": "world"
 }

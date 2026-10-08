@@ -563,6 +563,7 @@ id = "action-download-artifact"
 value = "actions/download-artifact@v4"
 sites = [
     ".github/actions/delvec-binary/action.yml",
+    ".github/actions/gallery-pieces/action.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/engine-release.yml",
     ".github/workflows/plugin-release.yml",

@@ -21,7 +21,7 @@
 //! 1. **Fold.** Every finding shares one cause and one repair, so they are one
 //!    diagnostic naming all of them. The code is unchanged and still fires per
 //!    item the moment the items differ — the folded arm is reachable only in the
-//!    state that makes them identical. Instances: [`codes::QUEST_NOT_EXPANDED`]
+//!    state that makes them identical. Instances: [`crate::quest::check::QUEST_NOT_EXPANDED`]
 //!    when stage 5 is empty (`crate::validate`), `DW0842` at a zero box count
 //!    (`compiler::detail`), `DW0826` when more than one thing leaves the region
 //!    (`crate::siteplan`).
@@ -471,16 +471,8 @@ pub mod codes {
         pub const SCHEMA: DwCode = DwCode::new("DW0100", ExitTier::Build);
     }
     crate::dw_code! {
-        /// Envelope `stage` does not match the document's slot.
-        pub const STAGE_MISMATCH: DwCode = DwCode::new("DW0101", ExitTier::Build);
-    }
-    crate::dw_code! {
         /// Unsupported `dsl_version`.
         pub const DSL_VERSION: DwCode = DwCode::new("DW0102", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Inconsistent `campaign_id` across stages.
-        pub const CAMPAIGN_ID_MISMATCH: DwCode = DwCode::new("DW0103", ExitTier::Build);
     }
     crate::dw_code! {
         /// Malformed id syntax (kebab-case / prefix).
@@ -495,70 +487,6 @@ pub mod codes {
         pub const DANGLING_REF: DwCode = DwCode::new("DW0112", ExitTier::Build);
     }
     crate::dw_code! {
-        /// Stage-6 dialogue node unreachable from `root`.
-        pub const DIALOGUE_UNREACHABLE: DwCode = DwCode::new("DW0120", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Stage-6 dialogue `root`/`next` references an unknown node.
-        pub const DIALOGUE_BAD_REF: DwCode = DwCode::new("DW0121", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Stage-6 dialogue effect references an objective that is unknown, not a
-        /// `talk-to`, or a `talk-to` on a different NPC (foreign effect).
-        pub const DIALOGUE_BAD_OBJECTIVE: DwCode = DwCode::new("DW0122", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A stage-5 `talk-to` objective has no reachable completing dialogue option
-        /// (the static half of the compiler's `DW0203` deadlock guarantee).
-        pub const DIALOGUE_UNCOVERED: DwCode = DwCode::new("DW0123", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Quest dependency cycle.
-        pub const PLAN_CYCLE: DwCode = DwCode::new("DW0130", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// `finale` is not a declared quest.
-        pub const FINALE_UNKNOWN: DwCode = DwCode::new("DW0131", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// `finale` is not the convergent sink of the plan: some declared quest is
-        /// not a transitive dependency of it.
-        ///
-        /// **The name deliberately does not contain `FINALE_UNREACHABLE`, which
-        /// belongs to `DW0201`.** That code says the finale can never complete; this
-        /// one says nothing at all about the finale being reachable — in the fixture
-        /// that raises it the finale completes perfectly well and a side trip hangs
-        /// off the plan. Both are `DwCode`, so nothing but the name distinguishes
-        /// them at a call site, and `tools/ci/check-dw-codes.py` credits a bare
-        /// constant name mentioned in a crate's tests to **that crate's** code — so
-        /// one shared name would buy coverage for whichever rule the file happens to
-        /// sit next to.
-        pub const PLAN_NOT_CONVERGENT: DwCode = DwCode::new("DW0132", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// An optional quest inside the finale's dependency closure (spec-0051
-        /// §8.1) — including a finale that declares itself optional.
-        pub const OPTIONAL_ON_SPINE: DwCode = DwCode::new("DW0866", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A mandatory quest whose `depends_on` edge or stage-5 `quest-complete`
-        /// trigger names an optional quest (spec-0051 §8.2).
-        pub const MANDATORY_ON_OPTIONAL: DwCode = DwCode::new("DW0867", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A mandatory objective gated on a flag only an optional quest produces
-        /// (spec-0051 §8.3) — the mainline key behind participation.
-        ///
-        /// The participation-minimal replay (`DW0204`) is the compensating stronger
-        /// check behind it; this one refuses at the edge so the message can name
-        /// the strand.
-        pub const MAINLINE_KEY_OPTIONAL: DwCode = DwCode::new("DW0868", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Objective `after` cycle.
-        pub const AFTER_CYCLE: DwCode = DwCode::new("DW0140", ExitTier::Build);
-    }
-    crate::dw_code! {
         /// Anchor not provided by the area's bound prefab.
         pub const ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0142", ExitTier::Build);
     }
@@ -567,80 +495,9 @@ pub mod codes {
         pub const ITEM_UNKNOWN: DwCode = DwCode::new("DW0143", ExitTier::Build);
     }
     crate::dw_code! {
-        /// (spec-0021) An `equipment` or `loot` enchantment id is not in the pinned
-        /// 1.21.11 enchantment registry.
-        pub const ENCHANTMENT_UNKNOWN: DwCode = DwCode::new("DW0433", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0021) An enchantment level is outside the 1..=255 range vanilla's
-        /// `minecraft:enchantments` component can carry.
-        pub const ENCHANTMENT_LEVEL: DwCode = DwCode::new("DW0434", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0021) Two `loot` entries target the same anchor, so one would
-        /// silently overwrite the other's contents.
-        pub const LOOT_DUPLICATE_ANCHOR: DwCode = DwCode::new("DW0435", ExitTier::Build);
-    }
-    crate::dw_code! {
         /// (spec-0021) A `loot` declaration carries more stacks than the container
         /// it fills has slots.
         pub const LOOT_TOO_MANY_ITEMS: DwCode = DwCode::new("DW0432", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A single-slot fill's `count` exceeds the item's `minecraft:max_stack_size`
-        /// in the pinned 1.21.11 registry. `item replace … container.<n> with <item>
-        /// <count>` fails **silently** above the cap, shipping an empty slot.
-        pub const ITEM_COUNT_OVER_STACK: DwCode = DwCode::new("DW0436", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// An `interact` declares `missing_item_hint` without a `requires_item`: the
-        /// hint answers a gate that does not exist, so it could never narrate.
-        pub const MISSING_ITEM_HINT_WITHOUT_ITEM: DwCode = DwCode::new("DW0437", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Planned quest (stage 4) has no expansion in stage 5.
-        pub const QUEST_NOT_EXPANDED: DwCode = DwCode::new("DW0150", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Stage-5 quest is not planned in stage 4.
-        pub const QUEST_NOT_PLANNED: DwCode = DwCode::new("DW0151", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Stage-2 NPC has no stage-6 dialogue tree.
-        pub const NPC_WITHOUT_TREE: DwCode = DwCode::new("DW0152", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Stage-6 dialogue tree references an NPC not declared in stage 2.
-        pub const TREE_WITHOUT_NPC: DwCode = DwCode::new("DW0153", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Area binds neither or both of `prefab` / `prefab_pool` (exactly one
-        /// required).
-        pub const PREFAB_BINDING: DwCode = DwCode::new("DW0160", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Area `prefab_pool` references a pool absent from `prefabs/` metadata.
-        pub const POOL_UNKNOWN: DwCode = DwCode::new("DW0161", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// Area `prefab` names a piece absent from `prefabs/` metadata — the same
-        /// obligation [`POOL_UNKNOWN`] carries on the other arm of the binding. It
-        /// is an error rather than a deferral because an area whose piece is absent
-        /// contributes no anchor set at all, so every per-area anchor proof over it
-        /// is SKIPPED rather than failed: a misspelling here is strictly less
-        /// checked than a correct name.
-        pub const PREFAB_UNKNOWN: DwCode = DwCode::new("DW0856", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6, spec-0017) A stage-7 edit script is structurally invalid: an edit
-        /// names a region no earlier `select` in its batch defined, a composition
-        /// (`union`/`intersect`/`subtract`) lists too few regions, a box `min`
-        /// exceeds `max` on an axis, a surface band's `from` exceeds `to`, a palette
-        /// recipe is empty / carries a non-positive or non-finite weight or `scale`,
-        /// a `matching` list is empty, or a morph `by`/`passes` is 0. (Unknown block
-        /// ids in recipes reuse [`BLOCK_UNKNOWN`] / `DW0193`; id-syntax and
-        /// duplicate-name violations reuse `DW0110`/`DW0111`.)
-        pub const EDIT_INVALID: DwCode = DwCode::new("DW0162", ExitTier::Build);
     }
     crate::dw_code! {
         /// (v0.3) A `kill` objective or `spawn-wave` effect references a `wave/<id>`
@@ -648,75 +505,9 @@ pub mod codes {
         pub const WAVE_UNKNOWN: DwCode = DwCode::new("DW0170", ExitTier::Build);
     }
     crate::dw_code! {
-        /// (v0.3) A declared wave is referenced by a `kill` objective but is never
-        /// spawned by any `spawn-wave` effect (referenced-but-never-spawned). A wave
-        /// must be spawned by some effect before its kill objective is reachable.
-        pub const WAVE_NEVER_SPAWNED: DwCode = DwCode::new("DW0171", ExitTier::Build);
-    }
-    crate::dw_code! {
         /// (v0.3) A `requires_flags` entry references a `flag/<id>` that no `set-flag`
         /// effect ever produces (dangling flag reference).
         pub const FLAG_UNKNOWN: DwCode = DwCode::new("DW0172", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §1) A wave declares `respawns_on_rest: true` but the campaign
-        /// declares no `bonfire` — nothing can ever re-seat it, so the field is a
-        /// silent no-op. Either add the bonfire the re-seat is meant to hang off, or
-        /// drop the field.
-        pub const REST_RESEAT_NO_BONFIRE: DwCode = DwCode::new("DW0370", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §1) The campaign places a `bonfire`
-        /// but no class kit declares a `flask`. Resting replenishes the flask to its
-        /// declared count; with no flask the rest interaction's whole recovery half
-        /// is a no-op and the souls loop has no consumable to spend, so this is a
-        /// build error rather than a design choice.
-        pub const BONFIRE_NO_FLASK: DwCode = DwCode::new("DW0476", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// **An item gate a class cannot bring.** An objective completes only for a
-        /// player holding a named item, and some class's player has no way to be
-        /// holding it: the item's only source in the whole campaign is *another*
-        /// class's kit, or it has no source at all.
-        ///
-        /// A delve is played by one to four players who each pick one class, so an
-        /// objective reachable only by one class's pick is an objective a party can
-        /// be assembled unable to finish — and the party finds out at the thing they
-        /// cannot press. Quantified over EVERY class for the same reason
-        /// [`BONFIRE_NO_FLASK`] is: one class that cannot bring it is as broken as
-        /// none, because a solo player of that class is a supported party.
-        pub const ITEM_GATE_UNBRINGABLE: DwCode = DwCode::new("DW0849", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §1) A kit item's potion `contents`
-        /// is not something 1.21.11 can pour: declared on an item that carries no
-        /// `minecraft:potion_contents` component, empty (neither a named potion nor
-        /// an effect), an unknown potion or status-effect id, an amplifier or
-        /// duration outside the field vanilla stores it in, a lasting effect with no
-        /// `duration`, an instantaneous one *with* a duration, or a malformed
-        /// `color`.
-        pub const KIT_POTION_INVALID: DwCode = DwCode::new("DW0486", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §1) A potion-bearing kit item
-        /// declares no `contents` at `dsl_version` 0.8.0 — the Uncraftable Potion, a
-        /// bottle that pours nothing. The placeholder flask, as a build error.
-        pub const KIT_POTION_MISSING: DwCode = DwCode::new("DW0487", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A `drops[]` `slot` entry does not
-        /// name a distinct slot the same entity's `equipment` actually fills — the
-        /// slot is empty, or the same slot is declared twice. A mob can only leave
-        /// behind a piece it wears, and it can only leave it behind once.
-        pub const DROP_SLOT_UNFILLED: DwCode = DwCode::new("DW0490", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// `drops[]` on an encounter that is
-        /// not billed `elite` or `boss`. Only a named fight leaves anything behind;
-        /// an ordinary mob's kit is never farmable (no-grind constitution), so the
-        /// declaration is refused rather than silently making rank-and-file gear
-        /// lootable.
-        pub const DROP_NOT_TIERED: DwCode = DwCode::new("DW0491", ExitTier::Build);
     }
     crate::dw_code! {
         /// (spec-0067) An `equipment` piece is declared where the pinned game will
@@ -725,17 +516,6 @@ pub mod codes {
         /// entities exclude the body. One code, three shapes in one message.
         /// Validation-tier (exit 1).
         pub const EQUIPMENT_UNSHOWN: DwCode = DwCode::new("DW0898", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0071 §2) **A purchase whose literals do not add up.** In one effect
-        /// list, a charge (`add-state` moving a datum down) fires at a balance that
-        /// cannot pay it — the floor its own `when` and its list's enclosing gate
-        /// leave open is below the amount charged, or nothing floors it at all — or
-        /// the arm that answers below the price stops at a ceiling that is not one
-        /// below where the charge starts, leaving a gap or an overlap. A price has no
-        /// field (spec-0032): it is written as gate terms and a charge, so the
-        /// engine compares the copies. Validation-tier (exit 1).
-        pub const PURCHASE_ARITHMETIC: DwCode = DwCode::new("DW0901", ExitTier::Build);
     }
     crate::dw_code! {
         /// (spec-0073 §8.1) **A health bar over a body whose health cannot move**:
@@ -766,21 +546,6 @@ pub mod codes {
         pub const ON_KILL_UNREACHABLE: DwCode = DwCode::new("DW0913", ExitTier::Build);
     }
     crate::dw_code! {
-        /// (spec-0076 §7) **A standing display the sidebar cannot draw as declared.**
-        /// A `state[]` datum declares `display: sidebar` and the slot cannot show
-        /// what it is handed: a second datum already asks for the one slot (the
-        /// sidebar holds one objective, and "first wins" would hide a decision the
-        /// creator has to make); the datum has no `name` (the slot's heading is the
-        /// display name, and without one the objective's id would stand on screen);
-        /// or the datum is `party`-scoped (its value lives on `#party`, and the
-        /// sidebar hides every `#`-prefixed holder, so the display would be an empty
-        /// heading). One rule about what the slot can draw, three ways to ask for
-        /// what it cannot — the `DW0520` shape. Validation-tier (exit 1).
-        /// Prescription: keep one `display`, give the datum a `name`, or declare it
-        /// `player`-scoped; a `party` purse keeps its announcement and stands nowhere.
-        pub const STATE_DISPLAY_UNDRAWABLE: DwCode = DwCode::new("DW0919", ExitTier::Build);
-    }
-    crate::dw_code! {
         /// (spec-0081 §6) **A celestial time whose shape states nothing a sky can
         /// show.** One rule about one value's shape, four ways to break it: the
         /// object names neither or both of `sun` / `moon`; it states a `phase` where
@@ -790,86 +555,6 @@ pub mod codes {
         /// body, remove the phase nobody can see, state the phase the party sees, or
         /// remove the restated phase.
         pub const CELESTIAL_TIME: DwCode = DwCode::new("DW0931", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0082 §5.1, §5.5) **An assembly's rig cannot be emitted as
-        /// declared.** The library holds no `rigs/<name>/rig.json` for the
-        /// assembly's `rig`, or the file does not parse, or it breaks a structural
-        /// rule (no part, an unknown block, a clip with no frame, a frame short a
-        /// part, a cadence outside `1..=20`, a non-finite transform, a zero scale);
-        /// or an `initial`, a strike step's `windup`/`strike`, or a `play-clip`
-        /// names a clip the rig lacks — the message lists the rig's clips.
-        /// Validation-tier (exit 1). Prescription: regenerate the rig with its
-        /// generator, or name a clip the rig declares (`delvec rig describe`
-        /// prints them).
-        pub const ASSEMBLY_RIG: DwCode = DwCode::new("DW0935", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A `collect` `dropped_by` is not backed by the wave it names:
-        /// the wave declares no `{item}` drop of this objective's item, the count
-        /// asks for more copies than the wave's mobs can yield, or the objective
-        /// also declares a `container` (the item cannot come out of a box *and* off
-        /// a body).
-        pub const DROP_COLLECT_UNSOURCED: DwCode = DwCode::new("DW0492", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A `collect` `dropped_by` is not ordered after the fight that
-        /// produces it: no `kill` objective for that wave precedes this collect in
-        /// the objective graph. Without that edge "kill the boss, take its key" is
-        /// an authoring intention the quest graph cannot prove, and the collect
-        /// reads as reachable from the campaign's first tick.
-        pub const DROP_COLLECT_UNORDERED: DwCode = DwCode::new("DW0493", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0031, DSL v0.10) A `lethal_volumes[]` entry's `message` is blank.
-        ///
-        /// The volume would still kill — and would kill in silence, which is the one
-        /// thing the declaration exists to prevent. There is no compiler default that
-        /// could be right for a cliff, a lava pit and an acid pool at once, so a blank
-        /// wording is refused rather than papered over: a gate that reports green
-        /// while the player learns nothing is exactly the vacuous pass CLAUDE.md names.
-        pub const LETHAL_MESSAGE_BLANK: DwCode = DwCode::new("DW0512", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0086 §3.2, §3.4, §3.5) **A loop whose release is not a fact about the
-        /// party, or that has none.**
-        ///
-        /// One rule — *the gate is the release, and the release is the party's* —
-        /// asked four ways: a loop with no gate term at all (it holds forever, a
-        /// soft-lock spelled out); a `requires_state` term naming a `player`-scoped
-        /// datum (one player released and another looped is a party split in two);
-        /// a `counts` naming a `player`-scoped datum (for the same reason); and a
-        /// `teleport` inside `on_cross` (the body was just moved, and a second move in
-        /// the same tick is two carries with one position). Validation-tier (exit 1).
-        /// Prescription: a `party` datum, a flag, or a release the party reaches.
-        pub const LOOP_GATE: DwCode = DwCode::new("DW0949", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0062) **A killing volume and what shows it disagree.**
-        ///
-        /// One rule, three shapes, and every remedy each names is admitted by the
-        /// others — which is why one code carries all of them (spec-0062 §4).
-        ///
-        /// * **Caught floor that shows nothing.** Some cell the party can walk to
-        ///   lies in the volume's keep-out, and the block under or in it is not one
-        ///   of the volume's `shown_by`. The player reads stone and dies on it. The
-        ///   remedy is the geometry's: lower the volume so its keep-out's top course
-        ///   lies under the floor, draw its `extent` in, or author a block vanilla
-        ///   hurts with under those cells and declare it. Never mark walkable-looking
-        ///   ground unwalkable — the compiler knows and the player does not.
-        /// * **A declared signal the bytes do not hold.** A `shown_by` block under
-        ///   or in no caught cell, whether the list is wrong or the volume catches
-        ///   nothing at all. The `DW0887` shape, on a volume instead of a waterline.
-        /// * **A `shown_by` naming a block vanilla does not hurt a body with.** The
-        ///   document arm, and the only one answerable with nothing placed:
-        ///   `minecraft:stone` over stone is borne out by the bytes and shows
-        ///   nothing.
-        ///
-        /// The world arm is raised by `delvec::compiler::lethal` over the final
-        /// assembled world (whether a cell is floor is a fact about the settled
-        /// bytes, so nothing before assembly can answer it); the document arm here,
-        /// by [`crate::validate`].
-        pub const LETHAL_INVISIBLE: DwCode = DwCode::new("DW0891", ExitTier::Build);
     }
     crate::dw_code! {
         /// (spec-0088) **A gate that cannot stage a lethal volume.** Two shapes,
@@ -887,30 +572,6 @@ pub mod codes {
         /// The remedy is to leave `when` out, or to name a flag or a `party`
         /// datum. Raised by [`crate::validate`] with no world built.
         pub const LETHAL_STAGE_GATE: DwCode = DwCode::new("DW0953", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0031, DSL v0.10) **A grant whose removal is a later effect, not its
-        /// own duration.** A `give-effect` is still live at the moment a
-        /// `clear-effect` for the same effect fires in the same bundle, so the clear
-        /// — not the duration — is what ends it.
-        ///
-        /// A bundle that does not reach its end leaves the effect on the player: a
-        /// logout, a crash, a death mid-chain, a `sequence` whose remaining
-        /// `schedule` never runs. A duration expires with no cooperation from
-        /// anything, which is why `seconds` is mandatory and why vanilla's `infinite`
-        /// is absent from this surface — this diagnostic is what stops the same
-        /// hazard being rebuilt out of two effects that are individually fine.
-        pub const EFFECT_CLEARED_LIVE: DwCode = DwCode::new("DW0540", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0031, DSL v0.10) A `give-effect`'s `seconds` is zero or beyond
-        /// [`crate::MAX_EFFECT_SECONDS`], or its `amplifier` is beyond
-        /// [`crate::MAX_POTION_AMPLIFIER`].
-        ///
-        /// Zero is the grant that never happens — the unbound-vacuity class as a
-        /// number. The ceilings are vanilla's own field widths, so a duration typed
-        /// in ticks or milliseconds is caught instead of silently overflowing.
-        pub const EFFECT_GRANT_BOUNDS: DwCode = DwCode::new("DW0541", ExitTier::Build);
     }
     crate::dw_code! {
         /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
@@ -993,13 +654,6 @@ pub mod codes {
         pub const SKIN_INVALID: DwCode = DwCode::new("DW0190", ExitTier::Build);
     }
     crate::dw_code! {
-        /// (v0.4) A `talk-to` objective has no **ungated** reachable completing
-        /// dialogue option — every completing option is `requires_flags`-gated, so
-        /// the objective can deadlock the moment it activates (spec-0008 §1). Keep at
-        /// least one ungated completing path.
-        pub const DIALOGUE_FLAG_DEADLOCK: DwCode = DwCode::new("DW0191", ExitTier::Build);
-    }
-    crate::dw_code! {
         /// (v0.4) A wave mob `effects[].effect` is not a known 1.21.11 effect id.
         pub const EFFECT_UNKNOWN: DwCode = DwCode::new("DW0192", ExitTier::Build);
     }
@@ -1009,301 +663,24 @@ pub mod codes {
         pub const BLOCK_UNKNOWN: DwCode = DwCode::new("DW0193", ExitTier::Build);
     }
     crate::dw_code! {
-        /// (v0.4) An environment trigger id is malformed (`DW0110`-style) or
-        /// duplicated within the stage-5 `triggers` namespace.
-        pub const TRIGGER_INVALID: DwCode = DwCode::new("DW0194", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.4) A dialogue `talk-to` or `interact` objective targets an NPC after a
-        /// `despawn-npc` removes it on a reachable path (spec-0008 §5).
-        pub const NPC_DESPAWNED_REF: DwCode = DwCode::new("DW0195", ExitTier::Build);
-    }
-    crate::dw_code! {
         /// (v0.5) An area `lighting.min_light` is out of the 1..=14 range (spec-0010).
         pub const LIGHTING_RANGE: DwCode = DwCode::new("DW0196", ExitTier::Build);
     }
-    crate::dw_code! {
-        /// (v0.6) A stage-2 NPC declares `deferred: true` but **no** `spawn-npc` effect
-        /// anywhere in the campaign ever summons it — the NPC never enters the world,
-        /// so its dialogue tree and any `talk-to` on it are unreachable content. The
-        /// NPC-lifecycle dual of [`NPC_DESPAWNED_REF`] / `DW0195`.
-        ///
-        /// (0197/0198 were *reserved* by spec-0011's draft and released when that spec
-        /// renumbered to `DW0340`/`DW0341`; they were never emitted by any code.)
-        pub const NPC_NEVER_SPAWNED: DwCode = DwCode::new("DW0197", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6) A `talk-to` on a `deferred` NPC activates before the NPC can exist:
-        /// every `spawn-npc` for it sits in a quest that is a strict *descendant* of the
-        /// objective's quest on the stage-4 DAG (and none fires from a trigger or
-        /// dialogue), so the objective provably activates on an empty anchor.
-        pub const NPC_SPAWNED_LATE: DwCode = DwCode::new("DW0198", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6) A `cutscene` effect's shape is invalid: it mixes the multi-shot
-        /// `shots` list with the single-shot `path`/`seconds` fields, gives neither,
-        /// or declares a shot with an empty camera `path`. A cutscene must resolve to
-        /// at least one shot, and every shot to at least one camera position.
-        pub const CUTSCENE_SHAPE: DwCode = DwCode::new("DW0199", ExitTier::Build);
-    }
 
     crate::dw_code! {
-        /// (v0.6) `horizon: "ocean"` declared without a `boundary` (spec-0013):
-        /// validation-tier (exit 1). An infinite swimmable sea with no return rule is
-        /// an authoring error. Grouped in the DW032x world/region family by domain;
-        /// unlike the compiler-tier DW030x geometry codes it is raised at DSL
-        /// validation, so it exits 1.
-        pub const OCEAN_NO_BOUNDARY: DwCode = DwCode::new("DW0320", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6) `boundary.margin` outside the `0..=64` range (spec-0013):
-        /// validation-tier (exit 1).
-        pub const BOUNDARY_MARGIN: DwCode = DwCode::new("DW0321", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A stage-1 `horizon` param is out of range, or is a param of a base other
-        /// than the one declared (spec-0026): validation-tier (exit 1).
-        pub const HORIZON_PARAM: DwCode = DwCode::new("DW0853", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A `horizon` whose base BUILDS terrain, on a campaign that states no
-        /// extent for that terrain to stand around (spec-0026): validation-tier
-        /// (exit 1).
-        ///
-        /// A surround rings a declared extent — a site plan's `region`. A campaign
-        /// that seats its pieces with `areas[]` declares none, and the union of
-        /// whatever gets placed is not a substitute: it is an artifact of the
-        /// compiler's fixed area stride, mostly the void between areas, so ringing
-        /// it builds a mountain range around empty space.
-        pub const SURROUND_NO_REGION: DwCode = DwCode::new("DW0855", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
-        /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
-        /// (spec-0014). Flatten the inner steps into the outer timeline.
-        pub const NESTED_SEQUENCE: DwCode = DwCode::new("DW0329", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (v0.6) Trap declaration structurally invalid (spec-0011): a malformed or
-        /// duplicated `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides,
-        /// or a trap whose `disarm.via` collides with its own trigger anchor.
-        /// Validation-tier (exit 1). Renumbered off the spec's stale reserved number
-        /// (0197 — since taken).
-        pub const TRAP_INVALID: DwCode = DwCode::new("DW0340", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §2) A `shortcut` declaration is structurally invalid: a
-        /// malformed or duplicate `shortcut/<id>`, a `gate`/`unlock` anchor no area's
-        /// prefab provides, or a `gate` that IS the `unlock` (the mechanism must sit
-        /// on the far side, not in the doorway).
-        pub const SHORTCUT_INVALID: DwCode = DwCode::new("DW0371", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §2) A `close-gate` effect targets a gate a `shortcut` owns.
-        /// A shortcut opens **permanently** — that is the whole pattern — so its
-        /// permanence is structural: there is no verb that can put it back. Use a
-        /// different gate for the point-of-no-return beat.
-        pub const SHORTCUT_RESEALED: DwCode = DwCode::new("DW0372", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §3) An `ambush` declaration is structurally invalid: a
-        /// malformed or duplicate `ambush/<id>`, an empty `actors` list (an ambush
-        /// that ambushes nobody), or the same actor listed twice (the second
-        /// `spawn-actor` is a guarded no-op, so the author's intent silently halves).
-        /// The telegraph is deliberately NOT required — an un-telegraphed ambush is
-        /// core souls vocabulary.
-        pub const AMBUSH_INVALID: DwCode = DwCode::new("DW0375", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §4) A `timed-gate` declaration is structurally invalid: a
-        /// malformed or duplicate `timed-gate/<id>`, an `open_ticks` or
-        /// `closed_ticks` of 0 (a gate that never opens, or never closes — neither is
-        /// a timing gate), a `phase` at or beyond the full cycle, or a gate another
-        /// `timed-gate` or a `shortcut` already owns (two clocks fighting over one
-        /// region, or a clock fighting a permanent open), or a `disarm.via` anchor no
-        /// area's prefab provides / one that IS the gate anchor (the jam lever cannot
-        /// live inside the span it stops).
-        pub const TIMED_GATE_INVALID: DwCode = DwCode::new("DW0377", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// A `close-gate` effect targets the gate of a `timed-gate` that
-        /// declares a `disarm`. A disarm suppresses the clock **permanently with the
-        /// gate resting open** — a jammed portcullis stays up — so, exactly like a
-        /// `shortcut` (`DW0372`), its permanence is structural: there is no verb that
-        /// can re-arm it. Use a different gate for the beat that must re-seal, or drop
-        /// the `disarm`.
-        pub const TIMED_GATE_REARMED: DwCode = DwCode::new("DW0389", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §6) A wave's TD `lane` / `summon` declaration is structurally
-        /// invalid or internally contradictory: an empty `waypoints` list, a
-        /// waypoint anchor no area's prefab provides, a repeated consecutive
-        /// waypoint, an `aggro_radius` outside `4..=64`, a mob whose
-        /// `attributes.follow_range` disagrees with `aggro_radius` (they MUST be
-        /// equal — a patrolling raider holds ground against a target it cannot
-        /// engage), or `lane` together with `summon: aggro-edge` (a lane IS the
-        /// routing; aggro-edge is its opposite).
-        pub const LANE_INVALID: DwCode = DwCode::new("DW0381", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §6) A lane wave contains a non-raider species. `Patrolling` /
-        /// `patrol_target` are Raider NBT: on anything else they are dropped and the
-        /// mob simply stands where it spawned. The admitted set is vanilla's own
-        /// `#minecraft:raiders` tag, read from the vendored tag table — never a
-        /// species list this engine keeps. Non-raiders use `summon: aggro-edge`
-        /// instead.
-        pub const LANE_NOT_RAIDER: DwCode = DwCode::new("DW0382", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §6) A lane wave fields fewer than 2 mobs. A lone patroller
-        /// sets `Patrolling:0b` on itself when it finds no companion within its
-        /// follow range (vanilla), so a one-mob lane cancels itself.
-        pub const LANE_SQUAD_TOO_SMALL: DwCode = DwCode::new("DW0383", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §6) A lane `pillager` is not holding a crossbow. Its only
-        /// attack goal is the crossbow goal, so a pillager that acquires a target it
-        /// has no runnable attack for freezes in place indefinitely — patrol blocked
-        /// by the target, nothing to run instead (live-verified deadlock).
-        pub const LANE_UNARMED: DwCode = DwCode::new("DW0384", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §6) A `summon: aggro-edge` wave mob declares no
-        /// `attributes.follow_range`. That radius IS the summon ring — the distance
-        /// at which the mob perceives the party — so it is authored, never guessed
-        /// from a vanilla defaults table the compiler cannot verify.
-        pub const AGGRO_EDGE_NO_RANGE: DwCode = DwCode::new("DW0385", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
-        /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
-        /// spec's stale reserved number (0198 — since taken).
-        pub const TRAP_PAYLOAD_UNKNOWN: DwCode = DwCode::new("DW0341", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (spec-0022) A trap declares **no consequence at all**: neither the legacy
-        /// redstone `effect` nor a command `payload`. A trap that does nothing is
-        /// mute hardware the completability proofs would nonetheless reason about,
-        /// so it is a content mistake, not a no-op. Validation-tier (exit 1).
-        pub const TRAP_NO_CONSEQUENCE: DwCode = DwCode::new("DW0440", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0022) A `volley` `projectile` / `collapse` `falling_block` /
-        /// `then_floor` id is not in the pinned 1.21.11 registry (a `projectile`
-        /// must be an ENTITY id, the collapse blocks BLOCK ids).
-        /// Validation-tier (exit 1).
-        pub const TRAP_VERB_ID_UNKNOWN: DwCode = DwCode::new("DW0441", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0022) A `volley`'s `salvos` / `interval` is out of range (`salvos`
-        /// in `1..=16`, `interval` in `1..=200`). A volley fires its whole kill zone
-        /// every salvo, so the entity count is `salvos x cells`; and salvos spread
-        /// wider than the interval cap stop reading as one trap event.
-        /// Validation-tier (exit 1).
-        pub const VOLLEY_CADENCE: DwCode = DwCode::new("DW0443", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (v0.6) A `shot_style` declaration is semantically invalid (spec-0015 shot
-        /// grammar): a styled shot with no `subject`; style-only fields (`subject`,
-        /// `subject_b`, `dist`, `degrees`, `bearing`) on an unstyled shot; a
-        /// `subject_b` on a style other than `two-shot` (or a `two-shot` without
-        /// one); `degrees` off `orbit-arc` or outside `45..=120`; `dist` outside
-        /// `1..=48`; or `bearing` outside `-360..=360`. Validation-tier (exit 1).
-        pub const SHOT_STYLE_INVALID: DwCode = DwCode::new("DW0348", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6) A `side-track` / `low-follow` shot whose subject has no
-        /// compiler-known motion: those styles dolly *with* a moving subject, so the
-        /// subject must be an NPC/actor with a matching `move-npc`/`move-actor` in
-        /// the same effect group or the same `sequence` timeline (an `anchor`
-        /// subject can never move). Validation-tier (exit 1). Use `locked-off` /
-        /// `push-in` for a static subject instead.
-        pub const SHOT_SUBJECT_UNMOVED: DwCode = DwCode::new("DW0349", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (v0.4, added round-6) A `use` trigger anchored where an NPC stands.
-        /// Right-click on an NPC already belongs to its dialogue advancement; a
-        /// second interaction hitbox in the same cell makes the client's entity
-        /// ray-pick ambiguous, and whichever entity loses the tie is silently dead
-        /// — the round-6 island soft-lock class (an exactly co-located hitbox
-        /// starved the giant's dialogue of every right-click). `strike` triggers
-        /// are exempt: a left-click has no dialogue meaning, so the compiler rides
-        /// the trigger's tag on the NPC's own hitbox instead of summoning a second
-        /// one. Validation-tier (exit 1).
-        pub const USE_TRIGGER_ON_NPC: DwCode = DwCode::new("DW0350", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (v0.6, spec-0018) `world.min_players` outside the `1..=4` range. A delve is
-        /// played by ONE party of 1–4 (ADR/CLAUDE.md product definition), so a declared
-        /// mandatory party size can never sit outside it. Validation-tier (exit 1).
-        pub const PARTY_SIZE: DwCode = DwCode::new("DW0356", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0077 §7) **A respawn wait that cannot be honoured.**
-        /// `world.respawn_wait.seconds` lies outside `1..=120`, or the campaign
-        /// declares a `respawn_wait` and no `set-checkpoint` or `bonfire` for a
-        /// fallen player to come back to (the wait hangs off the checkpoint respawn
-        /// edge, so with none it is a silently dead declaration). One rule about what
-        /// a wait needs, two ways to break it. Validation-tier (exit 1). The build's
-        /// own self-check that a shipped selector cannot read a waiter is `DW0926`.
-        /// Prescription: a value in `1..=120`, or a checkpoint, or drop the field.
-        pub const RESPAWN_WAIT_INVALID: DwCode = DwCode::new("DW0925", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is
-        /// only ever reached from the **scheduler** (`move-npc`/`move-actor`
-        /// `on_arrive`, a `sequence` step). `carrier: "one"` means "hand this single
-        /// quest prop to the player whose action earned it"; a scheduled bundle runs
-        /// with the server command source and has no acting player, so there is no
-        /// defensible recipient. Give it to the whole party (drop `carrier`), or move
-        /// the hand-off onto the beat that a player completes. Validation-tier (exit 1).
-        pub const PARTY_CARRIER_SCHEDULED: DwCode = DwCode::new("DW0357", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (v0.6) `world.difficulty` is `peaceful`. On
-        /// peaceful the server discards every hostile-category mob as it is ticked —
-        /// `/summon`ed, `NoAI`, `PersistenceRequired`, all of it — so a peaceful delve
-        /// is one in which every wave, every hostile actor and every ambush silently
-        /// ceases to exist. There is no delve that wants that, so the keyword is
-        /// refused rather than honoured. Validation-tier (exit 1).
-        pub const DIFFICULTY_INVALID: DwCode = DwCode::new("DW0468", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.6) A campaign fields scripted `actors[]` (an
-        /// ambush desugars into these too) but **no** `waves[]` and no declared
-        /// `world.difficulty`, so the compiler's historical derivation ships
-        /// `difficulty=peaceful` — under which every one of those actors that is a
-        /// hostile species is discarded on the tick it spawns. The compiler cannot
-        /// decide the question for the author: the pinned entity registry is a
-        /// membership set with no mob-category data, so "is this actor a monster" is
-        /// not something it can verify rather than guess. Advisory (warning,
-        /// exit 0) — declaring `world.difficulty` settles it either way.
-        pub const DIFFICULTY_UNDECLARED_ACTORS: DwCode = DwCode::new("DW0469", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0016 §1, spec-0023, souls ruling 5/7: "stage bosses never respawn
-        /// on rest") A wave declares BOTH `tier: boss` and `respawns_on_rest: true`.
-        /// `tier` and `respawns_on_rest` are two fields on the same [`Wave`]
-        /// declaration — the only place a "boss" billing and a "re-seat on rest"
-        /// contract can land on one another; an [`Actor`] carries `tier` too but has
-        /// no `respawns_on_rest` field at all (it is killed by hand, never re-seated
-        /// by a bonfire), so this is the sole structurally expressible violation of
-        /// the ruling. A rest-respawning boss re-fight breaks the retry economy the
-        /// ruling exists to protect: a boss is the campaign's named fight, not
-        /// trash pressure the party grinds back down every rest. Validation-tier
-        /// (exit 1), `dsl::validate`. Prescription: drop `tier: boss` if the
-        /// encounter really is meant to re-seat (bill it `elite` instead), or drop
-        /// `respawns_on_rest` if it really is the boss.
-        ///
-        /// [`Wave`]: crate::stages::Wave
-        /// [`Actor`]: crate::stages::Actor
-        pub const BOSS_RESPAWNS_ON_REST: DwCode = DwCode::new("DW0499", ExitTier::Build);
+        /// (spec-0091) **A view aimed past the served view distance.** What a
+        /// body is farther from than the served radius is never sent to its
+        /// client, so a far view is a declaration (`world.view_distance`), and a
+        /// thing aimed past it cannot render. Five shapes of one rule: a declared
+        /// `view_distance` outside `FLOOR..=CEILING` (validation tier, exit 1,
+        /// on `/content/view_distance`); a site-plan sightline or view longer
+        /// than the served radius (validation tier, `crate::viewdistance`); a
+        /// showcase camera whose subject — the first solid cell on its central
+        /// ray, else where that ray enters the loaded scene — is beyond it, and
+        /// a cutscene keyframe farther from its aim than it (both build tier,
+        /// exit 3, against the assembled world). Prescription, in every shape:
+        /// the fewest chunks that serve the distance, or the two ends nearer.
+        pub const VIEW_BEYOND_SERVED: DwCode = DwCode::new("DW0956", ExitTier::Build);
     }
 
     // -- DSL v0.10 runtime state (spec-0031) ---------------------------------
@@ -1319,203 +696,7 @@ pub mod codes {
         /// fix the id.
         pub const STATE_UNDECLARED: DwCode = DwCode::new("DW0500", ExitTier::Build);
     }
-    crate::dw_code! {
-        /// (v0.10, spec-0031) A gate's `requires_state` reads a declared datum that
-        /// **no verb anywhere in the campaign ever writes**. The datum can only ever
-        /// hold its declared `initial`, so the comparison's answer was decided at
-        /// authoring time and the gate is a constant wearing a condition's clothes.
-        ///
-        /// This is the vacuity rule at the level of one datum (CLAUDE.md: *a green
-        /// gate that binds to nothing is vacuous, not a pass*) — the numeric
-        /// equivalent of the bot's combat floor examining zero enemies for nineteen
-        /// rounds. Validation-tier (exit 1). Prescription: write the datum somewhere
-        /// (`set-state`/`add-state`/`clear-state`), or drop the comparison and say
-        /// what you meant unconditionally.
-        pub const STATE_NEVER_WRITTEN: DwCode = DwCode::new("DW0501", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.10, spec-0031) A declared datum that **no gate anywhere in the
-        /// campaign ever reads**. Either some verb writes it and nothing ever asks
-        /// (the write is inert — a counter nobody consults), or nothing touches it at
-        /// all (a dead declaration). Runtime state exists to be compared against; a
-        /// datum with no reader is bookkeeping no player can ever observe.
-        /// Validation-tier (exit 1). Prescription: gate something on it with
-        /// `requires_state`, or delete the declaration and its writes.
-        pub const STATE_NEVER_READ: DwCode = DwCode::new("DW0502", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.10, spec-0031) A `player`-scoped datum is referenced where emission
-        /// has no acting player to read or write it against.
-        ///
-        /// Two such places exist, and both are properties of the SITE, not of the
-        /// verb: a scheduler-only bundle (a `sequence` step, a `move-npc` /
-        /// `move-actor` `on_arrive`) runs with the server command source — the same
-        /// seam `DW0357` polices for `carrier: "one"` — and the gates emission
-        /// evaluates against the party holder rather than against a player (an
-        /// objective's activation guard, a trigger's arming gate, a trap's arming
-        /// gate) have no `@s` either. Validation-tier (exit 1). Prescription: declare
-        /// the datum `party`-scoped if the whole party shares it, or move the
-        /// read/write onto a site a player drives (a dialogue option, a cast
-        /// placement, an effect on a beat a player completes).
-        pub const STATE_SCOPE_UNREACHABLE: DwCode = DwCode::new("DW0503", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.10, spec-0032) A `stakes[]` declaration is unusable as a personal
-        /// wager: its `state` is a datum the campaign never declares, or one declared
-        /// `party`-scoped.
-        ///
-        /// **The scope half is the multiplayer decision most likely to be made by
-        /// accident** (spec-0032, stated for correction rather than left to emerge).
-        /// A stake is one player's loss and one player's chance to get it back; a
-        /// party-shared purse would turn a teammate's death into a penalty on
-        /// everyone, and nothing in the JSON would say so. Validation-tier (exit 1).
-        /// Prescription: declare the datum `player`-scoped, or point the stake at a
-        /// datum that is.
-        pub const STAKE_STATE_SCOPE: DwCode = DwCode::new("DW0520", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.10, spec-0032) A `drop-stake` effect names a stake the campaign never
-        /// declares in the stage-5 `stakes` list. Validation-tier (exit 1).
-        /// Prescription: declare it, or fix the id.
-        pub const STAKE_UNDECLARED: DwCode = DwCode::new("DW0521", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.10, spec-0032) A declared stake that **no `drop-stake` effect anywhere
-        /// in the campaign ever leaves**. The retention policy, the forfeit rule and
-        /// the whole placement table are computed for a mechanism no beat can fire —
-        /// a declaration wearing a feature's clothes.
-        ///
-        /// The same vacuity rule `DW0502` states for a datum with no reader
-        /// (CLAUDE.md: *a green gate that binds to nothing is vacuous, not a pass*).
-        /// Validation-tier (exit 1). Prescription: drop it from a beat — `on_death`
-        /// is the usual one — or delete the declaration.
-        pub const STAKE_NEVER_DROPPED: DwCode = DwCode::new("DW0522", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.10, spec-0032) A `shops[].offers[]` entry that cannot deliver
-        /// anything: it declares no `effects`, so its button is drawn, is pressable,
-        /// and does nothing.
-        ///
-        /// The shop analogue of the invisible-affordance rule: a control the player
-        /// can operate must have an observable answer. A refusal counts — an offer
-        /// whose only effect is a gated `narrate` saying "you cannot afford that" is
-        /// exactly the authored shape spec-0032 asks for. Validation-tier (exit 1).
-        /// Prescription: give the offer effects, or delete it.
-        pub const SHOP_OFFER_INERT: DwCode = DwCode::new("DW0523", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.10, spec-0032) A `forfeit` of kind `proportion` whose `percent` is
-        /// above 100 — a death that takes more than the whole purse. Validation-tier
-        /// (exit 1). Prescription: 0–100, or use `all`.
-        pub const STAKE_FORFEIT_RANGE: DwCode = DwCode::new("DW0524", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (v0.10, spec-0032) **A comparison read after the bundle has already changed
-        /// what it compares.** An effect's `requires_state` names a datum that an
-        /// EARLIER effect in the same bundle writes, so the gate is evaluated against
-        /// the post-write value, not the value the beat started with.
-        ///
-        /// Found in the emitted output of spec-0032's own first shop. The authored
-        /// shape a shop wants is "the purchase behind `at-least 1`, the apology behind
-        /// `at-most 0`" — and written in that order, buying your LAST ember prints both:
-        /// the debit runs, the balance falls to 0, and the apology's gate — evaluated
-        /// after it — now holds. Vanilla evaluates each `execute` when it reaches it,
-        /// which is the whole reason a per-effect gate is useful, so this is not a bug
-        /// to fix in emission: it is an ordering hazard that only reading the generated
-        /// function reveals. The fix is always the same and always local — **put the
-        /// reading effect before the writing one** — which is why this is a warning
-        /// naming the earlier write rather than a refusal.
-        ///
-        /// Warning-tier (exit 0). Prescription: move the gated effect ahead of the
-        /// write, or gate it on something the bundle does not itself change.
-        pub const STATE_READ_AFTER_WRITE: DwCode = DwCode::new("DW0527", ExitTier::Build);
-    }
 
-    crate::dw_code! {
-        /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
-        /// A trigger declares `audience: presser` on something other than an
-        /// `on: use`.
-        ///
-        /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
-        /// that runs a function as the player who clicked, and it fires on
-        /// right-clicks alone. A left-click is recorded in the interaction entity's
-        /// `attack` NBT — a UUID no command can become — and an `approach` involves no
-        /// click at all. Approximating it (polling the record and assuming the nearest
-        /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
-        /// capability is refused rather than faked.
-        pub const TRIGGER_AUDIENCE_UNATTRIBUTABLE: DwCode = DwCode::new("DW0427", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (v0.11) **A trigger id in the compiler's reserved `dw-` namespace.** The
-        /// compiler synthesizes triggers of its own — today the press answer every
-        /// sealed gate and shortcut door gives (`trigger/dw-press-…`) — and two
-        /// triggers sharing an id would share one `dw_trig_…` tag and one emitted
-        /// function, so one of them would silently disappear. Reserving the prefix
-        /// makes the collision impossible by construction instead of improbable.
-        pub const TRIGGER_ID_RESERVED: DwCode = DwCode::new("DW0428", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (v0.11) **A sealed body with no press answer**, uniformly over the
-        /// pressable class. A `shortcuts[]` door or
-        /// a `close-gate`'s wall is sealed, and nothing says what it answers when the
-        /// party presses it — no `use` trigger anchored on it, and (for a
-        /// `close-gate`) no authored `sealed_hint`.
-        ///
-        /// The compiler deliberately does **not** fill that silence. A baked default
-        /// is the compiler making a design statement — about tone, about what this
-        /// specific door is — on the author's behalf, and then never telling them it
-        /// did; an error makes the author say it. Same rule as "no hacks at any
-        /// layer": if content needs a thing, the DSL exposes it and the author
-        /// declares it, rather than a lower layer inventing it.
-        ///
-        /// One rule for the whole pressable class: two objects of the same class do
-        /// not get two defaulting policies, which would be the "capability keyed to
-        /// the verb" defect this very surface is CLAUDE.md's worked example of.
-        pub const SEALED_BODY_UNANSWERED: DwCode = DwCode::new("DW0429", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// (v0.11, spec-0034) **A declared locomotion the engine cannot hold the
-        /// body to** — today exactly one value, `aquatic`.
-        ///
-        /// The declaration surface exists so an author can claim a capability and
-        /// have the claim PROVEN. `aquatic` is the one
-        /// class that carries no exemption and governs no rule: it is a ledger
-        /// label the compiler derives from vanilla's own `#minecraft:aquatic` tag.
-        /// Declaring it could therefore never change a verdict, so it would always
-        /// land in `DW0454` — and a value whose only possible outcome is another
-        /// diagnostic is a trap, not a surface.
-        ///
-        /// The gap it names, stated rather than left to folklore (CLAUDE.md's
-        /// no-hack rule): the compiler routes **every** body on standable ground,
-        /// and `flooded` cells are impassable and never floor for every body. There
-        /// is no water-traversal model for a declaration to feed, so there is
-        /// nothing to hold an aquatic claim to. When routing grows one, this
-        /// refusal is what has to be deleted to enable the value.
-        ///
-        /// Error tier, raised in `validate_campaign_with`, so the run ends at the
-        /// validation tier (exit 1). Prescription: remove the declaration — a body whose
-        /// route crosses water is governed by the flooded-cell rules already, and
-        /// the derived aquatic class still reaches the binding ledger.
-        pub const TRAVERSAL_UNPROVABLE: DwCode = DwCode::new("DW0455", ExitTier::Build);
-    }
-
-    crate::dw_code! {
-        /// A gate contradicts itself, so it can NEVER open: a flag on both its
-        /// `requires_flags` and `forbids_flags`, or `requires_state` terms on one
-        /// datum that no integer satisfies (`at-least 5` with `at-most 3`, two
-        /// different `equals`). The thing carrying it — objective, effect, trigger,
-        /// trap, dialogue option, cast placement, shop offer — is authored content
-        /// that provably never happens, which is a defect in what the document
-        /// SAYS, not a stylistic lint. One rule over the whole closed consumer set
-        /// ([`crate::gate::for_each_gate`]), because satisfiability is a property
-        /// of the gate, never of the verb that first needed the question answered.
-        ///
-        /// Error tier, validation (exit 1).
-        pub const GATE_NEVER_OPENS: DwCode = DwCode::new("DW0847", ExitTier::Build);
-    }
     crate::dw_code! {
         /// An asset's licence is outside the ADR-0013 allowlist, or its record lacks
         /// a field the allowlist's rule for that asset requires. One code for every
@@ -1525,53 +706,11 @@ pub mod codes {
         pub const LICENSE_REFUSED: DwCode = DwCode::new("DW0741", ExitTier::Build);
     }
     crate::dw_code! {
-        /// (spec-0084 §6.1) A `world.textures[]` row's `replaces` names a texture the
-        /// pinned client does not ship — not the `minecraft` namespace, a path with
-        /// `textures/` or `.png` left on, another version's path, a misspelling — or
-        /// two rows replace one texture. Judged against the census vendored from the
-        /// pinned client jar (`delvec::compiler::textures`); the duplicate half is
-        /// judged in validation, where no census is needed.
-        pub const TEXTURE_PATH: DwCode = DwCode::new("DW0939", ExitTier::Build);
-    }
-    crate::dw_code! {
         /// (spec-0084 §6.2) A `world.textures[]` row's file is not an image the
         /// named texture can be replaced by: not a PNG, not `k·w₀ × k·h₀` of the
         /// vanilla frame (or `k·w₀ × n·k·h₀` with a sidecar), a sidecar that does not
         /// parse as vanilla's animation metadata, or bytes identical to vanilla's.
         pub const TEXTURE_IMAGE: DwCode = DwCode::new("DW0940", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0085 §4.3) **A particle the game does not draw from a bare id.** A
-        /// `particle` effect names an id the pinned registry
-        /// (`crates/dsl/data/particles-1.21.11.json`) does not hold, or one whose
-        /// type takes options (`dust`, `block`, `item`, …) — which the verb cannot
-        /// carry, so the emitted command would be refused by the game.
-        ///
-        /// Error tier, validation (exit 1).
-        pub const PERCEPTION_UNKNOWN_PARTICLE: DwCode = DwCode::new("DW0941", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0085 §3.3) **An audience on a party fact.** An effect states the
-        /// envelope's `audience` or `in` on a verb the emitter fires once for the
-        /// world ([`crate::stages::Verb::addresses_players`] answers `false`) — a
-        /// flag, a gate, a block, a region, a timeline, a rocket. A box has no party
-        /// and a world fact has no audience; a `sequence`'s steps each state their
-        /// own.
-        ///
-        /// Error tier, validation (exit 1).
-        pub const PERCEPTION_AUDIENCE_ON_A_PARTY_FACT: DwCode = DwCode::new("DW0942", ExitTier::Build);
-    }
-    crate::dw_code! {
-        /// (spec-0085 §5.3) **A sight effect that ends under a camera.** In one
-        /// timeline, a `give-effect` of a sight effect
-        /// ([`crate::perception::SIGHT`]) overlaps a `cutscene` step and ends inside
-        /// it, or within the effect's wind-down after it, so the effect starts
-        /// ramping down on screen. The `give-effect` half of the findings-ledger
-        /// row whose general form is that a granted sight effect outlasts any
-        /// authored camera it can overlap.
-        ///
-        /// Error tier, validation (exit 1).
-        pub const PERCEPTION_SIGHT_UNDER_A_CAMERA: DwCode = DwCode::new("DW0944", ExitTier::Build);
     }
 }
 

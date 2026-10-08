@@ -11,6 +11,11 @@
         "node": "node/far-corner",
         "objective": "obj/far-corner",
         "quest": "quest/walk-the-bank"
+      },
+      {
+        "node": "node/far-corner",
+        "objective": "obj/the-corner-stone",
+        "quest": "quest/walk-the-bank"
       }
     ],
     "critical_path": [
@@ -55,6 +60,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.1",
   "stage": "layout-graph"
 }

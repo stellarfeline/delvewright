@@ -466,6 +466,12 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             let Objective::Interact { id, anchor, .. } = o else {
                 continue;
             };
+            // spec-0093 §6.5: a prop vanilla reports the use of summons no
+            // hitbox — the block is the affordance, and a block contests nothing
+            // a ray picks among entities.
+            if crate::compiler::pressable::interact_block(o).is_some() {
+                continue;
+            }
             // Mirrors `emit::activation_commands`: an interact objective's
             // affordance is resolved within its quest's area.
             let Some(pos) = plan.point(area, anchor.as_str()) else {
@@ -487,8 +493,9 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
         }
     }
     for t in &plan.emitted_triggers_unlocalized() {
-        // `approach` triggers are a per-tick radius test, not an entity.
-        if matches!(t.on, TriggerOn::Approach { .. }) {
+        // `approach` and `step` triggers are a per-tick position test, not an
+        // entity.
+        if !t.on.is_click() {
             continue;
         }
         // `strike-npc` (DSL v0.6) has no cell at all — it rides the NPC's own
@@ -507,9 +514,12 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
         // `close-gate` seal, a sealed shortcut door — the trigger rides it and
         // summons nothing. Read from `crate::compiler::pressable`, the same authority the
         // emitter uses, so the two can never disagree about whether a body exists.
+        // …and the general form again (spec-0093 §6.5): a trigger whose prop
+        // vanilla reports the use of has no hitbox; the block is the body.
         if matches!(
-            crate::compiler::pressable::body_at(plan, at),
+            crate::compiler::pressable::trigger_body(plan, t),
             crate::compiler::pressable::Body::Rides { .. }
+                | crate::compiler::pressable::Body::Block { .. }
         ) {
             continue;
         }

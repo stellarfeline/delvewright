@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::design::DesignContent;
 use crate::detailplan::DetailPlanContent;
-use crate::diagnostic::{Diagnostic, codes};
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::ids::CampaignId;
 use crate::layout::{GeometryBriefContent, LayoutGraphContent};
 use crate::siteplan::SitePlanContent;
-use crate::stages::{
+use crate::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
     WorldEditsContent,
 };
@@ -353,6 +353,169 @@ pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
     match parse_campaign(raw) {
         Ok(campaign) => crate::validate::validate_campaign(&campaign),
         Err(diags) => diags,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+crate::dw_code! {
+    /// Envelope `stage` does not match the document's slot.
+    pub const STAGE_MISMATCH: DwCode = DwCode::new("DW0101", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// Inconsistent `campaign_id` across stages.
+    pub const CAMPAIGN_ID_MISMATCH: DwCode = DwCode::new("DW0103", ExitTier::Build);
+}
+
+/// The envelope of every stage document: its `stage` (`DW0101`), its
+/// `dsl_version` (`DW0102`), and its `campaign_id`'s syntax (`DW0110`) and
+/// agreement with the world stage's (`DW0103`).
+pub(crate) fn envelope_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let stages = [
+        (Stage::World, c.world.stage, c.world.dsl_version.as_str()),
+        (Stage::Npcs, c.npcs.stage, c.npcs.dsl_version.as_str()),
+        (
+            Stage::Classes,
+            c.classes.stage,
+            c.classes.dsl_version.as_str(),
+        ),
+        (
+            Stage::QuestPlan,
+            c.quest_plan.stage,
+            c.quest_plan.dsl_version.as_str(),
+        ),
+        (Stage::Quests, c.quests.stage, c.quests.dsl_version.as_str()),
+        (
+            Stage::Dialogue,
+            c.dialogue.stage,
+            c.dialogue.dsl_version.as_str(),
+        ),
+    ];
+    let stages: Vec<(Stage, Stage, &str)> = stages
+        .into_iter()
+        .chain(
+            c.world_edits
+                .iter()
+                .map(|e| (Stage::WorldEdits, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.geometry_brief
+                .iter()
+                .map(|e| (Stage::GeometryBrief, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.layout_graph
+                .iter()
+                .map(|e| (Stage::LayoutGraph, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.site_plan
+                .iter()
+                .map(|e| (Stage::SitePlan, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.detail_plan
+                .iter()
+                .map(|e| (Stage::DetailPlan, e.stage, e.dsl_version.as_str())),
+        )
+        .chain(
+            c.design
+                .iter()
+                .map(|e| (Stage::Design, e.stage, e.dsl_version.as_str())),
+        )
+        .collect();
+    for (expected, actual, version) in stages {
+        if actual != expected {
+            d.push(Diagnostic::error(
+                STAGE_MISMATCH,
+                expected.name(),
+                "/stage",
+                format!(
+                    "`stage` is `{}` but this is the `{}` stage document — set `stage` to `{}` (or \
+                     move this content into the `{}` document it belongs to)",
+                    actual.name(),
+                    expected.name(),
+                    expected.name(),
+                    actual.name(),
+                ),
+            ));
+        }
+        if version != DSL_VERSION {
+            d.push(Diagnostic::error(
+                codes::DSL_VERSION,
+                expected.name(),
+                "/dsl_version",
+                format!(
+                    "dsl_version `{version}` is not the one this engine accepts — set it to \
+                     `{DSL_VERSION}` and revise the document against that surface. An engine \
+                     accepts exactly the number it implements (ADR-0024); a document written \
+                     for another number is built by the engine that implements that number."
+                ),
+            ));
+        }
+    }
+
+    let ids: Vec<(Stage, &crate::ids::CampaignId)> = [
+        (Stage::World, &c.world.campaign_id),
+        (Stage::Npcs, &c.npcs.campaign_id),
+        (Stage::Classes, &c.classes.campaign_id),
+        (Stage::QuestPlan, &c.quest_plan.campaign_id),
+        (Stage::Quests, &c.quests.campaign_id),
+        (Stage::Dialogue, &c.dialogue.campaign_id),
+    ]
+    .into_iter()
+    .chain(
+        c.world_edits
+            .iter()
+            .map(|e| (Stage::WorldEdits, &e.campaign_id)),
+    )
+    .chain(
+        c.geometry_brief
+            .iter()
+            .map(|e| (Stage::GeometryBrief, &e.campaign_id)),
+    )
+    .chain(
+        c.layout_graph
+            .iter()
+            .map(|e| (Stage::LayoutGraph, &e.campaign_id)),
+    )
+    .chain(
+        c.site_plan
+            .iter()
+            .map(|e| (Stage::SitePlan, &e.campaign_id)),
+    )
+    .chain(
+        c.detail_plan
+            .iter()
+            .map(|e| (Stage::DetailPlan, &e.campaign_id)),
+    )
+    .chain(c.design.iter().map(|e| (Stage::Design, &e.campaign_id)))
+    .collect();
+    let canonical = c.world.campaign_id.as_str();
+    for (stage, id) in ids {
+        if !id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                stage.name(),
+                "/campaign_id",
+                format!("malformed campaign_id `{id}` (expected kebab-case)"),
+            ));
+        }
+        if id.as_str() != canonical {
+            d.push(Diagnostic::error(
+                CAMPAIGN_ID_MISMATCH,
+                stage.name(),
+                "/campaign_id",
+                format!(
+                    "campaign_id `{id}` differs from `{canonical}` (the world stage's id) — set \
+                     every stage's `campaign_id` to `{canonical}` so all six documents name one \
+                     campaign"
+                ),
+            ));
+        }
     }
 }
 

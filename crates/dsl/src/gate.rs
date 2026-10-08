@@ -41,9 +41,9 @@
 //! Determinism (ADR-0006): iteration is over slices and `BTreeMap` keys, in a
 //! fixed order that is part of this module's contract.
 
+use crate::StateCompare;
 use crate::envelope::Campaign;
 use crate::ids::FlagId;
-use crate::stages::StateCompare;
 
 /// A gate, as one value: everything that decides whether the thing carrying it
 /// may happen.
@@ -109,7 +109,7 @@ impl<'a> Gate<'a> {
 // here is a consumer no proof written against `Gate` can see — which is exactly
 // the shape `crates/dsl/tests/gate_consumers.rs` fails on.
 
-impl crate::stages::Objective {
+impl crate::Objective {
     /// This objective's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -120,7 +120,7 @@ impl crate::stages::Objective {
     }
 }
 
-impl crate::stages::QuestEffect {
+impl crate::QuestEffect {
     /// This effect's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -131,7 +131,7 @@ impl crate::stages::QuestEffect {
     }
 }
 
-impl crate::stages::EnvTrigger {
+impl crate::EnvTrigger {
     /// This trigger's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -142,7 +142,7 @@ impl crate::stages::EnvTrigger {
     }
 }
 
-impl crate::stages::Trap {
+impl crate::Trap {
     /// This trap's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -153,7 +153,7 @@ impl crate::stages::Trap {
     }
 }
 
-impl crate::stages::DialogueOption {
+impl crate::DialogueOption {
     /// This option's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -164,7 +164,7 @@ impl crate::stages::DialogueOption {
     }
 }
 
-impl crate::stages::CastPlacement {
+impl crate::CastPlacement {
     /// This placement's whole gate, as one value (DSL v0.10).
     pub fn gate(&self) -> Gate<'_> {
         Gate::of(
@@ -175,7 +175,7 @@ impl crate::stages::CastPlacement {
     }
 }
 
-impl crate::stages::ShopOffer {
+impl crate::ShopOffer {
     /// This offer's whole gate, as one value (DSL v0.10, spec-0032) — a **price
     /// is a gate**, so a shop declares no comparison surface of its own.
     ///
@@ -190,7 +190,7 @@ impl crate::stages::ShopOffer {
     }
 }
 
-impl crate::stages::Loop {
+impl crate::Loop {
     /// This loop's whole gate, as one value (spec-0086): the loop **holds** while
     /// it is open and stands down while it is shut.
     pub fn gate(&self) -> Gate<'_> {
@@ -202,11 +202,11 @@ impl crate::stages::Loop {
     }
 }
 
-impl crate::stages::LethalVolume {
+impl crate::LethalVolume {
     /// This volume's whole gate, as one value (spec-0088) — the [`Guard`]
     /// under `when`, or the always-open gate when it declares none.
     ///
-    /// [`Guard`]: crate::stages::Guard
+    /// [`Guard`]: crate::Guard
     pub fn gate(&self) -> Gate<'_> {
         match &self.when {
             Some(g) => Gate::of(&g.requires_flags, &g.forbids_flags, &g.requires_state),
@@ -402,7 +402,7 @@ impl GateBinding {
 /// `f(&site, gate)`.
 ///
 /// Order: every objective (quest order, objective order); every effect (via
-/// [`crate::stages::for_each_campaign_effect`], which inherits the single effect-root
+/// [`crate::for_each_campaign_effect`], which inherits the single effect-root
 /// enumeration and descends nesting); every trigger; every trap; every dialogue
 /// option; every cast placement; every shop offer; every lethal volume.
 ///
@@ -472,7 +472,7 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
     }
     // C2 effects — every root, top-level and nested, from the single enumeration.
     enumerated[slot_of(GateConsumer::Effect)] = true;
-    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
         visit(
             GateConsumer::Effect,
             format!("{path}/when"),
@@ -654,8 +654,8 @@ impl DatumSet {
     }
 
     /// Intersect with the values that SATISFY `op value`.
-    pub fn require(&mut self, op: crate::stages::CompareOp, value: i32) {
-        use crate::stages::CompareOp::*;
+    pub fn require(&mut self, op: crate::CompareOp, value: i32) {
+        use crate::CompareOp::*;
         match op {
             Equals => match self.pin {
                 Some(p) if p != value => self.contra = true,
@@ -672,8 +672,8 @@ impl DatumSet {
     /// Intersect with the values that VIOLATE `op value` — the negation of
     /// [`DatumSet::require`], spelled once so the two can never disagree about
     /// what a term means.
-    pub fn forbid(&mut self, op: crate::stages::CompareOp, value: i32) {
-        use crate::stages::CompareOp::*;
+    pub fn forbid(&mut self, op: crate::CompareOp, value: i32) {
+        use crate::CompareOp::*;
         match op {
             Equals => self.require(NotEquals, value),
             NotEquals => self.require(Equals, value),
@@ -775,24 +775,56 @@ impl Gate<'_> {
     /// on both lists, or one datum's terms intersect to the empty set. Terms on
     /// distinct flags/datums are independent and cannot contradict each other.
     pub fn contradiction(&self) -> Option<GateContradiction> {
-        for f in self.requires_flags {
-            if self.forbids_flags.iter().any(|g| g == f) {
-                return Some(GateContradiction::Flag(f.as_str().to_string()));
+        conjunction_contradictions(&[*self]).into_iter().next()
+    }
+
+    /// **Every reason this gate and `other` can never both hold** against one
+    /// reading of the campaign's flags and data — empty when some state
+    /// satisfies both.
+    ///
+    /// Two gates are mutually exclusive exactly when their conjunction is a
+    /// gate that can never open, so this is [`Gate::contradiction`]'s
+    /// arithmetic asked of the two together: a flag one requires and the other
+    /// forbids, or a datum whose terms across both intersect to the empty set.
+    /// Nothing else proves exclusivity — two gates on distinct flags or data
+    /// can both hold, however unlikely the author meant that to be. The answer
+    /// is about ONE reading: a caller whose two gates are tested at different
+    /// moments must also show that no write to the named flag or datum falls
+    /// between them. Every reason is returned, not the first, so that caller
+    /// can find one nothing writes.
+    pub fn exclusions(&self, other: &Gate<'_>) -> Vec<GateContradiction> {
+        conjunction_contradictions(&[*self, *other])
+    }
+}
+
+/// Every flag and every datum on which the conjunction of `gates` is empty, in
+/// a fixed order: flags in first-required order, then data by id (ADR-0006).
+/// The one arithmetic behind [`Gate::contradiction`] and [`Gate::exclusions`].
+fn conjunction_contradictions(gates: &[Gate<'_>]) -> Vec<GateContradiction> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for g in gates {
+        for f in g.requires_flags {
+            let forbidden = gates.iter().any(|h| h.forbids_flags.contains(f));
+            if forbidden && seen.insert(f.as_str()) {
+                out.push(GateContradiction::Flag(f.as_str().to_string()));
             }
         }
-        let mut per: std::collections::BTreeMap<&str, DatumSet> = std::collections::BTreeMap::new();
-        for t in self.requires_state {
+    }
+    let mut per: std::collections::BTreeMap<&str, DatumSet> = std::collections::BTreeMap::new();
+    for g in gates {
+        for t in g.requires_state {
             per.entry(t.state.as_str())
                 .or_default()
                 .require(t.op, t.value);
         }
-        for (state, set) in per {
-            if set.pick().is_none() {
-                return Some(GateContradiction::Datum(state.to_string()));
-            }
-        }
-        None
     }
+    for (state, set) in per {
+        if set.pick().is_none() {
+            out.push(GateContradiction::Datum(state.to_string()));
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -815,7 +847,7 @@ mod tests {
         }
     }
 
-    use crate::stages::CompareOp::*;
+    use crate::CompareOp::*;
 
     #[test]
     fn datum_set_picks_within_bounds_and_around_holes() {
@@ -903,8 +935,8 @@ mod tests {
 
     #[test]
     fn gate_contradiction_answers_per_axis() {
+        use crate::StateCompare;
         use crate::ids::FlagId;
-        use crate::stages::StateCompare;
         let f: Vec<FlagId> = vec![FlagId("flag/paid".to_string())];
         let g = Gate::of(&f, &f, &[]);
         assert_eq!(
@@ -929,5 +961,62 @@ mod tests {
             Some(GateContradiction::Datum("state/toll".to_string()))
         );
         assert_eq!(Gate::OPEN.contradiction(), None);
+    }
+
+    /// Two gates exclude each other exactly when their conjunction cannot open:
+    /// a flag one requires and the other forbids, or one datum's terms across
+    /// both meeting in the empty set. Distinct flags, and overlapping ranges,
+    /// still both hold.
+    #[test]
+    fn exclusions_are_the_conjunctions_contradictions() {
+        use crate::StateCompare;
+        use crate::ids::{FlagId, StateId};
+        let x = vec![FlagId("flag/x".to_string())];
+        let y = vec![FlagId("flag/y".to_string())];
+        let requires_x = Gate::of(&x, &[], &[]);
+        let forbids_x = Gate::of(&[], &x, &[]);
+        let forbids_y = Gate::of(&[], &y, &[]);
+        assert_eq!(
+            forbids_x.exclusions(&requires_x),
+            vec![GateContradiction::Flag("flag/x".to_string())]
+        );
+        assert_eq!(
+            requires_x.exclusions(&forbids_x),
+            forbids_x.exclusions(&requires_x),
+            "exclusion is symmetric"
+        );
+        assert!(
+            requires_x.exclusions(&forbids_y).is_empty(),
+            "distinct flags can both hold"
+        );
+        assert!(requires_x.exclusions(&requires_x).is_empty());
+        assert!(requires_x.exclusions(&Gate::OPEN).is_empty());
+        let cmp = |op, value| StateCompare {
+            state: StateId("state/tide".to_string()),
+            op,
+            value,
+        };
+        let high = [cmp(AtLeast, 5)];
+        let low = [cmp(AtMost, 4)];
+        let mid = [cmp(AtMost, 5)];
+        assert_eq!(
+            Gate::of(&[], &[], &high).exclusions(&Gate::of(&[], &[], &low)),
+            vec![GateContradiction::Datum("state/tide".to_string())]
+        );
+        assert!(
+            Gate::of(&[], &[], &high)
+                .exclusions(&Gate::of(&[], &[], &mid))
+                .is_empty(),
+            "ranges meeting at 5 both hold at 5"
+        );
+        // Every reason is named, so a caller can pick one nothing writes.
+        let both = Gate::of(&x, &[], &high);
+        assert_eq!(
+            both.exclusions(&Gate::of(&[], &x, &low)),
+            vec![
+                GateContradiction::Flag("flag/x".to_string()),
+                GateContradiction::Datum("state/tide".to_string()),
+            ]
+        );
     }
 }

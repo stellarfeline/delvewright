@@ -32,7 +32,7 @@ here:
    learns nothing from.
 5. **Audit the FULL ledger from round 1 before staging any build** — never from
    the last round, and never by reading. You do not have to remember to: the
-   staging paths REQUIRE it (step 9). Run it yourself first so the red list is in
+   staging paths REQUIRE it (step 13). Run it yourself first so the red list is in
    the round summary before anyone is invited.
 6. **Pre-flight, in this order, before the invitation**: full ladder green
    (PackTest → bot critical path + die-retry → every branch run) → staging gate →

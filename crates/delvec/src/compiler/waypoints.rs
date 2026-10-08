@@ -40,11 +40,7 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
             // Force-keep the gate mouth cells alongside the use-gate cells, so the
             // hop that actually crosses a clocked span is SHORT (see
             // [`gate_mouth_cells`]).
-            let mut force_keep = leg.use_gates.clone();
-            for region in &gates {
-                force_keep.extend(gate_mouth_cells(&leg.cells, *region));
-            }
-            let wps: Vec<Value> = thin(&leg.cells, &force_keep)
+            let wps: Vec<Value> = leg_waypoints(&leg.cells, &leg.use_gates, &gates)
                 .into_iter()
                 .map(|c| json!(c))
                 .collect();
@@ -161,6 +157,29 @@ fn occupies_gate(c: [i32; 3], (min, max): ([i32; 3], [i32; 3])) -> bool {
         && c[1] + (PLAYER_OCCUPANCY - 1) >= min[1]
 }
 
+/// A leg's exported waypoints: its proven cells thinned to corners, with every
+/// use-gate cell and every timed gate's two mouths force-kept, and **no kept cell
+/// inside a timed gate**. The waypoint contract is "stand here" (see
+/// [`gate_mouth_cells`]), and thinning's cell-after-a-corner rule keeps the first
+/// cell of a run that turns AT a gate's mouth into the gate — on the gallery,
+/// `[19, 67, 15]` inside the crush gate `timed-gate/inner-door`, where the harness
+/// aimed its crossing and the closing edge killed the bot. The flanking mouths
+/// stay pinned, so the crossing is still one short hop.
+fn leg_waypoints(
+    cells: &[[i32; 3]],
+    use_gates: &[[i32; 3]],
+    gates: &[([i32; 3], [i32; 3])],
+) -> Vec<[i32; 3]> {
+    let mut force_keep = use_gates.to_vec();
+    for region in gates {
+        force_keep.extend(gate_mouth_cells(cells, *region));
+    }
+    thin(cells, &force_keep)
+        .into_iter()
+        .filter(|c| !gates.iter().any(|r| occupies_gate(*c, *r)))
+        .collect()
+}
+
 /// The route cells at a timed gate's **mouth**: for each maximal run of cells whose
 /// occupancy is inside the region, the route cell immediately BEFORE the run and the
 /// one immediately AFTER it — the two cells flanking the crossing, on either side of
@@ -270,6 +289,39 @@ fn delta(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_waypoint_stands_inside_a_timed_gate_even_after_a_corner_at_its_mouth() {
+        // The gallery's marshal leg: south to the inner door's mouth, a turn east,
+        // a turn south through the one-cell crush gate, and on west.
+        let mut cells = Vec::new();
+        for z in 2..=14 {
+            cells.push([15, 67, z]);
+        }
+        for x in 16..=19 {
+            cells.push([x, 67, 14]);
+        }
+        cells.push([19, 67, 15]);
+        cells.push([19, 67, 16]);
+        for x in (15..=18).rev() {
+            cells.push([x, 67, 16]);
+        }
+        let gate = ([19, 67, 15], [20, 69, 15]);
+        // Thinning alone keeps the cell after the corner at the mouth: inside.
+        assert!(thin(&cells, &[]).contains(&[19, 67, 15]));
+        let wps = leg_waypoints(&cells, &[], &[gate]);
+        assert!(!wps.contains(&[19, 67, 15]), "{wps:?}");
+        assert!(
+            wps.contains(&[19, 67, 14]) && wps.contains(&[19, 67, 16]),
+            "both mouths stay pinned: {wps:?}"
+        );
+        let mouth = wps.iter().position(|c| *c == [19, 67, 14]).unwrap();
+        assert_eq!(
+            wps[mouth + 1],
+            [19, 67, 16],
+            "the crossing is one hop, mouth to mouth"
+        );
+    }
 
     #[test]
     fn short_route_is_kept_verbatim() {

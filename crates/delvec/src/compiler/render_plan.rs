@@ -223,6 +223,9 @@ pub struct PovShot {
     pub leg: usize,
     /// Waypoint index within the leg (0 = leg start).
     pub wp: usize,
+    /// The `critical_path` step the leg arrives at — whose configuration the
+    /// leg is walked in (spec-0089 §8).
+    pub step: usize,
     /// Objective id this leg walks toward, if resolvable.
     pub objective: Option<String>,
     /// The standing (feet) cell — a DW0314-proven-standable waypoint.
@@ -303,6 +306,7 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
                 area: ctx.area_id.clone(),
                 leg,
                 wp,
+                step: route.to_step,
                 objective: objective.clone(),
                 standing_cell: cell,
                 eye,
@@ -538,7 +542,7 @@ fn npc_name(c: &Campaign, npc_id: &str) -> String {
         .npcs
         .iter()
         .find(|n| n.id.as_str() == npc_id)
-        .map(|n| delvewright_dsl::l10n_plain(&n.name).to_string())
+        .map(|n| delvewright_dsl::l10n::plain(&n.name).to_string())
         .unwrap_or_else(|| local_of(npc_id))
 }
 
@@ -587,7 +591,7 @@ fn area_name_of(c: &Campaign, area_id: &str) -> String {
         .areas
         .iter()
         .find(|a| a.id.as_str() == area_id)
-        .map(|a| delvewright_dsl::l10n_plain(&a.name).to_string())
+        .map(|a| delvewright_dsl::l10n::plain(&a.name).to_string())
         .unwrap_or_default()
 }
 
@@ -595,7 +599,7 @@ fn area_name_of(c: &Campaign, area_id: &str) -> String {
 /// expect line to one sentence. Reviewer artifact, so the hint is read as its
 /// English source (`l10n::plain`) — a spec-0029 named exclusion.
 fn first_clause(hint: &str) -> String {
-    let hint = delvewright_dsl::l10n_plain(hint);
+    let hint = delvewright_dsl::l10n::plain(hint);
     let end = hint.find(['.', ';', '—']).unwrap_or(hint.len());
     hint[..end].trim().to_string()
 }
@@ -765,13 +769,44 @@ fn ground_plane(plan: &Plan) -> Option<f64> {
         .map(|s| f64::from(s.valley.floor_top_y + 1))
 }
 
+///
+/// `base` is the bytes a picture starts from
+/// ([`crate::compiler::view::beat::picture_base`]): with it, every POV shot
+/// states the configuration its leg is walked in (`after`, spec-0089 §8) and
+/// the camera record's `after` rules are asked (`DW0721`). The build always
+/// hands it; `delvec snapshot --shot`, which reads one shot's camera and writes
+/// no plan, does not.
 pub fn render_plan(
     plan: &Plan,
     prefabs: &PrefabRegistry,
     pov: &[PovShot],
     world: &World,
+    base: Option<&crate::compiler::blockstate::BlockMap>,
 ) -> Result<(Value, Vec<Diagnostic>), Failure> {
     let c = plan.campaign;
+    // spec-0089 §8: the configuration each POV shot stands in, from the
+    // critical path's own enumeration — per leg, the step whose configuration
+    // the leg arrives under and the cells its bytes move from load.
+    let pov_after: Option<Vec<Value>> = base.map(|base| {
+        let (configs, per_step) = crate::compiler::nav::path_configurations(plan, world);
+        let load = crate::compiler::view::beat::load_blocks(plan, world, base);
+        let mut moved: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+        pov.iter()
+            .map(|shot| {
+                let ci = per_step.get(shot.step).copied();
+                let cells = ci.map_or(0, |ci| {
+                    *moved
+                        .entry(ci)
+                        .or_insert_with(|| configs[ci].moved_from(&load))
+                });
+                let after = plan.critical_path[..shot.step.min(plan.critical_path.len())]
+                    .iter()
+                    .rev()
+                    .find_map(crate::compiler::view::beat::step_id);
+                json!({ "step": after, "cells_moved": cells })
+            })
+            .collect()
+    });
     let mut out = Shots::new(c, world);
 
     // --- spawn -------------------------------------------------------------
@@ -895,7 +930,7 @@ pub fn render_plan(
             .npcs
             .iter()
             .find(|n| n.id.as_str() == npc.npc_id)
-            .map(|n| delvewright_dsl::l10n_plain(&n.name))
+            .map(|n| delvewright_dsl::l10n::plain(&n.name))
             .unwrap_or("NPC");
         let Some(ResolvedAnchor::Point { pos, facing }) =
             plan.anchors.get(&(area.clone(), anchor.to_string()))
@@ -944,7 +979,7 @@ pub fn render_plan(
         if let Some(h) = hint {
             expect.push(Value::String(format!(
                 "matches objective hint: {}",
-                delvewright_dsl::l10n_plain(&h)
+                delvewright_dsl::l10n::plain(&h)
             )));
         }
         out.push(Shot {
@@ -995,7 +1030,7 @@ pub fn render_plan(
     // --- player-POV shots (first-person, along the walked critical path) ---
     // Appended after the overhead/orbit kinds so the deterministic prefix (spawn
     // first, …) that existing consumers assert stays stable.
-    for shot in pov {
+    for (si, shot) in pov.iter().enumerate() {
         let mut expect: Vec<Value> = vec![Value::String(shot.expect_line.clone())];
         expect.extend(shot.extra_expect.iter().cloned().map(Value::String));
         out.push(Shot {
@@ -1005,12 +1040,18 @@ pub fn render_plan(
             eye: shot.eye,
             look_at: shot.look_at,
             fov: Some(POV_FOV_DEG),
-            extra: vec![
-                ("leg", json!(shot.leg)),
-                ("waypoint", json!(shot.wp)),
-                ("objective", json!(shot.objective)),
-                ("standing_cell", json!(shot.standing_cell)),
-            ],
+            extra: {
+                let mut e = vec![
+                    ("leg", json!(shot.leg)),
+                    ("waypoint", json!(shot.wp)),
+                    ("objective", json!(shot.objective)),
+                    ("standing_cell", json!(shot.standing_cell)),
+                ];
+                if let Some(a) = pov_after.as_ref().and_then(|v| v.get(si)) {
+                    e.push(("after", a.clone()));
+                }
+                e
+            },
             expect,
             stamped: true,
         });
@@ -1057,20 +1098,41 @@ pub fn render_plan(
             code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
             message: d.message,
         })?;
-        let showcase =
-            prove_showcase(record, &parsed, |cell| !world.is_clear(cell)).map_err(|refusal| {
-                match refusal {
-                    ShowcaseRefusal::Record(d) => Failure {
-                        code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
-                        message: d.message,
-                    },
-                    ShowcaseRefusal::Camera(message) => Failure {
-                        code: crate::compiler::nav::DW_CAMERA_EYE_OCCLUDED,
-                        message,
-                    },
-                }
+        let radius = delvewright_dsl::viewdistance::served_radius_blocks(
+            delvewright_dsl::viewdistance::chunks(c),
+        );
+        let showcase = prove_showcase(record, &parsed, radius, |cell| !world.is_clear(cell))
+            .map_err(|refusal| match refusal {
+                ShowcaseRefusal::Record(d) => Failure {
+                    code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+                    message: d.message,
+                },
+                ShowcaseRefusal::Camera(message) => Failure {
+                    code: crate::compiler::nav::DW_CAMERA_EYE_OCCLUDED,
+                    message,
+                },
+                ShowcaseRefusal::Beyond(message) => Failure {
+                    code: delvewright_dsl::codes::VIEW_BEYOND_SERVED,
+                    message,
+                },
             })?;
         root["camera_eye_proof"]["showcase"] = json!(showcase);
+        // spec-0089: every camera's `after` stands somewhere — the record's own
+        // rules, asked of the build's configurations by the reader `delvec
+        // cameras` asks them through.
+        if let Some(base) = base {
+            let sheet =
+                crate::compiler::view::camera::parse_sheet(record).map_err(|d| Failure {
+                    code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+                    message: d.message,
+                })?;
+            crate::compiler::view::beat::check_record(plan, world, base, &sheet.cameras).map_err(
+                |message| Failure {
+                    code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+                    message,
+                },
+            )?;
+        }
     }
     Ok((root, warnings))
 }
@@ -1492,6 +1554,7 @@ mod pov_tests {
             area: "area/keep".into(),
             leg: 0,
             wp: 0,
+            step: 1,
             objective: None,
             standing_cell: [5, 65, 4],
             eye: [5.5, 66.62, 4.5],

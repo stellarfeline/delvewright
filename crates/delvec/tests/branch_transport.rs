@@ -588,6 +588,7 @@ fn ward_the_door(tmp: &TempCampaign) {
             "id": "trigger/ward-the-door",
             "at": "spawn",
             "on": { "on": "use" },
+            "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
             "effects": [ { "type": "set-flag", "flag": "flag/warded" } ]
         }));
     });

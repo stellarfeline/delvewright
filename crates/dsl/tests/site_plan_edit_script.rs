@@ -12,7 +12,7 @@
 //! and the repair prescribed by the message — *use one of the world stage's area
 //! ids* — names a set the other rule guarantees is empty.
 //!
-//! The tell that it was an oversight rather than a decision: `validate.rs` has
+//! The tell that it was an oversight rather than a decision: `dsl::validate` has
 //! exactly three area-set constructions, and the other two both insert
 //! `SITE_AREA`, each with a comment saying why.
 //!

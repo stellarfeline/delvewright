@@ -398,7 +398,7 @@ fn every_prefab_entry_point_is_classified_and_the_census_is_stated() {
         "`prefab audit <manifest.json>` — a tiled zone, measured as one assembled building",
         "`prefab audit <library dir>` — the whole library at once",
         "`prefab seating --horizon <base>` — the library the global `--prefabs` points at",
-        "`main::validate_loaded` -> `compiler::seating::check` — the one validation funnel every \
+        "`cli::campaign::validate_loaded` -> `compiler::seating::check` — the one validation funnel every \
          subcommand goes through, `build` included",
     ];
     println!(

@@ -55,6 +55,20 @@ export async function presentAndTrigger<I extends HandItem>(
   step: { readonly requiresItem: string | null; readonly command: string },
   label: string,
 ): Promise<void> {
+  await presentItem(bot, step, label);
+  bot.chat(step.command);
+}
+
+/**
+ * The hand half of {@link presentAndTrigger}: put the required item in the main
+ * hand, or say why it could not be. A block-bound interact (spec-0093 §6.5)
+ * presses a block instead of chatting, and loads its hand the same way.
+ */
+export async function presentItem<I extends HandItem>(
+  bot: InteractBot<I>,
+  step: { readonly requiresItem: string | null },
+  label: string,
+): Promise<void> {
   if (step.requiresItem !== null) {
     const want = step.requiresItem.replace(/^minecraft:/, "");
     const carried = bot.inventory.items().find((i) => i.name === want);
@@ -75,5 +89,4 @@ export async function presentAndTrigger<I extends HandItem>(
       }
     }
   }
-  bot.chat(step.command);
 }

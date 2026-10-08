@@ -50,9 +50,17 @@
           "moon": "setting"
         },
         "weather": "clear"
+      },
+      {
+        "name": "concept/bay-after-the-muster",
+        "shows": "the east bay after the muster is cleared, its floor raised in polished stone and the main gate down again",
+        "time": {
+          "sun": "high"
+        },
+        "weather": "clear"
       }
     ]
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.1",
   "stage": "design"
 }

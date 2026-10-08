@@ -802,7 +802,7 @@ fn the_binding_line_is_printed_on_every_build() {
     assert!(
         String::from_utf8_lossy(&plain.stderr).contains(
             "assembly binding: 0 assembl(ies) declared, 0 part(s), 0 clip(s), 0 hitbox(es) \
-             examined, 0 strike step(s) checked over 0 facing(s), 0 refused"
+             examined, 0 strike step(s) checked over 0 facing(s) and 0 locked cell(s), 0 refused"
         ),
         "{}",
         String::from_utf8_lossy(&plain.stderr)
@@ -837,7 +837,8 @@ fn the_binding_line_is_printed_on_every_build() {
     assert!(
         err.contains(
             "assembly binding: 1 assembl(ies) declared, 3 part(s), 4 clip(s), 1 hitbox(es) \
-             examined, 1 strike step(s) checked over 1 facing(s), 0 refused"
+             examined, 1 strike step(s) checked over 1 facing(s) and 0 locked cell(s), 0 \
+             refused"
         ),
         "{err}"
     );
@@ -863,5 +864,295 @@ fn the_press_ledger_records_the_strike_on_the_hitbox() {
             .unwrap()
             .contains("rides assembly `assembly/limb`'s hitbox, 1 x 2 standing on [5, 65, 8]"),
         "{v:#}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0094 — a strike locks where the player stands
+// ---------------------------------------------------------------------------
+
+/// The fixture rig with two more strikes: `near` lays the first part along
+/// the floor one to four cells in front of the mark, `far` three to seven;
+/// the other two parts stay on the mark.
+fn reaching_rig() -> Rig {
+    let mut r = rig();
+    let pose = |from: f64, to: f64| {
+        let mut f = r.clips["strike"].frames.last().unwrap().clone();
+        f[0].translation = [-0.5, 0.0, from];
+        f[0].scale = [1.0, 0.3, to - from];
+        f
+    };
+    let first = r.clips["strike"].frames[0].clone();
+    let (near, far) = (pose(1.0, 4.0), pose(3.0, 7.0));
+    for (name, last) in [("near", near), ("far", far)] {
+        let mut c = r.clips["strike"].clone();
+        c.frames = vec![first.clone(), last];
+        r.clips.insert(name.to_string(), c);
+    }
+    r
+}
+
+/// The fixture's thing moved to the room's west wall, facing east, locking
+/// onto whoever is nearest in the 3 × 3 round the exit with `near`, then
+/// `far`; its blow derived.
+fn locked_quests() -> Value {
+    quests_with(|q| {
+        let a = assembly(q);
+        a["at"] = json!({ "anchor": "anchor/exit", "offset": [-4, 0, 0] });
+        a["facing"] = json!("east");
+        a["strikes"]["while_in"] = json!({ "anchor": "anchor/exit", "extent": [3, 1, 1] });
+        let step = &mut a["strikes"]["pattern"][0];
+        step["strike"] = json!("near");
+        step["lock"] = json!({
+            "within": { "anchor": "anchor/exit", "extent": [1, 0, 1] },
+            "pick": "nearest",
+            "reaches": ["far"]
+        });
+        step["on_land"] = json!([{ "type": "damage-players", "amount": 4 }]);
+    })
+}
+
+/// A locked step chooses its target from the mark, reads its feet cell into
+/// the lock region's frame, dispatches on it to one function per cell of the
+/// region — each turning the root to the yaw proved for it — and swings and
+/// lands with the pose and the landing proved there; a step locked onto a
+/// region winds up only while somebody is in it. Every line was walked
+/// against the pinned command tree by the build.
+#[test]
+fn a_locked_strike_turns_to_the_cell_it_locks() {
+    let out = match try_build(&campaign(&locked_quests()), &prefabs_with(reaching_rig())) {
+        Ok(o) => o,
+        Err(e) => panic!("{e:?}"),
+    };
+    let lock = function(&out, "asm_lock_limb_0");
+    assert!(
+        lock.contains("tag @a[x=4,dx=2,y=65,dy=0,z=7,dz=2,tag=!dw_cutscene] add dw_asm_limb_target_c")
+            && lock.contains("execute positioned 1.5 65 8.5 run tag @a[tag=dw_asm_limb_target_c,sort=nearest,limit=1]")
+            && lock.contains("data get entity @a[tag=dw_asm_limb_target,limit=1] Pos[0]")
+            && lock.contains("function hello-world:asm_lockat_limb_0 with storage dw:asm limb"),
+        "{lock}"
+    );
+    assert_eq!(
+        function(&out, "asm_lockat_limb_0"),
+        "$function hello-world:asm_lockc_limb_0_$(l0)_$(l1)_$(l2)\n"
+    );
+    let cells: Vec<&String> = out
+        .keys()
+        .filter(|k| k.contains("/function/asm_lockc_limb_0_"))
+        .collect();
+    assert_eq!(cells.len(), 9, "one per cell of the 3 x 1 x 3 region");
+    // The exit's own cell is straight ahead; the cell north of it turned.
+    assert!(
+        function(&out, "asm_lockc_limb_0_1_0_1")
+            .starts_with("tp @e[tag=dw_asm_limb_root,limit=1] 1.5 65 8.5 0 0\n"),
+        "{}",
+        function(&out, "asm_lockc_limb_0_1_0_1")
+    );
+    assert!(
+        !function(&out, "asm_lockc_limb_0_1_0_0").contains(" 8.5 0 0\n"),
+        "{}",
+        function(&out, "asm_lockc_limb_0_1_0_0")
+    );
+    assert!(function(&out, "asm_begin_limb").contains("function hello-world:asm_lock_limb_0"));
+    assert_eq!(
+        function(&out, "asm_swingat_limb"),
+        "$function hello-world:asm_play_limb_$(r)\n"
+    );
+    assert!(function(&out, "asm_swing_limb").contains("asm_swingat_limb with storage dw:asm limb"));
+    assert_eq!(
+        function(&out, "asm_landat_limb_0"),
+        "$function hello-world:asm_land_limb_0_$(q)\n"
+    );
+    let land = function(&out, "asm_land_limb_0_0");
+    assert!(land.contains("run damage @s 4 minecraft:generic"), "{land}");
+    let tick = function(&out, "asm_tick_limb");
+    assert!(
+        tick.contains("if score #asm_limb_armed dw.sys matches 1 if score #asm_limb_step dw.sys matches 0 if entity @a[x=4,dx=2,y=65,dy=0,z=7,dz=2,tag=!dw_cutscene] run function hello-world:asm_begin_limb"),
+        "{tick}"
+    );
+    let record: Value =
+        serde_json::from_slice(out.get("validation/assembly.json").unwrap()).unwrap();
+    assert_eq!(record["locks"], 9, "{record:#}");
+    assert_eq!(record["strike_steps"][0]["locked"], true);
+    let clips: Vec<&str> = record["strike_steps"][0]["facings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["clip"].as_str().unwrap())
+        .collect();
+    assert!(
+        clips.contains(&"near") && clips.contains(&"far"),
+        "{clips:?}"
+    );
+    // The bot witnesses the lock on two cells a turn apart, then is spared.
+    let path: Value = serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
+    let w: Vec<&Value> = path["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s["action"] == "witness-strike")
+        .collect();
+    assert_eq!(
+        w.iter()
+            .map(|s| s["expect"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["struck", "struck", "spared"]
+    );
+    assert_ne!(w[0]["yaw"], w[1]["yaw"]);
+    // Two builds are byte-identical (ADR-0006).
+    let again = try_build(&campaign(&locked_quests()), &prefabs_with(reaching_rig())).unwrap();
+    assert_eq!(out, again);
+    // The generated suite drives the dispatch with proved cells.
+    let t = out
+        .get("packtest-datapack/data/hello-world/test/asm_lock_limb_0.mcfunction")
+        .expect("the lock template");
+    let t = std::str::from_utf8(t).unwrap();
+    assert!(t.contains("function hello-world:asm_lockat_limb_0 with storage dw:asm limb"));
+}
+
+/// Without `far` the cells only it reaches are `DW0968`, named; a lock region
+/// past `while_in` is `DW0968`.
+#[test]
+fn a_lock_that_cannot_strike_where_it_locks_is_dw0968() {
+    let q = quests_with(|q| *q = locked_quests());
+    let mut no_far = q.clone();
+    assembly(&mut no_far)["strikes"]["pattern"][0]["lock"]["reaches"] = json!([]);
+    let m = refusal(&no_far, reaching_rig(), "DW0968");
+    assert!(m.contains("[6, 65, 8]") && !m.contains("[4, 65, 8]"), "{m}");
+    let mut past = q;
+    assembly(&mut past)["strikes"]["pattern"][0]["lock"]["within"]["extent"] = json!([4, 0, 1]);
+    let m = refusal(&past, reaching_rig(), "DW0968");
+    assert!(m.contains("outside the arming region"), "{m}");
+    assert_eq!(build_code(&locked_quests(), reaching_rig()), None);
+}
+
+/// A locked blow with its own box, a nested one, and a lock in an aimed
+/// pattern are `DW0969`; a reach the rig lacks is `DW0935`; `arm-strikes` on a
+/// thing with no `strikes` is `DW0970`.
+#[test]
+fn the_lock_shape_and_arming_refusals() {
+    let has = |q: &Value, code: &str, at: &str| {
+        let d = validation_codes(q, reaching_rig());
+        assert!(
+            d.iter().any(|(c, p, _)| c == code && p.ends_with(at)),
+            "{code} at {at}: {d:?}"
+        );
+    };
+    let mut boxed = locked_quests();
+    assembly(&mut boxed)["strikes"]["pattern"][0]["on_land"][0]["in"] =
+        json!({ "anchor": "anchor/exit", "extent": [0, 0, 0] });
+    has(&boxed, "DW0969", "/on_land/0/in");
+    let mut nested = locked_quests();
+    assembly(&mut nested)["strikes"]["pattern"][0]["on_land"] = json!([{
+        "type": "sequence",
+        "steps": [{ "at_ticks": 0, "effects": [{ "type": "damage-players", "amount": 4 }] }]
+    }]);
+    has(&nested, "DW0969", "/on_land/0/steps/0/effects/0");
+    let mut aimed = locked_quests();
+    assembly(&mut aimed)["strikes"]["aim"] = json!({ "facings": 4 });
+    has(&aimed, "DW0969", "/pattern/0/lock");
+    let mut missing = locked_quests();
+    assembly(&mut missing)["strikes"]["pattern"][0]["lock"]["reaches"] = json!(["fly"]);
+    has(&missing, "DW0935", "/lock/reaches/0");
+    let mut idle = locked_quests();
+    assembly(&mut idle)
+        .as_object_mut()
+        .unwrap()
+        .remove("strikes");
+    trigger(&mut idle)["effects"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({ "type": "arm-strikes", "assembly": "assembly/limb" }));
+    has(&idle, "DW0970", "/assembly");
+    assert!(
+        validation_codes(&locked_quests(), reaching_rig()).is_empty(),
+        "{:?}",
+        validation_codes(&locked_quests(), reaching_rig())
+    );
+}
+
+/// A clip the story plays stands the pattern down: the cue writes `armed`
+/// 0, every begin line reads it, and `arm-strikes` — the only other writer
+/// besides the summon — writes 1. The suite drives it on the pinned server
+/// (`asm_hold_<s>`): no wind-up over the cue with a body in the region, one
+/// after the re-arm.
+#[test]
+fn a_clip_the_story_plays_holds_until_the_pattern_is_rearmed() {
+    let q = quests_with(|q| {
+        trigger(q)["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "type": "arm-strikes", "assembly": "assembly/limb",
+                          "when": { "requires_state": [ { "state": "state/hits", "op": "at-least", "value": 9 } ] } }));
+    });
+    let out = try_build(&campaign(&q), &prefabs_with(rig())).expect("builds");
+    let k = rig().clip_index("retract").unwrap();
+    let cue = function(&out, &format!("asm_cue_limb_{k}"));
+    assert!(
+        cue.contains("scoreboard players set #asm_limb_armed dw.sys 0"),
+        "{cue}"
+    );
+    let tick = function(&out, "asm_tick_limb");
+    let begins: Vec<&str> = tick
+        .lines()
+        .filter(|l| l.contains("asm_begin_limb"))
+        .collect();
+    assert!(!begins.is_empty());
+    assert!(
+        begins
+            .iter()
+            .all(|l| l.contains("if score #asm_limb_armed dw.sys matches 1")),
+        "{tick}"
+    );
+    assert_eq!(
+        function(&out, "asm_rearm_limb"),
+        "scoreboard players set #asm_limb_armed dw.sys 1\nscoreboard players set #asm_limb_step dw.sys 0\n"
+    );
+    assert!(all_functions(&out).contains("function hello-world:asm_rearm_limb"));
+    assert!(
+        function(&out, "asm_summon_limb")
+            .contains("scoreboard players set #asm_limb_armed dw.sys 1")
+    );
+    let t = out
+        .get("packtest-datapack/data/hello-world/test/asm_hold_limb.mcfunction")
+        .expect("the hold template");
+    let t = std::str::from_utf8(t).unwrap();
+    let cue_at = t.find("asm_cue_limb_").unwrap();
+    let rearm_at = t.find("asm_rearm_limb").unwrap();
+    assert!(cue_at < rearm_at, "{t}");
+    assert!(
+        t.contains("assert score #asm_limb_sm dw.sys matches 0"),
+        "{t}"
+    );
+    assert!(
+        t.contains("assert score #asm_limb_sm dw.sys matches 1"),
+        "{t}"
+    );
+}
+
+/// An aimed wind-up chooses its target from the mark: no selector both
+/// states the arming box and sorts.
+#[test]
+fn an_aimed_wind_up_chooses_its_target_from_the_mark() {
+    let q = quests_with(|q| {
+        assembly(q)["strikes"]["aim"] = json!({ "facings": 4 });
+        assembly(q)["strikes"]["while_in"] =
+            json!({ "anchor": "anchor/exit", "extent": [2, 1, 2] });
+    });
+    let out = try_build(&campaign(&q), &prefabs_with(rig())).expect("builds");
+    let begin = function(&out, "asm_begin_limb");
+    assert!(
+        begin.contains("execute positioned 5.5 65 8.5 run tag @a[tag=dw_asm_limb_target_c,sort=nearest,limit=1] add dw_asm_limb_target"),
+        "{begin}"
+    );
+    assert!(
+        begin.contains("facing entity @a[tag=dw_asm_limb_target,limit=1] feet"),
+        "{begin}"
+    );
+    assert!(
+        begin
+            .lines()
+            .all(|l| !(l.contains("x=") && l.contains("sort="))),
+        "{begin}"
     );
 }

@@ -1,0 +1,14 @@
+# `delvec::compiler::firework`
+
+The reference page for `crates/delvec/src/compiler/firework.rs`: the diagnostics-catalog row of every DW code
+this module declares. The catalog's shared rules are in [`compiler.md` §5](../../compiler.md#5-diagnostics-catalog).
+
+## Diagnostics
+
+### DW0899 — a firework bursts where the campaign meant it to (`compiler::firework`; error; exit 3)
+
+| Code | Meaning |
+|------|---------|
+| `DW0899` | **A firework is fired under a roof, or bursts within five blocks of a place the campaign posts a body** (spec-0068 §5). One code, two shapes, one rule — *a firework bursts where the campaign meant it to, and hurts nobody the campaign posted*. Build-tier (exit 3), `compiler::firework`, asked over the assembled world immediately after the wave-seating pass, because a wave's seats are posted places and this proof reads `DW0511`'s own enumeration (`lethal::posted_places`, handed over rather than re-derived, so a post class added for one rule is seen by the other). **A roof in the way**: the column from the mark to the burst height holds a cell a body cannot pass. A rocket under a roof bursts against the ceiling, at a height this engine cannot state and possibly within five blocks of the floor the party stands on; the message names the mark, the first solid cell and the height the flight needed, and the remedy is a lower flight, a mark with sky over it, or a taller room — never removing the check. Asked first, because a rocket that never reaches its burst height has no burst cell to measure a reach from. **A posted body in reach**: the entry spawn, every checkpoint and bonfire seat, every NPC and actor post, every cast placement, every wave seat, within five blocks of the burst cell. Judged on the largest axis separation with no line-of-sight credit — a wall the page says blocks the damage is not modelled — so the refused region is a superset of the sphere vanilla damages. **Players are not posted and are not proved safe**: a player standing level with a burst takes up to 19 HP (seven stars, the crafting cap), under a full body's twenty, and it is a hazard a player can see coming; no static model can state where a player might stand, so this rule does not pretend to, and the demo level is where that is looked at. A campaign that declares a firework assembles the world for this proof (`emit::assembles_world`), so a rocket is never declared, compiled and left unasked. |
+
+**Binding.** Every build that assembles a world prints `firework binding: F firework(s) declared, B burst column(s) checked to H cell(s), P post(s) within reach examined, R refused` — zeroes included — before the verdict is taken. A campaign that declares one also emits `validation/firework-gate.json`, with a row per firework naming its pointer, mark, launch cell, flight, column length and burst cell; a campaign that declares none emits no file, so a file reporting zero columns is a finding rather than an absence.

@@ -256,6 +256,9 @@
           "on": "use"
         },
         "once": false,
+        "prop": {
+          "block": "minecraft:oak_sign[rotation=0]"
+        },
         "requires_state": [
           {
             "op": "not-equals",
@@ -393,6 +396,6 @@
       }
     ]
   },
-  "dsl_version": "0.35.1",
+  "dsl_version": "0.36.1",
   "stage": "quests"
 }

@@ -29,7 +29,8 @@ def gate(tmp_path, monkeypatch):
     spec.loader.exec_module(module)
     crates = tmp_path / "crates"
     crates.mkdir()
-    doc = tmp_path / "compiler.md"
+    doc = tmp_path / "docs" / "reference" / "compiler.md"
+    doc.parent.mkdir(parents=True)
     doc.write_text("", encoding="utf-8")
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(module, "CRATES_DIR", crates)
@@ -114,8 +115,10 @@ def test_a_row_a_blank_line_detached_from_the_catalog_documents_nothing(gate):
     )
     counts, detached = gate.catalog_rows()
     assert counts == {"DW0351": 1}
-    assert [lineno for lineno, _ in detached] == [5]
-    assert "DW0352" in detached[0][1]
+    assert [(str(page), lineno) for page, lineno, _ in detached] == [
+        ("docs/reference/compiler.md", 5)
+    ]
+    assert "DW0352" in detached[0][2]
 
 
 def test_a_code_merely_mentioned_in_prose_does_not_count_as_a_row(gate):
@@ -265,6 +268,55 @@ def test_a_unit_test_sees_its_own_module_through_use_super_star(gate):
     covered = gate.tested_codes()
     assert "DW0732" in covered
     assert "DW0710" not in covered
+
+
+def test_an_out_of_line_test_module_is_test_code(gate):
+    """`#[cfg(test)] mod tests;` puts a module's tests in their own file; that
+    file is test code exactly as an inline `mod tests { }` is, and its
+    `use super::*` sees the module that declares it."""
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/route/mod.rs",
+        'pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";\n#[cfg(test)]\nmod tests;\n',
+    )
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/route/tests.rs",
+        "use super::*;\n#[test]\nfn t() { assert_eq!(e.code, DW_CRITICAL_UNROUTABLE); }\n",
+    )
+    _rs(gate, "delvec", "compiler/nav/world/mod.rs", 'pub const DW_OTHER: &str = "DW0399";\n')
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/world/notes.rs",
+        "use super::*;\n#[test]\nfn t() { assert_eq!(e.code, DW_OTHER); }\n",
+    )
+    covered = gate.tested_codes()
+    assert "DW0311" in covered
+    # A file no `#[cfg(test)] mod` declares is not test code, whatever it holds.
+    assert "DW0399" not in covered
+
+
+def test_an_out_of_line_test_module_at_a_restricted_visibility_is_test_code(gate):
+    """The `mod` an out-of-line test module is declared by is read through the
+    one visibility rule (`tools/lib/rust_source.py`), so `pub(in …)` and
+    `pub(super)` declare it as `mod` alone does."""
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/route/mod.rs",
+        'pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";\n'
+        "#[cfg(test)]\npub(in crate::compiler::nav) mod tests;\n",
+    )
+    _rs(
+        gate,
+        "delvec",
+        "compiler/nav/route/tests.rs",
+        "use super::*;\n#[test]\nfn t() { assert_eq!(e.code, DW_CRITICAL_UNROUTABLE); }\n",
+    )
+    assert "DW0311" in gate.tested_codes()
 
 
 def test_a_name_nothing_imports_credits_nothing(gate):
@@ -531,3 +583,139 @@ def test_a_tier_the_registry_disagrees_on_reds(gate):
     rows = [dict(ROWS[0], tier="Analysis"), ROWS[1]]
     errors = gate.registry_errors(rows, constants, tiers)
     assert any("DW0901 (A) is tier Analysis" in e for e in errors), errors
+
+
+STAGING_GATE = pathlib.Path(__file__).resolve().parents[1] / "creator" / "staging-gate.py"
+
+
+def test_a_code_documented_only_outside_the_catalog_is_undocumented_to_both_gates(
+    gate, monkeypatch
+):
+    """The pair: this gate and the staging gate guard one catalog and must read
+    it by one rule. A code with its own `###` section and prose but no catalog
+    row passed this gate (it counted any mention) while the staging gate refused
+    it as having no row. Both now answer from `documented_codes()`."""
+    _rs(gate, "compiler", "walk.rs", 'pub const DW_A: &str = "DW0974";\n'
+        'pub const DW_B: &str = "DW0975";')
+    gate.DOC_PATH.write_text(
+        "| Code | Meaning |\n"
+        "|------|---------|\n"
+        "| `DW0975` | A rule with its row. |\n"
+        "\n"
+        "### DW0974 — a rule documented only here\n"
+        "\n"
+        "`DW0974` refuses a record that does not describe this build.\n",
+        encoding="utf-8",
+    )
+    assert gate.undocumented_source_codes(gate.source_codes()) == ["DW0974"]
+
+    spec = importlib.util.spec_from_file_location("staging_gate_pair", STAGING_GATE)
+    staging = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(staging)
+    monkeypatch.setattr(staging, "_load_dw_checker", lambda: gate)
+    monkeypatch.setattr(staging, "REPO_ROOT", gate.REPO_ROOT)
+    engine = staging.Engine()
+    assert engine.dw_documented == gate.documented_codes() == {"DW0975"}
+    ok, why = engine.dw_exists("DW0974")
+    assert not ok and "no diagnostics-catalog row" in why
+
+
+# ------------------------------------------- row in page: one record, its module --
+#
+# A code's row lives on the page of the module that declares it
+# (`docs/reference/<crate>/<module path>.md`). The two ways that goes wrong are
+# a code with no row anywhere and a row on some other page — the shape a moved
+# declaration leaves behind when its row does not move with it.
+
+
+def _page(gate, rel: str, body: str) -> None:
+    path = gate.REPO_ROOT / "docs" / "reference" / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def test_a_row_on_its_declaring_modules_page_is_placed(gate):
+    _rs(gate, "delvec", "compiler/nav.rs", 'pub const DW_A: &str = "DW0301";')
+    _rs(gate, "dsl", "diagnostic.rs", "pub mod codes {\n" 'pub const B: &str = "DW0102";\n}')
+    _page(gate, "delvec/compiler/nav.md", CATALOG + "| `DW0301` | a nav rule |\n")
+    _page(gate, "dsl/diagnostic.md", CATALOG + "| `DW0102` | the dsl version |\n")
+    errors, placed, pages = gate.row_in_page_errors()
+    assert errors == []
+    assert (placed, pages) == (2, 2)
+
+
+def test_a_row_on_the_wrong_page_reds_naming_the_right_one(gate):
+    """The declaration moved from `compiler::nav` to `compiler::timed_gate` and
+    the row stayed behind."""
+    _rs(gate, "delvec", "compiler/nav.rs", "")
+    _rs(gate, "delvec", "compiler/timed_gate.rs", 'pub const DW_A: &str = "DW0301";')
+    _page(gate, "delvec/compiler/nav.md", CATALOG + "| `DW0301` | a nav rule |\n")
+    errors, placed, _pages = gate.row_in_page_errors()
+    assert placed == 0
+    assert len(errors) == 1
+    assert "docs/reference/delvec/compiler/nav.md:3" in errors[0]
+    assert "docs/reference/delvec/compiler/timed_gate.md" in errors[0]
+
+
+def test_a_row_left_in_compiler_md_is_on_the_wrong_page(gate):
+    """`compiler.md` holds the catalog's rules and no module's rows."""
+    _rs(gate, "delvec", "compiler/nav.rs", 'pub const DW_A: &str = "DW0301";')
+    gate.DOC_PATH.write_text(CATALOG + "| `DW0301` | a nav rule |\n", encoding="utf-8")
+    errors, placed, _pages = gate.row_in_page_errors()
+    assert placed == 0
+    assert any("docs/reference/compiler.md:3" in e and "delvec/compiler/nav.md" in e for e in errors)
+
+
+def test_a_crate_root_declaration_has_its_page_beside_the_crate_directory(gate):
+    _rs(gate, "delvec", "main.rs", 'pub const DW_A: &str = "DW0967";')
+    _page(gate, "delvec.md", CATALOG + "| `DW0967` | an output rule |\n")
+    errors, placed, _pages = gate.row_in_page_errors()
+    assert errors == [] and placed == 1
+
+
+def test_a_module_page_whose_module_is_gone_reds(gate):
+    _rs(gate, "delvec", "compiler/mod.rs", "")
+    _page(gate, "delvec/compiler/vanished.md", "# a module that moved\n")
+    errors, _placed, pages = gate.row_in_page_errors()
+    assert pages == 1
+    assert len(errors) == 1 and "delvec/compiler/vanished.md" in errors[0]
+
+
+def test_a_code_with_no_row_on_any_page_is_undocumented(gate):
+    _rs(gate, "delvec", "compiler/nav.rs", 'pub const DW_A: &str = "DW0301";\npub const DW_B: &str = "DW0302";')
+    _page(gate, "delvec/compiler/nav.md", CATALOG + "| `DW0301` | a nav rule |\n")
+    assert gate.undocumented_source_codes(gate.source_codes()) == ["DW0302"]
+
+
+def test_the_registry_module_agrees_through_an_inline_module_and_a_raw_identifier(gate):
+    _rs(gate, "dsl", "diagnostic.rs", "pub mod codes {\n" 'pub const B: &str = "DW0102";\n}')
+    _rs(gate, "delvec", "compiler/loop.rs", 'pub const L: &str = "DW0945";')
+    rows = [
+        {"code": "DW0102", "name": "B", "module": "delvewright_dsl::diagnostic::codes"},
+        {"code": "DW0945", "name": "L", "module": "delvec::compiler::r#loop"},
+    ]
+    errors, agreed = gate.registry_module_errors(rows, gate.declaring_modules())
+    assert errors == [] and agreed == 2
+
+
+def test_a_registry_module_the_source_reading_does_not_compute_reds(gate):
+    _rs(gate, "delvec", "compiler/nav.rs", 'pub const DW_A: &str = "DW0301";')
+    rows = [
+        {"code": "DW0301", "name": "DW_A", "module": "delvec::compiler::nav::proofs"},
+        {"code": "DW0301", "name": "DW_A", "module": "delvewright_dsl::compiler::nav"},
+    ]
+    errors, agreed = gate.registry_module_errors(rows, gate.declaring_modules())
+    assert agreed == 0 and len(errors) == 2
+
+
+def test_the_live_catalog_has_every_row_on_its_declaring_modules_page():
+    """The live tree: every row placed, and the binding is the whole catalog."""
+    spec = importlib.util.spec_from_file_location("check_dw_codes_live_pages", SCRIPT)
+    live = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(live)
+    errors, placed, pages = live.row_in_page_errors()
+    assert errors == []
+    assert placed == sum(live.catalog_row_counts().values()) > 0
+    assert pages > 0

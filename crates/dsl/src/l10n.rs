@@ -67,7 +67,7 @@
 //! Effect strings nested inside a `sequence` step or a lifecycle bundle
 //! (`on_respawn`/`on_caught`/`on_arrive`) are player-visible too, so they are
 //! inventoried under **position-derived** child keys: the parent effect's `fx.…`
-//! key, then a stable segment ([`crate::stages::QuestEffect::nested_effect_lists_keyed_mut`])
+//! key, then a stable segment ([`crate::QuestEffect::nested_effect_lists_keyed_mut`])
 //! — `seq.<step>` for a sequence step, `respawn`/`caught`/`arrive` for the bundles —
 //! then the effect's index in that list, then the leaf (`.narrate`/`.give`).
 //! Example: a narrate in sequence step 1, effect 0 of `on_objective_complete`
@@ -104,7 +104,7 @@
 //! player never sees, so translating them is pointless and out of scope): world
 //! `theme`/`premise`, NPC `persona` fields, persona `relationships`.
 
-use crate::stages::Verb;
+use crate::Verb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use schemars::JsonSchema;
@@ -113,7 +113,7 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{Campaign, DSL_VERSION};
 use crate::ids::CampaignId;
-use crate::stages::{NarrateStyle, QuestEffect};
+use crate::{NarrateStyle, QuestEffect};
 
 /// Walk the player-visible strings of a single quest effect (DSL v0.4): a
 /// `narrate` line and a named `give-item`'s display name. `keybase` is the
@@ -366,7 +366,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             // player who clicks without the required item in hand, so it is as
             // player-visible as `hint` and translates like it. Absent on every
             // pre-0.7 objective → inventory unchanged.
-            if let crate::stages::Objective::Interact {
+            if let crate::Objective::Interact {
                 missing_item_hint: Some(m),
                 ..
             } = o
@@ -378,7 +378,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             // it off the stack in the barrel and off their own hotbar, so it is as
             // player-visible as a `title` and translates like one. Absent on every
             // pre-0.8 objective → inventory unchanged.
-            if let crate::stages::Objective::Collect {
+            if let crate::Objective::Collect {
                 item_name: Some(n), ..
             } = o
             {
@@ -393,7 +393,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         for (npc, entry) in &mut q.cast {
             let np = local(npc.as_str()).to_string();
             for (b, p) in entry.placements_mut().into_iter().enumerate() {
-                let Some(crate::stages::CastDialogue::Barks(pool)) = p.dialogue.as_mut() else {
+                let Some(crate::CastDialogue::Barks(pool)) = p.dialogue.as_mut() else {
                     continue;
                 };
                 for (i, line) in pool.barks.iter_mut().enumerate() {
@@ -727,7 +727,7 @@ pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
         .iter()
         .map(|q| (local(q.id.as_str()), q.goal.as_str()))
         .collect();
-    let quests: BTreeMap<&str, &crate::stages::Quest> = c
+    let quests: BTreeMap<&str, &crate::Quest> = c
         .quests
         .content
         .quests
@@ -741,13 +741,13 @@ pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
         .iter()
         .map(|n| (local(n.id.as_str()), n.name.as_str()))
         .collect();
-    let mut nodes: BTreeMap<(&str, &str), &crate::stages::DialogueNode> = BTreeMap::new();
+    let mut nodes: BTreeMap<(&str, &str), &crate::DialogueNode> = BTreeMap::new();
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             nodes.insert((local(tree.npc.as_str()), local(node.id.as_str())), node);
         }
     }
-    let shops: BTreeMap<&str, &crate::stages::Shop> = c
+    let shops: BTreeMap<&str, &crate::Shop> = c
         .quests
         .content
         .shops
@@ -1399,8 +1399,8 @@ pub fn pack_texture_id(campaign_id: &str, texture_id: &str) -> String {
 /// `skin.texture_id` off the body it is summoning. Applying the namespace at those
 /// emit sites is a rule each of them has to remember — the shape that let an
 /// actor's skin be emitted but never baked. Applying it here, at the one walk over
-/// every body that declares a skin ([`crate::stages::body_skins_mut`], the mutable
-/// mirror of [`crate::stages::body_skin_sites`]), leaves no un-namespaced id in the
+/// every body that declares a skin ([`crate::body_skins_mut`], the mutable
+/// mirror of [`crate::body_skin_sites`]), leaves no un-namespaced id in the
 /// campaign for a new emit site to find: a summon written tomorrow is namespaced
 /// because there is nothing else to read. Same shape as [`tag_translatables`],
 /// which is why it sits beside it.
@@ -1416,7 +1416,7 @@ pub fn pack_texture_id(campaign_id: &str, texture_id: &str) -> String {
 pub fn namespace_skin_textures(c: &mut Campaign) -> BTreeMap<String, String> {
     let dir = pack_texture_dir(c.world.campaign_id.as_str());
     let mut sources = BTreeMap::new();
-    for skin in crate::stages::body_skins_mut(c) {
+    for skin in crate::body_skins_mut(c) {
         let packed = format!("{dir}{}", skin.texture_id);
         sources.insert(
             packed.clone(),

@@ -120,14 +120,15 @@ flowchart TD
     F --> A["7 · delvec analyze<br/>reachability / deadlock / dark mitigation"]
     A --> B["8 · delvec build -o validation/delve-output<br/>must exit 0"]
     B --> CAM["8b · showcase cameras<br/>one per approved image"]
-    CAM --> W{{"9 · WALK IT<br/>staging gate, then localhost:25565"}}
-    W --> G8{{"10 · MACHINE LADDER<br/>PackTest / bot / branch runs"}}
+    CAM --> D["9 · detail plan — site plan only,<br/>nothing waits on a walk"]
+    D --> G8{{"10 · MACHINE LADDER<br/>PackTest / bot / branch runs"}}
     G8 --> G7{{"11 · BRANCH CHRONICLE<br/>only when branch_points exist"}}
     G7 --> G9{{"12 · VISUAL REVIEW<br/>POV sequence first"}}
-    G9 --> D["13 · detail plan — site plan only,<br/>after the walk"]
-    D --> G10([14 · storybook + play commands])
+    G9 --> W{{"13 · WALK IT — the detailed world<br/>staging gate, then localhost:25565"}}
+    W --> G10([14 · storybook + play commands<br/>on a passed walk record of this build])
 
     W -.finding.-> P2
+    W -.finding.-> D
     G7 -.finding.-> C
     G8 -.content bug.-> C
     G8 -.toolchain bug.-> ESC[[STOP and escalate<br/>never work around]]
@@ -214,10 +215,10 @@ something it does not check is how a green run ships a broken delve.
 | 4 | design gate | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/creator/refimg.py`. A render is a candidate prefab imaged by `delvec render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names. The engine also reads that approval (spec-0061): `design.json` records one row per approved image with the `time` and `weather` it was drawn under, written in the same act as the approval (`references/design-gate.md`), and `DW0890` refuses at the next `delvec validate` when the skies the built world reaches and the skies the rows state are not equal, or when a row and a file do not answer to each other | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it |
 | 7 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 8 | `delvec build` | the DSL compiles to a datapack | nothing about play |
-| 9 | the walk | somebody has stood in the world — scale, route legibility, silhouette; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled |
 | 11 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
 | 10 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that a wave IS what the document says — read `encounters[].declared_facts` and `muster_findings` in the run report. `declared_facts: 0` over a campaign with waves means the muster asked nothing of any body, which is not a pass; an empty `muster_findings` beside a non-zero count is. The ladder asserts nothing about whether a fight can be won — that is the owner's hour |
 | 12 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — an inside-out cinematic is fully DW-green |
+| 13 | the walk | somebody has stood in the DETAILED world, after detail, the ladder and the visual review — scale, route legibility, silhouette, on the buildings that ship; on a site-plan campaign, `walk-record.json` names that build by its grid, ways and detail hashes, and every later build refuses a record of a different build (`DW0974`); a route problem found here costs a detail rework as well as the plan or graph edit; and the staging gate has run, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled |
 | 14 | storybook marker | the host is told which engine they need, and the player which Minecraft to install | verified by `tools/creator/check-storybook-version.py`, which is the thing that stops a stale marker |
 
 Step 11 exists because of the **decompilation principle** (spec-0025): the

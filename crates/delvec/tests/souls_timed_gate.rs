@@ -327,8 +327,8 @@ fn crush_false_is_inert() {
         }
     }
 
-    // The two builds differ ONLY in the closing function, the crush PackTests, and
-    // the waypoints artifact's exported `crush` fact: the runtime
+    // The two builds differ ONLY in the closing function, the crush PackTests, the
+    // observer census's selector count, and the waypoints artifact's exported `crush` fact: the runtime
     // harness must be TOLD a closing edge kills, or it walks the bot into one blind
     // (the manifest hashes those files, so it differs too — and must).
     let differing: Vec<&String> = off
@@ -340,6 +340,8 @@ fn crush_false_is_inert() {
         format!("datapack/data/{NS}/function/tgate_close_inner_door.mcfunction"),
         format!("packtest-datapack/data/{NS}/test/souls_timed_gate_crush_inner_door.mcfunction"),
         "validation/critical-path-waypoints.json".to_string(),
+        // The observer census counts the crush's guarded selector.
+        "validation/observer-census.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {

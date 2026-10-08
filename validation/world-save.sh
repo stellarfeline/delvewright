@@ -57,13 +57,17 @@ repo="$(cd "$here/.." && pwd)"
 usage() {
   cat >&2 <<'USAGE'
 usage: EULA=TRUE validation/world-save.sh <build-dir> --project <compose-project>
-                                          [--timeout <seconds>]
+                                          [--timeout <seconds>] [--seed <dir>]
 
   <build-dir>  a `delvec build` output directory (containing datapack/ + server/)
   --project    REQUIRED. The compose project this boot owns (e.g. dw-round-m).
                Distinct per concurrent run; there is no default, because a shared
                default is what makes two ladders tear each other down.
   --timeout    how long to wait for the datapack to finish placing (default 600).
+  --seed       a server-bootstrap cache (`validation/server-bootstrap-cache.sh`)
+               copied into the world volume before the boot, so the boot fetches
+               nothing live; refused when it holds no file, and the boot is then
+               held to have used it. CI passes the job's one verified fetch.
 
 Writes <build-dir>/world/ (level.dat + region/), replacing whatever was there.
 The next `delvec build` into <build-dir> removes it (it is this build's world).
@@ -74,10 +78,12 @@ USAGE
 build_dir=""
 project=""
 timeout_s=600
+seed=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project|-p) [ $# -ge 2 ] || usage; project="$2"; shift 2 ;;
     --timeout)    [ $# -ge 2 ] || usage; timeout_s="$2"; shift 2 ;;
+    --seed)       [ $# -ge 2 ] || usage; seed="$2"; shift 2 ;;
     -h|--help)    usage ;;
     -*)           echo "world-save: unknown argument '$1'" >&2; usage ;;
     *)            [ -z "$build_dir" ] || { echo "world-save: unexpected argument '$1'" >&2; usage; }
@@ -137,6 +143,21 @@ echo "==> world save: project '$project', build tree '$build_abs'"
 # is exactly the picture nobody would question.
 "$here/fresh-volumes.sh" --project "$project"
 
+if [ -n "$seed" ]; then
+  [ -d "$seed" ] && [ -n "$(find "$seed" -type f -print -quit)" ] || {
+    echo "world-save: --seed $seed holds no file — this boot would fetch the server live" >&2
+    exit 2
+  }
+  seed_abs="$(cd "$seed" && pwd)"
+  # The seeding container is the delve image itself, so Docker populates the
+  # empty volume from the image first and the overlay lands on top — the shape
+  # tier 2's datapack-load boot uses.
+  echo "==> seeding the server bootstrap from $seed_abs"
+  "${COMPOSE[@]}" build server
+  "${COMPOSE[@]}" run --rm --no-deps -v "$seed_abs:/seed:ro" --entrypoint /bin/bash server \
+    -c 'cp -a /seed/. /data/ && chown -R 1000:1000 /data'
+fi
+
 echo "==> booting the delve image"
 "${COMPOSE[@]}" up -d --build server
 
@@ -173,6 +194,21 @@ fi
 # poll above matched something other than a live scoreboard read.
 placed_reply="$(dw_rcon "$cid" "scoreboard players get #placed dw.sys")"
 echo "    $placed_reply"
+
+if [ -n "$seed" ]; then
+  # BINDING: a seed is worth something only if THIS boot used it.
+  # Read whole, then matched: `docker logs | grep -q` stops reading at the first
+  # match, the producer takes a SIGPIPE, and `pipefail` reports the match as a miss.
+  boot_log="$(docker logs "$cid" 2>&1)"
+  case "$boot_log" in
+    *"is already installed"*) : ;;
+    *)
+      echo "world-save: the seeded boot still bootstrapped the server jar live — the seed did not bind" >&2
+      exit 1
+      ;;
+  esac
+  echo "    bootstrap binding: seeded, 0 live fetches on this boot"
+fi
 
 echo "==> flushing the world to disk"
 dw_rcon "$cid" "save-all flush" >/dev/null

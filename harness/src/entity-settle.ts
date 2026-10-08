@@ -3,7 +3,7 @@
 // arrive 2-4s late — after the join packet, not with it. The island bot logs in
 // already within TALK_RANGE of its first talk-to target, so `walkTo` returns
 // immediately with no walk to cover the gap, and the FIRST crosshair assertion
-// (executor.ts's `requireCrosshair`) fired at ~t+0.5s against a tracker nobody
+// (executor/crosshair.ts's `requireCrosshair`) fired at ~t+0.5s against a tracker nobody
 // had told about a single entity yet — printing "no `interaction` body tracked
 // within 3 blocks", a diagnostic that is honest about ITS OWN data (see
 // requireCrosshair's doc) but, to a reader, indistinguishable from a real
@@ -20,7 +20,7 @@
 //
 // This module is pure (no mineflayer import) so the settle predicate is
 // unit-testable without a server; the loop that actually polls `bot.entities`
-// and sleeps between polls lives in executor.ts (`awaitEntitySettle`).
+// and sleeps between polls lives in executor/settle.ts (`awaitEntitySettle`).
 
 /** One poll's reading: how many non-player entities the tracker currently holds. */
 export type EntityCount = number;

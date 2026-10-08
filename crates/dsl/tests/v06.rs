@@ -8,7 +8,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, localize, parse_campaign};
+use delvewright_dsl::{RawCampaign, check_campaign, l10n, localize, parse_campaign};
 use std::sync::LazyLock;
 
 /// A v0.6 stage-1 world document: ocean horizon + a boundary (the happy path).
@@ -376,14 +376,18 @@ fn v06_sequence_narrate_is_inventoried_and_localized() {
     let mut campaign = parse_campaign(&raw).expect("parses");
 
     // The nested narrate is inventoried with its canonical English text.
-    let inv = l10n_inventory(&campaign);
+    let inv = l10n::inventory(&campaign);
     assert_eq!(
         inv.get(NESTED_NARRATE_KEY).map(String::as_str),
         Some("The seal cracks open."),
         "sequence narrate must be inventoried under a stable nested key; inventory: {inv:#?}"
     );
     // Determinism: the key derivation is stable across builds (byte-identity gate).
-    assert_eq!(inv, l10n_inventory(&campaign), "inventory is deterministic");
+    assert_eq!(
+        inv,
+        l10n::inventory(&campaign),
+        "inventory is deterministic"
+    );
 
     // Localize swaps the nested narrate in place (the emission path reads this).
     let mut tr = std::collections::BTreeMap::new();

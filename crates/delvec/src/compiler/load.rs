@@ -94,13 +94,14 @@ pub const DESIGN_FILE: &str = "design.json";
 ///
 /// Not a stage document: it carries no `dsl_version`, no `campaign_id` and no
 /// `stage`, because it is not authored against a schema version — it is the
-/// record of a human walking one particular derived blockout, and its form was
-/// fixed by the spec that produced the blockout rather than by the DSL.
+/// record of a human walking one particular build, and its form is
+/// `compiler::walk`'s rather than the DSL's.
 ///
 /// It is deliberately **not** hashed into the manifest inputs. It reaches no
-/// emitted byte: it gates whether detail work may proceed at all, and a build
-/// whose record was merely re-recorded must stay byte-identical, or double-build
-/// determinism would become a property of when somebody last walked the map.
+/// emitted byte: `DW0974` refuses a record that does not describe the build
+/// beside it, and a build whose record was merely re-recorded must stay
+/// byte-identical, or double-build determinism would become a property of when
+/// somebody last walked the map.
 pub const WALK_RECORD_FILE: &str = "walk-record.json";
 
 /// A loaded campaign directory: the parsed-ready [`RawCampaign`] plus the exact

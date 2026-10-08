@@ -1,0 +1,23 @@
+{
+  "code": "DW0958",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/2/on_complete/-",
+      "value": {
+        "at": {
+          "anchor": "anchor/arrival",
+          "offset": [
+            0,
+            0,
+            2
+          ]
+        },
+        "type": "lightning"
+      }
+    }
+  ],
+  "units": [],
+  "why": "A bolt struck two cells from `anchor/arrival`, where every player and every respawn first stands. While it lives a bolt calls `thunderHit` on every living body whose box meets its own — three blocks out on each side, three below and nine above — dealing 5 HP and eight seconds alight, and turning a villager into a witch; a body posted there is struck every time the beat fires. The build names the strike, the post and the box. It declares no unit: `lightning` and its mark are bound by the valley-site overlay, whose strike stands at the far end of the walled court, clear of every post. The remedy is the mark or the post, never removing the check. Perturbing toward the vacuous shape is the other direction: move the same strike four cells further from the arrival and the gate goes green over the same post, which the binding line counts as a post examined."
+}

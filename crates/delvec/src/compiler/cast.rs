@@ -499,8 +499,8 @@ fn concurrent_quests<'a>(c: &'a Campaign, quest: &str, order: &'a [String]) -> B
 ///   it does not trip it at all.
 /// * The deep fixpoint's `DW0203` is cast-blind by construction: it is monotone
 ///   and has no notion of *when*, whereas the ledger is entirely about when.
-///   [`crate::compiler::flow::Flow`] consults the ledger only in its replay
-///   (`skips`/`DW0205`), which is the one place a moment exists.
+///   [`crate::compiler::flow::Flow`]'s replay is the one place a moment exists,
+///   and it reads objectives, never the ledger.
 ///
 /// The rule is therefore the CONJUNCTION and nothing wider: an objective that
 /// requires this conversation, and no scene the ledger can present while that
@@ -655,7 +655,7 @@ pub fn clause_gate_holds(
     flags: &BTreeMap<String, i32>,
     datums: &BTreeMap<String, i32>,
 ) -> bool {
-    use delvewright_dsl::stages::CompareOp;
+    use delvewright_dsl::CompareOp;
     cl.requires_flags
         .iter()
         .all(|f| flags.get(f).copied().unwrap_or(0) == 1)
