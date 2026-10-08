@@ -10,15 +10,12 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../c
 | Code | Meaning |
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
-| `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.36.0`; the message names it (ADR-0024). Raised per stage document by `dsl::validate::envelope`, and for an l10n sidecar under `DW0180`. |
-| `DW0103` | `campaign_id` differs across stages. |
-| `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). **The message names the form of the type it rejected**, derived from that id type's own `PREFIX` — `` `dlg/<kebab>` `` for a dialogue node, `` `class/<kebab>` `` for a class — rather than restating the general rule beside three fixed examples. One macro in `dsl::validate::syntax` is the single path every id type's syntax refusal goes through, so the answer comes from the type at every site: `ids::syntax_form`. The per-section refusals that spell their own prefix by hand (`wave/`, `trigger/`, `trap/`, `shortcut/`, `ambush/`, `timed-gate/`, `loot/`) are the same fact copied, which is why the general path did not have it. |
+| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.36.0`; the message names it (ADR-0024). Raised per stage document by `dsl::envelope::envelope_checks`, and for an l10n sidecar under `DW0180`. |
+| `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). **The message names the form of the type it rejected**, derived from that id type's own `PREFIX` — `` `dlg/<kebab>` `` for a dialogue node, `` `class/<kebab>` `` for a class — rather than restating the general rule beside three fixed examples. One macro, `dsl::ids::id_syntax!`, is the single path every id type's syntax refusal goes through, so the answer comes from the type at every site: `ids::syntax_form`. The per-section refusals that spell their own prefix by hand (`wave/`, `trigger/`, `trap/`, `shortcut/`, `ambush/`, `timed-gate/`, `loot/`) are the same fact copied, which is why the general path did not have it. |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
-| `DW0112` | Dangling / forward / undeclared reference (incl. persona relationship to unknown NPC). An **area** reference resolves against the campaign's placement authority and its prescription comes from there (see the remediation contract above): a `Prefabs` campaign is told to declare it in stage-1 `world.areas`, a `SitePlan` campaign is told its one area is `area/site` and explicitly told NOT to declare it, and a campaign with neither is told both branches. Three sets in `dsl::validate` resolve an area id — npc/quest-plan references, and a stage-7 edit script's `batches[].area` — and all three prescribe from the same authority. |
+| `DW0112` | Dangling / forward / undeclared reference (incl. persona relationship to unknown NPC). An **area** reference resolves against the campaign's placement authority and its prescription comes from there (see the remediation contract above): a `Prefabs` campaign is told to declare it in stage-1 `world.areas`, a `SitePlan` campaign is told its one area is `area/site` and explicitly told NOT to declare it, and a campaign with neither is told both branches. Two sets resolve an area id — `dsl::world::declared_area_ids`, which npc and quest-plan references read, and a stage-7 edit script's own for its `batches[].area` (`dsl::world_edits`) — and both prescribe from the same authority. |
 | `DW0142` | Anchor not provided by the area's bound prefab — or, on a site-plan campaign, not among the names the derivation places. The predicate is `AnchorProviders`; the prescription is the placement authority's (see the remediation contract above), so a derived map is given the synthesized vocabulary instead of being sent to prefab metadata it does not have and told not to invent a name it is required to invent. **Silent while the derived vocabulary is unknowable** — a site-plan campaign with no `layout-graph.json`, where `DW0824` is the finding: `AnchorProviders` contributes no set for `area/site` and the whole campaign defers, the same path a `prefab_pool` takes. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
-| `DW0162` | Stage-7 edit script structurally invalid (spec-0017): an edit names a region no earlier `select` in its batch defined (region refs are strictly backward within a batch), a `union`/`intersect` lists < 2 regions / a `subtract` removes nothing, a box `min` > `max` on an axis, a surface band `from` > `to`, a palette recipe is empty or carries a non-positive/non-finite `weight`/`scale`, a `matching` list is empty, or a morph `by`/`passes` is 0. (Unknown recipe/matching block ids reuse `DW0193`; id syntax `DW0110`; duplicate batch/region names `DW0111`.) |
 | `DW0170` | `kill`/`spawn-wave` references an undeclared `wave/<id>`. |
 | `DW0172` | `requires_flags` references a flag no `set-flag` produces. The producer scan descends every nested effect list (`sequence` steps, `on_respawn`/`on_caught`/`on_arrive`), so a `set-flag` nested in a timeline still counts as a producer (no spurious fire). |
 | `DW0173` | Wave-mob `entity` is not a known vanilla entity id. |
@@ -31,13 +28,6 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../c
 | `DW0192` | Wave-mob `effects[].effect` not a known 1.21.11 status-effect id. |
 | `DW0193` | `set-block`/`interact.prop` block id not a known 1.21.11 block id (base id checked; a malformed blockstate suffix `id[…]` — unbalanced `[]`, empty, or non-`key=value` tokens — reuses this code). |
 | `DW0196` | Area `lighting.min_light` out of range (must be 1..=14). spec-0010. |
-| `DW0340` | Trap declaration structurally invalid (spec-0011): a malformed/duplicate `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides, or a `disarm.via` that collides with the trap's own trigger anchor. The `at` remedy names what a trap actually needs of a piece — **one point anchor, under any name** — and says that a spec-0022 command `payload` needs nothing beyond that cell, because the compiler emits the detection; the `dispenser` socket belongs to a legacy `dispense` effect and the `trigger_block` to a flag-gated trap (`DW0363`). Sending an author to carve trap hardware for a payload trap sends them to build something no build reads. |
-| `DW0341` | A trap `dispense` payload item id is not in the pinned 1.21.11 registry (spec-0011; mirrors `DW0143`). |
-| `DW0377` | A `timed-gate` declaration (spec-0016 §4) is structurally invalid: a malformed or duplicate `timed-gate/<id>`, an `open_ticks` or `closed_ticks` of 0 (a gate that never opens, or never closes — that is `open-gate`/`close-gate`, not a clock), a `phase` at or beyond the full cycle, two timed gates driving one region (two clocks race every tick and the region's state becomes emission order, not design), a gate a `shortcut` already owns (a clock would re-seal what `DW0372` exists to forbid re-sealing), or a `disarm.via` anchor no area's prefab provides / one that IS the gate anchor (the jam lever cannot stand inside the span the portcullis closes on). Validation-tier (exit 1), `dsl::validate`. |
-| `DW0375` | An `ambush` declaration (spec-0016 §3) is structurally invalid: a malformed or duplicate `ambush/<id>`, an empty `actors` list (an ambush that springs nothing), or the same actor listed twice — `spawn-actor` is idempotent, so the second one is a silent no-op and the ambush is half the size it reads as. Validation-tier (exit 1), `dsl::validate`. Deliberately does **not** require a `telegraph`: the un-telegraphed ambush is core souls vocabulary. Everything else about an ambush is checked as the trigger it desugars to (`DW0194`, the anchor seals, `DW0350`). |
-| `DW0371` | A `shortcut` declaration (spec-0016 §2) does not resolve: a malformed or duplicate `shortcut/<id>`, a `gate`/`unlock` anchor no area's prefab provides, or an `unlock` equal to its own `gate` — the mechanism belongs on the far side of the door it opens, which is the entire point of the pattern. Validation-tier (exit 1), `dsl::validate`; anchor resolution stays lenient for pool areas the compiler resolves later, and for a site-plan campaign whose `layout-graph.json` is absent (`DW0824`), where the derived vocabulary is unknowable rather than empty. The id and self-gate arms are unaffected by either — they judge what the declaration says. |
-| `DW0372` | A `close-gate` effect targets a gate a `shortcut` owns (spec-0016 §2). A shortcut opens **permanently** — that is the pattern — so permanence is made structural rather than left to authoring discipline: there is simply no way to spell the re-seal. The scan descends nested effect lists, so a `close-gate` buried in a `sequence` step is caught. `close-gate` on any other gate (the point-of-no-return staging beat) is untouched. Validation-tier (exit 1), `dsl::validate`. |
-| `DW0389` | A `close-gate` effect targets the gate of a `timed-gate` that declares a `disarm` (`docs/notes/souls-design-language.md` §5.2). A disarm suppresses the clock **permanently with the gate resting OPEN** — a jammed portcullis stays up — so, exactly as for a `shortcut` (`DW0372`), permanence is structural rather than left to authoring discipline: there is no way to spell the re-arm. The scan descends nested effect lists, so a `close-gate` buried in a `sequence` step is caught. A `close-gate` on a timed gate with **no** `disarm` is untouched — that clock is still a clock and the point-of-no-return beat may seal it. Validation-tier (exit 1), `dsl::validate`. |
 
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
 
@@ -48,26 +38,11 @@ This module's rows of a section whose prose is on the [`delvec::compiler::nav` p
 
 ### DW043x — geometry & container proofs (stair orientation; spec-0021 loot; `collect` container adoption)
 
-Two unrelated families sharing a number block: proofs that a *block* is the
-block the content meant, rather than proofs about quests or timelines.
+This module's rows of a section whose prose is on the [`delvewright_dsl::loot` page](loot.md#dw043x--geometry--container-proofs-stair-orientation-spec-0021-loot-collect-container-adoption).
 
 | Code | Meaning |
 |------|---------|
 | `DW0432` | A **positional container fill** declares more stacks than a vanilla chest or barrel has slots (27): a `loot` entry's `items`, or a `collect` whose own stack plus `fill_count` padding exceeds 27. Validation-tier (exit 1). Slots are assigned positionally, so every stack past the 27th would be dropped without a word. Prescription: split the contents across more than one container, or lower `fill_count` — a container that reads full does not need to overflow. |
-| `DW0433` | An enchantment id — on an `equipment` piece, a `loot` stack, or (spec-0075) a `give-item` at any effect root — is not in the pinned 1.21.11 enchantment registry. Validation-tier (exit 1). The registry is the 43-id `enchantment` list from the same misode/mcmeta 1.21.11 summary the item registry comes from. The message calls out the classic trap explicitly: vanilla's curse ids are `minecraft:binding_curse` and `minecraft:vanishing_curse`, never `curse_of_binding`. |
-| `DW0434` | An enchantment level outside `1..=255`, the range the `minecraft:enchantments` component can store. Validation-tier (exit 1). Levels **above an enchantment's survival maximum are deliberately allowed** — exceeding it from a command is legal vanilla and is precisely how a set-piece elite is built, so the compiler does not overrule that design call. `0` means "not enchanted" and is silently dropped by the game, which is why it is rejected rather than ignored. |
-| `DW0435` | Two **positional container fills** claim one anchor: two `loot` entries, or a `loot` entry and a `collect`'s adopted `container`, or two adopted collects. Validation-tier (exit 1). Slots are assigned positionally from `container.0`, so the later fill overwrites the earlier one slot-for-slot and the loser's items never reach the player — and for two collects it is worse: whichever activates second replaces the first objective's items with its own. Prescription: give each fill its own container anchor (prefabs may expose several), or fold the items into one — never rely on declaration order to combine them. |
-| `DW0436` | A **single-slot fill**'s `count` exceeds the item's `minecraft:max_stack_size` in the pinned 1.21.11 registry. Validation-tier (exit 1). Covers every DSL surface that compiles to `item replace … container.<n> with <item> <count>`: a `loot[]` stack, a `collect` objective's prop chest, and a trap's `dispense` payload. The command fails **SILENTLY** above the cap — the slot ships empty, the server logs nothing — which is the same silent-failure class `DW0431` exists for: `minecraft:rabbit_stew` (cap 1) declared `count: 2` puts nothing in the chest. The cap is Mojang's own data, vendored per MC pin as `crates/delvec/data/item-stack-sizes-1.21.11.json` (regenerate with `tools/maintenance/extract-item-stack-sizes.py`; a test pins its key set equal to the item registry's) — never a hand-maintained table. 1.21.11 uses exactly three caps: 1, 16, 64. Skipped when the item id is unknown, since that is already `DW0143`. Prescription: lower the count, or add more entries/containers. Do NOT rely on the game splitting the stack — `give` does, `item replace` does not. |
-
-### DW044x — command-driven trap payloads (spec-0022)
-
-This module's rows of a section whose prose is on the [`delvec::compiler::nav` page](../delvec/compiler/nav.md#dw044x--command-driven-trap-payloads-spec-0022).
-
-| Code | Meaning |
-|------|---------|
-| `DW0440` | A trap declares **no consequence at all** — neither the legacy redstone `effect` (spec-0011 `dispense`) nor a spec-0022 command `payload`. A trigger with nothing downstream of it is scenery, but the completability proofs still model its cell as a hazard, so it is a content mistake rather than a deliberate no-op. Validation-tier (exit 1), `dsl::validate`. Prescription: give the trap a `payload` (`volley`, `collapse`, `damage-players`, `play-sound`, `narrate`, `set-flag`, `spawn-wave`, …). |
-| `DW0441` | A payload verb's vanilla id is not in the pinned 1.21.11 registry, or is of the wrong kind: a `volley` `projectile` must be an **entity** id, a `collapse` `falling_block` / `then_floor` a **block** id. Validation-tier (exit 1), `dsl::validate`; mirrors `DW0143`/`DW0341`. |
-| `DW0443` | A `volley`'s `salvos` (1..=16) or `interval` (1..=200 ticks) is out of range. A volley fires its whole kill zone every salvo, so the entity count is `salvos x standable cells`; past the cap that is a server hazard rather than a trap, and salvos spread wider than the interval cap stop reading as one event. Validation-tier (exit 1), `dsl::validate`. |
 
 ### DW0898 — a piece where the body shows it (`dsl::equipment`; error; exit 1)
 
@@ -80,67 +55,12 @@ it. A piece in a slot its body does not draw is NBT nobody sees.
 |------|---------|
 | `DW0898` | **A piece is declared where the pinned game will not show it on that body** (spec-0067). `dsl::equipment::fit_checks`, called from `dsl::validate`, validation tier (exit 1), once per piece of every `equipment` a wave mob or an actor declares. The body is the entity the puppet wears (`BodyRef::worn_entity`: a skinned actor is a `minecraft:mannequin`). One code, three shapes, every shape that holds named in one message: **the body does not show it** — the body table has no entry for that entity type at that slot for the piece's kind (a chestplate on a horse, a sword in a creeper's hand, an iron helmet on a villager, whose head draws an item and not armour, any piece on a body that is not a living entity); the message lists the slots the body draws with their kinds, and for a hand it names `attributes` as the way to write a held weapon's number; **the wrong slot** — the item's `equippable.slot` is another slot (a helmet in `legs`, horse armour in `chest`); the hands take any item and are exempt; **the wrong body** — the item's `allowed_entities` exclude the body (a saddle on a zombie, horse armour on a skeleton horse), with every admitted entity spelled out, tags expanded. **Not judged**: an item with no `equippable` component in a slot the body draws for an `item` (a carved pumpkin or a block on a zombie's head). **The kinds**: `armour` (an asset and a `head`/`chest`/`legs`/`feet` slot, `HumanoidArmorLayer`), `wings` (an asset with a `wings` layer), `animal` (an asset with a `*_body`/`*_saddle` layer), `item` (no asset, or no component). **The two tables**: the body table (`crates/dsl/data/entity-slots-1.21.11.json`, 92 rows over the 157 pinned entity types, each naming its renderer; groups: 16 humanoid six, 5 head item and both hands, 2 head item and main hand, 4 main hand only, 2 both hands only, 5 body and saddle, 6 saddle only, 4 body only, 48 nothing; the evoker, illusioner, vindicator and panda draw their hand only in a state and count as showing it) is authored from the pinned client's renderers and held by `crates/delvec/tests/equipment_tables.rs` to `#minecraft:can_equip_saddle`, to the body items' allowed lists plus the skeleton horse, and to the equipment assets' 15 body/saddle layer types; the item table (`crates/delvec/data/item-equippable-1.21.11.json`, 84 items, `tools/maintenance/extract-item-equippable.py`) is injected through `ItemRegistry::equippable`, and a registry that does not know an item judges nothing. **Binding**: `equipment binding: B body(ies) dressed over K entity type(s), P piece(s) declared over S slot(s) in use, F piece(s) with a registry-declared slot, A with an allowed-entity list, R refused (DW0898).` on every run of the validation funnel, zeroes included. **Emission**: the two new keys ride the component-era `equipment` / `drop_chances` compounds in `EquipSlot::ALL`'s order, the drop-strip line zeroes all eight, and the generated `v06_actor_equipment_<body>` PackTest asserts every filled slot on the puppet and on the unleashed twin — the live proof that the pinned server stores each key. **Prescription**: dress another body, choose a piece the body draws, move the piece to its declared slot, or change the entity. Gallery probe: `a-chestplate-on-a-horse`. |
 
-### DW0945–DW0950 — an endless corridor (`compiler::loop` / `dsl::validate` / `compiler::plan`; spec-0086; error + one advisory)
-
-This module's rows of a section whose prose is on the [`delvec::compiler::loop` page](../delvec/compiler/loop.md#dw0945dw0950--an-endless-corridor-compilerloop--dslvalidate--compilerplan-spec-0086-error--one-advisory).
-
-| Code | Meaning |
-|------|---------|
-| `DW0949` | **A loop whose release is not a fact about the party, or that has none.** A loop with no gate term; a `requires_state` term or a `counts` naming a `player`-scoped datum; a `teleport` effect inside `on_cross`, at any depth. Validation tier (exit 1), `dsl::validate`. Prescription: a `party` datum, a flag, or a release the party reaches. |
-
 ### DW046x — the NPC scene ledger (`compiler::cast`; spec-0020)
 
 This module's rows of a section whose prose is on the [`delvec::compiler::cast` page](../delvec/compiler/cast.md#dw046x--the-npc-scene-ledger-compilercast-spec-0020).
 
 | Code | Meaning |
 |------|---------|
-
-### DW0890 — the approved hour is the built hour (`compiler::design`; error; exit 1)
-
-This module's rows of a section whose prose is on the [`delvec::compiler::design` page](../delvec/compiler/design.md#dw0890--the-approved-hour-is-the-built-hour-compilerdesign-error-exit-1).
-
-| Code | Meaning |
-|------|---------|
-| `DW0891` | **A killing volume the player cannot see** (spec-0062). One code, three shapes, one rule — *a killing volume and what shows it agree*. The ruling it transcribes is the owner's: **avoiding a lethal volume's collateral damage is never done by marking ground that looks walkable as unwalkable, because the player does not know.** The constraint belongs on the volume: it sits at the bottom of a pit, or far enough from the mouth that a body standing on solid ground cannot be caught. **The world arm** is `compiler::lethal::check_danger_is_visible`, build tier (exit 3), raised once per volume over the final assembled world — whether a cell is floor is a fact about the settled bytes and where the volume is at all is a fact about the solved layout, so nothing before assembly can answer it. Its two shapes: *caught floor that shows nothing*, naming the volume, its keep-out box, the caught cells by floor as `DW0881` prints them, and the declared signals if any; and *a declared signal the bytes do not hold* — a `shown_by` block under or in no caught cell, naming the block and the count of caught cells it was checked against, where a count of zero says the volume catches nothing and the declaration is what is wrong (`DW0887`'s shape, on a volume instead of a waterline). **The document arm** is `dsl::validate`, validation tier (exit 1): a `shown_by` id that is a known block and not one vanilla hurts a body with — nothing has to be placed to know it, and the message prints the set to choose from. **The terms, and each is a set the engine already computes**: the keep-out is `metrics::keep_out_box(Body::PLAYER, V)`, asked of each cell with the body's feet where the model stands it (`World::body_can_meet_volume`, so a body on a partial floor is caught by a volume in the course it stands on); the population is `World::reachable_walkable` over `World::without_exclusions` — lethal volumes and furniture (spec-0065) both lifted, so a furniture declaration over caught floor cannot hide it — rooted at every cell the party MAY be put at (`lethal::put_at_roots`, spec-0083 §3.8: the entry spawn, every `set-checkpoint` and `bonfire` seat, every crossing's entry point and every `teleport` destination, link or gather) rather than at the entry alone, because a party carried into an area stands on that area's floor — and a wider population here can only refuse more; the caught cells are the intersection; and a caught cell **shows** when the block **under** it or **in** it is one of `shown_by`. Under or in, never beside — a shore cell next to lava stands on stone and holds air, and the lava beside it is not what the body is on. **The population is the lethality-free one, and that is the whole binding.** On the world the router walks, the keep-out is already impassable, so a population taken from it can never contain a caught cell and this check would be green over every volume ever written while matching nothing. `the_population_is_the_lethality_free_one` computes it both ways on the `lethal-volume` fixture and asserts **zero** over the lethal-applied world and **nine** over the counterfactual, and the check is bound to the second. **What separates a lava lake from a kill zone over stone** is never the volume: the occupancy model classes water and lava alike as flooded — impassable, never floor — so no cell of a lake's surface is ever standable, ever in the population, ever caught. A volume drawn to the lake's *shore* catches the shore, which stands on stone and shows nothing, and is refused; the remedy is to draw it one cell in or one course under. **One code for three shapes** because they are one disagreement and every remedy each names is admitted by the others: signalling the floor satisfies the first and creates no fiction, deleting a fiction never uncovers floor, naming a hurting block never makes a floor read as safe. **Where it stands in the order**: `DW0511`, then this, then `DW0510`, then `DW0850` and `DW0881` — a volume that catches walked floor usually closes a route as well and often sits under a reach, so asked first the refusal names the cause and every later rule then judges a volume the player can see. It reads the plan's volumes, the population and the block map, never a route, so nothing is lost by asking it early. **Bound at both entry points**: `emit::build` and the world-edits batch replay (`compiler::edit::check_batch_invariants`), before the route proof at each — a gate bound at one of two doors is bound at neither. **It changes nothing about the walk graph**: the router still refuses every cell of the keep-out, the recovery stake still chooses its lip outside it, `death-plan.json` still carries it to the bot. What this guarantees is that the cells the walk graph loses are cells a player could see were dangerous. **Prescription, always the geometry's**: lower the volume so its keep-out's top course lies under the floor (a pit's volume sits on an anchor at the pit's bottom); draw its `extent` in so the keep-out stops one cell short of the floor; or author one of the blocks vanilla hurts a body with under those cells and declare it in `shown_by`. Never mark walkable-looking ground unwalkable. **Binding**: `danger-visibility binding: N volume(s) examined against a walked population of M cell(s); …; R of N volume(s) reached by a body the engine models.` on every build that declares a volume, refusals included, and the same numbers in `validation/lethal-gate.json`'s `danger_visibility`. **Its zero binding is said, not passed**: an empty catch over a volume no body can enter looks exactly like one over a volume clear of the floor, so each volume is also asked whether any modelled body gets its hitbox into it at all — a player walking, falling, jumping or swimming from the walked population (`World::body_moves`, which does not dive), a fall through it at any depth, or a wave member (`DW0922` / `DW0923`'s reach). A volume none reaches is a `DW0891` **warning** naming it — not a refusal, because the usual cause is a movement the engine does not model (a player diving to the bottom of a flooded shaft), and refusing would reject a legitimate design for an engine limitation. **A volume live from a story stage is judged per configuration** (spec-0088): in every configuration the critical path or a branch path passes in which it may be live, and in the last configuration before each switch-on, each over that configuration's world and bytes; the two shapes above name the configuration, and **the fourth shape** is raised in the configuration before a switch-on — *`lethal/<id>` goes live at step N of the path and a body may be standing on these cells when it does; nothing in the world before that beat says they kill* — prescribing, in order: roof or wall the cells off until the beat that opens them, lower the volume under the floor a body stands on before the flip, or author a hurting block visible before the flip and declare it. Its zero binding is asked per configuration, and a staged volume judged in no configuration is refused naming the enumeration. |
-
-### DW0935–DW0938 — a fixed thing that can be hit and hits back (`dsl::validate` + `compiler::assembly`; error)
-
-This module's rows of a section whose prose is on the [`delvec::compiler::assembly` page](../delvec/compiler/assembly.md#dw0935dw0938--a-fixed-thing-that-can-be-hit-and-hits-back-dslvalidate--compilerassembly-error).
-
-| Code | Meaning |
-|---|---|
-| `DW0935` | **An assembly's rig cannot be emitted as declared** (spec-0082 §5.1, §5.5, §3.2). Validation tier (exit 1), `dsl::validate::assembly_checks` over `AnchorRegistry::rig` (the compiler's `PrefabRegistry` reads `<library>/rigs/*/rig.json`). The library holds no `rigs/<name>/rig.json`; the file does not parse as a rig document; or it breaks a structural rule `dsl::rig::check` states — no part, a part's block not a block state of the pinned registry (the `DW0193` rule), no clip, a clip with no frame, a frame that is not one transform per part, `ticks_per_frame` outside `1..=20`, a non-finite number, a scale of 0 on an axis, a zero-length quaternion, a clip name that is not kebab-case — each naming its field; or an `initial`, a strike step's `windup`/`strike`, or a `play-clip` (at any depth of any root) names a clip the rig lacks, the message listing the rig's clips; or a strike step's `ticks_per_frame` lies outside `1..=20`, naming the field. `delvec rig describe` refuses the same rig with the same code. Prescription: regenerate the rig with its generator, or name a clip the rig declares. |
-
-### DW0968–DW0970 — a strike locks where the player stands (`dsl::validate` + `compiler::assembly`; error)
-
-| Code | Meaning |
-|---|---|
-| `DW0969` | **A locked blow is declared where the lock derives it** (spec-0094 §5.2). Validation tier (exit 1), `dsl::validate::lock_shape_checks`. In a step with a `lock`: a top-level `damage-players` with an `in` (the blow's area is the cells the chosen pose comes down on — a written box is a second, fixed answer), a `damage-players` nested at any depth inside another effect's list (it cannot be moved with the lock), and the `lock` itself when the pattern declares `aim` (two rules choosing one turn), each naming the field. Prescription: drop the `in`, lift the `damage-players` to the top of `on_land` (a `when` on it is kept), or drop `aim` or `lock`. |
-| `DW0970` | **An `arm-strikes` names an assembly that never strikes** (spec-0094 §3.3). Validation tier (exit 1), `dsl::validate::assembly_checks`, at every depth of every effect root: the named assembly declares no `strikes`, so there is no pattern to re-arm and the beat does nothing. Prescription: give the assembly a `strikes` pattern, or drop the effect. |
-
-### DW0901 — a purchase adds up where it is written (`dsl::purchase`; error; exit 1)
-
-**A price has no field, so the engine compares the copies of it.** spec-0032
-rules that a price is a gate term and that an offer's refusal is authored: the
-purchase behind `at-least <price>`, the apology behind `at-most <price − 1>`, the
-charge an `add-state` of `−<price>`. That ruling stands, and its cost is that one
-number is written four or five times — in the button's own words, on the gate of
-what the player receives, on the gate of the charge, as the charge's `amount`,
-and, minus one, on the arm that answers below it — with nothing else binding
-them, so an offer gating on `at-least 15` and charging `16` would compile.
-
-**The quantifier is every effect list whose effects charge a datum**, never a
-shop: the rule reads the gate, so it binds wherever the shape occurs — a shop
-offer, an environment trigger, a trap payload, a quest's `on_complete`, a
-`sequence`'s step. A list is judged together with the gate of whatever it hangs
-off (an offer's own gate, a trigger's or trap's arming gate, a nested list's
-parent `when`), because both must hold for the charge to run; that is what lets
-the correct spelling of a shop — gate the offer, leave the effects bare — pass
-while gating the offer at 15 and charging 16 is refused.
-
-| Code | Meaning |
-|------|---------|
-| `DW0901` | **A purchase whose literals do not add up** (spec-0071 §2). `dsl::purchase::purchase_checks`, called from the one validation funnel, **validation tier (exit 1)**; the `DwCode` declares build tier, which is what happens if the rule refuses with a build under way. One code, three shapes, one rule — *a charge and the gate beside it are one price*. **A charge deeper than its floor**: an effect charges `n` of a datum while the floor its own `when` and its list's enclosing gate leave open is `m < n`, so at a balance of `m` the charge leaves the datum at `m − n` — below what the creator gated on. The message names `n`, `m`, the datum and the balance it lands on, and names the enclosing gate when one is read. **A charge nothing floors, in a list that prices the same datum elsewhere**: the copy is missing rather than wrong, and it fires at any balance including one that cannot pay. A list that says nothing else about the datum it moves is a design, not a purchase, and is not judged — a campaign may mean a datum to go below zero. **A refusal arm that does not meet the sale**: an effect gated `at-most k` on the datum and nothing else on it is the arm that plays when the player cannot pay, so `k` must be `m − 1`; a lower `k` leaves a **gap** (`k+1..m−1`, balances at which the button does nothing at all) and a `k` at or above `m` leaves an **overlap** (`m..k`, balances at which the player is charged *and* told they cannot afford it). An effect declaring both a floor and a ceiling wrote an interval and is left alone. **The arithmetic is the gate's own** (`gate::DatumSet::min`/`max`), the same interval-with-holes the satisfiability verdict is taken from, so the two cannot disagree about what a term means. **Its neighbour is `DW0527`**, which catches the same overlap arising from ORDER — an apology whose gate is read after the debit that moved it — where this one catches it arising from the literals; both prescribe moving something the author wrote, and neither prescribes a field. **Prescription**: raise the gate to the charge, lower the charge to the gate, or set the answering arm's ceiling one below the sale. There is no `price` field to add, and adding one would be a second comparison surface for one meaning. **Binding**: `purchase binding: C charge(s) over D datum(s) bind P (list, datum) pair(s) of L effect list(s) walked, G of them behind a numeric gate, R refused (DW0901).` on every validation run, zeroes included. Gallery probe: `a-key-that-charges-more-than-it-asks`. |
 
 ### DW0909–DW0912 — a fight shows its health (`dsl::healthbar` / `compiler::healthbar`; error + advisory; exit 1 / 0)
 
@@ -188,229 +108,8 @@ This module's rows of a section whose prose is on the [`delvec::compiler::lethal
 
 | Code | Meaning |
 |------|---------|
-| `DW0512` | **A volume that kills in silence.** A `lethal_volumes[]` entry's `message` is blank. Validation-tier (exit 1), `dsl::validate`. There is no compiler-owned default that could be right for a cliff, a lava pit and an acid pool at once, so a blank wording is refused rather than papered over — a volume that kills while the player learns nothing is the vacuous pass CLAUDE.md names. Prescription: write the line the player reads as they die. |
 | `DW0953` | **A gate that cannot stage a lethal volume** (spec-0088). Two shapes, validation tier (exit 1), `dsl::validate`, with no world built: `when: {}` — a stage with no term (an always-live volume is spelled by leaving `when` out) — and a `requires_state` term on a `player`-scoped datum, raised at the check site of `DW0503` with the volume's own code (a volume's liveness is a fact about the place: a term one player satisfies and another does not is a pit that kills one body and spares the next, and the sweep's entity half has no player to read). The message names the volume and the term. Prescription: leave `when` out, or name a flag or a `party`-scoped datum. |
 | `DW0956` | **A view aimed past the served view distance** (spec-0091). What a body is farther from than the served radius (`16 × world.view_distance` blocks, floor 10 chunks) is never sent to its client, so the view cannot render. Five shapes of one rule: a declared `view_distance` outside `10..=32` (validation tier, exit 1, `dsl::viewdistance`, on `world` `/content/view_distance`); a site-plan `sightlines[i]` longer than the radius, or a `views[i]` whose `look_at` is farther from its `eye` than it (validation tier, on `site-plan` `/content/sightlines/{i}` / `/content/views/{i}`); a showcase camera of `design/cameras.json` whose subject — the first solid cell on its central ray inside the loaded scene, else where that ray enters it — is past the radius (build tier, exit 3, `view::camera::prove_showcase`, the third shape of the showcase proof); a cutscene keyframe farther from its aim (`look_at`, a static subject, or a moving subject's position at that tick; a shot facing along its travel has no aim and is counted, not judged) than the radius (build tier, exit 3, `nav::check_cutscenes`, after the clip checks). Every message names the distance, what is served, and the prescription: `world.view_distance: <the fewest chunks that serve it>` (one edit to one field, asserted reachable by `tests/view_distance.rs`), or the two ends nearer; a distance past 512 blocks names the ceiling instead. **Binding**: the two `view distance binding:` lines (the world row above). |
-
-### DW0520–DW0527, DW0880 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032)
-
-**There is no price diagnostic here, and its absence is the design.** A price is a
-[`Gate`] term — the numeric comparison spec-0031 put in the shared gate rather than
-in the verb that first asked for it — so everything that could go wrong with one is
-already `DW0500`–`DW0503`: the datum must be declared, must be written somewhere,
-must be read somewhere, and must be reachable at the scope the site evaluates at. A
-shop that had grown a `price` field would have needed all four rules written a
-second time, and the fifth consumer would have needed a fifth copy. `ShopOffer` is
-therefore the **seventh gate consumer**, carrying `requires_flags` /
-`forbids_flags` / `requires_state` like the other six and nothing of its own;
-`crates/dsl/tests/gate_consumers.rs` asserts the positive half from the generated
-schema and `crates/delvec/tests/v10_economy.rs` the negative half (no `price`,
-`cost` or `compare` field exists anywhere in the shop's types).
-
-`DW0520`–`DW0524` and `DW0527` are declaration and authoring rules: the first five live in `dsl::validate`, `DW0527` in `dsl::state`. `DW0525` and
-`DW0526` are the **placement table's** proofs and live in `compiler::stake`,
-because where a stake lands is a question about the solved layout — the same split
-a lethal volume's `DW0512` and `DW0510`/`DW0511` make. `DW0880` lives there too,
-and is about the marker rather than the anchor.
-
-#### A marker is a PLACE, and a death leaves one place
-
-The hardware is one class for the campaign — the `minecraft:interaction` box
-tagged `dw_stk` and the glowing `minecraft:item_display` beside it, both summoned
-by `stk_place` — and there is one of it at a place however many datums a death
-forfeited there. That is forced rather than chosen. The placement table is keyed
-on (respawn seat, death region) and never on the stake, so every stake one death
-drops resolves to one anchor; and the rule degenerates to *leave it where the
-player fell*, a position chosen at runtime that no compile-time separation can
-reach. Four `1.0 × 2.0` boxes at one cell are coincident: any pick ray enters them
-at the same distance and the client resolves the tie by entity iteration order,
-which is exactly what `DW0878` refuses between two authored affordances.
-
-So the place holds one box, and what was left there is counted in the per-player
-ledger — where a wager always lived. One advancement fires one `stk_collect`,
-which locates the place and offers it to every declared stake in turn, so one
-right-click returns every datum that death left. **The place is the box the
-player clicked**: the advancement only says some `dw_stk` box was used, so
-`stk_collect` tags the player and runs `stk_pick` as every `dw_stk` interaction,
-which keeps the one whose last user (`on target`) is that player with the latest
-`interaction.timestamp` — the click just made — and the place's position is read
-off it; no box, no collection. Choosing the box nearest the player instead would
-offer the wagers at whatever place stood closest, so a player reaching past one
-stake to click another would collect the near one (under `collect_by: anyone`,
-another player's purse) and leave their own standing. `stk_ref` counts live wagers at
-that position across every stake, and `stk_gc` — the one function permitted to
-retire the hardware (`DW0421`) — deletes a place nobody has a wager at. Each
-stake keeps its own forfeit rule, retention policy, collect rule, slots and
-message: those are properties of a wager, not of a place.
-
-What a place cannot hold is two answers to what it looks like, and that is
-`DW0880`.
-
-#### The placement rule, and why it is a table rather than a search
-
-The rule: *the stake anchor is the point, on the walkable path from the respawn
-point in force at the moment of death to the death point under the quest state in
-force at that moment, that minimises distance to the death point.*
-
-Read literally that is a runtime search, which ADR-0006 forbids. Read as a function
-of three compile-time quantities it is a table, and every quantity already has an
-owner: **walkable** is the same `nav::World` the completability proof runs on
-(including a lethal volume's impassable cells, so "the near lip of the hazard"
-falls out rather than being a second rule); **the quest state** is the DAG-indexed
-sealing the region-write model establishes, swept over the seat's own arrivals by
-`nav::reachable_under_every_quest_state`; and **the respawn point in force** is
-engine state the runtime already keeps in `#cp dw.sys`.
-
-The rule degenerates, which is why there is only one rule: a player who dies on
-ground they can walk back to is at distance zero from themselves, so the anchor is
-the death point. Only deaths whose position **cannot** host a stake need a row, and
-there are exactly two kinds — a death inside a **lethal volume**, and a death on a
-block **runtime can remove** (a lift car, a `close-gate` region, a `collapse`
-floor; spec-0031's ruling that a stake left on the car would be deleted by the next
-ride). Both are boxes, so the runtime lookup is a selector test on the corpse
-(`@s[x=…,dx=…]`) rather than a search.
-
-**What a region forbids an anchor is the region's own answer, and the two kinds
-answer differently.** A runtime-mutable region acts on BLOCKS, so what it can
-destroy is a marker in one of its own cells and cell containment is the whole
-rule. A lethal volume acts on BODIES, through a vanilla selector the server
-adjudicates against the body's whole hitbox — `@a[x=lo,dx=hi-lo,…]` covers
-`[lo, hi + 1]` on each axis and matches on intersection, so it kills a
-`metrics::PLAYER_WIDTH`-wide body whose feet cell is one outside the box.
-`DeathRegion::holds_no_anchor` therefore refuses a lethal volume the shell of
-cells `metrics::selector_reaches_body_in_cell` reports: one cell on every axis,
-derived from the body and never chosen. An anchor inside that shell is a place
-the delve invites the player to walk back to and then kills them for standing on,
-and the bot ladder measured exactly that on the gallery — west pit
-`[1,63,2]..[3,67,4]`, anchor `[1,65,5]`, three runs, three deaths at cell
-`[3,65,5]` on the walk off it. The harness holds the same rule for the walk that
-reaches the anchor (`volumeReachesCell`), so the two are written twice in two
-languages and computed differently — a sweep of the cell's extent here, a clamp
-to the nearest position there. Neither may drift: each side sweeps the same box
-over the same 441-cell grid and states the same 175 reached
-(`the_cell_rule_agrees_with_a_swept_body_box`,
-`volumeReachesCell agrees with a swept body box, and with the compiler's count`),
-so the agreement is a shared number rather than each doc comment asserting the
-other's.
-
-#### The three ways a stake can be pulled out from under itself
-
-Two are `DW0526`'s, one is not, and the third is named rather than left silent.
-
-| how | in scope? | why |
-|---|---|---|
-| **Runtime-mutable ground** — `close-gate`, `set-block`, `collapse`, a shortcut's or a timed gate's seal | yes | the case spec-0031's ruling was written for: a stake left on a lift car is deleted by the next ride. |
-| **`fill-region` / `clear-region`** | yes, and it is *the same defect* | a `clear-region` deletes the block a marker stands on exactly as a departing car does. They enter through `QuestEffect::region_write` — the DSL's own answer to "which verbs rewrite a box" — so a later verb of that family is covered by existing rather than by being remembered. |
-| **A `teleport`'s `from` box** | **no — a deliberate ruling; closed by `DW0545` one layer away** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded — after which `stk_gc` finds nobody holding a wager there and retires it, taking the wager with it. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
-
-The teleport case cannot simply inherit the teleport's own `DW0542` either, and the
-reason is the shape spec-0031 named when it refused to inherit `lethal_volumes[]`'s
-exemption list into a verb that *moves* rather than *deletes*: `DW0542` tests the
-affordance authority, which carries compile-time cells, and a stake has none to
-offer it. Inheriting it would have produced a green that examined nothing.
-
-**`compiler::stake` carries no teleport rule.** "The teleport exempts engine
-machinery" would build a roster into one verb; "the stake ledger survives its
-marker moving" would make the stake compensate for a selector that grabbed
-something it should never have grabbed. The question is upstream of both —
-*what does a region verb select?* — and a marker being a **place** is a property
-of the marker, not of any verb. So the class is declared where the marker is
-summoned and every box-narrowed selector reads it (`DW0545` above). That a
-capability keyed to the object needs no cooperation from this module is the
-point rather than a coincidence.
-
-**Note the direction of the conservatism, because it is why this set is not
-`Plan::region_events`.** The completability model deliberately drops a non-fill
-write fired from an **optional** root — an optional firing may fill, never open —
-because a route proof must not lean on a clear the party might never trigger. This
-set needs the opposite: a `clear-region` in an `on_death` bundle the party may
-never reach is still ground a stake must not stand on, because if they do reach it
-the marker is gone. Same geometry, opposite direction, so the two lists cannot be
-one.
-
-**Two conservative simplifications, recorded rather than hidden.** spec-0032
-already records one — *reachable under the quest state* stands in for *explored*,
-which the engine does not track. The implementation adds a second: nothing
-observable at runtime says which point of a respawn point's DAG span a death
-happened at, so the reachable set used for a seat is the **intersection** over
-every sealing configuration that can hold while that seat is in force. The anchor
-is then reachable under all of them, which is strictly stronger than the rule as
-written and needs no runtime discriminator for quest state at all. A campaign with
-no `close-gate` has exactly one configuration and pays nothing.
-
-The span swept is every critical-path arrival from the seat's own firing step to
-`critical_path.len()` inclusive — **the arrivals past the last objective
-included**, each of them carrying every objective on the path as fired (see *Every
-arrival is keyed* above). A seat's configurations therefore hold the world as the
-party leaves it at the end of the delve, which is the one a death after the last
-beat respawns into.
-
-#### What the runtime tiers can and cannot witness — stated, not implied
-
-**A PackTest fake player is permanently undamageable and cannot die** (measured
-twice, independently, on the pinned toolserver). So that tier cannot witness a
-player death, and therefore cannot prove the edge from a death to a stake being
-placed. Two templates are generated and both are honest about what they cover:
-`v10_shop_purchase` drives an offer handler as its own dummy and proves the debit
-and the refusal; `shop_enchanted_stack_<i>_<j>`, one per offer that hands over an
-enchanted stack (spec-0075), empties its dummy, drives the offer's gate and each
-stack's own `when` open as the buyer, probes the inventory before the purchase
-(must read 0) and after (must read 1) for the item carrying exactly those
-enchantments in the component the item writes them to; `v10_stake_<id>` drives `stk_drop_<id>` and the campaign's real
-`stk_collect` and proves that the declared share leaves the purse, that a marker
-really stands where the drop put it, that collecting returns **exactly** what was
-taken, and that a second collection in the same breath returns nothing more; and
-`v10_stake_two_datums` drives two forfeits from one position and proves that the
-two leave **one** `minecraft:interaction` and one display, that one press returns
-both datums, and that the place then retires. No template is generated for the
-death edge itself — a template that bound to nothing and reported green is the
-vacuity CLAUDE.md names, and it is worse than an absence because review cannot
-see it.
-
-**The death itself is a bot-tier proof.** spec-0032's acceptance criterion 9 —
-*die in a lethal volume, respawn, walk back, collect, with the amount asserted* —
-is carried by the harness's `death-loop` stage: it walks a real client into every
-declared lethal volume, dies there, and asserts the volume's wording, the declared
-forfeit, the stake's presence at the table's own anchor, the walk back, an exact
-restore under a double right-click in one tick, the retirement of the collected
-hardware, and the respawn seat — all against `validation/death-plan.json`, never
-against the emission. It runs on every bot run whose build ships
-`validation/death-plan.json` (`DELVEWRIGHT_DEATH_LOOP=0` skips it, and the report
-records the skip); no CI job runs the bot ladder. Over the economy fixture:
-`EULA=TRUE validation/bot-run.sh --project dw-death-loop --output
-./delve-output-economy` over a build of `crates/delvec/tests/fixtures/economy`.
-
-**The die-retry loop** — death → respawn at the governing checkpoint → walk back
-→ re-engage — binds only where an ARMED checkpoint stands before a mandatory
-encounter. `crates/delvec/tests/fixtures/die-retry` is the smallest campaign that
-lets it bind, `crates/delvec/tests/die_retry_fixture.rs` holds it to that shape,
-and the run report's `die_retry_binding` makes the zero loud on every other build.
-
-**The first death is seeded.** `dw.death_seen` and `dw.death_ack` are `dummy`
-objectives, so a player who has never died has no score in either — and `execute
-if score @s A > @s B` with B unset does not fire (measured on the pinned 1.21.11
-server; `scoreboard players add <e> <obj> 0` is what creates the entry at zero).
-`cp_respawn_check` therefore seeds each acknowledgement it reads, ahead of the
-comparison, so `on_death` and the checkpoint respawn dispatch fire on a player's
-FIRST death; `v06_checkpoints` and `v10_on_death` assert the ORDER, not merely
-the presence.
-
-Binding (playtest-methodology rule 1): a campaign with a stake emits
-`validation/stake-gate.json` — stakes declared, respawn seats and death regions the
-table is keyed on (and how many of those regions are lethal volumes), quest-state
-configurations enumerated, rows proved, distinct anchors resolved, runtime-mutable
-cells excluded, stranded cells found, and how many of the declared stakes can
-actually leave a marker. A campaign with no stake emits **no file
-at all**, so a file that exists and reports zero is a finding rather than an
-absence.
-
-| Code | Meaning |
-|------|---------|
-| `DW0520` | **A stake that is not a personal wager.** A `stakes[]` entry's `state` names a datum the campaign never declares, or one declared `party`-scoped. Validation-tier (exit 1), `dsl::validate`. The scope half is stated as a rule because it is the multiplayer decision most likely to be made by accident: a shared purse turns a teammate's death into a penalty on everyone and nothing in the JSON would say so. Prescription: declare the datum `player`-scoped, or point the stake at one that is. |
-| `DW0521` | **`drop-stake` names no declared stake.** Validation-tier (exit 1), `dsl::validate`. Prescription: declare it in `stakes[]`, or fix the id. |
-| `DW0522` | **A stake nothing ever drops.** A declared stake that no `drop-stake` effect anywhere in the campaign leaves: its forfeit rule, its retention policy and its whole compile-time placement table describe a mechanism no beat can fire. Validation-tier (exit 1), `dsl::validate`. The vacuity rule `DW0502` states for a datum with no reader, applied to a whole feature. Prescription: drop it from a beat (`on_death` is the usual one), or delete the declaration. |
-| `DW0523` | **A shop button that cannot answer.** A `shops[].offers[]` entry with no `effects` — drawn, pressable, inert — or a `shops[]` entry with no offers at all, which is worse than an empty shop: vanilla's 1.21.11 dialog codec rejects an empty action list at pack load. Validation-tier (exit 1), `dsl::validate`. A **refusal counts as an answer**, so an offer whose only effect is a `narrate` gated on `at-most <price − 1>` satisfies it — which is exactly the shape spec-0032 asks for. Prescription: give the offer effects, or delete it. |
-| `DW0524` | **A forfeit above the whole purse.** A `forfeit` of kind `proportion` whose `percent` exceeds 100. Validation-tier (exit 1), `dsl::validate`. Prescription: 0–100, or `{"kind": "all"}`. |
 
 ### DW0185 — untranslated player-visible literal (`compiler::emit`; error; exit 3)
 

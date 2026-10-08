@@ -371,3 +371,26 @@ pub(crate) fn actor_equipment_checks(
         );
     }
 }
+
+/// `DW0110` over the scripted-actor ids.
+pub(crate) fn actor_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, a) in c.quests.content.actors.iter().enumerate() {
+        crate::ids::id_syntax!(d, a.id, "quests", format!("/content/actors/{i}/id"));
+    }
+}
+
+/// `DW0111` over the scripted-actor ids: unique within the stage-5 actors
+/// namespace (DSL v0.6).
+pub(crate) fn actor_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::ids::dup_check(
+        c.quests
+            .content
+            .actors
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.id.as_str(), format!("/content/actors/{i}/id"))),
+        "quests",
+        "actor",
+        d,
+    );
+}

@@ -88,3 +88,258 @@ pub struct TimedGateDisarm {
     /// other objectives/triggers may read it via `requires_flags`).
     pub sets_flag: FlagId,
 }
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeSet;
+
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
+use crate::envelope::Campaign;
+use crate::registry::AnchorRegistry;
+use crate::validate::{
+    AnchorProviders, for_each_effect_deep, for_each_trigger_effect_deep, station_kind_diag,
+};
+
+crate::dw_code! {
+    /// (spec-0016 §4) A `timed-gate` declaration is structurally invalid: a
+    /// malformed or duplicate `timed-gate/<id>`, an `open_ticks` or
+    /// `closed_ticks` of 0 (a gate that never opens, or never closes — neither is
+    /// a timing gate), a `phase` at or beyond the full cycle, or a gate another
+    /// `timed-gate` or a `shortcut` already owns (two clocks fighting over one
+    /// region, or a clock fighting a permanent open), or a `disarm.via` anchor no
+    /// area's prefab provides / one that IS the gate anchor (the jam lever cannot
+    /// live inside the span it stops).
+    pub const TIMED_GATE_INVALID: DwCode = DwCode::new("DW0377", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A `close-gate` effect targets the gate of a `timed-gate` that
+    /// declares a `disarm`. A disarm suppresses the clock **permanently with the
+    /// gate resting open** — a jammed portcullis stays up — so, exactly like a
+    /// `shortcut` (`DW0372`), its permanence is structural: there is no verb that
+    /// can re-arm it. Use a different gate for the beat that must re-seal, or drop
+    /// the `disarm`.
+    pub const TIMED_GATE_REARMED: DwCode = DwCode::new("DW0389", ExitTier::Build);
+}
+
+/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377` /
+/// `DW0389`.
+///
+/// The structural half only: ids, a cycle that actually cycles, a phase inside
+/// the cycle, one owner per gate region, and a `disarm.via` that
+/// resolves to a real anchor outside the span it jams. The *design* half — that
+/// the gate is a timing read and not a coin flip — needs the nav model's crossing
+/// time and lives in `compiler::nav` (`DW0378`). The fill-block requirement is
+/// `DW0343`, the same rule `close-gate` and `shortcut` obey.
+///
+/// `DW0389` is the permanence rule, and it is the exact mirror of a shortcut's
+/// `DW0372`: a disarmed gate rests OPEN forever, so no `close-gate` anywhere may
+/// name it. Making that structural is cheaper and safer than trusting every
+/// author never to reach for the re-seal verb.
+///
+/// Anchor resolution stays lenient for pool areas the compiler resolves later —
+/// the same policy as the trap and shortcut checks.
+pub(crate) fn timed_gate_checks(
+    c: &Campaign,
+    anchors: &dyn AnchorRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    if quests.timed_gates.is_empty() {
+        return;
+    }
+    let providers = AnchorProviders::build(c, anchors);
+    let shortcut_gates: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut driven: BTreeSet<&str> = BTreeSet::new();
+    for (i, g) in quests.timed_gates.iter().enumerate() {
+        let err = |path: String, msg: String, d: &mut Vec<Diagnostic>| {
+            d.push(Diagnostic::error(TIMED_GATE_INVALID, "quests", path, msg));
+        };
+        if !g.id.is_valid_syntax() {
+            err(
+                format!("/content/timed_gates/{i}/id"),
+                format!(
+                    "malformed timed-gate id `{}` — ids must be lowercase kebab-case with the \
+                     `timed-gate/` prefix (e.g. `timed-gate/piston-hall`)",
+                    g.id
+                ),
+                d,
+            );
+        }
+        if !seen.insert(g.id.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/id"),
+                format!("duplicate timed-gate id `{}` — rename one", g.id),
+                d,
+            );
+        }
+        for (field, ticks) in [
+            ("open_ticks", g.open_ticks),
+            ("closed_ticks", g.closed_ticks),
+        ] {
+            if ticks == 0 {
+                err(
+                    format!("/content/timed_gates/{i}/{field}"),
+                    format!(
+                        "timed gate `{}` declares `{field}: 0` — a gate that never {} is not a \
+                         timing gate. Use `open-gate`/`close-gate` for a one-way state change, or \
+                         give both halves of the cycle a real duration.",
+                        g.id,
+                        if field == "open_ticks" {
+                            "opens"
+                        } else {
+                            "closes"
+                        }
+                    ),
+                    d,
+                );
+            }
+        }
+        let cycle = g.open_ticks.saturating_add(g.closed_ticks);
+        if cycle > 0 && g.phase >= cycle {
+            err(
+                format!("/content/timed_gates/{i}/phase"),
+                format!(
+                    "timed gate `{}` declares `phase: {}` at or beyond its own {cycle}-tick cycle \
+                     — a phase is an offset INTO the cycle, so it must be less than it (use \
+                     `phase % cycle`).",
+                    g.id, g.phase
+                ),
+                d,
+            );
+        }
+        // The clock fills and clears a REGION twice a cycle, so `gate` demands a
+        // gate station. This is the first shape question asked of
+        // `timed_gates[].gate` at this tier at all: the name itself is resolved
+        // only by the compiler, so a point named here used to travel all the way
+        // to `DW0343`.
+        if let Some(f) = station_kind_diag(
+            &providers,
+            g.gate.as_str(),
+            crate::layout::StationKind::Gate,
+            "a timed gate's `gate`",
+            "quests",
+            format!("/content/timed_gates/{i}/gate"),
+        ) {
+            d.push(f);
+        }
+        if !driven.insert(g.gate.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/gate"),
+                format!(
+                    "gate `{}` is driven by two timed gates — two clocks filling and clearing the \
+                     same region race every tick and the region's state becomes emission order, \
+                     not design. One clock per gate.",
+                    g.gate
+                ),
+                d,
+            );
+        }
+        if shortcut_gates.contains(g.gate.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/gate"),
+                format!(
+                    "gate `{}` is both a `shortcut` gate and a `timed-gate` — a shortcut opens \
+                     PERMANENTLY (spec-0016 §2) and a clock would re-seal it every cycle, which \
+                     is exactly the re-seal `DW0358` exists to forbid. Use two different gates.",
+                    g.gate
+                ),
+                d,
+            );
+        }
+        // The disarm affordance, the same two rules a trap's obeys.
+        if let Some(dis) = &g.disarm {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                dis.via.as_str(),
+                crate::layout::StationKind::Point,
+                "a timed gate's disarm affordance",
+                "quests",
+                format!("/content/timed_gates/{i}/disarm/via"),
+            ) {
+                d.push(f);
+            }
+            if !providers.resolvable(dis.via.as_str()) {
+                err(
+                    format!("/content/timed_gates/{i}/disarm/via"),
+                    format!(
+                        "timed-gate `disarm.via` anchor `{}` is not provided by any area's \
+                         prefab — {}",
+                        dis.via,
+                        providers.anchor_remedy(
+                            "use an anchor some area's prefab exposes for the jam affordance \
+                             (anchor names come from prefab metadata; do NOT invent one)"
+                        ),
+                    ),
+                    d,
+                );
+            }
+            if dis.via == g.gate {
+                err(
+                    format!("/content/timed_gates/{i}/disarm/via"),
+                    format!(
+                        "timed gate `{}` puts its `disarm.via` on its own gate anchor `{}` — the \
+                         jam lever would stand inside the span the portcullis closes on (and, \
+                         with `crush`, kills in). The affordance belongs on ground the player \
+                         can reach and hold WITHOUT gambling on the clock, which is the entire \
+                         point of the third rung.",
+                        g.id, g.gate
+                    ),
+                    d,
+                );
+            }
+        }
+    }
+
+    // `close-gate` may never target a disarmable timed gate: a disarm leaves the
+    // portcullis jammed OPEN forever, so permanence is structural (`DW0389`, the
+    // mirror of a shortcut's `DW0372`).
+    let disarmed: BTreeSet<&str> = quests
+        .timed_gates
+        .iter()
+        .filter(|g| g.disarm.is_some())
+        .map(|g| g.gate.as_str())
+        .collect();
+    if disarmed.is_empty() {
+        return;
+    }
+    let report = |path: String, anchor: &str, d: &mut Vec<Diagnostic>| {
+        d.push(Diagnostic::error(
+            TIMED_GATE_REARMED,
+            "quests",
+            path,
+            format!(
+                "`close-gate` targets `{anchor}`, the gate of a `timed-gate` that declares a \
+                 `disarm` — a disarmed gate rests OPEN permanently (souls dossier \
+                 §5.2: a hazard the party has switched off stays off), so nothing may re-arm \
+                 its clock. Use a different gate for the beat that must re-seal, or drop the \
+                 `disarm` and keep the clock running."
+            ),
+        ));
+    };
+    for (qi, q) in quests.quests.iter().enumerate() {
+        for_each_effect_deep(q, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && disarmed.contains(a.as_str())
+            {
+                report(format!("/content/quests/{qi}/{path}/anchor"), a.as_str(), d);
+            }
+        });
+    }
+    for (ti, t) in quests.triggers.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && disarmed.contains(a.as_str())
+            {
+                report(
+                    format!("/content/triggers/{ti}/{path}/anchor"),
+                    a.as_str(),
+                    d,
+                );
+            }
+        });
+    }
+}

@@ -268,6 +268,80 @@ impl std::fmt::Display for CampaignId {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Validation: the three rules every id collection obeys
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeSet;
+
+use crate::diagnostic::{Diagnostic, codes};
+
+/// **`DW0110`: refuse a malformed id**, pushing onto `$d`.
+///
+/// The form is taken from the id's own type (`syntax_form`), never written
+/// into this message. This macro is the ONE path every id type's syntax
+/// refusal goes through, and it used to answer all of them with the same
+/// three examples — `area/keep`, `npc/keeper`, `quest/find-key` — so a
+/// rejected dialogue node id was refused by a sentence that never spelled
+/// `dlg/<kebab>`, and the rule it needed lived only in the schema
+/// description. The prefix belongs to the id type, so every site gets it
+/// from the type: the general mechanism was here all along, and only its
+/// message was too narrow to reach what it was rejecting.
+macro_rules! id_syntax {
+    ($d:expr, $id:expr, $stage:expr, $path:expr) => {
+        if !$id.is_valid_syntax() {
+            $d.push($crate::diagnostic::Diagnostic::error(
+                $crate::diagnostic::codes::ID_SYNTAX,
+                $stage,
+                $path,
+                format!(
+                    "malformed id `{}` — this field takes {}: the type prefix, a `/`, and \
+                     one lowercase kebab-case segment after it ([a-z0-9] and `-`, no second \
+                     `/`, no capitals, no underscores)",
+                    $id,
+                    $id.syntax_form()
+                ),
+            ));
+        }
+    };
+}
+pub(crate) use id_syntax;
+
+/// **`DW0111`: refuse the second of two equal ids** in one namespace, at the
+/// later one's path.
+pub(crate) fn dup_check<'a>(
+    ids: impl Iterator<Item = (&'a str, String)>,
+    stage: &'static str,
+    what: &str,
+    d: &mut Vec<Diagnostic>,
+) {
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (id, path) in ids {
+        if !seen.insert(id) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                stage,
+                path,
+                format!("duplicate {what} id `{id}` — rename one so every {what} id is unique"),
+            ));
+        }
+    }
+}
+
+/// **`DW0112`: refuse a reference that does not resolve** — `ok` is whether it
+/// does, and `msg` is the refusal's own wording.
+pub(crate) fn dangling(
+    d: &mut Vec<Diagnostic>,
+    ok: bool,
+    stage: &'static str,
+    path: String,
+    msg: String,
+) {
+    if !ok {
+        d.push(Diagnostic::error(codes::DANGLING_REF, stage, path, msg));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

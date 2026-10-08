@@ -265,3 +265,387 @@ pub struct TrapDisarm {
     /// objectives/triggers may read it via `requires_flags`).
     pub sets_flag: FlagId,
 }
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeSet;
+
+use crate::Verb;
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
+use crate::envelope::Campaign;
+use crate::loot::check_stack_count;
+use crate::registry::{
+    AnchorRegistry, BlockRegistry, EntityRegistry, ItemBackedBlockRegistry, ItemRegistry,
+};
+use crate::validate::{
+    AnchorProviders, collect_declared_flags, for_each_trap_payload_deep, station_kind_diag,
+};
+
+crate::dw_code! {
+    /// (v0.6) Trap declaration structurally invalid (spec-0011): a malformed or
+    /// duplicated `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides,
+    /// or a trap whose `disarm.via` collides with its own trigger anchor.
+    /// Validation-tier (exit 1). Renumbered off the spec's stale reserved number
+    /// (0197 — since taken).
+    pub const TRAP_INVALID: DwCode = DwCode::new("DW0340", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
+    /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
+    /// spec's stale reserved number (0198 — since taken).
+    pub const TRAP_PAYLOAD_UNKNOWN: DwCode = DwCode::new("DW0341", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0022) A trap declares **no consequence at all**: neither the legacy
+    /// redstone `effect` nor a command `payload`. A trap that does nothing is
+    /// mute hardware the completability proofs would nonetheless reason about,
+    /// so it is a content mistake, not a no-op. Validation-tier (exit 1).
+    pub const TRAP_NO_CONSEQUENCE: DwCode = DwCode::new("DW0440", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0022) A `volley` `projectile` / `collapse` `falling_block` /
+    /// `then_floor` id is not in the pinned 1.21.11 registry (a `projectile`
+    /// must be an ENTITY id, the collapse blocks BLOCK ids).
+    /// Validation-tier (exit 1).
+    pub const TRAP_VERB_ID_UNKNOWN: DwCode = DwCode::new("DW0441", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0022) A `volley`'s `salvos` / `interval` is out of range (`salvos`
+    /// in `1..=16`, `interval` in `1..=200`). A volley fires its whole kill zone
+    /// every salvo, so the entity count is `salvos x cells`; and salvos spread
+    /// wider than the interval cap stop reading as one trap event.
+    /// Validation-tier (exit 1).
+    pub const VOLLEY_CADENCE: DwCode = DwCode::new("DW0443", ExitTier::Build);
+}
+
+/// DSL v0.6 trap validation (spec-0011). Each trap binds to a **point anchor**
+/// an area's prefab provides — any anchor, whatever it is called; a spec-0022
+/// command `payload` needs that cell and nothing else of the piece, because the
+/// compiler emits the detection. Structural failures are `DW0340` (a
+/// malformed/duplicate id, an `at`/`disarm.via` no area's prefab provides, or a
+/// `disarm.via` colliding with the trap's own trigger anchor); a dispense
+/// payload item unknown to the pinned registry is `DW0341`. A trap's
+/// `requires_flags` resolves against the declared-flag set like a trigger's
+/// (`DW0172`). The completability obligation for a *lethal* trap is discharged
+/// later by the compiler nav proof (`DW0342`).
+pub(crate) fn trap_checks(
+    c: &Campaign,
+    items: &dyn ItemRegistry,
+    entities: &dyn EntityRegistry,
+    anchors: &dyn AnchorRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    if quests.traps.is_empty() {
+        return;
+    }
+
+    // Area anchor sets (single-prefab areas) + whether any pool area exists, so
+    // resolution stays lenient for pool areas the compiler resolves later — the
+    // same policy as the v0.4 trigger check.
+    let providers = AnchorProviders::build(c, anchors);
+
+    let flags = collect_declared_flags(c);
+
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, t) in quests.traps.iter().enumerate() {
+        if !t.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/id"),
+                format!(
+                    "malformed trap id `{}` — trap ids must be lowercase kebab-case with the \
+                     `trap/` prefix (e.g. `trap/dart-hall`)",
+                    t.id
+                ),
+            ));
+        }
+        if !seen.insert(t.id.as_str()) {
+            d.push(Diagnostic::error(
+                TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/id"),
+                format!(
+                    "duplicate trap id `{}` — rename one so every trap id is unique",
+                    t.id
+                ),
+            ));
+        }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            t.at.as_str(),
+            crate::layout::StationKind::Point,
+            "a trap's `at`",
+            "quests",
+            format!("/content/traps/{i}/at"),
+        ) {
+            d.push(f);
+        }
+        if !providers.resolvable(t.at.as_str()) {
+            d.push(Diagnostic::error(
+                TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/at"),
+                format!(
+                    "trap `at` anchor `{}` is not provided by any area's prefab — {}",
+                    t.at,
+                    providers.anchor_remedy(
+                        "bind the trap to a point anchor some area's prefab exposes, whatever \
+                         that anchor is called (names come from prefab metadata; do NOT invent \
+                         one). A `payload` trap needs nothing of the piece but that one cell and \
+                         the trigger block standing in it (`DW0917`) — the compiler emits the \
+                         detection; only a legacy `dispense` effect \
+                         needs the anchor's `dispenser` socket, and only a flag-gated trap \
+                         needs its `trigger_block`"
+                    ),
+                ),
+            ));
+        }
+        if let Some(dis) = &t.disarm {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                dis.via.as_str(),
+                crate::layout::StationKind::Point,
+                "a trap's disarm affordance",
+                "quests",
+                format!("/content/traps/{i}/disarm/via"),
+            ) {
+                d.push(f);
+            }
+            if !providers.resolvable(dis.via.as_str()) {
+                d.push(Diagnostic::error(
+                    TRAP_INVALID,
+                    "quests",
+                    format!("/content/traps/{i}/disarm/via"),
+                    format!(
+                        "trap `disarm.via` anchor `{}` is not provided by any area's prefab — \
+                         {}",
+                        dis.via,
+                        providers.anchor_remedy(
+                            "use an anchor some area's prefab exposes for the disarm affordance"
+                        ),
+                    ),
+                ));
+            }
+            if dis.via == t.at {
+                d.push(Diagnostic::error(
+                    TRAP_INVALID,
+                    "quests",
+                    format!("/content/traps/{i}/disarm/via"),
+                    format!(
+                        "trap `disarm.via` anchor `{}` is the trap's own trigger anchor — the \
+                         disarm must be a distinct, separately-reachable affordance, not the trap \
+                         cell itself",
+                        dis.via
+                    ),
+                ));
+            }
+        }
+        // spec-0022: a trap must actually DO something. Neither the legacy
+        // redstone `effect` nor a command `payload` means mute hardware that
+        // the completability proofs would still reason about — a content
+        // mistake, never a deliberate no-op.
+        if t.effect.is_none() && t.payload.is_empty() {
+            d.push(Diagnostic::error(
+                TRAP_NO_CONSEQUENCE,
+                "quests",
+                format!("/content/traps/{i}"),
+                format!(
+                    "trap `{}` declares no consequence — give it a `payload` (an ordered \
+                     effect list: `volley`, `collapse`, `damage-players`, `play-sound`, \
+                     `narrate`, `set-flag`, `spawn-wave`, …). A trigger with nothing \
+                     downstream of it is scenery, not a trap",
+                    t.id
+                ),
+            ));
+        }
+        // spec-0022 payload validation: the trap-payload verbs' own ids and
+        // cadence, plus the standard flag/wave/item consumer resolution every
+        // other effect root gets.
+        for_each_trap_payload_deep(t, |path, eff| {
+            let base = format!("/content/traps/{i}/{path}");
+            match &eff.verb {
+                Verb::Volley {
+                    projectile,
+                    salvos,
+                    interval,
+                    ..
+                } => {
+                    let proj = projectile
+                        .as_deref()
+                        .unwrap_or(crate::DEFAULT_VOLLEY_PROJECTILE);
+                    if !entities.contains(proj) {
+                        d.push(Diagnostic::error(
+                            TRAP_VERB_ID_UNKNOWN,
+                            "quests",
+                            format!("{base}/projectile"),
+                            format!(
+                                "volley `projectile` `{proj}` is not in the pinned 1.21.11 \
+                                 entity registry — use a projectile entity id (e.g. \
+                                 `minecraft:arrow`, `minecraft:spectral_arrow`)"
+                            ),
+                        ));
+                    }
+                    let n = salvos.unwrap_or(crate::DEFAULT_VOLLEY_SALVOS);
+                    if n == 0 || n > crate::MAX_VOLLEY_SALVOS {
+                        d.push(Diagnostic::error(
+                            VOLLEY_CADENCE,
+                            "quests",
+                            format!("{base}/salvos"),
+                            format!(
+                                "volley `salvos` is {n} — must be 1..={}. A volley fires \
+                                 its whole kill zone every salvo, so the entity count is \
+                                 `salvos x standable cells`; beyond the cap that is a \
+                                 server hazard, not a trap",
+                                crate::MAX_VOLLEY_SALVOS
+                            ),
+                        ));
+                    }
+                    let iv = interval.unwrap_or(crate::DEFAULT_VOLLEY_INTERVAL);
+                    if iv == 0 || iv > crate::MAX_VOLLEY_INTERVAL {
+                        d.push(Diagnostic::error(
+                            VOLLEY_CADENCE,
+                            "quests",
+                            format!("{base}/interval"),
+                            format!(
+                                "volley `interval` is {iv} ticks — must be 1..={}. Salvos \
+                                 spaced wider than that stop reading as one trap event",
+                                crate::MAX_VOLLEY_INTERVAL
+                            ),
+                        ));
+                    }
+                }
+                Verb::Collapse {
+                    falling_block,
+                    then_floor,
+                    ..
+                } => {
+                    let blocks = ItemBackedBlockRegistry::new(items);
+                    let fb = falling_block
+                        .as_deref()
+                        .unwrap_or(crate::DEFAULT_COLLAPSE_FALLING_BLOCK);
+                    for (field, id) in [
+                        ("falling_block", Some(fb)),
+                        ("then_floor", then_floor.as_deref()),
+                    ] {
+                        let Some(id) = id else { continue };
+                        if !blocks.contains(id) {
+                            d.push(Diagnostic::error(
+                                TRAP_VERB_ID_UNKNOWN,
+                                "quests",
+                                format!("{base}/{field}"),
+                                format!(
+                                    "collapse `{field}` `{id}` is not in the pinned 1.21.11 \
+                                     block registry — use a placeable block id (e.g. \
+                                     `minecraft:gravel`, `minecraft:sand`)"
+                                ),
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+            for (kind, list) in [
+                ("requires_flags", eff.requires_flags()),
+                ("forbids_flags", eff.forbids_flags()),
+            ] {
+                for (n, f) in list.iter().enumerate() {
+                    if !flags.contains(f.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::FLAG_UNKNOWN,
+                            "quests",
+                            format!("{base}/{kind}/{n}"),
+                            format!(
+                                "trap payload effect `{kind}` references flag `{f}`, which no \
+                                 `set-flag` effect ever produces — add the producing \
+                                 `set-flag {{ flag: \"{f}\" }}`, or correct the flag name"
+                            ),
+                        ));
+                    }
+                }
+            }
+            if let Some(w) = eff.spawn_wave()
+                && !c.quests.content.waves.iter().any(|x| x.id == *w)
+            {
+                d.push(Diagnostic::error(
+                    codes::WAVE_UNKNOWN,
+                    "quests",
+                    format!("{base}/wave"),
+                    format!("trap payload `spawn-wave` references unknown wave `{w}`"),
+                ));
+            }
+            if let Some(item) = eff.give_item()
+                && !items.contains(item)
+            {
+                d.push(Diagnostic::error(
+                    codes::ITEM_UNKNOWN,
+                    "quests",
+                    format!("{base}/item"),
+                    format!(
+                        "trap payload `give-item` item `{item}` is not in the pinned \
+                         1.21.11 item registry"
+                    ),
+                ));
+            }
+        });
+        if let Some((item, count)) = t.dispense() {
+            if !items.contains(item) {
+                d.push(Diagnostic::error(
+                    TRAP_PAYLOAD_UNKNOWN,
+                    "quests",
+                    format!("/content/traps/{i}/effect/dispense/item"),
+                    format!(
+                        "trap dispense payload item `{item}` is not in the pinned 1.21.11 item \
+                         registry — use a valid namespaced item id (e.g. `minecraft:arrow`)"
+                    ),
+                ));
+            }
+            // The dispenser payload is the same single-slot `item replace …
+            // container.0` fill a `loot` entry is, so it carries the same silent
+            // over-cap failure (`DW0436`) — a splash potion caps at 1.
+            check_stack_count(
+                item,
+                count,
+                &format!("trap `{}` dispense payload", t.id),
+                format!("/content/traps/{i}/effect/dispense/count"),
+                items,
+                d,
+            );
+        }
+        for (m, f) in t.requires_flags.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quests",
+                    format!("/content/traps/{i}/requires_flags/{m}"),
+                    format!(
+                        "trap `requires_flags` references flag `{f}`, which no `set-flag` effect or \
+                         trap disarm ever produces — add a producer or correct the flag name"
+                    ),
+                ));
+            }
+        }
+        // Trap `forbids_flags` — same unknown-flag treatment (DW0172).
+        for (m, f) in t.forbids_flags.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quests",
+                    format!("/content/traps/{i}/forbids_flags/{m}"),
+                    format!(
+                        "trap `forbids_flags` references flag `{f}`, which no `set-flag` effect or \
+                         trap disarm ever produces — the gate can never suppress anything; add a \
+                         producer or correct the flag name"
+                    ),
+                ));
+            }
+        }
+    }
+}

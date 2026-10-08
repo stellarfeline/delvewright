@@ -521,3 +521,60 @@ pub(crate) fn npc_anchor_checks(
         }
     }
 }
+
+/// `DW0110` over the NPC ids.
+pub(crate) fn npc_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
+        crate::ids::id_syntax!(d, npc.id, "npcs", format!("/content/npcs/{i}/id"));
+    }
+}
+
+/// `DW0111` over the NPC ids.
+pub(crate) fn npc_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::ids::dup_check(
+        c.npcs
+            .content
+            .npcs
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.id.as_str(), format!("/content/npcs/{i}/id"))),
+        "npcs",
+        "npc",
+        d,
+    );
+}
+
+/// `DW0112` over what an NPC names: its area, and the NPC each persona
+/// relationship is with (a same-stage reference, validated within stage 2).
+pub(crate) fn npc_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::ids::dangling;
+    let area_ids = crate::world::declared_area_ids(c);
+    let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
+        dangling(
+            d,
+            area_ids.contains(npc.area.as_str()),
+            "npcs",
+            format!("/content/npcs/{i}/area"),
+            format!(
+                "npc references unknown area `{}` — {}",
+                npc.area,
+                crate::placement::Placement::of(c).area_remedy(),
+            ),
+        );
+        // Persona relationships are same-stage NPC refs (validated within stage 2).
+        for (k, rel) in npc.persona.relationships.iter().enumerate() {
+            dangling(
+                d,
+                npc_ids.contains(rel.npc.as_str()),
+                "npcs",
+                format!("/content/npcs/{i}/persona/relationships/{k}/npc"),
+                format!(
+                    "persona relationship references unknown npc `{}` — declare that npc in \
+                     stage 2 or correct the reference",
+                    rel.npc
+                ),
+            );
+        }
+    }
+}

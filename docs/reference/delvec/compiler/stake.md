@@ -7,7 +7,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ### DW0520–DW0527, DW0880 — trade and the recovery stake (`dsl::validate` / `compiler::stake`; spec-0032)
 
-This module's rows of a section whose prose is on the [`delvewright_dsl::diagnostic` page](../../dsl/diagnostic.md#dw0520dw0527-dw0880--trade-and-the-recovery-stake-dslvalidate--compilerstake-spec-0032).
+This module's rows of a section whose prose is on the [`delvewright_dsl::economy` page](../../dsl/economy.md#dw0520dw0527-dw0880--trade-and-the-recovery-stake-dslvalidate--compilerstake-spec-0032).
 
 | Code | Meaning |
 |------|---------|

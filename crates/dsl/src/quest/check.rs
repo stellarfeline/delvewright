@@ -6,11 +6,13 @@
 use crate::cutscene::check_cutscene_shape;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
+use crate::loot::{MIN_CONTAINER_SLOTS, check_stack_count};
 use crate::registry::{AnchorRegistry, BlockRegistry, EffectRegistry, ItemRegistry};
 use crate::validate::{
-    AnchorProviders, MIN_CONTAINER_SLOTS, check_block_field, check_enchantments, check_stack_count,
-    for_each_effect_deep, graph_has_cycle, produced_flags, station_kind_diag,
+    AnchorProviders, check_block_field, for_each_effect_deep, graph_has_cycle, produced_flags,
+    station_kind_diag,
 };
+use crate::wave::check_enchantments;
 use crate::{Objective, PlannedQuest, QuestEffect, Verb};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1178,5 +1180,124 @@ pub(crate) fn quest_prop_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mu
                 d,
             );
         });
+    }
+}
+
+/// `DW0110` over the expanded quests' ids and their objectives' ids.
+pub(crate) fn quest_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        crate::ids::id_syntax!(d, q.id, "quests", format!("/content/quests/{i}/id"));
+        for (j, obj) in q.objectives.iter().enumerate() {
+            crate::ids::id_syntax!(
+                d,
+                obj.id(),
+                "quests",
+                format!("/content/quests/{i}/objectives/{j}/id")
+            );
+        }
+    }
+}
+
+/// `DW0111` over the expanded quests' ids, and over the objective ids.
+pub(crate) fn quest_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::ids::dup_check(
+        c.quests
+            .content
+            .quests
+            .iter()
+            .enumerate()
+            .map(|(i, q)| (q.id.as_str(), format!("/content/quests/{i}/id"))),
+        "quests",
+        "quest",
+        d,
+    );
+    // Objective ids: unique across all of stage 5 (so cross-stage dialogue refs
+    // resolve unambiguously).
+    crate::ids::dup_check(
+        c.quests
+            .content
+            .quests
+            .iter()
+            .enumerate()
+            .flat_map(|(i, q)| {
+                q.objectives.iter().enumerate().map(move |(j, o)| {
+                    (
+                        o.id().as_str(),
+                        format!("/content/quests/{i}/objectives/{j}/id"),
+                    )
+                })
+            }),
+        "quests",
+        "objective",
+        d,
+    );
+}
+
+/// `DW0112` over what an expanded quest names: the quest a `quest-complete`
+/// trigger waits on, the NPC a `talk-to` objective names, the objectives an
+/// `after` lists, and the objective each `on_objective_complete` key names.
+pub(crate) fn quest_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::ids::dangling;
+    let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    let expanded_ids: BTreeSet<&str> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .map(|q| q.id.as_str())
+        .collect();
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        if let crate::Trigger::QuestComplete { quest } = &q.trigger {
+            dangling(
+                d,
+                expanded_ids.contains(quest.as_str()),
+                "quests",
+                format!("/content/quests/{i}/trigger/quest"),
+                format!(
+                    "quest trigger `quest-complete` references unknown quest `{quest}` — declare \
+                     that quest in stage 5 or correct the reference"
+                ),
+            );
+        }
+        let local_objs: BTreeSet<&str> = q.objectives.iter().map(|o| o.id().as_str()).collect();
+        for (j, obj) in q.objectives.iter().enumerate() {
+            if let crate::Objective::TalkTo { npc, .. } = obj {
+                dangling(
+                    d,
+                    npc_ids.contains(npc.as_str()),
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/npc"),
+                    format!(
+                        "`talk-to` objective references unknown npc `{npc}` — declare it in \
+                         stage 2 or correct the reference"
+                    ),
+                );
+            }
+            for (m, aft) in obj.after().iter().enumerate() {
+                dangling(
+                    d,
+                    local_objs.contains(aft.as_str()),
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/after/{m}"),
+                    format!(
+                        "objective `after` references unknown objective `{aft}` — `after` may \
+                         only name another objective in the same quest; declare it or correct \
+                         the reference"
+                    ),
+                );
+            }
+        }
+        for key in q.on_objective_complete.keys() {
+            dangling(
+                d,
+                local_objs.contains(key.as_str()),
+                "quests",
+                format!("/content/quests/{i}/on_objective_complete/{key}"),
+                format!(
+                    "`on_objective_complete` is keyed by unknown objective `{key}` — the key must \
+                     name an objective declared in this quest; declare it or correct the key"
+                ),
+            );
+        }
     }
 }
