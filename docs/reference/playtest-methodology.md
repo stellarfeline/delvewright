@@ -356,7 +356,7 @@ combat" that counts every `spawn-wave`/`spawn-actor` effect and every `actor/`
 id counts populations the general form does not name: a guided tour whose only
 bodies are invulnerable puppets that walk out of a gate and are removed is
 adjudicated as a campaign owing a combat plan, and refused for shipping none,
-while `emit.rs` is right not to write one. The precondition is the class the
+while `compiler::emit` is right not to write one. The precondition is the class the
 row's own words name: mandatory combat is a `kill` objective or a body turned
 loose (`combat::mandatory_fights`). A general form can name a population the
 DSL spells more than one way — an `unleash-actor` effect and the `ambushes[]`

@@ -1313,7 +1313,7 @@ No generated PackTest asserts on rendered text at all.
 
 ## 3. Verb → emission mapping
 
-Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit.rs`.
+Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit/`, one file per object.
 
 | Verb / effect | Emitted mechanism |
 |---------------|-------------------|
@@ -1823,7 +1823,7 @@ every `# @dummy` test spawns its **own** dummy player, all dummies coexist, and
 all test functions execute over the same server tick(s), sequentially in an
 order the compiler does not control. The conversion is **total** and the rule is
 hard: **every generated test is interleaving-independent — own dummy, own
-scores, own init** (`pin_dummy` in `emit.rs`;
+scores, own init** (`pin_dummy` in `compiler/emit/packtest.rs`;
 CI-enforced over every fixture family by `tests/packtest_batch.rs`):
 
 - **Own dummy — `@p` is not "the test's player".** It re-resolves from the test
