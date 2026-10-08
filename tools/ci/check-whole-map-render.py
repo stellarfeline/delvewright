@@ -94,6 +94,7 @@ pass.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import subprocess
@@ -103,6 +104,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+import parallel  # noqa: E402
 from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_domain import GALLERY, materialise, overlays  # noqa: E402
 
@@ -330,114 +332,135 @@ def main() -> int:
     weathers_seen: dict[str, int] = {}
     classes_seen: dict[str, int] = {}
 
-    for base in bases:
+    def engine_runs(base: str) -> dict:
+        """Every engine run one base needs, in directories named for its point.
+
+        It judges nothing and says nothing, so the bases run on the shared pool
+        (`tools/lib/parallel.py`); the walk below reads them in the declared
+        order. `points_by_base` gives each base a distinct point, so no two
+        bases share a directory.
+        """
         point = found[base]
         label = point or "primary"
         src, out = work / f"src-{label}", work / f"out-{label}"
         materialise(src, None if point is None else GALLERY / "overlays" / point)
-        r = run([str(delvec), "build", str(src), "-o", str(out), "--prefabs", args.prefabs])
-        if r.returncode != 0:
-            findings.append(
-                f"{base} ({label}): `delvec build` exited {r.returncode} — the point "
-                f"this base is proven on does not compile: {r.stderr.strip().splitlines()[-1:]}"
-            )
-            continue
-        builds += 1
+        got: dict = {"src": src, "out": out, "label": label}
+        got["build"] = run([str(delvec), "build", str(src), "-o", str(out), "--prefabs", args.prefabs])
+        if got["build"].returncode != 0:
+            return got
         stub_world(out)
-        plan = json.loads((out / "render-plan.json").read_text())
-        h = plan.get("horizon")
-        kind = h.get("kind") if h else "void"
-        if kind != base:
-            findings.append(
-                f"{base} ({label}): the build emitted horizon kind `{kind}` — the "
-                "point does not exercise the base it was selected for"
-            )
-        extent = (h or {}).get("extent")
-
-        record = src / "design" / "cameras.json"
-        if record.is_file():
-            records += 1
-            sheet = json.loads(record.read_text())
-            dest = work / f"cameras-{label}"
+        if (src / "design" / "cameras.json").is_file():
             # `delvec cameras` plans and assembles the campaign to stand each
             # camera (spec-0089), so it reads the prefab library the build read.
-            r = run(
+            got["cameras"] = run(
                 [str(delvec), "--prefabs", args.prefabs, "cameras", str(out),
-                 "--campaign", str(src), "-o", str(dest)]
+                 "--campaign", str(src), "-o", str(work / f"cameras-{label}")]
             )
-            if r.returncode != 0:
-                findings.append(
-                    f"{base} ({label}): `delvec cameras` exited {r.returncode} — "
-                    f"{(r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip() else 'no reason given'}"
-                )
-            elif not sheet.get("cameras"):
-                findings.append(f"{base} ({label}): {record} states no camera")
-            else:
-                for cam in sheet["cameras"]:
-                    scene_file = dest / f"{sheet['campaign_id']}_camera_{cam['name']}.json"
-                    if not scene_file.is_file():
-                        findings.append(
-                            f"{base} ({label}): camera `{cam['name']}` has no scene {scene_file.name}"
-                        )
-                        continue
-                    cameras_judged += 1
-                    doc = json.loads(scene_file.read_text())
-                    for why in camera_matches(doc, cam):
-                        findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
-                    design = json.loads((src / "design.json").read_text())
-                    for why in sky_matches(doc, cam, design, weathers_seen, classes_seen):
-                        findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
-
         for arm in ("scene", "panorama"):
-            dest = work / f"{arm}-{label}"
             cmd = [str(delvec)]
             if arm == "scene":
                 cmd += ["--prefabs", args.prefabs]
-            cmd += [arm, str(out), "-o", str(dest)]
-            r = run(cmd)
+            cmd += [arm, str(out), "-o", str(work / f"{arm}-{label}")]
+            got[arm] = run(cmd)
+        return got
+
+    with contextlib.closing(parallel.ordered(engine_runs, bases)) as ran:
+        for base, outcome in zip(bases, ran):
+            got = outcome.get()
+            src, out, label = got["src"], got["out"], got["label"]
+            r = got["build"]
             if r.returncode != 0:
                 findings.append(
-                    f"{base} ({label}): `delvec {arm}` exited {r.returncode} — "
-                    f"{(r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip() else 'no reason given'}"
+                    f"{base} ({label}): `delvec build` exited {r.returncode} — the point "
+                    f"this base is proven on does not compile: {r.stderr.strip().splitlines()[-1:]}"
                 )
                 continue
-            files = sorted(dest.glob("*.json"))
-            if not files:
+            builds += 1
+            plan = json.loads((out / "render-plan.json").read_text())
+            h = plan.get("horizon")
+            kind = h.get("kind") if h else "void"
+            if kind != base:
                 findings.append(
-                    f"{base} ({label}): `delvec {arm}` exited 0 and emitted no scene "
-                    "file. Exit 0 is not a picture."
+                    f"{base} ({label}): the build emitted horizon kind `{kind}` — the "
+                    "point does not exercise the base it was selected for"
                 )
-                continue
-            for f in files:
-                scenes_judged += 1
-                doc = json.loads(f.read_text())
-                chunks = doc.get("chunkList") or []
-                if not chunks:
-                    findings.append(f"{base} ({label}) {f.name}: empty chunkList")
+            extent = (h or {}).get("extent")
+
+            record = src / "design" / "cameras.json"
+            if record.is_file():
+                records += 1
+                sheet = json.loads(record.read_text())
+                dest = work / f"cameras-{label}"
+                r = got["cameras"]
+                if r.returncode != 0:
+                    findings.append(
+                        f"{base} ({label}): `delvec cameras` exited {r.returncode} — "
+                        f"{(r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip() else 'no reason given'}"
+                    )
+                elif not sheet.get("cameras"):
+                    findings.append(f"{base} ({label}): {record} states no camera")
+                else:
+                    for cam in sheet["cameras"]:
+                        scene_file = dest / f"{sheet['campaign_id']}_camera_{cam['name']}.json"
+                        if not scene_file.is_file():
+                            findings.append(
+                                f"{base} ({label}): camera `{cam['name']}` has no scene {scene_file.name}"
+                            )
+                            continue
+                        cameras_judged += 1
+                        doc = json.loads(scene_file.read_text())
+                        for why in camera_matches(doc, cam):
+                            findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
+                        design = json.loads((src / "design.json").read_text())
+                        for why in sky_matches(doc, cam, design, weathers_seen, classes_seen):
+                            findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
+
+            for arm in ("scene", "panorama"):
+                dest = work / f"{arm}-{label}"
+                r = got[arm]
+                if r.returncode != 0:
+                    findings.append(
+                        f"{base} ({label}): `delvec {arm}` exited {r.returncode} — "
+                        f"{(r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip() else 'no reason given'}"
+                    )
                     continue
-                if arm == "panorama":
-                    panoramas_framed += 1
-                    box = plan["layout_aabb"]
-                    inside, w, h = subject_in_frame(doc, box["min"], box["max"])
-                    if not inside or w * h < MIN_FILL:
-                        findings.append(
-                            f"{base} ({label}) {f.name}: the placed areas "
-                            f"{box['min']}..{box['max']} are "
-                            f"{'inside' if inside else 'NOT inside'} the frame and "
-                            f"cover {w * h:.2f} of it ({w:.2f} x {h:.2f}); the floor "
-                            f"is {MIN_FILL:.2f}. A panorama frames the built place, "
-                            "not the ground around it."
-                        )
-                if extent:
-                    gap = covers(chunks, extent["min"], extent["max"])
-                    if gap:
-                        findings.append(
-                            f"{base} ({label}) {f.name}: the scene loads none of "
-                            f"{len(gap)} chunk column(s) of the landform the horizon "
-                            f"declares (first: {', '.join(gap[:4])}). The frame would "
-                            "show the map standing in a void it is surrounded by "
-                            "ground in."
-                        )
+                files = sorted(dest.glob("*.json"))
+                if not files:
+                    findings.append(
+                        f"{base} ({label}): `delvec {arm}` exited 0 and emitted no scene "
+                        "file. Exit 0 is not a picture."
+                    )
+                    continue
+                for f in files:
+                    scenes_judged += 1
+                    doc = json.loads(f.read_text())
+                    chunks = doc.get("chunkList") or []
+                    if not chunks:
+                        findings.append(f"{base} ({label}) {f.name}: empty chunkList")
+                        continue
+                    if arm == "panorama":
+                        panoramas_framed += 1
+                        box = plan["layout_aabb"]
+                        inside, w, h = subject_in_frame(doc, box["min"], box["max"])
+                        if not inside or w * h < MIN_FILL:
+                            findings.append(
+                                f"{base} ({label}) {f.name}: the placed areas "
+                                f"{box['min']}..{box['max']} are "
+                                f"{'inside' if inside else 'NOT inside'} the frame and "
+                                f"cover {w * h:.2f} of it ({w:.2f} x {h:.2f}); the floor "
+                                f"is {MIN_FILL:.2f}. A panorama frames the built place, "
+                                "not the ground around it."
+                            )
+                    if extent:
+                        gap = covers(chunks, extent["min"], extent["max"])
+                        if gap:
+                            findings.append(
+                                f"{base} ({label}) {f.name}: the scene loads none of "
+                                f"{len(gap)} chunk column(s) of the landform the horizon "
+                                f"declares (first: {', '.join(gap[:4])}). The frame would "
+                                "show the map standing in a void it is surrounded by "
+                                "ground in."
+                            )
 
     print(
         f"camera skies: weathers {dict(sorted(weathers_seen.items()))}, daylight classes "

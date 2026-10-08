@@ -77,6 +77,8 @@ some other document wearing this probe's name.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -88,6 +90,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 import gallery_domain  # noqa: E402
+import parallel  # noqa: E402
 from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_units import FILE_KEY, Binder, Enumerator, stage_files  # noqa: E402
 
@@ -98,6 +101,15 @@ GALLERY = REPO / "gallery"
 def die(msg: str) -> "None":
     print(f"error: {msg}", file=sys.stderr)
     raise SystemExit(1)
+
+
+class ProbeRefusal(Exception):
+    """A refusal raised inside a probe's run, which may be on a worker thread.
+
+    It carries the message and the walk prints it through `die` at the probe's
+    own place in the order, so a concurrent run says what the serial run said,
+    where it said it.
+    """
 
 
 # The non-stage documents the gallery binds beside the stage documents, each by
@@ -265,7 +277,9 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
         scratch = Path(tempfile.mkdtemp(prefix="gallery-probe-prefabs-")) / "prefabs"
         try:
             if gallery_domain.probe_prefabs(prefabs, scratch) == 0:
-                die(f"the prefab directory `{prefabs}` copied for the probe holds no file")
+                raise ProbeRefusal(
+                    f"the prefab directory `{prefabs}` copied for the probe holds no file"
+                )
             d = subprocess.run(
                 [str(delvec), "--prefabs", str(scratch), "detail", str(campaign), "--all", "--json"],
                 capture_output=True,
@@ -459,6 +473,43 @@ def probe_discharges(
     return out
 
 
+def prepare_probe(pd: Path, tmp: Path) -> dict:
+    """One probe's declaration read and checked, and its point materialised.
+
+    Everything here is cheap and runs in the walk's order; only the engine run
+    that follows is spread across the pool. Each probe is materialised into a
+    directory named for it under `tmp`, so no two probes share a path.
+    """
+    manifest_path = pd / "probe.json"
+    if not manifest_path.is_file():
+        die(f"probe `{pd.name}` has no `probe.json`")
+    manifest = json.loads(manifest_path.read_text())
+    kind, code, claimed, why = probe_kind(pd.name, manifest)
+    ops = probe_patch(pd.name, manifest)
+    own = sum(
+        1 for f in pd.rglob("*") if f.is_file() and f.name not in gallery_domain.POINT_MANIFESTS
+    )
+    if not ops and not own:
+        die(
+            f"probe `{pd.name}` declares no edit and ships no document of its own, so "
+            "it materialises the primary UNCHANGED. It is then refused — or not — by "
+            "whatever the primary does, and it demonstrates nothing about "
+            f"`{code}`. A probe is the primary plus a declared edit."
+        )
+    dest = tmp / pd.name
+    materialise_point("probe", pd, dest)
+    return {
+        "name": pd.name,
+        "kind": kind,
+        "code": code,
+        "claimed": claimed,
+        "why": why,
+        "ops": ops,
+        "own": own,
+        "dest": dest,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--delvec", help="the delvec whose schema export defines the units")
@@ -564,36 +615,51 @@ def main() -> int:
     own_documents = 0
     tmp = Path(tempfile.mkdtemp(prefix="gallery-probes-"))
     try:
+        # Three passes, so the probes' engine runs — all the time this gate
+        # takes — happen concurrently while everything it SAYS is said in the
+        # serial order. First, in order, each probe's declaration is read and
+        # its point materialised into a directory of its own; a refusal there is
+        # held, with what it printed, and nothing after it is prepared, because
+        # the serial walk would never have reached it. Second, every prepared
+        # probe runs through the engine on the shared pool
+        # (`tools/lib/parallel.py`), each with its own scratch and build
+        # directories. Third, in order, each probe's verdict is judged exactly
+        # as the serial loop judged it, and a held refusal is replayed at its
+        # place — so the first refusal, the exit status and every printed line
+        # are the serial run's.
+        prepared: list[tuple] = []
+        held: tuple[str, int] | None = None
         for pd in sorted(p for p in probes_dir.iterdir() if p.is_dir()) if probes_dir.is_dir() else []:
-            manifest_path = pd / "probe.json"
-            if not manifest_path.is_file():
-                die(f"probe `{pd.name}` has no `probe.json`")
-            manifest = json.loads(manifest_path.read_text())
-            kind, code, claimed, why = probe_kind(pd.name, manifest)
-            ops = probe_patch(pd.name, manifest)
-            own = sum(
-                1 for f in pd.rglob("*") if f.is_file() and f.name not in gallery_domain.POINT_MANIFESTS
-            )
-            if not ops and not own:
-                die(
-                    f"probe `{pd.name}` declares no edit and ships no document of its own, so "
-                    "it materialises the primary UNCHANGED. It is then refused — or not — by "
-                    "whatever the primary does, and it demonstrates nothing about "
-                    f"`{code}`. A probe is the primary plus a declared edit."
+            said = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(said):
+                    prepared.append(prepare_probe(pd, tmp))
+            except SystemExit as e:
+                held = (said.getvalue(), e.code)
+                break
+        runs = parallel.ordered(
+            lambda p: run_probe(delvec, p["dest"], prefabs), prepared
+        )
+        with contextlib.closing(runs):
+            for p, outcome in zip(prepared, runs):
+                probes_examined += 1
+                probes_patched += 1 if p["ops"] else 0
+                paths_touched += len(p["ops"])
+                own_documents += p["own"]
+                try:
+                    rc, codes, phase = outcome.get()
+                except ProbeRefusal as e:
+                    die(str(e))
+                name, kind, code = p["name"], p["kind"], p["code"]
+                assert_refused(name, kind, code, rc, codes, phase)
+                if kind == DEMONSTRATION:
+                    demonstrations[name] = {"code": code, "why": p["why"], "phase": phase}
+                refusal.update(
+                    probe_discharges(name, kind, code, p["claimed"], p["why"], units, bound)
                 )
-            probes_examined += 1
-            probes_patched += 1 if ops else 0
-            paths_touched += len(ops)
-            own_documents += own
-            dest = tmp / pd.name
-            materialise_point("probe", pd, dest)
-            rc, codes, phase = run_probe(delvec, dest, prefabs)
-            assert_refused(pd.name, kind, code, rc, codes, phase)
-            if kind == DEMONSTRATION:
-                demonstrations[pd.name] = {"code": code, "why": why, "phase": phase}
-            refusal.update(
-                probe_discharges(pd.name, kind, code, claimed, why, units, bound)
-            )
+        if held is not None:
+            sys.stderr.write(held[0])
+            raise SystemExit(held[1])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
