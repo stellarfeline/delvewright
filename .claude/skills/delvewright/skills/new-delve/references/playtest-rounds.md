@@ -43,7 +43,7 @@ here:
    for, and the audit that catches up finds them all at once.
 8. **Close the round in `GENERATION.md` with its machine record**, not just prose:
    how many validation-loop iterations it took to reach green, and every DW code
-   the round hit **with its count** (`DW0205 x3, DW0483 x3, DW0450 x1`). Write it
+   the round hit **with its count** (`DW0204 x3, DW0483 x3, DW0450 x1`). Write it
    even when the count is zero — a round that hit nothing is the datum that says
    the gates had nothing to say. It is the only source from which rounds-to-green
    can be read afterwards; a round summarised in prose alone is a round whose cost

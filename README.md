@@ -6,7 +6,7 @@ English · [简体中文](README.zh-CN.md)
 
 **[Inside Vesperhold](docs/media/vesperhold/README.md)** — the approach, the ward, the garden, the cloister, the chapel, the pool under it, the bell tower and the throne hall.
 
-**Delvewright turns a creative prompt into a story-driven Minecraft adventure map for one to four friends, and proves by machine that it can be finished before it is handed over.**
+**Delvewright is an AI Minecraft adventure map generator: it turns a creative prompt into a story-driven RPG dungeon for one to four friends — a vanilla datapack with quests and NPCs — and proves by machine that it can be finished before it is handed over.**
 
 It automates the tedium and the verification, not the design: it stops and waits for you to approve the design, hands you the finished delve to play, and when it refuses something it names what to change instead of changing it.
 
