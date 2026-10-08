@@ -6,9 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::serde_fields::is_zero3;
 use crate::{ActorId, Mark, NpcId};
 
-#[cfg(doc)]
-use crate::Verb;
-
 /// Whether a `cutscene` shows the party's bodies (spec-0095).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -281,5 +278,392 @@ impl CameraShot {
         self.seconds
             .or(self.shot_style.map(ShotStyle::default_seconds))
             .unwrap_or(1)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Validation — the checks `dsl::validate` runs over this object (ADR-0031)
+// ---------------------------------------------------------------------------
+
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
+use crate::envelope::Campaign;
+use crate::{QuestEffect, Verb};
+use std::collections::BTreeSet;
+
+crate::dw_code! {
+    /// (v0.6) A `cutscene` effect's shape is invalid: it mixes the multi-shot
+    /// `shots` list with the single-shot `path`/`seconds` fields, gives neither,
+    /// or declares a shot with an empty camera `path`. A cutscene must resolve to
+    /// at least one shot, and every shot to at least one camera position.
+    pub const CUTSCENE_SHAPE: DwCode = DwCode::new("DW0199", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) A `shot_style` declaration is semantically invalid (spec-0015 shot
+    /// grammar): a styled shot with no `subject`; style-only fields (`subject`,
+    /// `subject_b`, `dist`, `degrees`, `bearing`) on an unstyled shot; a
+    /// `subject_b` on a style other than `two-shot` (or a `two-shot` without
+    /// one); `degrees` off `orbit-arc` or outside `45..=120`; `dist` outside
+    /// `1..=48`; or `bearing` outside `-360..=360`. Validation-tier (exit 1).
+    pub const SHOT_STYLE_INVALID: DwCode = DwCode::new("DW0348", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) A `side-track` / `low-follow` shot whose subject has no
+    /// compiler-known motion: those styles dolly *with* a moving subject, so the
+    /// subject must be an NPC/actor with a matching `move-npc`/`move-actor` in
+    /// the same effect group or the same `sequence` timeline (an `anchor`
+    /// subject can never move). Validation-tier (exit 1). Use `locked-off` /
+    /// `push-in` for a static subject instead.
+    pub const SHOT_SUBJECT_UNMOVED: DwCode = DwCode::new("DW0349", ExitTier::Build);
+}
+
+/// `cutscene` shape (`DW0199`): a cutscene is written either multi-shot
+/// (`shots: [...]`, DSL v0.6) or single-shot (`path` + `seconds`, DSL v0.4) —
+/// never both, never neither — and every resolved shot needs at least one camera
+/// waypoint. The two spellings normalize to the same shot list
+/// ([`QuestEffect::cutscene_shots`]), so this is the one place the shape is
+/// policed; emission may then assume a non-empty, well-formed list.
+pub(crate) fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut Vec<Diagnostic>) {
+    let Verb::Cutscene {
+        shots,
+        path,
+        seconds,
+        ..
+    } = &eff.verb
+    else {
+        return;
+    };
+    let single = !path.is_empty() || seconds.is_some();
+    let err = |d: &mut Vec<Diagnostic>, field: &str, msg: String| {
+        d.push(Diagnostic::error(
+            CUTSCENE_SHAPE,
+            "quests",
+            format!("{base_path}/{field}"),
+            msg,
+        ));
+    };
+    match (!shots.is_empty(), single) {
+        (true, true) => err(
+            d,
+            "shots",
+            "`cutscene` mixes the multi-shot `shots` list with the single-shot \
+             `path`/`seconds` fields — use one form: move the single-shot fields into a `shots` \
+             entry, or drop `shots`"
+                .to_string(),
+        ),
+        (false, false) => err(
+            d,
+            "shots",
+            "`cutscene` declares no shot — give a `shots` list of \
+             `{path, seconds, look_at?}` (multi-shot), or a single-shot `path` + `seconds`"
+                .to_string(),
+        ),
+        (false, true) if seconds.is_none() => err(
+            d,
+            "seconds",
+            "single-shot `cutscene` is missing `seconds` — every shot needs a duration".to_string(),
+        ),
+        _ => {}
+    }
+    for (i, shot) in shots.iter().enumerate() {
+        // A `shot_style` supplies both a default dolly and a default duration
+        // (spec-0015), so `path`/`seconds` become optional overrides on a
+        // styled shot; the style's own shape is policed by `DW0348`/`DW0349`.
+        if shot.shot_style.is_some() {
+            continue;
+        }
+        if shot.path.is_empty() {
+            err(
+                d,
+                &format!("shots/{i}/path"),
+                "`cutscene` shot has an empty camera `path` — give at least one waypoint (one \
+                 waypoint is a static shot, two or more is a dolly), or use a `shot_style`"
+                    .to_string(),
+            );
+        }
+        if shot.seconds.is_none() {
+            err(
+                d,
+                &format!("shots/{i}/seconds"),
+                "`cutscene` shot is missing `seconds` — every unstyled shot needs an explicit \
+                 duration (a `shot_style` would supply a default)"
+                    .to_string(),
+            );
+        }
+    }
+    if shots.is_empty() && single && path.is_empty() {
+        err(
+            d,
+            "path",
+            "single-shot `cutscene` has an empty camera `path` — give at least one waypoint (one \
+             waypoint is a static shot, two or more is a dolly)"
+                .to_string(),
+        );
+    }
+}
+
+/// Shot-style semantics (DSL v0.6, spec-0015 shot grammar): `DW0348` for
+/// invalid style/param combinations, `DW0112` for a subject referencing an
+/// unknown npc/actor, and `DW0349` for a `side-track`/`low-follow` whose
+/// subject provably cannot move.
+///
+/// The moving-subject scope mirrors the compiler's expansion resolution
+/// exactly: a subject "moves" if a matching `move-npc`/`move-actor` runs in the
+/// **same effect list**, or anywhere in the **same `sequence` timeline**
+/// (including the list that launched the sequence). Nested reaction lists
+/// (`on_arrive`/`on_caught`/`on_respawn`) start a fresh scope — their firing
+/// time is unknowable statically, so motion outside them is never assumed.
+pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::{CameraSubject, ShotStyle};
+    let quests = &c.quests.content;
+    let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    let npc_ids = &npc_ids;
+    let actor_ids: BTreeSet<&str> = quests.actors.iter().map(|a| a.id.as_str()).collect();
+
+    /// The sibling moves visible to a cutscene: `(is_actor, id)`.
+    fn moves_in(list: &[QuestEffect], scope: &mut Vec<(bool, String)>) {
+        for e in list {
+            match &e.verb {
+                Verb::MoveNpc { npc, .. } => scope.push((false, npc.to_string())),
+                Verb::MoveActor { actor, .. } => scope.push((true, actor.to_string())),
+                Verb::Sequence { steps } => {
+                    // A sequence launched from this list shares its timeline.
+                    for st in steps {
+                        moves_in(&st.effects, scope);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn subject_check(
+        sub: &CameraSubject,
+        field: &str,
+        path: &str,
+        npc_ids: &BTreeSet<&str>,
+        actor_ids: &BTreeSet<&str>,
+        d: &mut Vec<Diagnostic>,
+    ) {
+        let (unknown, kind, id) = match sub {
+            CameraSubject::Anchor(_) => return,
+            CameraSubject::Npc(s) => (!npc_ids.contains(s.npc.as_str()), "npc", s.npc.as_str()),
+            CameraSubject::Actor(s) => (
+                !actor_ids.contains(s.actor.as_str()),
+                "actor",
+                s.actor.as_str(),
+            ),
+        };
+        if unknown {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                format!("{path}/{field}"),
+                format!(
+                    "shot `{field}` references unknown {kind} `{id}` — declare it (stage 2 npcs / \
+                     stage-5 `actors`) or correct the reference"
+                ),
+            ));
+        }
+    }
+
+    fn check_shot_list(
+        eff: &QuestEffect,
+        scope: &[(bool, String)],
+        path: &str,
+        npc_ids: &BTreeSet<&str>,
+        actor_ids: &BTreeSet<&str>,
+        d: &mut Vec<Diagnostic>,
+    ) {
+        let Verb::Cutscene { shots, .. } = &eff.verb else {
+            return;
+        };
+        for (i, shot) in shots.iter().enumerate() {
+            let spath = format!("{path}/shots/{i}");
+            let err = |d: &mut Vec<Diagnostic>, field: &str, msg: String| {
+                d.push(Diagnostic::error(
+                    SHOT_STYLE_INVALID,
+                    "quests",
+                    format!("{spath}/{field}"),
+                    msg,
+                ));
+            };
+            let Some(style) = shot.shot_style else {
+                for (field, present) in [
+                    ("subject", shot.subject.is_some()),
+                    ("subject_b", shot.subject_b.is_some()),
+                    ("dist", shot.dist.is_some()),
+                    ("degrees", shot.degrees.is_some()),
+                    ("bearing", shot.bearing.is_some()),
+                ] {
+                    if present {
+                        err(
+                            d,
+                            field,
+                            format!(
+                                "`{field}` is a `shot_style` parameter but this shot declares no \
+                                 `shot_style` — add one, or drop the field"
+                            ),
+                        );
+                    }
+                }
+                continue;
+            };
+            let token = style.token();
+            match &shot.subject {
+                None => err(
+                    d,
+                    "subject",
+                    format!(
+                        "`shot_style: {token}` needs a `subject` — the anchor, npc, or actor the \
+                         shot frames"
+                    ),
+                ),
+                Some(sub) => subject_check(sub, "subject", &spath, npc_ids, actor_ids, d),
+            }
+            match (&shot.subject_b, style == ShotStyle::TwoShot) {
+                (None, true) => err(
+                    d,
+                    "subject_b",
+                    "`shot_style: two-shot` frames two subjects — give `subject_b`".to_string(),
+                ),
+                (Some(_), false) => err(
+                    d,
+                    "subject_b",
+                    format!("`subject_b` is only meaningful on `two-shot`, not `{token}`"),
+                ),
+                (Some(sub), true) => subject_check(sub, "subject_b", &spath, npc_ids, actor_ids, d),
+                (None, false) => {}
+            }
+            if let Some(g) = shot.degrees {
+                if style != ShotStyle::OrbitArc {
+                    err(
+                        d,
+                        "degrees",
+                        format!("`degrees` is only meaningful on `orbit-arc`, not `{token}`"),
+                    );
+                } else if !(45.0..=120.0).contains(&g) {
+                    err(
+                        d,
+                        "degrees",
+                        format!(
+                            "`orbit-arc` sweep `{g}` is outside `45..=120` degrees (the dossier's \
+                             readable-orbit range)"
+                        ),
+                    );
+                }
+            }
+            if let Some(dist) = shot.dist
+                && !(1.0..=48.0).contains(&dist)
+            {
+                err(
+                    d,
+                    "dist",
+                    format!("`dist` `{dist}` is outside the sane `1..=48` block range"),
+                );
+            }
+            if let Some(b) = shot.bearing
+                && !(-360.0..=360.0).contains(&b)
+            {
+                err(
+                    d,
+                    "bearing",
+                    format!("`bearing` `{b}` is outside `-360..=360` degrees"),
+                );
+            }
+            if style.needs_moving_subject() {
+                let moved = match &shot.subject {
+                    Some(CameraSubject::Npc(s)) => {
+                        scope.iter().any(|(a, id)| !a && id == s.npc.as_str())
+                    }
+                    Some(CameraSubject::Actor(s)) => {
+                        scope.iter().any(|(a, id)| *a && id == s.actor.as_str())
+                    }
+                    // An anchor can never move; a missing subject already got DW0348.
+                    Some(CameraSubject::Anchor(_)) => false,
+                    None => true,
+                };
+                if !moved {
+                    d.push(Diagnostic::error(
+                        SHOT_SUBJECT_UNMOVED,
+                        "quests",
+                        format!("{spath}/subject"),
+                        format!(
+                            "`shot_style: {token}` dollies with a MOVING subject, but this \
+                             subject has no matching `move-npc`/`move-actor` in the same effect \
+                             group or sequence — add the move alongside the cutscene, or use a \
+                             static style (`locked-off`, `push-in`)"
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Walk an effect list with its move scope; recurse into nested lists.
+    fn walk_list(
+        list: &[QuestEffect],
+        outer_scope: &[(bool, String)],
+        path: &str,
+        npc_ids: &BTreeSet<&str>,
+        actor_ids: &BTreeSet<&str>,
+        d: &mut Vec<Diagnostic>,
+    ) {
+        let mut scope = outer_scope.to_vec();
+        moves_in(list, &mut scope);
+        for (j, e) in list.iter().enumerate() {
+            let epath = format!("{path}/{j}");
+            check_shot_list(e, &scope, &epath, npc_ids, actor_ids, d);
+            for (pseg, _kseg, inner) in e.nested_effect_lists_labeled() {
+                // A sequence step shares this timeline's scope; reaction lists
+                // (`on_arrive`/`on_caught`/`on_respawn`) fire at an unknowable
+                // time and start fresh.
+                let inherited: &[(bool, String)] = if matches!(&e.verb, Verb::Sequence { .. }) {
+                    &scope
+                } else {
+                    &[]
+                };
+                walk_list(
+                    inner,
+                    inherited,
+                    &format!("{epath}/{pseg}"),
+                    npc_ids,
+                    actor_ids,
+                    d,
+                );
+            }
+        }
+    }
+
+    for (i, q) in quests.quests.iter().enumerate() {
+        for (key, effs) in &q.on_objective_complete {
+            walk_list(
+                effs,
+                &[],
+                &format!("/content/quests/{i}/on_objective_complete/{key}"),
+                npc_ids,
+                &actor_ids,
+                d,
+            );
+        }
+        walk_list(
+            &q.on_complete,
+            &[],
+            &format!("/content/quests/{i}/on_complete"),
+            npc_ids,
+            &actor_ids,
+            d,
+        );
+    }
+    for (i, t) in quests.triggers.iter().enumerate() {
+        walk_list(
+            &t.effects,
+            &[],
+            &format!("/content/triggers/{i}/effects"),
+            npc_ids,
+            &actor_ids,
+            d,
+        );
     }
 }

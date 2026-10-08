@@ -5029,7 +5029,7 @@ this doc is current behavior).
   rather than a silent drop. It is recorded in the guard's allowlist so it stays
   visible on every CI run.
 
-  **Sound by construction, not a walker: `validate::world_checks`.** It checks
+  **Sound by construction, not a walker: `world::world_checks`.** It checks
   the stage-1 *fields* R1–R3 and never walks an effect root, so widening it would
   report the same campaigns with a worse message.
 

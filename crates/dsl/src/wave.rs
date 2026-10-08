@@ -547,3 +547,982 @@ pub struct MobEffect {
     /// Amplifier (0 = level I).
     pub amplifier: u32,
 }
+
+// ---------------------------------------------------------------------------
+// Validation — the checks `dsl::validate` runs over this object (ADR-0031)
+// ---------------------------------------------------------------------------
+
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
+use crate::envelope::Campaign;
+use crate::registry::{AnchorRegistry, EffectRegistry, EntityRegistry, ItemRegistry};
+use crate::validate::{
+    AnchorProviders, check_enchantments, declares_bonfire, for_each_effect_deep,
+    for_each_trap_payload_deep, for_each_trigger_effect_deep, quest_ancestors, station_kind_diag,
+};
+use crate::{Objective, Verb};
+use std::collections::BTreeSet;
+
+crate::dw_code! {
+    /// (spec-0016 §1) A wave declares `respawns_on_rest: true` but the campaign
+    /// declares no `bonfire` — nothing can ever re-seat it, so the field is a
+    /// silent no-op. Either add the bonfire the re-seat is meant to hang off, or
+    /// drop the field.
+    pub const REST_RESEAT_NO_BONFIRE: DwCode = DwCode::new("DW0370", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A `drops[]` `slot` entry does not
+    /// name a distinct slot the same entity's `equipment` actually fills — the
+    /// slot is empty, or the same slot is declared twice. A mob can only leave
+    /// behind a piece it wears, and it can only leave it behind once.
+    pub const DROP_SLOT_UNFILLED: DwCode = DwCode::new("DW0490", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `drops[]` on an encounter that is
+    /// not billed `elite` or `boss`. Only a named fight leaves anything behind;
+    /// an ordinary mob's kit is never farmable (no-grind constitution), so the
+    /// declaration is refused rather than silently making rank-and-file gear
+    /// lootable.
+    pub const DROP_NOT_TIERED: DwCode = DwCode::new("DW0491", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A `collect` `dropped_by` is not backed by the wave it names:
+    /// the wave declares no `{item}` drop of this objective's item, the count
+    /// asks for more copies than the wave's mobs can yield, or the objective
+    /// also declares a `container` (the item cannot come out of a box *and* off
+    /// a body).
+    pub const DROP_COLLECT_UNSOURCED: DwCode = DwCode::new("DW0492", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A `collect` `dropped_by` is not ordered after the fight that
+    /// produces it: no `kill` objective for that wave precedes this collect in
+    /// the objective graph. Without that edge "kill the boss, take its key" is
+    /// an authoring intention the quest graph cannot prove, and the collect
+    /// reads as reachable from the campaign's first tick.
+    pub const DROP_COLLECT_UNORDERED: DwCode = DwCode::new("DW0493", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0016 §6) A wave's TD `lane` / `summon` declaration is structurally
+    /// invalid or internally contradictory: an empty `waypoints` list, a
+    /// waypoint anchor no area's prefab provides, a repeated consecutive
+    /// waypoint, an `aggro_radius` outside `4..=64`, a mob whose
+    /// `attributes.follow_range` disagrees with `aggro_radius` (they MUST be
+    /// equal — a patrolling raider holds ground against a target it cannot
+    /// engage), or `lane` together with `summon: aggro-edge` (a lane IS the
+    /// routing; aggro-edge is its opposite).
+    pub const LANE_INVALID: DwCode = DwCode::new("DW0381", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0016 §6) A lane wave contains a non-raider species. `Patrolling` /
+    /// `patrol_target` are Raider NBT: on anything else they are dropped and the
+    /// mob simply stands where it spawned. The admitted set is vanilla's own
+    /// `#minecraft:raiders` tag, read from the vendored tag table — never a
+    /// species list this engine keeps. Non-raiders use `summon: aggro-edge`
+    /// instead.
+    pub const LANE_NOT_RAIDER: DwCode = DwCode::new("DW0382", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0016 §6) A lane wave fields fewer than 2 mobs. A lone patroller
+    /// sets `Patrolling:0b` on itself when it finds no companion within its
+    /// follow range (vanilla), so a one-mob lane cancels itself.
+    pub const LANE_SQUAD_TOO_SMALL: DwCode = DwCode::new("DW0383", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0016 §6) A lane `pillager` is not holding a crossbow. Its only
+    /// attack goal is the crossbow goal, so a pillager that acquires a target it
+    /// has no runnable attack for freezes in place indefinitely — patrol blocked
+    /// by the target, nothing to run instead (live-verified deadlock).
+    pub const LANE_UNARMED: DwCode = DwCode::new("DW0384", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0016 §6) A `summon: aggro-edge` wave mob declares no
+    /// `attributes.follow_range`. That radius IS the summon ring — the distance
+    /// at which the mob perceives the party — so it is authored, never guessed
+    /// from a vanilla defaults table the compiler cannot verify.
+    pub const AGGRO_EDGE_NO_RANGE: DwCode = DwCode::new("DW0385", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.6) A campaign fields scripted `actors[]` (an
+    /// ambush desugars into these too) but **no** `waves[]` and no declared
+    /// `world.difficulty`, so the compiler's historical derivation ships
+    /// `difficulty=peaceful` — under which every one of those actors that is a
+    /// hostile species is discarded on the tick it spawns. The compiler cannot
+    /// decide the question for the author: the pinned entity registry is a
+    /// membership set with no mob-category data, so "is this actor a monster" is
+    /// not something it can verify rather than guess. Advisory (warning,
+    /// exit 0) — declaring `world.difficulty` settles it either way.
+    pub const DIFFICULTY_UNDECLARED_ACTORS: DwCode = DwCode::new("DW0469", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0016 §1, spec-0023, souls ruling 5/7: "stage bosses never respawn
+    /// on rest") A wave declares BOTH `tier: boss` and `respawns_on_rest: true`.
+    /// `tier` and `respawns_on_rest` are two fields on the same [`Wave`]
+    /// declaration — the only place a "boss" billing and a "re-seat on rest"
+    /// contract can land on one another; an [`Actor`] carries `tier` too but has
+    /// no `respawns_on_rest` field at all (it is killed by hand, never re-seated
+    /// by a bonfire), so this is the sole structurally expressible violation of
+    /// the ruling. A rest-respawning boss re-fight breaks the retry economy the
+    /// ruling exists to protect: a boss is the campaign's named fight, not
+    /// trash pressure the party grinds back down every rest. Validation-tier
+    /// (exit 1), `dsl::validate`. Prescription: drop `tier: boss` if the
+    /// encounter really is meant to re-seat (bill it `elite` instead), or drop
+    /// `respawns_on_rest` if it really is the boss.
+    ///
+    /// [`Wave`]: crate::Wave
+    /// [`Actor`]: crate::Actor
+    pub const BOSS_RESPAWNS_ON_REST: DwCode = DwCode::new("DW0499", ExitTier::Build);
+}
+
+/// The vanilla `entity_type` tag whose members honour `Patrolling` /
+/// `patrol_target`: `#minecraft:raiders`.
+///
+/// On anything outside it the keys are inert — the mob stands where it spawned —
+/// which is the silent no-op class `DW0382` exists to make loud.
+///
+/// **The species list is Mojang's, never ours**, the same rule `DW0496` follows
+/// for `#minecraft:burn_in_daylight`. In the pinned game these are the same six
+/// types by two independent routes: the data branch publishes them as this tag,
+/// and the code branch makes exactly them subclasses of `PatrollingMonster` —
+/// whose own `registerGoals` adds the `LongDistancePatrolGoal` every one of them
+/// inherits. A hand-written table is how the two come apart, and had: it named
+/// five, omitting `minecraft:illusioner`, so a lane of illusioners was refused a
+/// march the game would have walked.
+const LANE_RAIDER_TAG: &str = "minecraft:raiders";
+
+/// Whether `entity` may be fielded in a lane — membership of [`LANE_RAIDER_TAG`].
+///
+/// `#minecraft:raiders` names only concrete types in the pinned game (no nested
+/// `#tag` member), so [`crate::registry::entity_in_tag`]'s deliberate
+/// non-expansion cannot narrow this set.
+fn is_lane_raider(entity: &str) -> bool {
+    crate::registry::entity_in_tag(entity, LANE_RAIDER_TAG)
+}
+
+/// Species whose ONLY attack goal is gated on holding a specific weapon: they
+/// acquire a target, find no runnable attack goal, and freeze — while the patrol
+/// goal stays blocked by the very target they cannot hit (`DW0384`). A pillager
+/// is a crossbow mob and nothing else, so this table has exactly one row.
+///
+/// The near miss is `minecraft:illusioner`, whose ranged goal is bow-gated the
+/// same way — but it also carries two spell goals that are gated on nothing but
+/// a target, so a bare-handed illusioner has something runnable and does not
+/// freeze. Every other raider melees or casts bare-handed.
+const LANE_WEAPON_GATED: [(&str, &str); 1] = [("pillager", "minecraft:crossbow")];
+
+/// The bare entity id (`minecraft:pillager` → `pillager`).
+fn bare_entity(id: &str) -> &str {
+    id.strip_prefix("minecraft:").unwrap_or(id)
+}
+
+/// The advisory half of the difficulty surface
+/// (`DW0469`): a campaign that stages a **fighting** actor but declares no
+/// `waves[]` and no `world.difficulty` ships the compiler's derived
+/// `difficulty=peaceful` — under which the server discards every
+/// hostile-category mob as it ticks it (`/summon`ed, `NoAI` and
+/// `PersistenceRequired` all irrelevant), so that fighter is gone on the tick it
+/// spawns and the beat that summoned it plays to an empty room.
+///
+/// "Fighting" is read off the campaign's own declarations, never guessed from
+/// the species: an `unleash-actor` (the author asking for a real-AI twin) or
+/// `vulnerable: true` (the author declaring a damageable target). Both are
+/// statements of combat intent the compiler can see. The species question — is
+/// `minecraft:sheep` a monster? — is exactly what it cannot answer, because the
+/// pinned entity registry is a membership set with no mob-category data, which
+/// is also why this is advisory rather than an error.
+///
+/// Gated with the rest of the v0.6 quests surface, where actors live —
+/// deliberately NOT on the world stage's version, so a campaign whose world
+/// stage is older still hears about it.
+pub(crate) fn difficulty_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if c.world.content.difficulty.is_some() || !c.quests.content.waves.is_empty() {
+        return;
+    }
+    let mut fighters: BTreeSet<String> = c
+        .quests
+        .content
+        .actors
+        .iter()
+        .filter(|a| a.vulnerable)
+        .map(|a| a.id.as_str().to_string())
+        .collect();
+    for q in &c.quests.content.quests {
+        for_each_effect_deep(q, |_, eff| {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    for t in &c.quests.content.triggers {
+        for_each_trigger_effect_deep(t, |_, eff| {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    for t in &c.quests.content.traps {
+        for_each_trap_payload_deep(t, |_, eff| {
+            if let Verb::UnleashActor { actor, .. } = &eff.verb {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    if fighters.is_empty() {
+        return;
+    }
+    d.push(Diagnostic::warning(
+        DIFFICULTY_UNDECLARED_ACTORS,
+        "world",
+        "/content/difficulty".to_string(),
+        format!(
+            "this campaign stages {} actor(s) meant to FIGHT ({}) — unleashed into a real-AI twin, \
+             or declared `vulnerable` — but declares no `waves[]` and no `world.difficulty`, so it \
+             ships the compiler's derived `difficulty=peaceful`. On peaceful the server discards \
+             every hostile-category mob as it ticks it, so a monster among these is gone on the \
+             tick it spawns and the beat that summoned it plays to an empty room. Declare \
+             `world.difficulty` on the world stage: `easy` reproduces the halved-damage world \
+             existing combat numbers were tuned in, `normal` is the vanilla baseline. (If every \
+             one of them is a passive species, there is nothing to fix.)",
+            fighters.len(),
+            fighters
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    ));
+}
+
+/// Validate the spec-0016 §6 wave `lane` / `summon` surface.
+///
+/// Five rules, five codes, each pinned to a live-verified 1.21.11 failure mode:
+/// * `DW0381` — the declaration does not resolve or contradicts itself;
+/// * `DW0382` — a lane species outside the raider family (the NBT is inert);
+/// * `DW0383` — a lane squad below 2 (a lone patroller self-cancels);
+/// * `DW0384` — a lane pillager without its crossbow (target-acquisition deadlock);
+/// * `DW0385` — an aggro-edge mob with no authored `follow_range` (no ring radius).
+///
+/// Anchor resolution stays lenient for pool areas the compiler resolves later —
+/// the same policy as the trap, trigger and shortcut checks. Waypoint *geometry*
+/// (standable, reachable, spaced > 10) is a build-tier proof over the assembled
+/// world (`DW0386`), not a validation-tier one.
+pub(crate) fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+    if quests
+        .waves
+        .iter()
+        .all(|w| w.lane.is_none() && w.summon.is_none())
+    {
+        return;
+    }
+    let providers = AnchorProviders::build(c, anchors);
+
+    for (i, w) in quests.waves.iter().enumerate() {
+        let aggro_edge = w.summon == Some(crate::WaveSummon::AggroEdge);
+        if aggro_edge {
+            if w.lane.is_some() {
+                d.push(Diagnostic::error(
+                    LANE_INVALID,
+                    "quests",
+                    format!("/content/waves/{i}/summon"),
+                    format!(
+                        "wave `{}` declares BOTH a `lane` and `summon: aggro-edge` (spec-0016 §6) \
+                         — a lane IS the routing (march while distant, native AI once aggroed), \
+                         and aggro-edge is its opposite (materialize already at the edge of \
+                         perception, no routing at all). Pick one.",
+                        w.id
+                    ),
+                ));
+            }
+            for (k, m) in w.mobs.iter().enumerate() {
+                if m.attributes.and_then(|a| a.follow_range).is_none() {
+                    d.push(Diagnostic::error(
+                        AGGRO_EDGE_NO_RANGE,
+                        "quests",
+                        format!("/content/waves/{i}/mobs/{k}/attributes"),
+                        format!(
+                            "`summon: aggro-edge` mob `{}` in wave `{}` declares no \
+                             `attributes.follow_range` (spec-0016 §6). That radius IS the summon \
+                             ring — the distance at which this mob perceives the party — so it is \
+                             authored, never guessed: the compiler will not fabricate a vanilla \
+                             default it cannot verify against the pinned server.",
+                            m.entity, w.id
+                        ),
+                    ));
+                }
+            }
+        }
+        let Some(lane) = &w.lane else { continue };
+
+        if lane.waypoints.is_empty() {
+            d.push(Diagnostic::error(
+                LANE_INVALID,
+                "quests",
+                format!("/content/waves/{i}/lane/waypoints"),
+                format!(
+                    "wave `{}` declares a `lane` with no waypoints (spec-0016 §6) — a lane is a \
+                     polyline the squad marches; give it at least one waypoint anchor",
+                    w.id
+                ),
+            ));
+        }
+        for (k, wp) in lane.waypoints.iter().enumerate() {
+            if let Some(f) = station_kind_diag(
+                &providers,
+                wp.as_str(),
+                crate::layout::StationKind::Point,
+                "a lane waypoint",
+                "quests",
+                format!("/content/waves/{i}/lane/waypoints/{k}"),
+            ) {
+                d.push(f);
+            }
+            if !providers.resolvable(wp.as_str()) {
+                d.push(Diagnostic::error(
+                    LANE_INVALID,
+                    "quests",
+                    format!("/content/waves/{i}/lane/waypoints/{k}"),
+                    format!(
+                        "lane waypoint anchor `{wp}` is not provided by any area's prefab — {}",
+                        providers.anchor_remedy(
+                            "use an anchor a prefab exposes (anchor names come from prefab \
+                             metadata; do NOT invent one)"
+                        ),
+                    ),
+                ));
+            }
+            if k > 0 && lane.waypoints[k - 1] == *wp {
+                d.push(Diagnostic::error(
+                    LANE_INVALID,
+                    "quests",
+                    format!("/content/waves/{i}/lane/waypoints/{k}"),
+                    format!(
+                        "lane waypoint `{wp}` repeats the one before it — the squad would be told \
+                         to march to where it already stands, and vanilla re-rolls a patrol \
+                         target on arrival. Remove the repeat."
+                    ),
+                ));
+            }
+        }
+        if !(4..=64).contains(&lane.aggro_radius) {
+            d.push(Diagnostic::error(
+                LANE_INVALID,
+                "quests",
+                format!("/content/waves/{i}/lane/aggro_radius"),
+                format!(
+                    "lane `aggro_radius` {} on wave `{}` is outside 4..=64 (spec-0016 §6). It is \
+                     emitted verbatim as the mobs' `follow_range` attribute AND as the release \
+                     radius; below 4 the squad walks into contact before it can see anyone, and \
+                     past 64 it aggroes across the whole delve.",
+                    lane.aggro_radius, w.id
+                ),
+            ));
+        }
+        if w.mobs.iter().map(|m| m.count).sum::<u32>() < 2 {
+            d.push(Diagnostic::error(
+                LANE_SQUAD_TOO_SMALL,
+                "quests",
+                format!("/content/waves/{i}/mobs"),
+                format!(
+                    "lane wave `{}` fields fewer than 2 mobs (spec-0016 §6). A lone patroller \
+                     sets `Patrolling:0b` on ITSELF when it finds no companion within its follow \
+                     range — vanilla behaviour, live-verified — so a one-mob lane cancels its own \
+                     routing and just stands there. Field a squad of at least 2.",
+                    w.id
+                ),
+            ));
+        }
+        for (k, m) in w.mobs.iter().enumerate() {
+            let bare = bare_entity(&m.entity);
+            if !is_lane_raider(&m.entity) {
+                d.push(Diagnostic::error(
+                    LANE_NOT_RAIDER,
+                    "quests",
+                    format!("/content/waves/{i}/mobs/{k}/entity"),
+                    format!(
+                        "lane wave `{}` fields `{}`, which is not raider-family (spec-0016 §6). \
+                         `Patrolling`/`patrol_target` are Raider NBT: on any other species they \
+                         are simply dropped and the mob stands where it spawned. Lane species \
+                         (vanilla's own `#{LANE_RAIDER_TAG}` tag): {}. For anything else use \
+                         `summon: aggro-edge`, which needs no patrol AI.",
+                        w.id,
+                        m.entity,
+                        crate::registry::entity_tag_members_bare(LANE_RAIDER_TAG).join(" / ")
+                    ),
+                ));
+            }
+            if let Some((_, weapon)) = LANE_WEAPON_GATED.iter().find(|(s, _)| *s == bare) {
+                let held = m
+                    .equipment
+                    .as_ref()
+                    .and_then(|e| e.main_hand.as_ref())
+                    .map_or(*weapon, |p| p.item());
+                if held != *weapon {
+                    d.push(Diagnostic::error(
+                        LANE_UNARMED,
+                        "quests",
+                        format!("/content/waves/{i}/mobs/{k}/equipment/main_hand"),
+                        format!(
+                            "lane `{bare}` in wave `{}` holds `{held}` instead of `{weapon}` \
+                             (spec-0016 §6). Its ONLY attack goal is the crossbow goal, so on \
+                             acquiring a target it has nothing runnable to do — and the patrol \
+                             goal is meanwhile blocked BY that target. The mob freezes in place \
+                             indefinitely (live-verified deadlock). Give it the crossbow, or drop \
+                             the `main_hand` override and take the compiler's default.",
+                            w.id
+                        ),
+                    ));
+                }
+            }
+        }
+        if let Some(bad) = w.mobs.iter().enumerate().find(|(_, m)| {
+            m.attributes
+                .and_then(|a| a.follow_range)
+                .is_some_and(|r| r != f64::from(lane.aggro_radius))
+        }) {
+            let (k, m) = bad;
+            d.push(Diagnostic::error(
+                LANE_INVALID,
+                "quests",
+                format!("/content/waves/{i}/mobs/{k}/attributes/follow_range"),
+                format!(
+                    "lane mob `{}` in wave `{}` declares `follow_range` {} but the lane's \
+                     `aggro_radius` is {} (spec-0016 §6). They MUST be equal: the release radius \
+                     is where routing hands over to native AI, and a patrolling raider that \
+                     targets a player outside its engagement range HOLDS GROUND instead of \
+                     marching — the squad stalls mid-lane. Drop the override (the compiler sets \
+                     `follow_range` from `aggro_radius`) or make the two agree.",
+                    m.entity,
+                    w.id,
+                    m.attributes
+                        .and_then(|a| a.follow_range)
+                        .unwrap_or_default(),
+                    lane.aggro_radius
+                ),
+            ));
+        }
+    }
+}
+
+/// Declared drops: what an elite or boss
+/// leaves behind is a **declared subset**, never automatically everything.
+///
+/// Four rules, all of them about the gap between what a campaign says and what
+/// the world can actually produce:
+///
+/// * `DW0491` — only an `elite`/`boss` encounter may declare drops. Rank-and-file
+///   gear stays unfarmable by construction (no-grind constitution).
+/// * `DW0490` — a `slot` entry must name a **distinct** slot the same entity's
+///   own `equipment` fills. A body cannot leave behind a piece it never wore.
+/// * `DW0492` — a `dropped_by` collect must be backed by the wave it names: the
+///   wave really declares that item, in at least the count the objective asks
+///   for, and the objective does not also adopt a container.
+/// * `DW0493` — that collect must be **ordered after** the fight, so the chain
+///   "kill the boss → take its key → open the door" is a proof rather than an
+///   intention.
+pub(crate) fn check_drops(
+    c: &Campaign,
+    quests: &crate::QuestsContent,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    use crate::{EncounterTier, MobDrop};
+
+    // --- the declaration side: waves and actors ---------------------------
+    let tiered =
+        |t: Option<EncounterTier>| matches!(t, Some(EncounterTier::Elite | EncounterTier::Boss));
+    for (i, w) in quests.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if m.drops.is_empty() {
+                continue;
+            }
+            if !tiered(w.tier) {
+                d.push(Diagnostic::error(
+                    DROP_NOT_TIERED,
+                    "quests",
+                    format!("/content/waves/{i}/mobs/{k}/drops"),
+                    format!(
+                        "wave `{}` declares drops but is not billed `elite` or `boss` — only a \
+                         named fight leaves anything behind; an ordinary mob's kit is never \
+                         farmable. Declare the wave's `tier`, or remove the `drops`",
+                        w.id
+                    ),
+                ));
+            }
+            check_drop_list(
+                &m.drops,
+                m.equipment.as_ref(),
+                &format!("wave `{}` mob {k}", w.id),
+                &format!("/content/waves/{i}/mobs/{k}/drops"),
+                items,
+                d,
+            );
+        }
+    }
+    for (i, a) in quests.actors.iter().enumerate() {
+        if a.drops.is_empty() {
+            continue;
+        }
+        if !tiered(a.tier) {
+            d.push(Diagnostic::error(
+                DROP_NOT_TIERED,
+                "quests",
+                format!("/content/actors/{i}/drops"),
+                format!(
+                    "actor `{}` declares drops but is not billed `elite` or `boss` — only a named \
+                     fight leaves anything behind; a staged puppet's kit is never farmable. \
+                     Declare the actor's `tier`, or remove the `drops`",
+                    a.id
+                ),
+            ));
+        }
+        check_drop_list(
+            &a.drops,
+            a.equipment.as_ref(),
+            &format!("actor `{}`", a.id),
+            &format!("/content/actors/{i}/drops"),
+            items,
+            d,
+        );
+    }
+
+    // --- the consumption side: `collect.dropped_by` ------------------------
+    // How many copies of each item every wave can yield: one per declaring mob
+    // in the stack, so a pair of elites each dropping a sword yields two.
+    let mut yielded: BTreeMap<&str, BTreeMap<&str, u32>> = BTreeMap::new();
+    for w in &quests.waves {
+        let per = yielded.entry(w.id.as_str()).or_default();
+        for m in &w.mobs {
+            for dr in &m.drops {
+                if let MobDrop::Item(it) = dr {
+                    *per.entry(it.item.as_str()).or_default() += m.count;
+                }
+            }
+        }
+    }
+    let anc = quest_ancestors(c);
+    // Which quests hold a `kill` objective for each wave, and which objective ids.
+    let mut kills: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+    for q in &quests.quests {
+        for o in &q.objectives {
+            if let Objective::Kill { wave, id, .. } = o {
+                kills
+                    .entry(wave.as_str())
+                    .or_default()
+                    .push((q.id.as_str(), id.as_str()));
+            }
+        }
+    }
+    for (i, q) in quests.quests.iter().enumerate() {
+        let after_anc = objective_ancestors(q);
+        for (j, o) in q.objectives.iter().enumerate() {
+            let Objective::Collect {
+                id,
+                item,
+                count,
+                container,
+                dropped_by: Some(wave),
+                ..
+            } = o
+            else {
+                continue;
+            };
+            let path = format!("/content/quests/{i}/objectives/{j}/dropped_by");
+            if container.is_some() {
+                d.push(Diagnostic::error(
+                    DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` declares both `dropped_by` (wave `{wave}`) and a \
+                         `container` — the item comes off a body or out of a box, not both; drop \
+                         whichever provisioning this beat does not use"
+                    ),
+                ));
+            }
+            let Some(per) = yielded.get(wave.as_str()) else {
+                // Unknown wave: the ordinary dangling-reference diagnostic
+                // (`DW0170`) already names it; nothing to add here.
+                continue;
+            };
+            match per.get(item.as_str()).copied() {
+                None => d.push(Diagnostic::error(
+                    DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` takes `{item}` off wave `{wave}`, but no mob of that \
+                         wave declares a `{{\"item\": \"{item}\"}}` drop — {}. Declare the drop on \
+                         the wave's mob, or point `dropped_by` at the wave that really carries it",
+                        if per.is_empty() {
+                            "the wave declares no item drops at all".to_string()
+                        } else {
+                            format!(
+                                "it declares {}",
+                                per.keys().cloned().collect::<Vec<_>>().join(", ")
+                            )
+                        }
+                    ),
+                )),
+                Some(have) if have < *count => d.push(Diagnostic::error(
+                    DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` asks for {count} × `{item}`, but wave `{wave}` yields \
+                         only {have} — a body drops its declared item once. Lower the `count`, or \
+                         raise the declaring mob's `count`"
+                    ),
+                )),
+                Some(_) => {}
+            }
+            // The ordering proof: some `kill` objective for this wave must
+            // strictly precede this collect — in the same quest through the
+            // `after` graph, or in a quest this one transitively depends on.
+            let ordered = kills.get(wave.as_str()).is_some_and(|ks| {
+                ks.iter().any(|(kq, ko)| {
+                    if *kq == q.id.as_str() {
+                        after_anc
+                            .get(id.as_str())
+                            .is_some_and(|set| set.contains(ko))
+                    } else {
+                        anc.get(q.id.as_str()).is_some_and(|set| set.contains(kq))
+                    }
+                })
+            });
+            if !ordered {
+                d.push(Diagnostic::error(
+                    DROP_COLLECT_UNORDERED,
+                    "quests",
+                    path,
+                    format!(
+                        "`collect` `{id}` takes `{item}` off wave `{wave}`, but no `kill` \
+                         objective for `{wave}` is proven to run first — the item would be \
+                         unreachable while the objective reads as active from the campaign's \
+                         first tick. Add a `kill` objective for `{wave}` and list it in this \
+                         objective's `after`, or put the kill in a quest this one `depends_on`"
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// One entity's `drops[]` list: distinct, really-worn slots (`DW0490`) and
+/// registry-valid quest items (`DW0143`). Shared by wave mobs and actors so the
+/// two surfaces cannot drift.
+fn check_drop_list(
+    drops: &[crate::MobDrop],
+    equipment: Option<&crate::MobEquipment>,
+    what: &str,
+    base_path: &str,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    use crate::MobDrop;
+
+    let mut seen_slots: BTreeSet<&'static str> = BTreeSet::new();
+    for (n, dr) in drops.iter().enumerate() {
+        match dr {
+            MobDrop::Slot(s) => {
+                let field = s.slot.field();
+                let filled: Vec<&str> = equipment
+                    .map(|eq| {
+                        eq.slots()
+                            .into_iter()
+                            .filter(|(_, p)| p.is_some())
+                            .map(|(name, _)| name)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if equipment.is_none_or(|eq| eq.filled(s.slot).is_none()) {
+                    d.push(Diagnostic::error(
+                        DROP_SLOT_UNFILLED,
+                        "quests",
+                        format!("{base_path}/{n}/slot"),
+                        format!(
+                            "{what} declares a `{field}` drop, but its `equipment` puts nothing \
+                             in `{field}` — {}. A body can only leave behind a piece it wears: \
+                             equip the slot, or drop a slot it fills",
+                            if filled.is_empty() {
+                                "it declares no equipment at all".to_string()
+                            } else {
+                                format!("it fills {}", filled.join(", "))
+                            }
+                        ),
+                    ));
+                } else if !seen_slots.insert(field) {
+                    d.push(Diagnostic::error(
+                        DROP_SLOT_UNFILLED,
+                        "quests",
+                        format!("{base_path}/{n}/slot"),
+                        format!(
+                            "{what} declares the `{field}` drop twice — a body leaves each piece \
+                             behind once; remove the duplicate entry"
+                        ),
+                    ));
+                }
+            }
+            MobDrop::Item(it) => {
+                if !items.contains(&it.item) {
+                    d.push(Diagnostic::error(
+                        codes::ITEM_UNKNOWN,
+                        "quests",
+                        format!("{base_path}/{n}/item"),
+                        format!(
+                            "{what} declares a drop of `{}`, which is not in the pinned 1.21.11 \
+                             item registry — use a valid namespaced item id (e.g. \
+                             `minecraft:tripwire_hook`)",
+                            it.item
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Per-objective transitive `after` ancestors within one quest: `obj -> {every
+/// objective that must complete before it}`. Acyclicity is guaranteed by
+/// `DW0140`; a cyclic quest simply yields a partial set and the cycle's own
+/// diagnostic fires.
+fn objective_ancestors(q: &crate::Quest) -> BTreeMap<&str, BTreeSet<&str>> {
+    let direct: BTreeMap<&str, Vec<&str>> = q
+        .objectives
+        .iter()
+        .map(|o| {
+            (
+                o.id().as_str(),
+                o.after().iter().map(|a| a.as_str()).collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    let mut out = BTreeMap::new();
+    for o in &q.objectives {
+        let mut anc: BTreeSet<&str> = BTreeSet::new();
+        let mut stack = vec![o.id().as_str()];
+        while let Some(cur) = stack.pop() {
+            if let Some(ds) = direct.get(cur) {
+                for dep in ds {
+                    if anc.insert(dep) {
+                        stack.push(dep);
+                    }
+                }
+            }
+        }
+        out.insert(o.id().as_str(), anc);
+    }
+    out
+}
+
+/// Validate one [`MobEquipment`] block — item ids against the pinned registry
+/// (`DW0143`) and every piece's enchantments against the pinned enchantment
+/// registry (`DW0433`) and level range (`DW0434`).
+///
+/// Shared verbatim by wave mobs and actors so the two surfaces cannot drift:
+/// they are the same schema type and therefore must be the same rules.
+pub(crate) fn check_equipment(
+    eq: &crate::MobEquipment,
+    what: &str,
+    base_path: &str,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let ench_reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
+    for (slot, piece) in eq.slots() {
+        let Some(piece) = piece else { continue };
+        let it = piece.item();
+        if !items.contains(it) {
+            d.push(Diagnostic::error(
+                codes::ITEM_UNKNOWN,
+                "quests",
+                format!("{base_path}/{slot}"),
+                format!(
+                    "{what} equipment `{slot}` item `{it}` is not in the pinned 1.21.11 \
+                     item registry — use a valid namespaced item id (e.g. \
+                     `minecraft:iron_helmet`)"
+                ),
+            ));
+        }
+        check_enchantments(
+            piece.enchantments(),
+            &format!("{what} equipment `{slot}`"),
+            "quests",
+            &format!("{base_path}/{slot}/enchantments"),
+            &ench_reg,
+            d,
+        );
+    }
+}
+
+/// Wave-mob `equipment` (spec-0014): item ids and enchantments
+/// ([`check_equipment`]).
+pub(crate) fn wave_equipment_checks(
+    c: &Campaign,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    // Wave-mob `equipment` item ids: every present slot must name a
+    // pinned-1.21.11 item — the same registry and DW family as `give-item`
+    // (`DW0143`).
+    for (i, w) in quests.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            let Some(eq) = &m.equipment else { continue };
+            check_equipment(
+                eq,
+                "wave-mob",
+                &format!("/content/waves/{i}/mobs/{k}/equipment"),
+                items,
+                d,
+            );
+        }
+    }
+}
+
+/// A wave's `respawns_on_rest` (spec-0016 §1): inert with no `bonfire`
+/// (`DW0370`), and forbidden on a `boss` (`DW0499`).
+pub(crate) fn rest_reseat_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+    // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
+    // `bonfire` anywhere in the campaign nothing can ever fire the re-seat, so
+    // the field is a silent no-op — the class of defect this compiler always
+    // turns loud (`DW0370`).
+    let has_bonfire = declares_bonfire(c);
+    if !has_bonfire {
+        for (i, w) in quests.waves.iter().enumerate() {
+            if w.respawns_on_rest {
+                d.push(Diagnostic::error(
+                    REST_RESEAT_NO_BONFIRE,
+                    "quests",
+                    format!("/content/waves/{i}/respawns_on_rest"),
+                    format!(
+                        "wave `{}` declares `respawns_on_rest: true` but this campaign declares \
+                         no `bonfire` — nothing can ever re-seat it, so the field is inert. Add \
+                         the `bonfire` the re-seat hangs off (spec-0016 §1), or drop the field; \
+                         do NOT leave a silently dead declaration in the DSL.",
+                        w.id.as_str()
+                    ),
+                ));
+            }
+        }
+    }
+
+    // spec-0016 §1 + spec-0023, souls ruling 5/7 ("stage bosses never respawn
+    // on rest"): `tier` and
+    // `respawns_on_rest` are two fields on the SAME wave declaration — the only
+    // place a "boss" billing and a "re-seat on rest" contract can land on one
+    // another (an actor carries `tier` too, but has no `respawns_on_rest` field
+    // at all, so it cannot express this violation). A rest-respawning boss
+    // re-fight breaks the retry economy the ruling protects. Checked
+    // unconditionally of `has_bonfire`: the combination is forbidden on its own
+    // terms, not merely inert like `DW0370`.
+    for (i, w) in quests.waves.iter().enumerate() {
+        if w.respawns_on_rest && w.tier == Some(EncounterTier::Boss) {
+            d.push(Diagnostic::error(
+                BOSS_RESPAWNS_ON_REST,
+                "quests",
+                format!("/content/waves/{i}/respawns_on_rest"),
+                format!(
+                    "wave `{}` declares `tier: boss` AND `respawns_on_rest: true` — souls \
+                     ruling 5/7 is that stage bosses never respawn on rest, since a \
+                     rest-respawning boss re-fight breaks the retry economy the ruling \
+                     protects. Drop `respawns_on_rest` if this really is the boss, or drop \
+                     `tier: boss` (bill it `elite` instead) if the encounter is meant to \
+                     re-seat.",
+                    w.id.as_str()
+                ),
+            ));
+        }
+    }
+}
+
+/// Wave declarations (spec-0001 v0.3): id syntax (`DW0110`), uniqueness
+/// (`DW0111`) and every mob's entity id (`DW0173`).
+pub(crate) fn wave_decl_checks(
+    c: &Campaign,
+    entities: &dyn EntityRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+
+    // Wave declarations.
+    let mut seen_waves: BTreeSet<&str> = BTreeSet::new();
+    for (i, w) in quests.waves.iter().enumerate() {
+        if !w.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                format!("/content/waves/{i}/id"),
+                format!(
+                    "malformed wave id `{}` — wave ids must be lowercase kebab-case with the \
+                     `wave/` prefix (e.g. `wave/ambush`)",
+                    w.id
+                ),
+            ));
+        }
+        if !seen_waves.insert(w.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                format!("/content/waves/{i}/id"),
+                format!(
+                    "duplicate wave id `{}` — rename one so every wave id is unique",
+                    w.id
+                ),
+            ));
+        }
+        for (k, m) in w.mobs.iter().enumerate() {
+            if !entities.contains(&m.entity) {
+                d.push(Diagnostic::error(
+                    codes::ENTITY_UNKNOWN,
+                    "quests",
+                    format!("/content/waves/{i}/mobs/{k}/entity"),
+                    format!(
+                        "wave-mob entity `{}` is not a known 1.21.11 entity id — use a valid \
+                         namespaced entity id (e.g. `minecraft:zombie`)",
+                        m.entity
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// Every wave mob's status effects name a 1.21.11 effect (`DW0192`).
+pub(crate) fn mob_effect_checks(
+    c: &Campaign,
+    effects: &dyn EffectRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+
+    // --- wave-mob effects + attributes ---
+    for (i, w) in quests.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            for (e, eff) in m.effects.iter().enumerate() {
+                if !effects.contains(&eff.effect) {
+                    d.push(Diagnostic::error(
+                        codes::EFFECT_UNKNOWN,
+                        "quests",
+                        format!("/content/waves/{i}/mobs/{k}/effects/{e}/effect"),
+                        format!(
+                            "wave-mob effect `{}` is not a known 1.21.11 status-effect id — use a \
+                             valid namespaced effect id (e.g. `minecraft:strength`)",
+                            eff.effect
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}

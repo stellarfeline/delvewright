@@ -264,6 +264,629 @@ pub struct PlannedQuest {
     pub act: u32,
 }
 
+// ---------------------------------------------------------------------------
+// Validation — the checks `dsl::validate` runs over this object (ADR-0031)
+// ---------------------------------------------------------------------------
+
+use crate::Verb;
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
+use crate::envelope::Campaign;
+use crate::validate::{declared_endings, graph_has_cycle, produced_flags};
+
+crate::dw_code! {
+    /// Quest dependency cycle.
+    pub const PLAN_CYCLE: DwCode = DwCode::new("DW0130", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `finale` is not a declared quest.
+    pub const FINALE_UNKNOWN: DwCode = DwCode::new("DW0131", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `finale` is not the convergent sink of the plan: some declared quest is
+    /// not a transitive dependency of it.
+    ///
+    /// **The name deliberately does not contain `FINALE_UNREACHABLE`, which
+    /// belongs to `DW0201`.** That code says the finale can never complete; this
+    /// one says nothing at all about the finale being reachable — in the fixture
+    /// that raises it the finale completes perfectly well and a side trip hangs
+    /// off the plan. Both are `DwCode`, so nothing but the name distinguishes
+    /// them at a call site, and `tools/ci/check-dw-codes.py` credits a bare
+    /// constant name mentioned in a crate's tests to **that crate's** code — so
+    /// one shared name would buy coverage for whichever rule the file happens to
+    /// sit next to.
+    pub const PLAN_NOT_CONVERGENT: DwCode = DwCode::new("DW0132", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// An optional quest inside the finale's dependency closure (spec-0051
+    /// §8.1) — including a finale that declares itself optional.
+    pub const OPTIONAL_ON_SPINE: DwCode = DwCode::new("DW0866", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A mandatory quest whose `depends_on` edge or stage-5 `quest-complete`
+    /// trigger names an optional quest (spec-0051 §8.2).
+    pub const MANDATORY_ON_OPTIONAL: DwCode = DwCode::new("DW0867", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// A mandatory objective gated on a flag only an optional quest produces
+    /// (spec-0051 §8.3) — the mainline key behind participation.
+    ///
+    /// The participation-minimal replay (`DW0204`) is the compensating stronger
+    /// check behind it; this one refuses at the edge so the message can name
+    /// the strand.
+    pub const MAINLINE_KEY_OPTIONAL: DwCode = DwCode::new("DW0868", ExitTier::Build);
+}
+
+pub(crate) fn plan_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let plan = &c.quest_plan.content;
+    let planned_ids: BTreeSet<&str> = plan.quests.iter().map(|q| q.id.as_str()).collect();
+
+    // The partition (spec-0051). `spine()` is the ONE authority on which quests
+    // the finale cannot fire without; `mandatory` is the author's claim about
+    // the same set, and `optional()` is the ONE authority on the other half.
+    let optional: BTreeSet<&str> = plan.optional();
+
+    // Dependency edges (only to existing quests; dangling handled elsewhere).
+    let edges: BTreeMap<&str, Vec<&str>> = plan
+        .quests
+        .iter()
+        .map(|q| {
+            let deps = q
+                .depends_on
+                .iter()
+                .map(|x| x.as_str())
+                .filter(|x| planned_ids.contains(x))
+                .collect();
+            (q.id.as_str(), deps)
+        })
+        .collect();
+    let nodes: Vec<&str> = plan.quests.iter().map(|q| q.id.as_str()).collect();
+
+    if graph_has_cycle(&nodes, &edges) {
+        d.push(Diagnostic::error(
+            PLAN_CYCLE,
+            "quest-plan",
+            "/content/quests",
+            "stage-4 quest `depends_on` graph contains a cycle — the plan must be a DAG; remove a \
+             `depends_on` edge so the quests form an acyclic order",
+        ));
+        return; // reachability is meaningless with a cycle
+    }
+
+    // Finale must be declared.
+    if !planned_ids.contains(plan.finale.as_str()) {
+        d.push(Diagnostic::error(
+            FINALE_UNKNOWN,
+            "quest-plan",
+            "/content/finale",
+            format!(
+                "stage-4 `finale` `{}` is not a declared quest — set `finale` to the id of an \
+                 existing planned quest (the one that ends the delve)",
+                plan.finale
+            ),
+        ));
+        return;
+    }
+
+    // Finale convergence: every quest must be a transitive dependency of the
+    // finale (the plan converges on the finale). See README (spec ambiguity).
+    //
+    // The spine is asked of [`QuestPlanContent::spine`], which is the ONE
+    // authority on it — the same function the layout binding and the
+    // critical-path spine obligation read. This check used to derive the closure
+    // itself, over `edges` (deps pruned to declared quests) rather than over the
+    // raw `depends_on`; both derivations were correct and neither was named, so
+    // nothing would have caught them drifting apart. The two sets differ only by
+    // ids the plan does not declare, which is `DW0112`'s finding and not this
+    // one's, and which cannot move this verdict because the membership below is
+    // only ever asked about a DECLARED quest.
+    let reach = plan.spine();
+    for (i, q) in plan.quests.iter().enumerate() {
+        // Below the fence `optional` is empty, so this is every quest and the
+        // message is the one it has always been. At and above it, the rule is
+        // the MANDATORY half of spec-0051 §2.4's mismatch pair: a quest that
+        // claims to be on the critical path and is not reachable from the
+        // finale is still the wiring mistake it always was — it does not
+        // silently become optional content. The other half (an optional quest
+        // the closure does reach) is `DW0866`, because those are opposite
+        // errors and a shared message could prescribe neither.
+        if optional.contains(q.id.as_str()) {
+            continue;
+        }
+        if !reach.contains(q.id.as_str()) {
+            d.push(Diagnostic::error(
+                PLAN_NOT_CONVERGENT,
+                "quest-plan",
+                format!("/content/quests/{i}"),
+                format!(
+                    "quest `{}` is not a (transitive) dependency of finale `{}`, so the plan does \
+                     not converge on the finale — add a `depends_on` chain so `{}` eventually \
+                     depends on `{}` (or drop `{}` if it is not part of this delve)",
+                    q.id, plan.finale, plan.finale, q.id, q.id
+                ),
+            ));
+        }
+    }
+
+    partition(c, &optional, &reach, d);
+}
+
+/// The partition refusals of spec-0051 §8.1–2: the two ways a declared-optional
+/// quest can be a lie about the completion proof.
+///
+/// Both are edge-shaped and both are refused where the author can see the edge.
+/// They are separate codes because they prescribe opposite repairs — one says
+/// *this is not really optional*, the other says *this dependency is not really
+/// mandatory* — and a campaign can trip either without the other.
+///
+/// Inert on a campaign that declares no optional quest: `optional` is empty, so
+/// every loop below ranges over nothing.
+fn partition(
+    c: &Campaign,
+    optional: &BTreeSet<&str>,
+    spine: &BTreeSet<&str>,
+    d: &mut Vec<Diagnostic>,
+) {
+    if optional.is_empty() {
+        return;
+    }
+    let plan = &c.quest_plan.content;
+
+    // §8.1 — the finale leans on it. An optional quest the finale cannot fire
+    // without is not optional; the declaration would be a lie the proof then
+    // rests on. Covers the finale itself: `spine()` contains it, so a finale
+    // declared `mandatory: false` lands here rather than needing its own rule.
+    for (i, q) in plan.quests.iter().enumerate() {
+        if !optional.contains(q.id.as_str()) || !spine.contains(q.id.as_str()) {
+            continue;
+        }
+        let how = if q.id.as_str() == plan.finale.as_str() {
+            "it IS the finale".to_string()
+        } else {
+            format!("finale `{}` transitively depends on it", plan.finale)
+        };
+        d.push(Diagnostic::error(
+            OPTIONAL_ON_SPINE,
+            "quest-plan",
+            format!("/content/quests/{i}/mandatory"),
+            format!(
+                "quest `{}` declares `mandatory: false`, but {} — so the delve cannot be \
+                 completed without it and calling it optional would be a claim the \
+                 completability proof then rests on. Set `mandatory: true`, or cut the \
+                 `depends_on` chain that puts it in the finale's closure. Do not leave it for \
+                 the proof to sort out: the skip world is exactly the world in which this \
+                 quest is never played, and the finale never fires there",
+                q.id, how
+            ),
+        ));
+    }
+
+    // §8.2 — the mainline hangs off it. Refused at the EDGE, naming the edge,
+    // for both edge kinds a quest has: the stage-4 `depends_on` graph and the
+    // stage-5 `quest-complete` trigger. One rule ("a mandatory quest may not
+    // wait on elective content"), so one code; the message names which edge.
+    for (i, q) in plan.quests.iter().enumerate() {
+        if optional.contains(q.id.as_str()) {
+            continue; // optional-on-optional and optional-on-mandatory are legal (§4)
+        }
+        for (j, dep) in q.depends_on.iter().enumerate() {
+            if !optional.contains(dep.as_str()) {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                MANDATORY_ON_OPTIONAL,
+                "quest-plan",
+                format!("/content/quests/{i}/depends_on/{j}"),
+                format!(
+                    "mandatory quest `{}` declares `depends_on` `{}`, which is optional — a \
+                     quest on the critical path cannot wait on content the party may never \
+                     play, so this edge makes the mainline unreachable in the skip world. \
+                     Either mark `{}` mandatory, or drop the edge and attach `{}` to the \
+                     spine some other way",
+                    q.id, dep, dep, dep
+                ),
+            ));
+        }
+    }
+
+    // The same rule over the stage-5 activation edge. `depends_on` orders the
+    // plan; the trigger is what actually arms the quest at runtime, and nothing
+    // ties the two together (a `quest-complete` trigger is resolved against the
+    // stage-5 quest set, never against stage 4). So a campaign can spell this
+    // edge with the trigger alone, and the `depends_on` loop above would not
+    // see it.
+    let declared: BTreeSet<&str> = plan.quests.iter().map(|q| q.id.as_str()).collect();
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        if optional.contains(q.id.as_str()) || !declared.contains(q.id.as_str()) {
+            continue;
+        }
+        let crate::Trigger::QuestComplete { quest } = &q.trigger else {
+            continue;
+        };
+        if !optional.contains(quest.as_str()) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            MANDATORY_ON_OPTIONAL,
+            "quests",
+            format!("/content/quests/{i}/trigger/quest"),
+            format!(
+                "mandatory quest `{}` is triggered by the completion of `{}`, which is \
+                 optional — the party may never complete `{}`, so `{}` would never activate \
+                 and the mainline would stop there. Trigger `{}` from a mandatory quest, or \
+                 mark `{}` mandatory",
+                q.id, quest, quest, q.id, q.id, quest
+            ),
+        ));
+    }
+
+    mainline_key(c, optional, d);
+}
+
+/// spec-0051 §8.3 — **a mainline key behind participation**: a mandatory
+/// objective gated on a flag every producer of which is rooted in an optional
+/// quest.
+///
+/// Refused **at the edge**, naming the objective, the flag and the optional-only
+/// producers, because that is where an author can act. The
+/// participation-minimal replay (`DW0204`) remains the compensating stronger
+/// check behind it, exactly as it already backstops the negative-gate fixpoint:
+/// the replay credits only the exported path's own producers, so this shape
+/// fails there too. What the edge buys is a message that names the strand
+/// instead of a walk that stops.
+///
+/// **The producer partition is conservative in the safe direction.** A flag is
+/// optional-only when EVERY root that sets it is an optional quest's bundle;
+/// a single producer anywhere else — a mandatory quest, an environment trigger,
+/// a trap disarm, a dialogue option, `on_death` — takes the flag out of the set.
+/// Dialogue is counted as non-optional deliberately: whether an option is
+/// reachable only inside an optional quest's scene is a cast-ladder question
+/// this rule cannot answer, and answering it wrongly here would refuse a
+/// correct campaign. `DW0204` can answer it, and does.
+///
+/// **Not yet covered, and named rather than implied**: the `requires_state` and
+/// `dropped_by` chains of §8.3. Both are real shapes — an item that drops only
+/// from a wave an optional quest spawns is the example the spec gives — and
+/// both are still caught by `DW0204`, one step later and with a worse message.
+fn mainline_key(c: &Campaign, optional: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
+    // flag -> the optional quests that set it, while nothing else does.
+    let mut only_optional: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut disqualified: BTreeSet<&str> = BTreeSet::new();
+
+    crate::for_each_campaign_effect(c, &mut |_path, site, eff| {
+        let Verb::SetFlag { flag, .. } = &eff.verb else {
+            return;
+        };
+        let flag = flag.as_str();
+        let owner = match site {
+            crate::EffectSite::Objective { quest, .. }
+            | crate::EffectSite::QuestComplete { quest } => quest.as_str(),
+            // Every other root is ambient or dialogue-hosted: not a quest, so
+            // not "optional participation" in this rule's sense.
+            _ => {
+                disqualified.insert(flag);
+                return;
+            }
+        };
+        match optional.get(owner) {
+            Some(q) => only_optional.entry(flag).or_default().insert(*q),
+            None => disqualified.insert(flag),
+        };
+    });
+    for t in &c.dialogue.content.dialogues {
+        for n in &t.nodes {
+            for o in &n.options {
+                for e in &o.effects {
+                    if let crate::DialogueEffect::SetFlag { flag } = e {
+                        disqualified.insert(flag.as_str());
+                    }
+                }
+            }
+        }
+    }
+    for trap in &c.quests.content.traps {
+        if let Some(dis) = &trap.disarm {
+            disqualified.insert(dis.sets_flag.as_str());
+        }
+    }
+
+    // A mandatory quest's objective gated on such a flag.
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        if optional.contains(q.id.as_str()) {
+            continue;
+        }
+        for (j, o) in q.objectives.iter().enumerate() {
+            for (m, f) in o.requires_flags().iter().enumerate() {
+                let flag = f.as_str();
+                if disqualified.contains(flag) {
+                    continue;
+                }
+                let Some(producers) = only_optional.get(flag) else {
+                    continue; // never produced at all: `DW0172`'s finding, not this one's
+                };
+                let names = producers.iter().copied().collect::<Vec<_>>().join("`, `");
+                d.push(Diagnostic::error(
+                    MAINLINE_KEY_OPTIONAL,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/requires_flags/{m}"),
+                    format!(
+                        "objective `{}` of mandatory quest `{}` requires flag `{}`, and the \
+                         only effect that ever sets `{}` is rooted in optional quest(s) \
+                         `{}` — so a party that plays only the mainline can never open \
+                         this beat, and the delve is not completable with zero optional \
+                         participation. Move the `set-flag` onto a mandatory quest, mark \
+                         the producing quest mandatory, or drop the gate",
+                        o.id(),
+                        q.id,
+                        flag,
+                        flag,
+                        names
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// Structural validation of the stage-4 `branch_points` declaration (spec-0025).
+///
+/// Everything here reuses the DSL's existing structural codes on purpose — a
+/// branch point is an ordinary declaration with ordinary ids, so a malformed id
+/// is `DW0110`, a repeated one `DW0111`, and a reference to something that does
+/// not exist `DW0112`. The `DW048x` block is reserved for what is genuinely new:
+/// proofs *about* branches.
+pub(crate) fn branch_point_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests: BTreeSet<&str> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| q.id.as_str())
+        .collect();
+    let endings: BTreeSet<String> = declared_endings(c);
+    let flags: BTreeSet<String> = produced_flags(c);
+    let mut seen_points: BTreeSet<&str> = BTreeSet::new();
+    let mut seen_branches: BTreeSet<&str> = BTreeSet::new();
+
+    for (i, bp) in c.quest_plan.content.branch_points.iter().enumerate() {
+        let base = format!("/content/branch_points/{i}");
+        if !bp.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quest-plan",
+                format!("{base}/id"),
+                format!(
+                    "`{}` is not a valid branch-point id — use `branch-point/<kebab-case>`",
+                    bp.id.as_str()
+                ),
+            ));
+        } else if !seen_points.insert(bp.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quest-plan",
+                format!("{base}/id"),
+                format!("duplicate branch-point id `{}`", bp.id.as_str()),
+            ));
+        }
+        if !quests.contains(bp.opens_at.as_str()) {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quest-plan",
+                format!("{base}/opens_at"),
+                format!(
+                    "branch point `{}` opens at `{}`, which is not a planned quest — name the \
+                     quest at which the story actually forks",
+                    bp.id.as_str(),
+                    bp.opens_at.as_str()
+                ),
+            ));
+        }
+        for (j, f) in bp.forks_on.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quest-plan",
+                    format!("{base}/forks_on/{j}"),
+                    format!(
+                        "branch point `{}` forks on `{}`, which no `set-flag` effect produces — a \
+                         fork nothing can set is not a fork",
+                        bp.id.as_str(),
+                        f.as_str()
+                    ),
+                ));
+            }
+        }
+        let fork_set: BTreeSet<&str> = bp.forks_on.iter().map(|f| f.as_str()).collect();
+        for (j, b) in bp.branches.iter().enumerate() {
+            let bpath = format!("{base}/branches/{j}");
+            if !b.id.is_valid_syntax() {
+                d.push(Diagnostic::error(
+                    codes::ID_SYNTAX,
+                    "quest-plan",
+                    format!("{bpath}/id"),
+                    format!(
+                        "`{}` is not a valid branch id — use `branch/<kebab-case>`",
+                        b.id.as_str()
+                    ),
+                ));
+            } else if !seen_branches.insert(b.id.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::ID_DUPLICATE,
+                    "quest-plan",
+                    format!("{bpath}/id"),
+                    format!(
+                        "duplicate branch id `{}` — branch ids are campaign-wide unique because \
+                         each one names an emitted `validation/branch-chronicle-<id>.md`",
+                        b.id.as_str()
+                    ),
+                ));
+            }
+            for (k, f) in b.flags.iter().enumerate() {
+                if !fork_set.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::DANGLING_REF,
+                        "quest-plan",
+                        format!("{bpath}/flags/{k}"),
+                        format!(
+                            "branch `{}` holds `{}`, which its branch point does not list in \
+                             `forks_on` — a branch may only pin flags its own fork owns",
+                            b.id.as_str(),
+                            f.as_str()
+                        ),
+                    ));
+                }
+            }
+            match (b.converges_at(), b.ending()) {
+                (Some(q), _) => {
+                    if !quests.contains(q.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::DANGLING_REF,
+                            "quest-plan",
+                            format!("{bpath}/leads_to"),
+                            format!(
+                                "branch `{}` converges at `{}`, which is not a planned quest",
+                                b.id.as_str(),
+                                q.as_str()
+                            ),
+                        ));
+                    }
+                }
+                (None, Some(e)) => {
+                    if !endings.contains(e.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::DANGLING_REF,
+                            "quest-plan",
+                            format!("{bpath}/leads_to"),
+                            format!(
+                                "branch `{}` runs to `{}`, which no `campaign-complete` effect \
+                                 declares — name the ending on the `campaign-complete` that ends \
+                                 this branch",
+                                b.id.as_str(),
+                                e.as_str()
+                            ),
+                        ));
+                    }
+                }
+                (None, None) => d.push(Diagnostic::error(
+                    codes::ID_SYNTAX,
+                    "quest-plan",
+                    format!("{bpath}/leads_to"),
+                    format!(
+                        "`{}` is neither a `quest/<kebab>` (the branches converge there) nor an \
+                         `ending/<kebab>` (this branch runs to it) — the prefix is what says which \
+                         one a branch leads to",
+                        b.leads_to
+                    ),
+                )),
+            }
+        }
+    }
+}
+
+/// Dangling-subject check for every `happening` (spec-0025). A subject naming an
+/// `npc/`, `actor/`, `wave/` or `anchor/` id must resolve; an `item/<kebab>`
+/// label is a free namespace for a story token the campaign tracks by hand, and
+/// anything else is a malformed id.
+pub(crate) fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let npcs: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    let actors: BTreeSet<&str> = c
+        .quests
+        .content
+        .actors
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+    let waves: BTreeSet<&str> = c
+        .quests
+        .content
+        .waves
+        .iter()
+        .map(|w| w.id.as_str())
+        .collect();
+    let check = |subject: &str, stage: &str, path: String, d: &mut Vec<Diagnostic>| {
+        let known = match subject.split_once('/') {
+            Some(("npc", _)) => npcs.contains(subject),
+            Some(("actor", _)) => actors.contains(subject),
+            Some(("wave", _)) => waves.contains(subject),
+            // Anchors resolve against prefab metadata far downstream (pool areas
+            // are drawn at build time), so the DSL only polices the namespace.
+            Some(("anchor", _)) | Some(("item", _)) => true,
+            _ => false,
+        };
+        if !known {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                stage,
+                path,
+                format!(
+                    "`happening.subject` names `{subject}`, which is not a declared `npc/`, \
+                     `actor/` or `wave/` id (`anchor/` and `item/` labels are also accepted). A \
+                     subject the compiler cannot resolve cannot be reasoned about, so the \
+                     contradiction proof would silently skip this beat"
+                ),
+            ));
+        }
+    };
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        if let Some(h) = &q.happening
+            && let Some(s) = &h.subject
+        {
+            check(
+                s,
+                "quests",
+                format!("/content/quests/{i}/happening/subject"),
+                d,
+            );
+        }
+        for (j, o) in q.objectives.iter().enumerate() {
+            if let Some(h) = o.happening()
+                && let Some(s) = &h.subject
+            {
+                check(
+                    s,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/happening/subject"),
+                    d,
+                );
+            }
+        }
+    }
+    let mut effect_subjects: Vec<(String, String)> = Vec::new();
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        // The one derivation (spec-0071 §3), read here exactly as the chronicle
+        // reads it. Only a **stated** subject is policed: a derived one is the
+        // effect's own `anchor`/`npc`/`actor`/`wave` reference, already refused
+        // by kind where it is written, and a second report would point the
+        // author at a `happening/subject` the document does not have.
+        if let Some(s) = eff.happening_subject().filter(|s| !s.derived) {
+            effect_subjects.push((format!("{path}/happening/subject"), s.id.to_string()));
+        }
+    });
+    for (path, s) in effect_subjects {
+        check(&s, "quests", path, d);
+    }
+    for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, n) in t.nodes.iter().enumerate() {
+            for (k, o) in n.options.iter().enumerate() {
+                if let Some(h) = &o.happening
+                    && let Some(s) = &h.subject
+                {
+                    check(
+                        s,
+                        "dialogue",
+                        format!("/content/dialogues/{i}/nodes/{j}/options/{k}/happening/subject"),
+                        d,
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod spine_tests {
     use super::QuestPlanContent;

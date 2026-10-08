@@ -39,10 +39,10 @@ that may legitimately hold one:
 
 - `registry.rs` — the trait's own declaration and its implementations, which is
   where the narrow question is DEFINED;
-- `validate.rs` — permitted at most once, inside `AnchorProviders::build`, which
+- `validate/mod.rs` — permitted at most once, inside `AnchorProviders::build`, which
   is the one place the broad question is answered.
 
-A second call in `validate.rs`, or a call anywhere else, is the eleventh walk
+A second call in `validate/mod.rs`, or a call anywhere else, is the eleventh walk
 arriving, and it fails here instead of shipping a check blind to whatever
 placement authority lands next.
 
@@ -79,9 +79,11 @@ DSL_SRC = REPO / "crates" / "dsl" / "src"
 CALL_RE = re.compile(r"\banchors_for\s*\(")
 
 # The file that DEFINES the narrow question, and the file that answers the broad
-# one. Every other call site is a copy of a walk that has already been written.
+# one, each as a path relative to `DSL_SRC` — never a bare file name, because a
+# name such as `mod.rs` is held by many files. Every other call site is a copy of
+# a walk that has already been written.
 DEFINITION = "registry.rs"
-AUTHORITY = "validate.rs"
+AUTHORITY = "validate/mod.rs"
 AUTHORITY_FN = "impl AnchorProviders"
 
 
@@ -109,9 +111,10 @@ def main() -> int:
         per_file[rel] = lines
         total += len(lines)
 
-        if f.name == DEFINITION:
+        under = f.relative_to(DSL_SRC).as_posix()
+        if under == DEFINITION:
             continue
-        if f.name == AUTHORITY:
+        if under == AUTHORITY:
             # The one broad answer, and only one: `AnchorProviders::build`.
             if AUTHORITY_FN not in text:
                 findings.append(
@@ -140,7 +143,7 @@ def main() -> int:
         findings.append(
             f"{rel} calls `anchors_for` at line(s) {', '.join(map(str, lines))}.\n"
             "    Only `registry.rs` (which declares it) and "
-            "`validate.rs`'s `AnchorProviders::build` (which answers the broad "
+            "`validate/mod.rs`'s `AnchorProviders::build` (which answers the broad "
             "question with it) may. Anywhere else is a walk over `world.areas` "
             "that will be correct until the next placement authority lands and "
             "will then be quietly wrong about a whole class of campaign."

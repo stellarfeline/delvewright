@@ -240,8 +240,8 @@ world.rs          WorldContent, Horizon*, Boundary, Area, AreaLighting, Pieces,
 body.rs           Locomotion, BodyTraversal, BodyRef, Body*Site + body_traversal_checks
 npc.rs            NpcsContent, Npc, NpcSkin, Persona + deferred_npc_checks, despawned_ref_check
 dialogue.rs       DialogueContent, NpcDialogue, DialogueNode/Option/Effect + dialogue checks
-class.rs          ClassesContent, Class, KitItem, Carrier, PotionContents + kit, item-gate,
-                  enchantment and equipment checks
+class.rs          ClassesContent, Class, KitItem, Carrier, PotionContents + kit item,
+                  kit potion, flask and item-gate checks
 quest_plan.rs     QuestPlanContent, BranchPoint, BranchDecl, Happening, PlannedQuest
                   + plan, partition, mainline_key, branch_point_checks, happening_subject_checks
 quest/mod.rs      QuestsContent, Quest, Trigger, Visibility, Guidance + references,
@@ -581,7 +581,7 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
 | Step | What moves | Size |
 |------|-----------|------|
 | B1 | `stages.rs` → the DSL object modules of §2; `lib.rs` keeps one glob per module and no type list | one worker, mechanical; call sites that named `dsl::stages::` or a root alias change to the root or module path |
-| B2a–c | `validate.rs` → each object module's checks, in three sequential cuts (world/npc/dialogue/class; quest/state/wave/actor/trigger; trap/timed gate/ambush/shortcut/loot/assembly/lethal/loop/economy); the version-named bundles dissolved; `diagnostic::codes` declarations move with their checks; the A1 row-in-page rule moves their catalog rows | three PRs, a few hours each |
+| B2a–c | `validate.rs` → each object module's checks, in three sequential cuts (world/body/npc/dialogue/class; quest/state/wave/actor/trigger; trap/timed gate/ambush/shortcut/loot/assembly/lethal/loop/economy); the version-named bundles dissolved; `diagnostic::codes` declarations move with their checks; the A1 row-in-page rule moves their catalog rows | three PRs, a few hours each |
 | B3a | `emit.rs` PackTest emitters (lines 16598–26170) → `emit/packtest/<object>.rs`, `emit/packtest.rs` the batch model | one PR |
 | B3b | the rest of `emit.rs` → `emit/<object>.rs` by its own section markers, `emit/{mod,text,functions,manifest,server}.rs` | one PR, after B3a |
 | B4a | `nav.rs` → `nav/{world,route}.rs` and `nav/mod.rs` | one PR |
@@ -613,6 +613,92 @@ are different files and meet only at one `pub mod` line each; B2 after B1):
   `Edge.shortcut`). B1 keeps the population to the stage modules; widening it
   is its own step, which triages those seven.
 - `purchase.rs` carries checks, so its absorption into `economy.rs` is B2's.
+
+**What B2a found** (corrections to this record, made where B2a touched it):
+
+- B2a renames `validate.rs` to `validate/mod.rs`, so the later cuts delete from
+  the file's final path. `check-anchor-providers.py` names its authority by
+  path relative to `crates/dsl/src` (`validate/mod.rs`), never by bare file
+  name: `mod.rs` is a name many files hold.
+- Diagnostic order is observable — `delvec` stable-sorts by group, so within a
+  group the order checks run in is the order a creator reads. A block inside a
+  bundle (`v04_checks`'s NPC skins, `v06_checks`'s flask rule,
+  `anchors_and_items`'s NPC stations and kit items) therefore moves as a
+  function of its object called from the position the block held; the bundle
+  is dissolved when its last block has left.
+- `body_traversal_checks` was in no cut; it is the body's and goes with B2a.
+  `prefab_binding` (an area binds one piece or one pool) is the world's.
+- The enchantment and equipment checks read item stacks — a wave mob's or an
+  actor's `equipment`, a `loot` stack, a `give-item` — and no class field, so
+  they are not `class.rs`'s; each goes with the object whose stack it reads, in
+  B2b and B2c.
+- `syntax`, `uniqueness`, `references` and `envelope` are each one pass over
+  every collection. Splitting them by cut would make all three cuts edit the
+  same four functions, so they stay whole in `validate/mod.rs` until B2c
+  dissolves them once every object module exists.
+- A code moves when every raise site in the DSL crate is in one module, and the
+  compiler's uses follow it (`compiler::plan` names `world::HORIZON_PARAM` and
+  `world::SURROUND_NO_REGION`, `compiler::textures` names
+  `world::TEXTURE_PATH`). A code still raised from two DSL modules (`DW0112`,
+  `DW0142`, `DW0143`, `DW0172`, `DW0190`, `DW0196`) stays in
+  `diagnostic::codes` until a later cut leaves it one raiser. `DW0741` is
+  raised in the DSL only by a texture row, but it is the licence rule's code —
+  `delvec prefab` raises it for every asset it admits — so its object is
+  `dsl::license`, not the world, and it stays where it is.
+- Helpers the moved checks share with checks still in `validate/mod.rs`
+  (`AnchorProviders`, `station_kind_diag`, `for_each_effect_deep`,
+  `for_each_trigger_effect_deep`, `quest_ancestors`) stay there, `pub(crate)`,
+  until the cut that moves their last caller.
+- `purchase.rs` → `economy.rs` belongs to B2c, the cut that holds `economy`.
+
+**What B2b found** (corrections to this record, made where B2b touched it):
+
+- `quest/mod.rs` with the quest's checks would pass 1500 lines, so they are
+  `quest/check.rs` (`dsl::quest::check`, page `dsl/quest/check.md`), split one
+  level down by the §1 rule. It is a `pub` module: the codes it declares were
+  public in `diagnostic::codes` and stay public.
+- `cross_stage` is two checks: a planned quest against its expansion is the
+  quest's; an NPC against its dialogue tree is the dialogue's
+  (`dialogue::npc_tree_checks`).
+- The verb rules that no object module owns — `give-effect`/`clear-effect`
+  (`DW0540`/`DW0541`), the `sequence` nesting rule (`DW0329`), a
+  `carrier: "one"` give (`DW0357`), `give-item` enchantments and the per-effect
+  block/NPC/cutscene references — go with the quest's checks, beside
+  `quest/verb.rs`, where those verbs are declared. `firework_checks` and
+  `perception_checks`, in no cut, go to the existing `firework` and `perception`
+  modules; the cutscene's shape and shot-style checks to `cutscene`.
+- `v06_checks` walks a quest's or a trigger's bundle once for actor references
+  and the `sequence` nesting rule together, so that walk is one function of the
+  actor (`actor::actor_checks`) that calls `quest::check::check_no_nested_sequence`;
+  splitting it would reorder diagnostics within a group.
+- Equipment is the wave's type (`MobEquipment`), so `check_equipment` and the
+  drops checks are `wave.rs`'s and the actor calls them. `check_enchantments`
+  reads an item stack — an equipped piece, a `give-item`, a `loot` stack — and
+  no object module holds the item stack, so it stays in `validate/mod.rs` with
+  `DW0433`/`DW0434` in `diagnostic::codes` until B2c moves `loot`, its last
+  other caller.
+- Codes raised from two modules after this cut stay in `diagnostic::codes`:
+  `DW0110`–`DW0112`, `DW0142`, `DW0143`, `DW0170`, `DW0172`, `DW0173`,
+  `DW0190`, `DW0192`, `DW0196`, `DW0432`, `DW0500`, `DW0953`. Codes declared in
+  `diagnostic::codes` but raised from one object module outside the three cuts
+  (`equipment`, `purchase`, `healthbar`, `onkill`, `celestial`, `l10n`,
+  `chrome`, `viewdistance`) are in no B2 step; dissolving `diagnostic::codes`
+  needs a step that moves them.
+- `world_edits_checks` is in no cut; B2c takes it with `split_blockstate`, the
+  last caller of which it is.
+- A catalog section whose rows split keeps its prose on the page holding most
+  of its rows (§4): `DW050x` moves to `dsl/state.md` with `DW0500`'s row left
+  on `dsl/diagnostic.md` under a pointer, and the status-effect section
+  (`DW0540`–`DW0545`) to `dsl/quest/check.md`, where two of its four rows are.
+- A private copy the split made visible: two inventories of "which flags
+  exist". `produced_flags` (`set-flag`, dialogue, trap disarm) answers
+  `DW0172` for objectives, effects and branch points; `collect_declared_flags`
+  (the same, plus a timed gate's disarm) answers it for triggers, dialogue and
+  traps. A flag only a timed-gate disarm sets is therefore refused on an
+  objective and accepted on a trigger's own `requires_flags` (reproduced on the
+  gallery: `flag/gate-jammed` planted on both raises one `DW0172`, at the
+  objective). B2b moves both unchanged; the merge is its own step, proven by a
+  test that plants that flag on both sites.
 
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is

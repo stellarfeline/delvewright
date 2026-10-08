@@ -16,7 +16,7 @@ This module's rows of a section whose prose is on the [`delvec::compiler::nav` p
 
 ### DW0540–DW0542 and DW0545 — status effects, the region teleport, and the fixture class (`dsl::validate` / `compiler::teleport` / `compiler::affordance`; spec-0031)
 
-This module's rows of a section whose prose is on the [`delvewright_dsl::diagnostic` page](../../dsl/diagnostic.md#dw0540dw0542-and-dw0545--status-effects-the-region-teleport-and-the-fixture-class-dslvalidate--compilerteleport--compileraffordance-spec-0031).
+This module's rows of a section whose prose is on the [`delvewright_dsl::quest::check` page](../../dsl/quest/check.md#dw0540dw0542-and-dw0545--status-effects-the-region-teleport-and-the-fixture-class-dslquestcheck--compilerteleport--compileraffordance-spec-0031).
 
 | Code | Meaning |
 |------|---------|

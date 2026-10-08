@@ -1,0 +1,45 @@
+# `delvewright_dsl::world`
+
+The reference page for `crates/dsl/src/world.rs`: the diagnostics-catalog row of every DW code
+this module declares. The catalog's shared rules are in [`compiler.md` §5](../compiler.md#5-diagnostics-catalog).
+
+## Diagnostics
+
+### DW01xx — validation (`dsl`; severity error; exit 1)
+
+This module's rows of a section whose prose is on the [`delvewright_dsl::diagnostic` page](diagnostic.md#dw01xx--validation-dsl-severity-error-exit-1).
+
+| Code | Meaning |
+|------|---------|
+| `DW0160` | Area binds neither or both of `prefab`/`prefab_pool`. |
+| `DW0161` | `prefab_pool` references a pool absent from `prefabs/` metadata. |
+| `DW0856` | **A bare `prefab` names a piece the library does not hold** — the same obligation `DW0161` carries on the other arm of the binding. Asked of `AnchorRegistry::has_prefab`, which answers `Some(true)`/`Some(false)` from a registry that is the whole library and `None` from one that is not, so a subset registry or a test double refuses nothing on its word; `anchors_for` cannot answer it, because its `None` deliberately means *defer*. It is an error rather than a deferral because an area whose piece is absent contributes **no anchor set at all**, and every per-area anchor check reads a missing set as a deferral and skips: the anchor proof (`DW0142`) over every quest in that area then examines zero anchors and passes. A mistyped piece is therefore not merely accepted — it is **less checked than a correct one**, which is the unbound vacuity mode one keystroke away. Prescription: correct the id, or add the piece to the prefabs dir. (A piece whose metadata file failed to parse is absent from the registry too and so is reported here as well as by `DW0346`; both name the same missing piece from the two ends.) |
+| `DW0320` | `horizon:"ocean"` declared without a `boundary` (an infinite swimmable sea with no return rule). spec-0013. Numbered in the 032x world/region family but **validation-tier (exit 1)**, not a DW03x build code. |
+| `DW0321` | `boundary.margin` outside `0..=64`. spec-0013. Validation-tier (exit 1). |
+| `DW0356` | `world.min_players` outside `1..=4` (spec-0018). A delve is played by ONE party of 1–4 (the product definition), so a declared mandatory size can never sit outside it. Absent = 1. Validation-tier (exit 1), `dsl::world`. |
+| `DW0925` | **A respawn wait that cannot be honoured** (spec-0077 §7). `world.respawn_wait.seconds` outside `1..=120`; or a `respawn_wait` in a campaign that declares no `set-checkpoint` or `bonfire` (the wait begins on the checkpoint respawn edge, so with none it never runs). Validation-tier (exit 1), `dsl::world`, on `world`/`/content/respawn_wait[/seconds]`. Prescription: a value in `1..=120`, a checkpoint, or no `respawn_wait`. |
+
+### DW046x — the NPC scene ledger (`compiler::cast`; spec-0020)
+
+This module's rows of a section whose prose is on the [`delvec::compiler::cast` page](../delvec/compiler/cast.md#dw046x--the-npc-scene-ledger-compilercast-spec-0020).
+
+| Code | Meaning |
+|------|---------|
+| `DW0468` | `world.difficulty` is `peaceful`. Refused, not honoured: on peaceful the server calls `checkDespawn` on every entity as it ticks it and **discards every hostile-category mob** — being `/summon`ed, `NoAI` or `PersistenceRequired` saves none of them — so every wave, hostile actor and ambush in the campaign would silently cease to exist. The keyword parses (it is a variant precisely so this diagnostic can exist instead of a serde "unknown variant") and validation rejects it. Validation-tier (exit 1), `dsl::world`. Prescription: declare `easy`, `normal` or `hard`; for a genuinely combat-free delve, omit `difficulty` entirely — a campaign with no waves already ships peaceful by derivation. |
+
+### DW0939/DW0940 — a delve wears its own textures (`dsl::validate` + `compiler::textures`; error; exit 1)
+
+This module's rows of a section whose prose is on the [`delvewright_dsl::diagnostic` page](diagnostic.md#dw0939dw0940--a-delve-wears-its-own-textures-dslvalidate--compilertextures-error-exit-1).
+
+| Code | Meaning |
+|---|---|
+| `DW0939` | **A `world.textures[]` row names a texture the pinned client does not ship, or two rows replace one texture** (spec-0084 §6.1). `replaces` is resolved against the census `crates/delvec/data/textures-1.21.11.json`, keyed `minecraft:<path>`, so another namespace, a `textures/` or `.png` left on, another version's path (the pre-pin `environment/moon_phases` strip) and a misspelling are all this refusal: an override written there would bind nothing and refuse nothing. The message names the nearest census paths by prefix, and what to strip. The duplicate half is judged in `dsl::world` (no census needed); the census half in `compiler::textures::resolve`, at `delvec validate` and again at build. Prescription: name a texture from the census, or remove the row. |
+
+### DW0821/DW0836–DW0839 — the derived blockout (`compiler::blockout`; error + two advisories)
+
+This module's rows of a section whose prose is on the [`delvec::compiler::blockout` page](../delvec/compiler/blockout.md#dw0821dw0836dw0839--the-derived-blockout-compilerblockout-error--two-advisories).
+
+| Code | Rule |
+|---|---|
+| `DW0853` | **A horizon param is out of range, or belongs to another base.** `delvewright_dsl::world` (`horizon_param_checks`), validation tier (exit 1). The `horizon` object form is one flat schema rather than one per base, because a tagged union per base would make the common case — a base and nothing else — the awkward one. The price of a flat shape is that a param can sit beside a base that reads nothing from it, and this is that price paid rather than absorbed: an `ocean` carrying a `rim_height` parses perfectly, and the author who wrote it believes something is reading it. The range half is `ratio` (2.0..=3.0) and `rim_height` (16..=128), checked on the **resolved** view so a shorthand is judged by the same rule as the object form it desugars to, with both bounds and the default in the message and the reason for each bound stated — under the `ratio` floor the annulus has no room for a gap floor and a slope run both, over the ceiling it is mostly terrain no body reaches at a cost that is all shipped bytes. **Restated at build time under the same code**, from the generator's own range guard, because one rule with two names is two rules that will disagree. Binding: campaigns declaring a `horizon`, of which those declaring the object form are param-checked. |
+| `DW0855` | **A horizon that builds terrain, on a campaign with no map to build it around.** `delvewright_dsl::world` (`horizon_param_checks`), validation tier (exit 1), restated at build time under the same code. A surround rings a **declared** extent, and exactly two documents declare one (`dsl::placement::Extent`, the one predicate this tier and `plan::surround_rect` share): a site plan's `region` — required, non-derivable, and which no box may grow — and the single `prefab` a ONE-AREA campaign binds, whose declared structure size is the map, because the map is that piece. The second is how a **site** is placed: a building with its island, its moat and its banks inside one box. Everything else states no extent. **The substitute is the whole point of the refusal**: the union of whatever `areas[]` happens to place looks like an extent and is not one, because areas sit on the compiler's fixed 256-block stride, so that union is mostly the void between them and ringing it builds a mountain range around empty space. Measured rather than argued: the same surround around the gallery site plan's declared 64x64 region is fourteen templates in about ninety seconds, and around the union of the gallery primary's two hand-placed areas it had not finished in ten minutes. The fast answer and the correct answer are the same answer, which is usually the sign that the substitute was never the thing. **The refusal is bound to that argument and not one step wider.** *This campaign places `areas[]`, therefore it has stated no extent* goes further than the argument: the stride is what makes a union meaningless, and a one-area campaign never uses it. Read that wide, it would leave the campaign class that most wants ground around its piece with no reachable remedy, because a site plan is refused by `DW0839` beside a non-empty `areas[]` — the pair defect CLAUDE.md names, a gate whose prescribed remedy is another gate's refusal. Prescription, all three reachable and each taken green in `crates/delvec/tests/remedy_reachability.rs`: make the map ONE PIECE (one area bound to one `prefab`), give the campaign a site plan and declare `areas` empty, or declare `void` or `ocean`, which need no map to be a horizon of — never widen the union. |

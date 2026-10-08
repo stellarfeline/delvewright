@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[cfg(doc)]
-use crate::{Mark, Npc, Verb, Wave};
+use crate::{Mark, Npc, Wave};
 
 /// A scripted stage actor (DSL v0.6, spec-0014): a NoAI/Silent/no-loot puppet,
 /// distinct from a stage-2 [`Npc`] (no dialogue, any mob type). Emitted with tag
@@ -170,4 +170,204 @@ pub struct SequenceStep {
     /// The effects fired at `at_ticks`. Any stage-5 effect except a nested
     /// `sequence` (rejected with `DW0329`).
     pub effects: Vec<QuestEffect>,
+}
+
+// ---------------------------------------------------------------------------
+// Validation — the checks `dsl::validate` runs over this object (ADR-0031)
+// ---------------------------------------------------------------------------
+
+use crate::Verb;
+use crate::diagnostic::{Diagnostic, codes};
+use crate::envelope::Campaign;
+use crate::ids::is_kebab;
+use crate::quest::check::check_no_nested_sequence;
+use crate::registry::{AnchorRegistry, EntityRegistry, ItemRegistry};
+use crate::validate::{AnchorProviders, station_kind_diag};
+use crate::wave::check_equipment;
+use std::collections::BTreeSet;
+
+/// Recursively visit every effect in `effs`, descending into every nested effect
+/// list ([`QuestEffect::nested_effect_lists`]: `sequence` steps, `set-checkpoint`
+/// `on_respawn`, `begin-stealth` `on_caught`, `move-actor` / `move-npc`
+/// `on_arrive`).
+fn walk_effects_deep(effs: &[QuestEffect], f: &mut dyn FnMut(&QuestEffect)) {
+    for e in effs {
+        e.visit_deep(f);
+    }
+}
+
+/// Actor declarations (spec-0014): a known entity id, a well-formed and distinct
+/// skin, a spawn anchor some area provides — and every actor staging effect's
+/// reference (`DW0112`), every `move-actor` destination anchor (`DW0142`) and the
+/// no-nested-`sequence` rule (`DW0329`) at every depth of a quest's or a
+/// trigger's bundles.
+pub(crate) fn actor_checks(
+    c: &Campaign,
+    anchors: &dyn AnchorRegistry,
+    entities: &dyn EntityRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    let declared: BTreeSet<&str> = quests.actors.iter().map(|a| a.id.as_str()).collect();
+
+    // Anchor names provided by single-prefab areas (pool areas resolve anchors in
+    // the compiler, so their presence defers the check — mirroring `DW0142`'s
+    // single-prefab-only scope; never a false positive).
+    let providers = AnchorProviders::build(c, anchors);
+
+    // Actor declarations: entity id, skin, spawn anchor.
+    let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
+    for (i, a) in quests.actors.iter().enumerate() {
+        if !entities.contains(&a.entity) {
+            d.push(Diagnostic::error(
+                codes::ENTITY_UNKNOWN,
+                "quests",
+                format!("/content/actors/{i}/entity"),
+                format!(
+                    "actor entity `{}` is not a known 1.21.11 entity id — use a valid namespaced \
+                     entity id (e.g. `minecraft:warden`)",
+                    a.entity
+                ),
+            ));
+        }
+        if let Some(skin) = &a.skin {
+            if !is_kebab(&skin.texture_id) {
+                d.push(Diagnostic::error(
+                    codes::SKIN_INVALID,
+                    "quests",
+                    format!("/content/actors/{i}/skin/texture_id"),
+                    format!(
+                        "actor skin `texture_id` `{}` is malformed — it must be a bare kebab token \
+                         (e.g. `giant-idle`), matching the `skins/<texture_id>.png` filename",
+                        skin.texture_id
+                    ),
+                ));
+            } else if !seen_skins.insert(skin.texture_id.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::SKIN_INVALID,
+                    "quests",
+                    format!("/content/actors/{i}/skin/texture_id"),
+                    format!(
+                        "duplicate actor skin `texture_id` `{}` — each mannequin needs a distinct \
+                         texture; rename one (and its `skins/<id>.png`)",
+                        skin.texture_id
+                    ),
+                ));
+            }
+        }
+        if let Some(f) = station_kind_diag(
+            &providers,
+            a.anchor.as_str(),
+            crate::layout::StationKind::Point,
+            "an actor's station",
+            "quests",
+            format!("/content/actors/{i}/anchor"),
+        ) {
+            d.push(f);
+        }
+        if !providers.resolvable(a.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("/content/actors/{i}/anchor"),
+                format!(
+                    "actor anchor `{}` is not provided by any area's prefab — {}",
+                    a.anchor,
+                    providers.anchor_remedy(
+                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
+                    ),
+                ),
+            ));
+        }
+    }
+
+    // Effect-level: actor references (DW0112), move-actor destination anchors
+    // (DW0142), and the no-nested-sequence rule (DW0329). Deep-walk so effects
+    // nested in a `sequence` / `move-actor` `on_arrive` are covered.
+    let mut groups: Vec<(String, &[QuestEffect])> = Vec::new();
+    for (i, q) in quests.quests.iter().enumerate() {
+        for (key, effs) in &q.on_objective_complete {
+            groups.push((
+                format!("/content/quests/{i}/on_objective_complete/{key}"),
+                effs.as_slice(),
+            ));
+        }
+        groups.push((
+            format!("/content/quests/{i}/on_complete"),
+            q.on_complete.as_slice(),
+        ));
+    }
+    for (i, t) in quests.triggers.iter().enumerate() {
+        groups.push((
+            format!("/content/triggers/{i}/effects"),
+            t.effects.as_slice(),
+        ));
+    }
+    for (path, effs) in &groups {
+        let mut visit = |e: &QuestEffect| {
+            if let Some(actor) = e.actor_ref()
+                && !declared.contains(actor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::DANGLING_REF,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "actor staging effect references unknown actor `{actor}` — declare it in \
+                         the stage-5 `actors` list, or fix the reference"
+                    ),
+                ));
+            }
+            if let Verb::MoveActor { to, .. } = &e.verb
+                && let Some(f) = station_kind_diag(
+                    &providers,
+                    to.anchor.as_str(),
+                    crate::layout::StationKind::Point,
+                    "a `move-actor` destination",
+                    "quests",
+                    path.clone(),
+                )
+            {
+                d.push(f);
+            } else if let Verb::MoveActor { to, .. } = &e.verb
+                && !providers.resolvable(to.anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "move-actor destination anchor `{}` is not provided by any \
+                         area's prefab — {}",
+                        to.anchor,
+                        providers.anchor_remedy("use an anchor a prefab exposes"),
+                    ),
+                ));
+            }
+        };
+        walk_effects_deep(effs, &mut visit);
+        check_no_nested_sequence(effs, path, d);
+    }
+}
+
+/// Actor `equipment` (spec-0021): item ids and enchantments, by the wave mob's
+/// rule ([`crate::wave::check_equipment`]).
+pub(crate) fn actor_equipment_checks(
+    c: &Campaign,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    // Actor `equipment` (spec-0021): the same shape, the same registries, the
+    // same diagnostics as a wave mob's — one surface, one rule set.
+    for (i, a) in quests.actors.iter().enumerate() {
+        let Some(eq) = &a.equipment else { continue };
+        check_equipment(
+            eq,
+            "actor",
+            &format!("/content/actors/{i}/equipment"),
+            items,
+            d,
+        );
+    }
 }

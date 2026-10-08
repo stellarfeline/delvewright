@@ -274,3 +274,536 @@ impl Prop {
         crate::blockshape::is_hand_pressed(&self.block)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Validation — the checks `dsl::validate` runs over this object (ADR-0031)
+// ---------------------------------------------------------------------------
+
+use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
+use crate::envelope::Campaign;
+use crate::quest::check::check_effect_v04;
+use crate::registry::{AnchorRegistry, BlockRegistry};
+use crate::validate::{
+    AnchorProviders, check_block_field, for_each_trigger_effect_deep, station_kind_diag,
+};
+use std::collections::{BTreeMap, BTreeSet};
+
+crate::dw_code! {
+    /// (v0.4) An environment trigger id is malformed (`DW0110`-style) or
+    /// duplicated within the stage-5 `triggers` namespace.
+    pub const TRIGGER_INVALID: DwCode = DwCode::new("DW0194", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.4, added round-6) A `use` trigger anchored where an NPC stands.
+    /// Right-click on an NPC already belongs to its dialogue advancement; a
+    /// second interaction hitbox in the same cell makes the client's entity
+    /// ray-pick ambiguous, and whichever entity loses the tie is silently dead
+    /// — the round-6 island soft-lock class (an exactly co-located hitbox
+    /// starved the giant's dialogue of every right-click). `strike` triggers
+    /// are exempt: a left-click has no dialogue meaning, so the compiler rides
+    /// the trigger's tag on the NPC's own hitbox instead of summoning a second
+    /// one. Validation-tier (exit 1).
+    pub const USE_TRIGGER_ON_NPC: DwCode = DwCode::new("DW0350", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
+    /// A trigger declares `audience: presser` on something other than an
+    /// `on: use` or an `on: step`.
+    ///
+    /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
+    /// that runs a function as the player who clicked, and it fires on
+    /// right-clicks alone; a step is a player standing in the cell, which a
+    /// positional selector names. A left-click is recorded in the interaction entity's
+    /// `attack` NBT — a UUID no command can become — and an `approach` involves no
+    /// click at all. Approximating it (polling the record and assuming the nearest
+    /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
+    /// capability is refused rather than faked.
+    pub const TRIGGER_AUDIENCE_UNATTRIBUTABLE: DwCode = DwCode::new("DW0427", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.11) **A trigger id in the compiler's reserved `dw-` namespace.** The
+    /// compiler synthesizes triggers of its own — today the press answer every
+    /// sealed gate and shortcut door gives (`trigger/dw-press-…`) — and two
+    /// triggers sharing an id would share one `dw_trig_…` tag and one emitted
+    /// function, so one of them would silently disappear. Reserving the prefix
+    /// makes the collision impossible by construction instead of improbable.
+    pub const TRIGGER_ID_RESERVED: DwCode = DwCode::new("DW0428", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (v0.11) **A sealed body with no press answer**, uniformly over the
+    /// pressable class. A `shortcuts[]` door or
+    /// a `close-gate`'s wall is sealed, and nothing says what it answers when the
+    /// party presses it — no `use` trigger anchored on it, and (for a
+    /// `close-gate`) no authored `sealed_hint`.
+    ///
+    /// The compiler deliberately does **not** fill that silence. A baked default
+    /// is the compiler making a design statement — about tone, about what this
+    /// specific door is — on the author's behalf, and then never telling them it
+    /// did; an error makes the author say it. Same rule as "no hacks at any
+    /// layer": if content needs a thing, the DSL exposes it and the author
+    /// declares it, rather than a lower layer inventing it.
+    ///
+    /// One rule for the whole pressable class: two objects of the same class do
+    /// not get two defaulting policies, which would be the "capability keyed to
+    /// the verb" defect this very surface is CLAUDE.md's worked example of.
+    pub const SEALED_BODY_UNANSWERED: DwCode = DwCode::new("DW0429", ExitTier::Build);
+}
+
+/// `DW0427`/`DW0428`: the two ways a trigger's **press answer** surface can be
+/// declared wrong (DSL v0.11).
+///
+/// Both are about the trigger as an *object*, not about any effect inside it, so
+/// they sit together and are checked over the one trigger authority.
+pub(crate) fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        if t.addresses_presser() && !t.attributes_its_actor() {
+            d.push(Diagnostic::error(
+                TRIGGER_AUDIENCE_UNATTRIBUTABLE,
+                "quests",
+                format!("/content/triggers/{i}/audience"),
+                format!(
+                    "trigger `{}` watches a `{}` and asks for `audience: presser`, but vanilla \
+                     names the player only for a RIGHT-click and a step. \
+                     `minecraft:player_interacted_with_entity` is the one criterion that runs a \
+                     function as the clicker, and a step is a player standing in the cell; a \
+                     left-click is recorded in the interaction entity's `attack` NBT, which names \
+                     a UUID no command can become, and an `approach` is not attributed. Guessing \
+                     — polling the record and hoping the nearest player is the striker — is the \
+                     kind of downstream folklore this engine refuses (CLAUDE.md: a capability \
+                     with no vanilla primitive under it is excluded, not faked). Prescription: \
+                     make it an `on: use` or `on: step` trigger, or drop `audience` and let the \
+                     beat address the party",
+                    t.id,
+                    t.on.kind()
+                ),
+            ));
+        }
+        let local = crate::l10n::local_id(t.id.as_str());
+        if local.starts_with(RESERVED_TRIGGER_PREFIX) {
+            d.push(Diagnostic::error(
+                TRIGGER_ID_RESERVED,
+                "quests",
+                format!("/content/triggers/{i}/id"),
+                format!(
+                    "trigger id `{}` opens with `{RESERVED_TRIGGER_PREFIX}`, which the compiler \
+                     reserves for the triggers it synthesizes itself — today the press answer \
+                     every sealed gate and shortcut door gives (`trigger/dw-press-…`). Two \
+                     triggers with one id would share one `dw_trig_…` tag and one emitted \
+                     function, so one of them would silently vanish. Prescription: rename it; any \
+                     kebab id not starting with `{RESERVED_TRIGGER_PREFIX}` is yours",
+                    t.id
+                ),
+            ));
+        }
+    }
+}
+
+/// `DW0429`: **a sealed body the campaign never answers** (DSL v0.11),
+/// uniformly over the pressable class.
+///
+/// A sealed thing is something the party walks up to and pushes on — a `shortcut`
+/// door on the wrong side of the loop, a `close-gate`'s wall — and the press has
+/// to say something. The compiler will not say it for them: a baked default is a
+/// design statement (about tone, about what this thing is) made on the author's
+/// behalf and never disclosed, so the obligation is stated instead of filled.
+///
+/// **One rule for the whole pressable class, not one per verb.** A shortcut door
+/// and a sealed gate are two objects of the same class, and giving them two
+/// defaulting policies would be exactly the "capability keyed to the verb" defect
+/// CLAUDE.md's worked example is about — which this surface *is*. So above the
+/// fence both are held to the same obligation, and `plan::press_answer_sites`
+/// carries the single shared list they are read from.
+///
+/// **Two ways to discharge it**, and they are the same thing said at two layers:
+///
+/// * a `use` trigger anchored on the body — the general verb, available to every
+///   pressable object (`QuestsContent::answers_press_at`);
+/// * for a `close-gate`, an authored `sealed_hint` — the sugar, which *is* the
+///   author defining the wording. The compiler lowering that onto the general
+///   path is not the compiler putting words in a player's mouth.
+///
+/// A `strike` discharges neither: pressing a thing is a right-click, and a
+/// left-click reply is a gesture the player may never make.
+pub(crate) fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+
+    // Every gate anchor some `close-gate` seals, and whether any firing on it
+    // authored a wording. Keyed by ANCHOR because the seal is a place, not an
+    // event — the same reason `plan::collect_seal_hints` dedups by anchor and
+    // `DW0423` refuses two firings that disagree.
+    let mut sealed: BTreeMap<&str, (bool, String)> = BTreeMap::new();
+    crate::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(anchor) = eff.close_gate_anchor() else {
+            return;
+        };
+        let entry = sealed
+            .entry(anchor.as_str())
+            .or_insert_with(|| (false, path.to_string()));
+        entry.0 |= eff.close_gate_sealed_hint().is_some();
+    });
+    for (anchor, (authored, path)) in sealed {
+        if authored || quests.answers_press_at(anchor) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            SEALED_BODY_UNANSWERED,
+            "quests",
+            path,
+            format!(
+                "this `close-gate` seals `{anchor}`, and nothing says what the wall answers when \
+                 the party presses it. A seal is a thing the party walks back to and pushes on, \
+                 so the press has to say something — and the compiler will not word it for you: a \
+                 baked default decides this wall's tone on your behalf and never tells you it \
+                 did. Two ways to say it, and either is enough: add `\"sealed_hint\": \"<what the \
+                 wall says>\"` to this effect, or anchor a trigger on the gate — \
+                 `{{\"id\": \"trigger/<name>\", \"at\": \"{anchor}\", \"on\": {{\"on\": \"use\"}}, \
+                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+                 \"style\": \"actionbar\", \"text\": \"<what the wall says>\"}}]}}`. The trigger form \
+                 is the general one and can carry a sound, a flag gate or any other effect"
+            ),
+        ));
+    }
+
+    for (i, sc) in quests.shortcuts.iter().enumerate() {
+        let gate = sc.gate.as_str();
+        if quests.answers_press_at(gate) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            SEALED_BODY_UNANSWERED,
+            "quests",
+            format!("/content/shortcuts/{i}"),
+            format!(
+                "shortcut `{}` bars the gate `{gate}` from world-load, and nothing in the \
+                 campaign answers a right-click on it — so a player who walks the long way \
+                 round, arrives at the wrong side of the door and pushes on it is told nothing. \
+                 That is the press a shortcut loop most invites. The compiler will not word it \
+                 for you: a baked default would be the engine deciding this door's tone and \
+                 never saying that it had. A `shortcut` carries no wording field, deliberately — \
+                 the line is a trigger. Prescription: add a trigger anchored on the gate — \
+                 `{{\"id\": \"trigger/<name>\", \"at\": \"{gate}\", \"on\": {{\"on\": \"use\"}}, \
+                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+                 \"style\": \"actionbar\", \"text\": \"<what the door says>\"}}]}}` — which rides \
+                 the door's own hitboxes, fires only from the sealed side, and retires when the \
+                 door opens. Any `use` trigger on `{gate}` discharges this, whatever it does",
+                sc.id
+            ),
+        ));
+    }
+}
+
+/// The id prefix the compiler reserves for triggers it synthesizes
+/// (`plan::press_answer_trigger_id`). Stated here because the *reservation* is a
+/// DSL-level fact even though today's only user is in the compiler.
+const RESERVED_TRIGGER_PREFIX: &str = "dw-";
+
+/// Every effect anchor of an environment trigger (`DW0142`/`DW0871`), at any
+/// nesting depth, resolved against the union of every known area's anchors.
+pub(crate) fn trigger_anchor_checks(
+    c: &Campaign,
+    providers: &AnchorProviders,
+    d: &mut Vec<Diagnostic>,
+) {
+    // Environment triggers are global (no owning area), so their effect anchors
+    // resolve against the union of every known area's anchors — the same
+    // resolved-or-diagnostic rule as quest effects, applied at the only scope a
+    // trigger has. Skipped entirely when some area binds a pool / an unknown
+    // prefab, because then the union is not the whole truth.
+    if providers.all_areas_known() {
+        for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+            for_each_trigger_effect_deep(t, |path, eff| {
+                for (suffix, anchor, demands) in eff.anchor_refs() {
+                    if let Some(f) = station_kind_diag(
+                        providers,
+                        anchor.as_str(),
+                        demands,
+                        &format!("`{}`", eff.verb.tag()),
+                        "quests",
+                        format!("/content/triggers/{ti}/{path}/{suffix}"),
+                    ) {
+                        d.push(f);
+                        continue;
+                    }
+                    if providers.union().contains(anchor.as_str()) {
+                        continue;
+                    }
+                    d.push(Diagnostic::error(
+                        codes::ANCHOR_UNRESOLVED,
+                        "quests",
+                        format!("/content/triggers/{ti}/{path}/{suffix}"),
+                        format!(
+                            "`{verb}` anchor `{anchor}` in an environment trigger is not \
+                             provided by any area's prefab — {}",
+                            providers.anchor_remedy(
+                                "use an anchor a prefab exposes (anchor names come from prefab \
+                                 metadata; do NOT invent one)"
+                            ),
+                            verb = eff.verb.tag(),
+                        ),
+                    ));
+                }
+            });
+        }
+    }
+}
+
+/// An environment trigger's effect `requires_flags` / `forbids_flags`, at any
+/// nesting depth, name a produced flag (`DW0172`).
+pub(crate) fn trigger_effect_flag_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+
+    let declared_flags: BTreeSet<String> = crate::validate::produced_flags(c);
+
+    // v0.6: environment-trigger effect `requires_flags` / `forbids_flags`
+    // resolution (DW0172).
+    for (i, t) in quests.triggers.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
+            for (n, f) in eff.requires_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/triggers/{i}/{path}/when/requires_flags/{n}"),
+                        format!(
+                            "effect `requires_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
+                             earlier, or correct the flag name"
+                        ),
+                    ));
+                }
+            }
+            for (n, f) in eff.forbids_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/triggers/{i}/{path}/when/forbids_flags/{n}"),
+                        format!(
+                            "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — the gate can never suppress anything; add the \
+                             producing `set-flag {{ flag: \"{f}\" }}` effect, or correct the flag \
+                             name"
+                        ),
+                    ));
+                }
+            }
+        });
+    }
+}
+
+/// A trigger's `prop` block id is in the block registry (`DW0193`).
+pub(crate) fn trigger_prop_checks(
+    c: &Campaign,
+    blocks: &dyn BlockRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+
+    // --- block ids: interact props + set-block effects (quest + trigger) ---
+    // A trigger's `prop` (spec-0093 §6.5) is the same object class as an
+    // interact's and is held to the same registry.
+    for (i, t) in quests.triggers.iter().enumerate() {
+        if let Some(prop) = &t.prop {
+            check_block_field(
+                blocks,
+                &prop.block,
+                format!("/content/triggers/{i}/prop/block"),
+                "triggers[].prop",
+                "minecraft:lever[face=floor,facing=north]",
+                d,
+            );
+        }
+    }
+}
+
+/// Environment trigger declarations (spec-0008 §7): id syntax and uniqueness
+/// (`DW0194`), the `at` / `strike-npc` target (`DW0194`, `DW0142`, `DW0112`), an
+/// `approach` range, a `use` trigger on an NPC's cell (`DW0350`), the trigger's
+/// own flags (`DW0172`) and every effect's references ([`check_effect_v04`]).
+pub(crate) fn trigger_decl_checks(
+    c: &Campaign,
+    anchors: &dyn AnchorRegistry,
+    blocks: &dyn BlockRegistry,
+    flags: &BTreeSet<&str>,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    let declared_waves: BTreeSet<&str> = quests.waves.iter().map(|w| w.id.as_str()).collect();
+
+    // area anchor sets (single-prefab areas only) + whether any pool area exists.
+    let providers = AnchorProviders::build(c, anchors);
+
+    // --- environment triggers ---
+    let mut seen_triggers: BTreeSet<&str> = BTreeSet::new();
+    for (i, t) in quests.triggers.iter().enumerate() {
+        if !t.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                TRIGGER_INVALID,
+                "quests",
+                format!("/content/triggers/{i}/id"),
+                format!(
+                    "malformed trigger id `{}` — trigger ids must be lowercase kebab-case with \
+                     the `trigger/` prefix (e.g. `trigger/pressure-plate`)",
+                    t.id
+                ),
+            ));
+        }
+        if !seen_triggers.insert(t.id.as_str()) {
+            d.push(Diagnostic::error(
+                TRIGGER_INVALID,
+                "quests",
+                format!("/content/triggers/{i}/id"),
+                format!(
+                    "duplicate trigger id `{}` — rename one so every trigger id is unique",
+                    t.id
+                ),
+            ));
+        }
+        // `at` names a place; `strike-npc` names a character. Exactly one of the
+        // two must be supplied, so neither form can be authored half-way (an
+        // ignored anchor would read as meaningful and silently do nothing).
+        match (t.on.needs_anchor(), t.at_anchor()) {
+            (true, None) => d.push(Diagnostic::error(
+                TRIGGER_INVALID,
+                "quests",
+                format!("/content/triggers/{i}/at"),
+                format!(
+                    "trigger `{}` fires on `{}`, which watches a place, but declares no `at` \
+                     anchor — add one ({}), or switch to `strike-npc` if the target is an NPC's \
+                     body",
+                    t.id,
+                    t.on.kind(),
+                    providers
+                        .anchor_remedy("anchor names come from prefab metadata; do NOT invent one"),
+                ),
+            )),
+            (false, Some(at)) => d.push(Diagnostic::error(
+                TRIGGER_INVALID,
+                "quests",
+                format!("/content/triggers/{i}/at"),
+                format!(
+                    "trigger `{}` fires on `{}`, whose target is {} — it watches no cell, so \
+                     the `at` anchor `{at}` names nothing and would be silently ignored. \
+                     Remove `at`.",
+                    t.id,
+                    t.on.kind(),
+                    match (t.on.npc_target(), t.on.assembly_target()) {
+                        (Some(n), _) => format!("NPC `{n}`'s body"),
+                        (_, Some(m)) => format!("assembly `{m}`'s hitbox"),
+                        _ => "an object".to_string(),
+                    }
+                ),
+            )),
+            (true, Some(at)) if !providers.resolvable(at) => d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("/content/triggers/{i}/at"),
+                format!(
+                    "trigger `at` anchor `{at}` is not provided by any area's prefab — {}",
+                    providers.anchor_remedy(
+                        "set `at` to an anchor some area's prefab exposes (anchor names come from \
+                         prefab metadata; do NOT invent one)"
+                    ),
+                ),
+            )),
+            _ => {}
+        }
+        // A `strike-npc` target must be a real stage-2 NPC: the trigger's tag
+        // rides that NPC's hitbox, so an unknown id would emit a tag on nothing
+        // and the trigger could never fire.
+        if let Some(npc) = t.on.npc_target()
+            && !c.npcs.content.npcs.iter().any(|n| n.id == *npc)
+        {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                format!("/content/triggers/{i}/on/npc"),
+                format!(
+                    "`strike-npc` trigger `{}` targets NPC `{npc}`, which stage 2 does not \
+                     declare — use a declared npc id",
+                    t.id
+                ),
+            ));
+        }
+        if let TriggerOn::Approach { range } = &t.on
+            && *range == 0
+        {
+            d.push(Diagnostic::error(
+                TRIGGER_INVALID,
+                "quests",
+                format!("/content/triggers/{i}/on/range"),
+                "`approach` trigger `range` must be > 0 — set a positive block radius (e.g. 3)"
+                    .to_string(),
+            ));
+        }
+        if matches!(t.on, TriggerOn::Use)
+            && let Some(at) = t.at_anchor()
+            && let Some(npc) = c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|n| n.anchor.as_str() == at && n.offset == [0, 0, 0])
+        {
+            d.push(Diagnostic::error(
+                USE_TRIGGER_ON_NPC,
+                "quests",
+                format!("/content/triggers/{i}/at"),
+                format!(
+                    "`use` trigger `{}` is anchored at `{}`, where NPC `{}` stands — a \
+                     right-click there already belongs to the NPC's dialogue, and two \
+                     interaction hitboxes in one cell race for the same click (the loser is \
+                     silently dead, which can soft-lock the delve). Move the trigger to its \
+                     own anchor, or express the interaction as a dialogue option on the NPC. \
+                     (To make an NPC's body itself the target, use `strike-npc`.)",
+                    t.id, at, npc.id
+                ),
+            ));
+        }
+        for (m, f) in t.requires_flags.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quests",
+                    format!("/content/triggers/{i}/requires_flags/{m}"),
+                    format!(
+                        "trigger `requires_flags` references flag `{f}`, which no `set-flag` \
+                         effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
+                         somewhere, or correct the flag name"
+                    ),
+                ));
+            }
+        }
+        // v0.6: trigger-level `forbids_flags` — same unknown-flag treatment as
+        // `requires_flags` (DW0172).
+        for (m, f) in t.forbids_flags.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quests",
+                    format!("/content/triggers/{i}/forbids_flags/{m}"),
+                    format!(
+                        "trigger `forbids_flags` references flag `{f}`, which no `set-flag` \
+                         effect ever produces — the gate can never suppress anything; add the \
+                         producing `set-flag {{ flag: \"{f}\" }}` effect, or correct the flag name"
+                    ),
+                ));
+            }
+        }
+        for_each_trigger_effect_deep(t, |path, eff| {
+            check_effect_v04(
+                eff,
+                blocks,
+                &declared_waves,
+                &format!("/content/triggers/{i}/{path}"),
+                &npc_ids,
+                d,
+            );
+        });
+    }
+}
