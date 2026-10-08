@@ -463,6 +463,44 @@ fn gates_that_can_both_hold_under_the_cutscene_are_still_dw0933() {
     run.refused("DW0933");
 }
 
+/// The carrying step's `cutscene_seconds` covers the cutscene its `sequence`
+/// plays, read against the tick the emitted driver calls `cs_end` at: a
+/// cutscene on the sequence's first step, and one on a later step that starts
+/// `at_ticks` after the trigger fires. A step that exported no hold, or one
+/// shorter than the emitted bracket, leaves the bot walking in spectator,
+/// stranded at the camera (`compiler::hold`). A `sequence` inside a `sequence`
+/// is refused (`DW0329`), so one level is every depth a timeline has.
+#[test]
+fn the_carrying_step_waits_out_a_cutscene_its_sequence_plays() {
+    assert_carrying_hold("cs-hold-first", 0, |q| cutscene_then_teleport(q, 22));
+    assert_carrying_hold("cs-hold-later", 30, |q| {
+        trigger_mut(q)["effects"] = json!([{"type": "sequence", "steps": [
+            {"at_ticks": 0, "effects": [{"type": "narrate", "text": "The tiller creaks."}]},
+            {"at_ticks": 30, "effects": [cutscene()]},
+            {"at_ticks": 52, "effects": [teleport()]}
+        ]}]);
+    });
+}
+
+/// Build the primary with `patch` and assert the carrying step's
+/// `cutscene_seconds` is the whole seconds to `cs_end`, for a cutscene that
+/// starts `start` ticks after the trigger fires.
+fn assert_carrying_hold(who: &str, start: u32, patch: impl FnOnce(&mut Value)) {
+    let run = build(&campaign(who, patch));
+    run.green();
+    let end = start + emitted_cs_end_tick(&run.out);
+    let path = run.json("critical-path.json");
+    let step = carrying_step(&path).expect("a trigger step carries the party");
+    let secs = step["cutscene_seconds"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{who}: the carrying step owes no cutscene hold: {step}"));
+    assert_eq!(
+        secs,
+        u64::from(end.div_ceil(20)),
+        "{who}: `cs_end` runs at tick {end} after the trigger fires"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Criterion 11 — the binding line and the ledger.
 // ---------------------------------------------------------------------------
