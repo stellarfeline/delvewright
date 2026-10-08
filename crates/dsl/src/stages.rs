@@ -1490,6 +1490,66 @@ pub struct NpcSkin {
     /// Player model. **Required** (spec-0009): an omitted model renders slim, so
     /// a wide skin on a slim model is distorted — the compiler always emits it.
     pub model: SkinModel,
+    /// The overlay layers this mannequin does **not** draw (spec-0097 §5). A
+    /// mannequin draws all seven of the player model's second-layer parts unless
+    /// told otherwise, and the skin's paint on a hidden part is not shown. Absent
+    /// or empty draws every layer and emits nothing; otherwise the list is
+    /// emitted as the mannequin's own `hidden_layers` field, in this order. A
+    /// layer named twice is `DW0980`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_layers: Vec<SkinLayer>,
+}
+
+/// One of the player model's second-layer parts, as the pinned client's
+/// `PlayerModelPart` names it (spec-0097 §2.4). `left` and `right` are the
+/// model's own, not the observer's. `crates/delvec/tests/skin_layers.rs` holds
+/// these tokens equal to the layers `crates/delvec/data/model-parts-1.21.11.json`
+/// read from the jar.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SkinLayer {
+    /// The cape, where the profile carries one.
+    Cape,
+    /// The torso's overlay shell.
+    Jacket,
+    /// The left arm's overlay shell.
+    LeftSleeve,
+    /// The right arm's overlay shell.
+    RightSleeve,
+    /// The left leg's overlay shell.
+    LeftPantsLeg,
+    /// The right leg's overlay shell.
+    RightPantsLeg,
+    /// The head's overlay shell.
+    Hat,
+}
+
+impl SkinLayer {
+    /// Every layer, in the client's own order.
+    pub const ALL: [SkinLayer; 7] = [
+        SkinLayer::Cape,
+        SkinLayer::Jacket,
+        SkinLayer::LeftSleeve,
+        SkinLayer::RightSleeve,
+        SkinLayer::LeftPantsLeg,
+        SkinLayer::RightPantsLeg,
+        SkinLayer::Hat,
+    ];
+
+    /// The vanilla id a mannequin's `hidden_layers` list carries.
+    pub fn token(self) -> &'static str {
+        match self {
+            SkinLayer::Cape => "cape",
+            SkinLayer::Jacket => "jacket",
+            SkinLayer::LeftSleeve => "left_sleeve",
+            SkinLayer::RightSleeve => "right_sleeve",
+            SkinLayer::LeftPantsLeg => "left_pants_leg",
+            SkinLayer::RightPantsLeg => "right_pants_leg",
+            SkinLayer::Hat => "hat",
+        }
+    }
 }
 
 /// Player-model shape for a mannequin skin (`wide` = classic/Steve, `slim` =

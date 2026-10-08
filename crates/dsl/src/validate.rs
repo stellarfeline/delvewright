@@ -71,6 +71,9 @@ pub fn validate_campaign_with(
     // spec-0034: the per-body traversal declaration. The walk is empty for a
     // campaign that declares none.
     body_traversal_checks(c, &mut d);
+    // spec-0097: which overlay layers a skinned body hides. Empty for a campaign
+    // that hides none.
+    skin_layer_checks(c, &mut d);
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
@@ -3412,6 +3415,29 @@ fn texture_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!("/content/textures/{i}/license"),
                 format!("texture `{}` (replaces `{}`): {reason}", t.id, t.replaces),
             ));
+        }
+    }
+}
+
+/// spec-0097 §5: a skinned body's `hidden_layers` names each layer at most once
+/// (`DW0980`). Walked over every body that declares a skin, whatever its class.
+fn skin_layer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for site in crate::stages::body_skin_sites(c) {
+        let mut seen = BTreeSet::new();
+        for (k, layer) in site.skin.hidden_layers.iter().enumerate() {
+            if !seen.insert(*layer) {
+                d.push(Diagnostic::error(
+                    codes::SKIN_LAYER_TWICE,
+                    site.body.stage(),
+                    format!("{}/hidden_layers/{k}", site.path),
+                    format!(
+                        "`{}` hides `{}` twice — `hidden_layers` is the set of overlay layers \
+                         the mannequin does not draw, so name each layer once",
+                        site.body.id(),
+                        layer.token()
+                    ),
+                ));
+            }
         }
     }
 }

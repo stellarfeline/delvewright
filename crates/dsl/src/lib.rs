@@ -130,12 +130,12 @@ pub use stages::{
     MobEquipment, NarrateStyle, NestedDispatch, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective,
     OnFull, OnKill, ParticleAt, Persona, Pieces, PlannedQuest, PlayersKeyword, PotionContents,
     PotionEffect, Precipitation, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
-    Relationship, RespawnWait, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle, SkinModel,
-    SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay, StateScope, StateWrite,
-    StealthZone, StrikeAim, StrikeStep, TextureOverride, TimeKeyword, TimeSite, TimedGate, Trap,
-    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Verb,
-    Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
-    enchantment_component, is_potion_bearing_item, offset_cell,
+    Relationship, RespawnWait, Role, SequenceStep, Shop, ShopOffer, Shortcut, ShotStyle, SkinLayer,
+    SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl, StateDisplay, StateScope,
+    StateWrite, StealthZone, StrikeAim, StrikeStep, TextureOverride, TimeKeyword, TimeSite,
+    TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerAudience,
+    TriggerOn, Verb, Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime,
+    WorldWeather, enchantment_component, is_potion_bearing_item, offset_cell,
 };
 pub use stages::{
     BodyRef, BodySite, BodySkinSite, BodyTraversalSite, body_sites, body_skin_sites,

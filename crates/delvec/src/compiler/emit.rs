@@ -11075,9 +11075,9 @@ fn npc_summon_commands(
         // wrong data for a standing NPC. Valid 1.21.11 mannequin poses: standing,
         // crouching, swimming, fall_flying, sleeping (spec-0009 template).
         out.push(format!(
-            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
+            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}}{},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
             p[0], p[1], p[2], skin.texture_id, skin.model.token(),
-            snbt_text_component(name), npc.tag
+            mannequin_hidden_layers_nbt(skin), snbt_text_component(name), npc.tag
         ));
     } else {
         // CustomName is a 1.21.11 text component, emitted as a plain SNBT string
@@ -11757,12 +11757,13 @@ fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw:
             .as_deref()
             .unwrap_or_else(|| a.id.as_str().rsplit('/').next().unwrap_or("actor"));
         format!(
-            "summon {body} {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:{inv}b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}{attrs}{equip}}}",
+            "summon {body} {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}}{},immovable:1b,pose:\"standing\",Invulnerable:{inv}b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}{attrs}{equip}}}",
             p[0],
             p[1],
             p[2],
             skin.texture_id,
             skin.model.token(),
+            mannequin_hidden_layers_nbt(skin),
             snbt_text_component(desc)
         )
     } else {
@@ -11785,6 +11786,22 @@ fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw:
             p[0], p[1], p[2]
         )
     }
+}
+
+/// The mannequin's `hidden_layers` field for a skin (spec-0097 §5): `""` when the
+/// skin hides nothing — a mannequin starts with every layer shown, so the field's
+/// absence is the vanilla default and byte-identical to every summon before it —
+/// and `,hidden_layers:["<id>",…]` in authored order otherwise.
+pub(crate) fn mannequin_hidden_layers_nbt(skin: &delvewright_dsl::NpcSkin) -> String {
+    if skin.hidden_layers.is_empty() {
+        return String::new();
+    }
+    let ids: Vec<String> = skin
+        .hidden_layers
+        .iter()
+        .map(|l| format!("\"{}\"", l.token()))
+        .collect();
+    format!(",hidden_layers:[{}]", ids.join(","))
 }
 
 /// Whether a body of this entity kind carries the `Mob`-only loot NBT the
@@ -26285,6 +26302,7 @@ mod tests {
         a.skin = Some(delvewright_dsl::NpcSkin {
             texture_id: "giant-idle".to_string(),
             model: delvewright_dsl::SkinModel::Wide,
+            hidden_layers: vec![],
         });
         let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
         assert!(
@@ -26293,6 +26311,27 @@ mod tests {
         );
         assert!(s.contains("profile:{texture:\"delvewright:npc/giant-idle\",model:\"wide\"}"));
         assert!(s.contains("dw_pup_keeper"));
+    }
+
+    /// spec-0097 §5: a skin's hidden layers ride both mannequin summons, in
+    /// authored order, and an empty list writes nothing at all.
+    #[test]
+    fn a_mannequin_hides_the_layers_its_skin_names() {
+        use delvewright_dsl::SkinLayer;
+        let mut a = mk_actor("actor/keeper", "minecraft:warden", false);
+        a.skin = Some(delvewright_dsl::NpcSkin {
+            texture_id: "giant-idle".to_string(),
+            model: delvewright_dsl::SkinModel::Wide,
+            hidden_layers: vec![SkinLayer::Hat, SkinLayer::Jacket],
+        });
+        let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+        assert!(
+            s.contains("model:\"wide\"},hidden_layers:[\"hat\",\"jacket\"],immovable:1b"),
+            "{s}"
+        );
+        a.skin.as_mut().unwrap().hidden_layers.clear();
+        let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+        assert!(!s.contains("hidden_layers"), "{s}");
     }
 
     /// A `skin` is a costume, not a lobotomy: a skinned actor is the same body
@@ -26306,6 +26345,7 @@ mod tests {
         a.skin = Some(delvewright_dsl::NpcSkin {
             texture_id: "guard".to_string(),
             model: delvewright_dsl::SkinModel::Wide,
+            hidden_layers: vec![],
         });
         a.equipment = Some(delvewright_dsl::MobEquipment {
             head: Some(EquipItem::Plain("minecraft:netherite_helmet".to_string())),

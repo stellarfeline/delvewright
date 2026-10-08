@@ -26,6 +26,9 @@
 //!   vanilla's animation metadata; or bytes equal to vanilla's, which replace
 //!   nothing.
 //! - [`DW_IMAGE_MISSING`] (`DW0309`) — the row's `textures/<id>.png` is absent.
+//! - `DW0978` / `DW0979` — the row replaces a texture an entity model is drawn
+//!   with, and its paint lands on no box of that model, or only on faces a body
+//!   standing level with it cannot see ([`crate::compiler::skinparts`]).
 //!
 //! The id and licence half of a row is judged in the DSL, where no file is
 //! needed (`DW0190`, `DW0741`, and a second row replacing one texture,
@@ -219,6 +222,18 @@ pub fn resolve<'a>(
         };
         let mcmeta = file(&sidecar_file(&row.id)).map(<[u8]>::to_vec);
         match judge(&row.id, &row.replaces, entry, png, mcmeta.as_deref()) {
+            // spec-0097 §4: a texture an entity model is drawn with is held to
+            // that model's boxes, by the one rule a mannequin skin is held to.
+            Ok(_) if let Some(refusal) = model_refusal(&row.replaces, png) => {
+                diags.push(Finding::new(
+                    refusal.code,
+                    format!("{pointer}/id"),
+                    format!(
+                        "`world.textures[{i}]` (`{}`, replaces `{}`): `{image}` {}",
+                        row.id, row.replaces, refusal.reason
+                    ),
+                ));
+            }
             Ok((k, frames)) => out.push(Resolved {
                 id: row.id.clone(),
                 replaces: row.replaces.clone(),
@@ -242,6 +257,17 @@ pub fn resolve<'a>(
         }
     }
     (out, diags)
+}
+
+/// The `DW0978` / `DW0979` refusal of a row whose replaced texture the
+/// model-part table binds to a model (spec-0097 §4.3), or `None` — for a texture
+/// no humanoid model is drawn with, and for a sheet the model's boxes read.
+fn model_refusal(replaces: &str, png: &[u8]) -> Option<crate::compiler::skinparts::Refusal> {
+    let (key, model) = crate::compiler::skinparts::model_for_texture(replaces)?;
+    let img = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+        .ok()?
+        .to_rgba8();
+    crate::compiler::skinparts::judge(key, model, &img).err()
 }
 
 /// The `DW0939` message: what was asked for, why it is not in the census, and

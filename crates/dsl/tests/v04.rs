@@ -105,6 +105,55 @@ fn malformed_skin_texture_id_is_dw0190() {
 }
 
 // ---------------------------------------------------------------------------
+// DW0980 — a mannequin layer hidden twice (spec-0097 §5)
+// ---------------------------------------------------------------------------
+
+fn npcs_hiding(layers: &str) -> String {
+    valid_npcs_v04().replacen(
+        "\"base_entity\": \"minecraft:villager\",",
+        &format!(
+            "\"base_entity\": \"minecraft:villager\", \"skin\": {{ \"texture_id\": \"keeper\", \
+             \"model\": \"wide\", \"hidden_layers\": {layers} }},"
+        ),
+        1,
+    )
+}
+
+#[test]
+fn a_layer_hidden_twice_is_dw0980_and_each_layer_once_is_clean() {
+    let twice = check_campaign(&campaign_with(
+        &npcs_hiding(r#"["hat", "jacket", "hat"]"#),
+        QUESTS_BASE.as_str(),
+        &valid_dialogue_v04(),
+    ));
+    let hit: Vec<_> = twice.iter().filter(|d| d.code == "DW0980").collect();
+    assert_eq!(hit.len(), 1, "one repeat, one refusal: {twice:#?}");
+    assert!(
+        hit[0].path.ends_with("/skin/hidden_layers/2"),
+        "{:?}",
+        hit[0].path
+    );
+    let once = check_campaign(&campaign_with(
+        &npcs_hiding(r#"["hat", "jacket", "cape"]"#),
+        QUESTS_BASE.as_str(),
+        &valid_dialogue_v04(),
+    ));
+    assert!(
+        !once.iter().any(|d| d.code == "DW0980"),
+        "distinct layers are clean: {once:#?}"
+    );
+    let unknown = check_campaign(&campaign_with(
+        &npcs_hiding(r#"["helmet"]"#),
+        QUESTS_BASE.as_str(),
+        &valid_dialogue_v04(),
+    ));
+    assert!(
+        unknown.iter().any(|d| d.code == "DW0100"),
+        "a layer the client does not name is a schema error: {unknown:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // DW0191 — talk-to with only flag-gated completing options (deadlock risk)
 // ---------------------------------------------------------------------------
 

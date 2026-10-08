@@ -993,6 +993,12 @@ pub mod codes {
         pub const SKIN_INVALID: DwCode = DwCode::new("DW0190", ExitTier::Build);
     }
     crate::dw_code! {
+        /// (spec-0097 §5) A body's `skin.hidden_layers` names one layer twice. The
+        /// list is the set of overlay layers the mannequin does not draw; a
+        /// repeat says nothing a single entry does not, and is a mistake.
+        pub const SKIN_LAYER_TWICE: DwCode = DwCode::new("DW0980", ExitTier::Build);
+    }
+    crate::dw_code! {
         /// (v0.4) A `talk-to` objective has no **ungated** reachable completing
         /// dialogue option — every completing option is `requires_flags`-gated, so
         /// the objective can deadlock the moment it activates (spec-0008 §1). Keep at
