@@ -24,18 +24,26 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(root.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
-/// The body of `fn <name>` in `src`: from its signature to the next top-level
-/// item.
+/// The body of `fn <name>` in `src`: from its signature to the nearest
+/// following top-level function, at any visibility (`fn`, `pub fn`,
+/// `pub(crate) fn`, `pub(in …) fn`), or `#[cfg(test)]`.
 fn body<'a>(src: &'a str, name: &str) -> &'a str {
     let sig = src
         .find(&format!("fn {name}("))
         .unwrap_or_else(|| panic!("no `fn {name}`"));
     let rest = &src[sig..];
-    let end = rest[1..]
-        .find("\nfn ")
-        .or_else(|| rest[1..].find("\npub fn "))
-        .or_else(|| rest[1..].find("\n#[cfg(test)]"))
-        .map(|i| i + 1)
+    let starts_item = |line: &str| {
+        let unscoped = match line.strip_prefix("pub") {
+            Some(r) if r.starts_with('(') => r.find(')').map_or(r, |i| &r[i + 1..]).trim_start(),
+            Some(r) if r.starts_with(' ') => r.trim_start(),
+            _ => line,
+        };
+        unscoped.starts_with("fn ") || line.starts_with("#[cfg(test)]")
+    };
+    let end = rest
+        .match_indices('\n')
+        .map(|(i, _)| i + 1)
+        .find(|&i| starts_item(&rest[i..]))
         .unwrap_or(rest.len());
     &rest[..end]
 }

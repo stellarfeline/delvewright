@@ -845,11 +845,16 @@ mod staged_liveness_tests {
                     let mut current = String::new();
                     for line in text.lines() {
                         let t = line.trim_start();
-                        if let Some(rest) = t
-                            .strip_prefix("fn ")
-                            .or_else(|| t.strip_prefix("pub fn "))
-                            .or_else(|| t.strip_prefix("pub(crate) fn "))
-                        {
+                        // A function header at any visibility: `fn`, `pub fn`,
+                        // `pub(crate) fn`, `pub(in …) fn`.
+                        let unscoped = match t.strip_prefix("pub") {
+                            Some(r) if r.starts_with('(') => {
+                                r.find(')').map_or(r, |i| &r[i + 1..]).trim_start()
+                            }
+                            Some(r) if r.starts_with(' ') => r.trim_start(),
+                            _ => t,
+                        };
+                        if let Some(rest) = unscoped.strip_prefix("fn ") {
                             current = rest.split(['(', '<']).next().unwrap_or("").to_string();
                         }
                         if t.contains("liveness_of(") && !t.contains("fn liveness_of") {
