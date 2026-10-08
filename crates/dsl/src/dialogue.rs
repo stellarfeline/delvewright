@@ -648,3 +648,45 @@ pub(crate) fn dialogue_flag_checks(c: &Campaign, flags: &BTreeSet<&str>, d: &mut
         }
     }
 }
+
+/// Stage-2 NPC ↔ stage-6 dialogue tree, 1:1 both directions (`DW0152`,
+/// `DW0153`).
+pub(crate) fn npc_tree_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // Stage-2 NPC ↔ stage-6 dialogue tree, 1:1 both directions.
+    let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    let tree_npcs: BTreeSet<&str> = c
+        .dialogue
+        .content
+        .dialogues
+        .iter()
+        .map(|t| t.npc.as_str())
+        .collect();
+    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
+        if !tree_npcs.contains(npc.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::NPC_WITHOUT_TREE,
+                "dialogue",
+                format!("/content/npcs/{i}"),
+                format!(
+                    "npc `{}` has no stage-6 dialogue tree — every stage-2 npc needs exactly one \
+                     tree; add a dialogue tree for `{}`, or remove the npc",
+                    npc.id, npc.id
+                ),
+            ));
+        }
+    }
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        if !npc_ids.contains(tree.npc.as_str()) {
+            d.push(Diagnostic::error(
+                codes::TREE_WITHOUT_NPC,
+                "dialogue",
+                format!("/content/dialogues/{i}/npc"),
+                format!(
+                    "dialogue tree targets npc `{}`, which is not declared in stage 2 — declare \
+                     that npc in stage 2, or point this tree at an existing npc",
+                    tree.npc
+                ),
+            ));
+        }
+    }
+}
