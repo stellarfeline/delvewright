@@ -1002,6 +1002,24 @@ the assembly touched it):
   `tests/premise_declines.rs` and `tests/blockout.rs` name `cli/view.rs` and
   `cli/campaign.rs`.
 
+**What assembling B2c, B5 and B6 found** (corrections to this record, made
+where the assembly touched it):
+
+- B5 and B6 each repaired a visibility-prefix scan with a private spelling:
+  B5's `is_fn_definition` in `tests/blockout.rs`, B6's `defines_fn` in
+  `tests/footprint_call_graph.rs` and its `VIS` regex in
+  `tools/lib/clap_surface.py`. All three read through the one rule now:
+  the two Rust scans through `common::source_scan::fn_name`, with one test of
+  it carrying both scans' cases, and `clap_surface.py` through
+  `tools/lib/rust_source.py`'s `VISIBILITY`, loaded from beside itself
+  because its callers load it by path. A copy of `clap_surface.py` carries
+  `rust_source.py` with it.
+- B2c and B6 met where B6 moved a body B2c had edited: `run_rig_describe`
+  names `assembly::ASSEMBLY_RIG`, in `cli/metrics.rs`. B2a and B5 met the
+  same way: `plan/surround.rs` names `world::SURROUND_NO_REGION` and
+  `world::HORIZON_PARAM`. Neither was a textual conflict inside the moved
+  file; each was a modify/delete or a conflict in the file the body left.
+
 **Phase C — fold by object** (fully parallel across objects; each a couple of
 hours): for each object, `compiler/<object>/{mod,check,emit,packtest}.rs` is
 formed from `<object>.rs`, `emit/<object>.rs`, `emit/packtest/<object>.rs`,
