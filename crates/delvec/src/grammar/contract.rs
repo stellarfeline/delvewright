@@ -1789,7 +1789,7 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
     // any `no_body` kind asks for, which is the test — an escape hatch that
     // costs more than the thing it escapes is not an escape hatch.
     let unaccounted = uncovered_standable(ix);
-    let empty_ok = (kinds.by_region.is_empty()
+    let all_play_space = (kinds.by_region.is_empty()
         && !ix.standable.is_empty()
         && unaccounted.is_empty())
     .then(|| {
@@ -1799,8 +1799,9 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
              every piece of floor here is play space and §2.5 must walk a body to it",
             ix.standable.len()
         )
-    })
-    .or_else(|| scenery_zero(ix).filter(|_| kinds.by_region.is_empty()));
+    });
+    let empty_ok =
+        all_play_space.or_else(|| scenery_zero(ix).filter(|_| kinds.by_region.is_empty()));
     Gate {
         id: "contract-no-body",
         state: verdict(bad.is_empty()),
