@@ -216,7 +216,7 @@ pass afterwards. Which rules bind which line:
   the action, the object and the place, the place by a landmark the player can
   see and a position relative to it, never by a compass point; a refusal says what is wrong and what
   fixes it; an item tooltip says what the item does first.
-- **Story text** — dialogue, barks, narration: S1–S5. State the fact; end on
+- **Story text** — dialogue, barks, narration: S1–S6. State the fact; end on
   information; a joke carries the function too.
 - **Where the player reads at all**: L1 (`game-writing.md` §8). Before a line
   or an object exists to tell the player what to do, check that the level does
@@ -231,3 +231,15 @@ pass afterwards. Which rules bind which line:
 Write each line knowing it will be transcreated: the English is the fact source
 another language is rewritten from, so a fact the English only implies is a fact
 the other language loses.
+
+**Styled spans.** Any line a player reads may carry
+`[[<styles>|<text>]]` — `<styles>` one or more of `obfuscated`, `bold`,
+`italic`, `underlined`, `strikethrough`, `color=<vanilla name or #rrggbb>`,
+comma-separated, no spaces; spans do not nest, and `[[`/`]]` appear nowhere
+else in a line. Example, a bark of a clerk whose mind has been touched:
+`The ledger is kept by [[obfuscated|someone else]] at night.` Use one only by
+S6 (`game-writing.md` §2): a style shows what the words cannot, never emphasis
+the words should carry — rarely, at most one span in a line. `delvec validate`
+refuses malformed markup and a translation whose spans differ from the English;
+a bold span counts one pixel wider per character against an option label's
+button (`DW0331`).

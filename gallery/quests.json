@@ -635,7 +635,8 @@
             "dialogue": {
               "barks": [
                 "Everything on the counter is priced.",
-                "The emeralds are the hall's, not mine."
+                "The emeralds are the hall's, not mine.",
+                "The ledger is kept by [[obfuscated|someone else]] at [[italic,color=dark_purple|night]]."
               ]
             },
             "doing": "minding the counter"

@@ -1441,8 +1441,12 @@ pub fn untag(s: &str) -> Option<(&str, &str)> {
 /// `critical-path.json`, the generated PackTest sources. Each such site is a named
 /// exclusion in `docs/reference/compiler.md`: it is not a text component, so it
 /// cannot carry a translate key, and it is not read by a player.
-pub fn plain(s: &str) -> &str {
-    untag(s).map(|(_, e)| e).unwrap_or(s)
+///
+/// It is the **visible** text: a styled span (spec-0096) reads as its own text,
+/// with the markup dropped ([`crate::textstyle::visible`]), because none of these
+/// readers draws a style.
+pub fn plain(s: &str) -> std::borrow::Cow<'_, str> {
+    crate::textstyle::visible(untag(s).map(|(_, e)| e).unwrap_or(s))
 }
 
 /// Whether `s` contains any reserved private-use character — i.e. whether it is,

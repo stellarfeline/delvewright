@@ -79,6 +79,7 @@ pub mod siteplan;
 pub mod split;
 pub mod state;
 pub mod stealth;
+pub mod textstyle;
 pub mod timed_gate;
 pub mod trap;
 pub mod trigger;

@@ -227,10 +227,13 @@ fn term_json(t: &GateTerm) -> Value {
 /// The bot asserts the **English**, because that is what a run against the default
 /// build puts on the wire (every component carries `fallback`); the key travels
 /// beside it so a localized run can assert the same line by its key instead.
-fn worded(s: &str) -> (Option<&str>, &str) {
+///
+/// The English is the **visible** text (spec-0096): a chat line reads a styled
+/// span as its own text, so the bot's needle carries no markup.
+fn worded(s: &str) -> (Option<&str>, std::borrow::Cow<'_, str>) {
     match delvewright_dsl::l10n::untag(s) {
-        Some((key, english)) => (Some(key), english),
-        None => (None, s),
+        Some((key, english)) => (Some(key), delvewright_dsl::textstyle::visible(english)),
+        None => (None, delvewright_dsl::textstyle::visible(s)),
     }
 }
 
@@ -523,8 +526,22 @@ mod tests {
         let tagged = delvewright_dsl::l10n::tag("lethal.the-drop.message", "The floor gives way.");
         assert_eq!(
             worded(&tagged),
-            (Some("lethal.the-drop.message"), "The floor gives way.")
+            (
+                Some("lethal.the-drop.message"),
+                "The floor gives way.".into()
+            )
         );
-        assert_eq!(worded("untagged"), (None, "untagged"));
+        assert_eq!(worded("untagged"), (None, "untagged".into()));
+        let styled = delvewright_dsl::l10n::tag(
+            "lethal.the-drop.message",
+            "The [[obfuscated|floor]] gives way.",
+        );
+        assert_eq!(
+            worded(&styled),
+            (
+                Some("lethal.the-drop.message"),
+                "The floor gives way.".into()
+            )
+        );
     }
 }

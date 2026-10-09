@@ -293,11 +293,43 @@ pub fn art_font_width(text: &str) -> u32 {
 }
 
 /// The rendered width of `text` in the font `style` renders in, in font pixels.
+///
+/// `text` is a line as authored, so a styled span (spec-0096) is measured as
+/// what it draws: its own text, never its markup, plus [`bold_widening`].
 pub fn width_for(style: NarrateStyle, text: &str) -> u32 {
-    match style {
-        NarrateStyle::Art => art_font_width(text),
-        _ => default_font_width(text),
+    let shown = delvewright_dsl::textstyle::visible(text);
+    let base = match style {
+        NarrateStyle::Art => art_font_width(&shown),
+        _ => default_font_width(&shown),
+    };
+    base + bold_widening(text)
+}
+
+/// The width a line's **bold** spans add: one font pixel per character of every
+/// bold span, spaces included (spec-0096 §3.4). Bold widening a glyph by one
+/// pixel is the Minecraft Wiki's statement, not a measurement of the pinned
+/// client, so every character is counted: the estimate can only be wider than
+/// the truth, which can only turn a width check red, never let an overrun ship.
+/// An obfuscated span adds nothing — each glyph is drawn as a random glyph of
+/// its own width.
+pub fn bold_widening(text: &str) -> u32 {
+    if !delvewright_dsl::textstyle::has_markup(text) {
+        return 0;
     }
+    delvewright_dsl::textstyle::parse(text)
+        .map(|segs| {
+            segs.iter()
+                .map(|g| match g {
+                    delvewright_dsl::textstyle::Segment::Span(st, t)
+                        if st.flags.contains(&"bold") =>
+                    {
+                        t.chars().count() as u32
+                    }
+                    _ => 0,
+                })
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -419,7 +451,8 @@ pub fn check_option_labels(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -
 
 /// The `DW0331` diagnostic for an option `label`, or `None` if it fits its button.
 fn label_over_budget(stage: &str, path: String, text: &str) -> Option<Diagnostic> {
-    let width = default_font_width(text);
+    let width =
+        default_font_width(&delvewright_dsl::textstyle::visible(text)) + bold_widening(text);
     if width <= BUTTON_LABEL_BUDGET {
         return None;
     }
@@ -447,6 +480,36 @@ fn label_over_budget(stage: &str, path: String, text: &str) -> Option<Diagnostic
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A styled label is measured as it draws (spec-0096 §3.4): the markup is
+    /// not drawn, an obfuscated span is exactly as wide as its text, and a bold
+    /// span is one pixel wider per character.
+    #[test]
+    fn a_styled_span_is_measured_as_it_draws() {
+        let plain = "Ask the clerk";
+        let w = default_font_width(plain);
+        assert_eq!(
+            width_for(NarrateStyle::Chat, "Ask the [[obfuscated|clerk]]"),
+            w
+        );
+        assert_eq!(
+            width_for(NarrateStyle::Chat, "Ask the [[bold|clerk]]"),
+            w + "clerk".len() as u32
+        );
+        assert_eq!(
+            width_for(NarrateStyle::Chat, "[[bold,obfuscated|Ask the clerk]]"),
+            w + plain.chars().count() as u32
+        );
+        // A label whose bold span tips it over the button is refused; the same
+        // label unstyled is not.
+        let long = "Ask the clerk for more ink";
+        assert!(default_font_width(long) <= BUTTON_LABEL_BUDGET);
+        let bold = format!("[[bold|{long}]]");
+        let over = default_font_width(long) + long.chars().count() as u32 > BUTTON_LABEL_BUDGET;
+        assert_eq!(label_over_budget("s", "p".into(), &bold).is_some(), over);
+        assert!(label_over_budget("s", "p".into(), long).is_none());
+        assert!(label_over_budget("s", "p".into(), &format!("[[obfuscated|{long}]]")).is_none());
+    }
 
     /// The vanilla ASCII advances the table encodes: the common letter is 6 px, and
     /// the narrow glyphs are genuinely narrower (a character count would call `iii`
