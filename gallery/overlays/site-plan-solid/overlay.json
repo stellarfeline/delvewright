@@ -1,5 +1,6 @@
 {
   "binds": [
+    "Edge::climb",
     "Fill::solid",
     "Fill::solid.block"
   ],

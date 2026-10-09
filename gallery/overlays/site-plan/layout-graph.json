@@ -123,6 +123,11 @@
         "a": "node/undercroft",
         "b": "node/near-hall",
         "class": "climb",
+        "gating": {
+          "flags": [
+            "flag/muster-cleared"
+          ]
+        },
         "id": "edge/undercroft-crawl",
         "one_way": "a-to-b",
         "shortcut": true
@@ -224,6 +229,13 @@
         "intent": "approach",
         "note": "A place that is a ROUTE: eight cells across and twenty-four long, bounded in one axis and free in the other. No rung of the size ladder admits it and no calibration of the ladder could — for a rung to span 8..24 on an axis, an alcove and a hall would be the same thing.",
         "way_class": "road"
+      },
+      {
+        "id": "node/beacon",
+        "intent": "scenery",
+        "note": "A stone beacon on the open ground south-west of the yard, built to be seen from it and never entered: the gallery's scenery place (spec-0098 §14). The checks confirm it both ways — the graph does not reach it and no body gets into it in the built world.",
+        "reached": false,
+        "size_class": "alcove"
       }
     ]
   },

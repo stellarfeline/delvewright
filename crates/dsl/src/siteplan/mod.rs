@@ -431,7 +431,11 @@ pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
     let Some(n) = graph.nodes.iter().find(|n| &n.id == node) else {
         return out; // `DW0842` names a row whose place the graph does not have.
     };
-    out.insert(node_anchor(node));
+    // Scenery (`reached: false`) owes no place to stand: nothing visits it
+    // (spec-0098 §14).
+    if n.reached {
+        out.insert(node_anchor(node));
+    }
     if &graph.entry == node {
         out.insert(ENTRY_ANCHOR.to_string());
     }

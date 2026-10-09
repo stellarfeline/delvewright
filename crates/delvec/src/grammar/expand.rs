@@ -116,6 +116,11 @@ pub struct ExpandOptions {
     /// changes nothing about the expansion — the program already carries the
     /// values — and everything about what the export can honestly record.
     pub overrides: Overrides,
+    /// The place this expansion fills is **scenery** (`reached: false`,
+    /// spec-0098 §14): built to be seen and never entered, so its contract is
+    /// judged sealed — no way in is claimed. Set by `delvec detail` from the
+    /// layout graph, the place's kind, never the piece's own word.
+    pub sealed: bool,
 }
 
 impl ExpandOptions {
@@ -127,6 +132,7 @@ impl ExpandOptions {
             limits: Limits::default(),
             orientation: Orientation::IDENTITY,
             overrides: Overrides::none(),
+            sealed: false,
         }
     }
 
@@ -425,6 +431,8 @@ pub struct Expansion {
     pub stats: Stats,
     /// The orientation-sensitive fills seen, and which were unguarded.
     pub oriented: OrientedFillAudit,
+    /// Carried from [`ExpandOptions::sealed`]: the contract is judged sealed.
+    pub sealed: bool,
 }
 
 /// The scope at a refusal site, in the terms guards read it.
@@ -933,6 +941,7 @@ pub fn expand(
             unguarded: expander.oriented_unguarded.into_iter().collect(),
             undecided: expander.oriented_undecided.into_iter().collect(),
         },
+        sealed: options.sealed,
     })
 }
 

@@ -427,7 +427,15 @@ fn detail_one(
 
     // ---- 3. the expansion, at the frame ----
     let seed = seed_of(node);
-    let opts = ExpandOptions::seeded(seed).with_overrides(overrides);
+    // Scenery (`reached: false`, spec-0098 §14): the place is built to be
+    // seen and never entered, so its piece's contract is judged sealed.
+    let scenery = campaign
+        .layout_graph
+        .as_ref()
+        .and_then(|g| g.content.nodes.iter().find(|n| &n.id == node))
+        .is_some_and(|n| !n.reached);
+    let mut opts = ExpandOptions::seeded(seed).with_overrides(overrides);
+    opts.sealed = scenery;
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];
     let region = Box3::at_origin(size);
     let expansion = match expand(&program, region, &opts) {
@@ -519,7 +527,15 @@ fn detail_one(
         })
         .collect();
     let probe = light::probe_entered(&zone, DEFAULT_DARK_THRESHOLD, sky, &doors);
-    if probe.is_unbound() {
+    // Scenery is lit for nobody: a body never stands in it, so there is no
+    // play light to measure, and an unbound probe over it is the honest answer
+    // rather than a refusal.
+    if probe.is_unbound() && scenery {
+        eprintln!(
+            "{place}: scenery (`reached: false`) — the light probe binds no cell a body stands \
+             in, and none is owed."
+        );
+    } else if probe.is_unbound() {
         eprintln!(
             "{} [error] {place}: the light probe bound to ZERO cells, so nothing was measured: \
              {}. Nothing was written.",
@@ -528,7 +544,9 @@ fn detail_one(
         );
         return Err(1);
     }
-    admit_meta::set_lighting_from_probe(&mut meta, &probe);
+    if !(probe.is_unbound() && scenery) {
+        admit_meta::set_lighting_from_probe(&mut meta, &probe);
+    }
 
     // ---- 6. the bindings check, on the row this run would write ----
     let row = row_for(campaign, node, &id, &meta);

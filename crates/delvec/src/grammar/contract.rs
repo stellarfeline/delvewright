@@ -330,6 +330,8 @@ struct Element {
 /// ones.
 struct Index<'a> {
     contract: &'a SpatialContract,
+    /// The piece's place is scenery: it claims no way in (see [`check_sealed`]).
+    sealed: bool,
     /// Space name → cells.
     space_cells: BTreeMap<&'a str, BTreeSet<[i32; 3]>>,
     /// Out-of-walk region name → cells.
@@ -370,6 +372,7 @@ impl<'a> Index<'a> {
         let all_no_body_cells = no_body_cells.values().flatten().copied().collect();
         Index {
             contract,
+            sealed: false,
             space_cells,
             no_body_cells,
             via_cells,
@@ -497,7 +500,24 @@ pub fn check(
     contract: &SpatialContract,
     anchors: &BTreeMap<String, [i32; 3]>,
 ) -> ContractReport {
-    let ix = Index::new(model, contract);
+    check_sealed(model, contract, anchors, false)
+}
+
+/// [`check`] for a piece whose place is **scenery** (`reached: false`,
+/// spec-0098 §14) when `sealed`: the place is built to be seen and never
+/// entered, so the piece claims no way in — its entry carries no `exterior`
+/// edge of a traversal class, and declaring one is the contradiction this
+/// refuses — and its zero exterior faces are stated, not refused. The kind is
+/// the place's (the layout graph's `reached`), handed by `delvec detail`,
+/// never the piece's own word.
+pub fn check_sealed(
+    model: &VoxelModel,
+    contract: &SpatialContract,
+    anchors: &BTreeMap<String, [i32; 3]>,
+    sealed: bool,
+) -> ContractReport {
+    let mut ix = Index::new(model, contract);
+    ix.sealed = sealed;
     let mut gates = Vec::new();
     let mut findings = Vec::new();
     let mut enumeration = Vec::new();
@@ -549,6 +569,18 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             "`entry` names {:?}, which is not a declared space",
             contract.entry
         ));
+    } else if ix.sealed {
+        if let Some(e) = contract
+            .edges
+            .iter()
+            .find(|e| is_traversal(&e.class) && (e.a == EXTERIOR || e.b == EXTERIOR))
+        {
+            bad.push(format!(
+                "the piece's place is scenery — built to be seen and never entered — and edge \
+                 {}--{}--{} claims a way in from outside",
+                e.a, e.class, e.b
+            ));
+        }
     } else if !contract.edges.iter().any(|e| {
         is_traversal(&e.class)
             && ((e.a == contract.entry && e.b == EXTERIOR)
@@ -2545,7 +2577,11 @@ fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<Str
         id: "contract-exterior-faces",
         state: verdict(silent.is_empty()),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: (ix.sealed && declared == 0).then(|| {
+            "0 exterior edge(s): the place is scenery, built to be seen and never entered, so \
+             the piece claims no way in"
+                .to_string()
+        }),
         bound: declared,
         detail: if !silent.is_empty() {
             silent.join(" · ")

@@ -99,6 +99,23 @@
           "datum": "datum/grade"
         },
         "node": "node/causeway"
+      },
+      {
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          8,
+          44
+        ],
+        "node": "node/beacon"
       }
     ],
     "datums": [

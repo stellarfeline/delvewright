@@ -2067,3 +2067,78 @@ fn a_climb_is_laddered_at_stage_five_and_a_deep_walk_is_refused() {
         .unwrap_or_else(|| panic!("{:?}", d.iter().map(|x| x.code.clone()).collect::<Vec<_>>()));
     assert!(deep.message.contains("`climb`"), "{}", deep.message);
 }
+
+/// **Scenery is confirmed not reached** (spec-0098 §14, a ruling). A place
+/// declared `reached: false` — a crown built to be seen and never entered,
+/// with no connection to anything — stands in the fixture as a closed
+/// stand-in: the plan validates, and the battery proves it NOT reached, with
+/// the scenery counted in its binding. The perturbation: the loft, which the
+/// fixture's stair and drop both lead into, declared scenery — the battery
+/// refuses (`DW0837`), because a body getting into scenery is the design
+/// failing.
+#[test]
+fn scenery_is_proven_not_reached_and_reachable_scenery_is_refused() {
+    let with_crown = |loft_scenery: bool| {
+        let dir = variant(
+            &format!("scenery-{loft_scenery}"),
+            |v| {
+                v["content"]["boxes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "node": "node/crown", "min": [48, 48], "extent": [8, 8],
+                        "floor": {"datum": "datum/grade"}, "ceiling": {"clearance": 3}
+                    }));
+            },
+            None,
+        );
+        common::patch_file(&dir.join("layout-graph.json"), |v| {
+            let nodes = v["content"]["nodes"].as_array_mut().unwrap();
+            nodes.push(serde_json::json!({
+                "id": "node/crown", "intent": "scenery", "size_class": "alcove",
+                "reached": false
+            }));
+            if loft_scenery {
+                for n in nodes.iter_mut() {
+                    if n["id"] == "node/loft" {
+                        n["reached"] = serde_json::json!(false);
+                    }
+                }
+            }
+        });
+        common::campaign_at(&dir)
+    };
+    let c = with_crown(false);
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let errs: Vec<String> = d
+        .iter()
+        .filter(|x| x.severity == delvewright_dsl::Severity::Error)
+        .map(|x| x.code.clone())
+        .collect();
+    assert!(errs.is_empty(), "{errs:?}");
+    let b = battery_of(&c);
+    assert!(
+        !b.findings.iter().any(|(_, x)| x.code == "DW0837"),
+        "{:?}",
+        b.findings
+            .iter()
+            .map(|(_, x)| x.code.clone())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(b.binding.scenery, 1, "{}", b.binding.line());
+
+    let b = battery_of(&with_crown(true));
+    assert!(
+        b.findings.iter().any(|(_, x)| x.code == "DW0837"
+            && x.message.contains("`node/loft`")
+            && x.message.contains("reached: false")),
+        "{:?}",
+        b.findings
+            .iter()
+            .map(|(_, x)| x.code.clone())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(b.binding.scenery, 2, "{}", b.binding.line());
+}

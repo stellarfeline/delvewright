@@ -944,7 +944,15 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
     let second = delvec(&["allocation", ds, "--all"]);
     assert_eq!(first.stdout, second.stdout, "two invocations, one handout");
     let all: Vec<Value> = serde_json::from_slice(&first.stdout).unwrap();
-    assert_eq!(all.len(), 7, "one handout per place");
+    let places = serde_json::from_str::<Value>(
+        &std::fs::read_to_string(dir.join("site-plan.json")).unwrap(),
+    )
+    .unwrap()["content"]["boxes"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert!(places > 0);
+    assert_eq!(all.len(), places, "one handout per place");
     const FIELDS: [&str; 14] = [
         "place",
         "brief",

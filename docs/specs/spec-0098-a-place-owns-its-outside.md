@@ -978,7 +978,7 @@ what a criterion asserts says so in the word *loosening*.
 
 ### Rulings
 
-Three rulings on this spec, applied as stated.
+Four rulings on this spec, applied as stated.
 
 1. **Compatibility is not a loosening.** Nothing owes compatibility to
    anything already built (CLAUDE.md), so a criterion asserting that stage 5 is
@@ -1021,6 +1021,29 @@ Three rulings on this spec, applied as stated.
    declared `open` or `open_top` under the piece's own blocks: without that, a
    pavilion had no kind it could be declared as. Such a space is a covered
    space, taken as declared, with its covered cells stated in the enumeration.
+
+4. **A place may be scenery.** A box built to be seen and never entered —
+   a tree's crown over a treehouse — is a layout node declaring
+   `reached: false`, named from the closure's own word for a place a body
+   gets to. A check confirms the declared intent both ways: a reached node's
+   floor must be reached (`DW0816` over the graph, `DW0837` over the built
+   world, as before), and a node declared not reached must NOT be — the
+   closure reaching it is `DW0816`, and a body reaching a cell of its play
+   space in the built world is `DW0837`, because a body getting into scenery
+   is the design failing. Scenery still owns its outside (§2), still
+   stitches its ground ring (`DW0990`), and is still detailed — a stand-in
+   never ships. It is exempt from exactly what a place owes because a body
+   visits it: the node anchor (`anchor/node-<x>`, the place a body stands —
+   nothing stands there), the light a body plays by (the light probe of
+   `delvec detail` binds no cell a body stands in, and none is owed), and the
+   way in its piece would otherwise claim (the contract is judged sealed: no
+   exterior traversal edge, declaring one refused, zero faces stated). The
+   kind is the place's, read from the layout graph, never the piece's own
+   word. The gallery's open site-plan point binds it with a sealed stone
+   beacon south-west of the yard; the probe `scenery-the-graph-reaches`
+   declares the loft scenery while the far hall's stair leads into it.
+   Shown in `blockout.rs`
+   `scenery_is_proven_not_reached_and_reachable_scenery_is_refused`.
 
 ### Corrections
 

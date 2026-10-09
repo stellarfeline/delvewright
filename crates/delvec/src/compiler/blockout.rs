@@ -1736,6 +1736,8 @@ pub struct BatteryBinding {
     pub stairwell_cells: usize,
     /// Places proven reached — `DW0837`.
     pub nodes: usize,
+    /// Of those, scenery (`reached: false`) proven NOT reached — `DW0837`.
+    pub scenery: usize,
     /// Standable cells classified by owner — `DW0838`.
     pub standable: usize,
     /// Unordered place pairs tested for an unallocated crossing — `DW0838`.
@@ -1778,7 +1780,7 @@ impl BatteryBinding {
              {ct} contact(s), {cc} crossable column(s) measured; {pt} portal(s) measured \
              over {pc} standable opening cell(s), {ps} left to `DW0836` as solid; {sw} \
              unallocated open cell(s) admitted as a stair's stairwell), {n} place(s) \
-             proven reached, {c} standable cell(s) classified over {p} place pair(s), \
+             proven reached ({sc} of them scenery, proven not reached), {c} standable cell(s) classified over {p} place pair(s), \
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
              {l} critical-path leg(s) measured; {fx} fixed ring ground cell(s) handed, {bc} \
              plot-edge column(s) examined, {ck} crack(s) (DW0990); {uc} standable cell(s) \
@@ -1803,6 +1805,7 @@ impl BatteryBinding {
             w = self.walls,
             sw = self.stairwell_cells,
             n = self.nodes,
+            sc = self.scenery,
             c = self.standable,
             p = self.pairs,
             sl = self.sightlines,
@@ -2739,8 +2742,45 @@ fn nodes_reached(
         }
     }
 
+    // Scenery (`reached: false`, spec-0098 §14): the declared intent is
+    // confirmed the other way — a body getting into it is the design failing.
+    let scenery: BTreeSet<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| !n.reached)
+        .map(|n| n.id.0.as_str())
+        .collect();
     for x in &b.boxes {
         binding.nodes += 1;
+        if scenery.contains(x.node.0.as_str()) {
+            binding.scenery += 1;
+            if !stands_in(x, &b.boxes, world, &reached) {
+                continue;
+            }
+            let (lo, hi) = x.space();
+            let witness = cells_of(lo, hi)
+                .map(narrow)
+                .find(|c| reached.contains(c))
+                .map_or_else(|| "a cell of it".to_string(), |c| format!("{c:?}"));
+            raise(
+                d,
+                DW_NODE_UNREACHED,
+                Diagnostic::error(
+                    DW_NODE_UNREACHED,
+                    "site-plan",
+                    format!("/content/boxes[{}]", x.node),
+                    format!(
+                        "`{node}` is declared `reached: false` — scenery, built to be seen and \
+                         never entered — and a body reaches {witness} inside it in the built \
+                         world, from the campaign's entry over the step rule. Close the way in \
+                         (the place's own walls, or the edge of whatever a body walks from), \
+                         or take `reached: false` off and make it a place a body visits.",
+                        node = x.node,
+                    ),
+                ),
+            );
+            continue;
+        }
         if stands_in(x, &b.boxes, world, &reached) {
             continue;
         }

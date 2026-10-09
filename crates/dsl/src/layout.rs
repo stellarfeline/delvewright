@@ -268,6 +268,22 @@ pub struct Node {
     /// cannot fail to exist in the built world.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stations: Vec<Station>,
+    /// **Whether a body reaches this place** (spec-0098 §14, a ruling).
+    /// `false` declares the place scenery — a box built to be seen and never
+    /// entered, a tree's crown over a treehouse — and the checks confirm that
+    /// intent both ways: the closure must not reach it (`DW0816`) and no body
+    /// may get into it in the built world (`DW0837`), exactly as a reached
+    /// place must be reached. Absent means reached.
+    #[serde(default = "reached_default", skip_serializing_if = "is_true")]
+    pub reached: bool,
+}
+
+fn reached_default() -> bool {
+    true
+}
+
+fn is_true(b: &bool) -> bool {
+    *b
 }
 
 /// **A named place inside a node** (spec-0052 §3).
@@ -1860,7 +1876,28 @@ fn unwritten_mission_caveat(c: &Campaign, graph: &LayoutGraphContent) -> &'stati
 /// `DW0816`: a node the closure never reaches.
 fn unreached(graph: &LayoutGraphContent, closure: &Closure, caveat: &str, d: &mut Vec<Diagnostic>) {
     for (i, n) in graph.nodes.iter().enumerate() {
-        if closure.reached.contains(n.id.0.as_str()) {
+        let reached = closure.reached.contains(n.id.0.as_str());
+        // Scenery (`reached: false`): the intent is confirmed the other way.
+        if !n.reached {
+            if reached {
+                d.push(Diagnostic::error(
+                    DW_NODE_UNREACHED,
+                    "layout-graph",
+                    format!("/content/nodes/{i}/reached"),
+                    format!(
+                        "place `{id}` is declared `reached: false` — scenery, built to be seen \
+                         and never entered — and the closure reaches it from `{entry}`: a \
+                         connection leads a body into it. Remove the connections that reach \
+                         it (a vision edge is how a place is seen), or take `reached: false` \
+                         off and make it a place a body visits.{caveat}",
+                        id = n.id,
+                        entry = graph.entry,
+                    ),
+                ));
+            }
+            continue;
+        }
+        if reached {
             continue;
         }
         let near = graph
