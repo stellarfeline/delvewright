@@ -11,12 +11,22 @@
         "a": "room",
         "b": "lookout",
         "class": "climb",
-        "rise": 4,
+        "rise": 2,
         "via": "lookout-ladder"
+      },
+      {
+        "a": "lookout",
+        "b": "crow",
+        "class": "climb",
+        "rise": 2,
+        "via": "crow-ladder"
       }
     ],
     "entry": "room",
     "spaces": {
+      "crow": {
+        "envelope": "open"
+      },
       "lookout": {
         "envelope": "open"
       },
@@ -43,6 +53,92 @@
           },
           "op": "claim",
           "region": "causeway-front"
+        },
+        "weight": 1
+      }
+    ],
+    "crow-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "crow"
+        },
+        "weight": 1
+      }
+    ],
+    "crow-ladder": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "ladder"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "crow-ladder"
+        },
+        "weight": 1
+      }
+    ],
+    "crow-ladder-foot": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "ladder"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "lookout"
+        },
+        "weight": 1
+      }
+    ],
+    "crow-ladder-top": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "crow-ladder"
+        },
+        "weight": 1
+      }
+    ],
+    "crow-nest": [
+      {
+        "body": {
+          "body": {
+            "body": {
+              "op": "void"
+            },
+            "op": "claim",
+            "region": "crow"
+          },
+          "mark": {
+            "anchor": "causeway-crow",
+            "at": "offset",
+            "facing": "north",
+            "x": {
+              "expr": "int",
+              "value": 0
+            },
+            "y": {
+              "expr": "int",
+              "value": 0
+            },
+            "z": {
+              "expr": "int",
+              "value": 0
+            }
+          },
+          "op": "mark"
         },
         "weight": 1
       }
@@ -130,7 +226,7 @@
             {
               "blocks": {
                 "expr": "int",
-                "value": 4
+                "value": 2
               },
               "size": "absolute"
             },
@@ -364,7 +460,7 @@
                           {
                             "blocks": {
                               "expr": "int",
-                              "value": 11
+                              "value": 14
                             },
                             "size": "absolute"
                           },
@@ -378,7 +474,7 @@
                           {
                             "blocks": {
                               "expr": "int",
-                              "value": 11
+                              "value": 8
                             },
                             "size": "absolute"
                           },
@@ -418,15 +514,198 @@
                         "symbol": "room-air"
                       },
                       {
-                        "axis": "y",
+                        "axis": "x",
                         "children": [
                           {
-                            "op": "call",
-                            "symbol": "wall"
+                            "axis": "z",
+                            "children": [
+                              {
+                                "axis": "y",
+                                "children": [
+                                  {
+                                    "op": "call",
+                                    "symbol": "wall"
+                                  },
+                                  {
+                                    "op": "call",
+                                    "symbol": "crow-nest"
+                                  }
+                                ],
+                                "op": "split",
+                                "sizes": [
+                                  {
+                                    "blocks": {
+                                      "expr": "int",
+                                      "value": 4
+                                    },
+                                    "size": "absolute"
+                                  },
+                                  {
+                                    "size": "relative",
+                                    "weight": {
+                                      "expr": "int",
+                                      "value": 1
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "axis": "y",
+                                "children": [
+                                  {
+                                    "op": "call",
+                                    "symbol": "wall"
+                                  },
+                                  {
+                                    "op": "call",
+                                    "symbol": "lookout-air"
+                                  },
+                                  {
+                                    "op": "void"
+                                  }
+                                ],
+                                "op": "split",
+                                "sizes": [
+                                  {
+                                    "blocks": {
+                                      "expr": "int",
+                                      "value": 2
+                                    },
+                                    "size": "absolute"
+                                  },
+                                  {
+                                    "blocks": {
+                                      "expr": "int",
+                                      "value": 2
+                                    },
+                                    "size": "absolute"
+                                  },
+                                  {
+                                    "size": "relative",
+                                    "weight": {
+                                      "expr": "int",
+                                      "value": 1
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "axis": "y",
+                                "children": [
+                                  {
+                                    "op": "call",
+                                    "symbol": "wall"
+                                  },
+                                  {
+                                    "op": "call",
+                                    "symbol": "crow-ladder-foot"
+                                  },
+                                  {
+                                    "op": "call",
+                                    "symbol": "crow-ladder"
+                                  },
+                                  {
+                                    "op": "call",
+                                    "symbol": "crow-ladder-top"
+                                  },
+                                  {
+                                    "op": "void"
+                                  }
+                                ],
+                                "op": "split",
+                                "sizes": [
+                                  {
+                                    "blocks": {
+                                      "expr": "int",
+                                      "value": 2
+                                    },
+                                    "size": "absolute"
+                                  },
+                                  {
+                                    "blocks": {
+                                      "expr": "int",
+                                      "value": 1
+                                    },
+                                    "size": "absolute"
+                                  },
+                                  {
+                                    "blocks": {
+                                      "expr": "int",
+                                      "value": 1
+                                    },
+                                    "size": "absolute"
+                                  },
+                                  {
+                                    "blocks": {
+                                      "expr": "int",
+                                      "value": 1
+                                    },
+                                    "size": "absolute"
+                                  },
+                                  {
+                                    "size": "relative",
+                                    "weight": {
+                                      "expr": "int",
+                                      "value": 1
+                                    }
+                                  }
+                                ]
+                              }
+                            ],
+                            "op": "split",
+                            "sizes": [
+                              {
+                                "blocks": {
+                                  "expr": "int",
+                                  "value": 3
+                                },
+                                "size": "absolute"
+                              },
+                              {
+                                "blocks": {
+                                  "expr": "int",
+                                  "value": 2
+                                },
+                                "size": "absolute"
+                              },
+                              {
+                                "size": "relative",
+                                "weight": {
+                                  "expr": "int",
+                                  "value": 1
+                                }
+                              }
+                            ]
                           },
                           {
-                            "op": "call",
-                            "symbol": "lookout-air"
+                            "axis": "y",
+                            "children": [
+                              {
+                                "op": "call",
+                                "symbol": "wall"
+                              },
+                              {
+                                "op": "call",
+                                "symbol": "crow-air"
+                              }
+                            ],
+                            "op": "split",
+                            "sizes": [
+                              {
+                                "blocks": {
+                                  "expr": "int",
+                                  "value": 4
+                                },
+                                "size": "absolute"
+                              },
+                              {
+                                "size": "relative",
+                                "weight": {
+                                  "expr": "int",
+                                  "value": 1
+                                }
+                              }
+                            ]
                           }
                         ],
                         "op": "split",
@@ -434,7 +713,7 @@
                           {
                             "blocks": {
                               "expr": "int",
-                              "value": 4
+                              "value": 1
                             },
                             "size": "absolute"
                           },

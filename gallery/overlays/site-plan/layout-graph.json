@@ -31,6 +31,11 @@
         "node": "node/near-hall",
         "objective": "obj/read-the-label",
         "quest": "quest/near-hall"
+      },
+      {
+        "node": "node/causeway",
+        "objective": "obj/climb-the-crow",
+        "quest": "quest/far-hall"
       }
     ],
     "critical_path": [
@@ -39,6 +44,8 @@
       "node/near-hall",
       "node/far-hall",
       "node/loft",
+      "node/far-hall",
+      "node/causeway",
       "node/far-hall",
       "node/exit"
     ],
@@ -233,7 +240,14 @@
       {
         "id": "node/causeway",
         "intent": "approach",
-        "note": "A place that is a ROUTE: eight cells across and twenty-four long; a box is the author's declaration of its own size."
+        "note": "A place that is a ROUTE: eight cells across and twenty-four long; a box is the author's declaration of its own size.",
+        "stations": [
+          {
+            "anchor": "anchor/causeway-crow",
+            "kind": "point",
+            "note": "The crow's nest on the causeway's stand, reached up two ladders stacked one on the other: the first tops out on the foot of the second, so a climber lets go of one and takes hold of the next from the same cell."
+          }
+        ]
       },
       {
         "id": "node/beacon",

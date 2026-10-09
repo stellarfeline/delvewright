@@ -358,6 +358,7 @@ impl World {
                 continue;
             }
             let mut start = i;
+            let mut split_start = false;
             while i + 1 < cells.len() && is_climb_step(cells[i], cells[i + 1]) {
                 i += 1;
                 // A standable cell inside the stretch, reached after the body
@@ -369,25 +370,45 @@ impl World {
                     && held_before
                     && self.standable_fp(cells[i], &fp)
                 {
-                    out.push(self.climb_run(&cells[start..=i], false, &fp));
+                    out.push(self.climb_run(&cells[start..=i], split_start, true, &fp));
                     start = i;
+                    split_start = true;
                 }
             }
-            out.push(self.climb_run(&cells[start..=i], true, &fp));
+            out.push(self.climb_run(&cells[start..=i], split_start, false, &fp));
         }
         out
     }
 
     /// One [`ClimbRun`] over the route stretch `span`, from its first cell to
-    /// its last. `holds_last` is false when the last cell is a standable cell
-    /// the body lets go onto to take hold of the next climb: it is that climb's
-    /// cell, not this one's.
-    fn climb_run(&self, span: &[[i32; 3]], holds_last: bool, fp: &Footprint) -> ClimbRun {
+    /// its last. `split_start` / `split_end` say the first / last cell is a
+    /// standable cell where one climb lets go and the next takes hold. Such a
+    /// cell — the foot of a ladder, a climbable a body stands in — is held by
+    /// the climb whose column it is in and by no other: going up a stack it is
+    /// the next climb's foot, going down it is where the climb above slides to.
+    fn climb_run(
+        &self,
+        span: &[[i32; 3]],
+        split_start: bool,
+        split_end: bool,
+        fp: &Footprint,
+    ) -> ClimbRun {
         let last = span.len() - 1;
+        let boundary = |k: usize| (split_start && k == 0) || (split_end && k == last);
+        let inner: Vec<[i32; 3]> = span
+            .iter()
+            .enumerate()
+            .filter(|&(k, c)| !boundary(k) && self.climb_cell_fp(*c, fp))
+            .map(|(_, c)| *c)
+            .collect();
+        let column = inner.first().map(|c| (c[0], c[2]));
         let held: Vec<[i32; 3]> = span
             .iter()
             .enumerate()
-            .filter(|&(k, c)| (holds_last || k != last) && self.climb_cell_fp(*c, fp))
+            .filter(|&(k, c)| {
+                self.climb_cell_fp(*c, fp)
+                    && (!boundary(k) || column.is_none_or(|col| col == (c[0], c[2])))
+            })
             .map(|(_, c)| *c)
             .collect();
         let first = held.first().copied().unwrap_or(span[0]);
@@ -652,5 +673,21 @@ mod tests {
         assert_eq!(runs[1].from, shared);
         assert_eq!(runs[1].cells.first(), Some(&shared));
         assert_eq!(runs[1].cells.last(), Some(&[3, 72, 1]));
+
+        // Down the same stack: the shared cell is where the upper ladder
+        // slides to — its column — and the lower climb takes hold from it.
+        let down = w
+            .find_path([5, 73, 1], [0, 65, 1])
+            .expect("the stack routes down");
+        let runs = w.climb_runs(&down);
+        assert_eq!(runs.len(), 2, "{down:?} -> {runs:?}");
+        for r in &runs {
+            let cols: BTreeSet<(i32, i32)> = r.cells.iter().map(|c| (c[0], c[2])).collect();
+            assert_eq!(cols.len(), 1, "one column per climb: {r:?}");
+        }
+        assert_eq!(runs[0].to, shared);
+        assert_eq!(runs[0].cells.last(), Some(&shared));
+        assert_eq!(runs[1].from, shared);
+        assert!(!runs[1].cells.contains(&shared));
     }
 }

@@ -2744,8 +2744,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the body takes hold, where it lets go (both kept waypoints), the lowest and
   highest cell it holds in, the block, and a ladder's facing. The cells held
   between `from` and `to` are not waypoints (a waypoint is a place to stand), so
-  a climb is one hop, and the harness drives it. Omitted for a leg that climbs
-  nothing. **Validation metadata, not shipped gameplay** —
+  a climb is one hop, and the harness drives it. **A climb is one column**: a
+  body changes column only by letting go onto a standable cell, so where one
+  ladder tops out onto the foot of the next the route is two climbs, the first
+  letting go at that cell and the second taking hold from it, and the cell is
+  held by the climb whose column it is in (`World::climb_runs`; the gallery's
+  causeway stacks two ladders this way on its critical path). Omitted for a leg
+  that climbs nothing. **Validation metadata, not shipped gameplay** —
   excluded from the delve image (like `packtest-datapack/`); emitted only when a
   walked critical leg exists, so a fully-transported campaign stays
   byte-identical.

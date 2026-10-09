@@ -20,6 +20,7 @@
       },
       {
         "anchors": {
+          "anchor/causeway-crow": "anchor/causeway-crow",
           "anchor/node-causeway": "anchor/node-causeway"
         },
         "piece": "prefab/gallery-causeway",
