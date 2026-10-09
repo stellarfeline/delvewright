@@ -1,0 +1,13 @@
+{
+  "code": "DW0978",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/textures/1/id",
+      "value": "drowned-player-layout"
+    }
+  ],
+  "units": [],
+  "why": "This edit points the `drowned-wrap` row at `textures/drowned-player-layout.png`, which the gallery generator paints on the player model's jacket, sleeve and pants positions. The drowned's outer layer is a grown copy of the base model and samples the BASE positions, so every one of those pixels lands on no box it builds and draws nothing: the sheet The Stranding first shipped. The refusal names the models whose boxes the paint does fit."
+}

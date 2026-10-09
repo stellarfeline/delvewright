@@ -216,7 +216,6 @@ pub(crate) fn actor_checks(
     let providers = AnchorProviders::build(c, anchors);
 
     // Actor declarations: entity id, skin, spawn anchor.
-    let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
     for (i, a) in quests.actors.iter().enumerate() {
         if !entities.contains(&a.entity) {
             d.push(Diagnostic::error(
@@ -230,30 +229,19 @@ pub(crate) fn actor_checks(
                 ),
             ));
         }
-        if let Some(skin) = &a.skin {
-            if !is_kebab(&skin.texture_id) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "quests",
-                    format!("/content/actors/{i}/skin/texture_id"),
-                    format!(
-                        "actor skin `texture_id` `{}` is malformed — it must be a bare kebab token \
-                         (e.g. `giant-idle`), matching the `skins/<texture_id>.png` filename",
-                        skin.texture_id
-                    ),
-                ));
-            } else if !seen_skins.insert(skin.texture_id.as_str()) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "quests",
-                    format!("/content/actors/{i}/skin/texture_id"),
-                    format!(
-                        "duplicate actor skin `texture_id` `{}` — each mannequin needs a distinct \
-                         texture; rename one (and its `skins/<id>.png`)",
-                        skin.texture_id
-                    ),
-                ));
-            }
+        if let Some(skin) = &a.skin
+            && !is_kebab(&skin.texture_id)
+        {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "quests",
+                format!("/content/actors/{i}/skin/texture_id"),
+                format!(
+                    "actor skin `texture_id` `{}` is malformed — it must be a bare kebab token \
+                     (e.g. `giant-idle`), matching the `skins/<texture_id>.png` filename",
+                    skin.texture_id
+                ),
+            ));
         }
         if let Some(f) = station_kind_diag(
             &providers,

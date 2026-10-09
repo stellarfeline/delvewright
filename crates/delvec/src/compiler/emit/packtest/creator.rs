@@ -17,7 +17,7 @@ pub(super) fn emit_creator_packtests(plan: &Plan, out: &mut BuildOutput) {
             [min[0], min[2]]
         })
         .unwrap_or([0, 0]);
-    for (path, body) in crate::compiler::creator::packtests(ns, artifact_title(c), column) {
+    for (path, body) in crate::compiler::creator::packtests(ns, &artifact_title(c), column) {
         out.insert(path, body.into_bytes());
     }
 }

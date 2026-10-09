@@ -104,6 +104,11 @@ pub struct LoadedCampaign {
     /// `textures/<id>.png.mcmeta`) → raw bytes. Empty when the campaign ships no
     /// `textures/` directory. Every one is also a manifest input.
     pub textures: BTreeMap<String, Vec<u8>>,
+    /// The mannequin skins under `skins/`: authored `texture_id` (the filename
+    /// stem) → raw bytes, so validation can hold each to the model it is worn on
+    /// (spec-0097). Not a manifest input here: the build bakes the skins its
+    /// bodies name and hashes them as outputs. Empty without a `skins/` directory.
+    pub skins: BTreeMap<String, Vec<u8>>,
     /// The approved reference images under `design/` (spec-0061). Read here
     /// because it is the one place that knows where the campaign directory is,
     /// and because the design gate holds the record and the directory to each
@@ -349,7 +354,33 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
         inputs,
         l10n,
         textures,
+        skins: load_skins_dir(dir)?,
     })
+}
+
+/// Read every `<id>.png` in a campaign's `skins/` directory → `id` → raw bytes.
+/// Empty when the directory does not exist. Sorted (ADR-0006).
+fn load_skins_dir(dir: &Path) -> std::io::Result<BTreeMap<String, Vec<u8>>> {
+    let root = dir.join("skins");
+    let mut out = BTreeMap::new();
+    if !root.is_dir() {
+        return Ok(out);
+    }
+    for entry in std::fs::read_dir(&root).map_err(|e| named("skins", e))? {
+        let path = entry.map_err(|e| named("skins", e))?.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some(stem) = name.strip_suffix(".png") else {
+            continue;
+        };
+        if !path.is_file() {
+            continue;
+        }
+        let bytes = std::fs::read(&path).map_err(|e| named(format!("skins/{name}"), e))?;
+        out.insert(stem.to_string(), bytes);
+    }
+    Ok(out)
 }
 
 /// Read every `<name>.png` and `<name>.png.mcmeta` in a campaign's `textures/`

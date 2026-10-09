@@ -931,7 +931,7 @@ pub fn render_plan(
             .iter()
             .find(|n| n.id.as_str() == npc.npc_id)
             .map(|n| delvewright_dsl::l10n::plain(&n.name))
-            .unwrap_or("NPC");
+            .unwrap_or(std::borrow::Cow::Borrowed("NPC"));
         let Some(ResolvedAnchor::Point { pos, facing }) =
             plan.anchors.get(&(area.clone(), anchor.to_string()))
         else {

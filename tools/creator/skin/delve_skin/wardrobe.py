@@ -18,15 +18,15 @@ names no wardrobe at all composes exactly the bytes it composed before.
 The skin is 64x64 and the model's geometry is fixed, so some costume ideas have
 nowhere to go and are refused rather than approximated:
 
-* **Nothing stands proud of the body.** The base layer is a paint job on six
-  boxes. A coat that hangs open, a hat with a brim, a hood, a cloak, a beard
-  that juts and hair with any volume at all need the *overlay* layer (or model
-  geometry) and cannot be painted here. `delve_skin` authors the base layer
-  only. **Hair in particular is paint on the skull**: a bun, a braid, a
-  ponytail, a fringe that falls and a silhouette that is not a cube do not
-  exist, and long hair is hair-coloured paint down the sides of the head and
-  across the top of the torso back -- which reads at playing distance and is not
-  the same thing as hair.
+* **Nothing stands proud of the body by more than the overlay shell.** Each
+  part has a second box over it, the overlay, grown by half a pixel a side on
+  the head and a quarter on the body and limbs (spec-0097). The composer paints
+  a beard, hair, a hood and a high collar onto that shell, so they stand off the
+  base by exactly that much. The shell can be left transparent where it is not
+  wanted, but it cannot grow: a hat with a brim, a coat that hangs open, a
+  cloak, a beard that juts, a bun, a braid or a ponytail have no geometry and
+  cannot be drawn. Hair is a lip of paint half a pixel off the skull, not a
+  silhouette.
 * **A limb is 4 px around.** A lapel, a cuff, a buckle or a seam narrower than
   one pixel does not exist; a belt is 2 px tall on a 12 px torso and that is the
   finest horizontal band there is.
@@ -100,8 +100,21 @@ SHOULDER_HAIR: Tuple[int, int] = (9, 11)
 
 #: Whether the torso garment is open at the throat. ``open`` leaves the V of
 #: bare skin at the collar that a tunic or an open shirt has; ``closed`` takes
-#: it away, which is what a weatherproof jacket or a high collar needs.
-COLLAR = ("open", "closed")
+#: it away, which is what a weatherproof jacket needs; ``high`` is ``closed``
+#: plus a collar ring on the torso's overlay shell, standing off the neck.
+COLLAR = ("open", "closed", "high")
+
+#: A hood. ``up`` covers the head's overlay shell but for the face, and falls
+#: onto the top and the upper back of the torso's shell; it replaces the hair's
+#: shell, and the hair painted on the skull still shows round the face.
+HOOD = ("none", "up")
+
+#: A coat on the overlay shell, over whatever the base garment is. ``coat`` is
+#: the torso's shell all round, open down the front, and the sleeves' shells
+#: over the sleeve's span; ``long_coat`` also hangs over the thighs on the
+#: pants' shells. On a model whose torso shell is a robe that hangs past the
+#: hips (a villager's), the coat is that robe.
+OVERCOAT = ("none", "coat", "long_coat")
 
 #: What is going grey. ``features.greying`` is the older spelling of ``beard``;
 #: a sheet carrying both is refused -- see ``Wardrobe.from_dict``.
@@ -114,6 +127,8 @@ _AXES: Dict[str, Tuple[str, ...]] = {
     "hair": tuple(HAIR),
     "facial_hair": FACIAL_HAIR,
     "collar": COLLAR,
+    "hood": HOOD,
+    "overcoat": OVERCOAT,
     "greying": GREYING,
 }
 
@@ -128,6 +143,8 @@ class Wardrobe:
     hair: str = "short"
     facial_hair: str = "beard"
     collar: str = "open"
+    hood: str = "none"
+    overcoat: str = "none"
     greying: str = "none"
 
     @staticmethod
@@ -196,6 +213,28 @@ class Wardrobe:
     def hair_reaches_the_shoulders(self) -> bool:
         return self.hair == "long"
 
+    def hooded(self) -> bool:
+        return self.hood == "up"
+
+    def collar_ring(self) -> bool:
+        return self.collar == "high"
+
+    def needs_shells(self) -> list[tuple[str, str]]:
+        """The declared features that exist only on an overlay shell, with the
+        composer part whose shell each one needs."""
+        out = []
+        if self.collar_ring():
+            out.append(("collar: high", "torso"))
+        if self.hooded():
+            out.append(("hood: up", "head"))
+        if self.overcoat != "none":
+            out.append((f"overcoat: {self.overcoat}", "torso"))
+        return out
+
+    def coat_sleeve_default(self) -> Tuple[int, int]:
+        """The span a coat's sleeve covers over a bare arm: a short sleeve's."""
+        return SLEEVES["short"]
+
     def greys_hair(self) -> bool:
         return self.greying in ("hair", "both")
 
@@ -221,5 +260,7 @@ class Wardrobe:
             "hair": self.hair,
             "facial_hair": self.facial_hair,
             "collar": self.collar,
+            "hood": self.hood,
+            "overcoat": self.overcoat,
             "greying": self.greying,
         }

@@ -90,6 +90,9 @@ pub fn validate_campaign_with(
     // spec-0034: the per-body traversal declaration. The walk is empty for a
     // campaign that declares none.
     crate::body::body_traversal_checks(c, &mut d);
+    // spec-0097: which overlay layers a skinned body hides. Empty for a campaign
+    // that hides none.
+    crate::npc::skin_layer_checks(c, &mut d);
     crate::world::prefab_binding(c, anchors, &mut d);
     // Anchors and items: an NPC's station, a quest's objective and effect
     // anchors (resolved against its planned area), a trigger's effect anchors

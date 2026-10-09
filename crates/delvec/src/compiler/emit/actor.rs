@@ -78,12 +78,13 @@ pub(super) fn actor_puppet_summon(
             .as_deref()
             .unwrap_or_else(|| a.id.as_str().rsplit('/').next().unwrap_or("actor"));
         format!(
-            "summon {body} {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:{inv}b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}{attrs}{equip}}}",
+            "summon {body} {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}}{},immovable:1b,pose:\"standing\",Invulnerable:{inv}b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}{attrs}{equip}}}",
             p[0],
             p[1],
             p[2],
             skin.texture_id,
             skin.model.token(),
+            mannequin_hidden_layers_nbt(skin),
             snbt_text_component(desc)
         )
     } else {

@@ -11,7 +11,7 @@ The order inside `quests.json` matters: **write the `cast` block first, before
 the objectives.** Every quest declares, for every NPC live in it,
 `{at, doing, dialogue}` — position first, story second.
 
-Then `dialogue.json`. Two rules that are not style preferences:
+Then `dialogue.json`. Three rules that are not style preferences:
 
 - **A dialogue option is a button caption, not a sentence.** Vanilla draws each
   option on a fixed 150-GUI-px button and *scrolls* a label that does not fit.
@@ -20,6 +20,10 @@ Then `dialogue.json`. Two rules that are not style preferences:
   wraps, in the option's `tooltip`, or in the NPC's reply — never in the button.
 - **Re-derive every node's option list from that node's situation.** Never carry
   an option list forward from an earlier node.
+- **A question gets an answer.** An option whose label or tooltip ends in `?`
+  leads (`next`) to a node in which the speaker answers it plainly; an option
+  with no `next` closes the dialog, so a question there is asked into silence.
+  Its `complete-objective` still fires when it is chosen.
 
 Loop `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` until clean after each.
 **This is the step where clean is reachable**, and it is where the codes step 3

@@ -1,0 +1,25 @@
+{
+  "code": "DW0982",
+  "patch": [
+    {
+      "doc": "dialogue.json",
+      "op": "replace",
+      "path": "/content/dialogues/0/nodes/0/options/0/label",
+      "value": "Who is the Sergeant?"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/content/dlg.curator.curator-root.opt.0.label",
+      "value": "军士是谁？"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/source/dlg.curator.curator-root.opt.0.label",
+      "value": "Who is the Sergeant?"
+    }
+  ],
+  "units": [],
+  "why": "The Curator's first option, which asks what the hall is, made to ask about `the Sergeant` instead - the far hall's actor, whose name exists only as the nameplate over its body, in a quest that has not begun when the Curator first speaks. Before the first step of every walk the player's own words name a body they have never seen and nothing has said what it is: the playtest shape, where an option spoke of `the watch` the party had only fought under a nameplate. The option still leads to the Curator's answer node, so the question is answered and only the name is new. It declares no unit: what must not compile is a name in the player's mouth that the play order has not told them."
+}

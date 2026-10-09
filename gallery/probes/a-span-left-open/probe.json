@@ -1,0 +1,19 @@
+{
+  "code": "DW0975",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/cast/npc~1factor/dialogue/barks/2",
+      "value": "The ledger is kept by [[obfuscated|someone else at night."
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/source/cast.near-hall.factor.0.bark.2",
+      "value": "The ledger is kept by [[obfuscated|someone else at night."
+    }
+  ],
+  "units": [],
+  "why": "The counter's third bark with its obfuscated span opened and never closed. A span is `[[<styles>|<text>]]`, and an unclosed one would otherwise reach the player as raw brackets and the rest of the line as the span's text; the engine refuses it at the document, naming the line and the character the span opens at. It declares no unit: the markup lives inside a string the schema already declares, and what the engine refuses here is markup that does not parse."
+}

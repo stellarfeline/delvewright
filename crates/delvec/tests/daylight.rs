@@ -220,7 +220,6 @@ fn a_helmet_clears_dw0496() {
             serde_json::json!([{
                 "entity": "minecraft:zombie",
                 "count": 2,
-                "name": "Hollow Footman",
                 "equipment": { "head": "minecraft:leather_helmet" }
             }]),
         );
@@ -373,7 +372,7 @@ fn a_husk_is_silent() {
         set_mobs(
             quests,
             serde_json::json!([
-                { "entity": "minecraft:husk", "count": 2, "name": "Sand-Choked Footman" }
+                { "entity": "minecraft:husk", "count": 2 }
             ]),
         );
     });
@@ -405,7 +404,7 @@ fn an_unhelmeted_skeleton_is_dw0496() {
         set_mobs(
             quests,
             serde_json::json!([
-                { "entity": "minecraft:skeleton", "count": 2, "name": "Hollow Archer" }
+                { "entity": "minecraft:skeleton", "count": 2 }
             ]),
         );
     });
