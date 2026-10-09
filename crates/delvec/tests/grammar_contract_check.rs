@@ -1781,3 +1781,47 @@ fn an_anchor_in_a_way_region_resolves_to_the_way() {
     assert!(g.passed(), "{}", g.detail);
     assert!(g.detail.contains("1 in a way"), "{}", g.detail);
 }
+
+/// **An all-open piece states its zero instead of being refused** (spec-0098
+/// §6b, criterion 15). A street: a floor and nothing around it, one `open`
+/// space. `contract-closure` examines nothing — there is no envelope to close —
+/// and says so in the enumeration at a passing verdict; one `enclosed` space in
+/// the same contract, unclosed, still reds. Vacuous if the piece had an
+/// enclosing space: the contract's envelope set is asserted to be `{open}`.
+#[test]
+fn an_all_open_piece_states_its_zero_and_passes() {
+    let mut street = Build::new([14, 5, 8]);
+    street.stone([0, 0, 0], [13, 0, 7]);
+    let mut c = contract("street");
+    c.spaces.insert(
+        "street".to_string(),
+        space("open", vec![region([1, 1, 1], [12, 3, 6])]),
+    );
+    let envelopes: BTreeSet<&str> = c.spaces.values().map(|s| s.envelope.as_str()).collect();
+    assert_eq!(envelopes, ["open"].into_iter().collect());
+    let report = check(&street.model, &c, &no_anchors());
+    assert!(
+        !report
+            .gates
+            .iter()
+            .any(|g| g.id == "contract-closure" && !g.passed()),
+        "{:#?}",
+        report.gates
+    );
+    assert!(
+        report
+            .enumeration
+            .iter()
+            .any(|e| e.contains("contract-closure")
+                && e.contains(
+                    "0 of 1 space(s) declare an envelope closure examines; every space is open"
+                )),
+        "the zero is stated: {:?}",
+        report.enumeration
+    );
+    // The same street with its space declared `enclosed`: nothing closes it,
+    // and closure refuses.
+    c.spaces.get_mut("street").unwrap().envelope = "enclosed".to_string();
+    let report = check(&street.model, &c, &no_anchors());
+    assert!(!gate(&report, "contract-closure").passed());
+}

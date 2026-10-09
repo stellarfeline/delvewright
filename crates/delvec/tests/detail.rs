@@ -266,10 +266,19 @@ struct Detailed {
 /// Materialise the blockout fixture with `nodes` bound to pieces cut from its own
 /// massing.
 fn detailed(root: &Path, nodes: &[&str]) -> Detailed {
+    detailed_from(&blockout_dir(), root, nodes, &|_, _| None)
+}
+
+/// A piece cell's edit: the place, the piece-local cell, and the block to write
+/// there instead of the one cut from the massing (or `None` to keep it).
+type CellEdit<'a> = &'a dyn Fn(&str, [i64; 3]) -> Option<String>;
+
+/// [`detailed`] over any campaign directory, each cut piece edited by `edit`.
+fn detailed_from(src: &Path, root: &Path, nodes: &[&str], edit: CellEdit<'_>) -> Detailed {
     let campaign = root.join("campaign");
     let prefabs = root.join("prefabs");
     std::fs::create_dir_all(&prefabs).unwrap();
-    common::copy_dir_all(&blockout_dir(), &campaign);
+    common::copy_dir_all(src, &campaign);
     let c = campaign_at(&campaign);
     let mass = unbound_massing(&c);
 
@@ -278,7 +287,12 @@ fn detailed(root: &Path, nodes: &[&str]) -> Detailed {
         let id = node.split('/').nth(1).unwrap();
         let a = detail::allocation(&c, &NodeId((*node).to_string()))
             .unwrap_or_else(|| panic!("`{node}` is a place this map has"));
-        let cells = piece_cells(&c, &a, &mass);
+        let mut cells = piece_cells(&c, &a, &mass);
+        for (p, b) in &mut cells {
+            if let Some(nb) = edit(node, [i64::from(p[0]), i64::from(p[1]), i64::from(p[2])]) {
+                *b = nb;
+            }
+        }
         write_piece(&prefabs, id, &a, &cells);
         let anchors: serde_json::Map<String, serde_json::Value> = a
             .owed_anchors
@@ -1807,7 +1821,7 @@ fn check_and_expect(d: &Detailed, code: &str) -> String {
 
 fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
     let loaded = delvec::compiler::load::load_campaign_dir(&d.campaign).unwrap();
-    let c = delvewright_dsl::parse_campaign(&loaded.raw).unwrap();
+    let c = delvec::compiler::load::parse_loaded(&loaded).unwrap();
     let reg = PrefabRegistry::load_dir(&d.prefabs).unwrap();
     let plan = Plan::build(&c, &reg).expect("the detailed campaign plans");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -1864,4 +1878,425 @@ fn the_detailed_build_runs_the_unperturbed_derivation() {
             .collect()
     };
     assert_eq!(mass(&a), mass(&b));
+}
+
+// ---------------------------------------------------------------------------
+// spec-0098: a piece owns its outside, and writes nothing it does not own
+// ---------------------------------------------------------------------------
+
+fn voids_at(d: &Detailed) -> (Vec<delvewright_dsl::Diagnostic>, detail::VoidBinding) {
+    let c = campaign_at(&d.campaign);
+    let reg = PrefabRegistry::load_dir(&d.prefabs).expect("the piece library loads");
+    detail::check_voids(&c, &reg, &d.prefabs)
+}
+
+/// The first void cell of `place`'s frame whose owner's description contains
+/// `owner`, piece-local.
+fn a_void(place: &str, owner: &str) -> [i64; 3] {
+    let c = campaign_at(&blockout_dir());
+    let a = detail::allocation(&c, &NodeId(place.into())).unwrap();
+    let v = a
+        .voids
+        .iter()
+        .find(|v| v.owner.contains(owner))
+        .unwrap_or_else(|| panic!("`{place}` has no void owned by {owner}: {:?}", a.voids));
+    v.cells[0]
+}
+
+/// **Criterion 7: `DW0987` is reachable and bound.** The hall's frame reaches
+/// over the landing's lid, so the party plane under it is a void the landing
+/// owns. A hall piece painting one cell of it — stone, and separately air — is
+/// refused naming the cell and its owner; the same piece with `structure_void`
+/// there passes; the binding counts the voids it examined.
+#[test]
+fn dw0987_refuses_a_piece_painting_a_neighbours_cell() {
+    let cell = a_void("node/hall", "`node/landing`");
+    for (tag, block) in [("stone", "minecraft:stone"), ("air", "minecraft:air")] {
+        let tmp = tempdir(&format!("dw0987-{tag}"));
+        let d = detailed_from(&blockout_dir(), &tmp, &["node/hall"], &|n, p| {
+            (n == "node/hall" && p == cell).then(|| block.to_string())
+        });
+        let (diags, binding) = voids_at(&d);
+        let e = diags
+            .iter()
+            .find(|x| x.code == "DW0987")
+            .unwrap_or_else(|| panic!("{tag}: no DW0987 among {:?}", codes(&diags)));
+        assert!(
+            e.message.contains(&format!(
+                "piece-local [{}, {}, {}]",
+                cell[0], cell[1], cell[2]
+            )) && e.message.contains("`node/landing`")
+                && e.message.contains(block),
+            "{}",
+            e.message
+        );
+        assert_eq!(binding.painted, 1, "{}", binding.line());
+    }
+    let tmp = tempdir("dw0987-void");
+    let d = detailed(&tmp, &["node/hall"]);
+    let (diags, binding) = voids_at(&d);
+    assert!(diags.is_empty(), "{:?}", codes(&diags));
+    assert!(
+        binding.voids > 0 && binding.pieces == 1,
+        "{}",
+        binding.line()
+    );
+}
+
+/// **Criterion 23, the piece's half: `DW0990`'s first shape.** A piece writing
+/// one cell of the ring's fixed ground — stone, and separately air — is refused
+/// naming the cell and the terrain block it displaced.
+#[test]
+fn dw0990_refuses_a_piece_writing_the_rings_ground() {
+    let cell = a_void("node/exit", "fixed ground");
+    for (tag, block) in [("stone", "minecraft:stone"), ("air", "minecraft:air")] {
+        let tmp = tempdir(&format!("dw0990-{tag}"));
+        let d = detailed_from(&blockout_dir(), &tmp, &["node/exit"], &|n, p| {
+            (n == "node/exit" && p == cell).then(|| block.to_string())
+        });
+        let (diags, binding) = voids_at(&d);
+        let e = diags
+            .iter()
+            .find(|x| x.code == "DW0990")
+            .unwrap_or_else(|| panic!("{tag}: no DW0990 among {:?}", codes(&diags)));
+        assert!(
+            e.message
+                .contains("displacing the terrain's minecraft:grass_block"),
+            "{}",
+            e.message
+        );
+        assert_eq!(binding.written, 1, "{}", binding.line());
+    }
+}
+
+/// **Criterion 15, the binding's half: an all-open piece binds to an open
+/// place and not to a roofed one** (`DW0989`). The kind is the box's
+/// `ceiling`, never the piece's own word.
+#[test]
+fn dw0989_refuses_an_all_open_piece_on_a_roofed_place() {
+    for (place, roofed) in [("node/loft", false), ("node/exit", true)] {
+        let id = place.split('/').nth(1).unwrap();
+        let tmp = tempdir(&format!("dw0989-{id}"));
+        let d = detailed(&tmp, &[place]);
+        patch_piece(&d, id, |v| {
+            v["spatial_contract"]["spaces"]["room"]["envelope"] = serde_json::json!("open");
+        });
+        let (diags, binding) = check_at(&d);
+        let refused = diags.iter().any(|x| x.code == "DW0989");
+        assert_eq!(refused, roofed, "{place}: {:?}", codes(&diags));
+        assert_eq!(binding.roofed, usize::from(roofed), "{}", binding.line());
+        if roofed {
+            let e = diags.iter().find(|x| x.code == "DW0989").unwrap();
+            assert!(
+                e.message.contains("`open`") && e.message.contains("clearance"),
+                "{}",
+                e.message
+            );
+        }
+    }
+}
+
+/// A variant of the fixture whose vista runs from the landing to the exit,
+/// across the gap between their facing walls.
+fn facing_walls_dir(tag: &str) -> PathBuf {
+    let dir = tempdir(&format!("facing-{tag}")).join("src");
+    common::copy_dir_all(&blockout_dir(), &dir);
+    common::patch_file(&dir.join("layout-graph.json"), |v| {
+        for e in v["content"]["edges"].as_array_mut().unwrap() {
+            if e["id"] == "edge/loft-sightline" {
+                e["b"] = serde_json::json!("node/exit");
+            }
+        }
+    });
+    common::patch_file(&dir.join("site-plan.json"), |v| {
+        v["content"]["sightlines"][0]["from"] = serde_json::json!([7, 66, 12]);
+        v["content"]["sightlines"][0]["to"] = serde_json::json!([7, 66, 25]);
+    });
+    dir
+}
+
+/// **Criterion 9: the pair is whole** — `DW0821`'s remedy is taken in test.
+/// A vista from the landing to the exit is blocked at stage 5 by the two
+/// stand-ins' facing walls (a warning); binding both places to pieces that
+/// carve a window in the ring each owns clears it. Vacuous if the sightline
+/// was never blocked: the warning is asserted first.
+#[test]
+fn dw0821_clears_when_the_places_own_walls_are_carved() {
+    let src = facing_walls_dir("vista");
+    let tmp = tempdir("dw0821-pair-massed");
+    let massed = detailed_from(&src, &tmp, &[], &|_, _| None);
+    let (b, found) = battery_at(&massed);
+    assert!(found.iter().any(|c| c == "DW0821"), "{found:?}");
+    let m = b
+        .findings
+        .iter()
+        .find(|(_, d)| d.code == "DW0821")
+        .unwrap()
+        .1
+        .message
+        .clone();
+    assert!(
+        m.contains("[7, 66, 16]") && m.contains("[7, 66, 20]"),
+        "{m}"
+    );
+
+    let c = campaign_at(&src);
+    let local = |place: &str, w: [i64; 3]| {
+        let a = detail::allocation(&c, &NodeId(place.into())).unwrap();
+        [
+            w[0] - a.world_min[0],
+            w[1] - a.world_min[1],
+            w[2] - a.world_min[2],
+        ]
+    };
+    let (lw, ew) = (
+        local("node/landing", [7, 66, 16]),
+        local("node/exit", [7, 66, 20]),
+    );
+    let tmp = tempdir("dw0821-pair-carved");
+    let carved = detailed_from(&src, &tmp, &["node/landing", "node/exit"], &|n, p| {
+        ((n == "node/landing" && p == lw) || (n == "node/exit" && p == ew))
+            .then(|| "minecraft:air".to_string())
+    });
+    let (dd, _) = check_at(&carved);
+    assert!(errors(&dd).is_empty(), "{:?}", codes(&dd));
+    let (_, found) = battery_at(&carved);
+    assert!(!found.iter().any(|c| c == "DW0821"), "{found:?}");
+    assert!(
+        !found.iter().any(|c| c == "DW0838"),
+        "a window over head height is no way: {found:?}"
+    );
+}
+
+/// **Criteria 17 and 22: a walkable way out is refused, and closing it
+/// passes.** The landing's piece leaves the ring on its west side open above
+/// the terrain, which stands at the floor course: a body walks out onto ground
+/// no place claims (`DW0838`'s second shape), and once the exit opens its ring
+/// toward the landing across the gap, the two are walk-connected with no seam
+/// (`DW0838`'s first shape). The landing walling its ring again clears both.
+/// On a `solid` site the second shape examines zero cells.
+#[test]
+fn dw0838_refuses_ground_outside_every_claim_and_a_gap_nothing_allocated() {
+    let c = campaign_at(&blockout_dir());
+    let ring = |place: &str, side: &str| -> Vec<[i64; 3]> {
+        let a = detail::allocation(&c, &NodeId(place.into())).unwrap();
+        let (lo, hi) = (a.datum_y, a.datum_y + 1);
+        let mut out = Vec::new();
+        for x in 0..a.extent[0] {
+            for z in 0..a.extent[2] {
+                let on = match side {
+                    "west" => x == 0,
+                    "south" => z == a.extent[2] - 1,
+                    _ => z == 0,
+                };
+                if on && x > 0 && x < a.extent[0] - 1
+                    || on && side == "west" && z > 0 && z < a.extent[2] - 1
+                {
+                    for y in lo..=hi {
+                        out.push([x, y, z]);
+                    }
+                }
+            }
+        }
+        out
+    };
+    let open_west = ring("node/landing", "west");
+    let tmp = tempdir("dw0838-out");
+    let d = detailed_from(&blockout_dir(), &tmp, &["node/landing"], &|n, p| {
+        (n == "node/landing" && open_west.contains(&p)).then(|| "minecraft:air".to_string())
+    });
+    let (b, _) = battery_at(&d);
+    let out = b
+        .findings
+        .iter()
+        .find(|(_, x)| x.code == "DW0838" && x.message.contains("outside every place's claim"))
+        .unwrap_or_else(|| panic!("no second-shape DW0838: {:?}", errors_of(&b)));
+    assert!(
+        out.1.message.contains("`node/landing`"),
+        "{}",
+        out.1.message
+    );
+    assert!(b.binding.unclaimed_standable > 0);
+
+    // The landing and the exit open toward each other across the gap.
+    let (south, north) = (ring("node/landing", "south"), ring("node/exit", "north"));
+    let tmp = tempdir("dw0838-gap");
+    let d = detailed_from(
+        &blockout_dir(),
+        &tmp,
+        &["node/landing", "node/exit"],
+        &|n, p| {
+            ((n == "node/landing" && south.contains(&p))
+                || (n == "node/exit" && north.contains(&p)))
+            .then(|| "minecraft:air".to_string())
+        },
+    );
+    let (b, _) = battery_at(&d);
+    assert!(
+        b.findings.iter().any(|(_, x)| x.code == "DW0838"
+            && x.message.contains("allocated no seam for")
+            && x.message.contains("node/landing")
+            && x.message.contains("node/exit")),
+        "{:?}",
+        errors_of(&b)
+    );
+    // Closing the landing's edge: the exit's open ring still lets a body out
+    // onto the gap, but the two places are no longer joined.
+    let tmp = tempdir("dw0838-closed");
+    let d = detailed_from(
+        &blockout_dir(),
+        &tmp,
+        &["node/landing", "node/exit"],
+        &|n, p| (n == "node/exit" && north.contains(&p)).then(|| "minecraft:air".to_string()),
+    );
+    let (b, _) = battery_at(&d);
+    assert!(
+        !b.findings
+            .iter()
+            .any(|(_, x)| x.code == "DW0838" && x.message.contains("allocated no seam for")),
+        "{:?}",
+        errors_of(&b)
+    );
+    let tmp = tempdir("dw0838-all-closed");
+    let d = detailed(&tmp, &["node/landing", "node/exit"]);
+    let (b, _) = battery_at(&d);
+    assert!(
+        !errors_of(&b).contains(&"DW0838".to_string()),
+        "{:?}",
+        errors_of(&b)
+    );
+
+    // A solid site with no sky kept: nothing outside a claim is ground a body
+    // stands on. (The fixture's own `clearance` volume over the whole region
+    // would leave the rock's top a surface, and the shape would examine it.)
+    let solid = tempdir("dw0838-solid").join("src");
+    common::copy_dir_all(&blockout_dir(), &solid);
+    common::patch_file(&solid.join("site-plan.json"), |v| {
+        v["content"]["fill"] = serde_json::json!({"kind": "solid", "block": "minecraft:deepslate"});
+        v["content"]["volumes"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|vol| vol["role"] != "clearance");
+    });
+    let tmp = tempdir("dw0838-solid-built");
+    let d = detailed_from(&solid, &tmp, &[], &|_, _| None);
+    let (b, _) = battery_at(&d);
+    assert_eq!(b.binding.unclaimed_standable, 0, "{}", b.binding.line());
+}
+
+fn errors_of(b: &blockout::Battery) -> Vec<String> {
+    b.findings
+        .iter()
+        .filter(|(_, d)| d.severity == Severity::Error)
+        .map(|(_, d)| d.code.clone())
+        .collect()
+}
+
+/// A variant of the fixture standing on a heightmap: `h(x, z)` is the
+/// surface `y` of every column.
+fn sloped_dir(tag: &str, h: &dyn Fn(i64, i64) -> i64) -> PathBuf {
+    let dir = tempdir(&format!("sloped-{tag}")).join("src");
+    common::copy_dir_all(&blockout_dir(), &dir);
+    let img = image::GrayImage::from_fn(64, 64, |x, z| {
+        image::Luma([((h(i64::from(x), i64::from(z)) - 56) * 17) as u8])
+    });
+    img.save(dir.join("terrain.png")).unwrap();
+    common::patch_file(&dir.join("site-plan.json"), |v| {
+        v["content"]["fill"]["terrain"] = serde_json::json!({
+            "kind": "heightmap", "heightmap": "terrain.png", "base_y": 56, "range": 15
+        });
+    });
+    dir
+}
+
+/// **Criterion 21: a crack is refused and a faced plinth is not.** On a slope
+/// that falls three to five courses under the landing's floor course, the
+/// landing's piece opens its west ring above the fixed ground: its edge stands
+/// over the terrain with air under it, and `DW0990` refuses naming the edge and
+/// both heights. The same piece with the plot's edge faced down to the ring's
+/// ground passes, and on terrain one step under the floor the open ring passes
+/// too. Vacuous if the edge were not above the terrain: both heights are read
+/// off the refusal.
+#[test]
+fn dw0990_refuses_a_crack_and_passes_a_faced_edge_and_a_step() {
+    let low = |x: i64, z: i64| if x <= 12 { 59 + (z / 4) % 3 } else { 63 };
+    let src = sloped_dir("crack", &low);
+    let c = campaign_at(&src);
+    let a = detail::allocation(&c, &NodeId("node/landing".into())).unwrap();
+    let fixed: std::collections::BTreeSet<[i64; 3]> =
+        a.ground.fixed.iter().map(|f| f.cell).collect();
+    let floor = a.datum_y;
+    // The west ring above its ground: open.
+    let open = move |p: [i64; 3]| {
+        p[0] == 0 && p[2] > 0 && p[2] < a.extent[2] - 1 && !fixed.contains(&p) && p[1] < floor + 4
+    };
+    let tmp = tempdir("dw0990-crack");
+    let d = detailed_from(&src, &tmp, &["node/landing"], &|n, p| {
+        (n == "node/landing" && open(p)).then(|| "minecraft:air".to_string())
+    });
+    let (b, _) = battery_at(&d);
+    let crack = b
+        .findings
+        .iter()
+        .find(|(_, x)| x.code == "DW0990")
+        .unwrap_or_else(|| panic!("no DW0990: {:?}", errors_of(&b)));
+    assert!(
+        crack.1.message.contains("`node/landing`")
+            && crack.1.message.contains("stands at y 64")
+            && (crack.1.message.contains("at y 60")
+                || crack.1.message.contains("at y 61")
+                || crack.1.message.contains("at y 62")),
+        "{}",
+        crack.1.message
+    );
+    assert!(b.binding.cracks > 0);
+
+    // Faced: the plot's edge column under the floor course is solid.
+    let tmp = tempdir("dw0990-faced");
+    let d = detailed_from(&src, &tmp, &["node/landing"], &|n, p| {
+        if n != "node/landing" {
+            return None;
+        }
+        if open(p) {
+            return Some("minecraft:air".to_string());
+        }
+        (p[0] == 1
+            && p[1] < floor - 1
+            && p[1] > a.ground.bottom_y
+            && p[2] > 0
+            && p[2] < a.extent[2] - 1)
+            .then(|| "minecraft:stone_bricks".to_string())
+    });
+    let (b, _) = battery_at(&d);
+    assert!(
+        !errors_of(&b).contains(&"DW0990".to_string()),
+        "{:?}",
+        errors_of(&b)
+    );
+
+    // A step: terrain one under the floor course, the ring open above it.
+    let step = |x: i64, _z: i64| if x <= 12 { 62 } else { 63 };
+    let src = sloped_dir("step", &step);
+    let c = campaign_at(&src);
+    let a = detail::allocation(&c, &NodeId("node/landing".into())).unwrap();
+    let fixed: std::collections::BTreeSet<[i64; 3]> =
+        a.ground.fixed.iter().map(|f| f.cell).collect();
+    let floor = a.datum_y;
+    let ext = a.extent;
+    let tmp = tempdir("dw0990-step");
+    let d = detailed_from(&src, &tmp, &["node/landing"], &|n, p| {
+        (n == "node/landing"
+            && p[0] == 0
+            && p[2] > 0
+            && p[2] < ext[2] - 1
+            && !fixed.contains(&p)
+            && p[1] < floor + 4)
+            .then(|| "minecraft:air".to_string())
+    });
+    let (b, _) = battery_at(&d);
+    assert!(
+        !errors_of(&b).contains(&"DW0990".to_string()),
+        "{:?}",
+        errors_of(&b)
+    );
 }

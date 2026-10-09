@@ -320,7 +320,44 @@ fn structure_cells_inner(bytes: &[u8], stateful: bool) -> Vec<TemplateCell> {
 /// palette entry rather than copied once per cell — the form the assembled
 /// world stores.
 pub(crate) fn structure_cells_interned(bytes: &[u8]) -> Vec<([i32; 3], BlockState, Option<bool>)> {
-    let decoded = decode_template(bytes, true);
+    interned(decode_template(bytes, true))
+}
+
+/// [`structure_cells_interned`] **with the template's air kept**: every cell
+/// the game places when `/place template` writes this structure, which is every
+/// cell but a `structure_void` and a cell the template omits (spec-0098 §7).
+/// A template's air is placed, so it carves whatever stood there.
+pub(crate) fn structure_cells_placed(bytes: &[u8]) -> Vec<([i32; 3], BlockState, Option<bool>)> {
+    let mut decoded = decode_template(bytes, true);
+    if let Some(raw) = gunzip(bytes) {
+        decoded.cells = placed_cells(&raw).unwrap_or(decoded.cells);
+    }
+    interned(decoded)
+}
+
+fn gunzip(bytes: &[u8]) -> Option<Vec<u8>> {
+    let mut raw = Vec::new();
+    flate2::read::GzDecoder::new(bytes)
+        .read_to_end(&mut raw)
+        .ok()?;
+    Some(raw)
+}
+
+/// Every `(position, palette index)` a template's typed decoding names, air
+/// included; `None` when the bytes do not have the typed shape.
+fn placed_cells(raw: &[u8]) -> Option<Vec<([i32; 3], usize)>> {
+    let root = crate::compiler::nbtread::root(raw)?;
+    let mut out = Vec::new();
+    for b in root.blocks.iter().flatten() {
+        let (Some(pos), Some(state)) = (b.pos3(), &b.state) else {
+            continue;
+        };
+        out.push((pos, state.0 as usize));
+    }
+    Some(out)
+}
+
+fn interned(decoded: Decoded) -> Vec<([i32; 3], BlockState, Option<bool>)> {
     let states: Vec<Option<(BlockState, Option<bool>)>> = decoded
         .palette
         .iter()
@@ -332,9 +369,9 @@ pub(crate) fn structure_cells_interned(bytes: &[u8]) -> Vec<([i32; 3], BlockStat
     decoded
         .cells
         .iter()
-        .map(|&(pos, i)| {
-            let (state, open) = states[i].expect("a kept entry");
-            (pos, state, open)
+        .filter_map(|&(pos, i)| {
+            let (state, open) = states.get(i).copied().flatten()?;
+            Some((pos, state, open))
         })
         .collect()
 }
@@ -703,7 +740,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 // [`base_id`].
                 // Each distinct state is rotated once per template.
                 let mut rotated: BTreeMap<BlockState, BlockState> = BTreeMap::new();
-                structure_cells_interned(bytes)
+                structure_cells_placed(bytes)
                     .into_iter()
                     .map(|(local, name, open)| {
                         // Vanilla rotates blockstates as well as positions during
@@ -729,6 +766,13 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                     // Writing it as a block would model a voided cell as
                     // passable while the server keeps the wall under it.
                     if base_id(&name) == STRUCTURE_VOID {
+                        continue;
+                    }
+                    // A template's air is placed too, and carves what stood
+                    // there — the mass under it, an earlier template's block.
+                    if is_air(&name) {
+                        blocks.remove(&cell);
+                        open_gates.remove(&cell);
                         continue;
                     }
                     if is_fence_gate(&name) && open == Some(true) {
