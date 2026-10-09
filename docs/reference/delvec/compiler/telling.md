@@ -7,7 +7,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ### DW0981/DW0982 — what the dialogue tells the player (`compiler::telling`; error; exit 1)
 
-Two rules of `docs/reference/game-writing.md` made mechanical, both judged at `delvec validate`, where the line is written. Neither reaches the datapack. Every string is read as the player reads it: a styled span (spec-0096) is its own text (`dsl::textstyle::visible`), so a question inside markup ends in its own `?`, and a name, a use or a gloss in markup is matched by the words it draws.
+Two rules of `docs/reference/game-writing.md` made mechanical, both judged at `delvec validate`, where the line is written. Neither reaches the datapack. Every string is read as the player reads it: a styled span (spec-0096) is its own text (`dsl::textstyle::visible`), so a question inside markup ends in its own `?`, and a name, a use or a gloss in markup is matched by the words it draws — except an `obfuscated` span, which is drawn as noise: for `DW0982` its words neither tell a name nor use one (`dsl::textstyle::legible`), while a declared name is matched by its own words whatever its style.
 
 **A question gets an answer (`DW0981`).** An option whose `label` or `tooltip` — in English or in any declared-language sidecar rendition — ends in `?` or `？` is the player asking. Choosing an option with no `next` closes the dialog, so the player asks and the conversation ends. The option must lead to a node of the same tree that has a line, and not back to the node it stands in. Whether the line answers the question is the writer's; that a line follows is the engine's. The quantifier is every option of every tree.
 

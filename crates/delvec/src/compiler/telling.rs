@@ -635,17 +635,28 @@ pub fn check_names_told(c: &Campaign) -> Vec<Diagnostic> {
 /// what it examined.
 pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     let mut bind = NameBinding::default();
-    // Every string as the player reads it: a styled span (spec-0096) is its own
-    // text, so a name in markup, and a line that uses or glosses one in markup,
-    // are matched by the words that are drawn.
-    let inv: BTreeMap<String, String> = inventory(c)
-        .into_iter()
+    // Every string as the player reads it (spec-0096): a styled span is its own
+    // text, so a line that uses or glosses a name in markup is matched by the
+    // words it draws — except an obfuscated span, which is drawn as noise and
+    // tells nothing and uses nothing (`textstyle::legible`). A name itself is
+    // what the documents declare it to be, its markup dropped (`visible`): an
+    // obfuscated name is still that name when a legible line uses it.
+    let raw = inventory(c);
+    let inv: BTreeMap<String, String> = raw
+        .iter()
         .map(|(k, v)| {
-            let shown = delvewright_dsl::textstyle::visible(&v).into_owned();
-            (k, shown)
+            let read = delvewright_dsl::textstyle::legible(v).into_owned();
+            (k.clone(), read)
         })
         .collect();
-    let mut names: Vec<Name> = inv
+    let declared: BTreeMap<String, String> = raw
+        .iter()
+        .map(|(k, v)| {
+            let shown = delvewright_dsl::textstyle::visible(v).into_owned();
+            (k.clone(), shown)
+        })
+        .collect();
+    let mut names: Vec<Name> = declared
         .iter()
         .filter(|(k, _)| matches!(key_kind(k), Some(TextKind::Name | TextKind::ItemName)))
         .map(|(k, v)| Name {

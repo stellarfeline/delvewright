@@ -195,7 +195,7 @@ names that reach dialogue, is `DW0982`: the declared names (the inventory's
 `name` and item-name rows, the fact check's set) placed in the compiler's play
 order against what has told them (N1, N3). A question without an answer is
 `DW0981`: an option that asks and opens no line. A name tag on a crowd is
-`DW0983` (N6, [compiler.md § DW0983](compiler.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). All three refuse at `delvec validate` ([compiler.md § DW0981/DW0982](compiler.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
+`DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). All three refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
 The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |

@@ -472,3 +472,33 @@ fn a_button_is_on_screen_only_once_its_objective_is_pending() {
         "the critical path reaches obj/exit: {pt:?}"
     );
 }
+
+/// game-writing.md S6's "a name that will not stay still on the page": an
+/// obfuscated span is drawn as noise, so a gloss inside one tells the player
+/// nothing — the later use is still untold.
+#[test]
+fn an_obfuscated_gloss_tells_nothing() {
+    let c = with_dialogue(|d| {
+        d["content"]["dialogues"][0]["nodes"][0]["text"] =
+            "Halt. This is [[obfuscated|the Keep, the last hold on the moor]], and the door stays shut."
+                .into();
+        option(d, 0, 1)["label"] = "Open the keep, please.".into();
+    });
+    let (d, _) = telling::check_names_told_bound(&c);
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0982" && x.path.ends_with("/options/1/label")),
+        "{d:#?}"
+    );
+}
+
+/// …and a name the player cannot read is not a use of it.
+#[test]
+fn an_obfuscated_use_is_not_a_use() {
+    let c = with_dialogue(|d| {
+        option(d, 0, 1)["label"] = "Open the [[obfuscated|keep]], please.".into();
+    });
+    let (d, bind) = telling::check_names_told_bound(&c);
+    assert!(d.is_empty(), "{d:#?}");
+    assert_eq!(bind.untold, 0);
+}

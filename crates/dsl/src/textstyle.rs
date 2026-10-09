@@ -273,6 +273,32 @@ pub fn visible(s: &str) -> Cow<'_, str> {
     }
 }
 
+/// The text a player can **read** in the line: [`visible`], except that an
+/// `obfuscated` span's text is not legible — the client draws each of its glyphs
+/// as a random glyph of the same width — so each of its characters is replaced
+/// by U+FFFD (spaces kept, so the words around it stay words). A reader that
+/// asks what the player was told reads this; one that asks what the line says
+/// reads [`visible`]. A line that does not parse is returned unchanged.
+pub fn legible(s: &str) -> Cow<'_, str> {
+    if !has_markup(s) {
+        return Cow::Borrowed(s);
+    }
+    match parse(s) {
+        Ok(segs) => Cow::Owned(
+            segs.iter()
+                .map(|g| match g {
+                    Segment::Span(st, t) if st.flags.contains(&"obfuscated") => t
+                        .chars()
+                        .map(|c| if c.is_whitespace() { c } else { '\u{FFFD}' })
+                        .collect::<String>(),
+                    Segment::Text(t) | Segment::Span(_, t) => (*t).to_string(),
+                })
+                .collect(),
+        ),
+        Err(_) => Cow::Borrowed(s),
+    }
+}
+
 /// The span signatures of `s`, sorted — the multiset `DW0976` compares. Empty
 /// for a line with no span or one that does not parse.
 pub fn signatures(s: &str) -> Vec<String> {
@@ -518,6 +544,18 @@ pub fn validate_inline_styles(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An obfuscated span is drawn but not read: its words are not legible,
+    /// every other span's are, and a line with no markup is itself.
+    #[test]
+    fn an_obfuscated_span_is_not_legible() {
+        assert_eq!(legible("plain"), "plain");
+        assert_eq!(
+            legible("the [[obfuscated|old road]] and the [[bold|Keep]]"),
+            "the \u{FFFD}\u{FFFD}\u{FFFD} \u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD} and the Keep"
+        );
+        assert_eq!(legible("[[bold,obfuscated|x]]"), "\u{FFFD}");
+    }
 
     const BARK: &str =
         "The ledger is kept by [[obfuscated|someone else]] at [[italic,color=dark_purple|night]].";
