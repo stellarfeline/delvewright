@@ -365,6 +365,112 @@ pub fn synth(size: [i32; 3], cells: &[([i32; 3], PaletteEntry, Option<Nbt>)]) ->
     s
 }
 
+/// The block name a template uses for "this cell is not the piece's".
+pub const STRUCTURE_VOID: &str = "minecraft:structure_void";
+
+/// **The template as `/place template` must receive it**: every
+/// `minecraft:structure_void` cell omitted from the block list and its palette
+/// entry dropped, or `None` when the template holds none (the bytes are then
+/// already right and are shipped unchanged).
+///
+/// A template's `structure_void` means "the piece places nothing here", and
+/// every model the engine builds reads it so (`assembled.rs`, the light and
+/// view passes). The pinned game does not: `/place template` places every
+/// block the template lists, `structure_void` included, and no processor in its
+/// settings removes one, so a void written over a neighbour's floor deletes the
+/// floor. Vanilla's own save never writes one — the structure block passes
+/// `structure_void` as an ignored block to the template's fill, which skips it
+/// — so the shape vanilla ships is the shape this returns. Cited against the
+/// pinned server (1.21.11 `server.jar` sha1 `64bb6d76…`, Mojang mappings
+/// `server.txt` sha1 `5621e925…`): `PlaceCommand.placeTemplate` builds a bare
+/// `StructurePlaceSettings`; `StructureTemplate.placeInWorld` names no block;
+/// `StructureBlockEntity.saveStructure` appends `Blocks.STRUCTURE_VOID` to the
+/// ignored list `fillFromWorld` skips.
+///
+/// Everything else in the file — entities, block entities, `DataVersion`,
+/// keys this reader does not know — is carried through unchanged; compounds are
+/// re-serialised in `BTreeMap` order with gzip mtime 0, so the result is a
+/// function of the input bytes alone (ADR-0006). Bytes that do not parse as a
+/// structure template are returned as `None`: what reads them later refuses
+/// them in its own words.
+pub fn as_placed(bytes: &[u8]) -> Option<Vec<u8>> {
+    let mut raw = Vec::new();
+    flate2::read::GzDecoder::new(bytes)
+        .read_to_end(&mut raw)
+        .ok()?;
+    let value: fastnbt::Value = fastnbt::from_bytes(&raw).ok()?;
+    let Nbt::Compound(mut root) = Nbt::from(value) else {
+        return None;
+    };
+    let is_void = |entry: &Nbt| {
+        entry
+            .as_compound()
+            .and_then(|c| c.get("Name"))
+            .and_then(Nbt::as_str)
+            == Some(STRUCTURE_VOID)
+    };
+    // The single-palette form: the void indices are read off it, and it is
+    // re-indexed without them. The multi-palette form (`palettes`, one list
+    // per variant, all indexed by the one block list) drops a block only where
+    // EVERY variant names a void there, and keeps its palettes as they are.
+    let single = matches!(root.get("palette"), Some(Nbt::List(_)));
+    let void_states: BTreeSet<i32> = match (root.get("palette"), root.get("palettes")) {
+        (Some(Nbt::List(palette)), _) => palette
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| is_void(e))
+            .map(|(i, _)| i as i32)
+            .collect(),
+        (_, Some(Nbt::List(palettes))) => {
+            let lists: Vec<&[Nbt]> = palettes.iter().filter_map(Nbt::as_list).collect();
+            let len = lists.iter().map(|l| l.len()).min().unwrap_or(0);
+            (0..len)
+                .filter(|&i| !lists.is_empty() && lists.iter().all(|l| is_void(&l[i])))
+                .map(|i| i as i32)
+                .collect()
+        }
+        _ => BTreeSet::new(),
+    };
+    if void_states.is_empty() {
+        return None;
+    }
+    // Each surviving index moves down by the voids below it.
+    let shift = |s: i32| s - void_states.range(..s).count() as i32;
+    let Some(Nbt::List(blocks)) = root.get_mut("blocks") else {
+        return None;
+    };
+    blocks.retain(|b| {
+        let state = b
+            .as_compound()
+            .and_then(|c| c.get("state"))
+            .and_then(Nbt::as_i32);
+        !state.is_some_and(|s| void_states.contains(&s))
+    });
+    if single {
+        for b in blocks.iter_mut() {
+            if let Nbt::Compound(c) = b
+                && let Some(Nbt::Int(s)) = c.get_mut("state")
+            {
+                *s = shift(*s);
+            }
+        }
+        if let Some(Nbt::List(palette)) = root.get_mut("palette") {
+            let mut i = 0i32;
+            palette.retain(|_| {
+                let keep = !void_states.contains(&i);
+                i += 1;
+                keep
+            });
+        }
+    }
+    let nbt = fastnbt::to_bytes(&Nbt::Compound(root)).ok()?;
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).ok()?;
+    gz.finish().ok()
+}
+
 /// Round-trip a structure to bytes and back — helper for tests.
 pub fn roundtrip(s: &Structure) -> Result<Structure, String> {
     Structure::read(&s.write())

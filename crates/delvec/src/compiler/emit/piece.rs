@@ -4,7 +4,7 @@ use super::*;
 
 /// A placement sentinel: one known solid block of a structure, used at runtime
 /// to verify a `place template` actually landed (structure_file → (local pos,
-/// bare block id)). Chosen as the non-air block with the lowest `(y, z, x)` —
+/// bare block id)). Chosen as the non-air, non-void block with the lowest `(y, z, x)` —
 /// deterministic per structure bytes.
 pub(super) type Sentinels = BTreeMap<String, ([i32; 3], String)>;
 
@@ -15,10 +15,15 @@ pub(super) fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
     use std::io::Read;
     let mut raw = Vec::new();
     GzDecoder::new(bytes).read_to_end(&mut raw).ok()?;
+    // Air, and `structure_void` — a cell the shipped template does not place
+    // (`admit::structure::as_placed`), so no block of the world answers for it.
     let is_air = |name: &str| {
         matches!(
             name,
-            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+            "minecraft:air"
+                | "minecraft:cave_air"
+                | "minecraft:void_air"
+                | "minecraft:structure_void"
         )
     };
     // The lowest `(y, z, x)` non-air cell; `best` is replaced only by a

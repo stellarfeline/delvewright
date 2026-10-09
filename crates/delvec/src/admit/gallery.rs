@@ -234,13 +234,15 @@ fn emit_unchecked(gallery_id: &str, cands: &[Candidate], cols: usize) -> BTreeMa
         &serde_json::json!({ "values": [format!("{NS}:tick")] }),
     );
 
-    // structures (verbatim gzip bytes) — one per tile, so a zone that ships as
-    // nine templates arrives as nine resources under one exhibit's name.
+    // structures — one per tile, so a zone that ships as nine templates
+    // arrives as nine resources under one exhibit's name. Verbatim gzip bytes,
+    // except that a `structure_void` cell is omitted: the game would place the
+    // void block, and the piece means "nothing here" (`as_placed`).
     for p in &placed {
         for tile in &p.cand.tiles {
             out.insert(
                 format!("datapack/data/{NS}/structure/{}{}.nbt", p.safe, tile.suffix),
-                tile.nbt.clone(),
+                crate::admit::structure::as_placed(&tile.nbt).unwrap_or_else(|| tile.nbt.clone()),
             );
         }
     }

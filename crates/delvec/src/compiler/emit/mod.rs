@@ -676,9 +676,27 @@ pub fn build_with_warnings(
     );
 
     // structures (one `.nbt` per distinct structure id, even if reused across
-    // several placed pieces — the insert is idempotent, same bytes)
-    for template in plan.placed_pieces().flat_map(|p| &p.templates) {
-        if let Some(bytes) = structures.get(&template.structure_file) {
+    // several placed pieces — the insert is idempotent, same bytes). Each is
+    // shipped as `/place template` must receive it: a `structure_void` cell is
+    // one the piece does not place, which is how every model above read it,
+    // and the game would write the void block over whatever stands there
+    // (`admit::structure::as_placed`).
+    let placed: Vec<_> = plan.placed_pieces().flat_map(|p| &p.templates).collect();
+    let shipped: BTreeMap<&str, Vec<u8>> = {
+        let files: BTreeSet<&str> = placed
+            .iter()
+            .map(|t| t.structure_file.as_str())
+            .filter(|f| structures.contains_key(*f))
+            .collect();
+        let files: Vec<&str> = files.into_iter().collect();
+        let bytes = crate::par::map(&files, |f| {
+            let raw = &structures[*f];
+            crate::admit::structure::as_placed(raw).unwrap_or_else(|| raw.clone())
+        });
+        files.into_iter().zip(bytes).collect()
+    };
+    for template in &placed {
+        if let Some(bytes) = shipped.get(template.structure_file.as_str()) {
             out.insert(
                 format!("datapack/data/{ns}/structure/{}.nbt", template.structure_id),
                 bytes.clone(),
@@ -687,13 +705,13 @@ pub fn build_with_warnings(
     }
 
     // functions
-    // Placement sentinels: one known block per distinct structure, so the
-    // runtime can verify each `place template` landed (see `setup` emission).
+    // Placement sentinels: one known block per distinct structure, read off the
+    // bytes that ship, so the runtime can verify each `place template` landed
+    // (see `setup` emission).
     let mut sentinels: Sentinels = BTreeMap::new();
-    let placed: Vec<_> = plan.placed_pieces().flat_map(|p| &p.templates).collect();
     let picked = crate::par::map(&placed, |template| {
-        structures
-            .get(&template.structure_file)
+        shipped
+            .get(template.structure_file.as_str())
             .and_then(|bytes| structure_sentinel(bytes))
     });
     for (template, picked) in placed.into_iter().zip(picked) {
