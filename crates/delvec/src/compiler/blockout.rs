@@ -955,9 +955,16 @@ pub fn derive_with(
     // The synthesized spatial vocabulary (spec-0049 §5.2), read off the mass
     // that has just been laid — see `Mass::solid_in` for why it cannot be read
     // off the plan.
+    // Exactly the names the one authority says the derivation provides: a
+    // scenery place (`reached: false`) has no place anchor.
+    let provided = delvewright_dsl::synthesized_anchors(c);
     for b in &boxes {
+        let name = node_anchor(&b.node);
+        if !provided.contains(&name) {
+            continue;
+        }
         anchors.insert(
-            node_anchor(&b.node),
+            name,
             AnchorSpec::Point(narrow(footing(&mass, b, b.centre()))),
         );
     }

@@ -1406,3 +1406,57 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
         "nothing written"
     );
 }
+
+/// **Scenery owes no light, so no proof floods from inside it** (spec-0098
+/// §14, departure 36). The gallery's sealed scenery beacon with its lamp
+/// swapped for leaves: a closed room of stone and oak leaves with no light
+/// source anywhere in it. Scenery has no place a body stands, so the blockout
+/// synthesizes no `anchor/node-beacon` (the one authority,
+/// `synthesized_anchor_kinds`, names none), and the darkness survey
+/// (`DW0210`), which floods from every anchor of an area, never starts inside
+/// it: the whole builds. Before, the anchor stood on the room's floor and the
+/// survey refused the unlit scenery with `DW0210`.
+#[test]
+fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
+    let tmp = tempdir("unlit-scenery");
+    let dir = gallery_site_plan(&tmp);
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"] = json!([]);
+    });
+    common::patch_file(&dir.join("programs/beacon.json"), |v| {
+        v["palette"]["lamp"] =
+            json!("minecraft:oak_leaves[distance=1,persistent=true,waterlogged=false]");
+    });
+    let c = common::campaign_at(&dir);
+    assert!(
+        !delvewright_dsl::synthesized_anchors(&c).contains("anchor/node-beacon"),
+        "scenery has no place anchor"
+    );
+    assert!(
+        delvewright_dsl::synthesized_anchors(&c).contains("anchor/node-annex"),
+        "a reached place keeps its own"
+    );
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let out = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        dir.to_str().unwrap(),
+        "node/beacon",
+    ]);
+    let t = text(&out);
+    assert_eq!(code(&out), 0, "{t}");
+    assert!(!t.contains("DW0210"), "{t}");
+    assert!(
+        t.contains("detail: the whole builds with the piece(s) this run wrote."),
+        "{t}"
+    );
+    let bytes = std::fs::read(prefabs.join("gallery-beacon.nbt")).unwrap();
+    let s = delvec::admit::structure::Structure::read(&bytes).unwrap();
+    let names = s.block_names();
+    assert!(
+        names.contains("minecraft:oak_leaves") && !names.contains("minecraft:sea_lantern"),
+        "the piece is the unlit leafy room: {names:?}"
+    );
+}

@@ -313,8 +313,9 @@ pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str
 ///
 /// The mapping, and it is total:
 ///
-/// * [`ENTRY_ANCHOR`] and every `anchor/node-…` — [`StationKind::Point`], the
-///   floor centre a body stands on.
+/// * [`ENTRY_ANCHOR`] and every reached place's `anchor/node-…` —
+///   [`StationKind::Point`], the floor centre a body stands on. Scenery
+///   (`reached: false`) has none.
 /// * every `anchor/unlock-…` — [`StationKind::Point`], where the shortcut's
 ///   far-side affordance stands.
 /// * every `anchor/seam-…` — [`StationKind::Gate`], the region the derivation
@@ -334,7 +335,13 @@ pub fn synthesized_anchor_kinds(c: &Campaign) -> BTreeMap<String, StationKind> {
     };
     out.insert(ENTRY_ANCHOR.to_string(), StationKind::Point);
     for n in &graph.nodes {
-        out.insert(node_anchor(&n.id), StationKind::Point);
+        // Scenery (`reached: false`, spec-0098 §14) has no floor a body stands
+        // on, so it has no place anchor: a proof that floods from anchors
+        // would otherwise flood from inside a place nothing enters, and a
+        // document naming one is refused where it is written.
+        if n.reached {
+            out.insert(node_anchor(&n.id), StationKind::Point);
+        }
         // A station whose name collides with a synthesized one is `DW0869`, and
         // one that collides with another station is `DW0870`; both are errors,
         // so this insert never silently reinterprets a name a campaign builds
