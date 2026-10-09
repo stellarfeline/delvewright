@@ -20,6 +20,7 @@ COMPOSE="$ROOT/validation/compose.yaml"
 HARNESS_PKG="$ROOT/harness/package.json"
 CI_WF="$ROOT/.github/workflows/ci.yml"
 ENGINE_RELEASE_WF="$ROOT/.github/workflows/engine-release.yml"
+ISSUE_KIND_WF="$ROOT/.github/workflows/issue-kind.yml"
 SKIN_REQ="$ROOT/tools/creator/skin/requirements.txt"
 SKIN_PYPROJECT="$ROOT/tools/creator/skin/pyproject.toml"
 SKIN_CATALOG="$ROOT/tools/creator/skin/delve_skin/catalog.py"
@@ -488,6 +489,8 @@ all_stated() { # <label> <extended-regex> <expected-literal> <expected-count> <f
 echo "== CI toolchain ([ci], [skin]) =="
 # Node runtime for the harness job and for the `rust` job's node --test suites.
 all_stated "node -> ci.yml"      'node-version: *"[^"]*"' "node-version: \"$NODE_VERSION\"" 2 "$CI_WF"
+# The Copilot CLI the issue-kind workflow installs runs on the same Node line.
+all_stated "node -> issue-kind.yml" 'node-version: *"[^"]*"' "node-version: \"$NODE_VERSION\"" 1 "$ISSUE_KIND_WF"
 
 # Python is the one value in this section that is NOT one value: two interpreter
 # lines, for two disjoint dependency sets. So the binding is over the whole set —

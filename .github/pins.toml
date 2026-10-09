@@ -516,6 +516,7 @@ sites = [
     ".github/workflows/engine-release.yml",
     ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
+    ".github/workflows/issue-kind.yml",
     ".github/workflows/plugin-release.yml",
 ]
 policy = "floating"
@@ -536,7 +537,7 @@ why = "Cargo cache action, held at its major tag. Affects build time, not output
 [[pin]]
 id = "action-setup-node"
 value = "actions/setup-node@v4"
-sites = [".github/workflows/ci.yml"]
+sites = [".github/workflows/ci.yml", ".github/workflows/issue-kind.yml"]
 policy = "floating"
 why = "GitHub's Node toolchain action, held at its major tag."
 
@@ -570,6 +571,13 @@ sites = [
 ]
 policy = "floating"
 why = "GitHub's artifact download action, held at its major tag."
+
+[[pin]]
+id = "action-ai-inference"
+value = "actions/ai-inference@v3"
+sites = [".github/workflows/issue-kind.yml"]
+policy = "floating"
+why = "Runs the Copilot CLI for the issue-kind classifier, held at its major tag; v3 is the first major that reaches Copilot, the service v2 called being retired."
 
 [[pin]]
 id = "action-lychee"
@@ -621,6 +629,7 @@ id = "ci-node"
 value = "24"
 sites = [
     ".github/workflows/ci.yml",
+    ".github/workflows/issue-kind.yml",
     "versions.toml",
 ]
 policy = "floating"
