@@ -1618,10 +1618,8 @@ fn both_fills_derive_and_differ_only_where_no_place_owns() {
                     "a cell `{x}` owns under both, {cell:?}"
                 );
             }
-            (Owner::Nobody, Owner::Nobody) => {
-                if mo.get(&cell) != ms.get(&cell) {
-                    differ += 1;
-                }
+            (Owner::Nobody, Owner::Nobody) if mo.get(&cell) != ms.get(&cell) => {
+                differ += 1;
             }
             _ => {}
         }
@@ -1843,13 +1841,7 @@ fn the_ring_is_the_terrain_and_a_door_stands_on_its_sill() {
 fn gallery_site_plan() -> Campaign {
     let dir = std::env::temp_dir().join("dw-place-shell-gallery-site-plan");
     let _ = std::fs::remove_dir_all(&dir);
-    let gallery = common::repo_root().join("gallery");
-    common::copy_dir_all(&gallery, &dir);
-    for junk in ["baseline", "forms", "overlays", "probes"] {
-        let _ = std::fs::remove_dir_all(dir.join(junk));
-    }
-    common::copy_dir_all(&gallery.join("overlays/site-plan"), &dir);
-    let _ = std::fs::remove_file(dir.join("overlay.json"));
+    common::gallery_site_plan_at(&dir);
     common::campaign_at(&dir)
 }
 

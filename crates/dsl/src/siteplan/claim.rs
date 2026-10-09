@@ -26,6 +26,9 @@ use super::{Ground, PlacedBox, PlacedSeam};
 /// An inclusive world AABB, `(lo, hi)`.
 pub type Aabb = ([i64; 3], [i64; 3]);
 
+/// One group of `DW0827`: the places contesting, and the cells no rule awards them.
+pub type Contest = (Vec<NodeId>, Vec<[i64; 3]>);
+
 /// Who writes a cell (spec-0098 §2, rules 0–4).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Owner {
@@ -436,7 +439,7 @@ impl<'a> Site<'a> {
     /// by the places contesting them, in plan order — what `DW0827` refuses —
     /// and how many shared cells the rule did award, for the binding.
     #[must_use]
-    pub fn contests(&self) -> (Vec<(Vec<NodeId>, Vec<[i64; 3]>)>, usize) {
+    pub fn contests(&self) -> (Vec<Contest>, usize) {
         let mut by: BTreeMap<Vec<NodeId>, BTreeSet<[i64; 3]>> = BTreeMap::new();
         let mut awarded: BTreeSet<[i64; 3]> = BTreeSet::new();
         for i in 0..self.boxes.len() {

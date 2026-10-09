@@ -485,7 +485,7 @@ verb is a follow-on, not a condition of this spec.
 Both are recorded against the content repository's `campaign/stranding` at
 `6ddb2ca2` (GENERATION.md, round 7, engine findings 2 and 3).
 
-**Two seams sharing a corner cell (#1005) — dissolved by the frame.** The
+**Two seams sharing a corner cell — dissolved by the frame.** The
 Narrows is a strip with a contact along its whole west face and a contact across
 its north end; under spec-0050's frame both answering layers lay *inside* the
 play space (the piece's boundary cells, `x = x0` and `z = z0`), so the two
@@ -500,7 +500,7 @@ construction; nothing is conceded and nothing re-refused. Both planes are owned
 by a place (rule 3c: each contact names an `a`), so no engine wall stands in
 either. Criterion 14 pins it.
 
-**An all-open piece refused (#1004) — answered, with its hatch closed.** A
+**An all-open piece refused — answered, with its hatch closed.** A
 street or a mud field honestly encloses nothing, and `contract-closure` reds a
 zero binding when no space is `enclosed` or `open_top`. Under this spec open
 places are first-class pieces, so the zero must be readable. **Declared as a

@@ -1919,7 +1919,7 @@ mod tests {
         assert!(!f.owns(s.opening.0), "the plane is beyond the frame");
         assert_eq!(
             answering_layer(&f, &s),
-            f.hi[0] + 0,
+            f.hi[0],
             "the layer beside the plane"
         );
         assert_eq!(required_face_class(None, &s, &a, &f), ["walk"]);

@@ -335,9 +335,7 @@ fn the_model_reads_structure_void_as_the_game_does() {
     }
     let aired = assemble(common::structure_nbt(SIZE, &cells));
     assert!(
-        aired
-            .get(&at)
-            .is_none_or(|s| s.to_string() == "minecraft:air"),
+        aired.get(&at).is_none_or(|s| *s == "minecraft:air"),
         "air is placed, and carves the mass block: {:?}",
         aired.get(&at)
     );

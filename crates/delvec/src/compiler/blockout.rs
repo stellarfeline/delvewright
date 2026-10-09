@@ -2848,7 +2848,8 @@ fn crossings(
     // bounded map every cell a body can reach is inside some place, so a
     // standable cell of the region no claim covers must be reached from none.
     let site = Site::new(&b.boxes, &b.seams, &b.ground);
-    let bounds: Vec<(usize, ([i64; 3], [i64; 3]))> = (0..b.boxes.len())
+    type Bounds = ([i64; 3], [i64; 3]);
+    let bounds: Vec<(usize, Bounds)> = (0..b.boxes.len())
         .map(|i| (i, site.claim_bounds(i)))
         .collect();
     let (plo, phi) = c

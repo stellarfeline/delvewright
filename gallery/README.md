@@ -259,7 +259,8 @@ the whole thing builds from this repository alone — no content checkout:
 ```
 mkdir -p gallery-prefabs
 cargo run --release --manifest-path prefabs/gallery-generator/Cargo.toml \
-  -- gallery-prefabs --skins gallery/skins --design gallery/design --textures gallery/textures
+  -- gallery-prefabs --skins gallery/skins --design gallery/design --textures gallery/textures \
+  --terrain gallery/overlays/site-plan/terrain
 cargo build --release -p delvec --bin delvec
 target/release/delvec build gallery -o gallery-out --prefabs gallery-prefabs
 ```

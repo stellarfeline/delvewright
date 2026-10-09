@@ -923,13 +923,7 @@ fn a_gate_report_beside_a_piece_is_skipped_by_name_and_a_malformed_metadata_file
 /// `tools/ci/gallery_domain.py` does it.
 fn gallery_site_plan(root: &Path) -> PathBuf {
     let dir = root.join("site-plan");
-    let gallery = common::repo_root().join("gallery");
-    common::copy_dir_all(&gallery, &dir);
-    for junk in ["baseline", "forms", "overlays", "probes"] {
-        let _ = std::fs::remove_dir_all(dir.join(junk));
-    }
-    common::copy_dir_all(&gallery.join("overlays/site-plan"), &dir);
-    let _ = std::fs::remove_file(dir.join("overlay.json"));
+    common::gallery_site_plan_at(&dir);
     dir
 }
 

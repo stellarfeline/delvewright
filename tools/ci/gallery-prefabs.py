@@ -67,7 +67,7 @@ def die(msg: str) -> None:
     raise SystemExit(1)
 
 
-def generate(out: Path, skins: Path, design: Path, textures: Path) -> int:
+def generate(out: Path, skins: Path, design: Path, textures: Path, terrain: Path) -> int:
     out.mkdir(parents=True, exist_ok=True)
     skins.mkdir(parents=True, exist_ok=True)
     r = subprocess.run(
@@ -87,6 +87,8 @@ def generate(out: Path, skins: Path, design: Path, textures: Path) -> int:
             str(design),
             "--textures",
             str(textures),
+            "--terrain",
+            str(terrain),
         ],
         capture_output=True,
         text=True,
@@ -224,7 +226,13 @@ def main() -> int:
     out = Path(args.out)
     if out.exists():
         shutil.rmtree(out)
-    pieces = generate(out, GALLERY / "skins", GALLERY / "design", GALLERY / "textures")
+    pieces = generate(
+        out,
+        GALLERY / "skins",
+        GALLERY / "design",
+        GALLERY / "textures",
+        GALLERY / "overlays" / "site-plan" / "terrain",
+    )
     if pieces == 0:
         die("the generator wrote ZERO pieces")
     places, compared = detail(delvec, out)
