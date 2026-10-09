@@ -11,10 +11,8 @@ name: CI (tiers 1 + 2)
 # metered Actions minutes; the repo is PUBLIC, where standard runners are free,
 # so that premise was false and the reason above is the one that holds.
 #
-# `workflow_dispatch` is the plugin release's (ADR-0028 §5): `plugin-release.yml`
-# commits the version bump on `release/plugin-<version>` and dispatches this
-# workflow there, because a push made with a job token starts no run, and `main`
-# accepts that commit only once it carries every required check.
+# `workflow_dispatch` is a human's full run on any ref: nothing in this
+# repository dispatches it.
 #
 # WHAT RUNS. On `pull_request` a job runs only when the change reaches it: the
 # `changes` job diffs the merge preview against the pull request's base and
@@ -22,8 +20,7 @@ name: CI (tiers 1 + 2)
 # its group through its `if`. The table of what each job reads — every path,
 # with the reader that reads it — is `.github/ci-reach.toml`, interpreted only by
 # `tools/lib/ci_reach.py`. On `push` and `workflow_dispatch` every job runs, so
-# `tools/ci/wait-required-checks.py`, which refuses a skipped required check, sees
-# the whole set on the release's commit. `tools/ci/check-ci-reach.py` (a step of
+# a run on `main` or by hand reports the whole set. `tools/ci/check-ci-reach.py` (a step of
 # `docs`) refuses a job with no group, a group no job reads, a glob that matches
 # no tracked file, and an `if` that does not run on every non-pull-request event.
 #
@@ -105,10 +102,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # `check-skill-page.py` below reads two objects an ordinary shallow
-      # checkout does not carry, and refuses rather than judging the page
-      # against whatever is on disk. Three targeted fetches, every sha read at
-      # run time; the action says why it is not `fetch-depth: 0`.
+      # `check-skill-page.py` below reads the pinned engine tag, which an
+      # ordinary shallow checkout does not carry, and refuses rather than judging
+      # the page against whatever is on disk. One targeted fetch, its name read
+      # at run time; the action says why it is not `fetch-depth: 0`.
       - uses: ./.github/actions/skill-page-objects
       # ubuntu-latest ships python3 (>=3.11, has stdlib tomllib) and bash.
       - name: consumers agree with versions.toml
@@ -138,7 +135,7 @@ jobs:
       # asks the remote about pins.
       #
       - name: the creator plugin is held to its pin and its layout
-        run: python3 tools/ci/check-skill-page.py --base origin/main
+        run: python3 tools/ci/check-skill-page.py
 
       # The format's own implementations, reading the same artifact. Ours knows
       # about the pin, the engine and the split; these know what the loader will
@@ -1213,7 +1210,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # `check-skill-page.py --online` below is a caller, and it reads
-      # the same two objects the offline run does. Without them it refuses at
+      # the same object the offline run does. Without them it refuses at
       # exit 2 before it ever reaches the remote, so the online half would be a
       # step that has never once asked its question.
       - uses: ./.github/actions/skill-page-objects
@@ -1270,7 +1267,7 @@ jobs:
       - name: the plugin's shelf carries every target
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 tools/ci/check-skill-page.py --online --base origin/main
+        run: python3 tools/ci/check-skill-page.py --online
 
   # Every zone program in the rule library and the pinned campaigns still
   # expands and judges green, and every IR construct is demonstrated by the

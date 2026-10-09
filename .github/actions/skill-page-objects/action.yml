@@ -2,8 +2,8 @@ name: Fetch what the skill-page gate reads
 description: >
   `tools/ci/check-skill-page.py` judges the creator plugin against an object that
   a shallow `actions/checkout` does not carry: the ENGINE at the release tag
-  `[engine].ref` names, materialised with `git archive`. It also diffs the plugin
-  root against `origin/main`, which a shallow checkout has no ref for.
+  `[engine].ref` names, materialised with `git archive`, and the plugin manifest
+  inside it, which is what a creator installing from that tag receives.
 
   The gate refuses rather than judging the page against whatever is on disk, so
   on a shallow clone every one of its rules errors — measured: 2 failed and 27
@@ -24,8 +24,8 @@ description: >
   TREE, which is the tree that release would tag, and the gate's rule 2 refuses
   any absent name but that one.
 
-  Targeted fetches, not `fetch-depth: 0`: the tag and one commit of `main` are
-  all the gate reads, so the whole history is never needed.
+  A targeted fetch, not `fetch-depth: 0`: the tag is all the gate reads, so the
+  whole history is never needed.
 
 runs:
   using: composite
@@ -56,13 +56,3 @@ runs:
         else
           echo "skill-page objects: origin has no $REF — the engine the gate judges is this tree, which is the tree the release dispatched on this merge commit would tag (ADR-0029 §3)"
         fi
-
-    # `--base origin/main`, for the version-bump rule. `--depth=1` is right HERE
-    # and nowhere a developer runs it: the checkout is already shallow, so there
-    # is one commit to fetch and no full history to truncate
-    # (`tools/lib/gitbase.py` prints the other form to whoever runs it locally).
-    # The rule diffs two trees and reads one blob out of the base, so one commit
-    # is all it needs.
-    - name: fetch origin/main for the version-bump rule
-      shell: bash
-      run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main

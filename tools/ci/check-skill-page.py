@@ -63,10 +63,16 @@ WHAT IS CHECKED, AND THE PERTURBATION THAT REDS EACH
                                                RED: a bare `delvec analyze`
    10  retired: it held the page's headings to a frozen census of the page
        before it was split, so no step could ever be renamed or reordered.
-   11  `plugin.json` parses; `name` is kebab-case; `version` is semver; a diff
-       against the base does not move `version`, unless it is the plugin
-       release workflow's own commit (ADR-0028 §5).
-                                               RED: a pull request that bumps it
+   11  `plugin.json` parses; `name` is kebab-case; `version` is semver and IS
+       the version of the engine release the pin names, in this tree and in
+       the `plugin.json` the marketplace delivers — the one in the tree the
+       tag names, where the tag exists. The version is derived, never chosen:
+       Claude Code updates an installed plugin only when this string changes,
+       and the delivered bytes change only when the pin moves, so the pin's
+       version is the one string that moves exactly when they do.
+                                               RED: a pin move under an unchanged
+                                               version; a pin naming a tag whose
+                                               tree carries another version
    12  `marketplace.json` carries `name`, `owner.name`, and one plugin whose
        `source` is a `git-subdir` object whose `url` is `[engine].repo`, whose
        `path` is the plugin root, and whose `ref` equals `[engine].ref`, with no
@@ -181,7 +187,7 @@ name is a closed set — a name one document leaves open is a candidate, not a
 match. A behaviour the page describes (a refusal, an emitted key of a build
 output) is not a name and neither rule sees it.
 
-    python3 tools/ci/check-skill-page.py [--online] [--base origin/main]
+    python3 tools/ci/check-skill-page.py [--online]
 
 Exit 0 = every rule holds, 1 = a finding, 2 = something this gate reads is
 unusable and it checked nothing.
@@ -863,7 +869,6 @@ def check(
     rev: str,
     ref: str,
     tag_exists: bool,
-    base: str | None,
 ) -> None:
     page = SKILL.read_text(encoding="utf-8")
     files = page_files()
@@ -1226,7 +1231,7 @@ def check(
     engine_paths_rule(rep, rev, ref, tag_exists)
 
     # -- 11/12. the manifests ------------------------------------------------
-    manifest_rules(rep, base, repo, ref)
+    manifest_rules(rep, repo, ref, rev, tag_exists)
 
 
 def key_of(version: str) -> tuple[int, int, int]:
@@ -2240,7 +2245,7 @@ def runner(binary: pathlib.Path):
     return run
 
 
-def manifest_rules(rep: Report, base: str | None, pin_repo: str, ref: str) -> None:
+def manifest_rules(rep: Report, pin_repo: str, ref: str, rev: str, tag_exists: bool) -> None:
     try:
         plugin = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -2253,8 +2258,8 @@ def manifest_rules(rep: Report, base: str | None, pin_repo: str, ref: str) -> No
         rep.find(
             f"`plugin.json` `version` is {version!r}, which is not semver. A "
             f"declared version PINS the plugin: creators receive an update only "
-            f"when it moves, so this is the number a re-pin and a page edit both "
-            f"have to touch."
+            f"when it moves, and it is the version of the engine release the pin "
+            f"names."
         )
 
     try:
@@ -2369,82 +2374,113 @@ def manifest_rules(rep: Report, base: str | None, pin_repo: str, ref: str) -> No
             )
     rep.bind("marketplace plugin entr(y/ies)", len(entries) if isinstance(entries, list) else 0, 1)
 
-    version_move_rule(rep, base, version)
+    delivered_version_rule(rep, ref, rev, tag_exists, version)
 
 
-def version_move_rule(
+# The one pin whose tag was written before rule 11 derived the version: its
+# tree carries `plugin.json` 1.5.0 (and pins `delvec--v1.9.0`, because the pin
+# was moved onto the tag after the release rather than naming it before), which
+# is what every creator who installs while the pin names it receives. A tag
+# never moves, so this is a fact about history, keyed by the exact pair; it reds
+# as stale the moment the pin names anything else, so the pull request that
+# moves the pin deletes it.
+DELIVERED_BEFORE_THE_RULE = {"delvec--v1.10.0": "1.5.0"}
+
+# Where the plugin manifest sits in any tree of this repository, read once
+# from the real layout (the test fixture moves `PLUGIN_ROOT`, not history).
+MANIFEST_REL = (PLUGIN_ROOT / ".claude-plugin" / "plugin.json").relative_to(REPO).as_posix()
+
+
+def delivered_version_rule(
     rep: Report,
-    base: str | None,
+    ref: str,
+    rev: str,
+    tag_exists: bool,
     version: object,
-    repo: pathlib.Path | None = None,
-    plugin_root: pathlib.Path | None = None,
-    event: str | None = None,
-    ref: str | None = None,
+    legacy: dict[str, str] | None = None,
 ) -> None:
-    """Only the plugin release moves the plugin's version (ADR-0028 §5).
+    """The plugin's version IS the version of the engine release it ships at.
 
-    The marketplace delivers whatever `plugin.json` `version` `main` carries, and
-    a version that moves is an update every creator receives — so the release is
-    the one act that moves it, and an ordinary change never does. A page edit
-    under an unchanged version is fine: it reaches creators at the next release.
+    The marketplace entry delivers the plugin root at the tag `[engine].ref`
+    names (rule 12), and Claude Code updates an installed plugin only when
+    `plugin.json` `version` differs from the one it holds — measured, and
+    recorded in `docs/reference/skill-workflow.md`. The delivered bytes change
+    exactly when the pin moves, and every pin names a distinct release, so the
+    pin's own version is the one string that moves when they do. It is derived,
+    never chosen: there is one right value, every other value is a red, and no
+    base revision is needed to know it, so the rule binds on every run.
 
-    THE RELEASE COMMIT is recognised by what `plugin-release.yml` alone controls:
-    this run is a `workflow_dispatch` on `refs/heads/release/plugin-<version>`
-    (`GITHUB_EVENT_NAME`, `GITHUB_REF`, which a pull request's run cannot set),
-    and against the base the plugin root differs only in `plugin.json`, whose
-    object differs only in `version`.
-
-    A FUNCTION rather than the tail of `manifest_rules`, because its subject is a
-    git history: a test reaches it by handing it a repository of its own.
+    Two trees are read. THIS tree's `plugin.json` must state the pin's version:
+    while the tag is unborn this tree is what the release will tag, and once it
+    exists this is what keeps `main` stating the version it delivers. And where
+    the tag exists, the `plugin.json` in the tree it names — the bytes a creator
+    actually receives — must state it too, which is what refuses a pin onto an
+    engine release that was cut without the page moving to it.
     """
-    if base is None:
-        print("  --   version rule: not run (no --base given)")
+    legacy = DELIVERED_BEFORE_THE_RULE if legacy is None else legacy
+    for tag, held in sorted(legacy.items()):
+        if tag != ref:
+            rep.find(
+                f"`DELIVERED_BEFORE_THE_RULE` still records {tag} (delivering "
+                f"{held!r}) and the pin names {ref}. The entry describes what the "
+                f"pin used to deliver; the pull request that moved the pin deletes it."
+            )
+    try:
+        _line, number = release_tags.parse(ref)
+    except release_tags.Refused:
+        return  # rule 2 has already refused the name; there is no version to derive
+    if version != number:
+        rep.find(
+            f"`plugin.json` `version` is {version!r} and the pin names {ref}, so it "
+            f"is {number!r}. The plugin's version is the version of the engine "
+            f"release it ships at: the marketplace delivers the plugin root at that "
+            f"tag, and Claude Code updates an installed creator only when this "
+            f"string changes — a pin move under an unchanged version reaches nobody "
+            f"who already installed."
+        )
+    else:
+        print(f"  ok   plugin.json version {version!r} is the version {ref} states")
+    if not tag_exists:
+        print(
+            f"  ok   {ref} is unborn, so the plugin.json it will deliver is this "
+            f"tree's, held above"
+        )
+        rep.bind("delivered plugin manifest(s) held to the pin's version", 1, 1)
         return
-    repo = REPO if repo is None else repo
-    plugin_root = PLUGIN_ROOT if plugin_root is None else plugin_root
-    event = os.environ.get("GITHUB_EVENT_NAME", "") if event is None else event
-    ref = os.environ.get("GITHUB_REF", "") if ref is None else ref
-    plugin_rel = str(plugin_root.relative_to(repo))
-    manifest_rel = f"{plugin_rel}/.claude-plugin/plugin.json"
-    show = subprocess.run(
-        ["git", "-C", str(repo), "show", f"{base}:{manifest_rel}"], capture_output=True, text=True
-    )
-    if show.returncode != 0:
-        print(f"  ok   {base} carries no plugin manifest — this is the first publish")
-        return
-    base_doc = json.loads(show.stdout)
-    was = base_doc.get("version")
-    if was == version:
-        print(f"  ok   plugin.json version is {version!r} on both sides — an ordinary change moves no version")
-        return
-    diff = subprocess.run(
-        ["git", "-C", str(repo), "diff", "--name-only", base, "--", plugin_rel],
+    shown = subprocess.run(
+        ["git", "-C", str(REPO), "show", f"{rev}:{MANIFEST_REL}"],
         capture_output=True,
         text=True,
     )
-    if diff.returncode != 0:
-        rep.find(f"could not diff the plugin root against {base}: {diff.stderr.strip()}")
-        return
-    touched = [line for line in diff.stdout.split("\n") if line.strip()]
-    tree_doc = json.loads((plugin_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    why = []
-    if event != "workflow_dispatch":
-        why.append(f"the run is a {event or 'local'!r} event, not the release's workflow_dispatch")
-    if ref != f"refs/heads/release/plugin-{version}":
-        why.append(f"the ref is {ref or '(none)'!r}, not refs/heads/release/plugin-{version}")
-    if touched != [manifest_rel]:
-        why.append(f"{len(touched)} file(s) under the plugin root differ from {base}, not plugin.json alone")
-    if {k: v for k, v in tree_doc.items() if k != "version"} != {k: v for k, v in base_doc.items() if k != "version"}:
-        why.append("plugin.json differs in more than `version`")
-    if why:
+    if shown.returncode != 0:
         rep.find(
-            f"`plugin.json` `version` moves from {was!r} to {version!r} against {base}. Only the plugin "
-            f"release workflow (`.github/workflows/plugin-release.yml`) moves it, because the marketplace "
-            f"delivers the version `main` carries; leave it at {was!r} and dispatch a release instead. "
-            f"This is not that workflow's commit: {'; '.join(why)}."
+            f"{ref} names a tree with no {MANIFEST_REL}, so the marketplace entry "
+            f"that points at it delivers no plugin: {shown.stderr.strip()}"
         )
+        rep.bind("delivered plugin manifest(s) held to the pin's version", 0, 1)
         return
-    print(f"  ok   {version!r} is moved by the plugin release's own commit (release/plugin-{version}, plugin.json version only)")
+    try:
+        delivered = json.loads(shown.stdout).get("version")
+    except json.JSONDecodeError as exc:
+        raise Unusable(f"{MANIFEST_REL} at {ref} does not parse: {exc}") from exc
+    rep.bind("delivered plugin manifest(s) held to the pin's version", 1, 1)
+    if delivered == number:
+        print(f"  ok   the plugin.json {ref} delivers states {delivered!r}")
+    elif legacy.get(ref) == delivered:
+        print(
+            f"  ---  the plugin.json {ref} delivers states {delivered!r}, recorded in "
+            f"`DELIVERED_BEFORE_THE_RULE`: a creator installing now receives "
+            f"{delivered!r}, and one who already holds it receives no update until "
+            f"the pin moves to a tag cut from a tree this rule has held"
+        )
+    else:
+        rep.find(
+            f"the plugin.json {ref} delivers states {delivered!r}, not {number!r}. "
+            f"That release was cut from a tree whose page did not move to it, so a "
+            f"creator holding {delivered!r} would receive these bytes as no update "
+            f"at all. Pin a tag whose own tree named it (ADR-0029 §3), or name this "
+            f"tree's next tag."
+        )
 
 
 # ------------------------------------------------------------------ online --
@@ -2620,14 +2656,6 @@ def online(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--online", action="store_true", help="also ask the remote about the tag and its shelf")
-    ap.add_argument(
-        "--base",
-        default=None,
-        help=(
-            "the revision the plugin root is diffed against for the version "
-            "rule (e.g. origin/main). Omitted, that one rule does not run and says so."
-        ),
-    )
     args = ap.parse_args(argv)
 
     print(f"== check-skill-page — {rel(SKILL)} ==")
@@ -2640,7 +2668,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         with tempfile.TemporaryDirectory(prefix="skill-page-engine-") as tmp:
             engine = materialise(rev, pathlib.Path(tmp))
-            check(rep, engine, rev, ref, tag_exists, args.base)
+            check(rep, engine, rev, ref, tag_exists)
             if args.online:
                 print("== the release the page downloads ==")
                 version = engine_version(engine / "Cargo.toml")

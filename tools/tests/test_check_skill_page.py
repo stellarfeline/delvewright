@@ -70,7 +70,7 @@ def tree(mod, tmp_path, monkeypatch):
     return skill
 
 
-def run(mod, engine, base=None):
+def run(mod, engine):
     """Judge the tree the fixture set up, against the engine at the real pin.
 
     `rev` comes from the PERTURBED pin, so a test that breaks the pin's shape
@@ -84,7 +84,7 @@ def run(mod, engine, base=None):
         rev, tag_exists = mod.resolve_ref(ref)
     except mod.Unusable:
         rev, tag_exists = real_rev, real_tag_exists
-    mod.check(rep, engine_root, rev, ref, tag_exists, base)
+    mod.check(rep, engine_root, rev, ref, tag_exists)
     return rep
 
 
@@ -520,97 +520,73 @@ def test_a_command_named_only_in_inline_PROSE_inside_init_does_not_prove_it(
     assert not any("--profile play" in p for p in proofs), sorted(proofs)
 
 
-# ------------------------------------------- only the release moves the version --
+# ------------------------- rule 11, the version is the pinned release's own --
 
 
-def _plugin_repo(tmp_path: pathlib.Path, mod, version: str) -> pathlib.Path:
-    """A repository of its own, holding a plugin root at the real layout.
-
-    The rule's subject is a git HISTORY, so no perturbation of a copied tree can
-    reach it — this is the smallest thing that can be a base and a head.
-    """
-    repo = tmp_path / "repo"
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    (plugin / ".claude-plugin").mkdir(parents=True)
-    (plugin / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "delvewright", "version": version}) + "\n", encoding="utf-8"
-    )
-    (plugin / "page.md").write_text("the page, as it was\n", encoding="utf-8")
-    for args in (
-        ["init"],
-        ["config", "user.email", "t@example.invalid"],
-        ["config", "user.name", "t"],
-        ["add", "-A"],
-        ["commit", "-m", "base"],
-    ):
-        r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
-        assert r.returncode == 0, r.stderr
-    return repo
+def _set_version(mod, version: str) -> None:
+    path = mod.PLUGIN_JSON
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["version"] = version
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def _bump(plugin: pathlib.Path, version: str, **extra) -> None:
-    (plugin / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": "delvewright", "version": version, **extra}) + "\n", encoding="utf-8"
-    )
+def test_a_version_that_is_not_the_pins_reds(mod, tree, engine):
+    """The defect this rule exists for: the pin moved through five engine
+    releases while `plugin.json` stayed at 1.5.0, so `/plugin update` told every
+    installed creator they were up to date."""
+    _repo, ref = mod.read_pin()
+    _line, number = mod.release_tags.parse(ref)
+    major, minor, patch = (int(x) for x in number.split("."))
+    _set_version(mod, f"{major}.{minor}.{patch + 1}")
+    assert has(run(mod, engine), f"the pin names {ref}, so it is {number!r}")
 
 
-RELEASE = {"event": "workflow_dispatch", "ref": "refs/heads/release/plugin-1.2.0"}
+def test_the_pins_version_holds(mod, tree, engine):
+    _repo, ref = mod.read_pin()
+    _set_version(mod, mod.release_tags.parse(ref)[1])
+    rep = run(mod, engine)
+    assert not has(rep, "`plugin.json` `version` is"), rep.findings
 
 
-def test_a_pull_request_that_bumps_the_version_reds(mod, tmp_path):
-    """The perturbation: an ordinary change moving `plugin.json` `version`."""
-    repo = _plugin_repo(tmp_path, mod, "1.1.0")
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    _bump(plugin, "1.2.0")
+def test_an_unborn_pin_under_the_old_version_reds(mod):
+    """The pull request that names the next tag is the one that delivers: it
+    must carry that tag's version, because its tree IS what the release tags."""
     rep = mod.Report()
-    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/heads/topic")
-    assert any("moves from '1.1.0' to '1.2.0'" in f and "pull_request" in f for f in rep.findings), rep.findings
+    mod.delivered_version_rule(rep, "delvec--v9.8.7", "HEAD", False, "9.8.6", legacy={})
+    assert any("so it is '9.8.7'" in f for f in rep.findings), rep.findings
 
 
-def test_a_page_edit_with_no_bump_holds(mod, tmp_path):
-    repo = _plugin_repo(tmp_path, mod, "1.2.0")
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
+def test_an_unborn_pin_under_its_own_version_holds(mod):
     rep = mod.Report()
-    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="pull_request", ref="refs/heads/topic")
+    mod.delivered_version_rule(rep, "delvec--v9.8.7", "HEAD", False, "9.8.7", legacy={})
     assert rep.findings == [], rep.findings
+    assert rep.bindings == [("delivered plugin manifest(s) held to the pin's version", 1, 1)]
 
 
-def test_the_release_commit_holds(mod, tmp_path):
-    repo = _plugin_repo(tmp_path, mod, "1.1.0")
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    _bump(plugin, "1.2.0")
+def test_a_pin_whose_tree_delivers_another_version_reds(mod):
+    """The bytes a creator receives are the tag's, so the tag's `plugin.json` is
+    read, not this tree's. The perturbation is a pin onto an engine release cut
+    from a tree whose page never moved to it: here, a tag named 9.8.7 standing
+    at `HEAD`, whose committed `plugin.json` states the current pin's version."""
+    shown = subprocess.run(
+        ["git", "-C", str(mod.REPO), "show", f"HEAD:{mod.MANIFEST_REL}"],
+        capture_output=True, text=True, check=True,
+    )
+    assert json.loads(shown.stdout)["version"] != "9.8.7"
     rep = mod.Report()
-    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
-    assert rep.findings == [], rep.findings
+    mod.delivered_version_rule(rep, "delvec--v9.8.7", "HEAD", True, "9.8.7", legacy={})
+    assert any("the plugin.json delvec--v9.8.7 delivers states" in f for f in rep.findings), rep.findings
+    assert rep.bindings == [("delivered plugin manifest(s) held to the pin's version", 1, 1)]
 
 
-def test_a_release_branch_that_also_edits_the_page_reds(mod, tmp_path):
-    repo = _plugin_repo(tmp_path, mod, "1.1.0")
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    _bump(plugin, "1.2.0")
-    (plugin / "page.md").write_text("the page, edited\n", encoding="utf-8")
+def test_a_stale_pre_rule_entry_reds(mod):
+    """The record names what a pin USED to deliver; once the pin moves it is a
+    second statement of something no longer true."""
     rep = mod.Report()
-    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
-    assert any("2 file(s) under the plugin root" in f for f in rep.findings), rep.findings
-
-
-def test_a_release_commit_that_changes_another_manifest_field_reds(mod, tmp_path):
-    repo = _plugin_repo(tmp_path, mod, "1.1.0")
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    _bump(plugin, "1.2.0", description="changed")
-    rep = mod.Report()
-    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, **RELEASE)
-    assert any("more than `version`" in f for f in rep.findings), rep.findings
-
-
-def test_a_dispatch_on_another_branch_reds(mod, tmp_path):
-    repo = _plugin_repo(tmp_path, mod, "1.1.0")
-    plugin = repo / ".claude" / "skills" / "delvewright"
-    _bump(plugin, "1.2.0")
-    rep = mod.Report()
-    mod.version_move_rule(rep, "HEAD", "1.2.0", repo=repo, plugin_root=plugin, event="workflow_dispatch", ref="refs/heads/main")
-    assert any("not refs/heads/release/plugin-1.2.0" in f for f in rep.findings), rep.findings
+    mod.delivered_version_rule(
+        rep, "delvec--v9.8.7", "HEAD", False, "9.8.7", legacy={"delvec--v1.0.0": "0.1.0"}
+    )
+    assert any("still records delvec--v1.0.0" in f for f in rep.findings), rep.findings
 
 
 # ------------------------------------ rule 17, a DW code the pinned engine declares --

@@ -1,6 +1,6 @@
 # ADR-0028: Three things, each released by its name and its version — `delvec`, `delvewright-dsl` and the `delvewright` plugin
 
-- **Status**: Accepted — implemented; §1–§6, §9 and *Consequences* amended to what was built: a release is a human dispatching a workflow, and only the plugin release moves the plugin's version
+- **Status**: Superseded in part by ADR-0033 (§5)
 - **Date**: 2026-09-13
 - **Source**: the rule that the engine repository publishes three
   independently versioned things — the `delvec` binary, the `delvewright-dsl`
