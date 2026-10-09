@@ -327,8 +327,18 @@ impl World {
 
     /// The climbs a route takes, as runs: each maximal stretch of consecutive
     /// route cells joined by a climb move ([`World::climb_moves_fp`]) rather
-    /// than a walk. Empty for a route that climbs nothing — every route in a
+    /// than a walk, cut at every standable cell the stretch passes through after
+    /// it has held on. Empty for a route that climbs nothing — every route in a
     /// world without a climbable.
+    ///
+    /// **A run is one column.** A climb move never crosses columns while the
+    /// body holds on; it changes column only by letting go onto a standable cell
+    /// (off the side, over the top) and taking hold again. So a stretch that
+    /// tops out of one ladder straight onto the foot of the next is two climbs:
+    /// the first lets go onto that cell (which it does not hold in), the second
+    /// takes hold from it. The harness drives a climb up or down one column
+    /// (`harness/src/executor/climb.ts`) and refuses a record whose lowest and
+    /// highest held cells are not one column.
     pub fn climb_runs(&self, cells: &[[i32; 3]]) -> Vec<ClimbRun> {
         if self.climb.is_empty() || cells.len() < 2 {
             return Vec::new();
@@ -347,26 +357,48 @@ impl World {
                 i += 1;
                 continue;
             }
-            let start = i;
+            let mut start = i;
             while i + 1 < cells.len() && is_climb_step(cells[i], cells[i + 1]) {
                 i += 1;
+                // A standable cell inside the stretch, reached after the body
+                // has held on, is where one climb lets go and the next takes
+                // hold — unless the stretch ends here anyway.
+                let held_before = cells[start..i].iter().any(|c| self.climb_cell_fp(*c, &fp));
+                if i + 1 < cells.len()
+                    && is_climb_step(cells[i], cells[i + 1])
+                    && held_before
+                    && self.standable_fp(cells[i], &fp)
+                {
+                    out.push(self.climb_run(&cells[start..=i], false, &fp));
+                    start = i;
+                }
             }
-            let held: Vec<[i32; 3]> = cells[start..=i]
-                .iter()
-                .copied()
-                .filter(|c| self.climb_cell_fp(*c, &fp))
-                .collect();
-            let first = held.first().copied().unwrap_or(cells[start]);
-            let hold = self.climb_holds.get(&first);
-            out.push(ClimbRun {
-                from: cells[start],
-                to: cells[i],
-                cells: held,
-                block: hold.map(|h| h.block.clone()).unwrap_or_default(),
-                facing: hold.and_then(|h| h.ladder_facing()),
-            });
+            out.push(self.climb_run(&cells[start..=i], true, &fp));
         }
         out
+    }
+
+    /// One [`ClimbRun`] over the route stretch `span`, from its first cell to
+    /// its last. `holds_last` is false when the last cell is a standable cell
+    /// the body lets go onto to take hold of the next climb: it is that climb's
+    /// cell, not this one's.
+    fn climb_run(&self, span: &[[i32; 3]], holds_last: bool, fp: &Footprint) -> ClimbRun {
+        let last = span.len() - 1;
+        let held: Vec<[i32; 3]> = span
+            .iter()
+            .enumerate()
+            .filter(|&(k, c)| (holds_last || k != last) && self.climb_cell_fp(*c, fp))
+            .map(|(_, c)| *c)
+            .collect();
+        let first = held.first().copied().unwrap_or(span[0]);
+        let hold = self.climb_holds.get(&first);
+        ClimbRun {
+            from: span[0],
+            to: span[last],
+            cells: held,
+            block: hold.map(|h| h.block.clone()).unwrap_or_default(),
+            facing: hold.and_then(|h| h.ladder_facing()),
+        }
     }
 }
 
@@ -581,5 +613,44 @@ mod tests {
         assert_eq!(r.cells.last(), Some(&[2, 68, 1]));
         assert_eq!(r.facing, Some(delvewright_dsl::blockshape::Face::West));
         assert!(r.block.starts_with("minecraft:ladder"));
+    }
+
+    /// **A stack of two ladders is two climbs, each one column.** The lower
+    /// ladder (x = 2, y 65..=68) tops out over a step onto `[3, 69, 1]` — a
+    /// floor on the lower mass, and the foot of the upper ladder (x = 3,
+    /// y 69..=72) hung on the upper mass. The route never walks between them:
+    /// it lets go straight onto the second ladder's foot and takes hold again.
+    /// The export is two runs, the first letting go at the shared cell and the
+    /// second taking hold from it; neither holds in two columns.
+    #[test]
+    fn a_stack_of_two_ladders_is_two_one_column_climbs() {
+        let mut cells = cliff(Some(LADDER_WEST), "minecraft:stone");
+        for x in 4..=6 {
+            for z in 0..=2 {
+                for y in 69..=72 {
+                    cells.push(([x, y, z], "minecraft:stone".to_string()));
+                }
+            }
+        }
+        for y in 69..=72 {
+            cells.push(([3, y, 1], LADDER_WEST.to_string()));
+        }
+        let w = world(&cells);
+        let path = w
+            .find_path([0, 65, 1], [5, 73, 1])
+            .expect("the stack routes");
+        let shared = [3, 69, 1];
+        assert!(w.is_standable(shared) && w.is_climb_cell(shared));
+        let runs = w.climb_runs(&path);
+        assert_eq!(runs.len(), 2, "{path:?} -> {runs:?}");
+        for r in &runs {
+            let cols: BTreeSet<(i32, i32)> = r.cells.iter().map(|c| (c[0], c[2])).collect();
+            assert_eq!(cols.len(), 1, "one column per climb: {r:?}");
+        }
+        assert_eq!(runs[0].to, shared);
+        assert!(!runs[0].cells.contains(&shared));
+        assert_eq!(runs[1].from, shared);
+        assert_eq!(runs[1].cells.first(), Some(&shared));
+        assert_eq!(runs[1].cells.last(), Some(&[3, 72, 1]));
     }
 }
