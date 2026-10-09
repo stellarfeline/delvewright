@@ -114,7 +114,13 @@ any game, however oblique its story.
   order`) is the same case as a capitalised name. **Cited:** Haviland & Clark
   (1974), the given-new strategy: a definite noun phrase is processed by finding
   its antecedent, and comprehension is slower when there is none and the reader
-  must build a bridge. The play-order rule is **authored**.
+  must build a bridge. The play-order rule is **authored**. The body that
+  introduces a name is a person speaking to the player under it, or an item in
+  the player's hands; a nameplate over a body the party fights, a counter, a
+  bar's title and an area's name show a name without saying what it is, and a
+  definite mention (`the last of the watch`) presupposes it — none of these
+  introduces. **Authored**, from a playtest in which an option spoke of `the
+  watch`, a name the party had only seen over the bodies it fought.
 - **N2 — A head noun that names the kind is an introduction; an invented word is
   not.** `the Keep Doors`, `the Warden's Door`, `the eighth of Thaw` explain
   themselves. `the Undertide`, `Tallow` (a sidebar counter shown from the first
@@ -133,6 +139,13 @@ any game, however oblique its story.
 - **N5 — Real-world names in a tour get the same treatment.** A Chinese reader
   does not know who `Montrose` or `the Jacobites` are. One clause each.
   **Authored.**
+
+- **N6 — A name tag marks a person.** A body wears a name only when the story
+  treats it as someone: a boss, an elite, a named actor, an NPC. Ordinary bodies
+  fight under their kind and wear nothing. Three zombies of one wave each tagged
+  `The Watch` is the defect; three plain zombies, with a stated bar title `The
+  Watch` over the fight if it needs a heading, is the form, and one `The Watch
+  Captain` among them, alone under its name, is a character. **Authored.**
 
 ## 4. Chinese
 
@@ -175,13 +188,21 @@ Chinese is §7.
 
 ## 5. What a machine can check
 
-Summary of the design in the evidence file §5. One row is built: one name, one
-rendering is the transcreation tool's fact check, run on every line it writes
-([i18n.md § The fact check](i18n.md#the-fact-check)). The rest is not built.
+Summary of the design in the evidence file §5. Four rows are built. One name,
+one rendering is the transcreation tool's fact check, run on every line it writes
+([i18n.md § The fact check](i18n.md#the-fact-check)). Dangling name, for the
+names that reach dialogue, is `DW0982`: the declared names (the inventory's
+`name` and item-name rows, the fact check's set) placed in the compiler's play
+order against what has told them (N1, N3). A question without an answer is
+`DW0981`: an option that asks and opens no line. A name tag on a crowd is
+`DW0983` (N6, [compiler.md § DW0983](compiler.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). All three refuse at `delvec validate` ([compiler.md § DW0981/DW0982](compiler.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
+The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |
 |---|---|---|
-| Dangling name | Every player-facing string placed at its earliest display step in the compiler's play order (`Flow::journal`, the order `validation/branch-chronicle-*.md` prints), against a campaign glossary of declared names | Capitalisation sweep over four campaigns: 6 of 39 candidates real (15%), 6 of 7 found — a candidate list, not a refusal; with a declared glossary the check enforces a stated obligation |
+| Dangling name (`DW0982`, built for dialogue) | Every NPC line and option label or tooltip at its earliest display step in the compiler's play order (the replay's walk, on the critical path and every branch), against the declared names and what has told them: the person speaking, the class and kit, an item handed over, or a sentence that says what it is | Refused uses on content main: Vesperhold 1 of 4 (`Tallow`), and, order-free on the campaigns the current engine cannot read, Hollow Vigil 3 of 3 (`First Warden`) — each a name the evidence file's audit rates dangling; none rated introduced is refused. A place or thing the documents never name (an anchor) is out of its reach |
+| Name tag on a crowd (`DW0983`, built) | Every wave entry and actor carrying a name that one wave spawns more than one body under | Content main: 17 of 21 waves refused (Hollow Vigil 2 of 2, Nobody's Isle 3 of 3, Vesperhold 12 of 16), 0 of 36 named actors; every wave left standing is a single named boss or elite |
+| Question without an answer (`DW0981`, built) | Every dialogue option whose label or tooltip, in any language, ends in `?`/`？` | 0 of 73 question options on content main refused; in the gallery and its overlays 2 of 5, both in the site-plan overlay, since answered |
 | One name, one rendering | Glossary names × the Chinese of every string that contains them | 3 of 4 hits real (75%); recall 3 of 4 |
 | Archaic register (zh) | Marker list (诸位、在下、可曾、相询、若、便、择) | 7 of 9 (78%); recall 7 of 7 |
 | Calque markers (zh) | Marker list | 9 of 11 (82%); recall 9 of 23 |
@@ -274,6 +295,11 @@ fallback when no key is configured.
   statue. An unknown thing may go unnamed or be mentioned obliquely
   (`something at the bottom of the well`), but every claim made of it is true
   in the story. **Authored.**
+- A speaker never narrates the level's design. `Most walk past both.`, said by
+  a keeper of a lever and a bell the player has just used, is the designer
+  remarking on players through a character; the keeper says what this place is
+  and what just happened, in his own voice. **Authored**, from a playtest; no
+  machine check reads it.
 
 ## Sources
 

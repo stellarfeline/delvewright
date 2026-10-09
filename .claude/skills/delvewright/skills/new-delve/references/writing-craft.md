@@ -225,8 +225,14 @@ pass afterwards. Which rules bind which line:
   what happens, never from wording the player must decode; nothing the text
   says of the world contradicts what the level shows.
 - **Every name, everywhere**: N1–N5. The first time a name reaches the player in
-  play order it is a body or item carrying it, or a sentence saying what it is;
-  one thing has one name. §D above is the spelling half of N4.
+  play order it is the person speaking to them under it, an item in their hands,
+  or a sentence saying what it is; a nameplate over a body the party fights, a
+  counter or an area's name shows a name and does not tell it. One thing has one
+  name. §D above is the spelling half of N4.
+- **Every name tag**: N6. A `name` on a body marks a person — a boss, an elite,
+  a named actor, an NPC. A wave's ordinary bodies wear none; a fight that needs a
+  heading states its bar's `title`. One body alone under a name is a character;
+  two bodies under one name are refused.
 
 Write each line knowing it will be transcreated: the English is the fact source
 another language is rewritten from, so a fact the English only implies is a fact

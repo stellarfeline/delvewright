@@ -92,6 +92,7 @@
 //! - [`strand`]: a fight the party must win stays where the party can strike it (`DW0924`).
 //! - [`surround`]: horizon surround generation — the tiles that dress the world outside the placed pieces.
 //! - [`teleport`]: the `teleport` verb's one compile-time obligation, and the ledger saying what it looked at.
+//! - [`telling`]: what the dialogue tells the player — a question gets an answer (`DW0981`), a name is told before it is used (`DW0982`).
 //! - [`textfit`]: on-screen text that does not fit what draws it (`DW0330`/`DW0331`).
 //! - [`textures`]: a delve wears its own textures — `world.textures[]` against the pinned client's census and the campaign's files (`DW0939`/`DW0940`/`DW0309`), the pack entries, and the comparison sheet (spec-0084).
 //! - [`timeline`]: per-effect-timeline gate state — the static half of the `close-gate` model (`DW0410`).
@@ -189,6 +190,7 @@ pub mod statepath;
 pub mod strand;
 pub mod surround;
 pub mod teleport;
+pub mod telling;
 pub mod textfit;
 pub mod textures;
 pub mod timeline;
