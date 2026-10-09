@@ -1157,6 +1157,86 @@ fn a_via_at_a_corner_is_one_face_on_the_plane_it_lies_in() {
     assert_eq!(dirs, ["west", "north"], "{faces:?}");
 }
 
+/// **Two openings meeting at the room's corner are both openings** (spec-0098
+/// §6b). A street with a way along its whole west side and another across its
+/// north end, each answered in the piece's first layer as a place that owns
+/// neither plane answers it: the two openings share the corner column, whose
+/// cells touch the street only through a cell of the other opening.
+/// `contract-well-formed` passes and each way exports exactly its declared
+/// cells. The perturbations: drop the north way, and the west way's corner
+/// column touches nothing and reds; thicken the west way outward by a course,
+/// and its outer course — reached only through its own cells — reds. Vacuous
+/// if the corner cells touched the street: asserted they do not.
+#[test]
+fn two_openings_at_a_corner_open_through_each_other() {
+    let mut b = Build::new([10, 5, 10]);
+    b.stone([0, 0, 0], [9, 0, 9]);
+    let street = |west: i32| {
+        let mut c = contract("street");
+        c.spaces.insert(
+            "street".to_string(),
+            space("open", vec![region([west, 1, 1], [9, 3, 9])]),
+        );
+        c
+    };
+    let west_way = |c: &mut SpatialContract, x: [i32; 2]| {
+        c.edges.push(with_via(
+            edge("street", "exterior", "walk"),
+            "west-way",
+            vec![region([x[0], 1, 0], [x[1], 3, 9])],
+        ));
+    };
+    let north_way = |c: &mut SpatialContract| {
+        c.edges.push(with_via(
+            edge("street", "exterior", "walk"),
+            "north-way",
+            vec![region([0, 1, 0], [9, 3, 0])],
+        ));
+    };
+    let mut c = street(1);
+    west_way(&mut c, [0, 0]);
+    north_way(&mut c);
+    // The corner column is in both ways and beside no cell of the street.
+    let corner = [0, 1, 0];
+    let room: BTreeSet<[i32; 3]> = (1..=9)
+        .flat_map(|x| (1..=3).flat_map(move |y| (1..=9).map(move |z| [x, y, z])))
+        .collect();
+    assert!(
+        [[1, 0, 0], [0, 0, 1], [0, 1, 0]]
+            .iter()
+            .all(|d| !room.contains(&[corner[0] + d[0], corner[1] + d[1], corner[2] + d[2]]))
+    );
+    let report = check(&b.model, &c, &no_anchors());
+    let wf = gate(&report, "contract-well-formed");
+    assert!(wf.passed(), "{}", wf.detail);
+    let faces = exterior_faces(&b.model, &c);
+    let dirs: Vec<&str> = faces.iter().map(|f| f.dir.as_str()).collect();
+    assert_eq!(dirs, ["west", "north"], "{faces:?}");
+    assert!(faces.iter().all(|f| f.cells.len() == 30), "{faces:?}");
+
+    // Without the north way, the corner column touches nothing.
+    let mut alone = street(1);
+    west_way(&mut alone, [0, 0]);
+    let report = check(&b.model, &alone, &no_anchors());
+    let wf = gate(&report, "contract-well-formed");
+    assert!(!wf.passed(), "{}", wf.detail);
+    assert!(
+        wf.detail.contains("3 of its opening's cells touch neither"),
+        "{}",
+        wf.detail
+    );
+
+    // A west way two courses thick: its outer course reaches the street only
+    // through its own cells.
+    let mut thick = street(2);
+    west_way(&mut thick, [0, 1]);
+    north_way(&mut thick);
+    let report = check(&b.model, &thick, &no_anchors());
+    let wf = gate(&report, "contract-well-formed");
+    assert!(!wf.passed(), "{}", wf.detail);
+    assert!(wf.detail.contains("touch neither"), "{}", wf.detail);
+}
+
 /// **A stair's face is its via's footprint on the plane, treads included;
 /// a barred edge's face is its bar** (spec-0098). A cellar entered through a
 /// hole the floor above cuts: the stair's top step stands in the answering

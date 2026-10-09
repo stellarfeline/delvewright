@@ -994,6 +994,22 @@ what a criterion asserts says so in the word *loosening*.
     stand, reached by a ladder. Shown in `grammar_contract_check.rs`
     `a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways` and
     `a_climb_without_its_volume_or_its_rise_is_refused`.
+34. **Two seams at a corner, whoever owns the planes.** §6b's "dissolved by
+    the frame" holds only where the place owns both planes. Where a neighbour
+    owns one or both, that seam is answered on the place's own first layer
+    (departure 10), and the two openings again meet at the play space's corner
+    column: owning neither, the column lies in both openings; owning one, the
+    owned opening's end cell touches the room only through the other opening.
+    The Narrows itself is the second shape: its west contact's plane is its
+    own, its north passage's the neighbour's. The author declared both
+    openings exactly as allocated, so `contract-well-formed` was the wrong
+    gate of the pair (the regression could only turn a proof red): an exterior
+    opening's cell may touch the room through a cell of another of the same
+    space's exterior openings that itself touches the room — one hop, never
+    through its own opening. Shown in `compiler::detail`
+    `two_contacts_at_a_corner_answer_whoever_owns_each_plane` and
+    `grammar_contract_check.rs`
+    `two_openings_at_a_corner_open_through_each_other`.
 
 | Criterion | Demonstrated in |
 |---|---|
@@ -1010,8 +1026,8 @@ what a criterion asserts says so in the word *loosening*.
 | 11 | `tests/detail.rs` `a_campaign_that_binds_nothing_is_massed_byte_identically`, `the_seed_moves_no_detailed_byte` |
 | 12 | the gallery build over the overlay (the battery, `DW0885`, `DW0210`, `DW0891`, `DW0921`) |
 | 13 | `tools/ci/check-dw-codes.py`; the reference pages; `docs/demo-levels.md`; the skill text in the round's scratch file |
-| 14 | `compiler::detail` test `two_contacts_at_a_corner_answer_at_their_own_planes` (departure 13) |
-| 15 | `tests/grammar_contract_check.rs` `an_all_open_piece_states_its_zero_and_passes`, `a_covered_space_declared_open_is_taken_as_declared`; `tests/detail.rs` `an_all_open_piece_binds_to_a_roofed_place_and_an_open_one` |
+| 14 | `compiler::detail` tests `two_contacts_at_a_corner_answer_at_their_own_planes` (departure 13) and `two_contacts_at_a_corner_answer_whoever_owns_each_plane` (departure 34) |
+| 15 | `tests/grammar_contract_check.rs` `an_all_open_piece_states_its_zero_and_passes`, `a_covered_space_declared_open_is_taken_as_declared`; `tests/detail.rs` `an_all_open_piece_binds_to_a_roofed_place_and_an_open_one`; `tests/detail_verb.rs` `a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero` (the verb over the gallery's all-open causeway) |
 | 16 | `tests/blockout.rs` `dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them`; `siteplan::claim` `two_roofed_places_one_apart_are_contested_and_each_remedy_parts_them` |
 | 17 | `tests/detail.rs` `the_commons_is_walkable_ground_and_a_solid_site_has_none` |
 | 22 | `tests/detail.rs` `dw0838_refuses_a_hole_between_two_places_nothing_allocated`; `tests/cli.rs` `perturb_short_walls_reddens_dw0838_beside_dw0836` (the stand-in leak) |

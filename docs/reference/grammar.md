@@ -1093,7 +1093,13 @@ and crossing into one without an edge still fails the confined walk. Toward
 and a wall that is simply missing declares one as easily as a door does. So an
 opening to the outside is named, its cells are claimed, and the checker then
 requires them to touch the space and to be reached by the air outside the piece —
-which a wall claimed as a door in the middle of a room cannot supply.
+which a wall claimed as a door in the middle of a room cannot supply. Where two
+openings of one space meet at its corner column — two seams answered in the
+piece's first layer, so the column lies in both — a cell may instead touch a
+cell of **another** of the space's exterior openings that itself touches the
+space: one hop, never through its own opening's cells, so a door two courses
+thick is still refused (`grammar_contract_check.rs`
+`two_openings_at_a_corner_open_through_each_other`).
 
 What a piece leaves open at its own outer face is not a closure question at all.
 That is the **face contract**, and assembly consumes it (§6).

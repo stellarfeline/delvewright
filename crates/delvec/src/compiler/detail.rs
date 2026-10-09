@@ -1979,76 +1979,89 @@ mod tests {
         }
     }
 
-    /// **Criterion 14: two seams at a corner bind** — the Narrows' shape. A
-    /// long strip with a contact along its whole west face and another
-    /// across its north end, both naming the strip first, answers each at its
-    /// own party plane: the two openings meet only at the ring's corner column,
-    /// which neither shared face reaches, so they are disjoint; and a piece whose
-    /// contract carries one via per plane passes `contract-well-formed` and
-    /// exports exactly the faces `DW0844` compares against those cells. Vacuous
-    /// if the shared faces did not both reach the strip's corner: asserted.
-    #[test]
-    fn two_contacts_at_a_corner_answer_at_their_own_planes() {
+    /// The Narrows' shape under each owner of its two party planes: a long
+    /// strip with a contact along its whole west face and another across its
+    /// north end. `strip_owns` says, per plane (west, north), whether the strip
+    /// is the contact's `a` and so owns it (rule 3c). A piece is built the way
+    /// an author answering the allocation builds it: every cell of each seam's
+    /// answering layer an opening, the play space air, every other owned cell
+    /// stone, every void `structure_void`, and the declared space the play space
+    /// less any answering layer that lies inside it. Returns the
+    /// `contract-well-formed` gate, the faces the piece exports with the
+    /// answering cells each must equal, and both openings' cells.
+    #[allow(clippy::type_complexity)]
+    fn narrows_corner(
+        strip_owns: [bool; 2],
+    ) -> (
+        crate::grammar::Gate,
+        Vec<(BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>)>,
+        (BTreeSet<[i64; 3]>, BTreeSet<[i64; 3]>),
+    ) {
         use delvewright_dsl::siteplan::{Crossing, Ground, Site};
-        let strip = PlacedBox {
-            node: NodeId("node/narrows".into()),
-            foot: [10, 13, 10, 29],
+        let place = |node: &str, foot: [i64; 4]| PlacedBox {
+            node: NodeId(node.into()),
+            foot,
             floor: 64,
             clearance: 3,
             open: true,
             base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         };
-        let west = PlacedBox {
-            node: NodeId("node/flat".into()),
-            foot: [0, 8, 10, 29],
-            floor: 64,
-            clearance: 3,
-            open: true,
-            base: delvewright_dsl::siteplan::Base::Ground,
-            roof: None,
-        };
-        let north = PlacedBox {
-            node: NodeId("node/quay".into()),
-            foot: [10, 13, 0, 8],
-            floor: 64,
-            clearance: 3,
-            open: true,
-            base: delvewright_dsl::siteplan::Base::Ground,
-            roof: None,
-        };
-        let contact =
-            |edge: &str, b: &str, face: Face, axis: usize, plane: i64, span: (i64, i64)| {
-                let mut lo = [0, 64, 0];
-                let mut hi = [0, 66, 0];
-                lo[axis] = plane;
-                hi[axis] = plane;
-                let other = if axis == 0 { 2 } else { 0 };
-                lo[other] = span.0;
-                hi[other] = span.1;
-                PlacedSeam {
-                    edge: EdgeId(edge.into()),
-                    class: "walk",
-                    a: strip.node.clone(),
-                    b: NodeId(b.into()),
-                    face,
-                    normal_axis: axis,
-                    plane,
-                    opening: (lo, hi),
-                    shared: (lo, hi),
-                    crossing: Crossing::Contact,
-                    rise: 0,
-                    stair_in: None,
-                    form: "open ground".into(),
-                }
+        let strip = place("node/narrows", [10, 13, 10, 29]);
+        let west = place("node/flat", [0, 8, 10, 29]);
+        let north = place("node/quay", [10, 13, 0, 8]);
+        // `face` is the side of `a` the seam is on; `b` lies beyond it.
+        let contact = |edge: &str,
+                       other: &PlacedBox,
+                       owns: bool,
+                       faces: (Face, Face),
+                       axis: usize,
+                       plane: i64,
+                       span: (i64, i64)| {
+            let mut lo = [0, 64, 0];
+            let mut hi = [0, 66, 0];
+            lo[axis] = plane;
+            hi[axis] = plane;
+            let o = if axis == 0 { 2 } else { 0 };
+            lo[o] = span.0;
+            hi[o] = span.1;
+            let (a, b, face) = if owns {
+                (strip.node.clone(), other.node.clone(), faces.0)
+            } else {
+                (other.node.clone(), strip.node.clone(), faces.1)
             };
+            PlacedSeam {
+                edge: EdgeId(edge.into()),
+                class: "walk",
+                a,
+                b,
+                face,
+                normal_axis: axis,
+                plane,
+                opening: (lo, hi),
+                shared: (lo, hi),
+                crossing: Crossing::Contact,
+                rise: 0,
+                stair_in: None,
+                form: "open ground".into(),
+            }
+        };
         // The shared faces are the overlaps of the play spaces' spans: z 10..29
         // on the west plane x = 9, x 10..13 on the north plane z = 9.
-        let s_west = contact("edge/narrows-flat", "node/flat", Face::West, 0, 9, (10, 29));
+        let s_west = contact(
+            "edge/narrows-flat",
+            &west,
+            strip_owns[0],
+            (Face::West, Face::East),
+            0,
+            9,
+            (10, 29),
+        );
         let s_north = contact(
             "edge/narrows-quay",
-            "node/quay",
-            Face::North,
+            &north,
+            strip_owns[1],
+            (Face::North, Face::South),
             2,
             9,
             (10, 13),
@@ -2066,10 +2079,10 @@ mod tests {
         let g = Ground::solid("minecraft:stone");
         let site = Site::new(&boxes, &seams, &g);
         let f = Frame::of(&site, 0);
+        assert_eq!(f.owns(s_west.opening.0), strip_owns[0]);
+        assert_eq!(f.owns(s_north.opening.0), strip_owns[1]);
         let (wl, wh) = answering_cells(&f, &s_west);
         let (nl, nh) = answering_cells(&f, &s_north);
-        assert_eq!((wl[0], wh[0]), (9, 9), "the west contact at its own plane");
-        assert_eq!((nl[2], nh[2]), (9, 9), "the north contact at its own plane");
         let cells = |lo: [i64; 3], hi: [i64; 3]| -> BTreeSet<[i64; 3]> {
             (lo[0]..=hi[0])
                 .flat_map(|x| {
@@ -2078,11 +2091,7 @@ mod tests {
                 .collect()
         };
         let (cw, cn) = (cells(wl, wh), cells(nl, nh));
-        assert!(cw.is_disjoint(&cn), "the two openings share no cell");
-        assert!(f.owns(wl) && f.owns(nl), "the strip owns both planes");
 
-        // A piece: the frame, its floor course stone, the play space and both
-        // openings air, every other cell of the ring wall.
         let ext = f.extent();
         let mut model =
             crate::grammar::model::VoxelModel::new(crate::grammar::geom::Box3::at_origin([
@@ -2092,6 +2101,7 @@ mod tests {
             ]));
         let (slo, shi) = strip.space();
         let stone = crate::grammar::block::BlockState::simple("minecraft:stone_bricks");
+        let void = crate::grammar::block::BlockState::simple("minecraft:structure_void");
         let air = crate::grammar::block::BlockState::air();
         for x in 0..ext[0] {
             for y in 0..ext[1] {
@@ -2101,9 +2111,22 @@ mod tests {
                         || cw.contains(&w)
                         || cn.contains(&w)
                         || w[1] > shi[1];
-                    let b = if open { &air } else { &stone };
+                    let b = if open {
+                        &air
+                    } else if !f.owns(w) {
+                        &void
+                    } else {
+                        &stone
+                    };
                     model.set([x as i32, y as i32, z as i32], b).unwrap();
                 }
+            }
+        }
+        // The space is the play space less an answering layer inside it.
+        let mut space_lo = slo;
+        for (lo, axis) in [(wl, 0usize), (nl, 2usize)] {
+            if lo[axis] >= space_lo[axis] {
+                space_lo[axis] = lo[axis] + 1;
             }
         }
         let local = |c: [i64; 3]| {
@@ -2119,7 +2142,7 @@ mod tests {
             "strip".to_string(),
             delvewright_dsl::prefab::ContractSpace {
                 envelope: "open".to_string(),
-                boxes: vec![region(slo, [shi[0], shi[1], shi[2]])],
+                boxes: vec![region(space_lo, shi)],
             },
         );
         let via = |name: &str, lo, hi| delvewright_dsl::prefab::ContractEdge {
@@ -2147,16 +2170,75 @@ mod tests {
             .gates
             .iter()
             .find(|g| g.id == "contract-well-formed")
-            .expect("the gate runs");
+            .expect("the gate runs")
+            .clone();
+        let faces = crate::grammar::contract::exterior_faces(&model, &contract)
+            .into_iter()
+            .map(|face| {
+                let want = if face.cells.contains(&local(wl)) && face.cells.contains(&local(wh)) {
+                    &cw
+                } else {
+                    &cn
+                };
+                (face.cells, want.iter().map(|c| local(*c)).collect())
+            })
+            .collect();
+        (wf, faces, (cw, cn))
+    }
+
+    /// **Criterion 14: two seams at a corner bind** — the Narrows' shape, the
+    /// strip owning both planes. Each opening is answered at its own party
+    /// plane: the two meet only at the ring's corner column, which neither
+    /// shared face reaches, so they are disjoint; and a piece whose contract
+    /// carries one via per plane passes `contract-well-formed` and exports
+    /// exactly the faces `DW0844` compares against those cells. Vacuous if the
+    /// shared faces did not both reach the strip's corner: asserted.
+    #[test]
+    fn two_contacts_at_a_corner_answer_at_their_own_planes() {
+        let (wf, faces, (cw, cn)) = narrows_corner([true, true]);
+        assert!(
+            cw.iter().all(|c| c[0] == 9),
+            "the west contact at its own plane"
+        );
+        assert!(
+            cn.iter().all(|c| c[2] == 9),
+            "the north contact at its own plane"
+        );
+        assert!(cw.is_disjoint(&cn), "the two openings share no cell");
         assert!(wf.passed(), "{}", wf.detail);
-        let faces = crate::grammar::contract::exterior_faces(&model, &contract);
         assert_eq!(faces.len(), 2, "{faces:?}");
-        for (face, (lo, hi)) in faces.iter().zip([(wl, wh), (nl, nh)]) {
-            let want: BTreeSet<[i32; 3]> = cells(lo, hi).into_iter().map(local).collect();
-            assert_eq!(
-                face.cells, want,
-                "the face DW0844 compares is the answering cells"
-            );
+        for (got, want) in &faces {
+            assert_eq!(got, want, "the face DW0844 compares is the answering cells");
+        }
+    }
+
+    /// **Two seams at a corner bind whoever owns each plane** (the Narrows'
+    /// shape, every ownership the plan can give it). Where the strip owns
+    /// neither plane, or one, an answering layer lies inside its play space
+    /// and the two openings meet at the play space's corner column: the cells
+    /// there touch the room only through the other opening, and the piece
+    /// answers both seams exactly as allocated. `contract-well-formed` passes
+    /// and the exported faces are the cells `DW0844` compares. Vacuous if the
+    /// openings did not meet: each case asserts an opening cell beside the
+    /// other opening and none of the room.
+    #[test]
+    fn two_contacts_at_a_corner_answer_whoever_owns_each_plane() {
+        for owns in [[false, false], [true, false], [false, true]] {
+            let (wf, faces, (cw, cn)) = narrows_corner(owns);
+            let meet = cw.iter().any(|c| {
+                [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
+                    .iter()
+                    .any(|d| cn.contains(&[c[0] + d[0], c[1], c[2] + d[2]]))
+            }) || !cw.is_disjoint(&cn);
+            assert!(meet, "{owns:?}: the two openings meet at the corner");
+            assert!(wf.passed(), "{owns:?}: {}", wf.detail);
+            assert_eq!(faces.len(), 2, "{owns:?}: {faces:?}");
+            for (got, want) in &faces {
+                assert_eq!(
+                    got, want,
+                    "{owns:?}: the face DW0844 compares is the answering cells"
+                );
+            }
         }
     }
 }
