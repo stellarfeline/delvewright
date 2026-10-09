@@ -395,9 +395,12 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     for (c, (_, bytes)) in sheet.cameras.iter().zip(&emission.scenes) {
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
         let resolved = camera::resolve_sky(c, &rows).unwrap();
-        // Read off the scene: the overcast cell names its weather by its values.
+        // Read off the scene: the look-table cell names its weather by its
+        // values — a clear night carries the night cell (spec-0079, departure 1).
+        let night = scene::overcast_cell(resolved.class, WorldWeather::Clear);
         let weather = match v["sky"]["skyLight"].as_f64() {
             None => "clear",
+            Some(light) if night.is_some_and(|n| n.sky_light == light) => "clear",
             Some(light) => {
                 let class = resolved.class;
                 let rain = scene::overcast_cell(class, WorldWeather::Rain).unwrap();
@@ -463,5 +466,50 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     assert_ne!(
         after.scenes[j], emission.scenes[j],
         "the row's sky reaches a byte"
+    );
+}
+
+/// **A night picture renders the night** (spec-0079, departure 1). The
+/// Treehouse Camp's `lantern-night` shape: a camera answering a row drawn
+/// under `{"moon": "high"}` in the clear, in a delve whose world opens at
+/// dusk. The camera's sun is the row's hour — the moon high puts the sun at
+/// the nadir — and the scene carries the night cell rather than leaving the
+/// sky to the renderer, whose simulated sky clamps a sun under the horizon to
+/// the horizon and draws a sunset: the lens sees no sky, the sky casts the
+/// timeline's night light, and the sun gives none. The same camera answering a
+/// clear dusk row writes no sky block at all, as every clear scene with the
+/// sun up always has.
+#[test]
+fn a_camera_at_a_night_beat_renders_the_night_sky() {
+    let moon_high: WorldTime = serde_json::from_value(serde_json::json!({"moon": "high"})).unwrap();
+    let rows = [
+        row("concept/lantern-night", moon_high, WorldWeather::Clear),
+        row("concept/evening", WorldTime::Dusk, WorldWeather::Clear),
+    ];
+    let night = scene_of(
+        MINI,
+        cam("lantern-night", "concept/lantern-night", None),
+        &rows,
+    );
+    let altitude = night["sun"]["altitude"].as_f64().unwrap();
+    assert!(
+        altitude < 0.0,
+        "the moon high puts the sun under the horizon: {altitude}"
+    );
+    assert_eq!(night["sky"]["mode"], "SOLID_COLOR", "{night}");
+    assert_eq!(night["sky"]["apparentSkyLight"], 0.0, "{night}");
+    assert_eq!(
+        night["sky"]["skyLight"],
+        scene::BELOW_CLEAR.sky_light,
+        "{night}"
+    );
+    assert_eq!(night["sun"]["intensity"], 0.0, "{night}");
+    assert_eq!(night["sun"]["drawTexture"], false, "{night}");
+
+    let dusk = scene_of(MINI, cam("evening", "concept/evening", None), &rows);
+    assert!(dusk["sun"]["altitude"].as_f64().unwrap() > 0.0);
+    assert!(
+        dusk.get("sky").is_none() && dusk.get("fog").is_none(),
+        "a clear scene with the sun up is the renderer's own sky: {dusk}"
     );
 }

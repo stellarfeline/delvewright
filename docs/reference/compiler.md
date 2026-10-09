@@ -3406,11 +3406,20 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - **The sky of a scene** (`crate::view::scene::sky_of`, spec-0079 §4): the one
   writer of every `sky`, `sun` and `fog` key under `compiler::view`; the review
   frames (`scene::scenes_from_plan`), the panorama and every showcase camera
-  (`camera::world_scene`) take their sky through it. **`clear`** is the hour's
-  sun direction and nothing more — Chunky's simulated sky with its default sun is
-  a clear sky — so a clear scene's bytes are the bytes the engine wrote before
-  the weather reached a scene (pinned by `clear_scenes_keep_their_base_bytes`
-  against goldens emitted at spec-0079's base). **`rain`** and **`thunder`** write
+  (`camera::world_scene`) take their sky through it. **`clear`** with the sun at
+  or above the horizon is the hour's sun direction and nothing more — Chunky's
+  simulated sky with its default sun is a clear sky — so such a scene's bytes are
+  the bytes the engine wrote before the weather reached a scene (pinned by
+  `clear_scenes_keep_their_base_bytes` against goldens emitted at spec-0079's
+  base). **A clear night** (`below` × `clear`) is not left to the renderer: the
+  pinned core's `PreethamSky.updateSun` clamps a sun's altitude to `[0, π]`
+  before it shades the sky, so a sun under the horizon draws a sunset. It
+  writes the whole block of the **night cell** (`scene::BELOW_CLEAR`, spec-0079
+  departure 1): the vendored day timeline's night plateau — the visible sky
+  multiplied by `#000000` (`apparentSkyLight` 0), the sky's light at
+  `sky_light_factor` 0.24 in `sky_light_color` `#7a7aff` (`skyLight`,
+  `sky.color`), `fog.color` `#0f0f16` at density 0 — and no sun, pinned to the
+  timeline by `the_clear_night_cell_is_the_timelines_night_plateau`. **`rain`** and **`thunder`** write
   the whole overcast block on every scene: the sun's direction from `sun_at`,
   `sun.intensity`, `sun.color` and `sun.drawTexture false`; `sky.mode
   SOLID_COLOR`, `sky.color`, `sky.skyLight` (the light the sky casts) and
@@ -3431,6 +3440,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   | `high` × `thunder` | 1.92 | 0.72 | 0.125 | 0.003 |
   | `low` × `thunder` | 0.96 | 0.36 | 0.125 | 0.003 |
   | `below` × `thunder` | 0.096 | 0.036 | 0 | 0.003 |
+  | `below` × `clear` (night cell) | 0.24 | 0 | 0 | 0 |
 
   `low` × `rain` is the overcast dusk measured on one delve
   (`docs/reference/showcase-shots.md` §2b); the other five derive from it by two
@@ -5560,10 +5570,11 @@ alike (`compiler::design::answered`, exit 3), one sentence wherever it is read.
 **Binding line**, printed by every `delvec cameras` run, refused or not, beside
 the `answers:` sentence: one line per camera this run frames — `sky: <name>
 <time>+<weather> <derived from <row> | stated> class <high|low|below> — <the
-renderer's own clear sky | overcast cell <class>×<weather>: skyLight …,
+renderer's own clear sky | overcast cell <class>×<weather> | night cell below×clear: skyLight …,
 apparentSkyLight …, sun …, fog …>` — and `skies: D derived, S stated, over C
 camera(s)[ (R refused)]; weathers emitted: {…}`, whose set names the non-clear
-weathers (a clear scene emits no sky block). A record stating no sky prints `0
+weathers (a clear night's block is the night cell, named on its own `sky:`
+line). A record stating no sky prints `0
 stated`; a rain delve rendering clear prints the empty set. Beside them, per
 framed camera, `after: <name> at load` or `after: <name> after <step> (step <i>
 of <n> on <the critical path | branch `<id>`'s path>): <c> cells moved from load,
