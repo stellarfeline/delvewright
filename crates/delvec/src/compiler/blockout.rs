@@ -730,6 +730,21 @@ pub fn derive_with(
         }
     }
 
+    // The deliberate defect `Perturb::bury_barred` names: the far side of every
+    // barred door walled flush behind its opening.
+    if perturb.bury_barred {
+        for s in seams
+            .iter()
+            .filter(|s| s.class == "barred" && s.crossing == Crossing::Portal)
+        {
+            let (mut olo, mut ohi) = slide(s, perturb.slide_openings);
+            let b_off = s.face.vector()[s.normal_axis];
+            olo[s.normal_axis] += b_off;
+            ohi[s.normal_axis] += b_off;
+            mass.write(olo, ohi, palette::WALL);
+        }
+    }
+
     // (7) **The stairwell over every through-floor run.** A stair up through a
     // floor starts under the hole and walks back under the floor it pierces, so
     // its upper courses stand where that floor takes a climbing body's head. The
@@ -1399,6 +1414,31 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW0986`: a portal nothing crosses.
+    ///
+    /// The portal's half of the crossing question `DW0877` asks of a contact. A
+    /// portal's every cell can be clear (`DW0836`'s first claim holds) and the
+    /// hole still lead nowhere: massing stands flush behind it on one side, so a
+    /// body that opens the bar steps into air and meets a wall of treads. Every
+    /// route proof then goes round by another way and stays green, which is the
+    /// shape this code exists to refuse.
+    ///
+    /// **The quantifier**: some body standing in the opening steps, under
+    /// `nav::World::neighbors` at the player's footprint, onto standable ground
+    /// on **both** sides of the wall — the opening's standable cells taken as one
+    /// floor a body may walk across first (with the stairwell `DW0836` admits
+    /// beside a stair's hole, in the same wall), and measured over the world with
+    /// every bar open. A `drop` owes only its **high** side, because the far side
+    /// of a fall is what the step rule does not model (the policy `DW0877` and
+    /// `DW0837` already hold); for a hole in a floor, where nothing under the
+    /// opening holds a body up, the high side is the brink: the cell over the hole
+    /// has room for a body and a body stands level beside it.
+    ///
+    /// Build tier (exit 3).
+    pub const DW_PORTAL_UNCROSSABLE: DwCode = DwCode::new("DW0986", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0838`: a connection nothing allocated.
     pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::new("DW0838", ExitTier::Build);
 }
@@ -1423,6 +1463,17 @@ pub struct BatteryBinding {
     pub contacts: usize,
     /// Columns of contact span measured crossable — `DW0877`'s numerator.
     pub contact_columns: usize,
+    /// Portals whose crossing was measured — `DW0986`'s denominator. A portal
+    /// `DW0836` already found solid is not counted here: its opening is not a
+    /// hole to cross, and the refusal for it is already named.
+    pub portals: usize,
+    /// Of every portal seam, those not measured because `DW0836` found cells of
+    /// the opening itself solid — stated so the denominator's gap is never silent.
+    pub portals_solid: usize,
+    /// Standable cells of those portals' openings (with the stairwell beside a
+    /// stair's hole, in the same wall) a body could step out of — what `DW0986`
+    /// measured. A portal with none is crossed only by a `drop`'s brink.
+    pub portal_floor: usize,
     /// Shared walls examined for a wider or misplaced hole — `DW0836`.
     pub walls: usize,
     /// Open cells of those walls outside every allocation that claim 2 admitted
@@ -1452,14 +1503,18 @@ impl BatteryBinding {
     pub fn line(&self) -> String {
         format!(
             "blockout battery binding: {s} seam(s) proven over {w} shared wall(s) (of them \
-             {ct} contact(s), {cc} crossable column(s) measured; {sw} unallocated open cell(s) \
-             admitted as a stair's stairwell), {n} place(s) \
+             {ct} contact(s), {cc} crossable column(s) measured; {pt} portal(s) measured \
+             over {pc} standable opening cell(s), {ps} left to `DW0836` as solid; {sw} \
+             unallocated open cell(s) admitted as a stair's stairwell), {n} place(s) \
              proven reached, {c} standable cell(s) classified over {p} place pair(s), \
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
              {l} critical-path leg(s) measured.",
             s = self.seams,
             ct = self.contacts,
             cc = self.contact_columns,
+            pt = self.portals,
+            pc = self.portal_floor,
+            ps = self.portals_solid,
             w = self.walls,
             sw = self.stairwell_cells,
             n = self.nodes,
@@ -1913,6 +1968,16 @@ fn seams_built(
                 ),
             );
         }
+        // ---- A PORTAL's crossing (`DW0986`): the hole, clear, leads a body
+        // through. A portal `DW0836` has just found solid is left to it — its
+        // opening is not a hole to cross, and counted so the gap is stated.
+        if s.crossing == Crossing::Portal {
+            if blocked.is_empty() {
+                portal_crossing(s, world, binding, d);
+            } else {
+                binding.portals_solid += 1;
+            }
+        }
         // ---- Claim 3, over the two places' own walk planes. Owed by every
         // seam of either kind: on a contact it is what covers a drop's far side,
         // which the step rule does not walk to and the per-column claim above
@@ -1999,6 +2064,138 @@ fn seams_built(
             ),
         );
     }
+}
+
+/// `DW0986`: a portal's opening leads a body from one side to the other.
+///
+/// See [`DW_PORTAL_UNCROSSABLE`] for the quantifier. Taken over the world with
+/// every way open, because the question is whether the hole leads anywhere once
+/// it is opened, not whether it is open.
+///
+/// # Why a floor of the opening and not a column, as a contact measures
+///
+/// A body crosses a one-cell wall by standing in it: the step rule moves one
+/// cell horizontally and at most one vertically, so every walk from one side to
+/// the other stands on a cell of the wall's plane. But it need not step in and
+/// out from the SAME cell. A stair through a floor arrives in the hole on one
+/// tread and leaves it from the next — measured on the gallery's undercroft
+/// stair, no single cell of its hole has a step both down and up, and the stair
+/// is perfectly climbable. So the opening's standable cells are taken as one
+/// floor: a body may walk across it (and into the stairwell `DW0836` admits
+/// beside a stair's hole, which lies in the same wall) before it steps out. The
+/// body's width is the step rule's own footprint, so no second width is asked.
+fn portal_crossing(
+    s: &PlacedSeam,
+    world: &crate::compiler::nav::World,
+    binding: &mut BatteryBinding,
+    d: &mut Vec<(DwCode, Diagnostic)>,
+) {
+    binding.portals += 1;
+    let n_dir = s.face.vector()[s.normal_axis];
+    let (a_off, b_off) = (-n_dir, n_dir);
+    // The higher place, which is all a `drop` owes (see `contact_profile`).
+    let high_off = if s.rise <= 0 { a_off } else { b_off };
+    let drop = s.class == "drop";
+    let (slo, shi) = s.shared;
+    let in_wall = |c: [i32; 3]| {
+        let c = [i64::from(c[0]), i64::from(c[1]), i64::from(c[2])];
+        c[s.normal_axis] == s.plane && (0..3).all(|i| c[i] >= slo[i] && c[i] <= shi[i])
+    };
+    let side_of = |x: &[i32; 3]| i64::from(x[s.normal_axis]) - s.plane;
+
+    // The floor of the opening: its standable cells, and every standable cell of
+    // the same wall a body walks to from them without leaving the wall's plane.
+    let (lo, hi) = s.opening;
+    let mut floor: BTreeSet<[i32; 3]> = cells_of(lo, hi)
+        .map(narrow)
+        .filter(|c| world.is_standable(*c))
+        .collect();
+    let mut frontier: Vec<[i32; 3]> = floor.iter().copied().collect();
+    while let Some(c) = frontier.pop() {
+        for n in world.neighbors(c) {
+            if in_wall(n) && floor.insert(n) {
+                frontier.push(n);
+            }
+        }
+    }
+    let (mut onto_a, mut onto_b) = (0usize, 0usize);
+    for c in &floor {
+        let n = world.neighbors(*c);
+        onto_a += usize::from(n.iter().any(|x| side_of(x) == a_off));
+        onto_b += usize::from(n.iter().any(|x| side_of(x) == b_off));
+    }
+    // A hole in a floor under a `drop`: nothing under the opening holds a body,
+    // so the high side is the brink — the cell over the hole has room for a
+    // body, and a body stands beside it, level, to walk in from.
+    let brinks = if drop && s.normal_axis == 1 {
+        cells_of(lo, hi)
+            .filter(|c| {
+                let over = [c[0], c[1] + high_off, c[2]];
+                let head = [over[0], over[1] + 1, over[2]];
+                world.is_clear(narrow(over))
+                    && world.is_clear(narrow(head))
+                    && [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|(dx, dz)| {
+                        world.is_standable(narrow([over[0] + dx, over[1], over[2] + dz]))
+                    })
+            })
+            .count()
+    } else {
+        0
+    };
+    let onto_high = if high_off == a_off { onto_a } else { onto_b };
+    let crosses = if drop {
+        onto_high > 0 || brinks > 0
+    } else {
+        onto_a > 0 && onto_b > 0
+    };
+    binding.portal_floor += floor.len();
+    if crosses {
+        return;
+    }
+    let owed = if drop {
+        format!(
+            "a `drop` owes only its high side, `{h}`: a body walks into the opening from it, or, \
+             through a floor, to the brink over the hole ({brinks} brink cell(s))",
+            h = if high_off == a_off { &s.a } else { &s.b },
+        )
+    } else {
+        "a body standing in it must step onto standable ground on BOTH sides".to_string()
+    };
+    raise(
+        d,
+        DW_PORTAL_UNCROSSABLE,
+        Diagnostic::error(
+            DW_PORTAL_UNCROSSABLE,
+            "site-plan",
+            format!("/content/seams[{}]", s.edge),
+            format!(
+                "nothing crosses the {class} opening the plan allocated for `{id}`. Every cell of \
+                 it is clear, at x {x0}..{x1} y {y0}..{y1} z {z0}..{z1} between `{a}` and `{b}`, \
+                 and {owed}. Of the {k} cell(s) a body can stand on in the opening (with the \
+                 stairwell beside it in the same wall), {na} step into `{a}` and {nb} into `{b}` \
+                 — measured under the compiler's step rule with every bar open. What stands \
+                 past the hole is massing or a fall a body cannot walk, so a party that opens \
+                 this way meets a wall, and where another way joins these places every route \
+                 proof goes round by it and stays green. The repair is in the plan: move this seam along \
+                 its face (`at`), or move what stands flush behind it — a stair laid in either \
+                 place moves with its own edge's `at`/`meets`, and a detailed place's piece is \
+                 re-detailed — so that the opening meets floor on the side that has none.",
+                class = s.class,
+                id = s.edge,
+                a = s.a,
+                b = s.b,
+                k = floor.len(),
+                na = onto_a,
+                nb = onto_b,
+                x0 = lo[0],
+                x1 = hi[0],
+                y0 = lo[1],
+                y1 = hi[1],
+                z0 = lo[2],
+                z1 = hi[2],
+            ),
+        ),
+    );
 }
 
 /// **The part of a floor's unallocated opening that is a stair's stairwell** —
@@ -3074,6 +3271,17 @@ pub struct Perturb {
     /// It is what shows the stairwell admission refuses something — a claim 2
     /// that admitted any hole over a stair would pass it.
     pub open_stairwells: bool,
+    /// Wall the cells flush behind every **barred** portal's opening, on its `b`
+    /// side, over the opening's own span. Reddens `DW0986`: the bar opens onto
+    /// a wall, which is the shape a stair's treads laid across a doorway take.
+    ///
+    /// It is the only thing that can produce that red. The opening's cells are
+    /// untouched, so `DW0836`'s claim 1 stays green; the wall it writes is off
+    /// the shared wall's plane, so claim 2 stays green; closing a way only
+    /// removes crossings, so `DW0838` stays green. What it can also reach is
+    /// `DW0837`, and only when a barred door is the sole way into its `b` place
+    /// — the gallery's far hall is also entered through the annex chute.
+    pub bury_barred: bool,
 }
 
 impl Perturb {
@@ -3088,6 +3296,7 @@ impl Perturb {
             low_ceiling: None,
             wall_contacts: false,
             open_stairwells: false,
+            bury_barred: false,
         }
     }
 
@@ -3140,11 +3349,13 @@ pub enum Knob {
     WallContacts,
     /// [`Perturb::open_stairwells`].
     OpenStairwells,
+    /// [`Perturb::bury_barred`].
+    BuryBarred,
 }
 
 impl Knob {
     /// Every knob, in declaration order.
-    pub const ALL: [Knob; 7] = [
+    pub const ALL: [Knob; 8] = [
         Knob::SlideOpenings,
         Knob::Sink,
         Knob::ShortWalls,
@@ -3152,6 +3363,7 @@ impl Knob {
         Knob::LowCeiling,
         Knob::WallContacts,
         Knob::OpenStairwells,
+        Knob::BuryBarred,
     ];
 
     /// The kebab-case name a creator types.
@@ -3165,6 +3377,7 @@ impl Knob {
             Knob::LowCeiling => "low-ceiling",
             Knob::WallContacts => "wall-contacts",
             Knob::OpenStairwells => "open-stairwells",
+            Knob::BuryBarred => "bury-barred",
         }
     }
 
@@ -3179,6 +3392,7 @@ impl Knob {
             Knob::LowCeiling => "close one place a course under its plan's ceiling",
             Knob::WallContacts => "wall every contact's span the plan allocated",
             Knob::OpenStairwells => "cut the floor over every course of a through-floor stair",
+            Knob::BuryBarred => "wall the far side flush behind every barred door",
         }
     }
 
@@ -3208,6 +3422,7 @@ impl Knob {
             Knob::LowCeiling => "DW0833",
             Knob::WallContacts => "DW0877",
             Knob::OpenStairwells => "DW0836",
+            Knob::BuryBarred => "DW0986",
         }
     }
 
@@ -3248,6 +3463,10 @@ impl Knob {
             },
             Knob::OpenStairwells => Perturb {
                 open_stairwells: true,
+                ..Perturb::none()
+            },
+            Knob::BuryBarred => Perturb {
+                bury_barred: true,
                 ..Perturb::none()
             },
         })

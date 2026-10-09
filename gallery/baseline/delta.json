@@ -1,7 +1,20 @@
 {
   "added": [],
-  "base_commit": "e67c297b4e035ccda076c4760892808af2800120",
-  "changed": [],
-  "classes": {},
+  "base_commit": "cf212c04c6eaa75e9099d1c680ed6a7f7a7300e4",
+  "changed": [
+    "site-plan.en:creator-datapack/layout.json",
+    "site-plan.en:datapack/data/gallery/function/complete_q_near_hall.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/world_build.mcfunction",
+    "site-plan.en:render-plan.json",
+    "site-plan.en:validation/critical-path-waypoints.json",
+    "site-plan.en:validation/gate-seal.json",
+    "site-plan.en:validation/leave-proof.json"
+  ],
+  "classes": {
+    "creator overlay": 1,
+    "datapack function": 2,
+    "other": 1,
+    "validation ledger": 3
+  },
   "removed": []
 }
