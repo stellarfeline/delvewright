@@ -60,9 +60,13 @@ A `kill` step does three things, in order, and only the first is a measurement.
    read with `attribute … base get`, because `attribute … get` is the total after
    a weapon's modifier and vanilla's own random spawn bonus. The harness compares
    the multiset of what it read against the multiset the plan declares. A
-   declaration the bodies CONTRADICT fails the `critical-path` stage; a muster
-   that found nothing standing is a finding, because the declaration is then
-   unverified rather than wrong.
+   declaration the bodies CONTRADICT fails the `critical-path` stage. A muster
+   that finds nothing standing at the step's open is provisional: a wave an
+   approach trigger seats is not there until the party walks in, so the step walks
+   its route to the anchor, as a player does, and reads again (a body that comes
+   to the bot on the way is read by the damage handlers first). Nothing standing
+   at the anchor fails the stage as one zero-binding red: a declared wave whose
+   bodies nobody read ships with every declared fact unchecked.
 2. **The staged clear.** `wave_strike_<wave>` fells one body per call until the
    census says nothing of the wave stands. This is staging and the run artifact
    says so: every removal is in `staged_removals` with its reason. The blow is

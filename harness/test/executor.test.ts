@@ -2042,6 +2042,9 @@ class CombatFakeBot extends InteractFakeBot {
   /** A walk arrives: `goto` puts the bot at its goal. Off by default, because the
    * older tests were written against a bot that never moves. */
   moveOnGoto = false;
+  /** An approach trigger: the first walk seats this many bodies of the wave, as
+   * the-stranding's `on: approach` triggers do when the party walks in. */
+  seatOnGoto: number | undefined;
   /** Every `/damage <uuid>` staged blow the fake server received, by body id. */
   readonly stagedBlows: number[] = [];
   /** The body a strike fells lands a hit on the bot as it falls — a shot it
@@ -2087,6 +2090,10 @@ class CombatFakeBot extends InteractFakeBot {
     thinkTimeout: 0,
     goto: async (goal?: { x?: number; y?: number; z?: number }): Promise<void> => {
       this.calls.push("goto");
+      if (this.seatOnGoto !== undefined) {
+        this.seat(this.seatOnGoto);
+        this.seatOnGoto = undefined;
+      }
       // A route walkable on the way in and not on the way back: exactly what a
       // respawn dumped somewhere unreachable looks like to the bot.
       if (this.failReturnLeg && this.died) {
@@ -3094,6 +3101,45 @@ test("a muster reading that failed stays failed when a later reading finds the w
   assert.ok(
     executor.musterFailures().some((f) => f.startsWith(`${enc.wave}: wave seating:`)),
     `the earlier failure is kept: ${JSON.stringify(executor.musterFailures())}`,
+  );
+});
+
+test("a wave an approach trigger seats is read from its anchor, not reported as nothing standing", async () => {
+  // the-stranding r6: the wrecks, the lice and Marrack's men are seated by `on:
+  // approach` triggers. The kill step read each at its open, found nothing, and
+  // the bot then fought them — every declared fact unchecked, on every run.
+  const bot = new CombatFakeBot();
+  bot.seat(0);
+  bot.seatOnGoto = 2;
+  bot.moveOnGoto = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, false), false);
+  // The bot opens the step out of the trigger's range, 20 blocks from the anchor.
+  const step: KillStep = { ...KILL_STEP, count: 2, pos: [20, 64, 0] };
+  await within("executor.kill(step)", executor.kill(step));
+  const verdict = executor.waveMusters().get("wave/gate-assault")!;
+  assert.equal(verdict.read, 2, `the seated bodies were read: ${JSON.stringify(verdict)}`);
+  assert.deepEqual(verdict.failures, []);
+  assert.deepEqual(executor.musterFailures(), [], "the provisional zero at the step's open is not a failure");
+  const firstWalk = bot.calls.indexOf("goto");
+  const musters = bot.calls.flatMap((c, i) => (c.includes(":wave_muster_") ? [i] : []));
+  assert.ok(musters.length === 2 && musters[0]! < firstWalk && firstWalk < musters[1]!, `read, walk, read: ${bot.calls.join(" | ")}`);
+});
+
+test("a declared wave with no body even at its anchor is a red", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(0);
+  bot.moveOnGoto = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, false), false);
+  const step: KillStep = { ...KILL_STEP, count: 2, pos: [20, 64, 0] };
+  await within("executor.kill(step)", executor.kill(step));
+  assert.equal(executor.waveMusters().get("wave/gate-assault")?.read, 0);
+  assert.ok(
+    executor.musterFailures().some((f) => /^wave\/gate-assault: nothing of this wave was standing .* a zero binding is not a pass/.test(f)),
+    `the zero is a failure: ${JSON.stringify(executor.musterFailures())}`,
   );
 });
 
