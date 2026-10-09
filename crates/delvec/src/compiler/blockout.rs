@@ -663,6 +663,12 @@ pub fn derive_with(
             b.top() - sink
         };
         let (x0, x1, z0, z1) = (slo[0], shi[0], slo[2], shi[2]);
+        let wall_bottom = if perturb.hollow_edge {
+            b.floor_course_y()
+        } else {
+            slo[1]
+        };
+        let slo = [slo[0], wall_bottom, slo[2]];
         for (a, c) in [
             ([x0, slo[1], z0], [x0, wall_top, z1]),
             ([x1, slo[1], z0], [x1, wall_top, z1]),
@@ -3641,6 +3647,16 @@ pub struct Perturb {
     /// `DW0837`, and only when a barred door is the sole way into its `b` place
     /// — the gallery's far hall is also entered through the annex chute.
     pub bury_barred: bool,
+    /// Stand every stand-in's ring wall only from its floor course up, leaving
+    /// air between the ring's fixed ground and the floor wherever the terrain
+    /// lies lower than the floor course. Reddens `DW0990`'s second shape: the
+    /// plot's edge stands over the terrain with nothing under it.
+    ///
+    /// It is the only thing that can produce that red. The play spaces, the
+    /// openings and the floors are untouched, so `DW0836`/`DW0837` stay green;
+    /// the gap opened is under a floor a body stands on, never between two
+    /// places, so `DW0838` stays green.
+    pub hollow_edge: bool,
 }
 
 impl Perturb {
@@ -3656,6 +3672,7 @@ impl Perturb {
             wall_contacts: false,
             open_stairwells: false,
             bury_barred: false,
+            hollow_edge: false,
         }
     }
 
@@ -3710,11 +3727,13 @@ pub enum Knob {
     OpenStairwells,
     /// [`Perturb::bury_barred`].
     BuryBarred,
+    /// [`Perturb::hollow_edge`].
+    HollowEdge,
 }
 
 impl Knob {
     /// Every knob, in declaration order.
-    pub const ALL: [Knob; 8] = [
+    pub const ALL: [Knob; 9] = [
         Knob::SlideOpenings,
         Knob::Sink,
         Knob::ShortWalls,
@@ -3723,6 +3742,7 @@ impl Knob {
         Knob::WallContacts,
         Knob::OpenStairwells,
         Knob::BuryBarred,
+        Knob::HollowEdge,
     ];
 
     /// The kebab-case name a creator types.
@@ -3737,6 +3757,7 @@ impl Knob {
             Knob::WallContacts => "wall-contacts",
             Knob::OpenStairwells => "open-stairwells",
             Knob::BuryBarred => "bury-barred",
+            Knob::HollowEdge => "hollow-edge",
         }
     }
 
@@ -3752,6 +3773,7 @@ impl Knob {
             Knob::WallContacts => "wall every contact's span the plan allocated",
             Knob::OpenStairwells => "cut the floor over every course of a through-floor stair",
             Knob::BuryBarred => "wall the far side flush behind every barred door",
+            Knob::HollowEdge => "leave air under every stand-in's edge above the terrain",
         }
     }
 
@@ -3782,6 +3804,7 @@ impl Knob {
             Knob::WallContacts => "DW0877",
             Knob::OpenStairwells => "DW0836",
             Knob::BuryBarred => "DW0986",
+            Knob::HollowEdge => "DW0990",
         }
     }
 
@@ -3826,6 +3849,10 @@ impl Knob {
             },
             Knob::BuryBarred => Perturb {
                 bury_barred: true,
+                ..Perturb::none()
+            },
+            Knob::HollowEdge => Perturb {
+                hollow_edge: true,
                 ..Perturb::none()
             },
         })

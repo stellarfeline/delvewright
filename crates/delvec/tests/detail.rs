@@ -1373,8 +1373,15 @@ fn the_allocation_verb_hands_out_the_frame_the_seams_and_the_owed_names() {
         serde_json::json!([9, 6, 10]),
         "the frame is the place's claim"
     );
-    assert_eq!(v["seams"][0]["owns_plane"], false, "the cell owns the plane");
-    assert!(v["seams"][0]["form"].as_str().is_some_and(|f| !f.is_empty()));
+    assert_eq!(
+        v["seams"][0]["owns_plane"], false,
+        "the cell owns the plane"
+    );
+    assert!(
+        v["seams"][0]["form"]
+            .as_str()
+            .is_some_and(|f| !f.is_empty())
+    );
     assert_eq!(v["datum_y"], 1, "and the walk plane is one course up");
     assert_eq!(v["seams"][0]["edge"], "edge/cell-exit");
     assert_eq!(v["seams"][0]["face"], "east");
