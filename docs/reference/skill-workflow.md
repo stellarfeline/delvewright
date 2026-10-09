@@ -31,17 +31,32 @@ For every engine release the page moves to, in order:
 
 1. **A pull request names the tag.** It writes `[engine].ref` and the entry's
    `ref` to `delvec--v<version>`, where `<version>` is `[engine].version` at the
-   root of the same tree. That pull request is the one that walks the page
-   against the engine — which is now this tree — and it merges on the same terms
-   as any page change. `tools/ci/check-skill-page.py` refuses a name that is not
-   this tree's own tag, and `tools/ci/check-pins.py --online` refuses it too.
+   root of the same tree, and `plugin.json` `version` to `<version>`. That pull
+   request is the one that walks the page against the engine — which is now this
+   tree — and it merges on the same terms as any page change.
+   `tools/ci/check-skill-page.py` refuses a name that is not this tree's own tag
+   and a `plugin.json` version that is not the tag's, and
+   `tools/ci/check-pins.py --online` refuses the name too.
 2. **The release is dispatched on the merge commit**, as the next act.
    `engine-release.yml` derives the same name from the same tree, fills the
    shelf, uploads to crates.io, writes the tag at that commit and undrafts. From
-   this moment a fresh install receives the plugin root of that commit.
-3. **Nothing follows.** No commit re-points the entry and no pull request waits
+   this moment a fresh install receives the plugin root of that commit, and an
+   existing install updates to it.
+3. **The plugin release records it.** `plugin-release.yml`, dispatched with the
+   same `<version>`, tags `delvewright--v<version>` at the commit
+   `delvec--v<version>` names and publishes the plugin root as an archive. It
+   writes to no branch and delivers nothing the engine release has not already
+   delivered.
+4. **Nothing follows.** No commit re-points the entry and no pull request waits
    on the release. `main` moves on, and its tip's page is judged against the
    engine at the tag until the next pull request names the next tag.
+
+**The order is not reversible.** A pull request that points the pin at a tag
+already written is refused unless the tree that tag names already states that
+tag's version in `plugin.json` — which only a tree whose pin named the tag
+before its release does. Pinning an engine release after the fact delivers the
+page and the pin as they stood at the release, under the version they stood at,
+so it reaches no installed creator.
 
 **Between step 1 and step 2 a fresh install is refused, not broken** — measured
 on the pinned Claude Code: `claude plugin install` exits 1 with `Failed to clone
@@ -51,15 +66,16 @@ upstream origin`, and nothing is installed. An existing install is untouched:
 had.
 
 **A newer page reaches an existing creator when the entry's `ref` moves to a tag
-whose `plugin.json` `version` is above the one they hold** — an unchanged version
-is not an update, measured. So a page meant to reach existing creators is tagged
-from a `main` that already carries the version bump: the plugin release
-(`.github/workflows/plugin-release.yml`, dispatched by a human — it commits the
-bump, waits for every required check on that commit, fast-forwards `main`, and
-tags and publishes `delvewright--v<version>`) supplies the number, and an engine
-release after it is what delivers it. **A plugin release with no engine release
-after it reaches nobody on its own.** A pull request that edits the page leaves
-the version alone (`tools/ci/check-skill-page.py` refuses one that moves it).
+whose `plugin.json` `version` differs from the one they hold** — an unchanged
+version is not an update, measured. So the plugin's version is the version of
+the engine release it ships at, derived rather than chosen
+(`tools/ci/check-skill-page.py` rule 11): every pin move is a new version, and a
+creator's installed plugin version names the engine release whose page they hold
+and whose `delvec` their Init installs. A pull request that edits the page
+between releases leaves the version alone; its edit reaches creators with the
+next pin move. Every tag written before the rule (`delvec--v1.6.0` …
+`delvec--v1.10.0`) delivers 1.5.0, so the first release made under it is what
+reaches a creator who installed any of them.
 
 This file stays beside it rather than in it: it is about how an agent driving
 the page splits the work, which is engine-side planner material and is
