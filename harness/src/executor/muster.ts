@@ -23,7 +23,7 @@ export const methods = {
    * the probe walks the wave's own tag — so it needs no proximity, no line of sight
    * and nothing of the bot but the right to run a function.
    */
-  async musterWave(this: MineflayerExecutor, enc: Encounter): Promise<void> {
+  async musterWave(this: MineflayerExecutor, enc: Encounter, provisional = false): Promise<void> {
     const bot = this.requireBot();
     const before = this.musterSeq;
     // The seating this reading is OF: taken before the probe is called, so a
@@ -46,6 +46,17 @@ export const methods = {
           credited,
         );
         this.musters.set(enc.wave, verdict);
+        // A reading of nothing at a step's open is provisional: an approach
+        // trigger seats its wave when the party walks in, so the kill step reads
+        // again from the anchor. Until then the reading stays owed (a body that
+        // comes to the bot is read by the damage handlers) and nothing is logged.
+        if (provisional && sum.tagged === 0) {
+          process.stderr.write(
+            `[muster] ${enc.wave}: nothing of this wave is standing at the step's open, of ` +
+              `${verdict.declared} declared — reading it again from its anchor\n`,
+          );
+          return;
+        }
         for (const f of verdict.failures) this.musterFailureLog.push(`${enc.wave}: ${f}`);
         this.musteredEpoch.set(enc.wave, epoch);
         process.stderr.write(
@@ -135,7 +146,7 @@ export const methods = {
    * second reading would count the run's own removal as a body the server never
    * seated.
    */
-  async musterUnlessRead(this: MineflayerExecutor, enc: Encounter): Promise<void> {
+  async musterUnlessRead(this: MineflayerExecutor, enc: Encounter, provisional = false): Promise<void> {
     const pending = this.earlyMusters.get(enc.wave);
     if (pending) await pending;
     if (!this.readingOwed(enc)) {
@@ -147,7 +158,7 @@ export const methods = {
     }
     // Registered like an early reading, so a body that hits the bot while the
     // step's own muster is in flight waits for it instead of reading again.
-    const run = this.musterWave(enc);
+    const run = this.musterWave(enc, provisional);
     this.earlyMusters.set(enc.wave, run);
     try {
       await run;

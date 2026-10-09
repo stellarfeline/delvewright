@@ -12,7 +12,9 @@ import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours } from
 import {
   nextLegWaypoints,
   LEG_START_REACH,
+  MAX_HOP_BLOCKS,
   retainStandableWaypoints,
+  subdivideStraightRuns,
   walkGoals,
   type GoalSpec,
   type TimedGate,
@@ -618,6 +620,31 @@ export const methods = {
               `\n`,
           );
         }
+      }
+      // A straight run thins to one hop however long it is, and the pathfinder
+      // searches only chunks the client holds: a 268-block hop failed "No path to
+      // the goal" ten blocks in, every run. Split before the standability filter,
+      // so an inserted cell is judged like any other proven cell.
+      if (legWaypoints) {
+        // The destination closes the chain: a run-back's approach ends ON a proven
+        // cell, and the hop into it is a run like any other.
+        const dest: Vec3Tuple = [pos[0], pos[1], pos[2]];
+        const closes = legWaypoints.length > 0 && dest.every(Number.isInteger);
+        const sub = subdivideStraightRuns(closes ? [...legWaypoints, dest] : legWaypoints);
+        if (sub.split > 0 || sub.unsplittable.length > 0) {
+          process.stderr.write(
+            `[hop] ${label}: ${sub.split} hop(s) longer than ${MAX_HOP_BLOCKS} blocks split ` +
+              `into ${sub.split + sub.inserted} by ${sub.inserted} proven cell(s) of their own run` +
+              (sub.unsplittable.length > 0
+                ? `; ${sub.unsplittable.length} longer hop(s) are not one straight run and ` +
+                  `walk whole: ${sub.unsplittable
+                    .map(([a, b]) => `[${a.join(", ")}]→[${b.join(", ")}]`)
+                    .join(" ")}`
+                : "") +
+              `\n`,
+          );
+        }
+        legWaypoints = closes ? sub.cells.slice(0, -1) : sub.cells;
       }
       // Drop proven waypoints the bot cannot physically stand on. The compiler models
       // every non-air block as a full 1×1×1 solid, so a leg may be proven by standing
