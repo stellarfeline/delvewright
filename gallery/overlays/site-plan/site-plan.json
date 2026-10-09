@@ -216,9 +216,10 @@
         "opening": "door"
       },
       {
+        "at": 9,
         "edge": "edge/centre-door",
         "face": "south",
-        "meets": 7,
+        "meets": 9,
         "opening": "door"
       },
       {
@@ -400,6 +401,6 @@
       }
     ]
   },
-  "dsl_version": "0.36.1",
+  "dsl_version": "0.37.0",
   "stage": "site-plan"
 }

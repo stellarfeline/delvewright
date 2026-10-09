@@ -6,6 +6,7 @@ Usage:
   python -m delve_skin catalog CAST.json --out-dir DIR [--id ID]
   python -m delve_skin all     CAST.json --skins-dir DIR --catalog-dir DIR \
                                --preview-dir DIR [--id ID]
+  python -m delve_skin parts   MODEL
 
 A CAST file is ``{"campaign": "...", "skins": [ <entry>, ... ]}`` or a bare list
 of entries. ``--help`` on any subcommand prints the whole entry surface: which
@@ -22,12 +23,14 @@ from pathlib import Path
 from typing import List
 
 from delve_skin.catalog import catalog_card, dumps
+from delve_skin import models
 from delve_skin.compose import (
     ENTRY_KEYS,
     PALETTE_KEYS,
     CastEntry,
     compose_png_bytes,
-    compose_skin,
+    compose_preview_skin,
+    entities,
 )
 from delve_skin.preview import DEFAULT_SCALE, render_previews
 from delve_skin.wardrobe import (
@@ -36,7 +39,9 @@ from delve_skin.wardrobe import (
     FOOTWEAR,
     GREYING,
     HAIR,
+    HOOD,
     LEGS,
+    OVERCOAT,
     SLEEVES,
     Wardrobe,
 )
@@ -69,6 +74,14 @@ def _entry_surface_help() -> str:
         "cast-entry fields:",
         "  " + ", ".join(ENTRY_KEYS),
         "",
+        "entity -- the body the sheet is drawn to, on that model's own boxes (default",
+        "'mannequin', which needs 'model' wide|slim; a mob has one model and",
+        "refuses 'model'):",
+        "  " + ", ".join(entities()),
+        "",
+        "hidden_layers -- a mannequin's overlay layers it does not draw:",
+        "  " + ", ".join(models.mannequin_layers()),
+        "",
         "palette colours (#rrggbb; a missing one is derived from its neighbours):",
         "  " + ", ".join(PALETTE_KEYS),
         "",
@@ -95,7 +108,17 @@ def _entry_surface_help() -> str:
         f"  collar      (default {d.collar!r}) -- "
         + ", ".join(COLLAR)
         + ". 'open' leaves the V of bare skin a tunic has at the throat;"
-        + " 'closed' is a jacket that fastens.",
+        + " 'closed' is a jacket that fastens; 'high' is 'closed' with a collar"
+        + " ring on the torso's overlay shell.",
+        f"  hood        (default {d.hood!r}) -- "
+        + ", ".join(HOOD)
+        + ". 'up' covers the head's overlay shell but for the face and falls"
+        + " onto the shoulders. Painted in 'hood', its rim in 'hood_shadow'.",
+        f"  overcoat    (default {d.overcoat!r}) -- "
+        + ", ".join(OVERCOAT)
+        + ". A coat on the torso's and sleeves' overlay shells, open down the"
+        + " front; 'long_coat' also over the thighs. On a villager it is the robe."
+        + " Painted in 'coat', its opening and hem in 'coat_shadow'.",
         f"  greying     (default {d.greying!r}) -- "
         + ", ".join(GREYING)
         + ". Streaks 'hair_grey' / 'beard_grey' through whichever it names."
@@ -106,8 +129,10 @@ def _entry_surface_help() -> str:
         "refused by name: a misspelling would otherwise compose the default",
         "costume and say nothing.",
         "",
-        "The base layer is all there is: nothing can stand proud of the body, so",
-        "an open coat, a brim, a hood or hair with volume have nowhere to go.",
+        "Beards and hair are painted on the overlay shell as well as the skull, so",
+        "they stand half a pixel off the head. The shell is the only volume there",
+        "is: a brim, a crest, a bun, a cloak or a coat that hangs open have no",
+        "geometry and are not drawn.",
     ]
     return "\n".join(lines)
 
@@ -133,13 +158,13 @@ def _write_png(entry: CastEntry, out_dir: Path) -> bytes:
 def cmd_build(args) -> int:
     for e in _load_entries(Path(args.cast), args.id):
         _write_png(e, Path(args.out_dir))
-        print(f"composed {e.texture_id}.png ({e.model})")
+        print(f"composed {e.texture_id}.png ({e.model or e.entity})")
     return 0
 
 
 def cmd_preview(args) -> int:
     for e in _load_entries(Path(args.cast), args.id):
-        img = compose_skin(e)
+        img = compose_preview_skin(e)
         paths = render_previews(img, Path(args.out_dir), e.texture_id, args.scale)
         print(f"rendered {len(paths)} previews for {e.texture_id}")
     return 0
@@ -160,7 +185,7 @@ def cmd_catalog(args) -> int:
 def cmd_all(args) -> int:
     for e in _load_entries(Path(args.cast), args.id):
         png = _write_png(e, Path(args.skins_dir))
-        img = compose_skin(e)
+        img = compose_preview_skin(e)
         preview_paths = render_previews(
             img, Path(args.preview_dir), e.texture_id, args.scale
         )
@@ -172,6 +197,35 @@ def cmd_all(args) -> int:
         print(
             f"{e.texture_id}: skin + {len(preview_paths)} previews + catalog card"
         )
+    return 0
+
+
+def parts_table(key: str) -> str:
+    """A model's boxes, read from the model-part table (spec-0097 §6.4)."""
+    w, h = models.texture_size(key)
+    lines = [f"{key}: a {w}x{h} sheet, from {models.TABLE_PATH.name}"]
+    bs = models.boxes(key)
+    outer = not any(b.grow == 0 for b in bs)
+    for b in bs:
+        layer = "shell" if (b.grow > 0 and not outer) else ("outer" if outer else "base")
+        notes = []
+        if b.mirror:
+            notes.append("mirrored")
+        if b.posed:
+            notes.append("posed")
+        tail = f" ({', '.join(notes)})" if notes else ""
+        lines.append(
+            f"  {b.part:28} {layer:5} texOffs {b.u},{b.v}  box {b.w}x{b.h}x{b.d}  "
+            f"grow {b.grow}{tail}"
+        )
+        for face, (x, y, fw, fh) in b.face_rects().items():
+            if fw and fh:
+                lines.append(f"      {face:5} x {x}..{x + fw - 1}, y {y}..{y + fh - 1}")
+    return "\n".join(lines)
+
+
+def cmd_parts(args) -> int:
+    print(parts_table(args.model))
     return 0
 
 
@@ -215,6 +269,10 @@ def main(argv: List[str] | None = None) -> int:
     a.add_argument("--preview-dir", required=True)
     a.add_argument("--scale", type=int, default=DEFAULT_SCALE)
     a.set_defaults(func=cmd_all)
+
+    m = sub.add_parser("parts", help="print a model's boxes from the model-part table")
+    m.add_argument("model", choices=models.model_keys())
+    m.set_defaults(func=cmd_parts)
 
     args = parser.parse_args(argv)
     return args.func(args)

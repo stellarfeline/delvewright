@@ -1,0 +1,13 @@
+{
+  "code": "DW0983",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/waves/2/mobs/0/count",
+      "value": 2
+    }
+  ],
+  "units": [],
+  "why": "`wave/edge` is one skeleton named `The Edge Sentry` - a single named body inside a wave, which is a character and stands. Raise its `count` to 2 and nothing else changes: the same name, the same bar, the same strings. Now two bodies wear one name tag, so the name labels a crowd and says of each body that it is a person it is not - the playtest shape, where three zombies of one wave all wore `The Watch`. The boundary is the object's own count, never a flag: one body under a name is a person, two are a crowd. It declares no unit: `name` and `count` are both bound in the primary, and what must not compile is a name tag on one of many."
+}

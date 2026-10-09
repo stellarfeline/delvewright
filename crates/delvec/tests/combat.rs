@@ -718,13 +718,18 @@ fn the_combat_plan_names_the_census_probe() {
 /// as questions the live bodies are asked.
 ///
 /// Every field here is the one thing a combat step MEASURES, so the derivation is
-/// pinned rather than inferred from a run. `souls-bonfire`'s `wave/guards` seats
-/// two named zombies with `max_health`, `attack_damage` and `movement_speed`
-/// declared and no equipment.
+/// pinned rather than inferred from a run. `souls-bonfire`'s `wave/guards`,
+/// made one named zombie here (a name tag marks a single body, so the identity
+/// fact lives only on a stack of one), with `max_health`, `attack_damage` and
+/// `movement_speed` declared and no equipment.
 #[test]
 fn the_muster_states_what_the_wave_declares() {
     let tmp = TempCampaign::new();
-    campaign_with(tmp.path(), |_, _| {});
+    campaign_with(tmp.path(), |quests, _| {
+        let m = &mut quests["content"]["waves"][0]["mobs"][0];
+        m["count"] = serde_json::json!(1);
+        m["name"] = serde_json::json!("Keep Guard");
+    });
     let (out, _) = build(tmp.path()).expect("the reference campaign builds");
     let json: serde_json::Value =
         serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
@@ -735,7 +740,7 @@ fn the_muster_states_what_the_wave_declares() {
     // Three decimal places, and a sentinel no attribute reading can be.
     assert_eq!(m["scale"], 1000);
     assert_eq!(m["unread"], -1);
-    assert_eq!(m["bodies"], 2);
+    assert_eq!(m["bodies"], 1);
 
     // The identity facts name the declaration by ORDINAL, never by its text: the
     // plan must be byte-identical between an `en` build and a `--lang` bake.
@@ -747,9 +752,9 @@ fn the_muster_states_what_the_wave_declares() {
 
     let p = &m["profiles"][0];
     assert_eq!(p["type"], 0);
-    assert_eq!(p["count"], 2);
+    assert_eq!(p["count"], 1);
     assert_eq!(p["mask"], 1, "one fact declared, so bit 0 and nothing else");
-    assert_eq!(p["label"], "2 × minecraft:zombie (stack 0)");
+    assert_eq!(p["label"], "1 × minecraft:zombie (stack 0)");
     assert_eq!(p["max_health"], 12.0);
     assert_eq!(p["attack_damage"], 3.0);
     assert_eq!(p["movement_speed"], 0.2);

@@ -2,6 +2,8 @@
 
 - [Dress the character; do not hope the palette does it](#dress-the-character-do-not-hope-the-palette-does-it)
 - [The face is the composer's, not yours](#the-face-is-the-composers-not-yours)
+- [Two layers, and which ones the mannequin shows](#two-layers-and-which-ones-the-mannequin-shows)
+- [A mob's skin is drawn to the mob's own boxes](#a-mobs-skin-is-drawn-to-the-mobs-own-boxes)
 - [What the model cannot wear](#what-the-model-cannot-wear)
 - [Replacing a vanilla texture](#replacing-a-vanilla-texture)
 
@@ -62,7 +64,9 @@ said.
 | `footwear` | `none`, `sandal`, `shoe`, `boot`, `tall_boot` | how far up the leg it reaches — barefoot, sandal, shoe, mid-calf, knee. Painted in `sandal` |
 | `hair` | `bald`, `crop`, `short`, `jaw`, `long` | how far hair comes down the sides of the head. Past the ear it frames the face and takes a cut line in `hair_shadow`; `long` also falls onto the shoulders. **`short` is a short back and sides** — set this whenever the character is not one |
 | `facial_hair` | `none`, `moustache`, `beard` | painted in `beard`. `moustache` is the lip row, `beard` the mouth and chin rows plus the sides of the jaw. **`none` is a face, not a blank** — the composer models the mouth, chin and jaw for everyone, so pick grooming for the character and nothing else |
-| `collar` | `open`, `closed` | `closed` is the only way to fasten a garment at the throat — the open V is painted from `skin`, so no colour can close it |
+| `collar` | `open`, `closed`, `high` | `closed` is the only way to fasten a garment at the throat — the open V is painted from `skin`, so no colour can close it. `high` is `closed` plus a collar ring standing off the neck |
+| `overcoat` | `none`, `coat`, `long_coat` | a coat standing off the garment on the overlay shell, open down the front, its sleeves over the sleeve's span; `long_coat` also over the thighs. On a villager it is the robe to the hem. Painted in `coat` (defaults to `tunic` a step darker), opening and hem in `coat_shadow` |
+| `hood` | `none`, `up` | `up` puts a hood over the head, open at the face, falling onto the shoulders. Painted in `hood` (defaults to `tunic`), its rim in `hood_shadow` |
 | `greying` | `none`, `hair`, `beard`, `both` | streaks `hair_grey` / `beard_grey` through what it names. Keep those two colours **close together**: a wide gap reads as lichen on a rock, not as a greying head |
 
 A misspelled key, value or palette colour **exits by name** rather than
@@ -86,22 +90,64 @@ looks wrong. And **there is no nose and no palette key for one** — at 8×8 a n
 is two dark pixels immediately over the mouth and the pair merges into a muzzle,
 which is why no clean-shaven default skin has one either.
 
+## Two layers, and which ones the mannequin shows
+
+A player-model skin has two layers: the base, and an **overlay shell** over each
+part — the same box grown half a pixel a side on the head and a quarter on the
+body and limbs. The composer paints both. A beard, every head of hair, a hood
+and a high collar are painted on the shell as well as the base, so they stand
+half a pixel off the head and the neck; you choose them in the wardrobe and
+nothing else.
+
+The mannequin draws every overlay layer unless the NPC's `skin` says otherwise.
+`skin.hidden_layers` in `npcs.json` (or on an actor's `skin`) lists the layers
+it does **not** draw — `cape`, `jacket`, `left_sleeve`, `right_sleeve`,
+`left_pants_leg`, `right_pants_leg`, `hat`, the model's own left and right —
+each at most once. Hide `hat` when a character should read with a flat, close
+head; leave the list out otherwise. The cast entry's own `hidden_layers` is
+carried to the catalog card, so the card says what the mannequin shows: keep
+the two the same.
+
+## A mob's skin is drawn to the mob's own boxes
+
+A mob is not a player model. Its geometry is fixed in the game, and a texture
+fills only the boxes that model builds: a zombie or a husk has a hat shell and
+nothing else; a villager has a hat and a long robe; a piglin has a jacket,
+sleeves and pants but no hat; a drowned's, stray's or bogged's outer layer is a
+**separate texture whose boxes sit at the base positions**, grown — not at the
+player's overlay positions. Paint drawn to another model's layout lands nowhere,
+and the build refuses it.
+
+- To dress a mob, give the cast entry an `entity` instead of a `model` — any
+  humanoid mob the table carries: `zombie`, `husk`, `drowned`,
+  `drowned_outer_layer`, the skeletons and their outer layers, `villager`,
+  `wandering_trader`, `piglin`, `piglin_brute`, `zombified_piglin` (`--help`
+  lists them). The composer paints the same wardrobe onto that model's own
+  boxes: a villager's `overcoat` is its robe, a piglin's coat goes on its
+  jacket, sleeves and pants, an outer layer gets the hair, beard, hood and
+  collar at its base positions. A feature with no box on that model is refused
+  by name (a piglin has no hat, so no hood). The PNG is a `world.textures[]`
+  row, below — not a mannequin skin. The zombie villager and the parched are
+  not dressable.
+- `python -m delve_skin parts <model>` prints any model's boxes and every face
+  rectangle, for a sheet you draw by hand.
+
 ## What the model cannot wear
 
-Only the base layer is authored, so **nothing stands proud of the body**: a coat
-that hangs open, a hood, a hat with a brim, a cloak, a beard that juts, hair with
-volume. Do not ask for these and do not approximate them — a hood painted flat on
-a head reads as a badly-shaped haircut. A limb is 4 px around, so a cuff, a lapel
+The shell is the only volume there is, and it cannot grow: a coat that hangs
+open, a hat with a brim, a cloak, a beard that juts, a bun, a braid, a ponytail
+have no geometry anywhere on the model. Do not ask for these and do not
+approximate them. A limb is 4 px around, so a cuff, a lapel
 or a buckle narrower than a pixel does not exist; a garment cannot cross a body
 part, so a sleeve and a torso hem are independent and no skirt hangs past the
 hips; and sleeves take the torso garment's colour, there being no key for a
 contrasting one.
 
-**Hair is paint on the skull** — no bun, braid, ponytail, parting or silhouette
-off the cube. And on this model **a figure cannot be made to read as a woman**:
-what does it on a player skin is the `slim` arm geometry (which this composer
-refuses), a hair silhouette off the cube, and face detail finer than 8×8. Hair
-length is the only lever left and on a cube it is androgynous. So write a woman
+**Hair is a lip of paint half a pixel off the skull** — no bun, braid, ponytail,
+parting or silhouette off the cube. And on this model **a figure cannot be made
+to read as a woman** by the skin alone: the `slim` arm geometry helps — choose
+`model: slim` where the character is one — but face detail finer than 8×8 does
+not exist, and the shell adds depth, not a silhouette. So write a woman
 in the **dialogue and the brief**, dress the figure well, and do not expect the
 skin to carry the reading on its own — and never quietly recast a character
 because the texture will not say it.
@@ -127,7 +173,11 @@ ships. Every step is mandatory once a design calls for one:
    size if it is wrong). A recoloured vanilla texture is not original and may
    not ship; draw it new, or take one under an allowlisted licence. An
    animation is a strip of whole frames with `textures/<id>.png.mcmeta` beside
-   it holding vanilla's `animation` object.
+   it holding vanilla's `animation` object. **A mob's texture is drawn to that
+   mob's boxes** (the section above): compose it with `entity`, or draw it to
+   `python -m delve_skin parts <model>`. The build refuses a mob sheet with
+   paint on no box the model builds, and one whose paint sits only where nobody
+   standing level with the mob looks (the top of its head).
 3. **Record the licence.** `{"spdx": "original", "source": "original"}` for
    your own drawing; anything else needs `url`, and CC BY also `attribution`
    (`DW0741`).

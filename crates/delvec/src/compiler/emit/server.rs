@@ -35,9 +35,14 @@ pub(super) fn lang_assets(
     // The campaign reaching emission is tagged, so its inventory values are
     // translation tags; `plain` recovers the canonical English each tag carries.
     // Derived from the live inventory, never from a fixture (spec-0029 AC2).
+    // The English AS AUTHORED, markup included: a styled line is lowered below,
+    // by the same rule the component that asks for it was (spec-0096 §3.3).
     let english: BTreeMap<String, String> = delvewright_dsl::l10n::inventory(c)
         .into_iter()
-        .map(|(k, v)| (k, plain(&v).to_string()))
+        .map(|(k, v)| {
+            let e = delvewright_dsl::l10n::untag(&v).map_or(v.as_str(), |(_, e)| e);
+            (k.clone(), e.to_string())
+        })
         .collect();
     // Each file is the campaign's keys plus the compiler's own chrome
     // (`dsl::chrome`, spec-0029 addendum). The two key spaces are disjoint by
@@ -65,7 +70,7 @@ pub(super) fn lang_assets(
     };
     put(
         "en_us",
-        &english,
+        &styled_rows(&english, &english, "en_us")?,
         delvewright_dsl::chrome::english_entries(),
     );
 
@@ -113,7 +118,57 @@ pub(super) fn lang_assets(
         // than English-under-a-translated-name: the client falls through to
         // `en_us.json` (or to the component's own fallback, for a player who
         // declined the pack) and reads English. Honest, and never disguised.
-        put(mc, &doc.content, delvewright_dsl::chrome::lang_entries(mc));
+        put(
+            mc,
+            &styled_rows(&english, &doc.content, &path)?,
+            delvewright_dsl::chrome::lang_entries(mc),
+        );
+    }
+    Ok(out)
+}
+
+/// One language's rows with every styled line lowered (spec-0096 §3.3): the
+/// line's key carries its format string, and `<key>.span.<i>` the text of the
+/// English's span `i` as this language words it. A translation's spans are
+/// aligned to the English's by style ([`delvewright_dsl::textstyle::lower_aligned`]),
+/// so the style — which rides on the component — always meets its own text.
+/// Validation proved the alignment (`DW0976`); the pack is where a mismatch
+/// would become a span drawn in the wrong style, so it is proved again here.
+fn styled_rows(
+    english: &BTreeMap<String, String>,
+    rows: &BTreeMap<String, String>,
+    what: &str,
+) -> Result<BTreeMap<String, String>, BuildFailure> {
+    let mut out = BTreeMap::new();
+    for (k, v) in rows {
+        let en = english.get(k).map_or(v.as_str(), String::as_str);
+        match delvewright_dsl::textstyle::lower_aligned(en, v) {
+            Ok(None) => {
+                out.insert(k.clone(), v.clone());
+            }
+            Ok(Some(l)) => {
+                out.insert(k.clone(), l.format);
+                for (i, (_, t)) in l.spans.into_iter().enumerate() {
+                    let sk = delvewright_dsl::textstyle::span_key(k, i);
+                    // No inventory key has a `span` segment followed by an index
+                    // (the key scheme of `dsl::l10n`), so a span key cannot
+                    // shadow a row; asserted, not diagnosed — no input reaches it.
+                    assert!(
+                        !rows.contains_key(&sk),
+                        "span key `{sk}` collides with an inventory key"
+                    );
+                    out.insert(sk, t);
+                }
+            }
+            Err(why) => {
+                return Err(BuildFailure::Diagnostic {
+                    code: delvewright_dsl::textstyle::INLINE_STYLE_UNMATCHED,
+                    message: format!(
+                        "`{what}` row `{k}` cannot be written into the language file: {why}"
+                    ),
+                });
+            }
+        }
     }
     Ok(out)
 }

@@ -963,6 +963,16 @@ pub fn build_with_warnings(
         });
     }
     extra_assets.extend(crate::compiler::textures::pack_entries(&textures));
+    // spec-0097: the sheets a model's boxes judged, over the bytes the pack
+    // bakes. `delvec validate` refused any it would refuse; the ledger is the
+    // count, so a judgement that stopped reaching a sheet reads as zero.
+    let mut sheets = crate::compiler::skinparts::Binding::default();
+    let _ = crate::compiler::skinparts::check_skins(plan.campaign, skins, &mut sheets);
+    crate::compiler::skinparts::count_texture_rows(plan.campaign, &textures, &[], &mut sheets);
+    if let Some((code, message)) = sheets.first_refusal.clone() {
+        return Err(BuildFailure::Diagnostic { code, message });
+    }
+    put_json(&mut out, "validation/sheet-gate.json", &sheets.to_json());
     let resource_pack = if skins.is_empty() && extra_assets.is_empty() {
         None
     } else {

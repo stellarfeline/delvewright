@@ -1,0 +1,25 @@
+{
+  "code": "DW0981",
+  "patch": [
+    {
+      "doc": "dialogue.json",
+      "op": "replace",
+      "path": "/content/dialogues/0/nodes/0/options/2/label",
+      "value": "Must I read it?"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/content/dlg.curator.curator-root.opt.2.label",
+      "value": "非读不可吗？"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/source/dlg.curator.curator-root.opt.2.label",
+      "value": "Must I read it?"
+    }
+  ],
+  "units": [],
+  "why": "The Curator's third option, the one that walks past the label, reworded from a statement (`Skip the label.`) into a question (`Must I read it?`), in English and in its Chinese rendition; its effects are untouched, so choosing it still completes `obj/hear-the-curator`, and it still has no `next`. The player asks, the dialog closes, and nobody answers - the shape a playtest found in a closing dialogue where both options were questions whose only effect was to complete an objective. Only the words change, so no other check reads anything new: the label is as wide as before, the key set is the same, and the provenance row follows the English. It declares no unit: what must not compile is a question with no line after it."
+}

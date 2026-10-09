@@ -302,7 +302,7 @@ def run_build(
     return out, r
 
 
-def read_build(overlay: str | None, out: Path, r: subprocess.CompletedProcess):
+def read_build(overlay: str | None, lang: str, out: Path, r: subprocess.CompletedProcess):
     """`(manifest, warning rows)` of one finished build, or the refusal it earns."""
     if r.returncode != 0:
         die(
@@ -538,7 +538,7 @@ def main() -> int:
         )
         with contextlib.closing(runs):
             for (overlay, lang), outcome in zip(builds, runs):
-                m, rows = read_build(overlay, *outcome.get())
+                m, rows = read_build(overlay, lang, *outcome.get())
                 manifests[build_id(overlay, lang)] = m
                 warnings[build_id(overlay, lang)] = rows
     finally:

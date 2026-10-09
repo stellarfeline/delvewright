@@ -80,14 +80,18 @@
         "id": "wave/garrison",
         "mobs": [
           {
-            "count": 2,
+            "count": 1,
             "entity": "minecraft:zombie",
             "name": "Hollow Footman"
+          },
+          {
+            "count": 1,
+            "entity": "minecraft:zombie"
           }
         ]
       }
     ]
   },
-  "dsl_version": "0.36.1",
+  "dsl_version": "0.37.0",
   "stage": "quests"
 }

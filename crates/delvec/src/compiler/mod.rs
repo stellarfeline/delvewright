@@ -82,6 +82,7 @@
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
+//! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
 //! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
 //! - [`solver`]: the jigsaw layout solver.
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
@@ -91,6 +92,7 @@
 //! - [`strand`]: a fight the party must win stays where the party can strike it (`DW0924`).
 //! - [`surround`]: horizon surround generation — the tiles that dress the world outside the placed pieces.
 //! - [`teleport`]: the `teleport` verb's one compile-time obligation, and the ledger saying what it looked at.
+//! - [`telling`]: what the dialogue tells the player — a question gets an answer (`DW0981`), a name is told before it is used (`DW0982`).
 //! - [`textfit`]: on-screen text that does not fit what draws it (`DW0330`/`DW0331`).
 //! - [`textures`]: a delve wears its own textures — `world.textures[]` against the pinned client's census and the campaign's files (`DW0939`/`DW0940`/`DW0309`), the pack entries, and the comparison sheet (spec-0084).
 //! - [`timeline`]: per-effect-timeline gate state — the static half of the `close-gate` model (`DW0410`).
@@ -178,6 +180,7 @@ pub mod respawn;
 pub mod seating;
 pub mod seeding;
 pub mod served;
+pub mod skinparts;
 pub mod snapshot;
 pub mod solver;
 pub mod stairs;
@@ -187,6 +190,7 @@ pub mod statepath;
 pub mod strand;
 pub mod surround;
 pub mod teleport;
+pub mod telling;
 pub mod textfit;
 pub mod textures;
 pub mod timeline;

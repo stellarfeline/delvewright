@@ -1,0 +1,13 @@
+{
+  "code": "DW0979",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/textures/1/id",
+      "value": "drowned-crown"
+    }
+  ],
+  "units": [],
+  "why": "This edit points the `drowned-wrap` row at `textures/drowned-crown.png`, painted only on the top face of the outer layer's hat. The paint is sampled, but the face stands above a standing player's eye, so nobody level with the mob ever sees it: the sheet draws nothing at eye level."
+}
