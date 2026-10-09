@@ -249,7 +249,8 @@ pub(super) fn claims(c: &Campaign, plan: &SitePlanContent, d: &mut Vec<Diagnosti
                  corner) ask to draw the same wall, and only a connection between them says \
                  which side draws it (its `a`), or which is roofed where the other is open. Give \
                  them a seam (its `a` draws the wall), stand them two or more cells apart (each \
-                 then owns its own ring and the gap between is the site's fill), or make them \
+                 then owns its own ring and the gap between is the site's fill — on an open \
+                 site, the commons both may open onto), or make them \
                  one place. Where seams between them already exist, they disagree about which \
                  is `a` on this plane.",
                 n = cells.len(),

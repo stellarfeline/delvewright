@@ -1684,7 +1684,7 @@ pub struct BatteryBinding {
     /// Of those, cracks.
     pub cracks: usize,
     /// Standable cells inside the region and outside every claim. On an
-    /// `open` site they are the **commons** (spec-0098 §14, an owner ruling):
+    /// `open` site they are the **commons** (spec-0098 §14, a ruling):
     /// ordinary walkable ground every place may open onto. On a `solid` site
     /// there is no commons, and `DW0838`'s second shape refuses a place that
     /// reaches one.

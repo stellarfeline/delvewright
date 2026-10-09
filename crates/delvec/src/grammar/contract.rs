@@ -1140,7 +1140,7 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
         ));
     }
     // **The enclosed spaces are the author's declaration, and this gate
-    // confirms them** (spec-0098 §14, an owner ruling): a piece declares zero
+    // confirms them** (spec-0098 §14, a ruling): a piece declares zero
     // or more box-shaped `enclosed`/`open_top` spaces, and closure verifies
     // exactly those. Zero declared — a street, a pavilion, a covered market —
     // is legitimate and passes with its count stated; nothing infers an

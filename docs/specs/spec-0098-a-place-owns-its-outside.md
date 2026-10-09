@@ -20,9 +20,11 @@
   the plan gains a required `fill` — what every cell no place claims becomes
   (§2b) — whose `open` kind carries the site's **terrain**, a declared
   heightfield (§2c).
-- **Diagnostics**: **DW0987**, **DW0988**, **DW0989** and **DW0990**, all used
-  below; `DW0827`'s quantifier widens from play spaces to claims (§2 rule 3d);
-  `DW0838`'s widens to ground outside every claim (§2c).
+- **Diagnostics**: **DW0987**, **DW0988** and **DW0990**, all used below
+  (DW0989 was allocated and is unused: §14, ruling 3); `DW0827`'s
+  quantifier widens from play spaces to claims (§2 rule 3d); `DW0838` refuses
+  a place leaking, and on an `open` site ground outside every claim is the
+  commons (§2c, §14 ruling 2).
 - **Decision record**: ADR-0032 (one map route).
 - **Research**: rooflines and facades at Minecraft scale are researched, not
   invented — `docs/reference/roof-and-facade-craft.md` carries the record with
@@ -157,16 +159,14 @@ them reads bytes against the plan and never asks who wrote the bytes.
 **Unplanned crossings stay refused without any engine wall.** `DW0838` deletes
 every allocated opening and asks whether two places are still walk-connected
 over the bytes; a gap of ground that joins two places the graph does not connect
-is exactly what it refuses, naming the pair and a witness cell. Its remedies are
-each reachable inside an authored document, which is what makes it a pair and
-not a dead end: the place on either side **draws its edge** on the ring it owns
-(a wall, a hedge, a kerb a body cannot step over); the gap **becomes a place**
-— an alley with its own seams — or part of one; or a declared `volume` fills
-it. The refusal names all three. **Reachable ground is a place.** In a bounded
-map every cell a body can reach is inside some place — that is what a layout
-node is — so ground a body can walk between two places is either a place of its
-own (an alley, a square) or kept off by the edges of the places beside it; the
-proof does not change for an open site, it only has more to say.
+is exactly what it refuses when the walk does not pass through the commons,
+naming the pair and a witness cell. Its remedies are each reachable inside an
+authored document: the place **closes its wall** on the ring it owns, or the
+plan **allocates a seam** between the two. **On an `open` site, ground no place
+claims is the commons** (§14, ruling 2): ordinary walkable ground every
+place may open onto through its own openings, with no declaration — a narrow
+gap between two houses is simply ground, and two places that both open onto it
+are joined through it.
 
 ## 2b. What undeclared space becomes is declared, not picked by the engine
 
@@ -279,14 +279,13 @@ seams at either end are ordinary seams.
 
 **The faced cliff is already refused where it matters, by the proofs that read
 reach.** A body can walk off a plinth's edge: onto a neighbouring place, which
-is `DW0838` (a connection nothing allocated) unless a `drop` seam declares it;
-or onto ground no place claims, which is a way out of the designed places.
-`DW0838`'s quantifier **widens** to say so: *delete every allocated opening,
-and no two places are walk-connected, and no standable cell outside every
-claim is reached from any place.* Reachable ground is a place (§2); the
-remedies are the same three — close the edge, make the ground a place, or
-declare the drop — and each is authorable. In a `solid` site the second shape
-cannot fire, and its binding line says how many cells it examined.
+is `DW0838` (a crossing nothing allocated) unless a seam declares it; or, on an
+`open` site, onto the commons, which is ground like any other — the route
+proofs over the assembled world walk it, and a pocket in it is `DW0921`'s.
+`DW0838` refuses a place **leaking** (§14, ruling 2): *delete every
+allocated opening and the commons, and no two places are walk-connected; no
+stand-in — the engine's closed shell — reaches the commons; and on a `solid`
+site, which has no commons, no place reaches ground outside every claim.*
 
 **Her question, answered: there is no engine-generated connector between two
 heights.** The whole declares the height difference — a seam's rise is
@@ -457,9 +456,10 @@ is the size of that scene, and the whole is the plan. In this spec's terms:
   site the terrain — one heightfield the whole owns, rising and falling as the
   design drew it — with every scene stitched to it along its boundary (§2c),
   and `volumes[]` where rock shows or sky is kept; on a `solid` site, rock. Never a wall and never a fill nothing declared. A gap
-  between two houses too narrow for a road is ground and sky; if a body can
-  walk it from one place into another the graph does not join, that is
-  `DW0838`, and a design closes it or makes it a place (§2). The declared
+  between two houses too narrow for a road is ground and sky — the commons,
+  which both houses may open onto (§14, ruling 2); a body crossing from
+  one place into another through a wall, not through a seam or the commons,
+  is `DW0838`. The declared
   ground is one surface until stage 7 dresses it, and §10 names a dressed
   volume as the follow-on.
 
@@ -500,21 +500,16 @@ construction; nothing is conceded and nothing re-refused. Both planes are owned
 by a place (rule 3c: each contact names an `a`), so no engine wall stands in
 either. Criterion 14 pins it.
 
-**An all-open piece refused — answered, with its hatch closed.** A
-street or a mud field honestly encloses nothing, and `contract-closure` reds a
-zero binding when no space is `enclosed` or `open_top`. Under this spec open
-places are first-class pieces, so the zero must be readable. **Declared as a
-loosening, in these words**: `contract-closure` stops refusing a piece whose
-every space is `open`, and instead states its binding — `0 of N space(s)
-declare an envelope closure examines; every space is open` — at exit 0. What
-secured that refusal was the question "did a room forget to say it is
-enclosed", and that question is answered where the kind is known: **the plan**.
-A roofed box is a place with a lid, so a piece bound to it must carry at least
-one space closure examines; a piece with none is refused at the binding
-(`DW0989`), naming the place's `ceiling` and the piece's envelopes. An open box
-may carry a shelter (an `enclosed` space inside an open place is a hut on a
-flat) or nothing enclosed at all. The kind is the object's — the box's
-`ceiling` — never the piece's own word, so the defect cannot supply the hatch.
+**An all-open piece refused — answered by the author's declaration.** A
+street, a mud field, a pavilion or a covered market honestly encloses nothing,
+and `contract-closure` used to red a zero binding when no space is `enclosed`
+or `open_top`. **The enclosed spaces are the author's declaration, and the
+check confirms them** (§14, ruling 3): a piece declares zero or more
+box-shaped `enclosed` (or `open_top`) spaces in its spatial contract, and
+closure verifies exactly those. Zero declared passes and states `0 of N
+space(s) declare an envelope closure examines; every space is open`. Nothing
+infers an enclosure from the plan's `ceiling`, and a space declared `open`
+under the piece's own blocks is a covered space, taken as declared.
 
 **Also recorded there, a doc defect (finding 4)**: the allocation hands a seam
 as its two corner cells, which the skill's detail reference calls "its cells";
@@ -527,7 +522,6 @@ the reference is corrected to the handing's own words with the pin bump.
 | `DW0987` | **A piece paints a cell it does not own.** A bound piece's template holds a block other than `minecraft:structure_void` at a void cell of its frame — a neighbour's facade, the party wall a connection gave the other side, a clipped eave, a gap cell. Read off the piece's own `.nbt` at validation, where `DW0888` already opens it, and named per cell with the owner the plan awards it to. Air counts as painting: the game places a template's air, so an air cell over a neighbour's wall would carve it. Validation tier (exit 1). **Binding: bound pieces opened, void cells examined, painted.** |
 | `DW0990` | **The plot does not stitch.** Two shapes of one claim — that a place meets the ground the whole gave it. *A piece writes a fixed ring cell*: its template holds a block (air included) at a cell of the fixed ground (§2 rule 0), read off the piece's own `.nbt` at validation beside `DW0987`, named per cell with the terrain block it displaced. *A crack*: along a claim boundary the two standable surfaces differ by more than one block with air under the higher edge and no seam declaring the crossing — measured over the assembled bytes in the stage-5 battery, naming the boundary segment, both heights and both owners. Declared build tier (the battery's); the first shape is raised at validation on `DW0886`'s precedent. **Binding: fixed ring cells handed and examined; boundary columns examined, cracks.** |
 | `DW0827` (widened) | **Two owners for one block, and no rule to pick by.** Its claim is unchanged and its quantifier grows from play spaces to claims: two places whose claims share a cell that none of §2's rules 3a–3c awards — exactly one cell apart with no connection across that plane, or with connections that disagree about `a`. Named with both places, the shared cells and the three remedies (connect them, stand them apart, make them one). The engine neither arbitrates nor writes. Validation tier (exit 1). **Binding: box pairs compared, contested cells awarded.** |
-| `DW0989` | **A roofed place bound to a piece that encloses nothing.** The place's box has a `clearance` ceiling and the bound piece's spatial contract declares no `enclosed` or `open_top` space, so the closure gate had nothing of it to examine and the room that is the place's reason for a lid is not in the piece. Read from metadata at validation beside `DW0843`. An open box is never this refusal. Validation tier (exit 1). **Binding: roofed places bound, pieces with an enclosing space.** |
 | `DW0988` | **A roof the plan has no room for.** Two shapes of one claim, both read off the plan before any geometry: `roof` on a box whose `ceiling` is `open` — an open place has no lid to put a roof on; and a roof zone's course over the shell footprint lying in another place's play space or floor course — the stacked case, named with both places and the colliding courses. Eaves are not this refusal: they stop at a neighbour (§3). Validation tier (exit 1). **Binding: roofs declared, courses examined against places.** |
 
 **The model reads `structure_void` as the game does.** `assembled::placed_blocks`
@@ -683,11 +677,10 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
 10. **The model skips `structure_void`.** A template with `structure_void` over
     a mass block leaves the mass block in the assembled model; the same template
     with air removes it. Instrument: `assembled` unit test.
-11. **Stage 5 is unchanged where nothing is declared.** A campaign with no
-    `roof` and no detail plan derives byte-identical fills before and after this
-    spec. Instrument: the existing byte-identity test in `tests/blockout.rs`,
-    whose fixture declares neither, and the gallery baseline's delta naming only
-    the overlay that changed.
+11. **Binding nothing moves no byte.** A campaign whose detail plan binds no
+    place derives the same mass as the same campaign with no detail plan, and
+    the derivation is deterministic and seedless. Instruments: `tests/detail.rs`
+    and `tests/blockout.rs`.
 12. **Every proof still holds over a bound outside.** The stage-5 battery,
     `DW0885`, `DW0210`, `DW0891` and `DW0921` run on the gallery's site-plan
     overlay with the yard and the annex bound, exit 0, with their binding lines
@@ -703,11 +696,14 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     `contract-well-formed` and `DW0844` both green, the two declared openings
     disjoint. Vacuous if the openings do not meet at a corner: the test asserts
     the two shared faces' in-plane spans both reach the place's corner cell.
-15. **An all-open piece binds to an open place and not to a roofed one.** A
-    piece whose every space is `open` passes `contract-closure` with the stated
-    zero and binds green to an open box; the same piece bound to a box with a
-    `clearance` ceiling is refused `DW0989`. Vacuous if the piece has an
-    enclosing space: the test asserts the contract's envelope set is `{open}`.
+15. **The enclosed spaces are the author's declaration, and closure confirms
+    exactly those.** A piece whose every space is `open` passes
+    `contract-closure` with the stated zero (`0 of N`) and binds green to an
+    open box and to a roofed one alike; a covered space declared `open` is taken
+    as declared, its covered cells stated; the same space declared `enclosed`
+    is examined (the perturbation: the declaration is what binds the gate), and
+    unclosed it is refused. Vacuous if the piece has an enclosing space: the
+    test asserts the contract's envelope set is `{open}`.
 
 16. **Two places one cell apart with no connection are refused, and each
     remedy is taken green.** A plan with two roofed boxes one cell apart and no
@@ -716,13 +712,13 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     made one box each validates. Vacuous if the boxes do not share a cell: the
     test asserts the claims' intersection is non-empty. Instrument: `crates/dsl`
     site-plan tests.
-17. **A walkable gap is refused and the named remedies are reachable.** On a
-    fixture of two places two cells apart on an `open` site with a flat
-    terrain and no seam between them, `DW0838` names the pair and a cell in the gap; binding one
-    place to a piece that draws a wall on its ring clears it, and so does adding
-    the gap as a third place with two seams. Vacuous if the gap is not
-    walkable: the test asserts the witness cell first. Instrument:
-    `tests/blockout.rs`.
+17. **A narrow walkable gap between two places on an open site is ground.**
+    On the blockout fixture (`open`, flat terrain), the landing and the exit —
+    two places with no seam between them — each open their side onto the narrow
+    gap between them: the build is green, the binding states the commons, and
+    the count of place pairs joined through the commons rises by exactly one.
+    Perturbation: the exit keeps its side closed and the count falls back; over
+    a `solid` fill the binding states no commons and joins no pair.
 18. **A stand-in never ships.** The staging gate refuses a site-plan build whose
     blockout binding counts one box massed by the derivation, naming it, and
     admits the same build with that box bound; the gallery's site-plan overlay,
@@ -758,11 +754,13 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     across it passes; a step of exactly one passes. Vacuous if the edge is not
     above the terrain: the test asserts the two heights first. Perturbation
     `Perturb::hollow_edge` reds it alone. Instrument: `tests/blockout.rs`.
-22. **Ground outside every claim is not reached.** A piece whose ring is open
-    onto the terrain is refused `DW0838` (second shape) naming the first
-    unclaimed cell reached; closing the ring, or declaring that ground a place
-    with a seam, passes; on a `solid` site the shape's binding line reads zero
-    cells examined. Instrument: `tests/blockout.rs`.
+22. **A place that leaks is refused.** A hole in a place's own wall that lets
+    a body into another place where nothing allocated an opening — the
+    landing's party wall with the hall, two cells beside the allocated opening
+    — is `DW0838` naming both places; the same piece without the hole is green
+    (the perturbation). A stand-in — the engine's closed shell — whose walls
+    come out short lets a body onto the commons, and `DW0838` names it as a
+    stand-in leak (`--perturb short-walls`).
 
 23. **The ring is fixed, and the ground runs through every plot edge.** On the
     blockout fixture under a sloped terrain, every fixed ring cell the handout
@@ -857,13 +855,7 @@ what a criterion asserts says so in the word *loosening*.
 7. **A heightmap's refusals are `DW0826`**: unread (a campaign handed to the
    checks without its directory), unreadable, not exactly the region's `x × z`
    pixels (naming both sizes), or a surface outside the region's `y` span.
-8. **Criterion 11, a loosening.** `fill` is required and writes every unclaimed
-   cell and the ring's fixed ground, so a campaign with no `roof` and no detail
-   plan does not derive byte-identical fills to the engine before this spec. What
-   is asserted instead: a campaign that binds nothing masses byte-identically to
-   the same campaign with an empty detail plan (`tests/detail.rs`), the
-   derivation is deterministic and seedless (`tests/blockout.rs`), and every cell
-   a place owns under both fills derives identically (criterion 19).
+8. **Criterion 11 is restated as what it asserts** (ruling 1, below).
 9. **`DW0848`, a loosening.** A frame is a claim, never smaller than its box and
    wider by whichever ring cells and eaves the place owns, which no piece's
    bytes know; `footprint_class` is now held only to the class's narrowest box
@@ -894,11 +886,9 @@ what a criterion asserts says so in the word *loosening*.
     graph; so the refusal is shown at the campaign (the exit hung one cell from
     the landing) and each remedy — connect, stand apart, make one — at the
     ownership rule (`crates/dsl` claim tests).
-15. **Criteria 17 and 22, a loosening.** The fixture's gap cannot carry a third
-    place on the kit grid, so the remedy *the gap becomes a place with two seams*
-    is not taken in test; the refusal names it, and closing the edge is taken
-    green. **Criterion 21, a loosening**: the crossing exemption applies to any
-    seam's columns and is not separately shown with a `drop`.
+15. **Criteria 17 and 22 are rewritten** (ruling 2, below). **Criterion
+    21, a loosening**: the crossing exemption applies to any seam's columns and
+    is not separately shown with a `drop`.
 16. **Criterion 1's instrument** is `tests/blockout.rs`: the gallery overlay's
     terrain is a heightmap the loader reads, which the `dsl` crate's tests do not.
 17. **The model places template air** (§7): every cell a template names is
@@ -925,9 +915,15 @@ what a criterion asserts says so in the word *loosening*.
 23. **The overview camera stands over the declared fill** (the region's top on
     a `solid` site, the terrain at its column on an `open` one), as it already
     stood over a horizon's ground.
-24. **`DW0838`'s second shape examines** the standable cells of the region
-    outside every claim; on a `solid` site that keeps a sky volume, the rock's
-    top under the sky is such ground and is examined.
+24. **`DW0838` examines** the standable cells of the region outside every
+    claim: on an `open` site they are the commons (ruling 2); on a
+    `solid` site that keeps a sky volume, the rock's top under the sky is such
+    ground, and a place reaching it is refused. **Recorded debt**: the
+    solid-site refusal is not shown red in test — on the blockout fixture a
+    solid site's ring is the whole's rock, so no piece's opening reaches ground
+    outside every claim, and no fixture yet has a sky-open place that can climb
+    to the rock's top under a kept sky. Its message names its remedies (close
+    the edge, make the ground a place, declare the fill `open`).
 25. **The gallery's annex** declares nine roof courses with one cell of eaves:
     the eaves course sits level with the lid, so a stepped 45° gable over twenty
     columns peaks nine courses above it. Its free walls are three (north, west,
@@ -947,16 +943,63 @@ what a criterion asserts says so in the word *loosening*.
 | 8 | `crates/dsl/tests/v14_site_plan.rs` `dw0988_refuses_…`; probes `a-roof-over-the-open-sky`, `a-roof-under-the-hall` |
 | 9 | `tests/detail.rs` `dw0821_clears_when_the_places_own_walls_are_carved` (departure 12) |
 | 10 | `tests/one_place_site.rs` `the_model_reads_structure_void_as_the_game_does` |
-| 11 | departure 8 |
+| 11 | `tests/detail.rs` `a_campaign_that_binds_nothing_is_massed_byte_identically`, `the_seed_moves_no_detailed_byte` |
 | 12 | the gallery build over the overlay (the battery, `DW0885`, `DW0210`, `DW0891`, `DW0921`) |
 | 13 | `tools/ci/check-dw-codes.py`; the reference pages; `docs/demo-levels.md`; the skill text in the round's scratch file |
 | 14 | `compiler::detail` test `two_contacts_at_a_corner_answer_at_their_own_planes` (departure 13) |
-| 15 | `tests/grammar_contract_check.rs` `an_all_open_piece_states_its_zero_and_passes`; `tests/detail.rs` `dw0989_refuses_an_all_open_piece_on_a_roofed_place` |
+| 15 | `tests/grammar_contract_check.rs` `an_all_open_piece_states_its_zero_and_passes`, `a_covered_space_declared_open_is_taken_as_declared`; `tests/detail.rs` `an_all_open_piece_binds_to_a_roofed_place_and_an_open_one` |
 | 16 | `tests/blockout.rs` `dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them`; `siteplan::claim` `two_roofed_places_one_apart_are_contested_and_each_remedy_parts_them` |
-| 17, 22 | `tests/detail.rs` `dw0838_refuses_ground_outside_every_claim_and_a_gap_nothing_allocated` (departure 15) |
+| 17 | `tests/detail.rs` `the_commons_is_walkable_ground_and_a_solid_site_has_none` |
+| 22 | `tests/detail.rs` `dw0838_refuses_a_hole_between_two_places_nothing_allocated`; `tests/cli.rs` `perturb_short_walls_reddens_dw0838_beside_dw0836` (the stand-in leak) |
 | 18 | `tools/tests/test_staging_gate.py` `test_a_stand_in_never_ships` |
 | 19 | `crates/dsl/tests/v14_site_plan.rs` `a_plan_without_a_fill_is_refused_naming_the_field`; `tests/blockout.rs` `both_fills_derive_and_differ_only_where_no_place_owns`; overlays `site-plan` and `site-plan-solid` |
 | 20 | `tests/blockout.rs` `the_terrain_is_the_heightmap_column_for_column`; probe `a-terrain-on-a-datum-the-plan-does-not-name` |
 | 21 | `tests/detail.rs` `dw0990_refuses_a_crack_and_passes_a_faced_edge_and_a_step`; `tests/blockout.rs` `a_hollow_edge_reddens_dw0990_alone` |
 | 23 | `tests/blockout.rs` `the_ring_is_the_terrain_and_a_door_stands_on_its_sill`; `tests/detail.rs` `dw0990_refuses_a_piece_writing_the_rings_ground` |
 | 24, 25 | `tests/detail_verb.rs` `the_handout_is_complete_and_hands_each_seams_form_to_both_sides` |
+
+### Rulings
+
+Three rulings on this spec, applied as stated.
+
+1. **Compatibility is not a loosening.** Nothing owes compatibility to
+   anything already built (CLAUDE.md), so a criterion asserting that stage 5 is
+   unchanged from the engine before this spec asserts nothing the engine owes.
+   Criterion 11 is restated as what it now asserts — binding nothing moves no
+   byte, and the derivation is deterministic and seedless — and no longer
+   appears as a loosening.
+2. **Undeclared ground on an open site is ordinary walkable ground.** On a
+   `fill: open` site, ground no place claims is an implicit **commons** that
+   every place may open onto through its own openings, with no declaration
+   needed: a narrow gap between two houses is simply ground. What stays refused
+   is a place leaking (`DW0838`): a body crossing between two places other than
+   through an allocated opening, with the commons excluded from the walk; a
+   stand-in — the engine's closed shell, whose only openings are its seams —
+   reaching the commons; and, on a `solid` site, which has no commons, any place
+   reaching ground outside every claim. Two places that both open onto the
+   commons are joined through it, and the binding counts those pairs. **The
+   commons is not a node of the layout graph**: the graph holds the connections
+   the design states, and an implicit node would make every open-site place
+   adjacent to every other in it. The route proofs over the assembled world
+   read commons cells as the ordinary world cells they are: the critical
+   path's legs, `DW0311`'s reach, the gate-aware reach of `DW0306` and
+   `DW0921`'s pocket flood all walk the assembled world, and none of them
+   reads a claim, so a route through the commons is a route they walk and a
+   pocket in it is a pocket. The remedies stay reachable: close the
+   wall or allocate a seam (a crossing); detail the place (a stand-in leak);
+   close the edge, make the ground a place or declare the fill `open` (a
+   solid site). Criteria 17 and 22 test this.
+3. **Enclosed spaces are the author's declaration, and the check confirms
+   intent rather than restricting.** The principle, as the ruling states it: a check exists to
+   help the author confirm, deterministically, that the design intent was
+   achieved, never to limit creative freedom. A place's author declares zero
+   or more box-shaped enclosed spaces in their piece, with coordinates, through
+   the spatial contract's existing space regions; the closure check verifies
+   exactly those; zero declared is legitimate and passes with its count stated
+   (`0 of N`). `DW0989` is removed — no inference from the plan's `ceiling`,
+   and no refusal of a roofed place with nothing enclosed: a pavilion, a
+   covered market or a covered bridge is fine — and the number goes unused.
+   Executing the ruling also takes out the closure gate's refusal of a space
+   declared `open` or `open_top` under the piece's own blocks: without that, a
+   pavilion had no kind it could be declared as. Such a space is a covered
+   space, taken as declared, with its covered cells stated in the enumeration.

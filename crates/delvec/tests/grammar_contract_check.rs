@@ -426,7 +426,7 @@ fn merging_a_stairs_two_ends_into_one_space_is_refused() {
 }
 
 /// **A covered space declared `open` is taken as declared** (spec-0098 §14,
-/// an owner ruling: enclosed spaces are the author's declaration, and the
+/// a ruling: enclosed spaces are the author's declaration, and the
 /// check confirms intent rather than restricting it). The hall under its roof,
 /// declared `open`, is a covered space — a pavilion — and closure examines
 /// nothing of it; the covered cells are stated in the enumeration. The same

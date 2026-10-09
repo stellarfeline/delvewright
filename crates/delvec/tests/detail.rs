@@ -1970,7 +1970,7 @@ fn dw0990_refuses_a_piece_writing_the_rings_ground() {
 }
 
 /// **Criterion 15, the binding's half: an all-open piece binds to any place,
-/// roofed or open** (spec-0098 §14, an owner ruling: enclosed spaces are the
+/// roofed or open** (spec-0098 §14, a ruling: enclosed spaces are the
 /// author's declaration; a pavilion or a covered market is fine). Both the
 /// sky-open loft and the roofed exit bind a piece whose every space is
 /// `open` with no refusal. Vacuous if the patch did not reach the piece: its
@@ -2070,7 +2070,7 @@ fn dw0821_clears_when_the_places_own_walls_are_carved() {
 }
 
 /// **Criterion 17: on an open site, ground no place claims is the commons**
-/// (spec-0098 §14, an owner ruling). The landing's piece opens its west ring
+/// (spec-0098 §14, a ruling). The landing's piece opens its west ring
 /// onto the open ground beside it: green, the ground is the commons and the
 /// landing's own opening is its own. The landing and the exit open toward
 /// each other across the narrow gap between them: green again, and the pair
