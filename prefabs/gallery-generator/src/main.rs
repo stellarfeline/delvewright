@@ -3325,7 +3325,6 @@ fn write_probe_piece(
             "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
         },
         "anchors": {},
-        "note": why,
         "license": {
             "source": "original",
             "spdx": "GPL-3.0-or-later",
@@ -3335,7 +3334,10 @@ fn write_probe_piece(
         }
     });
     document::write_preserving(&out.join(format!("{id}.json")), &meta);
-    println!("{id}: probe piece written — {}x{}x{}", size[0], size[1], size[2]);
+    println!(
+        "{id}: probe piece written — {}x{}x{} ({why})",
+        size[0], size[1], size[2]
+    );
 }
 
 fn write_refused_pieces(out: &Path) {

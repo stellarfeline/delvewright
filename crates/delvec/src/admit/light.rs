@@ -113,8 +113,8 @@ pub const DEFAULT_DARK_THRESHOLD: i32 = 3;
 ///
 /// The open-air assumption above is what makes a colonnade measurable, and it is
 /// *false for a whole class of piece*. A `detail-plan` piece is placed inside the
-/// box a site plan gave it: its frame is the play space plus the one floor course
-/// under it (spec-0050 §3), everything above is the whole's, and it is walked
+/// box a site plan gave it: its frame is its place's claim (spec-0098 §2), what lies
+/// past it is the whole's or a neighbour's, and it is walked
 /// under the whole's roof. Probed as if it stood in open air, an emitterless
 /// detail piece measures the night sky floor at every cell and is written `lit` —
 /// a profile true of no world it will ever be placed in, which is the vacuity

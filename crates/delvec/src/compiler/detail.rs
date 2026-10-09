@@ -1261,12 +1261,16 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
                 format!("{path}/piece"),
                 format!(
                     "`{piece}` is not the shape of the box `{place}` gives it. The piece is \
-                     {gx}x{gy}x{gz}; the frame is {wx}x{wy}x{wz} — {over}. The frame is the play \
-                     space plus the one floor course under it, and equality is EXACT: undersize \
-                     refuses exactly as oversize does, because the box is the footprint and a \
-                     smaller building means a smaller box. That is a site-plan edit, taken \
-                     visibly, and it is the only way a part changes what the whole gave it. Run `delvec allocation {place}` for the frame, the datum and every \
-                     seam this box must answer.{upstream}",
+                     {gx}x{gy}x{gz}; the frame is {wx}x{wy}x{wz} — {over}. The frame is the place's claim — the \
+                     ground under its plot, its floor course, its play space, the ring its walls \
+                     may stand in and any roof the plan declares — and equality is EXACT: \
+                     undersize refuses exactly as oversize does, and a cell of the frame the \
+                     place does not own is held as `minecraft:structure_void`. A frame that \
+                     moved because the plan or its terrain moved is answered by re-running \
+                     `delvec detail` over the place's program; a different building is a \
+                     site-plan edit, taken visibly, the only way a part changes what the whole \
+                     gave it. Run `delvec allocation {place}` for the frame, the ground, the \
+                     voids and every seam this place must answer.{upstream}",
                     piece = row.piece,
                     place = row.place,
                     upstream = delvewright_dsl::refused_upstream(c, &row.place, seams, &mut reads),
