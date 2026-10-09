@@ -1213,7 +1213,10 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     assert_eq!(causeway["verdict"], "pass");
     let proof = gate(&causeway, "contract-edge-proof").expect("the edge proof is emitted");
     assert_eq!(proof["state"], "pass", "{proof}");
-    assert_eq!(proof["bound"], 2, "the two climbs of the ladder stack, proved: {proof}");
+    assert_eq!(
+        proof["bound"], 2,
+        "the two climbs of the ladder stack, proved: {proof}"
+    );
     let reach = gate(&causeway, "contract-reachability").expect("reachability is emitted");
     assert_eq!(reach["state"], "pass", "{reach}");
     assert!(reach["bound"].as_u64().unwrap() > 0, "{reach}");
