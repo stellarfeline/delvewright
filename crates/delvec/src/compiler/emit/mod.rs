@@ -1095,6 +1095,22 @@ pub fn build_with_warnings(
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);
     }
+    // **What the derivation massed** (spec-0098 §8): every place this world
+    // stands a stand-in in, by name, beside the binding line that counts them.
+    // A stand-in never ships — the staging gate reads this, the one event
+    // between a build and a player, and refuses any place named here.
+    if let Some(b) = &plan.blockout {
+        put_json(
+            &mut out,
+            "validation/blockout.json",
+            &serde_json::json!({
+                "line": b.binding.line(),
+                "boxes": b.binding.boxes,
+                "detailed": b.binding.detailed,
+                "massed": b.massed,
+            }),
+        );
+    }
     // The way gate's binding ledger (`compiler::ways`, spec-0042 AC11,
     // playtest-methodology.md rule 1): every contingent way the placed world
     // stages, what opens it and at which quest-DAG point — or that nothing does,

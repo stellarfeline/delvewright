@@ -305,11 +305,28 @@ def make_blockout_campaign(tmp_path, *, objectives=None, detail_plan=False):
     return d
 
 
-def make_blockout_build(tmp_path, *, validation=None, inputs=("quests.json", "site-plan.json")):
+def make_blockout_build(
+    tmp_path, *, validation=None, inputs=("quests.json", "site-plan.json"), massed=("node/hall",),
+    line_count=None,
+):
     b = make_build(tmp_path, validation=validation)
     (b / "manifest.json").write_text(
         json.dumps({"inputs": {k: "0" * 8 for k in inputs}, "outputs": {}})
     )
+    if massed is not None:
+        n = len(massed) if line_count is None else line_count
+        (b / "validation").mkdir(parents=True, exist_ok=True)
+        (b / "validation" / "blockout.json").write_text(
+            json.dumps(
+                {
+                    "line": f"blockout binding: 2 place(s) massed ({2 - n} detailed, so {n} massed "
+                    "by the derivation; 0 roof zone(s) massed), 0 fixed ring ground cell(s) laid.",
+                    "boxes": 2,
+                    "detailed": 2 - n,
+                    "massed": list(massed),
+                }
+            )
+        )
     return b
 
 
@@ -648,14 +665,49 @@ def test_a_blockout_is_refused_with_and_without_strict(gate, tmp_path):
 
 def test_the_same_campaign_detailed_is_stageable(gate, tmp_path):
     """One variable moves — the detail-plan document, in the source and in the
-    compiler's record — and the same ledger admits it."""
+    compiler's record, with every place filled — and the same ledger admits it."""
     camp = make_blockout_campaign(tmp_path, objectives=[{"type": "interact"}], detail_plan=True)
     tree = make_blockout_build(
-        tmp_path, inputs=("quests.json", "site-plan.json", "detail-plan.json")
+        tmp_path, inputs=("quests.json", "site-plan.json", "detail-plan.json"), massed=()
     )
     proc = stage(camp, tree, green_ledger(tmp_path))
     assert proc.returncode == 0, proc.stderr
     assert (tree / "staging-admission.json").is_file()
+
+
+def test_a_stand_in_never_ships(gate, tmp_path):
+    """spec-0098 criterion 18. A detailed campaign whose build's derivation still
+    masses one place is refused, naming it; the same build with that place bound
+    is admitted; and the count is read from the binding LINE, so a record that
+    names nobody while its line counts one place is refused too."""
+    def build(name, **kw):
+        root = tmp_path / name
+        root.mkdir()
+        camp = make_blockout_campaign(root, objectives=[{"type": "interact"}], detail_plan=True)
+        tree = make_blockout_build(
+            root, inputs=("quests.json", "site-plan.json", "detail-plan.json"), **kw
+        )
+        return camp, tree
+
+    camp, tree = build("one-massed", massed=("node/loft",))
+    proc = stage(camp, tree, green_ledger(tmp_path))
+    assert proc.returncode == 1, proc.stderr
+    assert "`node/loft`" in proc.stderr and "a stand-in never ships" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+    camp, tree = build("all-bound", massed=())
+    proc = stage(camp, tree, green_ledger(tmp_path))
+    assert proc.returncode == 0, proc.stderr
+
+    camp, tree = build("line-perturbed", massed=(), line_count=1)
+    proc = stage(camp, tree, green_ledger(tmp_path))
+    assert proc.returncode == 1, proc.stderr
+    assert "counts 1 place(s)" in proc.stderr
+
+    camp, tree = build("no-record", massed=None)
+    proc = stage(camp, tree, green_ledger(tmp_path))
+    assert proc.returncode == 1, proc.stderr
+    assert "no readable `validation/blockout.json`" in proc.stderr
 
 
 def test_either_instrument_alone_names_a_blockout(gate, tmp_path):

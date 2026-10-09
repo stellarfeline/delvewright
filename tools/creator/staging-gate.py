@@ -118,16 +118,18 @@ section with their justification, and their COUNT is in the headline, because
 rule 4 makes each one a standing risk item at every staging review. `--strict`
 fails on them too, for a reviewer who wants the absolute floor.
 
-**A pre-detail blockout is not stageable.** A site-plan campaign whose only
-geometry is the derived massing (spec-0049) — no place detailed — is refused
+**A pre-detail blockout is not stageable, and neither is a stand-in.** A
+site-plan campaign whose geometry is still derived massing anywhere is refused
 before any row is adjudicated, with or without `--strict`, and `--stage-anyway`
 does not reach the refusal: the first time a player meets a campaign is its
-finished first version, so a blockout is never handed to one. The subject is a
-blockout when EITHER of two unrelated instruments says so — the campaign
-source places by site plan and carries no `detail-plan.json`, or the build's
-compiler-written manifest lists `site-plan.json` among its inputs and no
-`detail-plan.json` — so a stale build of a since-detailed campaign is refused
-too. See `Subject.pre_detail`.
+finished first version, so a stand-in is never handed to one (spec-0098 §8).
+The subject is refused when ANY of three unrelated instruments says so — the
+campaign source places by site plan and carries no `detail-plan.json`; the
+build's compiler-written manifest lists `site-plan.json` among its inputs and
+no `detail-plan.json`; or the build's own `validation/blockout.json` — the
+derivation's binding line and the places it massed — counts a place no piece
+fills, names one, or is missing from a site-plan build. See `Subject.pre_detail`
+and `Subject.stand_ins`.
 
 The precondition may be a declared `applies_when`, or the binding probe's own
 shape where that probe COUNTS THE OBJECT CLASS ITSELF: an identity-shaped
@@ -477,11 +479,53 @@ class Subject:
         ).is_file():
             return True
         inputs = self.manifest_inputs
-        return (
+        if (
             inputs is not None
             and "site-plan.json" in inputs
             and "detail-plan.json" not in inputs
+        ):
+            return True
+        return bool(self.stand_ins)
+
+    @property
+    def stand_ins(self) -> list[str]:
+        """**The places this build still stands a stand-in in** (spec-0098 §8),
+        read off the build's own `validation/blockout.json` — the derivation's
+        binding line and the names it massed. Empty for a build that is not a
+        site-plan build, and for one whose every place a piece fills.
+
+        Fail closed: a site-plan build with no record, an unreadable one, or one
+        whose line counts a different number of massed places than it names is
+        answered with a sentence saying so rather than with an empty list. The
+        count is read from the LINE — the derivation's own statement — so a
+        record that names nobody while its line counts one is still refused.
+        """
+        inputs = self.manifest_inputs
+        site_plan_build = "site-plan.json" in self.stages or (
+            inputs is not None and "site-plan.json" in inputs
         )
+        if not site_plan_build:
+            return []
+        rec = self.build / "validation" / "blockout.json"
+        try:
+            doc = json.loads(rec.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return [
+                "(the build carries no readable `validation/blockout.json`, so what its "
+                "derivation massed is unknown)"
+            ]
+        line = doc.get("line") if isinstance(doc, dict) else None
+        named = doc.get("massed") if isinstance(doc, dict) else None
+        m = re.search(r"so (\d+) massed by the derivation", line or "")
+        if m is None or not isinstance(named, list):
+            return ["(the build's `validation/blockout.json` states no binding line to read)"]
+        counted = int(m.group(1))
+        if counted != len(named):
+            return [
+                f"(the binding line counts {counted} place(s) massed by the derivation and "
+                f"the record names {len(named)})"
+            ]
+        return [f"`{n}`" for n in named]
 
     def blockout_witness(self) -> str:
         """Which instrument named this subject a blockout, in words."""
@@ -495,6 +539,13 @@ class Subject:
             said.append(
                 "the build's manifest was compiled from `site-plan.json` and no "
                 "`detail-plan.json`"
+            )
+        stand_ins = self.stand_ins
+        if stand_ins:
+            said.append(
+                "the build's derivation still stands a stand-in in "
+                f"{len(stand_ins)} place(s) no piece fills: {', '.join(stand_ins)} — a "
+                "stand-in never ships"
             )
         return "; ".join(said)
 
@@ -1652,9 +1703,9 @@ def main() -> int:
             f"`{subj.name}` is a pre-detail blockout ({subj.blockout_witness()}). "
             "A campaign is staged only once detailed: the first time a player "
             "meets it is its finished first version, so a blockout is never "
-            "handed to one. Detail its places (`delvec detail <campaign-dir> "
-            "--all`), rebuild, and stage that build. `--stage-anyway` does not "
-            "reach this refusal."
+            "handed to one, and a stand-in never ships. Detail every place "
+            "(`delvec detail <campaign-dir> --all`), rebuild, and stage that "
+            "build. `--stage-anyway` does not reach this refusal."
         )
         if args.report:
             args.report.parent.mkdir(parents=True, exist_ok=True)
