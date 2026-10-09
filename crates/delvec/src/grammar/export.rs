@@ -1087,6 +1087,12 @@ fn license_metadata(
         for (role, block) in &overrides.roles {
             said.push(format!("{role}={block}"));
         }
+        if !overrides.voids.is_empty() {
+            said.push(format!(
+                "{} run(s) of cells the place does not own voided",
+                overrides.voids.len()
+            ));
+        }
         format!(" with {}", said.join(", "))
     };
     LicenseMetadata {

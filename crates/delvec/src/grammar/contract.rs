@@ -2352,6 +2352,7 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
         // exports both, as before. The space-derived opening keeps the older
         // reading, because a space spans the box and lies in no plane.
         let whole_via = edge.via.is_some();
+        let before = out.len();
         for (axis, dir) in [
             (0, [1, 0, 0]),
             (0, [-1, 0, 0]),
@@ -2382,6 +2383,54 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
                 dir: FaceDir(dir),
                 cells: on_face,
             });
+        }
+        // **A via inside the piece, on a plane the piece's place does not
+        // own** (spec-0098 §2): a place whose frame reaches past a party plane
+        // — its ring, its eaves — answers a seam it does not own at its own
+        // first layer beside the plane, which is no longer the frame's outer
+        // layer. Such a via still lies in one plane, and its face points away
+        // from the space it opens: the side of the plane the space's own cells
+        // are not on. Read only when the via is on no outer layer, so a piece
+        // that was answered on its boundary exports exactly what it did.
+        if whole_via && out.len() == before {
+            let space_cells = cells(&space.boxes);
+            for axis in 0..3usize {
+                let Some(first) = opening.iter().next() else {
+                    break;
+                };
+                let p = first[axis];
+                if p == min[axis] || p == max[axis] - 1 || !opening.iter().all(|c| c[axis] == p) {
+                    continue;
+                }
+                let beside = |off: i32| {
+                    opening.iter().any(|c| {
+                        let mut n = *c;
+                        n[axis] += off;
+                        space_cells.contains(&n)
+                    })
+                };
+                let dir_sign = match (beside(-1), beside(1)) {
+                    (true, false) => 1,
+                    (false, true) => -1,
+                    _ => continue,
+                };
+                let on_face: BTreeSet<[i32; 3]> = opening
+                    .iter()
+                    .filter(|c| nav::passable(model, **c))
+                    .copied()
+                    .collect();
+                if on_face.is_empty() {
+                    continue;
+                }
+                let mut dir = [0, 0, 0];
+                dir[axis] = dir_sign;
+                out.push(ExteriorFace {
+                    space: space_name.clone(),
+                    class: edge.class.clone(),
+                    dir: FaceDir(dir),
+                    cells: on_face,
+                });
+            }
         }
     }
     out.sort_by(|a, b| {

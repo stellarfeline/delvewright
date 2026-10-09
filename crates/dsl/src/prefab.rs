@@ -336,16 +336,16 @@ crate::dw_code! {
 ///
 /// 1. **The name is in the table** — otherwise `DW0812`, as for any document
 ///    naming a table entry.
-/// 2. **The horizontal extents could be a box of that class.** A detail frame's
-///    footprint IS its box's footprint (`Frame::of` grows the play space
-///    downward only), so a piece whose `x` or `z` falls outside the class's
-///    `min_footprint..=max_footprint` could fill no box of it.
-/// 3. **They sit on the kit grid.** A site-plan box's extent is a multiple of
-///    the grid quantum (`DW0825`), so a piece off the grid could fill no box at
-///    all, of any class.
-/// 4. **The height leaves the class its clearance.** A frame is the play space
-///    plus one floor course, so a piece under `min_clearance + 1` is short of
-///    the shallowest box of its class.
+/// 2. **The horizontal extents could hold a box of that class.** A detail frame
+///    is its place's claim (spec-0098 §2): the play footprint, plus whichever
+///    ring cells and eaves the place owns. So a frame is never narrower than its
+///    box, and a piece whose `x` or `z` is under the class's `min_footprint`
+///    could fill no box of it. How much wider than its box a frame is depends
+///    on its neighbours and its declared roof, which no piece's bytes know, so
+///    there is no upper bound and no grid to sit on.
+/// 3. **The height leaves the class its clearance.** A frame is at least the
+///    play space plus one floor course, so a piece under `min_clearance + 1` is
+///    short of the shallowest box of its class.
 ///
 /// Returns `None` for a piece that declares no class — which is the honest
 /// answer, and why the caller states how many pieces declared one against how
@@ -367,27 +367,20 @@ pub fn check_footprint_class(
         return None; // an internal table defect, which `Metrics::self_check` owns.
     };
     let size = meta.size();
-    let grid = table.grid(reads);
-    let q = grid.map_or(1, |g| i64::from(g.quantum).max(1));
     let (sx, sy, sz) = (i64::from(size[0]), i64::from(size[1]), i64::from(size[2]));
     let (minf, maxf) = (class.min_footprint, class.max_footprint);
     let mut why: Vec<String> = Vec::new();
-    if sx < i64::from(minf[0]) || sx > i64::from(maxf[0]) {
+    let _ = maxf;
+    if sx < i64::from(minf[0]) {
         why.push(format!(
-            "its x extent is {sx}, and a `{named}` box is {}..={} on x",
-            minf[0], maxf[0]
+            "its x extent is {sx}, and the narrowest `{named}` box is {} on x",
+            minf[0]
         ));
     }
-    if sz < i64::from(minf[1]) || sz > i64::from(maxf[1]) {
+    if sz < i64::from(minf[1]) {
         why.push(format!(
-            "its z extent is {sz}, and a `{named}` box is {}..={} on z",
-            minf[1], maxf[1]
-        ));
-    }
-    if sx % q != 0 || sz % q != 0 {
-        why.push(format!(
-            "its footprint {sx}x{sz} is off the kit grid, whose quantum is {q} — every site-plan \
-             box's extent is a multiple of it (`DW0825`)"
+            "its z extent is {sz}, and the narrowest `{named}` box is {} on z",
+            minf[1]
         ));
     }
     let least = i64::from(class.min_clearance) + 1;
@@ -408,8 +401,8 @@ pub fn check_footprint_class(
         format!(
             "`{id}` declares `footprint_class: \"{named}\"` and its own bytes could serve no box \
              of that class: {why}. The declaration is a claim about what this piece is FOR, and a \
-             site plan hands a piece the exact frame of the box it fills — so a piece whose \
-             extents no box of the class can have is a piece no `details[]` row could ever bind. \
+             site plan hands a piece a frame never smaller than the box it fills — so a piece \
+             smaller than every box of the class is a piece no `details[]` row could ever bind. \
              Either correct the class name, or rebuild the piece to a frame of the class it \
              claims. Structure size is {sx}x{sy}x{sz}.",
             id = meta.prefab_id,

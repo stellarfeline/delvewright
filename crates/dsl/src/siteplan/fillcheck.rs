@@ -220,30 +220,38 @@ pub(super) fn claims(c: &Campaign, plan: &SitePlanContent, d: &mut Vec<Diagnosti
         ));
     }
     let (contests, awarded) = site.contests();
-    for (i, j, cells) in contests {
-        let (a, b) = (&resolved.boxes[i].node, &resolved.boxes[j].node);
+    for (names, cells) in contests {
         let shown: Vec<String> = cells
             .iter()
             .take(6)
             .map(|c| format!("[{}, {}, {}]", c[0], c[1], c[2]))
             .collect();
+        let last = names
+            .last()
+            .cloned()
+            .unwrap_or_else(|| NodeId(String::new()));
+        let who = names
+            .iter()
+            .map(|n| format!("`{n}`"))
+            .collect::<Vec<_>>()
+            .join(" and ");
         d.push(Diagnostic::error(
             DW_BOXES_OVERLAP,
             "site-plan",
             format!(
                 "/content/boxes/{}",
-                index.get(b.0.as_str()).copied().unwrap_or(0)
+                index.get(last.0.as_str()).copied().unwrap_or(0)
             ),
             format!(
-                "`{a}` and `{b}` both claim {n} cell(s) and no rule awards them — {shown}{more}. \
-                 Two owners for one block, and no rule to pick by: a place owns the one-cell \
-                 ring its walls may stand in, so two places exactly one cell apart both ask to \
-                 draw the same wall, and only a connection between them says which side draws \
-                 it (its `a`), or which is roofed where the other is open. Give them a seam \
-                 (its `a` draws the wall), stand them two or more cells apart (each then owns \
-                 its own ring and the gap between is the site's fill), or make them one place. \
-                 Where seams between them already exist, they disagree about which is `a` on \
-                 this plane.",
+                "{who} all claim {n} cell(s) and no rule awards them — {shown}{more}. Two owners \
+                 for one block, and no rule to pick by: a place owns the one-cell ring its walls \
+                 may stand in, so places exactly one cell apart (side by side, or corner to \
+                 corner) ask to draw the same wall, and only a connection between them says \
+                 which side draws it (its `a`), or which is roofed where the other is open. Give \
+                 them a seam (its `a` draws the wall), stand them two or more cells apart (each \
+                 then owns its own ring and the gap between is the site's fill), or make them \
+                 one place. Where seams between them already exist, they disagree about which \
+                 is `a` on this plane.",
                 n = cells.len(),
                 shown = shown.join(", "),
                 more = if cells.len() > shown.len() {

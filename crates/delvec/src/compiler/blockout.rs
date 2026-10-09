@@ -1606,6 +1606,15 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW0990`: the plot does not stitch (spec-0098 §2c, §7). Two shapes of
+    /// one claim — that a place meets the ground the whole gave it: a piece
+    /// writes a fixed ring cell (read off its own `.nbt` at validation, beside
+    /// `DW0987`), and a crack along a claim boundary (measured over the
+    /// assembled bytes in this battery).
+    pub const DW_PLOT_UNSTITCHED: DwCode = DwCode::new("DW0990", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0838`: a connection nothing allocated.
     pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::new("DW0838", ExitTier::Build);
 }
@@ -1662,6 +1671,15 @@ pub struct BatteryBinding {
     pub identities_declared_only: usize,
     /// Critical-path legs measured — `DW0822`'s second call site.
     pub legs: usize,
+    /// Fixed ring ground cells the plan hands — what `DW0990`'s stitch stands on.
+    pub fixed_cells: usize,
+    /// Plot-edge columns compared with the ring beside them — `DW0990`.
+    pub boundary_columns: usize,
+    /// Of those, cracks.
+    pub cracks: usize,
+    /// Standable cells inside the region and outside every claim — `DW0838`'s
+    /// second shape examined whether any place reaches one.
+    pub unclaimed_standable: usize,
 }
 
 impl BatteryBinding {
@@ -1675,7 +1693,13 @@ impl BatteryBinding {
              unallocated open cell(s) admitted as a stair's stairwell), {n} place(s) \
              proven reached, {c} standable cell(s) classified over {p} place pair(s), \
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
-             {l} critical-path leg(s) measured.",
+             {l} critical-path leg(s) measured; {fx} fixed ring ground cell(s) handed, {bc} \
+             plot-edge column(s) examined, {ck} crack(s) (DW0990); {uc} standable cell(s) \
+             outside every claim examined (DW0838).",
+            fx = self.fixed_cells,
+            bc = self.boundary_columns,
+            ck = self.cracks,
+            uc = self.unclaimed_standable,
             s = self.seams,
             ct = self.contacts,
             cc = self.contact_columns,
@@ -1827,6 +1851,7 @@ pub fn check(
     seams_built(b, &open, &mut binding, &mut findings);
     nodes_reached(c, b, &sealed, &mut binding, &mut findings);
     crossings(c, b, &open, &mut binding, &mut findings);
+    stitches(b, &open, &mut binding, &mut findings);
     sightlines(c, b, &open, &mut binding, &mut findings);
     identities(c, b, &open, &mut binding, &mut findings);
     pacing(c, b, &open, &mut binding, &mut findings);
@@ -2798,9 +2823,6 @@ fn crossings(
 ) {
     let n = b.boxes.len();
     binding.pairs = n * n.saturating_sub(1) / 2;
-    if n < 2 {
-        return; // one place cannot be joined to another; the pair count says so.
-    }
     let seam: BTreeSet<[i32; 3]> = seam_cells(&b.seams);
     // Every standable cell the whole map has, minus the ways the plan cut.
     let (rlo, rhi) = region_span(c);
@@ -2815,6 +2837,37 @@ fn crossings(
         }
     }
     binding.standable = open.len();
+
+    // **The second shape** (spec-0098 §2c): ground outside every claim. In a
+    // bounded map every cell a body can reach is inside some place, so a
+    // standable cell of the region no claim covers must be reached from none.
+    let site = Site::new(&b.boxes, &b.seams, &b.ground);
+    let bounds: Vec<(usize, ([i64; 3], [i64; 3]))> = (0..b.boxes.len())
+        .map(|i| (i, site.claim_bounds(i)))
+        .collect();
+    let (plo, phi) = c
+        .site_plan
+        .as_ref()
+        .map(|p| (p.content.region.min, p.content.region.max()))
+        .unwrap_or(([0; 3], [-1; 3]));
+    let unclaimed: BTreeSet<[i32; 3]> = open
+        .iter()
+        .filter(|cell| {
+            let w = [i64::from(cell[0]), i64::from(cell[1]), i64::from(cell[2])];
+            if (0..3).any(|a| w[a] < plo[a] || w[a] > phi[a]) {
+                return false;
+            }
+            let near: Vec<usize> = bounds
+                .iter()
+                .filter(|(_, (lo, hi))| (0..3).all(|a| w[a] >= lo[a] && w[a] <= hi[a]))
+                .map(|(i, _)| *i)
+                .collect();
+            near.is_empty() || site.owner_among(w, &near) == Owner::Nobody
+        })
+        .copied()
+        .collect();
+    binding.unclaimed_standable = unclaimed.len();
+    let mut outside_reported = false;
 
     // Flood each place's own cells and see who else is in the component.
     let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -2837,6 +2890,36 @@ fn crossings(
             }
         }
         seen.extend(component.iter().copied());
+        if !outside_reported
+            && let Some(witness) = component.iter().find(|c| unclaimed.contains(*c))
+        {
+            outside_reported = true;
+            raise(
+                d,
+                DW_CROSSING_UNALLOCATED,
+                Diagnostic::error(
+                    DW_CROSSING_UNALLOCATED,
+                    "site-plan",
+                    "/content/boxes",
+                    format!(
+                        "a body standing in `{a}` can walk to {w:?}, which is ground outside \
+                         every place's claim. With every allocated opening removed from the \
+                         world, the walk still leaves the designed places: reachable ground is a \
+                         place, so ground a body can walk onto is either a place of its own or \
+                         kept off by the edges of the places beside it. Close the edge — the \
+                         place draws a wall, a hedge or a kerb on the ring it owns; make the \
+                         ground a place, with seams to the places it joins; or declare a volume \
+                         over it. {u} standable cell(s) outside every claim were examined.",
+                        a = x.node,
+                        w = witness,
+                        u = unclaimed.len(),
+                    ),
+                ),
+            );
+        }
+        if n < 2 {
+            continue; // one place cannot be joined to another; the pair count says so.
+        }
         // Who else lives in this component?
         for y in &b.boxes {
             if y.node == x.node {
@@ -2875,6 +2958,115 @@ fn crossings(
                 ),
             );
         }
+    }
+}
+
+/// `DW0990`'s second shape: **a crack along a claim boundary**, read off the
+/// assembled bytes (spec-0098 §2c).
+///
+/// Along every edge of every plot — each column just inside a place's
+/// footprint beside the ring column just outside it — the two ground surfaces
+/// either side are compared: the lowest standable cell of each column between
+/// the claim's bottom and the top of the play space. They pass when they differ
+/// by at most one block (a step a body walks), or when the higher one stands on
+/// a solid face reaching down to the lower (a retaining element: a plinth's
+/// face, a wall, the fixed ground under a sunken yard), or when a seam crosses
+/// the ring there (the crossing is declared). What is refused is air between
+/// the two surfaces under the higher edge — an edge nothing holds up. A column
+/// with no standable cell in range offers no surface to compare and is counted
+/// but not judged. A stand-in shell and a piece are judged alike: nothing here
+/// asks who wrote the bytes.
+fn stitches(
+    b: &Blockout,
+    world: &crate::compiler::nav::World,
+    binding: &mut BatteryBinding,
+    d: &mut Vec<(DwCode, Diagnostic)>,
+) {
+    let site = Site::new(&b.boxes, &b.seams, &b.ground);
+    for (i, p) in b.boxes.iter().enumerate() {
+        binding.fixed_cells += site.fixed_cells(i).len();
+        let bottom = site.bottom(i);
+        let top = p.top();
+        let surface = |x: i64, z: i64| -> Option<i64> {
+            (bottom + 1..=top + 1).find(|y| world.is_standable(narrow([x, *y, z])))
+        };
+        let seam_column = |x: i64, z: i64| {
+            b.seams.iter().any(|s| {
+                (s.a == p.node || s.b == p.node) && s.normal_axis != 1 && {
+                    let (along, across, other) = if s.normal_axis == 0 {
+                        (z, x, 2)
+                    } else {
+                        (x, z, 0)
+                    };
+                    across == s.plane && along >= s.opening.0[other] && along <= s.opening.1[other]
+                }
+            })
+        };
+        let [x0, x1, z0, z1] = p.foot;
+        let mut edges: Vec<([i64; 2], [i64; 2])> = Vec::new();
+        for z in z0..=z1 {
+            edges.push(([x0, z], [x0 - 1, z]));
+            edges.push(([x1, z], [x1 + 1, z]));
+        }
+        for x in x0..=x1 {
+            edges.push(([x, z0], [x, z0 - 1]));
+            edges.push(([x, z1], [x, z1 + 1]));
+        }
+        let mut cracks: Vec<String> = Vec::new();
+        for (inside, ring) in edges {
+            binding.boundary_columns += 1;
+            if seam_column(ring[0], ring[1]) {
+                continue;
+            }
+            let (Some(hp), Some(hr)) = (surface(inside[0], inside[1]), surface(ring[0], ring[1]))
+            else {
+                continue;
+            };
+            if (hp - hr).abs() <= 1 {
+                continue;
+            }
+            let (high_col, low, high) = if hp > hr {
+                (inside, hr, hp)
+            } else {
+                (ring, hp, hr)
+            };
+            let faced = (low..high).all(|y| !world.is_clear(narrow([high_col[0], y, high_col[1]])));
+            if faced {
+                continue;
+            }
+            binding.cracks += 1;
+            if cracks.len() < 6 {
+                cracks.push(format!(
+                    "plot column [{}, {}] stands at y {hp} and the ring column [{}, {}] at y {hr}",
+                    inside[0], inside[1], ring[0], ring[1]
+                ));
+            }
+        }
+        if cracks.is_empty() {
+            continue;
+        }
+        raise(
+            d,
+            DW_PLOT_UNSTITCHED,
+            Diagnostic::error(
+                DW_PLOT_UNSTITCHED,
+                "site-plan",
+                format!("/content/boxes[{}]", p.node),
+                format!(
+                    "`{node}` does not stitch to the ground the whole gave it: along its edge \
+                     the ground inside the plot and the ring's ground beside it differ by more \
+                     than a step, with air under the higher edge — {list}. Between `{node}` and \
+                     the whole's ring the two ground surfaces either differ by at most one \
+                     block, or the higher one stands on a solid face down to the lower (the \
+                     plinth's face, a retaining wall the piece draws inside its claim), or a seam \
+                     crosses there. Face the edge, step it, or bring the plot's ground to the \
+                     ring's — `delvec allocation {node}` hands the ring's height along the \
+                     whole perimeter.",
+                    node = p.node,
+                    list = cracks.join("; "),
+                ),
+            ),
+        );
     }
 }
 

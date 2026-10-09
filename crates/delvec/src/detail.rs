@@ -265,6 +265,17 @@ fn seed_of(node: &NodeId) -> u64 {
 fn handed(a: &Allocation) -> BTreeMap<String, i64> {
     let mut out = BTreeMap::new();
     out.insert(format!("{HANDED_PREFIX}datum-y"), a.datum_y);
+    // The ground the whole hands the place (spec-0098 §4), piece-local.
+    out.insert(format!("{HANDED_PREFIX}ground/min-y"), a.ground.min_y);
+    out.insert(format!("{HANDED_PREFIX}ground/max-y"), a.ground.max_y);
+    out.insert(format!("{HANDED_PREFIX}ground/bottom-y"), a.ground.bottom_y);
+    // The roof the plan reserves over it, when it declares one.
+    if let Some(r) = &a.roof {
+        out.insert(format!("{HANDED_PREFIX}roof/courses"), i64::from(r.courses));
+        out.insert(format!("{HANDED_PREFIX}roof/eaves"), i64::from(r.eaves));
+        out.insert(format!("{HANDED_PREFIX}roof/lid-y"), r.lid_y);
+        out.insert(format!("{HANDED_PREFIX}roof/top-y"), r.top_y);
+    }
     for s in &a.seams {
         let edge = s.edge.strip_prefix("edge/").unwrap_or(&s.edge);
         let key = |k: &str| format!("{HANDED_PREFIX}seam/{edge}/{k}");
@@ -395,6 +406,24 @@ fn detail_one(
             overrides.roles.insert(role_stem.to_string(), state.clone());
         }
     }
+
+    // ---- the cells the place does not own, voided after expansion ----
+    //
+    // A derivation, never typed (spec-0098 §4): the handout's voids — a
+    // neighbour's cells, the ring's fixed ground, nobody's — become
+    // `structure_void`, so the piece places nothing there and whatever the
+    // owner writes shows through.
+    overrides.voids = a
+        .voids
+        .iter()
+        .map(|v| {
+            let [lo, hi] = v.cells;
+            (
+                [lo[0] as i32, lo[1] as i32, lo[2] as i32],
+                [hi[0] as i32, hi[1] as i32, hi[2] as i32],
+            )
+        })
+        .collect();
 
     // ---- 3. the expansion, at the frame ----
     let seed = seed_of(node);

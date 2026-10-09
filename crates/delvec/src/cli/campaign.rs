@@ -486,6 +486,15 @@ pub(super) fn validate_loaded(
                     examined.push(dbind.line());
                 }
                 diags.extend(dd);
+                // spec-0098 §7: a bound piece writes no cell it does not own
+                // (`DW0987`) and no fixed ring ground (`DW0990`), read off its
+                // own `.nbt`, where `DW0888` already opens it.
+                let (vd, vbind) =
+                    delvec::compiler::detail::check_voids(&campaign, &prefabs, prefabs_dir);
+                if campaign.detail_plan.is_some() {
+                    examined.push(vbind.line());
+                }
+                diags.extend(vd);
             }
             // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
             // declared branch is enumerated and every static proof re-run under

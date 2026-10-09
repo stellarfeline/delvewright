@@ -290,16 +290,16 @@ pub(super) fn roofs(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
             if q.index == p.index {
                 continue;
             }
-            let (Some(x), Some(z)) = (
-                overlap((sx0, sx1), (q.x0() - 1, q.x1() + 1)),
-                overlap((sz0, sz1), (q.z0() - 1, q.z1() + 1)),
-            ) else {
-                continue;
-            };
-            // The neighbour's floor course and play space.
-            let q_lo = q.floor - 1;
-            let q_hi = q.y_span().map_or(q.floor, |(_, t)| t);
-            let Some(y) = overlap((rlo, rhi), (q_lo, q_hi)) else {
+            // The neighbour's play space (its footprint, floor to top) and its
+            // floor course (its shell footprint, one course under its floor).
+            let q_top = q.y_span().map_or(q.floor, |(_, t)| t);
+            let in_space = overlap((sx0, sx1), (q.x0(), q.x1()))
+                .zip(overlap((sz0, sz1), (q.z0(), q.z1())))
+                .zip(overlap((rlo, rhi), (q.floor, q_top)));
+            let in_floor = overlap((sx0, sx1), (q.x0() - 1, q.x1() + 1))
+                .zip(overlap((sz0, sz1), (q.z0() - 1, q.z1() + 1)))
+                .zip(overlap((rlo, rhi), (q.floor - 1, q.floor - 1)));
+            let Some(((x, z), y)) = in_space.or(in_floor) else {
                 continue;
             };
             d.push(Diagnostic::error(

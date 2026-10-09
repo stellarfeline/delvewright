@@ -279,10 +279,19 @@ fn a_low_wall_reddens_dw0838() {
         "a wall a body can climb is a seam that was discovered: {:?}",
         errors(&b)
     );
-    let m = message_for(&b, "DW0838");
+    // On an `open` site a wall a body can climb also lets it out onto the
+    // terrain, so both shapes of the claim fire; the pair shape is the one this
+    // test is about.
+    let pair = b
+        .findings
+        .iter()
+        .filter(|(_, d)| d.code == "DW0838")
+        .map(|(_, d)| d.message.clone())
+        .find(|m| m.contains("allocated no seam for"))
+        .unwrap_or_else(|| panic!("no pair-shaped DW0838 among {:?}", errors(&b)));
     assert!(
-        m.contains("allocated no seam for") && m.contains("can still walk to"),
-        "the refusal names both places and a witness cell: {m}"
+        pair.contains("can still walk to"),
+        "the refusal names both places and a witness cell: {pair}"
     );
     assert_eq!(b.binding.pairs, 21);
 }
@@ -1015,8 +1024,8 @@ fn the_synthesized_vocabulary_carries_the_unchanged_quest_layer() {
     );
 }
 
-/// **What every place owes, plus the gate regions no place owes, is exactly the
-/// synthesized set** (spec-0050 §6).
+/// **What every place owes is exactly the synthesized set** (spec-0050 §6;
+/// spec-0098 §2 — a seam's gate region is owed by the place owning its plane).
 ///
 /// `dsl::siteplan::synthesized_anchors` is the one authority for which names a
 /// site-plan campaign provides, and `owed_anchors` says which of them a given
@@ -1050,8 +1059,8 @@ fn the_owed_anchors_partition_the_synthesized_set() {
         );
     }
 
-    // The gate regions are the one family no place owes: they stand in a party
-    // plane the whole owns, not inside any piece.
+    // Every seam lies in a plane some place owns (spec-0098 §2), so the gate
+    // region over a barred way is owed too — by the place that owns its plane.
     let gates: std::collections::BTreeSet<String> = all
         .iter()
         .filter(|n| n.starts_with("anchor/seam-"))
@@ -1063,15 +1072,14 @@ fn the_owed_anchors_partition_the_synthesized_set() {
     );
     let owed: std::collections::BTreeSet<String> = owed_by.keys().cloned().collect();
     assert!(
-        owed.is_disjoint(&gates),
-        "a gate region is never owed by a place"
+        gates.is_subset(&owed),
+        "every gate region is owed by the place that owns its plane: {:?}",
+        gates.difference(&owed).collect::<Vec<_>>()
     );
-    let union: std::collections::BTreeSet<String> = owed.union(&gates).cloned().collect();
     assert_eq!(
-        union, all,
-        "every synthesized name is either owed by exactly one place or a gate \
-         region the whole keeps — there is no third kind, and a name in neither \
-         is one no piece is ever asked for"
+        owed, all,
+        "every synthesized name is owed by exactly one place — there is no second \
+         kind, and a name owed by nobody is one no piece is ever asked for"
     );
 }
 

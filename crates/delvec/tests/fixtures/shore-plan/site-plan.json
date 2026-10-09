@@ -81,6 +81,15 @@
         "y": 69
       }
     ],
+    "fill": {
+      "below": "minecraft:sandstone",
+      "kind": "open",
+      "surface": "minecraft:sand",
+      "terrain": {
+        "datum": "datum/grade",
+        "kind": "flat"
+      }
+    },
     "identities": [
       {
         "cmp": "eq",
@@ -153,6 +162,7 @@
         "at": 2,
         "edge": "edge/landing-hall",
         "face": "east",
+        "form": "a stone arch",
         "meets": 6,
         "opening": "arch"
       },
@@ -160,6 +170,7 @@
         "at": 6,
         "edge": "edge/hall-loft",
         "face": "east",
+        "form": "a stone arch, reached by a stone stair",
         "meets": 2,
         "opening": "arch",
         "stair_in": "node/hall"
@@ -174,12 +185,14 @@
         },
         "edge": "edge/loft-drop",
         "face": "west",
+        "form": "an open front where the two ground surfaces meet over a drop",
         "meets": 4
       },
       {
         "at": 2,
         "edge": "edge/hall-cell",
         "face": "south",
+        "form": "a stone arch closed by iron bars",
         "meets": 2,
         "opening": "arch"
       },
@@ -187,6 +200,7 @@
         "at": 2,
         "edge": "edge/cell-exit",
         "face": "west",
+        "form": "a stone arch",
         "meets": 2,
         "opening": "arch"
       }

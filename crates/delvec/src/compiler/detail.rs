@@ -113,23 +113,25 @@ fn seams_of<'a>(seams: &'a [PlacedSeam], node: &NodeId) -> Vec<(&'a PlacedSeam, 
         .collect()
 }
 
-/// **Which cell layer of the frame answers this seam**, and it is one of exactly
-/// two cases.
+/// **Which cell layer of the frame answers this seam** (spec-0098 §2, §6b).
 ///
-/// A vertical party plane sits one cell beyond the frame, so the answering layer
-/// is the frame's own boundary cell and the piece's opening leaves *toward* it.
-/// A horizontal party plane between stacked boxes **is** the upper box's floor
-/// course, so for that box the answering layer is the plane itself and the
-/// piece's opening is *at* those cells — which is spec-0050 §3's stacked-box
-/// sentence, in arithmetic.
+/// The place that owns the seam's plane answers **at the plane itself**: the
+/// opening is its to cut. The other place answers at its own first layer on its
+/// side of the plane — the play space's boundary across a wall, the top course
+/// under a stacked floor. So two seams of one place meet only where their
+/// planes do, and an owner's two openings at a corner are disjoint by
+/// construction.
 fn answering_layer(frame: &Frame, s: &PlacedSeam) -> i64 {
     let a = s.normal_axis;
-    if s.plane >= frame.lo[a] && s.plane <= frame.hi[a] {
-        s.plane // the seam lies in the piece's own floor course
-    } else if s.plane > frame.hi[a] {
-        frame.hi[a]
+    if frame.owns(s.opening.0) {
+        return s.plane;
+    }
+    // This place's side of the plane: where its frame lies.
+    let mid = (frame.lo[a] + frame.hi[a]) / 2;
+    if mid < s.plane {
+        s.plane - 1
     } else {
-        frame.lo[a]
+        s.plane + 1
     }
 }
 
@@ -1494,6 +1496,211 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
 }
 
 // ---------------------------------------------------------------------------
+// The piece never writes a cell it does not own (spec-0098 §7)
+// ---------------------------------------------------------------------------
+
+/// What the void check examined.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VoidBinding {
+    /// Bound pieces whose bytes were opened.
+    pub pieces: usize,
+    /// Void cells of their frames examined — `DW0987`.
+    pub voids: usize,
+    /// Of those, painted.
+    pub painted: usize,
+    /// Fixed ring ground cells of their frames examined — `DW0990`.
+    pub fixed: usize,
+    /// Of those, written.
+    pub written: usize,
+}
+
+impl VoidBinding {
+    /// One line, zeroes included.
+    #[must_use]
+    pub fn line(&self) -> String {
+        format!(
+            "void binding: {p} bound piece(s) opened, {v} void cell(s) examined, {pa} painted \
+             (DW0987); {f} fixed ring ground cell(s) examined, {w} written (DW0990).",
+            p = self.pieces,
+            v = self.voids,
+            pa = self.painted,
+            f = self.fixed,
+            w = self.written,
+        )
+    }
+}
+
+/// Every cell a piece's own templates hold, piece-local, with the block —
+/// air included, a cell no template places absent.
+fn piece_entries(
+    meta: &delvewright_dsl::PrefabMeta,
+    dir: &std::path::Path,
+) -> Result<BTreeMap<[i64; 3], String>, String> {
+    let mut out = BTreeMap::new();
+    for t in meta.templates() {
+        let path = dir.join(t.file);
+        let bytes = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let s = crate::admit::structure::Structure::read(&bytes)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        for x in 0..s.size[0] {
+            for y in 0..s.size[1] {
+                for z in 0..s.size[2] {
+                    if let Some(entry) = s.entry_at([x, y, z]) {
+                        out.insert(
+                            [
+                                i64::from(x + t.offset[0]),
+                                i64::from(y + t.offset[1]),
+                                i64::from(z + t.offset[2]),
+                            ],
+                            entry.name.clone(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// **`DW0987` and `DW0990`'s first shape: a bound piece writes no cell it does
+/// not own**, read off the piece's own `.nbt` at validation.
+///
+/// Every void cell of the frame must hold `minecraft:structure_void` or nothing
+/// — air counts as painting, because the game places a template's air. A void
+/// the ring's fixed ground fills is `DW0990` (the plot does not stitch), any
+/// other is `DW0987` (a neighbour's cell, a gap, a clipped eave), each named
+/// with its owner. A piece whose size is not its frame's is `DW0843`'s and is
+/// not opened here; one whose bytes will not open is `DW0346`'s.
+pub fn check_voids(
+    c: &Campaign,
+    prefabs: &PrefabRegistry,
+    prefabs_dir: &std::path::Path,
+) -> (Vec<Diagnostic>, VoidBinding) {
+    let mut d = Vec::new();
+    let mut binding = VoidBinding::default();
+    let Some(doc) = c.detail_plan.as_ref().map(|e| &e.content) else {
+        return (d, binding);
+    };
+    for (frame, _) in frames(c) {
+        let Some((i, row)) = doc
+            .details
+            .iter()
+            .enumerate()
+            .find(|(_, r)| r.place == frame.node)
+        else {
+            continue;
+        };
+        let Some(meta) = prefabs.get(row.piece.as_str()) else {
+            continue;
+        };
+        let size = meta.size();
+        if [i64::from(size[0]), i64::from(size[1]), i64::from(size[2])] != frame.extent() {
+            continue;
+        }
+        let Ok(cells) = piece_entries(meta, prefabs_dir) else {
+            continue;
+        };
+        binding.pieces += 1;
+        let mut painted: Vec<([i64; 3], String, String)> = Vec::new();
+        let mut written: Vec<([i64; 3], String, String)> = Vec::new();
+        let fixed: BTreeMap<[i64; 3], &String> = frame.fixed.iter().map(|(c, b)| (*c, b)).collect();
+        for v in &frame.voids {
+            for x in v.lo[0]..=v.hi[0] {
+                for y in v.lo[1]..=v.hi[1] {
+                    for z in v.lo[2]..=v.hi[2] {
+                        let world = [x, y, z];
+                        let ground = fixed.get(&world);
+                        if ground.is_some() {
+                            binding.fixed += 1;
+                        } else {
+                            binding.voids += 1;
+                        }
+                        let Some(block) = cells.get(&frame.to_local(world)) else {
+                            continue;
+                        };
+                        if block == "minecraft:structure_void" {
+                            continue;
+                        }
+                        match ground {
+                            Some(g) => written.push((world, block.clone(), (*g).clone())),
+                            None => painted.push((world, block.clone(), v.owner.describe())),
+                        }
+                    }
+                }
+            }
+        }
+        binding.painted += painted.len();
+        binding.written += written.len();
+        let path = format!("/content/details[{i}]/piece");
+        let show = |list: &[([i64; 3], String, String)], what: &str| -> String {
+            list.iter()
+                .take(6)
+                .map(|(w, b, o)| {
+                    let l = frame.to_local(*w);
+                    format!(
+                        "`{b}` at piece-local [{}, {}, {}] (world [{}, {}, {}]), {what} {o}",
+                        l[0], l[1], l[2], w[0], w[1], w[2]
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+        if !painted.is_empty() {
+            d.push(Diagnostic::error(
+                DW_PAINTS_NEIGHBOUR,
+                STAGE,
+                path.clone(),
+                format!(
+                    "`{piece}` writes {n} cell(s) of its frame that `{place}` does not own: \
+                     {list}{more}. A frame is a box and a place's claim is not, so the cells of \
+                     the box a neighbour, the site's fill or nobody owns are the piece's voids: \
+                     the piece holds `minecraft:structure_void` there (or no block) and the \
+                     owner's block shows through. Air counts as painting — the game places a \
+                     template's air, so air over a neighbour's wall carves it. `delvec \
+                     allocation {place}` lists every void with its owner, and `delvec detail` \
+                     writes them for a program-detailed place.",
+                    piece = row.piece,
+                    place = row.place,
+                    n = painted.len(),
+                    list = show(&painted, "owned by"),
+                    more = if painted.len() > 6 {
+                        format!(", and {} more", painted.len() - 6)
+                    } else {
+                        String::new()
+                    },
+                ),
+            ));
+        }
+        if !written.is_empty() {
+            d.push(Diagnostic::error(
+                crate::compiler::blockout::DW_PLOT_UNSTITCHED,
+                STAGE,
+                path,
+                format!(
+                    "`{piece}` writes {n} cell(s) of the ring's fixed ground around `{place}`: \
+                     {list}{more}. The ring of ground around every place is the whole's — the \
+                     terrain continued to the plot's edge — so two neighbouring plots meet the \
+                     same ground and the map's surface runs unbroken through every edge. The \
+                     piece holds `minecraft:structure_void` at each fixed cell and shapes its \
+                     own ground inside the ring; `delvec allocation {place}` lists every fixed \
+                     cell with its block.",
+                    piece = row.piece,
+                    place = row.place,
+                    n = written.len(),
+                    list = show(&written, "displacing the terrain's"),
+                    more = if written.len() > 6 {
+                        format!(", and {} more", written.len() - 6)
+                    } else {
+                        String::new()
+                    },
+                ),
+            ));
+        }
+    }
+    (d, binding)
+}
+
+// ---------------------------------------------------------------------------
 // The one path from a binding to placed bytes (spec-0050 §1)
 // ---------------------------------------------------------------------------
 
@@ -1613,7 +1820,7 @@ mod tests {
     /// A seam of `class` on `face` of `a`, with its plane at `plane`.
     fn a_seam(class: &'static str, face: Face, plane: i64, normal_axis: usize) -> PlacedSeam {
         let flat = |v: i64| {
-            let mut c = [1i64; 3];
+            let mut c = [3i64, 65, 3];
             c[normal_axis] = v;
             c
         };
@@ -1630,7 +1837,15 @@ mod tests {
             crossing: delvewright_dsl::siteplan::Crossing::Portal,
             rise: 0,
             stair_in: None,
+            form: "a doorway".into(),
         }
+    }
+
+    fn lone_frame(b: &PlacedBox) -> Frame {
+        let boxes = vec![b.clone()];
+        let g = delvewright_dsl::siteplan::Ground::solid("minecraft:stone");
+        let site = delvewright_dsl::siteplan::Site::new(&boxes, &[], &g);
+        Frame::of(&site, 0)
     }
 
     /// **Every row of spec-0050 §3's table**, including the one no site plan in
@@ -1643,7 +1858,7 @@ mod tests {
     #[test]
     fn the_class_table_answers_every_row() {
         let upper = a_box("node/a", 64);
-        let f = Frame::of(&upper);
+        let f = lone_frame(&upper);
         let a = NodeId("node/a".into());
         let b = NodeId("node/b".into());
 
@@ -1670,43 +1885,44 @@ mod tests {
         assert_eq!(required_face_class(Some(&edge), &s, &a, &f), ["drop"]);
         assert_eq!(required_face_class(Some(&edge), &s, &b, &f), ["walk"]);
 
-        // `barred` in a VERTICAL party plane → `walk`: the bar stands in the
-        // whole's plane, beyond the piece.
+        // `barred` in a plane this piece does NOT own → `walk`: the bar is the
+        // owner's to ship.
         let s = a_seam("barred", Face::East, f.hi[0] + 1, 0);
-        assert_ne!(
+        assert!(!f.owns(s.opening.0), "the plane is beyond the frame");
+        assert_eq!(
             answering_layer(&f, &s),
-            s.plane,
-            "the plane is outside the frame"
+            f.hi[0] + 0,
+            "the layer beside the plane"
         );
         assert_eq!(required_face_class(None, &s, &a, &f), ["walk"]);
 
-        // `barred` in THIS piece's own floor course → `barred`: the piece ships
-        // the gate's shut state, because that plane is the piece's. **This row is
-        // reached by no site plan in this repository**, which is why it is here.
-        let s = a_seam("barred", Face::Down, f.lo[1], 1);
+        // `barred` in a plane this piece OWNS → `barred`: the piece ships the
+        // gate's shut state (spec-0098 §2), and answers at the plane itself.
+        let s = a_seam("barred", Face::East, f.hi[0], 0);
+        assert!(f.owns(s.opening.0), "the ring is the piece's");
         assert_eq!(
             answering_layer(&f, &s),
             s.plane,
-            "the plane IS the floor course"
+            "the owner answers at the plane"
         );
         assert_eq!(required_face_class(None, &s, &a, &f), ["barred"]);
     }
 
-    /// The answering layer is one of exactly two cells, and which one is a fact
-    /// about where the party plane lies relative to the frame — not a choice.
+    /// The answering layer is the plane for its owner and the cell beside it,
+    /// on the place's own side, for the other — a fact about who owns the plane.
     #[test]
-    fn the_answering_layer_is_the_plane_or_the_frame_face_nearest_it() {
-        let f = Frame::of(&a_box("node/a", 64));
-        for (axis, face) in [(0usize, Face::East), (1, Face::Up), (2, Face::South)] {
+    fn the_answering_layer_is_the_plane_or_the_cell_beside_it() {
+        let f = lone_frame(&a_box("node/a", 64));
+        for (axis, face) in [(0usize, Face::East), (2, Face::South)] {
             let beyond_high = a_seam("walk", face, f.hi[axis] + 1, axis);
             assert_eq!(answering_layer(&f, &beyond_high), f.hi[axis]);
             let beyond_low = a_seam("walk", face, f.lo[axis] - 1, axis);
             assert_eq!(answering_layer(&f, &beyond_low), f.lo[axis]);
-            let inside = a_seam("walk", face, f.lo[axis], axis);
+            let owned = a_seam("walk", face, f.lo[axis], axis);
             assert_eq!(
-                answering_layer(&f, &inside),
+                answering_layer(&f, &owned),
                 f.lo[axis],
-                "a plane inside the frame answers AT itself"
+                "a plane the piece owns answers AT itself"
             );
         }
     }

@@ -911,7 +911,7 @@ pub fn campaign_bound_to(dst: &Path, id: &str) -> PathBuf {
 /// The parsed campaign at `dir`.
 pub fn campaign_at(dir: &Path) -> delvewright_dsl::Campaign {
     let loaded = delvec::compiler::load::load_campaign_dir(dir).expect("the campaign is readable");
-    delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses")
+    delvec::compiler::load::parse_loaded(&loaded).expect("the campaign parses")
 }
 
 /// **The prefab library, with every piece declaring its own outside** — a copy,

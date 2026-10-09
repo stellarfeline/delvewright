@@ -275,8 +275,8 @@ impl<'a> Site<'a> {
     }
 
     /// True when `cell` is in place `i`'s claim: in its shell, or in its roof
-    /// zone — except an eaves cell standing in another place's play space,
-    /// where the eave stops (spec-0098 §3).
+    /// zone — except an eaves cell standing in another place's shell (its play
+    /// space, its walls, its lid), where the eave stops (spec-0098 §3).
     #[must_use]
     pub fn claims(&self, i: usize, cell: [i64; 3]) -> bool {
         if inside(cell, self.shell(i)) {
@@ -293,11 +293,9 @@ impl<'a> Site<'a> {
             && cell[0] <= b.foot[1] + 1
             && cell[2] >= b.foot[2] - 1
             && cell[2] <= b.foot[3] + 1;
-        over_shell
-            || !self
-                .boxes
-                .iter()
-                .any(|o| o.node != b.node && inside(cell, o.space()))
+        // An eave stops where a neighbour's own shell begins — its play space,
+        // its walls, its lid — as a real eave stops at the wall it meets.
+        over_shell || !(0..self.boxes.len()).any(|k| k != i && inside(cell, self.shell(k)))
     }
 
     /// The places whose claim bounds meet `bounds` — the only places a cell
@@ -326,9 +324,10 @@ impl<'a> Site<'a> {
     /// 3. a cell several claims cover: in exactly one of their floor courses,
     ///    that place's (a stacked plane is the upper's floor); else, exactly one
     ///    of them roofed, that one's (the facade onto an open place); else,
-    ///    exactly two of them, and every seam the plan allocates between the two
-    ///    across that plane naming one `a`, that place's (a designed connection
-    ///    is drawn by its first-named side); else contested — `DW0827`;
+    ///    the seams the plan allocates between two of them across a plane
+    ///    through the cell agreeing, pair by pair, about which is `a`, the `a`
+    ///    of the first of them in plan order (a designed connection is drawn by
+    ///    its first-named side); else contested — `DW0827`;
     /// 4. a cell no claim covers is nobody's.
     #[must_use]
     pub fn owner_among(&self, cell: [i64; 3], cand: &[usize]) -> Owner {
@@ -366,25 +365,35 @@ impl<'a> Site<'a> {
         if roofed.len() == 1 {
             return Owner::Place(self.boxes[roofed[0]].node.clone());
         }
-        // 3c — the connection's `a`.
-        if claimants.len() == 2 {
-            let (p, q) = (
-                &self.boxes[claimants[0]].node,
-                &self.boxes[claimants[1]].node,
-            );
-            let across: Vec<&PlacedSeam> = self
-                .seams
-                .iter()
-                .filter(|s| {
-                    ((&s.a == p && &s.b == q) || (&s.a == q && &s.b == p))
-                        && cell[s.normal_axis] == s.plane
-                })
-                .collect();
-            if let Some(first) = across.first()
-                && across.iter().all(|s| s.a == first.a)
-            {
-                return Owner::Place(first.a.clone());
-            }
+        // 3c — the connection's `a`. The seams the plan allocates between two
+        // of the claimants across a plane through this cell: where the seams
+        // between one pair disagree about which is `a`, the plan is refused
+        // (rule 3d); where every one names the same `a`, the cell is that
+        // place's — spec-0098 §2's rule as written for two places. At a corner
+        // column where connections led by different places meet (a T-junction
+        // of three places), the cell is the `a` of the first of them in the
+        // plan's own seam order — the designer's order decides, never the
+        // engine (recorded in spec-0098's departures).
+        let names_of: Vec<&NodeId> = claimants.iter().map(|&i| &self.boxes[i].node).collect();
+        let across: Vec<&PlacedSeam> = self
+            .seams
+            .iter()
+            .filter(|s| {
+                names_of.contains(&&s.a)
+                    && names_of.contains(&&s.b)
+                    && cell[s.normal_axis] == s.plane
+            })
+            .collect();
+        let pair_disagrees = across.iter().any(|s| {
+            across.iter().any(|t| {
+                let same_pair = (s.a == t.a && s.b == t.b) || (s.a == t.b && s.b == t.a);
+                same_pair && s.a != t.a
+            })
+        });
+        if let Some(first) = across.first()
+            && !pair_disagrees
+        {
+            return Owner::Place(first.a.clone());
         }
         let mut names: Vec<NodeId> = claimants
             .iter()
@@ -423,35 +432,40 @@ impl<'a> Site<'a> {
         out
     }
 
-    /// The cells two places both claim that no rule awards (rule 3d), per
-    /// unordered pair in plan order — what `DW0827` refuses — and how many
-    /// contested cells the rule did award, for the binding.
+    /// The cells several places claim that no rule awards (rule 3d), grouped
+    /// by the places contesting them, in plan order — what `DW0827` refuses —
+    /// and how many shared cells the rule did award, for the binding.
     #[must_use]
-    pub fn contests(&self) -> (Vec<(usize, usize, Vec<[i64; 3]>)>, usize) {
-        let mut out = Vec::new();
-        let mut awarded = 0usize;
+    pub fn contests(&self) -> (Vec<(Vec<NodeId>, Vec<[i64; 3]>)>, usize) {
+        let mut by: BTreeMap<Vec<NodeId>, BTreeSet<[i64; 3]>> = BTreeMap::new();
+        let mut awarded: BTreeSet<[i64; 3]> = BTreeSet::new();
         for i in 0..self.boxes.len() {
             for j in i + 1..self.boxes.len() {
                 let Some(meet) = intersect(self.claim_bounds(i), self.claim_bounds(j)) else {
                     continue;
                 };
                 let cand = self.near(meet);
-                let mut bad = Vec::new();
                 for c in cells(meet) {
                     if !(self.claims(i, c) && self.claims(j, c)) {
                         continue;
                     }
                     match self.owner_among(c, &cand) {
-                        Owner::Contested(_) => bad.push(c),
-                        _ => awarded += 1,
+                        Owner::Contested(names) => {
+                            by.entry(names).or_default().insert(c);
+                        }
+                        _ => {
+                            awarded.insert(c);
+                        }
                     }
-                }
-                if !bad.is_empty() {
-                    out.push((i, j, bad));
                 }
             }
         }
-        (out, awarded)
+        (
+            by.into_iter()
+                .map(|(n, c)| (n, c.into_iter().collect()))
+                .collect(),
+            awarded.len(),
+        )
     }
 }
 
@@ -530,7 +544,7 @@ pub struct Ownership {
     /// The fixed ground cells inside the bounding box, each with the block the
     /// whole writes there, in cell order.
     pub fixed: Vec<([i64; 3], String)>,
-    /// Eaves cells the plan clipped at a neighbour's play space, merged, with
+    /// Eaves cells the plan clipped at a neighbour's shell, merged, with
     /// the neighbour.
     pub clipped: Vec<(Aabb, NodeId)>,
 }
@@ -587,7 +601,7 @@ impl Site<'_> {
             })
             .collect();
         // Eaves the plan clipped: roof-zone cells outside the shell footprint
-        // that lie in a neighbour's play space.
+        // that lie in a neighbour's shell.
         let mut clipped_by: BTreeMap<NodeId, BTreeSet<[i64; 3]>> = BTreeMap::new();
         if let Some(zone) = b.roof_zone() {
             for c in cells(zone) {
@@ -598,12 +612,12 @@ impl Site<'_> {
                 if over_shell {
                     continue;
                 }
-                if let Some(o) = self
-                    .boxes
-                    .iter()
-                    .find(|o| o.node != b.node && inside(c, o.space()))
+                if let Some(k) = (0..self.boxes.len()).find(|&k| k != i && inside(c, self.shell(k)))
                 {
-                    clipped_by.entry(o.node.clone()).or_default().insert(c);
+                    clipped_by
+                        .entry(self.boxes[k].node.clone())
+                        .or_default()
+                        .insert(c);
                 }
             }
         }

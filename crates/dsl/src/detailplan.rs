@@ -149,7 +149,7 @@ pub struct Frame {
     /// The ring's fixed ground inside the frame, each cell with the block the
     /// whole writes there (spec-0098 §2 rule 0).
     pub fixed: Vec<([i64; 3], String)>,
-    /// Eaves cells the plan clipped at a neighbour's play space.
+    /// Eaves cells the plan clipped at a neighbour's shell.
     pub clipped: Vec<(crate::siteplan::Aabb, NodeId)>,
 }
 
