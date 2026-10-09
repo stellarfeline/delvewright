@@ -228,6 +228,9 @@ fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
     }
     crate::compiler::nav::World::from_occupancy(
         crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
+        // Declined by design: a contract judges one piece before any
+        // campaign places it, so there is no horizon, volume or gate to
+        // state — the piece's own blocks are the whole question.
         crate::compiler::nav::Premises::geometry_only(),
     )
 }
