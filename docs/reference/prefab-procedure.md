@@ -86,8 +86,9 @@ measurement of what was built.
 
 **One exception: a piece that details a site-plan place (stage 6, spec-0050)
 has its region HANDED, not chosen.** `delvec allocation <campaign-dir>
-<place>` prints the frame's extents, the datum, every seam with the face
-class it must be answered with, the owed anchor names and the whole's
+<place>` prints the frame's extents, the datum, every seam with its opening
+(an inclusive box, as its two opposite corner cells: every cell between them is
+in the opening) and the face class it must be answered with, the owed anchor names and the whole's
 palette; the piece is authored against that and nothing else, and must be
 exactly the handed extent — `DW0843` refuses undersize exactly as oversize.
 The output is derived from the site plan on every invocation and is an input

@@ -150,8 +150,11 @@ the terrain along the perimeter with its min and max, every fixed ring cell with
 its block (the piece writes `structure_void` there), and the terrain-shaped
 columns under the plot the piece may reshape; the declared **roof** (courses,
 eaves, the lid and top `y`, every clipped eave); every seam piece-local with its
-declared `form`, the place on its other side, face, cells, class, rise, the
-answering class, whether this place owns the plane, and the ring's ground under
+declared `form`, the place on its other side, face, the opening (`cells`: an
+inclusive box written as its two opposite corner cells, piece-local — every cell
+between them is in the opening and is left open, the same box the program reads
+as `handed/seam/<edge stem>/{x0,…,z1}` and the contract edge's `via` declares),
+class, rise, the answering class, whether this place owns the plane, and the ring's ground under
 it; the owed anchor names; and every **void** of the frame with its owner.
 
 It is derived from the site plan on **every** invocation and is **an input to
