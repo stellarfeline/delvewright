@@ -225,6 +225,7 @@
     "site-plan-solid.en:validation/traversal-gate.json",
     "site-plan-solid.en:validation/watch-claims.json",
     "site-plan-solid.en:validation/watch-ledger.json",
+    "site-plan.en:datapack/data/gallery/structure/gallery-beacon.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-causeway.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-far-hall.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-loft.nbt",
@@ -343,6 +344,7 @@
     "site-plan.en:validation/respawn-safety.json",
     "site-plan.en:validation/sea-seepage.json",
     "site-plan.en:validation/strand.json",
+    "site-plan.en:validation/watch-ledger.json",
     "valley-site.en:creator-datapack/layout.json",
     "valley-site.en:critical-path.json",
     "valley-site.en:render-plan.json",
@@ -362,10 +364,10 @@
   "classes": {
     "PackTest": 61,
     "creator overlay": 24,
-    "datapack function": 285,
+    "datapack function": 286,
     "other": 23,
     "server config": 4,
-    "validation ledger": 86
+    "validation ledger": 87
   },
   "removed": [
     "site-plan.en:datapack/data/gallery/structure/horizon/valley/m0.nbt",
