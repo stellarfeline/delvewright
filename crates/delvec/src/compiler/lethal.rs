@@ -399,13 +399,14 @@ impl DangerVisibility {
                     "danger-visibility binding",
                     format!(
                         "lethal volume `{id}` is reached by no body the engine models: no cell a \
-                         player can walk, fall, jump or swim to from where the campaign puts the \
-                         party, and no cell a wave member can walk, fall or sink to within its \
+                         player can walk, fall, jump, swim or climb to from where the campaign \
+                         puts the party, and no cell a wave member can walk, fall, climb or sink \
+                         to within its \
                          follow range, holds a body the volume catches.{where_} So the \
                          visibility proof caught nothing here because nothing can be caught, not \
                          because the volume is clear of the floor — this is a zero binding. A \
                          body may still get in by a movement the model does not make (diving, a \
-                         diagonal jump, climbing), or nothing ever will. If a player is meant to \
+                         diagonal jump), or nothing ever will. If a player is meant to \
                          be able to die here, the engine has not proven they can get in, and the \
                          bot cannot be sent there; if nothing is, delete the volume."
                     ),

@@ -147,6 +147,32 @@ the muster put a question to, stated per encounter even when the muster never
 ran; `muster_findings` is what it could not establish. Zero declared facts over a
 campaign with waves is an unbound probe, and the run says so before it starts.
 
+## What the ladder asserts at a climb
+
+**The bot climbs the climb the compiler proved, and nothing else** (spec-0099).
+A leg whose proven route climbs carries `climbs[]` in
+`validation/critical-path-waypoints.json`: where the body takes hold, where it
+lets go, the column it holds in, the block and a ladder's facing. The hop between
+the two ends is driven by the climb executor (`harness/src/executor/climb.ts`),
+never handed to the pathfinder: into the column's centre; then, going up, push
+toward the block the ladder hangs on holding jump until the feet clear the let-go
+floor, or, going down, hold nothing and slide; then step onto the let-go cell,
+inside a budget of six seconds plus one a block of height. mineflayer-pathfinder
+2.4.5 walks every other hop unchanged. It can plan a ladder itself, and on a walk
+that matches no proven leg it does — which is why a climb the bot finished is not
+evidence that the climb was driven.
+
+**The binding count.** Every walk whose leg carries a climb prints
+`[climb] <walk>: N climb(s) on the proven leg, M driven as a climb hop`, and each
+driven hop prints where it let go. `N > M` says a climb was walked by the
+pathfinder, unproven; a run on a campaign with a climb that prints no such line
+walked it with no proven leg at all, and the line's absence is the finding.
+
+**What it cannot climb.** The bot's client physics (prismarine-physics) climbs
+`ladder` and `vine` and nothing else. A proven climb on a weeping, twisting or
+cave vine is refused by name at the hop — a harness gap, not a route defect — and
+is the owner's hour until the physics carries it.
+
 ## Rule 1 — a green gate that binds to nothing must report VACUOUS, not pass
 
 Most of the early "green" was vacuous. Three distinct ways this happens, all

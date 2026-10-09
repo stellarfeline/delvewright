@@ -35,7 +35,7 @@ impl LeaveBinding {
     pub fn line(&self) -> String {
         format!(
             "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
-             by walking, falling, jumping or swimming ({} of them afloat), {} it cannot leave; {} \
+             by walking, falling, jumping, swimming or climbing ({} of them afloat), {} it cannot leave; {} \
              link stand cell(s) served as a way out",
             self.configurations,
             self.route_cells,
@@ -304,9 +304,9 @@ fn verify_bodies_can_leave(
              or take away what they jumped in from); do not fence walkable-looking ground with an \
              invisible barrier. A body afloat climbs out only onto ground one cell above the \
              water's top, and does not dive. A room the story is meant to shut the party into \
-             holds the objective the story waits on, and is not this. Moves are cardinal: a \
-             diagonal jump or a climb (ladder, vine) is not counted, so a place left only that way \
-             reads as a trap.",
+             holds the objective the story waits on, and is not this. Moves are cardinal, and a \
+             climb counts only on a ladder or vine the world keeps: a diagonal jump is not counted, \
+             so a place left only that way reads as a trap.",
             pockets.join("; ")
         ),
     });
