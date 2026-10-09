@@ -1987,3 +1987,75 @@ fn removing_the_bundle_is_byte_identical_and_a_build_is_deterministic() {
     );
     assert_eq!(build_fight(dressed), with, "two builds are byte-equal");
 }
+
+/// **An interior overview stands over the whole stack it looks down into**
+/// (`DW0724`). A plan may stand one place over another — two treehouses up one
+/// trunk, a loft over a cellar — and the dollhouse eye three courses over the
+/// lower piece then sits inside the upper one. The fixture: hello-world's room,
+/// with a second piece placed directly over its top course and over the column
+/// its overview eye stands in, its whole box solid. The overview must stand
+/// over the upper piece where it asked to, not be pulled down through it.
+#[test]
+fn an_interior_overview_stands_over_a_place_stacked_over_its_eye() {
+    use delvec::compiler::plan::PiecePlacement;
+    use delvec::compiler::solver::Rotation;
+    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    let (min, max) = plan.areas[0].pieces[0].bbox();
+    let upper = PiecePlacement {
+        prefab_id: plan.areas[0].pieces[0].prefab_id.clone(),
+        templates: Vec::new(),
+        pos: [min[0] - 4, max[1] + 1, min[2] - 4],
+        size: [6, 6, 6],
+        rotation: Rotation::None,
+        mated: Vec::new(),
+    };
+    let (ulo, uhi) = upper.bbox();
+    assert!(
+        ulo[0] <= min[0] - 2
+            && uhi[0] >= min[0] - 2
+            && ulo[2] <= min[2] - 2
+            && uhi[2] >= min[2] - 2,
+        "the upper piece covers the lower one's overview column — without that this proves nothing"
+    );
+    let mut solid = std::collections::BTreeSet::new();
+    for x in ulo[0]..=uhi[0] {
+        for y in ulo[1]..=uhi[1] {
+            for z in ulo[2]..=uhi[2] {
+                solid.insert([x, y, z]);
+            }
+        }
+    }
+    plan.areas[0].pieces.push(upper);
+    let world =
+        delvec::compiler::nav::World::from_plan(&plan, &structures).with_extra_solid(&solid);
+    let (rp, _) = delvec::compiler::render_plan::render_plan(&plan, &prefabs, &[], &world, None)
+        .expect("every camera's eye is proven clear");
+    let shot = rp["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "interior")
+        .expect("the lower room's overview");
+    let cam = &shot["camera"];
+    assert!(
+        cam["requested_pos"].is_null(),
+        "the overview stands where it asked to, over the stack: {cam}"
+    );
+    assert!(
+        cam["pos"][1].as_f64().unwrap() > f64::from(uhi[1]) + 1.0,
+        "the eye is over the upper piece's top course ({}): {cam}",
+        uhi[1]
+    );
+}

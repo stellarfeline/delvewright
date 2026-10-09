@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::grammar::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.9.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.10.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -98,8 +98,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.9.0";
 /// * `1.9.0` — which of the building's own sides are finished exterior surface
 ///   (`DW0885`): the program-level `shown_faces` list, written through to the
 ///   exported prefab's own `shown_faces` on every expansion.
+/// * `1.10.0` — a climb inside one piece: the `climb` class of a contract edge,
+///   a way a body climbs on a ladder or a vine between two spaces.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
     "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0",
+    "1.10.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -146,6 +149,10 @@ pub const ANCHOR_ROLE_SINCE: &str = "1.8.0";
 /// finished exterior surface** — the list the export writes into the prefab's
 /// `shown_faces`, which `DW0885` reads (`crate::compiler::burial`).
 pub const SHOWN_FACES_SINCE: &str = "1.9.0";
+
+/// The version at which a contract edge may be a `climb` — a ladder or a vine
+/// between two spaces of one piece (spec-0099).
+pub const CLIMB_SINCE: &str = "1.10.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -237,6 +244,11 @@ pub fn has_shown_faces(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(SHOWN_FACES_SINCE)
 }
 
+/// True if `version` may write a `climb` contract edge.
+pub fn has_climb(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(CLIMB_SINCE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,6 +268,7 @@ mod tests {
         ("WAY_SINCE", WAY_SINCE, has_way),
         ("ANCHOR_ROLE_SINCE", ANCHOR_ROLE_SINCE, has_anchor_role),
         ("SHOWN_FACES_SINCE", SHOWN_FACES_SINCE, has_shown_faces),
+        ("CLIMB_SINCE", CLIMB_SINCE, has_climb),
     ];
 
     /// **The ordinal IS the ledger's order**, asserted over the ledger rather

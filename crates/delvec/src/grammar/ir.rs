@@ -25,10 +25,10 @@ use crate::grammar::block::BlockState;
 use crate::grammar::export::AnchorRole;
 use crate::grammar::geom::{Axis, Mirror, Orientation};
 use crate::grammar::version::{
-    ANCHOR_ROLE_SINCE, BIND_SINCE, CONTRACT_SINCE, INCLUDE_SINCE, LATEST_PROGRAM_VERSION,
-    LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE, has_anchor_role, has_bind,
-    has_contract, has_include, has_local_frame, has_mirror, has_shown_faces, has_way,
-    is_supported_version,
+    ANCHOR_ROLE_SINCE, BIND_SINCE, CLIMB_SINCE, CONTRACT_SINCE, INCLUDE_SINCE,
+    LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE,
+    has_anchor_role, has_bind, has_climb, has_contract, has_include, has_local_frame, has_mirror,
+    has_shown_faces, has_way, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -983,7 +983,7 @@ pub struct Way {
 ///
 /// Each class carries exactly the fields it means, so a `bar` on a walk or a
 /// `rise` on a sightline is not a thing an author can write and a check has to
-/// catch afterwards. The same holds for `way`: it is a field of the three
+/// catch afterwards. The same holds for `way`: it is a field of the four
 /// traversal classes, so a way on a sightline (which claims no traversal to be
 /// contingent about) and a way on a `barred` edge (which already declares one,
 /// spelled `bar`) are both unwritable rather than caught afterwards.
@@ -1010,6 +1010,22 @@ pub enum EdgeClass {
         /// end, which is why it is not optional here.
         via: String,
         /// The contingency, when this climb is severed as built.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        way: Option<Way>,
+    },
+    /// A climb on a ladder or a vine (spec-0099), over a transit volume of its
+    /// own: a body holds on and climbs, both ways. What makes a two-level
+    /// interior two spaces and a way between them when the way is a ladder
+    /// rather than a flight of treads.
+    Climb {
+        /// Declared level change.
+        rise: i64,
+        /// The climb volume — the climbable cells and the hole they rise
+        /// through belong to the edge, not to either end, which is why it is
+        /// not optional here.
+        via: String,
+        /// The contingency, when this climb is severed as built — a ladder
+        /// content hangs later.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         way: Option<Way>,
     },
@@ -1049,6 +1065,7 @@ impl EdgeClass {
         match self {
             EdgeClass::Walk { .. } => "walk",
             EdgeClass::Stair { .. } => "stair",
+            EdgeClass::Climb { .. } => "climb",
             EdgeClass::Drop { .. } => "drop",
             EdgeClass::Barred { .. } => "barred",
             EdgeClass::Vision { .. } => "vision",
@@ -1060,6 +1077,7 @@ impl EdgeClass {
         match self {
             EdgeClass::Walk { rise, .. }
             | EdgeClass::Stair { rise, .. }
+            | EdgeClass::Climb { rise, .. }
             | EdgeClass::Drop { rise, .. }
             | EdgeClass::Barred { rise, .. } => Some(*rise),
             EdgeClass::Vision { .. } => None,
@@ -1072,7 +1090,9 @@ impl EdgeClass {
             EdgeClass::Walk { via, .. }
             | EdgeClass::Drop { via, .. }
             | EdgeClass::Barred { via, .. } => via.as_deref(),
-            EdgeClass::Stair { via, .. } | EdgeClass::Vision { via } => Some(via),
+            EdgeClass::Stair { via, .. }
+            | EdgeClass::Climb { via, .. }
+            | EdgeClass::Vision { via } => Some(via),
         }
     }
 
@@ -1084,7 +1104,7 @@ impl EdgeClass {
         }
     }
 
-    /// The declared contingency, on the three classes that can carry one.
+    /// The declared contingency, on the four classes that can carry one.
     ///
     /// `barred`'s bar is deliberately NOT reported here: it is the same
     /// mechanism, but it is a different *declaration*, and the place the two
@@ -1095,6 +1115,7 @@ impl EdgeClass {
         match self {
             EdgeClass::Walk { way, .. }
             | EdgeClass::Stair { way, .. }
+            | EdgeClass::Climb { way, .. }
             | EdgeClass::Drop { way, .. } => way.as_ref(),
             EdgeClass::Barred { .. } | EdgeClass::Vision { .. } => None,
         }
@@ -2227,6 +2248,24 @@ impl Program {
                     "the contract's edge {:?}->{:?} (way region {:?})",
                     edge.a, edge.b, way.region
                 ),
+            });
+        }
+
+        // **The `climb` fence.** A new class is refused by name at serde by an
+        // engine that predates it; the fence keeps the declared number honest
+        // in the other direction — a document declaring an earlier version and
+        // writing a climb claims a compatibility it does not have.
+        if let Some(edge) = contract
+            .edges
+            .iter()
+            .find(|e| matches!(e.class, EdgeClass::Climb { .. }))
+            .filter(|_| !has_climb(&self.version))
+        {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a `climb` contract edge",
+                since: CLIMB_SINCE,
+                declared: self.version.clone(),
+                written_by: format!("the contract's edge {:?}->{:?}", edge.a, edge.b),
             });
         }
 

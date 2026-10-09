@@ -194,7 +194,7 @@ fn describe_cells(cells: &BTreeSet<[i32; 3]>) -> String {
 /// A traversal class: something a body crosses. `vision` is the one class that
 /// is not one.
 fn is_traversal(class: &str) -> bool {
-    matches!(class, "walk" | "stair" | "drop" | "barred")
+    matches!(class, "walk" | "stair" | "climb" | "drop" | "barred")
 }
 
 /// An edge whose `via` is a **transit volume** (its own cells, disjoint from
@@ -206,7 +206,57 @@ fn is_traversal(class: &str) -> bool {
 /// treads are, and letting it declare an opening on a shared boundary instead
 /// would put the laid cells inside a room.
 fn is_transit(edge: &crate::schem::prefab::ContractEdge) -> bool {
-    matches!(edge.class.as_str(), "stair" | "drop") || edge.way.is_some()
+    matches!(edge.class.as_str(), "stair" | "climb" | "drop") || edge.way.is_some()
+}
+
+/// **The body that climbs, over this piece's own blocks** — the compiler's nav
+/// model (spec-0099) built from the model, so a `climb` edge is proved by the
+/// same moves every route proof takes: a climbable is a cell a body holds in
+/// only while its `canSurvive` rule holds over these blocks
+/// ([`crate::compiler::assembled::climb_holds`]), and from it a body moves only
+/// by the climb's own moves ([`crate::compiler::nav::World::neighbors`]). A
+/// private climb rule here would be a second opinion two proofs could disagree
+/// about. Outside the model is air to this world, as it is to an assembled one.
+fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
+    let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+    for pos in model.region().positions() {
+        if let Some(b) = model.get(pos)
+            && !b.is_air()
+        {
+            blocks.insert(pos, b.to_string());
+        }
+    }
+    crate::compiler::nav::World::from_occupancy(
+        crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
+        // Declined by design: a contract judges one piece before any
+        // campaign places it, so there is no horizon, volume or gate to
+        // state — the piece's own blocks are the whole question.
+        crate::compiler::nav::Premises::geometry_only(),
+    )
+}
+
+/// Can a body get from any cell of `from` to any cell of `to`, moving only
+/// through `cells` and only by the body's own moves — the walk and the climb
+/// ([`body_world`])?
+fn body_connected(
+    world: &crate::compiler::nav::World,
+    cells: &BTreeSet<[i32; 3]>,
+    from: &BTreeSet<[i32; 3]>,
+    to: &BTreeSet<[i32; 3]>,
+) -> bool {
+    let mut seen: BTreeSet<[i32; 3]> = from.intersection(cells).copied().collect();
+    let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
+    while let Some(cur) = queue.pop_front() {
+        if to.contains(&cur) {
+            return true;
+        }
+        for next in world.neighbors(cur) {
+            if cells.contains(&next) && seen.insert(next) {
+                queue.push_back(next);
+            }
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -457,6 +507,24 @@ fn shell(set: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
     out
 }
 
+/// **Why a binding of zero is honest on scenery**, or `None`: the piece's place
+/// is scenery (`reached: false`, spec-0098 §14) and no cell of the piece is
+/// stood in at all. A body never enters scenery — `DW0837` refuses one that
+/// does — so a piece of it with no floor owes no floor: the gates whose
+/// population is standable floor state their zero with its count, the way
+/// `contract-closure` states an all-open piece's. The kind is the place's,
+/// handed by `delvec detail` from the layout graph, never the piece's own word,
+/// so the defect cannot reach this: a reached place with nowhere to stand is
+/// still refused.
+fn scenery_zero(ix: &Index) -> Option<String> {
+    (ix.sealed && ix.standable.is_empty()).then(|| {
+        "the place is scenery (`reached: false`), built to be seen and never entered, and 0 \
+         standable cell(s) of the piece are stood in: there is no floor for this gate to judge, \
+         and none is owed"
+            .to_string()
+    })
+}
+
 /// Every passable cell the air outside the piece reaches.
 ///
 /// The positive fact `facade` demands (spec-0036 §2.6). The model's region *is*
@@ -680,7 +748,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
         }
         if !matches!(
             edge.class.as_str(),
-            "walk" | "stair" | "drop" | "barred" | "vision"
+            "walk" | "stair" | "climb" | "drop" | "barred" | "vision"
         ) {
             bad.push(format!("{site}: {:?} is not an edge class", edge.class));
             continue;
@@ -707,7 +775,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             ("drop", Some(r), false) if r > -1 => {
                 bad.push(format!("{site}: a drop falls, so `rise` is <= -1, not {r}"))
             }
-            ("stair" | "drop", None, false) => {
+            ("stair" | "climb" | "drop", None, false) => {
                 bad.push(format!("{site}: this class requires a declared `rise`"))
             }
             _ => {}
@@ -719,10 +787,10 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
         if edge.class != "barred" && edge.bar.is_some() {
             bad.push(format!("{site}: only a barred edge carries a bar"));
         }
-        if matches!(edge.class.as_str(), "stair" | "vision") && edge.via.is_none() {
+        if matches!(edge.class.as_str(), "stair" | "climb" | "vision") && edge.via.is_none() {
             bad.push(format!(
-                "{site}: this class requires a `via` — a stair's treads belong to the edge, and a \
-                 sightline IS its opening"
+                "{site}: this class requires a `via` — a stair's treads and a climb's ladder belong \
+                 to the edge, and a sightline IS its opening"
             ));
         }
         way_well_formed(ix, model, i, edge, &site, exterior, &mut bad);
@@ -739,8 +807,8 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                 if !overlap.is_empty() {
                     bad.push(format!(
                         "{site}: its transit volume overlaps space {name:?} on {} cell(s) ({}). A \
-                         stair's treads, a drop's column and a way's laid cells belong to the \
-                         edge, not to either end",
+                         stair's treads, a climb's ladder, a drop's column and a way's laid cells \
+                         belong to the edge, not to either end",
                         overlap.len(),
                         describe_cells(&overlap)
                     ));
@@ -1031,7 +1099,7 @@ fn coverage(ix: &Index) -> Gate {
         id: "contract-coverage",
         state: verdict(uncovered.is_empty()),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: scenery_zero(ix),
         bound: ix.standable.len(),
         detail: if uncovered.is_empty() {
             format!(
@@ -1209,16 +1277,46 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
 /// cumulatively — so a cleared way and a laid way and a bar are all decided by
 /// the same code. `Ok(())` means the class holds; `Err` carries the class's own
 /// red, in its own words.
+#[allow(clippy::too_many_arguments)]
 fn prove_class(
     class: &str,
     model: &VoxelModel,
     graph: &BTreeSet<[i32; 3]>,
     via: &BTreeSet<[i32; 3]>,
+    span: &BTreeSet<[i32; 3]>,
     a: &BTreeSet<[i32; 3]>,
     b: &BTreeSet<[i32; 3]>,
     ends: (&str, &str),
 ) -> Result<(), String> {
     match class {
+        "climb" => {
+            // The cells a body HOLDS in are not standable, so the graph a walk
+            // is proved over never holds them: the climb adds every cell of
+            // its own volume a body can hold on in, and the body's own moves
+            // decide the rest.
+            let world = body_world(model);
+            let held: BTreeSet<[i32; 3]> = span
+                .iter()
+                .filter(|c| world.is_climb_cell(**c))
+                .copied()
+                .collect();
+            let cells: BTreeSet<[i32; 3]> = graph.union(&held).copied().collect();
+            if held.is_empty() {
+                Err(
+                    "its transit volume holds no climbable a body can hold on in — a ladder or a \
+                     vine whose hold these blocks keep (spec-0099) is what a body climbs"
+                        .to_string(),
+                )
+            } else if body_connected(&world, &cells, a, b) && body_connected(&world, &cells, b, a) {
+                Ok(())
+            } else {
+                Err(
+                    "the climb does not connect its two ends both ways through its own climbable \
+                     cells"
+                        .to_string(),
+                )
+            }
+        }
         "walk" => {
             if nav::connected(model, graph, a, b) && nav::connected(model, graph, b, a) {
                 Ok(())
@@ -1324,7 +1422,7 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
 
         let class = proving_class(&edge.class);
         let ends = (edge.a.as_str(), edge.b.as_str());
-        let held = prove_class(class, model, &graph, &via, &a, &b, ends);
+        let held = prove_class(class, model, &graph, &via, &span, &a, &b, ends);
 
         let Some(cont) = cont else {
             // No contingency: the edge is what it claims to be as shipped, and
@@ -1385,7 +1483,16 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
             ));
         }
 
-        if let Err(red) = prove_class(class, &opened, &open_graph, &open_via, &oa, &ob, ends) {
+        if let Err(red) = prove_class(
+            class,
+            &opened,
+            &open_graph,
+            &open_via,
+            &span,
+            &oa,
+            &ob,
+            ends,
+        ) {
             bad.push(if cont.sugar {
                 format!(
                     "{site}: with the bar region voided the two ends still do not connect through \
@@ -1771,7 +1878,7 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
     // any `no_body` kind asks for, which is the test — an escape hatch that
     // costs more than the thing it escapes is not an escape hatch.
     let unaccounted = uncovered_standable(ix);
-    let empty_ok = (kinds.by_region.is_empty()
+    let all_play_space = (kinds.by_region.is_empty()
         && !ix.standable.is_empty()
         && unaccounted.is_empty())
     .then(|| {
@@ -1782,6 +1889,8 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
             ix.standable.len()
         )
     });
+    let empty_ok =
+        all_play_space.or_else(|| scenery_zero(ix).filter(|_| kinds.by_region.is_empty()));
     Gate {
         id: "contract-no-body",
         state: verdict(bad.is_empty()),
@@ -1831,6 +1940,9 @@ struct Confined {
     ways: BTreeMap<String, WayGate>,
     /// Cells no walk ever counts: the out-of-walk regions.
     excluded: BTreeSet<[i32; 3]>,
+    /// The volume elements of every `climb` edge: the cells a body may HOLD
+    /// in, on the climb's own moves, besides standing ([`body_world`]).
+    climbs: Vec<usize>,
 }
 
 /// One contingent region, as the reachability walk sees it.
@@ -1865,6 +1977,7 @@ fn build_confined(ix: &Index) -> Confined {
     let mut walk: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut fall: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut ways: BTreeMap<String, WayGate> = BTreeMap::new();
+    let mut climbs: Vec<usize> = Vec::new();
 
     for (i, edge) in ix.contract.edges.iter().enumerate() {
         if !is_traversal(&edge.class) {
@@ -1884,6 +1997,9 @@ fn build_confined(ix: &Index) -> Confined {
             });
             id
         });
+        if edge.class == "climb" {
+            climbs.extend(via);
+        }
         // A bar's own cells are a place too, once the bar is gone: a body walks
         // *through* the gateway, and a graph that hops the two rooms without it
         // would call a room reachable that no route enters. A declared way
@@ -1966,6 +2082,7 @@ fn build_confined(ix: &Index) -> Confined {
         fall,
         ways,
         excluded: ix.all_no_body_cells.clone(),
+        climbs,
     }
 }
 
@@ -2041,6 +2158,20 @@ impl Confined {
         }
         let targets = &targets;
         let open_bars = open;
+        // **The climb**: where the contract declares one, the body's own
+        // moves over this state's blocks, and the cells of a climb volume a
+        // body holds in. Those are passed through, never owed: a target is a
+        // cell a body stands in.
+        let climb = (!self.climbs.is_empty()).then(|| {
+            let world = body_world(model);
+            let held: BTreeSet<[i32; 3]> = self
+                .climbs
+                .iter()
+                .flat_map(|&e| self.elements[e].cells.iter().copied())
+                .filter(|c| world.is_climb_cell(*c))
+                .collect();
+            (world, held)
+        });
         let mut seen: BTreeSet<[i32; 3]> = start
             .iter()
             .filter(|c| targets.contains(*c))
@@ -2048,6 +2179,22 @@ impl Confined {
             .collect();
         let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
         while let Some([x, y, z]) = queue.pop_front() {
+            if let Some((world, held)) = &climb {
+                for next in world.neighbors([x, y, z]) {
+                    if (targets.contains(&next) || held.contains(&next))
+                        && !seen.contains(&next)
+                        && self.hop(open_bars, [x, y, z], next, false)
+                    {
+                        seen.insert(next);
+                        queue.push_back(next);
+                    }
+                }
+                // A body holding on in mid-air walks nowhere and falls only
+                // by letting go, which the climb's moves already say.
+                if held.contains(&[x, y, z]) && !free.contains(&[x, y, z]) {
+                    continue;
+                }
+            }
             for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                 for dy in [0, 1, -1] {
                     let next = [x + dx, y + dy, z + dz];
@@ -2172,9 +2319,9 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
 
     Gate {
         id: "contract-reachability",
-        state: verdict(unreached.is_empty() && !targets.is_empty()),
+        state: verdict(unreached.is_empty() && (!targets.is_empty() || ix.sealed)),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: targets.is_empty().then(|| scenery_zero(ix)).flatten(),
         bound: targets.len(),
         detail: if !unreached.is_empty() {
             format!(
@@ -2635,7 +2782,7 @@ fn no_body_majority(ix: &Index, kinds: &CellKinds) -> Gate {
         id: "contract-no-body-majority",
         state: verdict(!majority || excused),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: scenery_zero(ix),
         bound: total,
         detail: if !majority {
             format!(

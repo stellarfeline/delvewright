@@ -154,7 +154,12 @@ point of each:
   inflate the reading. `box-extent` is measured at the **top course** of the play
   space for the same reason on the horizontal axes: a stair the plan hosts here
   legitimately stands on the floor, and a measurement taken there reports the
-  room as smaller than it is. **The prescription names both repairs**: a
+  room as smaller than it is. `distance-xz` measures each place's **floor
+  centre**: the midpoint of the extent its standable cells span at its realized
+  walk plane, over its own play space — never one probe column, whose reading
+  moved with whatever stood in it (a stand-in's ladder pillar) and rounded to
+  the integer centre where that cell held a block. A place with no footing
+  answers nothing and is counted declaration-only. **The prescription names both repairs**: a
   disagreement between plan and bytes is a disagreement about the MASS, and only
   one of the two things that put mass in a place is a defect — the derivation may
   have built it wrong, or the plan may have given the place a run of treads it was

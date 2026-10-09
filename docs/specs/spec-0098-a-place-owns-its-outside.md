@@ -953,6 +953,47 @@ what a criterion asserts says so in the word *loosening*.
     stair rising through a neighbour's hole answers the seam (`DW0844`); and
     the light probe of `delvec detail` walks in through the place's seams, so
     a cellar entered only from above is measured (`DW0752`).
+29. **`DW0833`'s `distance-xz` measures a place's floor centre**: the midpoint
+    of the extent the place's standable cells span at its realized walk plane,
+    over its own play space. One probe column through the box's centre read a
+    stand-in's ladder pillar as the room's edge and rounded to the integer
+    centre where the probe cell held a block, so an exact identity reddened on
+    a correctly built map. A room built a course narrower still moves the
+    reading. Shown in `blockout.rs`
+    `the_centre_measure_reads_the_floor_and_not_one_column`.
+30. **The rung in a floor's hole is the hole owner's.** A stand-in that cut the
+    hole of a `climb` through a floor hangs the rung in it whatever the lower
+    place's binding; a bound lower piece hangs its ladder up to its own
+    ceiling. Shown in `blockout.rs`
+    `the_rung_in_the_hole_is_the_hole_owners_whatever_the_lower_binding`.
+31. **The overview camera stands over a stack** (departure 23 extended): an
+    `interior` overview's eye also clears every placement and site-plan place
+    standing over its column, ceiling course and roof out to its eaves. Shown in
+    `emit.rs` `an_interior_overview_stands_over_a_place_stacked_over_its_eye`.
+32. **Scenery with no floor owes no floor** (ruling 4 carried into the
+    contract). A sealed piece — its place `reached: false` — none of whose cells
+    is stood in states that zero with its count in `contract-coverage`,
+    `contract-reachability`, `contract-no-body` and
+    `contract-no-body-majority`, as `contract-closure` states an all-open
+    piece's, so it is not forced to grow a floor that would then owe light. A
+    reached place with nowhere to stand is still refused. Shown in
+    `grammar_contract_check.rs`
+    `a_sealed_scenery_piece_states_its_zero_standable_cells`.
+33. **A climb inside one place is a contract edge.** A space is one floor, so
+    a two-level interior — a treehouse's two decks, a lookout over a road — is
+    two spaces, and the way between them when it is a ladder is a `climb`
+    edge of the piece's spatial contract: `rise` and a `via` (the climbable
+    cells and the hole they rise through) required, an optional `way`, proved
+    connected both ways through the cells of its volume a body holds on in,
+    over the body's own walk and climb moves (spec-0099) built from the
+    piece's blocks; the reachability walk crosses it the same way. It is
+    program document version `1.10.0`'s surface, refused below it where
+    written (`grammar_contract.rs`
+    `a_climb_is_refused_below_its_version_and_the_same_edge_as_a_stair_is_not`). The gallery
+    binds it: the open point's causeway carries a lookout gallery on a stone
+    stand, reached by a ladder. Shown in `grammar_contract_check.rs`
+    `a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways` and
+    `a_climb_without_its_volume_or_its_rise_is_refused`.
 
 | Criterion | Demonstrated in |
 |---|---|

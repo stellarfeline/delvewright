@@ -41,6 +41,10 @@ fn premise_declines_are_enumerated() {
         // (`from_solid_and_flooded`), which every unit-test world goes
         // through.
         ("compiler/nav/world/mod.rs", 1),
+        // `grammar/contract.rs`: the climb edge's proof over ONE piece's own
+        // blocks (`body_world`), judged before any campaign places it — no
+        // horizon, no volume, no gate; the piece's ladder is the question.
+        ("grammar/contract.rs", 1),
         // `sculpt/mod.rs`: the pocket proof over a sculpted piece ALONE,
         // before any campaign exists to state a premise (spec-0087 §3.4) — no
         // horizon, no volume, no gate; the piece's own blocks are the question.

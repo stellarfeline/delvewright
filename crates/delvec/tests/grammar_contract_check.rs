@@ -1910,3 +1910,244 @@ fn an_all_open_piece_states_its_zero_and_passes() {
     let report = check(&street.model, &c, &no_anchors());
     assert!(!gate(&report, "contract-closure").passed());
 }
+
+/// **A sealed scenery piece owes nothing a body would** (spec-0098 §14). A
+/// beacon built to be seen and never entered: a stone block around a hollow one
+/// course tall, so no cell of it is stood in. Judged as scenery
+/// (`check_sealed`), the zero standable cells are stated with their count and
+/// pass; the very same piece judged as a place a body reaches still reds on
+/// the zero — a reached place with nowhere to stand is the defect the
+/// reachability gate exists for.
+#[test]
+fn a_sealed_scenery_piece_states_its_zero_standable_cells() {
+    let mut b = Build::new([5, 5, 5]);
+    b.stone([0, 0, 0], [4, 4, 4]);
+    b.air([1, 2, 1], [3, 2, 3]);
+    let mut c = contract("room");
+    c.spaces.insert(
+        "room".to_string(),
+        space("enclosed", vec![region([1, 2, 1], [3, 2, 3])]),
+    );
+    assert!(
+        delvec::grammar::nav::standable_cells(&b.model).is_empty(),
+        "the beacon holds no cell a body stands in — without that this proves nothing"
+    );
+
+    let sealed = delvec::grammar::contract::check_sealed(&b.model, &c, &no_anchors(), true);
+    let red: Vec<String> = sealed
+        .gates
+        .iter()
+        .filter(|g| g.failed())
+        .map(|g| format!("{}: {}", g.id, g.detail))
+        .collect();
+    assert!(red.is_empty(), "scenery owes no standable cell: {red:?}");
+    assert!(
+        sealed
+            .enumeration
+            .iter()
+            .any(|l| l.contains("contract-reachability") && l.contains("0 standable cell(s)")),
+        "the zero is stated with its count: {:?}",
+        sealed.enumeration
+    );
+
+    let reached = check(&b.model, &c, &no_anchors());
+    assert!(
+        gate(&reached, "contract-reachability").failed(),
+        "a place a body reaches, with nowhere to stand, is refused"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A climb inside one piece: two spaces and the ladder between them
+// ---------------------------------------------------------------------------
+
+/// A two-level room 7x9x5: a lower floor at y 1, a mezzanine floor course at
+/// y 4 whose stood-on cells are at y 5, a door in the east wall at the lower
+/// level, and — when `ladder` names a facing — a ladder against the west wall
+/// from the lower floor up through a one-cell hole in the mezzanine, at x 1,
+/// z 2, y 1..=4. With no ladder the hole is still cut.
+fn two_level(ladder: Option<&str>) -> Build {
+    let mut b = Build::new([7, 9, 5]);
+    b.room([0, 0, 0], [6, 8, 4]);
+    b.stone([1, 4, 1], [5, 4, 3]);
+    b.air([1, 4, 2], [1, 4, 2]);
+    b.air([6, 1, 2], [6, 2, 2]);
+    if let Some(facing) = ladder {
+        let block: BlockState = format!("minecraft:ladder[facing={facing}]")
+            .parse()
+            .expect("a ladder state");
+        for y in 1..=4 {
+            b.model.set([1, y, 2], &block).unwrap();
+        }
+    }
+    b
+}
+
+/// The honest contract of [`two_level`]: the two floors are two spaces (a
+/// space is one floor), the ladder column is the climb's own volume, and the
+/// way between them is a `climb` rising 4.
+fn two_level_contract() -> SpatialContract {
+    let mut c = contract("lower");
+    c.spaces.insert(
+        "lower".to_string(),
+        space(
+            "enclosed",
+            vec![
+                region([1, 1, 1], [5, 3, 1]),
+                region([1, 1, 3], [5, 3, 3]),
+                region([2, 1, 2], [5, 3, 2]),
+            ],
+        ),
+    );
+    c.spaces.insert(
+        "upper".to_string(),
+        space("enclosed", vec![region([1, 5, 1], [5, 7, 3])]),
+    );
+    c.edges.push(with_via(
+        edge("lower", "exterior", "walk"),
+        "door",
+        vec![region([6, 1, 2], [6, 2, 2])],
+    ));
+    c.edges.push(with_rise(
+        with_via(
+            edge("lower", "upper", "climb"),
+            "ladder",
+            vec![region([1, 1, 2], [1, 4, 2])],
+        ),
+        4,
+    ));
+    c
+}
+
+/// **A two-level interior is two spaces and a declared climb** (spec-0099,
+/// spec-0098 §14). The ladder hangs on the west wall: every gate holds — the
+/// climb is proved both ways over the body's own climb moves, and the upper
+/// floor is reached from the entry through it.
+///
+/// Each perturbation is one the climb proof alone could catch: the same room
+/// with no ladder (the hole is still cut) and with the ladder turned to face
+/// the wall it should hang on — kept only where the mezzanine's floor course
+/// stands behind its top rung — both red the edge proof and leave the upper
+/// floor unreached; deleting the climb edge
+/// with the ladder hanging reds reachability, so the edge is a checked claim
+/// and not decoration; and folding the two floors into one space is refused
+/// as more than one floor.
+#[test]
+fn a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways() {
+    let c = two_level_contract();
+    let report = check(&two_level(Some("east")).model, &c, &no_anchors());
+    let red: Vec<String> = report
+        .gates
+        .iter()
+        .filter(|g| g.failed())
+        .map(|g| format!("{}: {}", g.id, g.detail))
+        .collect();
+    assert!(red.is_empty(), "the laddered room holds: {red:?}");
+    let proof = gate(&report, "contract-edge-proof");
+    assert_eq!(
+        proof.bound, 1,
+        "the one interior edge is the climb: {}",
+        proof.detail
+    );
+    let reach = gate(&report, "contract-reachability");
+    assert!(reach.passed(), "{}", reach.detail);
+
+    for (what, b) in [
+        ("no ladder", two_level(None)),
+        ("a ladder with nothing behind it", two_level(Some("west"))),
+    ] {
+        let report = check(&b.model, &c, &no_anchors());
+        let proof = gate(&report, "contract-edge-proof");
+        assert!(proof.failed(), "{what}: {}", proof.detail);
+        let reach = gate(&report, "contract-reachability");
+        assert!(
+            reach.failed() && reach.detail.contains("space upper"),
+            "{what}: the upper floor is unreached: {}",
+            reach.detail
+        );
+    }
+
+    let bare = check(&two_level(None).model, &c, &no_anchors());
+    let proof = gate(&bare, "contract-edge-proof");
+    assert!(
+        proof.detail.contains("no climbable a body can hold on in"),
+        "with no ladder the red says what a climb is: {}",
+        proof.detail
+    );
+
+    let mut severed = c.clone();
+    severed.edges.retain(|e| e.class != "climb");
+    let report = check(&two_level(Some("east")).model, &severed, &no_anchors());
+    let reach = gate(&report, "contract-reachability");
+    assert!(
+        reach.failed() && reach.detail.contains("space upper"),
+        "the ladder still hangs, and without the declared edge the upper floor is not reached: {}",
+        reach.detail
+    );
+
+    let mut merged = contract("room");
+    merged.spaces.insert(
+        "room".to_string(),
+        space(
+            "enclosed",
+            vec![
+                region([1, 1, 1], [5, 3, 1]),
+                region([1, 1, 3], [5, 3, 3]),
+                region([2, 1, 2], [5, 3, 2]),
+                region([1, 5, 1], [5, 7, 3]),
+            ],
+        ),
+    );
+    merged.edges.push(c.edges[0].clone());
+    merged.edges[0].a = "room".to_string();
+    let report = check(&two_level(Some("east")).model, &merged, &no_anchors());
+    let wf = gate(&report, "contract-well-formed");
+    assert!(
+        wf.failed() && wf.detail.contains("ONE floor"),
+        "two floors folded into one space are refused: {}",
+        wf.detail
+    );
+}
+
+/// **A climb declares its volume and its rise**, as a stair does: the ladder
+/// belongs to the edge, and the level relation is measured.
+#[test]
+fn a_climb_without_its_volume_or_its_rise_is_refused() {
+    let b = two_level(Some("east"));
+    let mut no_via = two_level_contract();
+    no_via.edges[1].via = None;
+    let wf = gate(
+        &check(&b.model, &no_via, &no_anchors()),
+        "contract-well-formed",
+    )
+    .clone();
+    assert!(
+        wf.failed() && wf.detail.contains("requires a `via`"),
+        "{}",
+        wf.detail
+    );
+    let mut no_rise = two_level_contract();
+    no_rise.edges[1].rise = None;
+    let wf = gate(
+        &check(&b.model, &no_rise, &no_anchors()),
+        "contract-well-formed",
+    )
+    .clone();
+    assert!(
+        wf.failed() && wf.detail.contains("requires a declared `rise`"),
+        "{}",
+        wf.detail
+    );
+    let mut off_by_one = two_level_contract();
+    off_by_one.edges[1].rise = Some(3);
+    let report = check(&b.model, &off_by_one, &no_anchors());
+    let proof = gate(&report, "contract-edge-proof");
+    assert!(
+        proof.failed()
+            && proof
+                .detail
+                .contains("declares rise 3 but the resolved boxes measure 4"),
+        "{}",
+        proof.detail
+    );
+}

@@ -6,10 +6,20 @@
         "b": "exterior",
         "class": "walk",
         "via": "causeway-front"
+      },
+      {
+        "a": "room",
+        "b": "lookout",
+        "class": "climb",
+        "rise": 4,
+        "via": "lookout-ladder"
       }
     ],
     "entry": "room",
     "spaces": {
+      "lookout": {
+        "envelope": "open"
+      },
       "room": {
         "envelope": "open"
       }
@@ -18,6 +28,7 @@
   "name": "gallery-causeway",
   "palette": {
     "floor": "minecraft:polished_andesite",
+    "ladder": "minecraft:ladder[facing=west,waterlogged=false]",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
     "wall": "minecraft:polished_blackstone_bricks"
@@ -65,6 +76,91 @@
             "role": "lid"
           },
           "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "lookout-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "lookout"
+        },
+        "weight": 1
+      }
+    ],
+    "lookout-ladder": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "ladder"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "lookout-ladder"
+        },
+        "weight": 1
+      }
+    ],
+    "lookout-ladder-column": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "lookout-ladder"
+            },
+            {
+              "op": "call",
+              "symbol": "lookout-ladder-top"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "lookout-ladder-top": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "lookout-ladder"
         },
         "weight": 1
       }
@@ -189,19 +285,111 @@
                     "symbol": "wall"
                   },
                   {
-                    "axis": "z",
+                    "axis": "x",
                     "children": [
                       {
-                        "op": "call",
-                        "symbol": "causeway-front-air"
+                        "axis": "z",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "causeway-front-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 23
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
                       },
                       {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "wall"
+                        "axis": "z",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "causeway-front-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "lookout-ladder-column"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 11
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 11
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
                       }
                     ],
                     "op": "split",
@@ -209,14 +397,7 @@
                       {
                         "blocks": {
                           "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 23
+                          "value": 5
                         },
                         "size": "absolute"
                       },
@@ -237,6 +418,40 @@
                         "symbol": "room-air"
                       },
                       {
+                        "axis": "y",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "lookout-air"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 4
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      },
+                      {
                         "op": "call",
                         "symbol": "wall"
                       }
@@ -246,7 +461,21 @@
                       {
                         "blocks": {
                           "expr": "int",
-                          "value": 24
+                          "value": 10
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 6
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 8
                         },
                         "size": "absolute"
                       },
@@ -603,5 +832,5 @@
     "west"
   ],
   "start": "place",
-  "version": "1.9.0"
+  "version": "1.10.0"
 }
