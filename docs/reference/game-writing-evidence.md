@@ -165,7 +165,10 @@ item named `Litany for the Unquiet`.
 Step 4 of the dangling-reference check (one rendering per name, no shared
 rendering) is built as the transcreation tool's fact check, over the declared
 names (`name`/`title` rows) rather than a hand-declared glossary
-([i18n.md § The fact check](i18n.md#the-fact-check)). Nothing else here is built.
+([i18n.md § The fact check](i18n.md#the-fact-check)). Step 3 is built for
+dialogue as `DW0982`, over the declared names without a hand-declared glossary
+([game-writing.md §5](game-writing.md#5-what-a-machine-can-check)). Nothing else
+here is built.
 
 ### Dangling-reference check
 

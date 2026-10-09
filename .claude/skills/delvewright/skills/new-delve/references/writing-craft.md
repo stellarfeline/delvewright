@@ -216,7 +216,7 @@ pass afterwards. Which rules bind which line:
   the action, the object and the place, the place by a landmark the player can
   see and a position relative to it, never by a compass point; a refusal says what is wrong and what
   fixes it; an item tooltip says what the item does first.
-- **Story text** — dialogue, barks, narration: S1–S5. State the fact; end on
+- **Story text** — dialogue, barks, narration: S1–S6. State the fact; end on
   information; a joke carries the function too.
 - **Where the player reads at all**: L1 (`game-writing.md` §8). Before a line
   or an object exists to tell the player what to do, check that the level does
@@ -225,9 +225,27 @@ pass afterwards. Which rules bind which line:
   what happens, never from wording the player must decode; nothing the text
   says of the world contradicts what the level shows.
 - **Every name, everywhere**: N1–N5. The first time a name reaches the player in
-  play order it is a body or item carrying it, or a sentence saying what it is;
-  one thing has one name. §D above is the spelling half of N4.
+  play order it is the person speaking to them under it, an item in their hands,
+  or a sentence saying what it is; a nameplate over a body the party fights, a
+  counter or an area's name shows a name and does not tell it. One thing has one
+  name. §D above is the spelling half of N4.
+- **Every name tag**: N6. A `name` on a body marks a person — a boss, an elite,
+  a named actor, an NPC. A wave's ordinary bodies wear none; a fight that needs a
+  heading states its bar's `title`. One body alone under a name is a character;
+  two bodies under one name are refused.
 
 Write each line knowing it will be transcreated: the English is the fact source
 another language is rewritten from, so a fact the English only implies is a fact
 the other language loses.
+
+**Styled spans.** Any line a player reads may carry
+`[[<styles>|<text>]]` — `<styles>` one or more of `obfuscated`, `bold`,
+`italic`, `underlined`, `strikethrough`, `color=<vanilla name or #rrggbb>`,
+comma-separated, no spaces; spans do not nest, and `[[`/`]]` appear nowhere
+else in a line. Example, a bark of a clerk whose mind has been touched:
+`The ledger is kept by [[obfuscated|someone else]] at night.` Use one only by
+S6 (`game-writing.md` §2): a style shows what the words cannot, never emphasis
+the words should carry — rarely, at most one span in a line. `delvec validate`
+refuses malformed markup and a translation whose spans differ from the English;
+a bold span counts one pixel wider per character against an option label's
+button (`DW0331`).

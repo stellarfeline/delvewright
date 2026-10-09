@@ -29,8 +29,8 @@ Pipeline:
 4. With `--reflect`, run each batch as three steps — transcreate, criticise the
    draft, revise with the critique in hand, returning already-good lines
    byte-identical.
-5. Fact-check every answer mechanically: placeholders and formatting codes kept,
-   numbers kept, every declared name rendered the one way the campaign renders it
+5. Fact-check every answer mechanically: placeholders, formatting codes and
+   styled-span markers (`[[<styles>|`, `]]`, spec-0096) kept, numbers kept, every declared name rendered the one way the campaign renders it
    and no two names sharing a rendering. A failing row is sent back once with
    its failures named; a row that still fails is refused — left out of the
    sidecar and named in the report, so the closing `delvec validate` says it is
@@ -335,6 +335,10 @@ Rules:
 - Every name in the glossary is written exactly as the glossary renders it, every
   time it appears. One name, one rendering; two names never share one.
 - Preserve every placeholder (`%s`, `%1$s`), formatting code and digit exactly.
+- A styled span is written `[[<styles>|<text>]]`. Keep every span of the English:
+  copy its opener (`[[` up to and including `|`) and its closing `]]` byte for
+  byte, transcreate only the text between them, and place the span where the
+  {lang} line puts that phrase. Never add, drop or merge a span.
 - Keep strings roughly as short as the English: they render in chat lines,
   item names, and title cards.
 {writing_rules}{translationese}"""
@@ -454,7 +458,7 @@ hand. Target language: {lang}.
 - Where a draft line is already accurate and natural, return it BYTE-IDENTICAL.
   Rewriting a good line for the sake of motion is a defect, not an improvement.
 - Every rule from the original brief still binds: the kind's job, persona voice,
-  glossary names exactly, placeholders and digits preserved, lengths close to the
+  glossary names exactly, placeholders, span markers and digits preserved, lengths close to the
   English, and `option-label` rows are the player's own reply on a narrow button.
 {writing_rules}{translationese}"""
 
@@ -468,7 +472,8 @@ passes, changing nothing else about them that does not need to change.
 - Reply with ONE JSON object mapping EVERY given key to its corrected string. No
   prose, no explanation, no markdown fences, no extra or missing keys.
 - A glossary name must appear exactly as the glossary renders it. A placeholder,
-  formatting code or number must appear exactly as in the English.
+  formatting code, styled-span marker (`[[<styles>|` and `]]`) or number must
+  appear exactly as in the English.
 {writing_rules}"""
 
 
@@ -827,8 +832,11 @@ def chat_once(
 # decide without reading for meaning. A row that fails is sent back once with
 # its failures named, and refused if it still fails.
 
-#: A placeholder or formatting code the client substitutes or interprets.
-PLACEHOLDER_RE = re.compile(r"%(?:\d+\$)?[sd]|%%|§[0-9a-fk-or]")
+#: A placeholder or formatting code the client substitutes or interprets, or a
+#: styled-span marker (spec-0096): a span's opener `[[<styles>|` and its `]]`.
+#: Compared as tokens, like a placeholder; the grammar itself is the compiler's
+#: (`dsl::textstyle`), whose `DW0975`/`DW0976` the closing `delvec validate` runs.
+PLACEHOLDER_RE = re.compile(r"%(?:\d+\$)?[sd]|%%|§[0-9a-fk-or]|\[\[[^\[\]|]*\||\]\]")
 #: A number written in digits, thousands separators included (`10,811`); its
 #: value is compared with the separators removed, so `10811` keeps it.
 DIGITS_RE = re.compile(r"\d{1,3}(?:,\d{3})+|\d+")
@@ -949,7 +957,7 @@ def check_row(e: Entry, text: str, names: dict[str, str], lang: str) -> list[str
         return ["the line is empty"]
     want, got = sorted(PLACEHOLDER_RE.findall(e.en)), sorted(PLACEHOLDER_RE.findall(text))
     if want != got:
-        failures.append(f"placeholders/formatting codes {want} became {got}")
+        failures.append(f"placeholders/formatting codes/span markers {want} became {got}")
     have = digit_numbers(text)
     for d in digit_numbers(e.en):
         if d in have:

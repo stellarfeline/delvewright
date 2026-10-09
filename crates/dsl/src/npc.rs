@@ -83,6 +83,66 @@ pub struct NpcSkin {
     /// Player model. **Required** (spec-0009): an omitted model renders slim, so
     /// a wide skin on a slim model is distorted — the compiler always emits it.
     pub model: SkinModel,
+    /// The overlay layers this mannequin does **not** draw (spec-0097 §5). A
+    /// mannequin draws all seven of the player model's second-layer parts unless
+    /// told otherwise, and the skin's paint on a hidden part is not shown. Absent
+    /// or empty draws every layer and emits nothing; otherwise the list is
+    /// emitted as the mannequin's own `hidden_layers` field, in this order. A
+    /// layer named twice is `DW0980`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_layers: Vec<SkinLayer>,
+}
+
+/// One of the player model's second-layer parts, as the pinned client's
+/// `PlayerModelPart` names it (spec-0097 §2.4). `left` and `right` are the
+/// model's own, not the observer's. `crates/delvec/tests/skin_parts.rs` holds
+/// these tokens equal to the layers `crates/delvec/data/model-parts-1.21.11.json`
+/// read from the jar.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SkinLayer {
+    /// The cape, where the profile carries one.
+    Cape,
+    /// The torso's overlay shell.
+    Jacket,
+    /// The left arm's overlay shell.
+    LeftSleeve,
+    /// The right arm's overlay shell.
+    RightSleeve,
+    /// The left leg's overlay shell.
+    LeftPantsLeg,
+    /// The right leg's overlay shell.
+    RightPantsLeg,
+    /// The head's overlay shell.
+    Hat,
+}
+
+impl SkinLayer {
+    /// Every layer, in the client's own order.
+    pub const ALL: [SkinLayer; 7] = [
+        SkinLayer::Cape,
+        SkinLayer::Jacket,
+        SkinLayer::LeftSleeve,
+        SkinLayer::RightSleeve,
+        SkinLayer::LeftPantsLeg,
+        SkinLayer::RightPantsLeg,
+        SkinLayer::Hat,
+    ];
+
+    /// The vanilla id a mannequin's `hidden_layers` list carries.
+    pub fn token(self) -> &'static str {
+        match self {
+            SkinLayer::Cape => "cape",
+            SkinLayer::Jacket => "jacket",
+            SkinLayer::LeftSleeve => "left_sleeve",
+            SkinLayer::RightSleeve => "right_sleeve",
+            SkinLayer::LeftPantsLeg => "left_pants_leg",
+            SkinLayer::RightPantsLeg => "right_pants_leg",
+            SkinLayer::Hat => "hat",
+        }
+    }
 }
 
 /// Player-model shape for a mannequin skin (`wide` = classic/Steve, `slim` =
@@ -444,34 +504,55 @@ pub(crate) fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mu
     }
 }
 
-/// spec-0009: a mannequin skin's `texture_id` is a bare kebab token, and no two
-/// NPCs share one (`DW0190`).
+/// spec-0009: a mannequin skin's `texture_id` is a bare kebab token (`DW0190`).
+///
+/// A `texture_id` names a FILE, and two bodies may wear one file: the bake
+/// reads it once and both summons point at the one pack texture
+/// (`read_skins`), and a skin's per-body choices (`model`, `hidden_layers`)
+/// ride the body, not the file (spec-0097 §4.3). So only the id's shape is
+/// refused here.
 pub(crate) fn npc_skin_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    // --- skins (spec-0009) ---
-    let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        if let Some(skin) = &npc.skin {
-            if !is_kebab(&skin.texture_id) {
+        if let Some(skin) = &npc.skin
+            && !is_kebab(&skin.texture_id)
+        {
+            d.push(Diagnostic::error(
+                codes::SKIN_INVALID,
+                "npcs",
+                format!("/content/npcs/{i}/skin/texture_id"),
+                format!(
+                    "skin `texture_id` `{}` is malformed — it must be a bare kebab token \
+                     (e.g. `keeper-armor`), matching the `skins/<texture_id>.png` filename",
+                    skin.texture_id
+                ),
+            ));
+        }
+    }
+}
+
+crate::dw_code! {
+    /// (spec-0097 §5) A body's `skin.hidden_layers` names one layer twice. The
+    /// list is the set of overlay layers the mannequin does not draw; a
+    /// repeat says nothing a single entry does not, and is a mistake.
+    pub const SKIN_LAYER_TWICE: DwCode = DwCode::new("DW0980", ExitTier::Build);
+}
+
+/// spec-0097 §5: a skinned body's `hidden_layers` names each layer at most once
+/// (`DW0980`). Walked over every body that declares a skin, whatever its class.
+pub(crate) fn skin_layer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for site in crate::body::body_skin_sites(c) {
+        let mut seen = BTreeSet::new();
+        for (k, layer) in site.skin.hidden_layers.iter().enumerate() {
+            if !seen.insert(*layer) {
                 d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "npcs",
-                    format!("/content/npcs/{i}/skin/texture_id"),
+                    SKIN_LAYER_TWICE,
+                    site.body.stage(),
+                    format!("{}/hidden_layers/{k}", site.path),
                     format!(
-                        "skin `texture_id` `{}` is malformed — it must be a bare kebab token \
-                         (e.g. `keeper-armor`), matching the `skins/<texture_id>.png` filename",
-                        skin.texture_id
-                    ),
-                ));
-            }
-            if !seen_skins.insert(skin.texture_id.as_str()) {
-                d.push(Diagnostic::error(
-                    codes::SKIN_INVALID,
-                    "npcs",
-                    format!("/content/npcs/{i}/skin/texture_id"),
-                    format!(
-                        "duplicate skin `texture_id` `{}` — each mannequin needs a distinct \
-                         texture; rename one (and its `skins/<id>.png`)",
-                        skin.texture_id
+                        "`{}` hides `{}` twice — `hidden_layers` is the set of overlay layers \
+                         the mannequin does not draw, so name each layer once",
+                        site.body.id(),
+                        layer.token()
                     ),
                 ));
             }

@@ -595,6 +595,49 @@ impl Walk<'_, '_> {
             })
             .collect()
     }
+
+    /// The quests running now.
+    pub fn active_quests(&self) -> &BTreeSet<String> {
+        &self.st.active
+    }
+
+    /// What a right-click on each NPC can put in front of the player now: every
+    /// node the live scene opens or the drawn options lead to, and every option
+    /// drawn on those nodes. `casts` is [`crate::compiler::cast::npc_casts`] of the
+    /// same campaign, resolved once by the caller.
+    pub fn dialogue_on_screen(
+        &self,
+        casts: &BTreeMap<String, crate::compiler::cast::NpcCast>,
+    ) -> DialogueOnScreen {
+        self.flow.dialogue_on_screen(casts, &self.st, None)
+    }
+
+    /// [`Self::dialogue_on_screen`] just after `step` was taken by its dialogue
+    /// option: the option's `next` node is shown at the state its own effects
+    /// produced, so what that node draws counts too — a button the click itself
+    /// made pending is on screen at once, even where no right-click reaches the
+    /// node any more.
+    pub fn dialogue_on_screen_after(
+        &self,
+        casts: &BTreeMap<String, crate::compiler::cast::NpcCast>,
+        step: &PathStep,
+    ) -> DialogueOnScreen {
+        let opened = self.flow.talk_next(step);
+        self.flow.dialogue_on_screen(
+            casts,
+            &self.st,
+            opened.as_ref().map(|(n, d)| (n.as_str(), d.as_str())),
+        )
+    }
+}
+
+/// The dialogue a player can read at one walk state ([`Walk::dialogue_on_screen`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DialogueOnScreen {
+    /// `(npc, node id)` of every node whose text a right-click can bring up.
+    pub nodes: BTreeSet<(String, String)>,
+    /// `(npc, node id, option index within the node)` of every option drawn.
+    pub options: BTreeSet<(String, String, usize)>,
 }
 
 /// Why a playthrough's step sequence is not a legal playthrough.
@@ -1783,6 +1826,120 @@ impl<'a> Flow<'a> {
             }
         }
         seen
+    }
+
+    /// The `(npc, node)` the dialogue option that takes `step` opens next, when
+    /// the step is a `talk-to` taken by an option with a `next`.
+    fn talk_next(&self, step: &PathStep) -> Option<(String, String)> {
+        let n = step.talk_option?;
+        let npc = match self.objective(&step.objective) {
+            Some(Objective::TalkTo { npc, .. }) => npc.as_str(),
+            _ => return None,
+        };
+        let t = self.trees.iter().find(|t| t.npc == npc)?;
+        let next = t.options.iter().find(|o| o.n == n)?.next.clone()?;
+        Some((npc.to_string(), next))
+    }
+
+    /// Whether the emitted dialog draws option `o` in state `st` — the model of
+    /// `emit::dialogue::option_display_conditions`: every flag it requires set,
+    /// none it forbids set, and every objective it completes pending under the
+    /// objective's whole guard (`emit::quest::pending_guard`, spec-0093 §6.3):
+    /// its quest running, every `after` complete, its gate's flags holding, and
+    /// not yet done. A numeric term is read as open, so the model never hides an
+    /// option the datapack might draw.
+    fn option_drawn(&self, o: &OptModel, st: &ReplayState) -> bool {
+        o.requires.iter().all(|f| st.flags.contains(f))
+            && !o.forbids.iter().any(|f| st.flags.contains(f))
+            && o.completes.iter().all(|obj| {
+                !st.done_obj.contains(obj)
+                    && self
+                        .objective_quest(obj)
+                        .is_some_and(|q| st.active.contains(q))
+                    && self.objective(obj).is_none_or(|ob| {
+                        ob.after().iter().all(|a| st.done_obj.contains(a.as_str()))
+                            && ob
+                                .requires_flags()
+                                .iter()
+                                .all(|f| st.flags.contains(f.as_str()))
+                            && !ob
+                                .forbids_flags()
+                                .iter()
+                                .any(|f| st.flags.contains(f.as_str()))
+                    })
+            })
+    }
+
+    /// [`Walk::dialogue_on_screen`] at state `st`: per NPC, the live scene root
+    /// ([`Self::scene_root`]), every node reachable from it through drawn
+    /// options, and the options drawn on those nodes.
+    fn dialogue_on_screen(
+        &self,
+        casts: &BTreeMap<String, crate::compiler::cast::NpcCast>,
+        st: &ReplayState,
+        opened: Option<(&str, &str)>,
+    ) -> DialogueOnScreen {
+        let mut out = DialogueOnScreen::default();
+        for t in &self.trees {
+            let drawn = |o: &OptModel| self.option_drawn(o, st);
+            let mut reach = match self.scene_root(casts, &t.npc, t, st) {
+                Some(root) => reachable_from(t, &root, &drawn),
+                None => BTreeSet::new(),
+            };
+            if let Some((npc, node)) = opened
+                && npc == t.npc
+            {
+                reach.extend(reachable_from(t, node, &drawn));
+            }
+            let mut within: BTreeMap<usize, usize> = BTreeMap::new();
+            for o in &t.options {
+                let i = within.entry(o.node).or_insert(0);
+                let at = *i;
+                *i += 1;
+                if reach.contains(&o.node) && drawn(o) {
+                    out.options
+                        .insert((t.npc.clone(), t.node_ids[o.node].clone(), at));
+                }
+            }
+            for ni in reach {
+                out.nodes.insert((t.npc.clone(), t.node_ids[ni].clone()));
+            }
+        }
+        out
+    }
+
+    /// The dialogue node an NPC's right-click opens in state `st`: the last cast
+    /// clause whose quest has begun and whose branch gate holds wins (the emitter's
+    /// `dw.cast` dispatch), falling back to the stage-6 root when no clause
+    /// governs. `None` when the governing scene is a bark pool or silence — a body
+    /// with no options to press.
+    fn scene_root(
+        &self,
+        casts: &BTreeMap<String, crate::compiler::cast::NpcCast>,
+        npc: &str,
+        t: &TreeModel,
+        st: &ReplayState,
+    ) -> Option<String> {
+        let Some(cast) = casts.get(npc) else {
+            return Some(t.root.clone());
+        };
+        let mut scene: Option<u32> = None;
+        for cl in &cast.by_quest {
+            if !st.active.contains(&cl.quest)
+                || !cl.requires_flags.iter().all(|f| st.flags.contains(f))
+                || cl.forbids_flags.iter().any(|f| st.flags.contains(f))
+            {
+                continue;
+            }
+            scene = Some(cl.scene);
+        }
+        match scene {
+            None => Some(t.root.clone()),
+            Some(i) => match cast.scenes.iter().find(|s| s.index == i).map(|s| &s.action) {
+                Some(crate::compiler::cast::SceneAction::Root(r)) => Some(r.clone()),
+                _ => None,
+            },
+        }
     }
 
     /// The position of quest `id` in the quests document — the index its JSON

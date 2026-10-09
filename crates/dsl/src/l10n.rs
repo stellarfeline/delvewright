@@ -1066,6 +1066,20 @@ pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
     out
 }
 
+/// Every effect emission can lower, top-level and nested, as `(stage, JSON
+/// pointer, l10n key base)` in the fixed inventory order: the pointer is what
+/// the replay records as fired (`flow::JournalStep::fired`), and the key base is
+/// what the effect's own strings are keyed under (`<keybase>.narrate`,
+/// `<keybase>.give`, …). The pairing [`each_string`] keys by, exposed so a play
+/// order can place an effect's strings at the step that fires it.
+pub fn effect_string_sites(c: &Campaign) -> Vec<(&'static str, String, String)> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |stage, path, keybase, _eff| {
+        out.push((stage, path.to_string(), keybase.to_string()));
+    });
+    out
+}
+
 /// Every **authored** bonfire rest-dialog label (spec-0016 §1), in the same
 /// fixed effect order the inventory uses. A bonfire's
 /// two options are drawn on exactly the same 150-GUI-px `multi_action` button a
@@ -1407,7 +1421,7 @@ pub fn pack_texture_id(campaign_id: &str, texture_id: &str) -> String {
 ///
 /// **The creator's key space does not move.** `texture_id` is what a creator
 /// writes in `npcs.json`/`quests.json` and names `skins/<texture_id>.png` after,
-/// and `DW0190` (malformed or duplicate id) and `DW0309` (missing PNG) both read it
+/// and `DW0190` (malformed id) and `DW0309` (missing PNG) both read it
 /// as authored — every one of them runs on the campaign *before* this rewrite, and
 /// `validate`/`analyze`, which never emit, never reach it at all.
 ///
@@ -1441,8 +1455,12 @@ pub fn untag(s: &str) -> Option<(&str, &str)> {
 /// `critical-path.json`, the generated PackTest sources. Each such site is a named
 /// exclusion in `docs/reference/compiler.md`: it is not a text component, so it
 /// cannot carry a translate key, and it is not read by a player.
-pub fn plain(s: &str) -> &str {
-    untag(s).map(|(_, e)| e).unwrap_or(s)
+///
+/// It is the **visible** text: a styled span (spec-0096) reads as its own text,
+/// with the markup dropped ([`crate::textstyle::visible`]), because none of these
+/// readers draws a style.
+pub fn plain(s: &str) -> std::borrow::Cow<'_, str> {
+    crate::textstyle::visible(untag(s).map(|(_, e)| e).unwrap_or(s))
 }
 
 /// Whether `s` contains any reserved private-use character — i.e. whether it is,

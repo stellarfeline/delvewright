@@ -106,9 +106,12 @@ fn glyph_for(ch: char) -> Option<&'static [&'static str; 7]> {
     ART_GLYPHS.iter().find(|(c, _)| *c == up).map(|(_, g)| g)
 }
 
-/// The first character of `text` the art font cannot render, if any.
+/// The first character of `text` the art font cannot render, if any. A styled
+/// span (spec-0096) is read as the text it draws: its markup is never rendered.
 fn first_uncovered(text: &str) -> Option<char> {
-    text.chars().find(|&ch| !covers(ch))
+    delvewright_dsl::textstyle::visible(text)
+        .chars()
+        .find(|&ch| !covers(ch))
 }
 
 /// Validate that every art-styled `narrate` string — the English source and every
@@ -388,6 +391,16 @@ const ART_GLYPHS: &[(char, [&str; 7])] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// spec-0096 §3.4: a styled art title is judged by the glyphs it draws. The
+    /// markup's brackets are not art glyphs, and are not flagged; a character
+    /// the font lacks inside a span still is.
+    #[test]
+    fn a_styled_art_title_is_judged_by_what_it_draws() {
+        assert!(!covers('['));
+        assert_eq!(first_uncovered("THE [[obfuscated|HALL]]"), None);
+        assert_eq!(first_uncovered("THE [[obfuscated|HALL@]]"), Some('@'));
+    }
 
     /// i18n v2 (spec-0029): the art font must render **lowercase** input, because
     /// `emit_narrate` no longer case-folds an art string on its way into the title

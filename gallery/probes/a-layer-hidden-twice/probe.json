@@ -1,0 +1,16 @@
+{
+  "code": "DW0980",
+  "patch": [
+    {
+      "doc": "npcs.json",
+      "op": "replace",
+      "path": "/content/npcs/0/skin/hidden_layers",
+      "value": [
+        "cape",
+        "cape"
+      ]
+    }
+  ],
+  "units": [],
+  "why": "This edit has the Curator hide `cape` twice. `hidden_layers` is the set of overlay layers a mannequin does not draw; a repeat says nothing one entry does not, so it is a mistake and is refused where it is written."
+}

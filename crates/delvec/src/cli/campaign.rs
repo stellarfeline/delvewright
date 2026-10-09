@@ -270,6 +270,15 @@ pub(super) fn validate_loaded(
             // could impersonate the key the compiler threads into a text
             // component — and has no glyph in any Minecraft font anyway.
             diags.extend(delvewright_dsl::validate_tr_sigil(&campaign, &sidecars));
+            // spec-0096: inline style markup in every player-facing line — the
+            // English and every sidecar row parse (DW0975), and a translation
+            // carries exactly the English's styled spans (DW0976).
+            diags.extend(delvewright_dsl::textstyle::validate_inline_styles(
+                &campaign, &sidecars,
+            ));
+            examined.push(
+                delvewright_dsl::textstyle::InlineStyleBinding::of(&campaign, &sidecars).line(),
+            );
             // The compiler's own chrome namespace is reserved as well (DW0186):
             // `delvewright.*` keys are the engine's on-screen strings, shipped
             // translated with the compiler, and a sidecar row under that prefix
@@ -305,6 +314,22 @@ pub(super) fn validate_loaded(
                 campaign.world.content.textures.len(),
                 delvec::compiler::textures::census().textures.len()
             ));
+            // spec-0097: every sheet a model's boxes can judge — the mannequin
+            // skins the bodies wear, and the texture rows an entity model is
+            // drawn with — and the one line saying how many were judged.
+            let mut sheets = delvec::compiler::skinparts::Binding::default();
+            diags.extend(delvec::compiler::skinparts::check_skins(
+                &campaign,
+                &loaded.skins,
+                &mut sheets,
+            ));
+            delvec::compiler::skinparts::count_texture_rows(
+                &campaign,
+                &texture_rows,
+                &texture_diags,
+                &mut sheets,
+            );
+            examined.push(sheets.line());
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
             // (DW0326), the unsupported `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source
@@ -333,6 +358,19 @@ pub(super) fn validate_loaded(
             diags.extend(delvec::compiler::textfit::check_option_labels(
                 &campaign, &sidecars,
             ));
+            // A dialogue option that asks a question leads to a line that can
+            // answer it (DW0981), in the English source and every declared
+            // sidecar. A document fact, refused where the option is written.
+            diags.extend(delvec::compiler::telling::check_questions(
+                &campaign, &sidecars,
+            ));
+            // A name tag marks a person: a name a crowd wears is refused on
+            // every body that wears it (DW0983), with what it examined.
+            {
+                let (td, tbind) = delvec::compiler::telling::check_name_tags(&campaign);
+                examined.push(tbind.line());
+                diags.extend(td);
+            }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.
@@ -472,6 +510,16 @@ pub(super) fn validate_loaded(
                 let (sd, sbind) = delvec::compiler::statepath::check(&campaign);
                 examined.push(sbind.line());
                 diags.extend(sd);
+            }
+            // DW0982: a declared name reaches a dialogue line or option only
+            // after the play order has told the player what it is
+            // (game-writing.md §3 N1/N3). The same walk the replay proves, bound
+            // here beside `statepath` for the same reason: every subcommand's
+            // validation goes through this funnel.
+            {
+                let (nd, nbind) = delvec::compiler::telling::check_names_told_bound(&campaign);
+                examined.push(nbind.line());
+                diags.extend(nd);
             }
             // **`DW0890`: the approved hour is the built hour** (spec-0061).
             // Refused here rather than at the build, on `DW0855`'s precedent

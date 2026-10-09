@@ -115,6 +115,7 @@ pub(super) fn marker_name_fields(title: Option<&str>) -> String {
 pub(super) fn snbt_text_component(s: &str) -> String {
     match delvewright_dsl::l10n::untag(s) {
         Some((key, english)) => snbt_translate(key, english),
+        None if delvewright_dsl::textstyle::lower(s).is_some() => snbt_of(&tr(s)),
         None => format!("{{text:{}}}", snbt_string(s)),
     }
 }
@@ -129,23 +130,114 @@ pub(super) fn snbt_text_component(s: &str) -> String {
 /// `en_us.json` deliberately: a player who **declines** the resource-pack prompt
 /// has no lang files at all, and the delve must still be playable in English
 /// (spec-0029 §3).
+///
+/// **A styled line** (spec-0096) — one whose text carries `[[<styles>|<text>]]`
+/// spans — lowers to the same `translate` component with the spans as its `with`
+/// arguments ([`styled_translate`]); a line with no span emits exactly what it
+/// did before the surface existed. This function and the two SNBT forms below
+/// are the only paths an authored string reaches the tree by (`DW0185`), so the
+/// style surface is every player-facing string's, not one text class's.
 pub(super) fn tr(s: &str) -> Value {
     match delvewright_dsl::l10n::untag(s) {
-        Some((key, english)) => json!({ "translate": key, "fallback": english }),
-        None => json!({ "text": s }),
+        Some((key, english)) => styled_translate(key, english)
+            .unwrap_or_else(|| json!({ "translate": key, "fallback": english })),
+        None => match delvewright_dsl::textstyle::parse(s) {
+            // A compiler literal never carries a span today; if one ever does it
+            // is drawn styled rather than as raw brackets.
+            Ok(segs)
+                if segs
+                    .iter()
+                    .any(|g| matches!(g, delvewright_dsl::textstyle::Segment::Span(..))) =>
+            {
+                let extra: Vec<Value> = segs
+                    .iter()
+                    .map(|g| match g {
+                        delvewright_dsl::textstyle::Segment::Text(t) => json!({ "text": t }),
+                        delvewright_dsl::textstyle::Segment::Span(st, t) => {
+                            let mut v = json!({ "text": t });
+                            let o = v.as_object_mut().expect("an object");
+                            for (k, val) in st.fields() {
+                                o.insert(k.to_string(), val);
+                            }
+                            v
+                        }
+                    })
+                    .collect();
+                json!({ "text": "", "extra": extra })
+            }
+            _ => json!({ "text": s }),
+        },
     }
+}
+
+/// The `translate` component of a tagged line whose text carries styled spans
+/// (spec-0096 §3.3), or `None` for a line with none:
+/// `{"translate": key, "fallback": <format>, "with": [<span>…]}`, each span
+/// `{"translate": "<key>.span.<i>", "fallback": <text>, <style>…}`. The format
+/// and the span texts are [`delvewright_dsl::textstyle::lower`]'s — the same rule
+/// the language files are written by (`emit::server::lang_assets`), so a
+/// component and the file that answers it cannot disagree.
+pub(super) fn styled_translate(key: &str, text: &str) -> Option<Value> {
+    let l = delvewright_dsl::textstyle::lower(text)?;
+    let with: Vec<Value> = l
+        .spans
+        .iter()
+        .enumerate()
+        .map(|(i, (style, t))| {
+            let mut v = json!({
+                "translate": delvewright_dsl::textstyle::span_key(key, i),
+                "fallback": t,
+            });
+            let o = v.as_object_mut().expect("an object");
+            for (k, val) in style.fields() {
+                o.insert(k.to_string(), val);
+            }
+            v
+        })
+        .collect();
+    Some(json!({ "translate": key, "fallback": l.format, "with": with }))
 }
 
 /// [`tr`] with extra component fields (`color`, `bold`, `italic`, `font`, …)
 /// merged in. Styling is orthogonal to whether the body is a literal or a
-/// translate key, so every styled site keeps its styling verbatim.
+/// translate key, so every styled site keeps its styling verbatim. A styled
+/// span sits inside the line and inherits these fields, overriding the keys it
+/// names itself.
 pub(super) fn tr_with(s: &str, fields: &[(&str, Value)]) -> Value {
     let mut v = tr(s);
     let obj = v.as_object_mut().expect("tr() builds an object");
     for (k, val) in fields {
+        // A caller's `with` (chrome's `%s` arguments) and a styled line's spans
+        // cannot share one array. Chrome strings are compiler-authored and carry
+        // no span, so this is a compiler defect if it ever fires.
+        assert!(
+            !(*k == "with" && obj.contains_key("with")),
+            "a styled line was passed `with` arguments: {s:?}"
+        );
         obj.insert((*k).to_string(), val.clone());
     }
     v
+}
+
+/// The SNBT spelling of a JSON text component: a compound with unquoted keys in
+/// the same (alphabetical) order, strings through [`snbt_string`], booleans as
+/// `true`/`false`, lists as lists. Used for a styled component living in an NBT
+/// field ([`snbt_component`]), where the stringified-JSON form would render
+/// verbatim.
+pub(super) fn snbt_of(v: &Value) -> String {
+    match v {
+        Value::Object(o) => format!(
+            "{{{}}}",
+            o.iter()
+                .map(|(k, v)| format!("{k}:{}", snbt_of(v)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Value::Array(a) => format!("[{}]", a.iter().map(snbt_of).collect::<Vec<_>>().join(",")),
+        Value::String(s) => snbt_string(s),
+        Value::Bool(b) => b.to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// The **SNBT** form of [`tr`], for a text component living in an NBT field
@@ -159,6 +251,7 @@ pub(crate) fn snbt_component(s: &str) -> String {
         // An untagged string keeps the bare quoted-string component form 1.21.11
         // already read it as, so a compiler-baked name stays byte-for-byte what it
         // was before spec-0029.
+        None if delvewright_dsl::textstyle::lower(s).is_some() => snbt_of(&tr(s)),
         None => snbt_string(s),
     }
 }
@@ -167,6 +260,9 @@ pub(crate) fn snbt_component(s: &str) -> String {
 /// Field order is alphabetical, matching the JSON components' `BTreeMap` order so
 /// the two forms read the same in a diff.
 pub(super) fn snbt_translate(key: &str, english: &str) -> String {
+    if let Some(styled) = styled_translate(key, english) {
+        return snbt_of(&styled);
+    }
     format!(
         "{{fallback:{},translate:{}}}",
         snbt_string(english),
@@ -177,7 +273,7 @@ pub(super) fn snbt_translate(key: &str, english: &str) -> String {
 /// The human string behind an authored value, for the **named exclusions**: sites
 /// that are not text components and are not read by a player. Re-exported here so
 /// every exclusion in `emit` is greppable as `plain(`.
-pub(super) fn plain(s: &str) -> &str {
+pub(super) fn plain(s: &str) -> std::borrow::Cow<'_, str> {
     delvewright_dsl::l10n::plain(s)
 }
 
@@ -186,7 +282,7 @@ pub(super) fn plain(s: &str) -> &str {
 /// not text components and no client ever renders them, so they carry the English
 /// source string rather than a translate key — a named exclusion, listed as such
 /// in `docs/reference/compiler.md`.
-pub(super) fn artifact_title(c: &delvewright_dsl::Campaign) -> &str {
+pub(super) fn artifact_title(c: &delvewright_dsl::Campaign) -> std::borrow::Cow<'_, str> {
     plain(&c.world.content.title)
 }
 
