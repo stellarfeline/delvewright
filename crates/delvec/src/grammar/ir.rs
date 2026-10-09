@@ -983,7 +983,7 @@ pub struct Way {
 ///
 /// Each class carries exactly the fields it means, so a `bar` on a walk or a
 /// `rise` on a sightline is not a thing an author can write and a check has to
-/// catch afterwards. The same holds for `way`: it is a field of the three
+/// catch afterwards. The same holds for `way`: it is a field of the four
 /// traversal classes, so a way on a sightline (which claims no traversal to be
 /// contingent about) and a way on a `barred` edge (which already declares one,
 /// spelled `bar`) are both unwritable rather than caught afterwards.
@@ -1010,6 +1010,22 @@ pub enum EdgeClass {
         /// end, which is why it is not optional here.
         via: String,
         /// The contingency, when this climb is severed as built.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        way: Option<Way>,
+    },
+    /// A climb on a ladder or a vine (spec-0099), over a transit volume of its
+    /// own: a body holds on and climbs, both ways. What makes a two-level
+    /// interior two spaces and a way between them when the way is a ladder
+    /// rather than a flight of treads.
+    Climb {
+        /// Declared level change.
+        rise: i64,
+        /// The climb volume — the climbable cells and the hole they rise
+        /// through belong to the edge, not to either end, which is why it is
+        /// not optional here.
+        via: String,
+        /// The contingency, when this climb is severed as built — a ladder
+        /// content hangs later.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         way: Option<Way>,
     },
@@ -1049,6 +1065,7 @@ impl EdgeClass {
         match self {
             EdgeClass::Walk { .. } => "walk",
             EdgeClass::Stair { .. } => "stair",
+            EdgeClass::Climb { .. } => "climb",
             EdgeClass::Drop { .. } => "drop",
             EdgeClass::Barred { .. } => "barred",
             EdgeClass::Vision { .. } => "vision",
@@ -1060,6 +1077,7 @@ impl EdgeClass {
         match self {
             EdgeClass::Walk { rise, .. }
             | EdgeClass::Stair { rise, .. }
+            | EdgeClass::Climb { rise, .. }
             | EdgeClass::Drop { rise, .. }
             | EdgeClass::Barred { rise, .. } => Some(*rise),
             EdgeClass::Vision { .. } => None,
@@ -1072,7 +1090,9 @@ impl EdgeClass {
             EdgeClass::Walk { via, .. }
             | EdgeClass::Drop { via, .. }
             | EdgeClass::Barred { via, .. } => via.as_deref(),
-            EdgeClass::Stair { via, .. } | EdgeClass::Vision { via } => Some(via),
+            EdgeClass::Stair { via, .. }
+            | EdgeClass::Climb { via, .. }
+            | EdgeClass::Vision { via } => Some(via),
         }
     }
 
@@ -1084,7 +1104,7 @@ impl EdgeClass {
         }
     }
 
-    /// The declared contingency, on the three classes that can carry one.
+    /// The declared contingency, on the four classes that can carry one.
     ///
     /// `barred`'s bar is deliberately NOT reported here: it is the same
     /// mechanism, but it is a different *declaration*, and the place the two
@@ -1095,6 +1115,7 @@ impl EdgeClass {
         match self {
             EdgeClass::Walk { way, .. }
             | EdgeClass::Stair { way, .. }
+            | EdgeClass::Climb { way, .. }
             | EdgeClass::Drop { way, .. } => way.as_ref(),
             EdgeClass::Barred { .. } | EdgeClass::Vision { .. } => None,
         }

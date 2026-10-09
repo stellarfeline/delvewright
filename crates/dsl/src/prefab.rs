@@ -416,7 +416,7 @@ pub fn check_footprint_class(
 pub struct ContractFace {
     /// The space the way in or out belongs to.
     pub space: String,
-    /// The edge's class: `walk` | `stair` | `drop` | `barred` | `vision`.
+    /// The edge's class: `walk` | `stair` | `climb` | `drop` | `barred` | `vision`.
     pub class: String,
     /// Which side of the piece: `east` | `west` | `up` | `down` | `south` |
     /// `north`.
@@ -453,7 +453,7 @@ pub struct ContractEdge {
     pub a: String,
     /// A declared space name, or `exterior`.
     pub b: String,
-    /// `walk` | `stair` | `drop` | `barred` | `vision`.
+    /// `walk` | `stair` | `climb` | `drop` | `barred` | `vision`.
     pub class: String,
     /// The declared level change, on the classes that carry one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

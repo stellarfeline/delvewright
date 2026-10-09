@@ -974,6 +974,18 @@ what a criterion asserts says so in the word *loosening*.
     reached place with nowhere to stand is still refused. Shown in
     `grammar_contract_check.rs`
     `a_sealed_scenery_piece_states_its_zero_standable_cells`.
+33. **A climb inside one place is a contract edge.** A space is one floor, so
+    a two-level interior — a treehouse's two decks, a lookout over a road — is
+    two spaces, and the way between them when it is a ladder is a `climb`
+    edge of the piece's spatial contract: `rise` and a `via` (the climbable
+    cells and the hole they rise through) required, an optional `way`, proved
+    connected both ways through the cells of its volume a body holds on in,
+    over the body's own walk and climb moves (spec-0099) built from the
+    piece's blocks; the reachability walk crosses it the same way. The gallery
+    binds it: the open point's causeway carries a lookout gallery on a stone
+    stand, reached by a ladder. Shown in `grammar_contract_check.rs`
+    `a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways` and
+    `a_climb_without_its_volume_or_its_rise_is_refused`.
 
 | Criterion | Demonstrated in |
 |---|---|
