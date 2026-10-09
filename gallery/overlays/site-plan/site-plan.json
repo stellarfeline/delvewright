@@ -216,9 +216,10 @@
         "opening": "door"
       },
       {
+        "at": 9,
         "edge": "edge/centre-door",
         "face": "south",
-        "meets": 7,
+        "meets": 9,
         "opening": "door"
       },
       {
