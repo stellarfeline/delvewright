@@ -232,7 +232,7 @@
     "site-plan.en:datapack/data/gallery/structure/gallery-undercroft.nbt",
     "site-plan.en:validation/blockout.json"
   ],
-  "base_commit": "d44b3a5d4d826322e81ff6d44e09298a7eed4bf8",
+  "base_commit": "fb62d18088838c0e31be6e0d0e88e003a1ed8870",
   "changed": [
     "carcass.en:creator-datapack/layout.json",
     "carcass.en:critical-path.json",
