@@ -981,7 +981,10 @@ what a criterion asserts says so in the word *loosening*.
     cells and the hole they rise through) required, an optional `way`, proved
     connected both ways through the cells of its volume a body holds on in,
     over the body's own walk and climb moves (spec-0099) built from the
-    piece's blocks; the reachability walk crosses it the same way. The gallery
+    piece's blocks; the reachability walk crosses it the same way. It is
+    program document version `1.10.0`'s surface, refused below it where
+    written (`grammar_contract.rs`
+    `a_climb_is_refused_below_its_version_and_the_same_edge_as_a_stair_is_not`). The gallery
     binds it: the open point's causeway carries a lookout gallery on a stone
     stand, reached by a ladder. Shown in `grammar_contract_check.rs`
     `a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways` and

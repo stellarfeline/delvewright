@@ -176,6 +176,7 @@ source is `crates/delvec/src/grammar/version.rs` (`SUPPORTED_PROGRAM_VERSIONS`,
 | `1.7.0` | the contingent edge — `way` on a `walk`, `stair` or `drop`: the traversal is severed as built, and content opens it | yes |
 | `1.8.0` | what a mark is FOR — `role` on a `mark`, written through to the exported anchor's metadata | yes |
 | `1.9.0` | which of the building's own sides are finished exterior surface — the program-level `shown_faces`, written through to the exported prefab's `shown_faces` (`DW0885`) | yes |
+| `1.10.0` | a climb inside one piece — the `climb` class of a contract edge, a way a body climbs on a ladder or a vine between two spaces | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -944,7 +945,7 @@ on a sightline is not writable in the first place:
 |---|---|
 | `walk` | `rise` (default 0), optional `via`, optional `way` |
 | `stair` | `rise`, **required** `via` — the treads belong to the edge, not to either end — optional `way` |
-| `climb` | `rise`, **required** `via` — the ladder or vine and the hole it rises through belong to the edge — optional `way`; both ways. A two-level interior is two spaces (a space is one floor) and a `climb` between them |
+| `climb` (`1.10.0`) | `rise`, **required** `via` — the ladder or vine and the hole it rises through belong to the edge — optional `way`; both ways. A two-level interior is two spaces (a space is one floor) and a `climb` between them |
 | `drop` | `rise`, optional `via`, optional `way`; directed `a` → `b` |
 | `barred` | `rise` (default 0), **required** `bar` (`{region, block}`), optional `via` |
 | `vision` | **required** `via`; no traversal claim, so no rise |

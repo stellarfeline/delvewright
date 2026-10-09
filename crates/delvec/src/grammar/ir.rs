@@ -25,10 +25,10 @@ use crate::grammar::block::BlockState;
 use crate::grammar::export::AnchorRole;
 use crate::grammar::geom::{Axis, Mirror, Orientation};
 use crate::grammar::version::{
-    ANCHOR_ROLE_SINCE, BIND_SINCE, CONTRACT_SINCE, INCLUDE_SINCE, LATEST_PROGRAM_VERSION,
-    LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE, has_anchor_role, has_bind,
-    has_contract, has_include, has_local_frame, has_mirror, has_shown_faces, has_way,
-    is_supported_version,
+    ANCHOR_ROLE_SINCE, BIND_SINCE, CLIMB_SINCE, CONTRACT_SINCE, INCLUDE_SINCE,
+    LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE,
+    has_anchor_role, has_bind, has_climb, has_contract, has_include, has_local_frame, has_mirror,
+    has_shown_faces, has_way, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -2248,6 +2248,24 @@ impl Program {
                     "the contract's edge {:?}->{:?} (way region {:?})",
                     edge.a, edge.b, way.region
                 ),
+            });
+        }
+
+        // **The `climb` fence.** A new class is refused by name at serde by an
+        // engine that predates it; the fence keeps the declared number honest
+        // in the other direction — a document declaring an earlier version and
+        // writing a climb claims a compatibility it does not have.
+        if let Some(edge) = contract
+            .edges
+            .iter()
+            .find(|e| matches!(e.class, EdgeClass::Climb { .. }))
+            .filter(|_| !has_climb(&self.version))
+        {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a `climb` contract edge",
+                since: CLIMB_SINCE,
+                declared: self.version.clone(),
+                written_by: format!("the contract's edge {:?}->{:?}", edge.a, edge.b),
             });
         }
 

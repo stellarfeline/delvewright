@@ -1553,3 +1553,48 @@ fn a_laid_way_exports_the_sign_and_the_block_it_will_be_filled_with() {
         other => panic!("the undeclared twin must be refused, got {other:?}"),
     }
 }
+
+/// **The `climb` fence, both directions.** `climb` is `1.10.0`'s surface. The
+/// gallery causeway's program — a lookout reached by a ladder, declared as a
+/// `climb` edge — validates at the version it declares and is refused by the
+/// FENCE, naming the edge and the version, when it declares `1.9.0`. The same
+/// program with that edge spelled as a `stair` validates at `1.9.0`: the fence
+/// refuses the class and nothing else.
+#[test]
+fn a_climb_is_refused_below_its_version_and_the_same_edge_as_a_stair_is_not() {
+    use delvec::grammar::version::CLIMB_SINCE;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../gallery/overlays/site-plan/programs/causeway.json");
+    let program: Program =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).expect("the program parses");
+    assert_eq!(
+        program.version, CLIMB_SINCE,
+        "the causeway declares the climb's version"
+    );
+    assert!(program.validate().is_ok(), "{:?}", program.validate());
+    match program.clone().at_version("1.9.0").validate() {
+        Err(ProgramError::FencedConstruct {
+            construct,
+            since,
+            declared,
+            written_by,
+        }) => {
+            assert!(construct.contains("climb"), "{construct}");
+            assert_eq!(since, "1.10.0");
+            assert_eq!(declared, "1.9.0");
+            assert!(written_by.contains("lookout"), "{written_by}");
+        }
+        other => panic!("expected a fenced-construct refusal, got {other:?}"),
+    }
+    let mut without = program.at_version("1.9.0");
+    for edge in &mut without.contract.as_mut().expect("a contract").edges {
+        if let EdgeClass::Climb { rise, via, way } = &edge.class {
+            edge.class = EdgeClass::Stair {
+                rise: *rise,
+                via: via.clone(),
+                way: way.clone(),
+            };
+        }
+    }
+    assert!(without.validate().is_ok(), "{:?}", without.validate());
+}
