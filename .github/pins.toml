@@ -553,6 +553,7 @@ id = "action-upload-artifact"
 value = "actions/upload-artifact@v4"
 sites = [
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
 ]
 policy = "floating"
@@ -565,6 +566,7 @@ sites = [
     ".github/actions/delvec-binary/action.yml",
     ".github/actions/gallery-pieces/action.yml",
     ".github/workflows/ci.yml",
+    ".github/workflows/dsl-crate-publish.yml",
     ".github/workflows/engine-release.yml",
 ]
 policy = "floating"
