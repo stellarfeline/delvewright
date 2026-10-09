@@ -16,22 +16,34 @@
   pair). Nothing here revisits spec-0049's stage 5: the blockout stays derived
   and authored by no one.
 - **DSL**: `dsl_version` **0.38.0**. The site plan's `boxes[]` gain `roof`.
-- **Diagnostics**: **DW0987**, **DW0988** and **DW0989**, all used below.
+- **Diagnostics**: **DW0987**, **DW0988** and **DW0989**, all used below;
+  `DW0827`'s quantifier widens from play spaces to claims (§2 rule 3d).
 - **Research**: rooflines and facades at Minecraft scale are researched, not
   invented — `docs/reference/roof-and-facade-craft.md` carries the record with
   every rule marked cited or authored. This spec consumes two of its findings
   (§3) and invents none.
+- **The ruling this executes**: a wall exists only where something declares
+  one; a site-plan box bounds where a design may draw; the engine never writes
+  a wall, a fill or any block nothing declared — it only checks. Where this
+  spec's first form let the engine keep a wall between two unconnected places,
+  that is gone (§2 rule 3d).
 - **Non-goals**: retiring `areas[]`; the per-piece drawing medium (ADR-0030's
   question, §9); detailing a whole-owned volume (§10); jigsaw connectors.
 
 ## 1. The principle, in one sentence
 
-**A place owns everything a body can see of it from outside, and the whole owns
-only what two places would otherwise both write.** The frame a piece fills is
-therefore the place's **shell** — its floor course, its play space, the one-cell
-ring its walls stand in, and, for a roofed place, its ceiling course and the
+**A wall exists only where a design declares one; the engine never writes a
+wall, a fill or any block that nothing declared — it only checks.** A site-plan
+box is a region that bounds where a design may draw, not a box wrapped in walls.
+So a place owns everything a body can see of it from outside — the frame a
+piece fills is the place's **claim**: its floor course, its play space, the
+one-cell ring its walls *may* stand in, and, for a roofed place, its lid and the
 roof zone the plan declares above it — minus the cells the ownership rule (§2)
-awards elsewhere.
+awards to a neighbour. Nothing in the final world is the engine's: what a piece
+does not draw inside its claim is air; what no place claims holds the ground or
+terrain the plan's `volumes[]` declare there, else air; and a cell two places
+would both draw with no rule to award it is a plan refusal, never an engine
+arbitration and never an engine wall.
 
 Everything spec-0050 bought is kept: the frame is still computed from the site
 plan inside `Plan::build` and authored by no one; the piece must still be
@@ -76,11 +88,17 @@ below calls it:
       designer put first on it draws the line where they meet: the kerb, the
       hedge, the doorway's reveal, with the allocated crossing left open
       (`DW0836`, `DW0877`) and nothing else (`DW0838`);
-   d. else it is the **whole's** — two places that stand side by side with no
-      connection, or whose connections disagree about which comes first, meet
-      at a wall neither designed, and the whole's massing is the honest
-      statement that nothing crosses there.
-4. A cell no claim covers is the whole's.
+   d. else the plan is **refused** (`DW0827`, whose claim this already is:
+      *two owners for one block, and no rule to pick by*): two places standing
+      exactly one cell apart with no connection between them, or whose
+      connections disagree about which comes first, have both asked to draw
+      the same wall. The remedy is the plan's — give them a connection (whose
+      `a` draws the wall), stand them two or more cells apart (each then owns
+      its own ring and the gap between is ground), or make them one place.
+4. A cell no claim covers is **nobody's**: it holds whatever the plan's
+   `volumes[]` declare there — a `ground` or `massif` fill, a `clearance` kept
+   empty — and otherwise air. The gap between two houses is ground and sky,
+   never a wall and never massing.
 
 **The frame** of a place is the bounding box of the cells it owns. Its piece is
 exactly that size (`DW0843`, unchanged). Cells inside the frame the place does
@@ -91,26 +109,37 @@ does not place is a cell the whole's block shows through, which is vanilla's
 own semantics for `structure_void`, and the assembled-world model reads it the
 same way (§7).
 
-**The whole writes** exactly what it wrote at stage 5, everywhere outside the
-cells bound pieces own — `Mass::holes` is now the owned-cell set of every bound
-place rather than its frame. A party wall between two bound buildings, a seam
-opening cut in such a wall, its frame ring and its bar, are written by the
-whole as before; a seam opening in a wall the piece owns is the piece's to cut,
-and the piece ships a `barred` seam's shut state there, which is spec-0050 §3's
-floor-course row generalised to every plane the piece owns.
+**Every seam lies in a plane some place owns**, because rule 3 awards every
+contested plane or refuses the plan. So every seam opening is the owning
+piece's to cut, and a `barred` seam's shut state is the owning piece's to ship —
+spec-0050 §3's floor-course row generalised to every plane. The gate region
+`anchor/seam-<edge>` is therefore **owed** by the place that owns the plane
+(spec-0050 §6's exception becomes the rule): its `anchors` binds it to a gate
+anchor of the piece whose region is exactly the allocated cells and whose
+declared `block` is what the campaign's `close-gate` writes back — the piece's
+own bar, never the derivation's constant. The derivation writes no opening, no
+frame ring and no bar in the final world.
 
-**What stays whole-owned, enumerated**: every party plane between two
-roofed places or two open places that no connection joins, or whose connections
-disagree about `a`; every seam opening, frame ring and bar in such a plane; every derived stair in an unbound
-host; every whole-owned volume; the region and its surround; the synthesized
-vocabulary — `spawn`, `anchor/node-…`, `anchor/seam-…` gate regions,
-`anchor/unlock-…`, every station stand-in — which the derivation places off
-the plan whether or not a piece stands there; and every proof: the seam
-battery, the reach proof, the unallocated-crossing sweep, the sightlines, the
-identities, the pacing, the exposure ledger (`DW0885`), the light measurement,
-the danger rule (`DW0891`) and the stranding proof (`DW0921`). Not one of
-them changes, because every one of them reads bytes against the plan and never
-asks who wrote the bytes.
+**What the whole owns, enumerated** — and none of it is a block nothing
+declared: the plan's `volumes[]`, filled as declared; the region and its
+surround (declared by `horizon`); the synthesized vocabulary — `spawn`,
+`anchor/node-…`, `anchor/unlock-…`, every station stand-in — placed off the
+plan whether or not a piece stands there; the review stand-ins of §8, which
+never ship; and every proof: the seam battery, the reach proof, the
+unallocated-crossing sweep, the sightlines, the identities, the pacing, the
+exposure ledger (`DW0885`), the light measurement, the danger rule (`DW0891`)
+and the stranding proof (`DW0921`). Not one proof changes, because every one of
+them reads bytes against the plan and never asks who wrote the bytes.
+
+**Unplanned crossings stay refused without any engine wall.** `DW0838` deletes
+every allocated opening and asks whether two places are still walk-connected
+over the bytes; a gap of ground that joins two places the graph does not connect
+is exactly what it refuses, naming the pair and a witness cell. Its remedies are
+each reachable inside an authored document, which is what makes it a pair and
+not a dead end: the place on either side **draws its edge** on the ring it owns
+(a wall, a hedge, a kerb a body cannot step over); the gap **becomes a place**
+— an alley with its own seams — or part of one; or a declared `volume` fills
+it. The refusal names all three.
 
 ## 3. The roof is declared by the whole and drawn by the piece
 
@@ -155,12 +184,13 @@ and is refused where it is declared (`DW0988`), naming both places and the
 courses that collide. The remedy is the plan's — fewer courses, a taller
 neighbour, or one place where there were two.
 
-**Two roofed places side by side** share the column over their party wall
-through both roof zones; it goes to the place their connection names `a`, or
-to the whole in the whole's block where nothing connects them (§2 rule 3c–d).
-A building whose roof should run unbroken over several rooms is **one place**
-whose piece declares several spaces — which is also how §5 says a route-A site
-is written.
+**Two roofed places exactly one cell apart** share the column over their party
+wall through both roof zones; it goes to the place their connection names `a`
+(§2 rule 3c), and with no connection the plan is refused (rule 3d). A row of
+houses a gap apart share nothing: each owns its own ring and roof, and the gap
+is ground and sky. A building whose roof should run unbroken over several rooms
+is **one place** whose piece declares several spaces — which is also how §5
+says a route-A site is written.
 
 ## 4. What the handing says now
 
@@ -237,9 +267,14 @@ is the size of that scene, and the whole is the plan. In this spec's terms:
   the graph declares that the pieces do not honour is refused. What the engine
   does mechanically is only the arithmetic — the corner of a box one cell
   beyond the face it hangs off, the sill, the rise.
-- **Between the scenes** the whole's volumes stand: the hillside, the sea bed,
-  the rock. They are massing until stage 7 dresses them, and §10 names a
-  dressed volume as the first falsifier this spec expects to meet.
+- **Between the scenes** stands only what the plan declares: the ground
+  surface a `ground` volume puts at its datum and the air above it, the rock of
+  a `massif`, the sky a `clearance` keeps empty — never a wall and never an
+  invented fill. A gap between two houses too narrow for a road is ground and
+  sky; if a body can walk it from one place into another the graph does not
+  join, that is `DW0838`, and a design closes it (§2). A declared volume is
+  filled in the plan's one palette block until stage 7 dresses it, and §10
+  names a dressed volume as the first falsifier this spec expects to meet.
 
 ## 6. The checks answer while the creator draws
 
@@ -274,7 +309,9 @@ party plane** — the west opening at `x = x0 − 1`, the north at `z = z0 − 1
 and two party planes meet only at the ring's corner column, `(x0 − 1, z0 − 1)`,
 which lies in neither seam's shared face (a shared face is the overlap of the two
 play spaces' spans and never reaches a corner). The openings are disjoint by
-construction; nothing is conceded and nothing re-refused. Criterion 14 pins it.
+construction; nothing is conceded and nothing re-refused. Both planes are owned
+by a place (rule 3c: each contact names an `a`), so no engine wall stands in
+either. Criterion 14 pins it.
 
 **An all-open piece refused (#1004) — answered, with its hatch closed.** A
 street or a mud field honestly encloses nothing, and `contract-closure` reds a
@@ -296,11 +333,12 @@ flat) or nothing enclosed at all. The kind is the object's — the box's
 as its two corner cells, which the skill's detail reference calls "its cells";
 the reference is corrected to the handing's own words with the pin bump.
 
-## 7. The piece never writes the whole's cell
+## 7. The piece never writes a neighbour's cell
 
 | Code | Rule |
 |---|---|
-| `DW0987` | **A piece paints a cell it does not own.** A bound piece's template holds a block other than `minecraft:structure_void` at a void cell of its frame — a party wall it was told is the whole's, a neighbour's facade, a clipped eave. Read off the piece's own `.nbt` at validation, where `DW0888` already opens it, and named per cell with the owner the plan awards it to. Air counts as painting: the game places a template's air, so an air cell over the whole's wall would carve it. Validation tier (exit 1). **Binding: bound pieces opened, void cells examined, painted.** |
+| `DW0987` | **A piece paints a cell it does not own.** A bound piece's template holds a block other than `minecraft:structure_void` at a void cell of its frame — a neighbour's facade, the party wall a connection gave the other side, a clipped eave, a gap cell. Read off the piece's own `.nbt` at validation, where `DW0888` already opens it, and named per cell with the owner the plan awards it to. Air counts as painting: the game places a template's air, so an air cell over a neighbour's wall would carve it. Validation tier (exit 1). **Binding: bound pieces opened, void cells examined, painted.** |
+| `DW0827` (widened) | **Two owners for one block, and no rule to pick by.** Its claim is unchanged and its quantifier grows from play spaces to claims: two places whose claims share a cell that none of §2's rules 3a–3c awards — exactly one cell apart with no connection across that plane, or with connections that disagree about `a`. Named with both places, the shared cells and the three remedies (connect them, stand them apart, make them one). The engine neither arbitrates nor writes. Validation tier (exit 1). **Binding: box pairs compared, contested cells awarded.** |
 | `DW0989` | **A roofed place bound to a piece that encloses nothing.** The place's box has a `clearance` ceiling and the bound piece's spatial contract declares no `enclosed` or `open_top` space, so the closure gate had nothing of it to examine and the room that is the place's reason for a lid is not in the piece. Read from metadata at validation beside `DW0843`. An open box is never this refusal. Validation tier (exit 1). **Binding: roofed places bound, pieces with an enclosing space.** |
 | `DW0988` | **A roof the plan has no room for.** Two shapes of one claim, both read off the plan before any geometry: `roof` on a box whose `ceiling` is `open` — an open place has no lid to put a roof on; and a roof zone's course over the shell footprint lying in another place's play space or floor course — the stacked case, named with both places and the colliding courses. Eaves are not this refusal: they stop at a neighbour (§3). Validation tier (exit 1). **Binding: roofs declared, courses examined against places.** |
 
@@ -312,16 +350,35 @@ wall under it. Direction: a model more passable than the world can only let a
 proof pass that the world would fail, so the correction can only turn a proof
 red; it is held by a test.
 
-## 8. What the derivation builds now
+## 8. The stage-5 blockout is a review stand-in, and a stand-in never ships
 
-`compiler.md`'s blockout table gains one row and amends one:
+The whole must be walkable and reviewable before any piece exists (ADR-0022;
+spec-0049 §5), and a half-detailed campaign must build and walk at every point
+in between (spec-0050 §1). Both stand, under one reading the record already
+carries: **the derivation's shells are stand-ins for pieces not yet drawn.**
+They are written in the blockout's legibility palette — concrete floors, stone
+bricks, the roof block — so that a walker sees massing and not a building, and
+they stand only in the claim of an **unbound** place, where a piece will stand.
+A bound place's claim is written by its piece and by nothing else.
 
-- **a roof**: for a box declaring `roof`, the roof zone massed solid in the
-  roof palette block, written after the shell and before the interiors are
-  cleared, so a neighbour's play space is never filled by it (and could not be,
-  by `DW0988`).
-- **a box**: the shell as before; the derived piece's AABB (what forceload and
-  relight read) is the claim.
+- **a box**: the stand-in shell in the claim the place owns — floor course,
+  ring, lid — exactly where its piece will draw; every seam opening the place
+  owns cut in it, its frame ring and its bar as now; nothing written in a
+  neighbour's cells and nothing in a gap.
+- **a roof**: for an unbound box declaring `roof`, the roof zone massed solid
+  in the roof palette block, so the skyline is walked before it is drawn.
+- **the gaps**: untouched — a declared volume's fill where the plan declares
+  one, air everywhere else, at stage 5 exactly as in the shipped world.
+
+**A stand-in never ships.** The derivation already counts them —
+`blockout binding: … N box(es) (D detailed, U massed by the derivation)` —
+and the fact `DW0821`'s promotion is keyed to (`detail::fully_detailed`) is
+the same number reaching zero. The staging gate (`tools/creator/staging-gate.py`),
+the one event between a build and a player, refuses a site-plan build whose
+binding line counts any box massed by the derivation, naming each; its clause
+today admits "any place detailed", and that is the loosened reading this spec
+closes. A development build is unaffected: it walks and renders with stand-ins
+at every stage, which is what they are for.
 
 Nothing else in the derivation moves: openings are still cut last, stairwells
 still measured over them, the stations still read off the laid mass.
@@ -345,15 +402,15 @@ Nothing here is a house or a town: a *shell owned by what it encloses, a lid
 declared by the whole, a party plane awarded by which side has walls* serves a
 cave chamber in a massif (no roof, walls the piece lines), a ship's deck on an
 open sea (an open place whose ring is its gunwale) and a terrace of shops
-(roofed places with whole-owned party walls) identically. The ownership rule
+(roofed places whose connections say who draws each party wall) identically. The ownership rule
 has three clauses and no table of kinds.
 
 Falsifiers, each a brief this spec cannot state without a workaround and each
 the trigger for a first-class surface rather than a hack:
 
-- **The whole's own ground wants dressing.** Between the places the whole's
-  volumes are massing in the derivation's palette, and the only surface that
-  dresses them is stage 7's edit script. The first campaign whose hillside or
+- **The whole's own ground wants dressing.** Between the places a declared
+  volume is filled in the plan's one palette block, and the only surface that
+  dresses it is stage 7's edit script. The first campaign whose hillside or
   sea floor cannot be dressed that way is the brief for *a volume is detailed
   like a place* — the same `details[]` row naming a `volume`.
 - **A roof that must run over two places.** The first brief that cannot make
@@ -380,16 +437,17 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
    `c` and the horizontal extent grows `e` beyond the shell. Vacuous if the
    assertion compares the frame to itself: the expected extents are literals
    derived in the test from the box's numbers. Instrument: `detailplan` tests.
-3. **The whole writes nothing a bound piece owns, and everything else.** On the
-   blockout fixture with one place bound, the derivation's fills cover no
-   owned cell of that place and every cell they covered when nothing was
-   bound outside it; the party plane with a roofed neighbour is still written.
-   Vacuous if the bound place owns zero cells: the test asserts the owned
-   count. Instrument: `tests/blockout.rs`.
+3. **The derivation writes only stand-ins, only in unbound claims.** On the
+   blockout fixture with one place bound, the derivation's fills cover no cell
+   of that place's owned set and no cell no place claims (a gap cell holds its
+   declared volume or nothing); with nothing bound, every fill lies in some
+   place's owned set or in a declared volume. Vacuous if the bound place owns
+   zero cells or the fixture has no gap: the test asserts both counts.
+   Instrument: `tests/blockout.rs`.
 4. **A detailed building carries its own outside.** The gallery's annex program
    paints its two free walls and a gabled roof over a declared `roof`; the
    assembled bytes at those cells are the program's blocks, not the blockout
-   palette's; its two party planes with the halls are the whole's wall; and the
+   palette's; its two party planes with the halls are drawn by the side the gallery's connections name `a`; and the
    render from eye height outside shows the roofline (the proof renders, §12).
    Vacuous if the perturbation moves no byte: `tools/ci/check-gallery-coverage.py`
    binds `PlanBox.roof`, `Roof.courses` and `Roof.eaves`, and the gallery's
@@ -451,6 +509,27 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     zero and binds green to an open box; the same piece bound to a box with a
     `clearance` ceiling is refused `DW0989`. Vacuous if the piece has an
     enclosing space: the test asserts the contract's envelope set is `{open}`.
+
+16. **Two places one cell apart with no connection are refused, and each
+    remedy is taken green.** A plan with two roofed boxes one cell apart and no
+    seam between them is `DW0827` naming both and the shared cells; the same
+    plan with a seam between them, with the boxes two apart, and with the two
+    made one box each validates. Vacuous if the boxes do not share a cell: the
+    test asserts the claims' intersection is non-empty. Instrument: `crates/dsl`
+    site-plan tests.
+17. **A walkable gap is refused and the named remedies are reachable.** On a
+    fixture of two places two cells apart on a `ground` volume with no seam
+    between them, `DW0838` names the pair and a cell in the gap; binding one
+    place to a piece that draws a wall on its ring clears it, and so does adding
+    the gap as a third place with two seams. Vacuous if the gap is not
+    walkable: the test asserts the witness cell first. Instrument:
+    `tests/blockout.rs`.
+18. **A stand-in never ships.** The staging gate refuses a site-plan build whose
+    blockout binding counts one box massed by the derivation, naming it, and
+    admits the same build with that box bound; the gallery's site-plan overlay,
+    fully bound, passes. Vacuous if the gate reads a flag rather than the
+    binding line: the test perturbs the line's count. Instrument:
+    `tools/creator/staging-gate.py` tests.
 
 ## 12. Proof renders
 

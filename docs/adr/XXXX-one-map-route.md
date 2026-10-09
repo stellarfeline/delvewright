@@ -44,11 +44,16 @@ of it.
    presents. No threshold decides between one place and many: that is the
    layout graph's node count, a design judgement.
 
-3. **The whole owes what two scenes would otherwise both write, and every
-   proof.** Party planes nothing connects, the whole's volumes, the region, the
-   surround, the synthesized names; and the seam battery, reach, the
-   unallocated-crossing sweep, sightlines, identities, exposure, light, danger
-   and stranding — over bytes, indifferent to who wrote them.
+3. **A wall exists only where a design declares one; the engine never writes a
+   wall, a fill or any block nothing declared — it only checks.** A site-plan
+   box bounds where a design may draw; it is not a box wrapped in walls. What
+   the whole owns is what the plan declares — its volumes, its region and
+   surround, the synthesized names — and every proof: the seam battery, reach,
+   the unallocated-crossing sweep, sightlines, identities, exposure, light,
+   danger and stranding, over bytes, indifferent to who wrote them. A cell two
+   scenes would both draw with no rule to award it is a plan refusal, not an
+   engine arbitration. The stage-5 blockout's shells are review stand-ins for
+   pieces not yet drawn, and a stand-in never ships.
 
 4. **A connection is designed, never derived.** The layout graph's edges and
    the plan's seams are the design of how scenes meet; the place a connection
@@ -68,9 +73,12 @@ of it.
   rewritten with the release that carries it.
 - The skill stops presenting `areas[]` as a way to make a map. No released
   campaign is owed anything (it is built by the engine it pins).
-- Between the scenes the whole's volumes are massing until stage 7 dresses them;
-  a volume detailed like a place is the first expected follow-on (spec-0098
-  §10).
+- Between the scenes stands only what the plan declares — ground at its datum
+  and sky, or declared terrain — never an engine wall; a declared volume is
+  dressed by stage 7, and a volume detailed like a place is the first expected
+  follow-on (spec-0098 §10).
+- A site-plan build ships only fully detailed: the staging gate refuses a box
+  the derivation still masses.
 - Research into single-building craft is bounded: route A has demonstrated the
   building; the open craft questions are composition — how scenes meet, how a
   town's ground reads — and are researched when a campaign reaches them.
