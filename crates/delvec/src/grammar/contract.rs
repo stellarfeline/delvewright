@@ -457,6 +457,24 @@ fn shell(set: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
     out
 }
 
+/// **Why a binding of zero is honest on scenery**, or `None`: the piece's place
+/// is scenery (`reached: false`, spec-0098 §14) and no cell of the piece is
+/// stood in at all. A body never enters scenery — `DW0837` refuses one that
+/// does — so a piece of it with no floor owes no floor: the gates whose
+/// population is standable floor state their zero with its count, the way
+/// `contract-closure` states an all-open piece's. The kind is the place's,
+/// handed by `delvec detail` from the layout graph, never the piece's own word,
+/// so the defect cannot reach this: a reached place with nowhere to stand is
+/// still refused.
+fn scenery_zero(ix: &Index) -> Option<String> {
+    (ix.sealed && ix.standable.is_empty()).then(|| {
+        "the place is scenery (`reached: false`), built to be seen and never entered, and 0 \
+         standable cell(s) of the piece are stood in: there is no floor for this gate to judge, \
+         and none is owed"
+            .to_string()
+    })
+}
+
 /// Every passable cell the air outside the piece reaches.
 ///
 /// The positive fact `facade` demands (spec-0036 §2.6). The model's region *is*
@@ -1031,7 +1049,7 @@ fn coverage(ix: &Index) -> Gate {
         id: "contract-coverage",
         state: verdict(uncovered.is_empty()),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: scenery_zero(ix),
         bound: ix.standable.len(),
         detail: if uncovered.is_empty() {
             format!(
@@ -1781,7 +1799,8 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
              every piece of floor here is play space and §2.5 must walk a body to it",
             ix.standable.len()
         )
-    });
+    })
+    .or_else(|| scenery_zero(ix).filter(|_| kinds.by_region.is_empty()));
     Gate {
         id: "contract-no-body",
         state: verdict(bad.is_empty()),
@@ -2172,9 +2191,9 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
 
     Gate {
         id: "contract-reachability",
-        state: verdict(unreached.is_empty() && !targets.is_empty()),
+        state: verdict(unreached.is_empty() && (!targets.is_empty() || ix.sealed)),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: targets.is_empty().then(|| scenery_zero(ix)).flatten(),
         bound: targets.len(),
         detail: if !unreached.is_empty() {
             format!(
@@ -2635,7 +2654,7 @@ fn no_body_majority(ix: &Index, kinds: &CellKinds) -> Gate {
         id: "contract-no-body-majority",
         state: verdict(!majority || excused),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: scenery_zero(ix),
         bound: total,
         detail: if !majority {
             format!(

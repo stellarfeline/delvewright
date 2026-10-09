@@ -1910,3 +1910,49 @@ fn an_all_open_piece_states_its_zero_and_passes() {
     let report = check(&street.model, &c, &no_anchors());
     assert!(!gate(&report, "contract-closure").passed());
 }
+
+/// **A sealed scenery piece owes nothing a body would** (spec-0098 §14). A
+/// beacon built to be seen and never entered: a stone block around a hollow one
+/// course tall, so no cell of it is stood in. Judged as scenery
+/// (`check_sealed`), the zero standable cells are stated with their count and
+/// pass; the very same piece judged as a place a body reaches still reds on
+/// the zero — a reached place with nowhere to stand is the defect the
+/// reachability gate exists for.
+#[test]
+fn a_sealed_scenery_piece_states_its_zero_standable_cells() {
+    let mut b = Build::new([5, 5, 5]);
+    b.stone([0, 0, 0], [4, 4, 4]);
+    b.air([1, 2, 1], [3, 2, 3]);
+    let mut c = contract("room");
+    c.spaces.insert(
+        "room".to_string(),
+        space("enclosed", vec![region([1, 2, 1], [3, 2, 3])]),
+    );
+    assert!(
+        delvec::grammar::nav::standable_cells(&b.model).is_empty(),
+        "the beacon holds no cell a body stands in — without that this proves nothing"
+    );
+
+    let sealed = delvec::grammar::contract::check_sealed(&b.model, &c, &no_anchors(), true);
+    let red: Vec<String> = sealed
+        .gates
+        .iter()
+        .filter(|g| g.failed())
+        .map(|g| format!("{}: {}", g.id, g.detail))
+        .collect();
+    assert!(red.is_empty(), "scenery owes no standable cell: {red:?}");
+    assert!(
+        sealed
+            .enumeration
+            .iter()
+            .any(|l| l.contains("contract-reachability") && l.contains("0 standable cell(s)")),
+        "the zero is stated with its count: {:?}",
+        sealed.enumeration
+    );
+
+    let reached = check(&b.model, &c, &no_anchors());
+    assert!(
+        gate(&reached, "contract-reachability").failed(),
+        "a place a body reaches, with nowhere to stand, is refused"
+    );
+}

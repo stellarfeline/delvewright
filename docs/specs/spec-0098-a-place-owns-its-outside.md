@@ -965,6 +965,15 @@ what a criterion asserts says so in the word *loosening*.
     `interior` overview's eye also clears every placement and site-plan place
     standing over its column, ceiling course and roof out to its eaves. Shown in
     `emit.rs` `an_interior_overview_stands_over_a_place_stacked_over_its_eye`.
+32. **Scenery with no floor owes no floor** (ruling 4 carried into the
+    contract). A sealed piece — its place `reached: false` — none of whose cells
+    is stood in states that zero with its count in `contract-coverage`,
+    `contract-reachability`, `contract-no-body` and
+    `contract-no-body-majority`, as `contract-closure` states an all-open
+    piece's, so it is not forced to grow a floor that would then owe light. A
+    reached place with nowhere to stand is still refused. Shown in
+    `grammar_contract_check.rs`
+    `a_sealed_scenery_piece_states_its_zero_standable_cells`.
 
 | Criterion | Demonstrated in |
 |---|---|
