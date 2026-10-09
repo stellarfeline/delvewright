@@ -314,6 +314,22 @@ pub(super) fn validate_loaded(
                 campaign.world.content.textures.len(),
                 delvec::compiler::textures::census().textures.len()
             ));
+            // spec-0097: every sheet a model's boxes can judge — the mannequin
+            // skins the bodies wear, and the texture rows an entity model is
+            // drawn with — and the one line saying how many were judged.
+            let mut sheets = delvec::compiler::skinparts::Binding::default();
+            diags.extend(delvec::compiler::skinparts::check_skins(
+                &campaign,
+                &loaded.skins,
+                &mut sheets,
+            ));
+            delvec::compiler::skinparts::count_texture_rows(
+                &campaign,
+                &texture_rows,
+                &texture_diags,
+                &mut sheets,
+            );
+            examined.push(sheets.line());
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
             // (DW0326), the unsupported `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source

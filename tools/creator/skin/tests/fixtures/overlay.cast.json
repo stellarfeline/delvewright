@@ -1,0 +1,224 @@
+{
+  "campaign": "_fixture",
+  "skins": [
+    {
+      "features": {
+        "quality": 4,
+        "style": "pilgrim"
+      },
+      "hidden_layers": [],
+      "model": "wide",
+      "palette": {
+        "beard": "#4a3b2e",
+        "eye": "#2d2a26",
+        "hair": "#4a3b2e",
+        "hood": "#5b4a3a",
+        "legwear": "#3d3730",
+        "sandal": "#3a2d22",
+        "skin": "#c08e66",
+        "tunic": "#6b5a46"
+      },
+      "role": "pilgrim",
+      "seed": 4101,
+      "style_brief": "A pilgrim on the road: a brown wool hood up over a full beard, a high collar fastened under it, long sleeves, trousers and boots.",
+      "texture_id": "hooded-pilgrim",
+      "wardrobe": {
+        "collar": "high",
+        "facial_hair": "beard",
+        "footwear": "boot",
+        "hair": "long",
+        "hood": "up",
+        "legs": "full",
+        "sleeves": "long"
+      }
+    },
+    {
+      "features": {
+        "quality": 4,
+        "style": "scribe"
+      },
+      "hidden_layers": [
+        "cape"
+      ],
+      "model": "wide",
+      "palette": {
+        "eye": "#3b4a5a",
+        "hair": "#2b1d16",
+        "hair_shadow": "#1b120d",
+        "legwear": "#2a2a30",
+        "sandal": "#2b2420",
+        "skin": "#e0b48f",
+        "tunic": "#2e3f5c"
+      },
+      "role": "scribe",
+      "seed": 4102,
+      "style_brief": "A young scribe with long dark hair to the shoulders, clean-shaven, in a blue coat with a high collar.",
+      "texture_id": "long-haired-scribe",
+      "wardrobe": {
+        "collar": "high",
+        "facial_hair": "none",
+        "footwear": "shoe",
+        "hair": "long",
+        "legs": "full",
+        "sleeves": "long"
+      }
+    },
+    {
+      "entity": "zombie",
+      "features": {
+        "quality": 3,
+        "style": "farmer"
+      },
+      "palette": {
+        "beard": "#3c4a2c",
+        "hair": "#3c4a2c",
+        "legwear": "#3e4b5c",
+        "skin": "#5f8a4c",
+        "tunic": "#6a5236"
+      },
+      "role": "zombie",
+      "seed": 4103,
+      "style_brief": "A drowned-field farmer risen: matted hair and a beard on the hat shell, a work shirt and trousers.",
+      "texture_id": "zombie-farmer",
+      "wardrobe": {
+        "collar": "closed",
+        "facial_hair": "beard",
+        "footwear": "none",
+        "hair": "jaw",
+        "legs": "full",
+        "sleeves": "short"
+      }
+    },
+    {
+      "entity": "drowned_outer_layer",
+      "features": {
+        "quality": 3,
+        "style": "sailor"
+      },
+      "palette": {
+        "beard": "#2f5a4e",
+        "hair": "#2f5a4e",
+        "hair_shadow": "#1f3d34",
+        "skin": "#4f8a7a",
+        "tunic": "#355f6e"
+      },
+      "role": "drowned",
+      "seed": 4104,
+      "style_brief": "A drowned sailor's second layer: weed-dark long hair and beard standing off the head, and kelp at the collar.",
+      "texture_id": "drowned-sailor",
+      "wardrobe": {
+        "collar": "high",
+        "facial_hair": "beard",
+        "hair": "long"
+      }
+    },
+    {
+      "entity": "villager",
+      "features": {
+        "quality": 3,
+        "style": "cleric"
+      },
+      "palette": {
+        "coat": "#6c4870",
+        "hair": "#6b5a48",
+        "legwear": "#3d3248",
+        "skin": "#bd8b6a",
+        "tunic": "#5a3c5e"
+      },
+      "role": "villager",
+      "seed": 4105,
+      "style_brief": "A village cleric: short grey-brown hair on the hat shell and a purple robe to the hem.",
+      "texture_id": "robed-villager",
+      "wardrobe": {
+        "collar": "high",
+        "facial_hair": "none",
+        "footwear": "shoe",
+        "hair": "short",
+        "legs": "full",
+        "overcoat": "coat",
+        "sleeves": "long"
+      }
+    },
+    {
+      "entity": "piglin",
+      "features": {
+        "quality": 3,
+        "style": "guard"
+      },
+      "palette": {
+        "beard": "#3a2a20",
+        "coat": "#5a3a1a",
+        "hair": "#3a2a20",
+        "legwear": "#4a3a2a",
+        "skin": "#e2a59a",
+        "tunic": "#7a5a2a"
+      },
+      "role": "piglin",
+      "seed": 4106,
+      "style_brief": "A piglin gatekeeper in a long leather coat over his jerkin, sleeves to the wrist.",
+      "texture_id": "piglin-gatekeeper",
+      "wardrobe": {
+        "facial_hair": "none",
+        "footwear": "boot",
+        "hair": "crop",
+        "legs": "full",
+        "overcoat": "long_coat",
+        "sleeves": "long"
+      }
+    },
+    {
+      "features": {
+        "quality": 4,
+        "style": "archivist"
+      },
+      "hidden_layers": [],
+      "model": "slim",
+      "palette": {
+        "hair": "#8a3b1f",
+        "hair_shadow": "#5e2714",
+        "legwear": "#2a2d33",
+        "sandal": "#2a221d",
+        "skin": "#e9c2a0",
+        "tunic": "#2f5d50"
+      },
+      "role": "archivist",
+      "seed": 4107,
+      "style_brief": "An archivist with long auburn hair, a green coat over a fitted shirt, slim build.",
+      "texture_id": "slim-archivist",
+      "wardrobe": {
+        "collar": "closed",
+        "facial_hair": "none",
+        "footwear": "shoe",
+        "hair": "long",
+        "legs": "full",
+        "overcoat": "coat",
+        "sleeves": "long"
+      }
+    },
+    {
+      "entity": "skeleton",
+      "features": {
+        "quality": 3,
+        "style": "bones"
+      },
+      "palette": {
+        "hair": "#5a5040",
+        "legwear": "#d6d2c4",
+        "sandal": "#bdb8a8",
+        "skin": "#d6d2c4",
+        "tunic": "#d6d2c4"
+      },
+      "role": "skeleton",
+      "seed": 4108,
+      "style_brief": "A skeleton with a few strands of hair left on its hat shell.",
+      "texture_id": "skeleton-strands",
+      "wardrobe": {
+        "facial_hair": "none",
+        "footwear": "none",
+        "hair": "crop",
+        "legs": "bare",
+        "sleeves": "bare"
+      }
+    }
+  ]
+}

@@ -72,9 +72,9 @@ pub(super) fn npc_summon_commands(
         // wrong data for a standing NPC. Valid 1.21.11 mannequin poses: standing,
         // crouching, swimming, fall_flying, sleeping (spec-0009 template).
         out.push(format!(
-            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
+            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}}{},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
             p[0], p[1], p[2], skin.texture_id, skin.model.token(),
-            snbt_text_component(name), npc.tag
+            mannequin_hidden_layers_nbt(skin), snbt_text_component(name), npc.tag
         ));
     } else {
         // CustomName is a 1.21.11 text component, emitted as a plain SNBT string
@@ -567,4 +567,21 @@ pub(super) fn movenpc_fns(
         }
     }
     out
+}
+
+/// The mannequin's `hidden_layers` field for a skin (spec-0097 §5): `""` when the
+/// skin hides nothing — a mannequin starts with every layer shown, so the field's
+/// absence is the vanilla default and byte-identical to every summon before it —
+/// and `,hidden_layers:["<id>",…]` in authored order otherwise. Both mannequin
+/// summons — an NPC's and a skinned actor's — write it through here.
+pub(super) fn mannequin_hidden_layers_nbt(skin: &delvewright_dsl::NpcSkin) -> String {
+    if skin.hidden_layers.is_empty() {
+        return String::new();
+    }
+    let ids: Vec<String> = skin
+        .hidden_layers
+        .iter()
+        .map(|l| format!("\"{}\"", l.token()))
+        .collect();
+    format!(",hidden_layers:[{}]", ids.join(","))
 }

@@ -90,7 +90,7 @@ The full inventory — every binary, script and flag that exists today — is
   --skins-dir … --preview-dir … --catalog-dir …`, in the venv *NPC skins* establishes at step 5. **Look at the previews**, and
   always set `model` (`wide`/`slim`) — an omitted model renders slim and distorts
   a wide skin. The compiler bakes the PNG into the delve's resource pack from
-  `campaigns/<id>/skins/`.
+  `campaigns/<id>/skins/`. A mob's retexture is drawn to that mob's own boxes (`delve_skin parts <model>`; *NPC skins*).
 - **Cleaning up a ladder or a play session by hand**: `$DELVEWRIGHT_ENGINE/validation/fresh-volumes.sh
   --project <id>`. `--project` is required everywhere and there is no daemon-wide
   mode. It reclaims what the project owns — containers, volumes and networks —

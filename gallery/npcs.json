@@ -24,6 +24,9 @@
         },
         "role": "quest-giver",
         "skin": {
+          "hidden_layers": [
+            "cape"
+          ],
           "model": "slim",
           "texture_id": "curator"
         }
