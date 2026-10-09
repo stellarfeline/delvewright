@@ -16,7 +16,7 @@ On `pull_request`, a group is on when a changed path matches one of its globs, o
 when a changed path matches the `[all]` set (the workflow, `.github/**`, the lock
 file and the pins every job reads — and this file, since it decides the rest).
 On any other event every group is on, with no diff computed: `push` to `main` and
-the plugin release's `workflow_dispatch` run everything.
+a human's `workflow_dispatch` run everything.
 
 The changed paths are `git diff --name-only --no-renames <base> <head>`. With
 `--no-renames` a move lists both the old and the new path, so a job that read the

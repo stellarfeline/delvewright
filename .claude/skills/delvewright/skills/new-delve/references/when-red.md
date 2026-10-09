@@ -32,6 +32,12 @@ area's piece must declare an entry point**, and few shipped prefabs do — step
 2A's probe lists them.
 Bind that area to one of them, or make a piece that has one.
 
+**`DW0991`: "the only route … climbs a climbable the world does not keep".** A
+ladder or vine on the route has nothing to hang on — usually a ladder facing
+INTO its wall. The message names each rung and the face it lacks. Turn the
+ladder to face away from the wall (`facing` is the way a body climbing it has
+its back), or give it a sturdy block behind; never move the objective.
+
 **The build is green, PackTest is green, and the bot fails its FIRST step with
 "No path to the goal!"** The party's first objective is in an area they did not spawn in,
 and no crossing carries them there — the delve is not completable and nothing

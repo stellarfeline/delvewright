@@ -119,11 +119,10 @@ def notes(line: str, repo: pathlib.Path, rev: str) -> str:
         except (KeyError, tomllib.TOMLDecodeError) as exc:
             raise Missing(f"{PAGE_PIN} has no readable [engine]: {exc}")
         window = requires_delvec(show(repo, sha, PAGE))
-        # The pin may name a tag this repository has not written yet: a plugin
-        # release dispatched inside ADR-0029 §4's interval is exactly that state,
-        # and its notes are still owed. So an unresolvable tag is PRINTED as
-        # unborn rather than raised — the one fact a reader needs is which engine
-        # release the page ships at, and that is the name itself.
+        # `plugin-release.yml` runs only at a written engine tag, so there the pin
+        # resolves. Run by hand on a commit whose pin is still unborn, the tag is
+        # PRINTED as unborn rather than raised — the one fact a reader needs is
+        # which engine release the page ships at, and that is the name itself.
         try:
             speaks = engine_table(repo, f"{pin['ref']}^{{commit}}")["dsl_crate_version"]
             speaks = f"**{speaks}**"
@@ -137,10 +136,10 @@ def notes(line: str, repo: pathlib.Path, rev: str) -> str:
         return (
             f"**`delvewright` {manifest['version']}** — the Delvewright Claude Code plugin (`/delvewright:new-delve`), "
             f"one of the three things this repository releases (the others are the `delvec` binary and the "
-            f"`delvewright-dsl` format crate). This release moved `main` to this version. It does not by "
-            f"itself deliver anything: the marketplace serves the plugin root at the engine release tag the "
-            f"entry names, so this page reaches creators when an engine release is dispatched after it "
-            f"(ADR-0029 §5).\n\n"
+            f"`delvewright-dsl` format crate). Its version is the version of the engine release it ships "
+            f"at, and it is tagged at that release's commit: the marketplace serves the plugin root at the "
+            f"engine release tag the entry names, so these are the bytes a creator installing from that tag "
+            f"receives, and an installed creator updates to them because the version moved with the pin.\n\n"
             f"- the page ships at engine release `{pin['ref']}`, and installs that engine\n"
             f"- it accepts `delvec` `{window}`\n"
             f"- that engine speaks `dsl_version` {speaks}\n"

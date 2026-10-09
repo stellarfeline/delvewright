@@ -121,7 +121,8 @@ def test_the_cli_refuses_a_bare_v_tag_with_exit_1():
 def test_a_release_starts_only_by_dispatch(line, path):
     """No push, tag or merge starts a release: `on` is `workflow_dispatch` alone.
     The engine and the format crate take the `main` commit whose version they
-    release; the plugin takes the version it moves `main` to (§5)."""
+    release; the plugin takes the version of the engine release whose commit it
+    tags (`check-skill-page.py` rule 11)."""
     doc = load(path.read_text(encoding="utf-8"))
     on = doc["on"]
     assert isinstance(on, dict) and sorted(on) == ["workflow_dispatch"], f"{path.name} starts on {sorted(on)}"

@@ -1461,9 +1461,10 @@ def package_dirs(repo: pathlib.Path, packages: list[str]) -> list[str]:
 # that does not exist yet can be held to the tree that will create it (ADR-0029
 # §3). Each entry is read where that line's own release workflow reads it:
 # `engine-release.yml` and `dsl-crate-publish.yml` both take a key of the root
-# `versions.toml`. `delvewright` is deliberately absent — `plugin-release.yml`
-# takes its version as a dispatch INPUT and writes the bump itself, so no tree
-# states it in advance and there is no unborn tag to accept.
+# `versions.toml`. `delvewright` is deliberately absent — its version is the
+# version of the `delvec` release it ships at (`check-skill-page.py` rule 11),
+# and `plugin-release.yml` only ever tags a commit that engine release already
+# tagged, so a `delvewright` tag is never unborn in a tree that pins it.
 OWN_VERSION_KEY = {
     "delvec": ("engine", "version"),
     "delvewright-dsl": ("engine", "dsl_crate_version"),
