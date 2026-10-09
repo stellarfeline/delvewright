@@ -94,7 +94,7 @@
 //! expansion, and the seventh private copy of them was here.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::light::{LightModel, effective_sky};
 use crate::schem::nav::{self, Voxels};
@@ -491,13 +491,27 @@ impl LightProbe {
 /// it is a caller measuring a piece under a sky nobody asked about, which is the
 /// defect this argument exists to end.
 pub fn probe<V: BlockCells + ?Sized>(zone: &V, dark_threshold: i32, sky: SkyClaim) -> LightProbe {
+    probe_entered(zone, dark_threshold, sky, &BTreeSet::new())
+}
+
+/// [`probe`], walked in from `doors` as well as from the ground-level
+/// entrance: a detail piece is entered where the whole hands it its seams
+/// (spec-0098 §4) — a cellar entered only through a hole in the floor above
+/// has no door at grade, and its seam is still the way in.
+pub fn probe_entered<V: BlockCells + ?Sized>(
+    zone: &V,
+    dark_threshold: i32,
+    sky: SkyClaim,
+    doors: &BTreeSet<[i32; 3]>,
+) -> LightProbe {
     let model = light_model(zone);
     let (sky_light, daylight) = (sky.night_sky(), sky.daylight_sky());
     let night_field = model.flood(sky_light as u8);
     let day_field = model.flood(daylight as u8);
 
     let standable = nav::standable_cells(zone);
-    let entry = nav::ground_entry(zone);
+    let mut entry = nav::ground_entry(zone);
+    entry.extend(doors.iter().filter(|c| standable.contains(*c)).copied());
     let measured = nav::reachable_from(zone, &standable, &entry);
 
     let at = |f: &BTreeMap<[i32; 3], u8>, c: [i32; 3]| f.get(&c).copied().unwrap_or(0) as i32;

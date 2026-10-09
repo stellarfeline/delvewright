@@ -2928,7 +2928,9 @@ fn crossings(
         // **The leak**: what a body reaches from this place without the
         // allocated openings and without the commons — another place's
         // space is a crossing nothing allocated.
-        let own = flood(&starts, false);
+        // On a solid site nothing outside a claim is the commons, so the walk
+        // goes wherever the bytes let it.
+        let own = flood(&starts, !binding.commons);
         // What it reaches when the commons is walkable ground too.
         let wide = if binding.commons {
             flood(&starts, true)

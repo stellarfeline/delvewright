@@ -2172,6 +2172,65 @@ fn the_commons_is_walkable_ground_and_a_solid_site_has_none() {
         "{}",
         b.binding.line()
     );
+
+    // And a place reaching ground outside every claim on a solid site is
+    // refused: the landing opens its west ring onto the rock's top under a
+    // clearance the plan keeps beside it (the fixture's own sky volume
+    // removed, so that clearance is the only open air outside a claim).
+    let beside = tempdir("commons-solid-beside").join("src");
+    common::copy_dir_all(&blockout_dir(), &beside);
+    let solid_fill = |v: &mut serde_json::Value| {
+        v["content"]["volumes"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|vol| vol["role"] != "clearance");
+        v["content"]["volumes"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "volume/beside-the-landing",
+                "role": "clearance",
+                "region": {"min": [0, 64, 8], "extent": [3, 10, 8]}
+            }));
+    };
+    common::patch_file(&beside.join("site-plan.json"), |v| {
+        v["content"]["fill"] = serde_json::json!({"kind": "solid", "block": "minecraft:deepslate"});
+        solid_fill(v);
+    });
+    let tmp = tempdir("commons-solid-beside-built");
+    let d = detailed_from(&beside, &tmp, &["node/landing"], &|n, p| {
+        (n == "node/landing" && open_west.contains(&p)).then(|| "minecraft:air".to_string())
+    });
+    let (b, _) = battery_at(&d);
+    assert!(b.binding.unclaimed_standable > 0, "{}", b.binding.line());
+    let out = b
+        .findings
+        .iter()
+        .find(|(_, x)| x.code == "DW0838" && x.message.contains("`solid`"))
+        .unwrap_or_else(|| panic!("no solid-site DW0838: {:?}", errors_of(&b)));
+    assert!(
+        out.1.message.contains("`node/landing`") && out.1.message.contains("`open`"),
+        "the remedies are named: {}",
+        out.1.message
+    );
+    // The perturbation: the same landing with its ring closed is green.
+    let tmp = tempdir("commons-solid-beside-closed");
+    let d = detailed_from(&beside, &tmp, &["node/landing"], &|_, _| None);
+    let (b, _) = battery_at(&d);
+    assert!(!dw0838(&b), "{:?}", errors_of(&b));
+    // Its remedy, reachable: the same plan declared `open` builds green.
+    common::patch_file(&beside.join("site-plan.json"), |v| {
+        v["content"]["fill"] = serde_json::json!({
+            "kind": "open", "surface": "minecraft:grass_block", "below": "minecraft:stone",
+            "terrain": {"kind": "flat", "datum": "datum/grade"}
+        });
+    });
+    let tmp = tempdir("commons-solid-remedied");
+    let d = detailed_from(&beside, &tmp, &["node/landing"], &|n, p| {
+        (n == "node/landing" && open_west.contains(&p)).then(|| "minecraft:air".to_string())
+    });
+    let (b, _) = battery_at(&d);
+    assert!(!dw0838(&b), "{:?}", errors_of(&b));
 }
 
 /// **Criterion 22: a hole in a place's own wall that lets a body into

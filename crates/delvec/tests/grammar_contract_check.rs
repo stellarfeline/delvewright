@@ -1157,6 +1157,68 @@ fn a_via_at_a_corner_is_one_face_on_the_plane_it_lies_in() {
     assert_eq!(dirs, ["west", "north"], "{faces:?}");
 }
 
+/// **A stair's face is its via's footprint on the plane, treads included;
+/// a barred edge's face is its bar** (spec-0098). A cellar entered through a
+/// hole the floor above cuts: the stair's top step stands in the answering
+/// layer under the hole, and the face it exports covers the whole hole, step
+/// and all — the crossing the neighbour meets. A `walk` edge over the same
+/// cells exports only the passable ones (the perturbation: the class is what
+/// admits the tread). A barred edge with no via faces out through its bar.
+#[test]
+fn a_stair_faces_out_with_its_treads_and_a_bar_through_its_gate() {
+    // 5x4x3: floor, a room, the top layer y 3 is the answering layer, with the
+    // stair's top step at x 3 under the hole x 1..3.
+    let mut b = Build::new([5, 4, 3]);
+    b.stone([0, 0, 0], [4, 0, 2]).stone([0, 3, 0], [4, 3, 2]);
+    b.air([1, 3, 0], [2, 3, 2]);
+    b.stone([3, 1, 0], [3, 2, 2]);
+    let mut c = contract("cellar");
+    c.spaces.insert(
+        "cellar".to_string(),
+        space("open", vec![region([0, 1, 0], [4, 2, 2])]),
+    );
+    c.edges.push(with_via(
+        edge("cellar", "exterior", "stair"),
+        "hole",
+        vec![region([1, 3, 0], [3, 3, 2])],
+    ));
+    let faces = exterior_faces(&b.model, &c);
+    assert_eq!(faces.len(), 1, "{faces:?}");
+    assert_eq!(faces[0].dir.as_str(), "up");
+    assert_eq!(
+        faces[0].cells.len(),
+        9,
+        "the whole hole, step included: {faces:?}"
+    );
+    c.edges[0].class = "walk".to_string();
+    let faces = exterior_faces(&b.model, &c);
+    assert_eq!(
+        faces[0].cells.len(),
+        6,
+        "a walk faces out through air only: {faces:?}"
+    );
+
+    // A gate in a wall: the bar is the face.
+    let mut g = Build::new([3, 3, 3]);
+    g.stone([0, 0, 0], [2, 2, 2]).air([1, 1, 1], [1, 1, 1]);
+    g.stone([1, 1, 0], [1, 1, 0]);
+    let mut c = contract("cell");
+    c.spaces.insert(
+        "cell".to_string(),
+        space("open", vec![region([1, 1, 1], [1, 1, 1])]),
+    );
+    c.edges.push(with_bar(
+        edge("cell", "exterior", "barred"),
+        "gate",
+        vec![region([1, 1, 0], [1, 1, 0])],
+        "minecraft:iron_bars",
+    ));
+    let faces = exterior_faces(&g.model, &c);
+    assert_eq!(faces.len(), 1, "{faces:?}");
+    assert_eq!(faces[0].dir.as_str(), "north");
+    assert_eq!(faces[0].class, "barred");
+}
+
 /// **A zero binding is red on the three obligations that carry the weight**
 /// (spec-0036 §2.9).
 #[test]

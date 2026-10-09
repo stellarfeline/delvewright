@@ -500,7 +500,25 @@ fn detail_one(
         })
         .collect();
     let zone = Zone::from_tiles(meta.size(), &tiles).on_ground(&ground);
-    let probe = light::probe(&zone, DEFAULT_DARK_THRESHOLD, sky);
+    // The piece is entered through its seams: every cell of each seam's
+    // answering cells and the layer either side of it.
+    let doors: std::collections::BTreeSet<[i32; 3]> = a
+        .seams
+        .iter()
+        .flat_map(|s| {
+            let (lo, hi) = (s.cells[0], s.cells[1]);
+            let mut out = Vec::new();
+            for x in lo[0] - 1..=hi[0] + 1 {
+                for y in lo[1] - 1..=hi[1] + 1 {
+                    for z in lo[2] - 1..=hi[2] + 1 {
+                        out.push([x as i32, y as i32, z as i32]);
+                    }
+                }
+            }
+            out
+        })
+        .collect();
+    let probe = light::probe_entered(&zone, DEFAULT_DARK_THRESHOLD, sky, &doors);
     if probe.is_unbound() {
         eprintln!(
             "{} [error] {place}: the light probe bound to ZERO cells, so nothing was measured: \

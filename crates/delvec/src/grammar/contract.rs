@@ -2383,9 +2383,12 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
         // The opening's cells: the declared via when there is one, otherwise the
         // space's own cells that sit on the region's outer layer — the piece
         // stops there, and what it leaves open is its face.
-        let opening = match &edge.via {
-            Some(via) => cells(&via.boxes),
-            None => cells(&space.boxes),
+        // A barred edge with no via opens through its bar: the gate is the
+        // opening (spec-0098).
+        let opening = match (&edge.via, &edge.bar) {
+            (Some(via), _) => cells(&via.boxes),
+            (None, Some(bar)) => cells(&bar.boxes),
+            (None, None) => cells(&space.boxes),
         };
         // **A declared via is a face on the plane it LIES IN.** A way cut at
         // the corner of a piece — a four-wide passage whose cells run from
@@ -2397,7 +2400,15 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
         // says so. A via that is one column at a corner lies in two planes and
         // exports both, as before. The space-derived opening keeps the older
         // reading, because a space spans the box and lies in no plane.
-        let whole_via = edge.via.is_some();
+        let whole_via = edge.via.is_some() || edge.bar.is_some();
+        // **A transit or barred edge's face is its via's footprint on the
+        // plane, treads and bars included** (spec-0098): a stair's treads
+        // belong to the edge, and where a stair rises through a hole the
+        // neighbour cuts, its top step stands in the answering layer under
+        // that hole; a barred edge's face is the gate it ships, shut. The face
+        // is the crossing the neighbour meets, so it is every via cell on the
+        // plane, not only the passable ones.
+        let transit = is_transit(edge) || edge.class == "barred";
         let before = out.len();
         for (axis, dir) in [
             (0, [1, 0, 0]),
@@ -2417,7 +2428,7 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
             }
             let on_face: BTreeSet<[i32; 3]> = opening
                 .iter()
-                .filter(|c| c[axis] == plane && nav::passable(model, **c))
+                .filter(|c| c[axis] == plane && (transit || nav::passable(model, **c)))
                 .copied()
                 .collect();
             if on_face.is_empty() {
@@ -2462,7 +2473,7 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
                 };
                 let on_face: BTreeSet<[i32; 3]> = opening
                     .iter()
-                    .filter(|c| nav::passable(model, **c))
+                    .filter(|c| transit || nav::passable(model, **c))
                     .copied()
                     .collect();
                 if on_face.is_empty() {
