@@ -730,6 +730,21 @@ pub fn derive_with(
         }
     }
 
+    // The deliberate defect `Perturb::bury_barred` names: the far side of every
+    // barred door walled flush behind its opening.
+    if perturb.bury_barred {
+        for s in seams
+            .iter()
+            .filter(|s| s.class == "barred" && s.crossing == Crossing::Portal)
+        {
+            let (mut olo, mut ohi) = slide(s, perturb.slide_openings);
+            let b_off = s.face.vector()[s.normal_axis];
+            olo[s.normal_axis] += b_off;
+            ohi[s.normal_axis] += b_off;
+            mass.write(olo, ohi, palette::WALL);
+        }
+    }
+
     // (7) **The stairwell over every through-floor run.** A stair up through a
     // floor starts under the hole and walks back under the floor it pierces, so
     // its upper courses stand where that floor takes a climbing body's head. The
@@ -1488,7 +1503,7 @@ impl BatteryBinding {
     pub fn line(&self) -> String {
         format!(
             "blockout battery binding: {s} seam(s) proven over {w} shared wall(s) (of them \
-             {ct} contact(s), {cc} crossable column(s) measured; {pt} portal(s) crossed \
+             {ct} contact(s), {cc} crossable column(s) measured; {pt} portal(s) measured \
              over {pc} standable opening cell(s), {ps} left to `DW0836` as solid; {sw} \
              unallocated open cell(s) admitted as a stair's stairwell), {n} place(s) \
              proven reached, {c} standable cell(s) classified over {p} place pair(s), \
@@ -3256,6 +3271,17 @@ pub struct Perturb {
     /// It is what shows the stairwell admission refuses something — a claim 2
     /// that admitted any hole over a stair would pass it.
     pub open_stairwells: bool,
+    /// Wall the cells flush behind every **barred** portal's opening, on its `b`
+    /// side, over the opening's own span. Reddens `DW0986`: the bar opens onto
+    /// a wall, which is the shape a stair's treads laid across a doorway take.
+    ///
+    /// It is the only thing that can produce that red. The opening's cells are
+    /// untouched, so `DW0836`'s claim 1 stays green; the wall it writes is off
+    /// the shared wall's plane, so claim 2 stays green; closing a way only
+    /// removes crossings, so `DW0838` stays green. What it can also reach is
+    /// `DW0837`, and only when a barred door is the sole way into its `b` place
+    /// — the gallery's far hall is also entered through the annex chute.
+    pub bury_barred: bool,
 }
 
 impl Perturb {
@@ -3270,6 +3296,7 @@ impl Perturb {
             low_ceiling: None,
             wall_contacts: false,
             open_stairwells: false,
+            bury_barred: false,
         }
     }
 
@@ -3322,11 +3349,13 @@ pub enum Knob {
     WallContacts,
     /// [`Perturb::open_stairwells`].
     OpenStairwells,
+    /// [`Perturb::bury_barred`].
+    BuryBarred,
 }
 
 impl Knob {
     /// Every knob, in declaration order.
-    pub const ALL: [Knob; 7] = [
+    pub const ALL: [Knob; 8] = [
         Knob::SlideOpenings,
         Knob::Sink,
         Knob::ShortWalls,
@@ -3334,6 +3363,7 @@ impl Knob {
         Knob::LowCeiling,
         Knob::WallContacts,
         Knob::OpenStairwells,
+        Knob::BuryBarred,
     ];
 
     /// The kebab-case name a creator types.
@@ -3347,6 +3377,7 @@ impl Knob {
             Knob::LowCeiling => "low-ceiling",
             Knob::WallContacts => "wall-contacts",
             Knob::OpenStairwells => "open-stairwells",
+            Knob::BuryBarred => "bury-barred",
         }
     }
 
@@ -3361,6 +3392,7 @@ impl Knob {
             Knob::LowCeiling => "close one place a course under its plan's ceiling",
             Knob::WallContacts => "wall every contact's span the plan allocated",
             Knob::OpenStairwells => "cut the floor over every course of a through-floor stair",
+            Knob::BuryBarred => "wall the far side flush behind every barred door",
         }
     }
 
@@ -3390,6 +3422,7 @@ impl Knob {
             Knob::LowCeiling => "DW0833",
             Knob::WallContacts => "DW0877",
             Knob::OpenStairwells => "DW0836",
+            Knob::BuryBarred => "DW0986",
         }
     }
 
@@ -3430,6 +3463,10 @@ impl Knob {
             },
             Knob::OpenStairwells => Perturb {
                 open_stairwells: true,
+                ..Perturb::none()
+            },
+            Knob::BuryBarred => Perturb {
+                bury_barred: true,
                 ..Perturb::none()
             },
         })

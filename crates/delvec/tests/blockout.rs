@@ -853,6 +853,7 @@ fn every_perturb_field_has_a_knob() {
     let mut seen = 0;
     let (mut slid, mut sunk, mut short, mut bricked, mut low, mut walled, mut wells) =
         (false, false, false, false, false, false, false);
+    let mut buried = false;
     for knob in Knob::ALL {
         let p = knob
             .perturb(knob.takes_place().then_some(place))
@@ -871,6 +872,7 @@ fn every_perturb_field_has_a_knob() {
             low_ceiling,
             wall_contacts,
             open_stairwells,
+            bury_barred,
         } = p;
         slid |= slide_openings != 0;
         sunk |= sink.is_some();
@@ -879,6 +881,7 @@ fn every_perturb_field_has_a_knob() {
         low |= low_ceiling.is_some();
         walled |= wall_contacts;
         wells |= open_stairwells;
+        buried |= bury_barred;
         seen += 1;
         assert!(
             knob.perturb(knob.takes_place().then_some("")).is_some(),
@@ -894,9 +897,10 @@ fn every_perturb_field_has_a_knob() {
     }
     assert_eq!(seen, Knob::ALL.len());
     assert!(
-        slid && sunk && short && bricked && low && walled && wells,
-        "one of the seven fields is never set by any knob: slid={slid} sunk={sunk} \
-         short={short} bricked={bricked} low={low} walled={walled} wells={wells}"
+        slid && sunk && short && bricked && low && walled && wells && buried,
+        "one of the eight fields is never set by any knob: slid={slid} sunk={sunk} \
+         short={short} bricked={bricked} low={low} walled={walled} wells={wells} \
+         buried={buried}"
     );
     // The spellings a creator types are unique and kebab-case, since the value
     // set is resolved by name.
@@ -908,9 +912,19 @@ fn every_perturb_field_has_a_knob() {
             "`{}` is not a kebab-case value",
             k.name()
         );
+        // A battery code is declared by the battery's module, or is the site
+        // plan's identity code the battery re-measures at its second call site.
+        let declared = delvewright_dsl::diagnostic::declared();
+        let owner = declared
+            .iter()
+            .find(|d| d.code == k.documented_code())
+            .map(|d| d.module);
         assert!(
-            k.documented_code().starts_with("DW08"),
-            "`{}` names `{}`, which is not a blockout-battery code",
+            matches!(
+                owner,
+                Some("delvec::compiler::blockout" | "delvewright_dsl::siteplan")
+            ),
+            "`{}` names `{}`, declared by {owner:?}, which is not a blockout-battery code",
             k.name(),
             k.documented_code()
         );
@@ -1232,5 +1246,70 @@ fn a_walled_front_reddens_dw0877() {
     assert_eq!(
         b.binding.contact_columns, 0,
         "and the numerator, which is what went to zero"
+    );
+}
+
+/// `DW0986`: a barred door whose far side the massing walls flush behind its
+/// opening — the shape a stair's treads laid across a doorway take — and the
+/// observer says nothing crosses it.
+///
+/// Produced by a **perturbed derivation**, never by hand-authored bytes. The
+/// knob is the only thing that can produce this red: the opening's cells stay
+/// clear (`DW0836`'s claim 1), the wall it writes is off the shared wall's plane
+/// (claim 2), and closing a way only removes crossings (`DW0838`). The
+/// assertions are on `DW0986`'s own message, which no other check produces.
+#[test]
+fn a_barred_door_onto_a_wall_reddens_dw0986() {
+    let (clean, _) = battery_under(Perturb::none());
+    assert!(
+        !errors(&clean).contains(&"DW0986".to_string()),
+        "the unperturbed derivation's portals all lead through: {:?}",
+        errors(&clean)
+    );
+    let portals = clean.binding.seams - clean.binding.contacts;
+    assert_eq!(
+        clean.binding.portals + clean.binding.portals_solid,
+        portals,
+        "every portal is either measured or left to `DW0836`, and none is lost"
+    );
+    assert_eq!(
+        clean.binding.portals_solid, 0,
+        "no opening is solid when nothing is perturbed"
+    );
+    assert!(
+        clean.binding.portal_floor > 0,
+        "the crossing stood a body in some opening, or the red below proves nothing"
+    );
+
+    let (b, _) = battery_under(Perturb {
+        bury_barred: true,
+        ..Perturb::none()
+    });
+    assert!(
+        errors(&b).contains(&"DW0986".to_string()),
+        "a bar that opens onto a wall is a way the graph declares and no body can take: {:?}",
+        errors(&b)
+    );
+    assert!(
+        !errors(&b).contains(&"DW0836".to_string()) && !errors(&b).contains(&"DW0838".to_string()),
+        "the buried door is a defect only the crossing can see: {:?}",
+        errors(&b)
+    );
+    let m = message_for(&b, "DW0986");
+    assert!(
+        m.contains("nothing crosses the barred opening"),
+        "the refusal names the seam's class and what it measured: {m}"
+    );
+    assert!(
+        m.contains("must step onto standable ground on BOTH sides"),
+        "and states the quantifier it holds the opening to: {m}"
+    );
+    assert!(
+        m.contains("move this seam along its face (`at`)"),
+        "and names the remedy: {m}"
+    );
+    assert_eq!(
+        b.binding.portals, clean.binding.portals,
+        "the binding states the denominator even when the check refuses"
     );
 }
