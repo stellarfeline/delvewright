@@ -159,14 +159,15 @@ test("a body of an undeclared kind standing in the wave is a finding", () => {
   assert.match(v.failures[0]!, /1 body\/bodies of an undeclared entity kind/);
 });
 
-test("an empty anchor says the probe had nothing to read, not that five stacks are missing", () => {
-  // A wave the world felled, or one a run-back has already cleared. Reporting it
-  // as five absent declarations would be a defect claim about content that is
-  // exactly as declared.
+test("an empty anchor is one zero-binding red, not five missing stacks", () => {
+  // A declared wave nobody read ships with its stats never checked: a red. It is
+  // one fact — nothing stood to read — never five absent declarations.
   const v = verifyMuster(GUARD, summary({ counted: 0, tagged: 0 }), []);
-  assert.equal(v.findings.length, 1);
-  assert.match(v.findings[0]!, /nothing of this wave was standing/);
-  assert.match(v.findings[0]!, /9 declared fact\(s\) could be checked/);
+  assert.deepEqual(v.findings, []);
+  assert.equal(v.failures.length, 1);
+  assert.match(v.failures[0]!, /nothing of this wave was standing/);
+  assert.match(v.failures[0]!, /9 declared fact\(s\) could be checked/);
+  assert.match(v.failures[0]!, /a zero binding is not a pass/);
 });
 
 test("the probe's own lines and its total must agree, or neither is evidence", () => {

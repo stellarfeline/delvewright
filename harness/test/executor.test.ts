@@ -1745,7 +1745,7 @@ test("the walk in opens a closed gate in its way — once, and never an open one
 // --- executor tier: reach + timed gate + completion transport -----------------
 
 import type { ReachStep } from "../src/critical-path.ts";
-import { nextLegWaypoints, parseWaypoints } from "../src/waypoints.ts";
+import { MAX_HOP_BLOCKS, nextLegWaypoints, parseWaypoints } from "../src/waypoints.ts";
 import { gatesBindingWalk } from "../src/timed-gate.ts";
 
 /**
@@ -1840,6 +1840,85 @@ test("reach: a completion transport landing mid-gate-leg is step success, not a 
     Date.now() - started < 10_000,
     "the step settled on the completion signals, not on a spent gate budget",
   );
+});
+
+/**
+ * A pathfinder that searches only what the client holds: a goal farther than
+ * `heldRadius` blocks from the bot answers "No path to the goal!", as
+ * mineflayer-pathfinder does when its search exhausts the loaded chunks short of
+ * the goal. Any nearer goal is walked to.
+ */
+class HeldRadiusBot extends TransportReachBot {
+  heldRadius = 192; // mineflayer's default `far`: 12 chunks
+  readonly goals: Array<[number, number, number]> = [];
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (goal?: { x: number; y: number; z: number }): Promise<void> => {
+      this.gotoCalls++;
+      if (!goal) throw new Error("no goal");
+      const p = this.entity.position;
+      if (Math.hypot(goal.x - p.x, goal.z - p.z) > this.heldRadius) {
+        throw new Error("No path to the goal!");
+      }
+      this.goals.push([goal.x, goal.y, goal.z]);
+      this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+    },
+  };
+}
+
+test("a straight proven run longer than the client sees is walked in hops of its own proven cells", async () => {
+  // the-stranding r6: the walk home is ONE thinned hop, [152,64,484] to
+  // [152,64,141] — 343 blocks — and the bot failed "No path to the goal" ten
+  // blocks in on every run, while 99- and 160-block hops passed.
+  const bot = new HeldRadiusBot();
+  bot.entity.position = new FakeVec3(152.5, 64, 488.5);
+  const executor = attach(bot);
+  executor.useCampaign("the-stranding");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.6.0",
+      campaign_id: "the-stranding",
+      legs: [
+        {
+          from: [152, 64, 488],
+          to: [152, 64, 140],
+          waypoints: [
+            [152, 64, 488],
+            [152, 64, 484],
+            [152, 64, 141],
+            [152, 64, 140],
+          ],
+        },
+      ],
+    }),
+  );
+  await within("executor.walkTo(home)", executor.walkTo([152, 64, 140], 1, "the walk home"));
+  const hops = bot.goals.slice(1).map((g, i) => {
+    const a = bot.goals[i]!;
+    return Math.max(Math.abs(g[0] - a[0]), Math.abs(g[1] - a[1]), Math.abs(g[2] - a[2]));
+  });
+  assert.ok(Math.max(...hops) <= MAX_HOP_BLOCKS, `every hop within the bound: ${hops.join(", ")}`);
+  for (const [x, y, z] of bot.goals) {
+    assert.ok(x === 152 && y === 64 && z >= 140 && z <= 488, `a proven cell of the run: ${x},${y},${z}`);
+  }
+  const end = bot.entity.position;
+  assert.ok(Math.abs(Math.floor(end.z) - 140) <= 1, `the walk ends at its destination: z ${end.z}`);
+});
+
+test("the hop bound is inside the radius the engine's floor view distance serves", () => {
+  // `delvewright_dsl::viewdistance::FLOOR` is 10 chunks (160 blocks). The goal of
+  // a hop that starts at a chunk's far edge is MAX_HOP_BLOCKS + 15 blocks from
+  // that chunk's near edge; it must still be a held chunk at the floor.
+  const FLOOR_CHUNKS = 10;
+  assert.ok(Math.ceil((MAX_HOP_BLOCKS + 15) / 16) < FLOOR_CHUNKS);
 });
 
 // --- the die-retry stage: the run artifact must never lose a death ---
@@ -1963,6 +2042,9 @@ class CombatFakeBot extends InteractFakeBot {
   /** A walk arrives: `goto` puts the bot at its goal. Off by default, because the
    * older tests were written against a bot that never moves. */
   moveOnGoto = false;
+  /** An approach trigger: the first walk seats this many bodies of the wave, as
+   * the-stranding's `on: approach` triggers do when the party walks in. */
+  seatOnGoto: number | undefined;
   /** Every `/damage <uuid>` staged blow the fake server received, by body id. */
   readonly stagedBlows: number[] = [];
   /** The body a strike fells lands a hit on the bot as it falls — a shot it
@@ -2008,6 +2090,10 @@ class CombatFakeBot extends InteractFakeBot {
     thinkTimeout: 0,
     goto: async (goal?: { x?: number; y?: number; z?: number }): Promise<void> => {
       this.calls.push("goto");
+      if (this.seatOnGoto !== undefined) {
+        this.seat(this.seatOnGoto);
+        this.seatOnGoto = undefined;
+      }
       // A route walkable on the way in and not on the way back: exactly what a
       // respawn dumped somewhere unreachable looks like to the bot.
       if (this.failReturnLeg && this.died) {
@@ -3015,6 +3101,45 @@ test("a muster reading that failed stays failed when a later reading finds the w
   assert.ok(
     executor.musterFailures().some((f) => f.startsWith(`${enc.wave}: wave seating:`)),
     `the earlier failure is kept: ${JSON.stringify(executor.musterFailures())}`,
+  );
+});
+
+test("a wave an approach trigger seats is read from its anchor, not reported as nothing standing", async () => {
+  // the-stranding r6: the wrecks, the lice and Marrack's men are seated by `on:
+  // approach` triggers. The kill step read each at its open, found nothing, and
+  // the bot then fought them — every declared fact unchecked, on every run.
+  const bot = new CombatFakeBot();
+  bot.seat(0);
+  bot.seatOnGoto = 2;
+  bot.moveOnGoto = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, false), false);
+  // The bot opens the step out of the trigger's range, 20 blocks from the anchor.
+  const step: KillStep = { ...KILL_STEP, count: 2, pos: [20, 64, 0] };
+  await within("executor.kill(step)", executor.kill(step));
+  const verdict = executor.waveMusters().get("wave/gate-assault")!;
+  assert.equal(verdict.read, 2, `the seated bodies were read: ${JSON.stringify(verdict)}`);
+  assert.deepEqual(verdict.failures, []);
+  assert.deepEqual(executor.musterFailures(), [], "the provisional zero at the step's open is not a failure");
+  const firstWalk = bot.calls.indexOf("goto");
+  const musters = bot.calls.flatMap((c, i) => (c.includes(":wave_muster_") ? [i] : []));
+  assert.ok(musters.length === 2 && musters[0]! < firstWalk && firstWalk < musters[1]!, `read, walk, read: ${bot.calls.join(" | ")}`);
+});
+
+test("a declared wave with no body even at its anchor is a red", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(0);
+  bot.moveOnGoto = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(2, false), false);
+  const step: KillStep = { ...KILL_STEP, count: 2, pos: [20, 64, 0] };
+  await within("executor.kill(step)", executor.kill(step));
+  assert.equal(executor.waveMusters().get("wave/gate-assault")?.read, 0);
+  assert.ok(
+    executor.musterFailures().some((f) => /^wave\/gate-assault: nothing of this wave was standing .* a zero binding is not a pass/.test(f)),
+    `the zero is a failure: ${JSON.stringify(executor.musterFailures())}`,
   );
 });
 

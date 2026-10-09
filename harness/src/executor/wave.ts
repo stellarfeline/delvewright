@@ -513,7 +513,21 @@ export const methods = {
       // also walks the bodies past a lethal pit — run second, the probe read an
       // empty anchor and reported three declared stacks missing, over a wave that
       // had spawned exactly as declared.
-      await this.musterUnlessRead(enc);
+      await this.musterUnlessRead(enc, true);
+      // Nothing seated yet: the wave is one an approach trigger seats as the
+      // party walks in (the-stranding's wrecks, lice and Marrack's men read 0 on
+      // every run, and the bot then fought them unread). Walk the step's route to
+      // the anchor as a player does, and read it there; a zero now is a red.
+      if (this.readingOwed(enc)) {
+        await this.walkTo(
+          step.pos,
+          3,
+          `wave ${step.wave} anchor (nothing seated at the step's open)`,
+          step.sneak,
+          { objective: step.objective, transport: step.transport },
+        );
+        await this.musterUnlessRead(enc);
+      }
       this.encounterPhases.set(enc.wave, "mustered");
       if (this.dieRetry) {
         this.encounterPhases.set(enc.wave, "die-retry");

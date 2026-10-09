@@ -3122,14 +3122,16 @@ fn a_perturbed_build_is_refused_an_output_directory() {
 /// to see are refused too, in those words.
 ///
 /// This is a fact about the GYM, stated so it can go stale loudly: the gym's
-/// plan declares no `contact` crossing for `wall-contacts` to wall and no
-/// `box-height` identity for `low-ceiling` to shorten. If the gym grows either,
+/// plan declares no `contact` crossing for `wall-contacts` to wall, no
+/// `box-height` identity for `low-ceiling` to shorten, and no `barred` way for
+/// `bury-barred` to wall behind. If the gym grows any of them,
 /// this test reds — and that red is the finding that a knob became demonstrable
 /// here, not a flake.
 #[test]
 fn a_defect_this_campaign_has_nothing_for_is_still_refused() {
     for (knob, place, why) in [
         ("wall-contacts", None, "the gym allocates no contact"),
+        ("bury-barred", None, "the gym declares no barred way"),
         (
             "low-ceiling",
             Some("node/hall-most"),
@@ -3271,6 +3273,7 @@ fn the_perturbation_flag_refuses_what_it_cannot_attribute() {
         "low-ceiling",
         "wall-contacts",
         "open-stairwells",
+        "bury-barred",
     ] {
         assert!(err.contains(knob), "`{knob}` is not offered: {err}");
     }

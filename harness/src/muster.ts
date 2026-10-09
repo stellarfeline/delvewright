@@ -125,10 +125,8 @@ export interface MusterVerdict {
    */
   readonly failures: readonly string[];
   /**
-   * What the probe could not establish, which is a different fact. Nothing of the
-   * wave standing when the step opened is the common case (the world felled it,
-   * or a run-back had already cleared it): the declaration is unverified, not
-   * contradicted, and a zero binding is a finding rather than a pass.
+   * What the probe could not establish, which is a different fact: a probe that
+   * never answered. Nothing of the wave standing is a failure, not this.
    */
   readonly findings: readonly string[];
 }
@@ -173,10 +171,11 @@ export function verifyMuster(
     for (let i = 0; i < profile.count; i += 1) slots.push({ profile, type, taken: false });
   }
 
-  // Nothing standing is not the same fact as a body that is wrong, and it must
-  // not be reported as N missing stacks. The wave may legitimately be gone — the
-  // world felled it, or a run-back's cohort was cleared — and what is true is
-  // only that the probe had nothing to read.
+  // Nothing standing is one fact, not N missing stacks, and it is a red: a
+  // declared wave whose bodies nobody read ships with every declared fact
+  // unchecked. The executor reads a wave that may not be seated yet (an approach
+  // trigger seats it when the party walks in) again from its anchor before a zero
+  // reading stands.
   if (summary.tagged === 0) {
     return {
       wave: summary.wave,
@@ -184,12 +183,13 @@ export function verifyMuster(
       read: 0,
       declared: plan.bodies,
       matched: 0,
-      failures: [],
-      findings: [
+      failures: [
         `nothing of this wave was standing when the muster ran, so none of its ` +
           `${plan.checked} declared fact(s) could be checked against a body ` +
-          `(${plan.bodies} declared: ${plan.profiles.map((p) => p.label).join("; ")})`,
+          `(${plan.bodies} declared: ${plan.profiles.map((p) => p.label).join("; ")}) — ` +
+          `a zero binding is not a pass`,
       ],
+      findings: [],
     };
   }
   if (summary.tagged !== summary.counted) {
