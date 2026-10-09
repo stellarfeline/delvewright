@@ -190,8 +190,9 @@ runs — `DW0843`, `DW0844` naming the seam and the face, `DW0845` — then
 the admission audit and the light probe (taken with the piece standing on its
 handed fixed ground, and walked in through the place's seams as well as its
 ground-level sides — a cellar entered only from above is probed from its
-hole; a scenery place, `reached: false`, is lit for nobody, owes no light and
-is judged sealed), **all before any file is written**.
+hole; a scenery place, `reached: false`, is lit for nobody: the probe is not
+run over it and states the standable cells it excludes with their count, and
+the piece is judged sealed), **all before any file is written**.
 Then it freezes the piece into `--prefabs` (`<campaign id>-<place stem>`, with
 the lighting profile measured), writes `<id>.report.json` beside it, writes the `details[]` row
 canonical (every owed name bound to the piece anchor of the same stem — a

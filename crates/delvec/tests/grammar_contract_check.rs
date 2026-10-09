@@ -2231,3 +2231,56 @@ fn a_climb_without_its_volume_or_its_rise_is_refused() {
         proof.detail
     );
 }
+
+/// **Scenery owes no floor, even where its leaves can be stood on**
+/// (spec-0098 §14, departure 36). A crown built to be seen and never
+/// entered: a mass of leaves three courses deep with open air over it, so its
+/// 25 leaf tops are standable cells. The place is scenery, proven unreached
+/// both ways by the build (`DW0816`, `DW0837`), so no cell of it is stood in
+/// and the contract owes it neither a space nor an out-of-walk region: judged
+/// as scenery (`check_sealed`), every floor gate passes and states the count
+/// it excuses, with the entry space declared over air and holding no
+/// standable cell. The very same piece judged as a place a body reaches reds
+/// on the leaf tops no declaration accounts for.
+#[test]
+fn a_leafy_scenery_crown_owes_no_floor_and_a_reached_one_does() {
+    let mut b = Build::new([5, 5, 5]);
+    b.paint(
+        [0, 0, 0],
+        [4, 2, 4],
+        "minecraft:oak_leaves[distance=1,persistent=true,waterlogged=false]",
+    );
+    let tops = delvec::grammar::nav::standable_cells(&b.model);
+    assert_eq!(tops.len(), 25, "every leaf top is standable: {tops:?}");
+    let mut c = contract("crown");
+    c.spaces.insert(
+        "crown".to_string(),
+        space("open", vec![region([0, 4, 0], [4, 4, 4])]),
+    );
+
+    let sealed = delvec::grammar::contract::check_sealed(&b.model, &c, &no_anchors(), true);
+    let red: Vec<String> = sealed
+        .gates
+        .iter()
+        .filter(|g| g.failed())
+        .map(|g| format!("{}: {}", g.id, g.detail))
+        .collect();
+    assert!(red.is_empty(), "scenery owes no floor: {red:?}");
+    let excused: BTreeSet<&str> = sealed
+        .gates
+        .iter()
+        .filter(|g| g.detail.contains("scenery") && g.detail.contains("25 standable cell(s)"))
+        .map(|g| g.id)
+        .collect();
+    assert!(
+        excused.contains("contract-coverage"),
+        "coverage states the 25 leaf tops it excuses: {:#?}",
+        sealed.gates
+    );
+
+    let reached = check(&b.model, &c, &no_anchors());
+    assert!(
+        gate(&reached, "contract-coverage").failed(),
+        "a reached place's standable leaf tops are owed a declaration"
+    );
+}

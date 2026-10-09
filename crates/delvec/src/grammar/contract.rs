@@ -507,21 +507,24 @@ fn shell(set: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
     out
 }
 
-/// **Why a binding of zero is honest on scenery**, or `None`: the piece's place
-/// is scenery (`reached: false`, spec-0098 §14) and no cell of the piece is
-/// stood in at all. A body never enters scenery — `DW0837` refuses one that
-/// does — so a piece of it with no floor owes no floor: the gates whose
-/// population is standable floor state their zero with its count, the way
-/// `contract-closure` states an all-open piece's. The kind is the place's,
+/// **Why scenery owes no floor**, or `None`: the piece's place is scenery
+/// (`reached: false`, spec-0098 §14). A body never enters scenery — the build
+/// proves it both ways, `DW0816` over the graph and `DW0837` over the built
+/// world — so none of the piece's standable cells is stood in, however many a
+/// crown's leaf tops make: the gates whose population is standable floor
+/// state the cells they excuse, with the count, and judge nothing (departure
+/// 36; with no standable cell at all, departure 32). The kind is the place's,
 /// handed by `delvec detail` from the layout graph, never the piece's own word,
-/// so the defect cannot reach this: a reached place with nowhere to stand is
-/// still refused.
+/// so the defect cannot reach this: a reached place's floor is still owed a
+/// declaration, and a reached place with nowhere to stand is still refused.
 fn scenery_zero(ix: &Index) -> Option<String> {
-    (ix.sealed && ix.standable.is_empty()).then(|| {
-        "the place is scenery (`reached: false`), built to be seen and never entered, and 0 \
-         standable cell(s) of the piece are stood in: there is no floor for this gate to judge, \
-         and none is owed"
-            .to_string()
+    ix.sealed.then(|| {
+        format!(
+            "the place is scenery (`reached: false`), built to be seen and never entered, and \
+             none of the piece's {} standable cell(s) is stood in: there is no floor for this \
+             gate to judge, and none is owed",
+            ix.standable.len()
+        )
     })
 }
 
@@ -1125,13 +1128,17 @@ fn uncovered_standable(ix: &Index) -> BTreeSet<[i32; 3]> {
 
 fn coverage(ix: &Index) -> Gate {
     let uncovered = uncovered_standable(ix);
+    let scenery = scenery_zero(ix);
     Gate {
         id: "contract-coverage",
-        state: verdict(uncovered.is_empty()),
+        state: verdict(uncovered.is_empty() || scenery.is_some()),
         undecided: 0,
-        empty_ok: scenery_zero(ix),
-        bound: ix.standable.len(),
-        detail: if uncovered.is_empty() {
+        detail: if let Some(why) = scenery.as_ref().filter(|_| !uncovered.is_empty()) {
+            format!(
+                "{why} — {} of them in nothing the contract declares",
+                uncovered.len()
+            )
+        } else if uncovered.is_empty() {
             format!(
                 "every one of {} standable cell(s) lies in a declared space, an out-of-walk region \
                  or a traversal edge's transit volume",
@@ -1146,6 +1153,8 @@ fn coverage(ix: &Index) -> Gate {
                 describe_cells(&uncovered)
             )
         },
+        empty_ok: scenery,
+        bound: ix.standable.len(),
     }
 }
 

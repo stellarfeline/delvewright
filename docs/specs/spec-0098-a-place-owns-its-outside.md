@@ -1039,6 +1039,27 @@ what a criterion asserts says so in the word *loosening*.
     Camp's glade, house and bridge; red on the old rule) and
     `a_gantry_over_a_yard_meets_it_at_the_yards_headroom`.
 
+36. **Scenery owes no floor and no light, whatever can be stood on**
+    (ruling 4 carried past departure 32). Departure 32 excused only a sealed
+    piece none of whose cells is standable, so a scenery crown — whose leaf
+    tops are standable — had to declare a standable cell in a space to bind
+    `contract-reachability`, and that cell was then owed light: the Treehouse
+    Camp's Hearth Crown hung lanterns to answer it. A `reached: false` place
+    is proven unreached both ways (`DW0816` over the graph, `DW0837` over the
+    built world), so no player stands on its leaves and a brightness grade
+    there confirms no intent. A sealed piece's floor gates now excuse every
+    standable cell, stating the count (`contract-coverage` passes with it;
+    the others state their zero with it), and `delvec detail` does not run
+    the light probe over scenery: it prints the standable cells it excludes,
+    with their count, and the piece's lighting stays unmeasured. The build's
+    `DW0210` is unchanged: it grades cells a body reaches, and a body
+    reaching scenery is `DW0837`. Shown in `grammar_contract_check.rs`
+    `a_leafy_scenery_crown_owes_no_floor_and_a_reached_one_does` and
+    `detail_verb.rs`
+    `a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged`
+    (the gallery beacon re-cut as 100 standable leaf tops with no light;
+    `reached: false` taken off, the verb judges its floor and writes nothing).
+
 | Criterion | Demonstrated in |
 |---|---|
 | 1 | `tests/blockout.rs` `the_ownership_rule_is_exhaustive_and_one_owner`; `crates/dsl` `siteplan::claim` tests |

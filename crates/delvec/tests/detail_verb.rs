@@ -1263,3 +1263,143 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
         beacon["enumeration"]
     );
 }
+
+/// The gallery beacon re-cut as a crown of leaves: five courses of ground,
+/// two of leaves, three of air over them — so every leaf top is a standable
+/// cell — and a contract whose one space is claimed in the top course of air
+/// and holds none of them.
+fn leafy_beacon() -> Value {
+    let beacon: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            common::repo_root().join("gallery/overlays/site-plan/programs/beacon.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let fill =
+        |role: &str| json!([{"body": {"material": {"role": role}, "op": "fill"}, "weight": 1}]);
+    let abs = |n: i64| json!({"blocks": {"expr": "int", "value": n}, "size": "absolute"});
+    let rest = json!({"size": "relative", "weight": {"expr": "int", "value": 1}});
+    json!({
+        "contract": {"edges": [], "entry": "crown", "spaces": {"crown": {"envelope": "open"}}},
+        "name": "gallery-beacon",
+        "palette": {
+            "ground": "minecraft:polished_blackstone_bricks",
+            "leaves": "minecraft:oak_leaves[distance=1,persistent=true,waterlogged=false]"
+        },
+        "params": {},
+        "shown_faces": ["east", "north", "south", "west"],
+        "start": "place",
+        "version": beacon["version"],
+        "rules": {
+            "ground": fill("ground"),
+            "leaves": fill("leaves"),
+            "air": [{"body": {"axis": "y", "op": "split",
+                "children": [{"op": "void"}, {"body": {"op": "void"}, "op": "claim", "region": "crown"}],
+                "sizes": [abs(2), rest.clone()]}, "weight": 1}],
+            "place": [{"body": {"axis": "y", "op": "split",
+                "children": [
+                    {"op": "call", "symbol": "ground"},
+                    {"op": "call", "symbol": "leaves"},
+                    {"op": "call", "symbol": "leaves"},
+                    {"op": "call", "symbol": "air"}
+                ],
+                "sizes": [abs(5), abs(1), abs(1), rest]}, "weight": 1}]
+        }
+    })
+}
+
+/// **Scenery whose leaves can be stood on owes no floor and no light**
+/// (spec-0098 §14, departure 36). The gallery's site-plan point with its
+/// scenery beacon (`reached: false`) re-cut as a crown of leaves with 100
+/// standable leaf tops, no light source, and a contract declaring none of
+/// them. `delvec detail` writes it and the whole builds: the contract's floor
+/// gates excuse the leaf tops with their count, and the light probe states
+/// the cells it excludes with theirs instead of grading them. The same piece
+/// with `reached: false` taken off is a place a body visits, and the verb
+/// judges its floor again — the leaf tops nothing declares and the way in
+/// nothing claims — and writes nothing.
+#[test]
+fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged() {
+    let tmp = tempdir("leafy-crown");
+    let dir = gallery_site_plan(&tmp);
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"] = json!([]);
+    });
+    let programs = dir.join("programs");
+    std::fs::remove_dir_all(&programs).unwrap();
+    std::fs::create_dir_all(&programs).unwrap();
+    std::fs::write(
+        programs.join("beacon.json"),
+        serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
+    )
+    .unwrap();
+    let detail_into = |prefabs: &Path| {
+        std::fs::create_dir_all(prefabs).unwrap();
+        delvec(&[
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+            "detail",
+            dir.to_str().unwrap(),
+            "--all",
+        ])
+    };
+
+    let prefabs = tmp.join("prefabs");
+    let out = detail_into(&prefabs);
+    let t = text(&out);
+    assert_eq!(code(&out), 0, "{t}");
+    assert!(
+        t.contains(
+            "node/beacon: scenery (`reached: false`) — the light probe excludes the piece's 100 \
+             standable cell(s): none is stood in, and none is owed light."
+        ),
+        "{t}"
+    );
+    assert!(
+        t.contains("detail: the whole builds with the piece(s) this run wrote."),
+        "{t}"
+    );
+    let report: Value = serde_json::from_str(
+        &std::fs::read_to_string(prefabs.join("gallery-beacon.report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(report["verdict"], "pass");
+    let coverage = report["gates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["id"] == "contract-coverage")
+        .cloned()
+        .expect("coverage is emitted");
+    assert_eq!(coverage["state"], "pass", "{coverage}");
+    assert_eq!(coverage["bound"], 100, "{coverage}");
+    assert!(
+        coverage["detail"]
+            .as_str()
+            .unwrap()
+            .contains("none of the piece's 100 standable cell(s) is stood in"),
+        "{coverage}"
+    );
+
+    common::patch_file(&dir.join("layout-graph.json"), |v| {
+        for n in v["content"]["nodes"].as_array_mut().unwrap() {
+            if n["id"] == "node/beacon" {
+                n.as_object_mut().unwrap().remove("reached");
+            }
+        }
+    });
+    let reached = tmp.join("prefabs-reached");
+    let out = detail_into(&reached);
+    let t = text(&out);
+    assert_eq!(code(&out), 1, "{t}");
+    assert!(
+        t.contains("contract-coverage FAIL") && t.contains("contract-reachability FAIL"),
+        "a reached crown's floor is judged again: {t}"
+    );
+    assert!(!t.contains("the light probe excludes"), "{t}");
+    assert!(
+        !reached.join("gallery-beacon.nbt").exists(),
+        "nothing written"
+    );
+}

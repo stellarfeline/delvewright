@@ -521,16 +521,21 @@ fn detail_one(
             out
         })
         .collect();
-    let probe = light::probe_entered(&zone, DEFAULT_DARK_THRESHOLD, sky, &doors);
-    // Scenery is lit for nobody: a body never stands in it, so there is no
-    // play light to measure, and an unbound probe over it is the honest answer
-    // rather than a refusal.
-    if probe.is_unbound() && scenery {
+    // Scenery is lit for nobody: a body never stands in it — the build proves
+    // that both ways (`DW0816`, `DW0837`) — so there is no play light to
+    // measure, whatever a crown's leaf tops offer to stand on. The probe is not
+    // run over it, and the cells it would have graded are stated, with their
+    // count (spec-0098 §14, departure 36).
+    if scenery {
         eprintln!(
-            "{place}: scenery (`reached: false`) — the light probe binds no cell a body stands \
-             in, and none is owed."
+            "{place}: scenery (`reached: false`) — the light probe excludes the piece's {} \
+             standable cell(s): none is stood in, and none is owed light.",
+            delvec::grammar::nav::standable_cells(&expansion.model).len()
         );
-    } else if probe.is_unbound() {
+    }
+    let probe =
+        (!scenery).then(|| light::probe_entered(&zone, DEFAULT_DARK_THRESHOLD, sky, &doors));
+    if let Some(probe) = probe.as_ref().filter(|p| p.is_unbound()) {
         eprintln!(
             "{} [error] {place}: the light probe bound to ZERO cells, so nothing was measured: \
              {}. Nothing was written.",
@@ -539,8 +544,8 @@ fn detail_one(
         );
         return Err(1);
     }
-    if !(probe.is_unbound() && scenery) {
-        admit_meta::set_lighting_from_probe(&mut meta, &probe);
+    if let Some(probe) = &probe {
+        admit_meta::set_lighting_from_probe(&mut meta, probe);
     }
 
     // ---- 6. the bindings check, on the row this run would write ----
@@ -613,6 +618,18 @@ fn detail_one(
 
     // ---- what was done, with every count beside its denominator ----
     let faces = meta.spatial_contract.as_ref().map_or(0, |c| c.faces.len());
+    let (profile, measured, dark) = match &probe {
+        Some(p) => (
+            p.profile,
+            p.measured_cells,
+            if p.is_dark() {
+                format!(" (dark: {})", p.dark_distribution())
+            } else {
+                String::new()
+            },
+        ),
+        None => ("scenery", 0, String::new()),
+    };
     eprintln!(
         "{place}: `{}` written from `{}` — frame {}x{}x{}, seed {seed}; {} of {} handed name(s) \
          bound; {} declared face(s) answering {} allocated seam(s); {} of {} owed name(s) bound; \
@@ -631,13 +648,9 @@ fn detail_one(
         a.seams.len(),
         row.anchors.len(),
         a.owed_anchors.len(),
-        probe.profile,
-        probe.measured_cells,
-        if probe.is_dark() {
-            format!(" (dark: {})", probe.dark_distribution())
-        } else {
-            String::new()
-        },
+        profile,
+        measured,
+        dark,
         files.join(", ")
     );
     if json {
@@ -652,7 +665,7 @@ fn detail_one(
                 "handed": { "bound": declared.len(), "offered": handed.len() },
                 "seams": { "faces": faces, "allocated": a.seams.len() },
                 "owed": { "bound": row.anchors.len(), "owed": a.owed_anchors.len() },
-                "lighting": { "profile": probe.profile, "measured_cells": probe.measured_cells },
+                "lighting": { "profile": profile, "measured_cells": measured },
                 "files": files,
             })
         );
