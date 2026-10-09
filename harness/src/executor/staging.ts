@@ -82,7 +82,10 @@ export const methods = {
         if (of !== undefined) {
           const protect = this.protectedWave;
           if (protect?.wave === of.wave) {
-            const hold = this.dieRetryHolds(of);
+            // How much of the wave stands, asked of the server now: whether this
+            // removal would be the one that clears it is the fact the hold turns on.
+            const standing = (await this.census(of))?.summary.present;
+            const hold = this.dieRetryHolds(of, standing);
             if (hold !== undefined) {
               process.stderr.write(`[staged] ${kind}#${id} stands with \`${of.wave}\`: ${hold}\n`);
               return;
