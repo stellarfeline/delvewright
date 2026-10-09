@@ -381,6 +381,9 @@ pub fn is_no_collision_plant(id: &str) -> bool {
                 // climbing / hanging plants
                 | "vine"
                 | "glow_lichen"
+                // glow lichen's sculk twin: every one of its 128 states has an
+                // empty collision shape in the pinned jar's table
+                | "sculk_vein"
                 | "spore_blossom"
                 | "small_dripleaf"
                 | "kelp"
@@ -1230,6 +1233,7 @@ mod tests {
             "minecraft:flower_pot",
             "minecraft:potted_cactus",
             "minecraft:glow_lichen",
+            "minecraft:sculk_vein",
             "minecraft:snow[layers=1]",
             // Namespaceless spellings reach the same answer.
             "torch",
