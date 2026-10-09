@@ -403,6 +403,20 @@ jobs:
             echo "Both publishes happen together in \`publish\`, which is waiting for the \`crates-io\` approval."
             echo "A run that is never approved leaves exactly this state."
           } >> "$GITHUB_STEP_SUMMARY"
+          # The approval page shows the notes that will be published: the draft's
+          # own body, read back, and `publish` undrafts that draft without editing
+          # it, so what is read here is what goes public. An empty body is a refusal.
+          gh release view "$TAG" --json body --jq .body > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::the draft release $TAG has an empty body; there is nothing to approve."
+            exit 1
+          fi
+          {
+            echo ""
+            echo "### changelog to be published for $TAG"
+            echo ""
+            cat release-notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ---- what WOULD be published, with no access to the token -----------------
   crates-preflight:

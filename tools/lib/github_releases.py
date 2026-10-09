@@ -62,9 +62,10 @@ def api_base() -> str:
     return base.rstrip("/")
 
 
-def fetch(path: str) -> Any:
+def fetch(path: str, payload: dict[str, str] | None = None) -> Any:
     req = urllib.request.Request(
         f"{api_base()}/{path}",
+        data=None if payload is None else json.dumps(payload).encode(),
         headers={
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
@@ -83,6 +84,18 @@ def fetch(path: str) -> Any:
         raise Unreadable(f"{path} -> HTTP {exc.code}") from exc
     except (urllib.error.URLError, OSError, TimeoutError, json.JSONDecodeError) as exc:
         raise Unreadable(f"{path} -> {exc}") from exc
+
+
+def generated_notes(repo: str, tag: str, commit: str, previous: str) -> str:
+    """The changelog GitHub would generate for `tag` at `commit` (the tag need not
+    exist). Creates nothing: the endpoint only renders text."""
+    payload = {"tag_name": tag, "target_commitish": commit}
+    if previous:
+        payload["previous_tag_name"] = previous
+    body = fetch(f"repos/{repo}/releases/generate-notes", payload).get("body", "")
+    if not isinstance(body, str):
+        raise Unreadable("generate-notes answered a body that is not text")
+    return body
 
 
 def published(repo: str, tag: str) -> dict[str, Any] | None:
@@ -180,6 +193,8 @@ USAGE = """usage: github_releases.py <command> [args]
   state <repo> <tag>          published | draft | absent
   assets <repo> <tag>         the published Release's asset names, one per line
   tag-commit <repo> <tag>     the commit the remote tag resolves to, or nothing
+  notes <repo> <tag> <commit> [previous]
+                              the changelog GitHub generates for the tag-to-be (creates nothing)
   bind-test                   refuse (exit 1) unless a known Release resolves
 """
 
@@ -198,6 +213,9 @@ def main(argv: list[str]) -> int:
                 return 0
             print(f"github_releases: {message}", file=sys.stderr)
             return 1
+        if command == "notes" and len(rest) in (3, 4):
+            print(generated_notes(rest[0], rest[1], rest[2], rest[3] if len(rest) == 4 else ""))
+            return 0
         if command in ("state", "assets", "tag-commit") and len(rest) == 2:
             ok, message = bind_test()
             if not ok:
