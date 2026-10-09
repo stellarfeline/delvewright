@@ -33,7 +33,9 @@
         "node": "node/hall"
       },
       {
-        "ceiling": "open",
+        "ceiling": {
+          "open": 3
+        },
         "extent": [
           8,
           8

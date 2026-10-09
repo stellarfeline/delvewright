@@ -1944,6 +1944,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
             floor: 64,
             clearance: 4,
             open: false,
+            base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         },
         delvewright_dsl::siteplan::PlacedBox {
@@ -1952,6 +1953,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
             floor: 64,
             clearance: 4,
             open: false,
+            base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         },
     ];

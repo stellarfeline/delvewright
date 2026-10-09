@@ -282,7 +282,8 @@ pub struct AllocatedSeam {
     /// (and, on a `barred` way, ships its shut state).
     pub owns_plane: bool,
     /// The ring's ground under a vertical seam, piece-local: the sill minus one,
-    /// flat across the opening (spec-0098 §2c). `None` through a floor.
+    /// flat across the opening (spec-0098 §2c). `None` through a floor, and on
+    /// an aloft place, which is handed no ground.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ground_y: Option<i64>,
 }
@@ -364,8 +365,11 @@ pub struct HandedView {
 pub struct HandedGround {
     /// The site's fill kind, `solid` or `open`.
     pub fill: String,
+    /// What the place stands on, as the plan declares it: `ground`, or
+    /// `{"aloft": n}` — hung, handed no ground and no fixed ring.
+    pub base: delvewright_dsl::siteplan::Base,
     /// The claim's bottom, piece-local — the lowest course of ground the piece
-    /// owns under its plot.
+    /// owns under its plot; on an aloft place, the lowest underside course.
     pub bottom_y: i64,
     /// The walk plane, piece-local.
     pub floor_y: i64,
@@ -380,7 +384,8 @@ pub struct HandedGround {
     /// there. The piece holds `structure_void` at each and may write no block.
     pub fixed: Vec<FixedCell>,
     /// The terrain-shaped ground inside the ring, one column per footprint
-    /// cell, from the claim's bottom: the piece reshapes it freely.
+    /// cell, from that column's claim bottom: the piece reshapes it freely.
+    /// Empty on an aloft place.
     pub columns: Vec<GroundColumn>,
 }
 
@@ -679,10 +684,15 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
         .max()
         .unwrap_or(frame.datum_y() - 1);
     let mut columns = Vec::new();
+    let aloft = site.is_aloft(i);
     for x in b.foot[0]..=b.foot[1] {
         for z in b.foot[2]..=b.foot[3] {
+            if aloft {
+                continue;
+            }
             let top = plan.ground.top(x, z).unwrap_or(b.floor_course_y());
-            let blocks: Vec<String> = (site.bottom(i)..=top.min(b.floor_course_y()))
+            let from = site.column_bottom(i, x, z).unwrap_or(frame.bottom);
+            let blocks: Vec<String> = (from..=top.min(b.floor_course_y()))
                 .map(|y| {
                     plan.ground
                         .fill_block([x, y, z])
@@ -706,6 +716,7 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
             "solid"
         }
         .to_string(),
+        base: b.base,
         bottom_y: frame.bottom - frame.lo[1],
         floor_y: frame.datum_y(),
         perimeter,
@@ -774,7 +785,7 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                         .map(str::to_string)
                         .collect(),
                     owns_plane: frame.owns(s.opening.0),
-                    ground_y: (s.normal_axis != 1).then(|| {
+                    ground_y: (s.normal_axis != 1 && !aloft).then(|| {
                         site.ground_height(i, s.opening.0[0], s.opening.0[2]) - frame.lo[1]
                     }),
                 }
@@ -1655,6 +1666,112 @@ pub fn check_voids(
     (d, binding)
 }
 
+/// What the aloft check examined.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AloftBinding {
+    /// Places the plan declares, ground and aloft.
+    pub places: usize,
+    /// Of those, aloft.
+    pub aloft: usize,
+    /// Terrain columns under their footprints and rings examined.
+    pub columns: usize,
+    /// Of those, columns whose surface reaches the claim bottom.
+    pub in_earth: usize,
+}
+
+impl AloftBinding {
+    /// One line, zeroes included.
+    #[must_use]
+    pub fn line(&self) -> String {
+        format!(
+            "aloft binding: {a} aloft place(s) of {p}, {c} terrain column(s) under them \
+             examined, {e} reaching into a claim (DW0990).",
+            a = self.aloft,
+            p = self.places,
+            c = self.columns,
+            e = self.in_earth,
+        )
+    }
+}
+
+/// **`DW0990`'s third shape: an aloft place standing in the earth**, read off
+/// the plan and its terrain at validation (spec-0098 §2).
+///
+/// An aloft place claims no ground: its claim stops its declared underside
+/// courses under its floor course, and the space under it is whoever claims
+/// it, else the site's fill. A terrain column under its footprint or ring
+/// whose surface reaches that bottom puts the whole's ground inside the
+/// place's claim, where neither owns it — refused per place, naming the
+/// columns. On a `solid` site every claim is carved out of the rock, so there
+/// is no surface to judge and the check binds zero columns.
+#[must_use]
+pub fn check_aloft(c: &Campaign) -> (Vec<Diagnostic>, AloftBinding) {
+    let mut d = Vec::new();
+    let plan = SitePlan::of(c);
+    let site = plan.site();
+    let mut binding = AloftBinding {
+        places: plan.boxes.len(),
+        ..AloftBinding::default()
+    };
+    let index: BTreeMap<&str, usize> = c
+        .site_plan
+        .as_ref()
+        .map(|p| {
+            p.content
+                .boxes
+                .iter()
+                .enumerate()
+                .map(|(i, b)| (b.node.0.as_str(), i))
+                .collect()
+        })
+        .unwrap_or_default();
+    for (i, b) in plan.boxes.iter().enumerate() {
+        let Some(n) = b.aloft() else { continue };
+        binding.aloft += 1;
+        if plan.ground.is_open() {
+            let w = b.foot[1] - b.foot[0] + 3;
+            let dz = b.foot[3] - b.foot[2] + 3;
+            binding.columns += usize::try_from(w * dz).unwrap_or(0);
+        }
+        let hits = site.aloft_in_earth(i);
+        if hits.is_empty() {
+            continue;
+        }
+        binding.in_earth += hits.len();
+        let bottom = site.bottom(i);
+        let shown: Vec<String> = hits
+            .iter()
+            .take(6)
+            .map(|h| format!("[{}, {}] at y {}", h[0], h[1], h[2]))
+            .collect();
+        d.push(Diagnostic::error(
+            crate::compiler::blockout::DW_PLOT_UNSTITCHED,
+            "site-plan",
+            format!(
+                "/content/boxes/{}/base",
+                index.get(b.node.0.as_str()).copied().unwrap_or(0)
+            ),
+            format!(
+                "an aloft place stands in the earth: `{node}` hangs (`base: {{\"aloft\": {n}}}`) \
+                 with its claim's bottom at y {bottom}, and the terrain under its footprint or \
+                 ring reaches that course in {k} column(s) — {list}{more}. An aloft place owns \
+                 no ground: the whole's terrain inside its claim has no owner that can draw it. \
+                 Stand the place on the ground (`base: \"ground\"`, so it is handed the ground \
+                 under it), raise its floor clear of the terrain, or lower the terrain under it.",
+                node = b.node,
+                k = hits.len(),
+                list = shown.join(", "),
+                more = if hits.len() > shown.len() {
+                    format!(", and {} more", hits.len() - shown.len())
+                } else {
+                    String::new()
+                },
+            ),
+        ));
+    }
+    (d, binding)
+}
+
 // ---------------------------------------------------------------------------
 // The one path from a binding to placed bytes (spec-0050 §1)
 // ---------------------------------------------------------------------------
@@ -1785,6 +1902,7 @@ mod tests {
             floor,
             clearance: 3,
             open: false,
+            base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         }
     }
@@ -1916,6 +2034,7 @@ mod tests {
             floor: 64,
             clearance: 3,
             open: true,
+            base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         };
         let west = PlacedBox {
@@ -1924,6 +2043,7 @@ mod tests {
             floor: 64,
             clearance: 3,
             open: true,
+            base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         };
         let north = PlacedBox {
@@ -1932,6 +2052,7 @@ mod tests {
             floor: 64,
             clearance: 3,
             open: true,
+            base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         };
         let contact =

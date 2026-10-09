@@ -197,13 +197,26 @@ pub(super) fn claims(c: &Campaign, plan: &SitePlanContent, d: &mut Vec<Diagnosti
             ),
             format!(
                 "the claim of `{node}` leaves the region: it spans x {x0}..{x1}, y {y0}..{y1}, z \
-                 {z0}..{z1} — its play space, the one-cell ring its walls may stand in, the \
-                 ground under it down to y {y0} and any roof the plan declares — and the region \
-                 spans x {a0}..{a1}, y {b0}..{b1}, z {c0}..{c1}. A place owns its outside, so \
-                 everything it owns is placed, and the region holds what the plan places. Move \
-                 the box in from the edge, lower its roof, or change the brief's fact and \
-                 re-derive the region.",
+                 {z0}..{z1} — its play space, the one-cell ring its walls may stand in, \
+                 {under} and any roof the plan declares — and the region spans x {a0}..{a1}, \
+                 y {b0}..{b1}, z {c0}..{c1}. A place owns its outside, so everything it owns is \
+                 placed, and the region holds what the plan places. Move the box in from the \
+                 edge, lower its roof, {fix}or change the brief's fact and re-derive the \
+                 region.",
                 node = b.node,
+                under = match b.aloft() {
+                    Some(n) => format!(
+                        "its underside ({n} course(s) under its floor course, `base: \
+                         {{\"aloft\": {n}}}`) down to y {}",
+                        lo[1]
+                    ),
+                    None => format!("the ground under it down to y {}", lo[1]),
+                },
+                fix = if b.aloft().is_some() {
+                    "shorten its underside, "
+                } else {
+                    ""
+                },
                 x0 = lo[0],
                 x1 = hi[0],
                 y0 = lo[1],
@@ -243,16 +256,22 @@ pub(super) fn claims(c: &Campaign, plan: &SitePlanContent, d: &mut Vec<Diagnosti
                 index.get(last.0.as_str()).copied().unwrap_or(0)
             ),
             format!(
-                "{who} all claim {n} cell(s) and no rule awards them — {shown}{more}. Two owners \
-                 for one block, and no rule to pick by: a place owns the one-cell ring its walls \
-                 may stand in, so places exactly one cell apart (side by side, or corner to \
-                 corner) ask to draw the same wall, and only a connection between them says \
-                 which side draws it (its `a`), or which is roofed where the other is open. Give \
-                 them a seam (its `a` draws the wall), stand them two or more cells apart (each \
-                 then owns its own ring and the gap between is the site's fill — on an open \
-                 site, the commons both may open onto), or make them \
-                 one place. Where seams between them already exist, they disagree about which \
-                 is `a` on this plane.",
+                "the cuboids of {who} all claim {n} cell(s) and no rule awards them — \
+                 {shown}{more}. Two owners for one block, and no rule to pick by. A place's \
+                 claim is a cuboid: its play space, the one-cell ring its walls may stand in, \
+                 its floor course, the ground under it down to its base (a ground place) or \
+                 its declared underside (an aloft one), and its lid and roof; two places \
+                 conflict exactly where those cuboids overlap. Places exactly one cell apart \
+                 (side by side, or corner to corner) ask to draw the same wall, and only a \
+                 connection between them says which side draws it (its `a`), or which is \
+                 roofed where the other is open. Give them a seam (its `a` draws the wall); \
+                 stand them two or more cells apart (each then owns its own ring and the gap \
+                 between is the site's fill — on an open site, the commons both may open \
+                 onto); where one stands over the other, hang the upper place (`base: \
+                 {{\"aloft\": n}}`, so it claims no ground under it) with its underside \
+                 clear of the lower, or shorten the lower open place's headroom (`ceiling: \
+                 {{\"open\": n}}`); or make them one place. Where seams between them \
+                 already exist, they disagree about which is `a` on this plane.",
                 n = cells.len(),
                 shown = shown.join(", "),
                 more = if cells.len() > shown.len() {

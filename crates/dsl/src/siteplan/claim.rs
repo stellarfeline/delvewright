@@ -144,7 +144,7 @@ impl PlacedBox {
 }
 
 /// The whole plan, resolved for ownership: every place, every seam, the site's
-/// ground, and each place's claim bottom.
+/// ground, and each place's claim bottom, column by column.
 #[derive(Debug, Clone)]
 pub struct Site<'a> {
     /// The plan's places.
@@ -153,55 +153,87 @@ pub struct Site<'a> {
     pub seams: &'a [PlacedSeam],
     /// The site's fill.
     pub ground: &'a Ground,
+    /// Each place's lowest claim bottom over its shell footprint.
     bottoms: Vec<i64>,
+    /// Each place's claim bottom per shell column, `x`-major over its shell
+    /// footprint (the play space's footprint grown by the ring).
+    columns: Vec<Vec<i64>>,
+}
+
+impl PlacedBox {
+    /// The underside courses under the floor course, on an aloft place.
+    #[must_use]
+    pub fn aloft(&self) -> Option<u32> {
+        self.base.aloft()
+    }
+
+    /// True when `(x, z)` is inside the shell footprint: the play space's
+    /// footprint grown by the one-cell ring.
+    #[must_use]
+    pub fn in_shell_footprint(&self, x: i64, z: i64) -> bool {
+        let [x0, x1, z0, z1] = self.foot;
+        x >= x0 - 1 && x <= x1 + 1 && z >= z0 - 1 && z <= z1 + 1
+    }
 }
 
 impl<'a> Site<'a> {
-    /// Resolve the claim bottoms of `boxes` over `ground`.
+    /// Resolve the claim bottoms of `boxes` over `ground` (spec-0098 §2).
     ///
-    /// A claim reaches down to the lower of its floor course and the lowest
-    /// terrain under its footprint and ring, so the ring's fixed ground is in
-    /// it (spec-0098 §2) — but never into a place stacked under it: the bottom
-    /// stops one course above the highest claim of any place whose claim lies
-    /// wholly below this one's floor and under its shell footprint, so the plane
-    /// between two stacked places is the upper's floor course (rule 3a) and not
-    /// a column of ground through the lower.
+    /// **A ground place** reaches down, column by column, to the lower of its
+    /// floor course and the terrain under that column, so the ring's fixed
+    /// ground is in it — but never into a place stacked under it: in a column
+    /// another place's claim covers wholly below this one's floor, the bottom
+    /// stops one course above that claim's top, so the plane between two
+    /// stacked places is the upper's floor course (rule 3a) and not a column of
+    /// ground through the lower. Per column: a hall over a cellar owns its
+    /// ground beside the cellar, and only the columns over it stop short.
+    ///
+    /// **An aloft place** reaches down exactly its declared underside courses
+    /// under its floor course, everywhere, and never consults the terrain.
     #[must_use]
     pub fn new(boxes: &'a [PlacedBox], seams: &'a [PlacedSeam], ground: &'a Ground) -> Site<'a> {
-        let bottoms = boxes
+        let columns: Vec<Vec<i64>> = boxes
             .iter()
             .map(|b| {
                 let [x0, x1, z0, z1] = b.foot;
-                let mut bottom = b.floor_course_y();
-                if ground.is_open() {
-                    for x in x0 - 1..=x1 + 1 {
-                        for z in z0 - 1..=z1 + 1 {
-                            if let Some(t) = ground.top(x, z) {
-                                bottom = bottom.min(t);
+                let course = b.floor_course_y();
+                let mut out = Vec::new();
+                for x in x0 - 1..=x1 + 1 {
+                    for z in z0 - 1..=z1 + 1 {
+                        if let Some(n) = b.aloft() {
+                            out.push(course - i64::from(n));
+                            continue;
+                        }
+                        let mut bottom = course;
+                        if ground.is_open()
+                            && let Some(t) = ground.top(x, z)
+                        {
+                            bottom = bottom.min(t);
+                        }
+                        for q in boxes {
+                            if q.node != b.node
+                                && q.in_shell_footprint(x, z)
+                                && q.claim_top() < b.floor
+                            {
+                                bottom = bottom.max(q.claim_top() + 1);
                             }
                         }
+                        out.push(bottom.min(course));
                     }
                 }
-                for q in boxes {
-                    if q.node == b.node {
-                        continue;
-                    }
-                    let overlaps = q.foot[0] - 1 <= x1 + 1
-                        && q.foot[1] + 1 >= x0 - 1
-                        && q.foot[2] - 1 <= z1 + 1
-                        && q.foot[3] + 1 >= z0 - 1;
-                    if overlaps && q.claim_top() < b.floor {
-                        bottom = bottom.max(q.claim_top() + 1);
-                    }
-                }
-                bottom.min(b.floor_course_y())
+                out
             })
+            .collect();
+        let bottoms = columns
+            .iter()
+            .map(|c| c.iter().copied().min().unwrap_or(i64::MAX))
             .collect();
         Site {
             boxes,
             seams,
             ground,
             bottoms,
+            columns,
         }
     }
 
@@ -211,14 +243,35 @@ impl<'a> Site<'a> {
         self.boxes.iter().position(|b| &b.node == node)
     }
 
-    /// Place `i`'s claim bottom.
+    /// Place `i`'s lowest claim bottom — the bottom of its shell.
     #[must_use]
     pub fn bottom(&self, i: usize) -> i64 {
         self.bottoms[i]
     }
 
-    /// Place `i`'s shell: the ground under its plot from its claim bottom, its
-    /// floor course, its play space and its ring, and on a roofed place its lid.
+    /// Place `i`'s claim bottom in shell column `(x, z)`; `None` outside its
+    /// shell footprint.
+    #[must_use]
+    pub fn column_bottom(&self, i: usize, x: i64, z: i64) -> Option<i64> {
+        let b = &self.boxes[i];
+        if !b.in_shell_footprint(x, z) {
+            return None;
+        }
+        let depth = b.foot[3] - b.foot[2] + 3;
+        let k = (x - (b.foot[0] - 1)) * depth + (z - (b.foot[2] - 1));
+        usize::try_from(k).ok().map(|k| self.columns[i][k])
+    }
+
+    /// True when place `i` is aloft.
+    #[must_use]
+    pub fn is_aloft(&self, i: usize) -> bool {
+        self.boxes[i].aloft().is_some()
+    }
+
+    /// Place `i`'s shell, as one box: the ground under its plot from its
+    /// lowest claim bottom, its floor course, its play space and its ring, and
+    /// on a roofed place its lid. A column's own bottom may stand higher
+    /// ([`Site::column_bottom`]).
     #[must_use]
     pub fn shell(&self, i: usize) -> Aabb {
         let b = &self.boxes[i];
@@ -226,6 +279,15 @@ impl<'a> Site<'a> {
             [b.foot[0] - 1, self.bottoms[i], b.foot[2] - 1],
             [b.foot[1] + 1, b.shell_top(), b.foot[3] + 1],
         )
+    }
+
+    /// True when `cell` is in place `i`'s shell: inside its bounding box and
+    /// at or above its column's claim bottom.
+    fn in_shell(&self, i: usize, cell: [i64; 3]) -> bool {
+        inside(cell, self.shell(i))
+            && self
+                .column_bottom(i, cell[0], cell[2])
+                .is_some_and(|b| cell[1] >= b)
     }
 
     /// Everything place `i` might claim, as one box — what a reader iterates.
@@ -239,6 +301,31 @@ impl<'a> Site<'a> {
             }
         }
         (lo, hi)
+    }
+
+    /// **An aloft place standing in the earth** (`DW0990`, third shape): every
+    /// column under place `i`'s footprint or ring whose terrain surface reaches
+    /// its claim bottom, as `[x, z, surface y]` in column order. Empty for a
+    /// ground place and on a `solid` site, whose rock is carved by every claim.
+    #[must_use]
+    pub fn aloft_in_earth(&self, i: usize) -> Vec<[i64; 3]> {
+        let b = &self.boxes[i];
+        if b.aloft().is_none() || !self.ground.is_open() {
+            return Vec::new();
+        }
+        let bottom = self.bottoms[i];
+        let [x0, x1, z0, z1] = b.foot;
+        let mut out = Vec::new();
+        for x in x0 - 1..=x1 + 1 {
+            for z in z0 - 1..=z1 + 1 {
+                if let Some(t) = self.ground.top(x, z)
+                    && t >= bottom
+                {
+                    out.push([x, z, t]);
+                }
+            }
+        }
+        out
     }
 
     /// The ground height `G` of place `i`'s ring column `(x, z)` (spec-0098
@@ -285,10 +372,11 @@ impl<'a> Site<'a> {
     }
 
     /// True when `cell` is fixed ground of place `i`: a ring cell of its shell
-    /// at or under the column's ground height.
+    /// at or under the column's ground height. An aloft place has none.
     #[must_use]
     pub fn is_fixed(&self, i: usize, cell: [i64; 3]) -> bool {
-        inside(cell, self.shell(i))
+        !self.is_aloft(i)
+            && self.in_shell(i, cell)
             && self.boxes[i].is_ring_column(cell[0], cell[2])
             && cell[1] <= self.ground_height(i, cell[0], cell[2])
     }
@@ -298,7 +386,7 @@ impl<'a> Site<'a> {
     /// space, its walls, its lid), where the eave stops (spec-0098 §3).
     #[must_use]
     pub fn claims(&self, i: usize, cell: [i64; 3]) -> bool {
-        if inside(cell, self.shell(i)) {
+        if self.in_shell(i, cell) {
             return true;
         }
         let b = &self.boxes[i];
@@ -314,7 +402,7 @@ impl<'a> Site<'a> {
             && cell[2] <= b.foot[3] + 1;
         // An eave stops where a neighbour's own shell begins — its play space,
         // its walls, its lid — as a real eave stops at the wall it meets.
-        over_shell || !(0..self.boxes.len()).any(|k| k != i && inside(cell, self.shell(k)))
+        over_shell || !(0..self.boxes.len()).any(|k| k != i && self.in_shell(k, cell))
     }
 
     /// The places whose claim bounds meet `bounds` — the only places a cell
@@ -432,18 +520,23 @@ impl<'a> Site<'a> {
 
     /// Every fixed ground cell of place `i`, with its column's ground height,
     /// in a fixed order — what the terrain pass writes and the handout hands.
+    /// Empty on an aloft place.
     #[must_use]
     pub fn fixed_cells(&self, i: usize) -> Vec<([i64; 3], i64)> {
         let b = &self.boxes[i];
         let (lo, hi) = self.shell(i);
         let mut out = Vec::new();
+        if self.is_aloft(i) {
+            return out;
+        }
         for x in lo[0]..=hi[0] {
             for z in lo[2]..=hi[2] {
                 if !b.is_ring_column(x, z) {
                     continue;
                 }
                 let g = self.ground_height(i, x, z);
-                for y in lo[1]..=g.min(hi[1]) {
+                let from = self.column_bottom(i, x, z).unwrap_or(lo[1]);
+                for y in from..=g.min(hi[1]) {
                     out.push(([x, y, z], g));
                 }
             }
@@ -631,8 +724,7 @@ impl Site<'_> {
                 if over_shell {
                     continue;
                 }
-                if let Some(k) = (0..self.boxes.len()).find(|&k| k != i && inside(c, self.shell(k)))
-                {
+                if let Some(k) = (0..self.boxes.len()).find(|&k| k != i && self.in_shell(k, c)) {
                     clipped_by
                         .entry(self.boxes[k].node.clone())
                         .or_default()
@@ -701,6 +793,7 @@ mod tests {
             floor,
             clearance,
             open,
+            base: crate::siteplan::Base::Ground,
             roof: None,
         }
     }
@@ -916,6 +1009,116 @@ mod tests {
 
         let one = vec![a_box("node/one-room", [0, 16, 0, 7], 64, 4, false)];
         assert!(Site::new(&one, &[], &g).contests().0.is_empty());
+    }
+
+    fn hung(mut b: PlacedBox, n: u32) -> PlacedBox {
+        b.base = crate::siteplan::Base::Aloft(n);
+        b
+    }
+
+    fn grass(top: i64) -> Ground {
+        Ground::open_flat(top, "minecraft:grass_block", "minecraft:dirt")
+    }
+
+    /// **A hall over a cellar keeps its ground beside the cellar** (spec-0098
+    /// §14, departure 2, per column). The hall (x/z 0..15, floor 64) stands on
+    /// open ground at y 59 over a cellar (x/z 2..9, lid at 61): only the
+    /// columns over the cellar's shell stop one course above its lid; every
+    /// other column reaches the terrain, so the hall's ring keeps its fixed
+    /// ground and owns the earth beside the cellar. Raised as one box, the
+    /// hall's bottom would be 62 everywhere and its fixed ground would vanish.
+    #[test]
+    fn a_hall_over_a_cellar_keeps_its_ground_beside_the_cellar() {
+        let boxes = vec![
+            a_box("node/hall", [0, 15, 0, 15], 64, 8, false),
+            a_box("node/cellar", [2, 9, 2, 9], 58, 3, false),
+        ];
+        let g = grass(59);
+        let site = Site::new(&boxes, &[], &g);
+        assert_eq!(site.column_bottom(0, 5, 5), Some(62), "over the cellar");
+        assert_eq!(site.column_bottom(0, 12, 12), Some(59), "beside it");
+        assert_eq!(site.bottom(0), 59, "the shell reaches the lowest column");
+        assert!(
+            !site.fixed_cells(0).is_empty(),
+            "the hall's ring keeps its fixed ground"
+        );
+        assert!(site.is_fixed(0, [-1, 59, 5]));
+        assert_eq!(
+            site.owner([12, 60, 12]),
+            Owner::Place(NodeId("node/hall".into())),
+            "the earth beside the cellar is the hall's"
+        );
+        assert_eq!(
+            site.owner([5, 61, 5]),
+            Owner::Place(NodeId("node/cellar".into())),
+            "the cellar's lid is the cellar's"
+        );
+        assert!(site.contests().0.is_empty());
+    }
+
+    /// **An aloft place owns no ground** (spec-0098 §2). A bridge deck at floor
+    /// 70 hung one course under its floor course over open ground at y 59:
+    /// its claim's bottom is y 68 everywhere, it has no fixed ring, and the
+    /// air and terrain under it are nobody's — the commons. Terrain reaching
+    /// y 68 under it is the earth standing in the claim (`DW0990`).
+    #[test]
+    fn an_aloft_place_owns_no_ground_and_the_space_under_it_is_the_commons() {
+        let boxes = vec![hung(a_box("node/bridge", [0, 7, 0, 3], 70, 3, true), 1)];
+        let g = grass(59);
+        let site = Site::new(&boxes, &[], &g);
+        assert_eq!(site.bottom(0), 68);
+        assert_eq!(site.column_bottom(0, -1, -1), Some(68));
+        assert!(site.fixed_cells(0).is_empty(), "no fixed ring");
+        assert!(!site.is_fixed(0, [-1, 59, 0]));
+        assert_eq!(site.owner([3, 60, 1]), Owner::Nobody, "under the deck");
+        assert_eq!(site.owner([3, 59, 1]), Owner::Nobody, "the terrain");
+        assert_eq!(
+            site.owner([3, 68, 1]),
+            Owner::Place(NodeId("node/bridge".into())),
+            "the underside course"
+        );
+        assert!(site.aloft_in_earth(0).is_empty());
+        let high = grass(68);
+        let site = Site::new(&boxes, &[], &high);
+        assert_eq!(
+            site.aloft_in_earth(0).len(),
+            10 * 6,
+            "every footprint and ring column"
+        );
+        let solid = solid();
+        assert!(
+            Site::new(&boxes, &[], &solid).aloft_in_earth(0).is_empty(),
+            "a solid site's rock is carved by every claim"
+        );
+    }
+
+    /// **A gantry over a yard meets it at the yard's open headroom**
+    /// (spec-0098 §2). The yard (floor 64, `open: 4`) claims air to y 67; the
+    /// gantry (floor 69, aloft 0) claims from its floor course, y 68 — the
+    /// cuboids touch and do not overlap. Hung one course lower, the gantry's
+    /// underside reaches the yard's air and its ring, and `DW0827` refuses
+    /// what no rule awards.
+    #[test]
+    fn a_gantry_over_a_yard_meets_it_at_the_yards_headroom() {
+        let yard = a_box("node/yard", [0, 7, 0, 7], 64, 4, true);
+        let gantry = a_box("node/gantry", [2, 5, -6, 13], 69, 3, true);
+        let g = grass(63);
+        let boxes = vec![yard.clone(), hung(gantry.clone(), 0)];
+        let site = Site::new(&boxes, &[], &g);
+        assert!(site.contests().0.is_empty(), "the cuboids touch");
+        assert_eq!(
+            site.owner([3, 67, 3]),
+            Owner::Place(NodeId("node/yard".into()))
+        );
+        assert_eq!(
+            site.owner([3, 68, 3]),
+            Owner::Place(NodeId("node/gantry".into()))
+        );
+        let boxes = vec![yard, hung(gantry, 1)];
+        let site = Site::new(&boxes, &[], &g);
+        let (contests, _) = site.contests();
+        assert_eq!(contests.len(), 1, "the underside reaches the yard");
+        assert!(contests[0].1.iter().all(|c| c[1] == 67));
     }
 
     #[test]

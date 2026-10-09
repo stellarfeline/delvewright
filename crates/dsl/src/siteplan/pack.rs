@@ -649,13 +649,10 @@ pub(super) fn resolve<'a>(
                 _ => None,
             });
         let clearance = match b.ceiling {
-            Ceiling::Clearance(c) => Some(c.get()),
-            // A sky-open place claims its class's own minimum headroom and
-            // nothing above it: an open place is precisely one that makes no
-            // claim on the air over it. True of both kinds of class, which is
-            // why the question is asked of the classification rather than of
-            // one of its variants.
-            Ceiling::Open => class.map(PlaceClass::min_clearance),
+            Ceiling::Clearance(c) => c.get(),
+            // A sky-open place claims exactly the courses of air it declares
+            // and nothing above them.
+            Ceiling::Open(n) => n.get(),
         };
         out.push(Placed {
             index: i,
