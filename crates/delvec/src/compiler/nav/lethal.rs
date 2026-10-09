@@ -260,6 +260,8 @@ mod mob_reach_tests {
                 partial,
                 waterloggable: BTreeSet::new(),
                 lava: BTreeSet::new(),
+                climb: Default::default(),
+                unheld_climb: Default::default(),
             },
             Premises::geometry_only(),
         )

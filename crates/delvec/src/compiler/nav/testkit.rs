@@ -44,6 +44,8 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             // This world has no ambient water, so nothing reads it.
             waterloggable: BTreeSet::new(),
             lava: BTreeSet::new(),
+            climb: Default::default(),
+            unheld_climb: Default::default(),
         },
         // The premises spelled out rather than derived from
         // `Premises::geometry_only()`: a struct literal is what makes a
@@ -189,6 +191,8 @@ pub(in crate::compiler::nav) fn classified(
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
             lava: BTreeSet::new(),
+            climb: Default::default(),
+            unheld_climb: Default::default(),
         },
         Premises::geometry_only(),
     )

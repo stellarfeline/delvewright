@@ -394,6 +394,8 @@ mod tests {
             use_gates: std::collections::BTreeSet::new(),
             flooded: std::collections::BTreeSet::new(),
             lava: std::collections::BTreeSet::new(),
+            climb: Default::default(),
+            unheld_climb: Default::default(),
             partial: BTreeMap::new(),
             waterloggable: std::collections::BTreeSet::new(),
         };

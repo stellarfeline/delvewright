@@ -501,6 +501,7 @@ fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
         to_step: 1,
         cells: vec![[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0]],
         use_gates: Vec::new(),
+        climbs: Vec::new(),
         // No runtime write on this leg: the bare world is the world it was
         // proven over, so the flooded cell has nothing to explain it away.
         region_state: RegionState::default(),
@@ -519,6 +520,7 @@ fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
         to_step: 1,
         cells: vec![[0, 65, 0], [1, 65, 0]],
         use_gates: Vec::new(),
+        climbs: Vec::new(),
         region_state: RegionState::default(),
     }];
     assert!(verify_exported_routes(&world, &dry).is_ok());
@@ -787,4 +789,78 @@ fn shaped_paths_are_deterministic() {
     for _ in 0..8 {
         assert_eq!(world.find_path([0, 64, 0], [4, 64, 10]).unwrap(), first);
     }
+}
+
+/// A floor at y = 64 over x 0..=6, z 0..=2, and a solid mass at x 3..=6 up to
+/// y = 68, so its top is stood on at y = 69. `ladder` hangs at x = 2, z = 1,
+/// y 65..=68, in the block state given.
+fn ladder_cliff(ladder: Option<&str>) -> World {
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..=6 {
+        for z in 0..=2 {
+            cells.push(([x, 64, z], "minecraft:stone"));
+            if x >= 3 {
+                for y in 65..=68 {
+                    cells.push(([x, y, z], "minecraft:stone"));
+                }
+            }
+        }
+    }
+    if let Some(l) = ladder {
+        for y in 65..=68 {
+            cells.push(([2, y, 1], l));
+        }
+    }
+    blocks_world(&cells)
+}
+
+/// **A forced leg up a ladder is proven, and one up a ladder the world does not
+/// keep is `DW0991`, naming it.** The same four-course face three ways: a ladder
+/// that hangs (the leg routes), a ladder turned to face into the mass with
+/// nothing behind it (`DW0991`, the block and the hold it lacks), and no ladder
+/// at all (`DW0311`, the generic answer — there is nothing to blame).
+#[test]
+fn a_leg_up_a_ladder_is_proven_and_an_unheld_ladder_is_dw0991() {
+    let (a, b) = ([0, 65, 1], [5, 69, 1]);
+    let leg = [vp(a, false), vp(b, false)];
+    assert!(
+        route_visited(
+            &ladder_cliff(Some("minecraft:ladder[facing=west]")),
+            &leg,
+            &RegionEvents::default(),
+            &linear
+        )
+        .is_ok()
+    );
+    let err = route_visited(
+        &ladder_cliff(Some("minecraft:ladder[facing=east]")),
+        &leg,
+        &RegionEvents::default(),
+        &linear,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, DW_CLIMB_UNHELD, "{}", err.message);
+    assert!(err.message.contains("[2, 66, 1]"), "{}", err.message);
+    assert!(err.message.contains("sturdy east face"), "{}", err.message);
+    let bare =
+        route_visited(&ladder_cliff(None), &leg, &RegionEvents::default(), &linear).unwrap_err();
+    assert_eq!(bare.code, DW_CRITICAL_UNROUTABLE);
+}
+
+/// **The exported route carries its climb, and its ends are waypoints.**
+#[test]
+fn the_exported_leg_names_its_climb() {
+    let w = ladder_cliff(Some("minecraft:ladder[facing=west]"));
+    let routes = route_walked_legs(
+        &w,
+        &[vp([0, 65, 1], false), vp([5, 69, 1], false)],
+        &RegionEvents::default(),
+        &linear,
+    );
+    let leg = &routes[0].0;
+    assert_eq!(leg.climbs.len(), 1);
+    assert!(
+        verify_exported_routes(&w, std::slice::from_ref(leg)).is_ok(),
+        "a held cell is a cell a body is in"
+    );
 }

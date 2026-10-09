@@ -629,6 +629,11 @@ pub struct LegRoute {
     /// pathfinder's `canOpenDoors` performs the adventure-legal click); always
     /// kept as thinned waypoints.
     pub use_gates: Vec<[i32; 3]>,
+    /// The climbs the route takes (spec-0099), in route order, as
+    /// [`World::climb_runs`] reads them off `cells` in the world the leg was
+    /// proven over. Exported in the waypoint metadata so the harness bot drives
+    /// the climb the compiler proved; empty for every leg that climbs nothing.
+    pub climbs: Vec<crate::compiler::nav::ClimbRun>,
     /// The runtime-region state in force while the player walks this leg — the
     /// world the A* above actually ran in ([`World::walked_leg_region_state`]).
     ///
@@ -764,7 +769,9 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
         let leg_world_owned = leg.proven_world(world);
         let leg_world: &World = leg_world_owned.as_ref().unwrap_or(world);
         for &cell in &leg.cells {
-            if !leg_world.is_standable(cell) {
+            // A cell a route holds a body in on a climb (spec-0099) is a cell the
+            // body can be in, though it stands on nothing.
+            if !leg_world.holds_body(cell) {
                 return Err(Failure {
                     code: DW_WAYPOINT_NOT_STANDABLE,
                     message: format!(

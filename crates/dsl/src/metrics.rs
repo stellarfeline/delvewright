@@ -400,6 +400,69 @@ pub const POLL_FALL_BLOCKS_PER_TICK: f64 = 3.92;
 /// costs one.
 pub const FALL_DAMAGE_ONSET_BLOCKS: f64 = 3.0;
 
+/// The vertical speed a body on a climbable is **given**, in blocks per tick,
+/// while it pushes against something or holds jump (spec-0099).
+///
+/// **Cited**, the pinned jar: `LivingEntity.handleRelativeFrictionAndCalculateMovement`
+/// sets the movement's `y` to `0.2` when `(horizontalCollision || jumping) &&
+/// onClimbable()`. The jump half is what lets a body climb a vine that hangs in
+/// open air, and what the harness bot holds.
+pub const CLIMB_SET_SPEED_BLOCKS_PER_TICK: f64 = 0.2;
+
+/// The fastest a body on a climbable **slides down**, and the fastest it moves
+/// sideways on one, in blocks per tick (spec-0099).
+///
+/// **Cited**, the pinned jar: `LivingEntity.handleOnClimbable` clamps `x` and `z`
+/// to `±0.15` and `y` to at least `-0.15`, and resets the fall distance on every
+/// tick the body is on one — so a body that reaches a climbable stops falling
+/// and takes no damage for the fall above it. A player who sneaks holds still
+/// (`y` is set to 0 while `isSuppressingSlidingDownLadder()`, which a player
+/// answers with `isShiftKeyDown()`), on every climbable but scaffolding.
+pub const CLIMB_SLIDE_BLOCKS_PER_TICK: f64 = 0.15;
+
+/// The air drag vanilla applies to a body's vertical speed each tick, and the
+/// gravity it subtracts first: `vy' = (vy − g)·k` (**cited**,
+/// `LivingEntity.travelInAir`: the `0.98f` factor; `g` is the `gravity`
+/// attribute, `0.08` for a player). [`POLL_FALL_BLOCKS_PER_TICK`] is this law's
+/// fixed point, measured.
+pub const AIR_DRAG: f64 = 0.98;
+
+/// See [`AIR_DRAG`].
+pub const GRAVITY_BLOCKS_PER_TICK2: f64 = 0.08;
+
+/// The speed a body climbs at, in blocks per tick: the set speed, less one
+/// tick of gravity, dragged — `(0.2 − 0.08) × 0.98 = 0.1176`, 2.35 blocks a
+/// second. Derived, because the movement a tick applies is the speed the
+/// previous tick left after gravity and drag.
+#[must_use]
+pub fn climb_blocks_per_tick() -> f64 {
+    (CLIMB_SET_SPEED_BLOCKS_PER_TICK - GRAVITY_BLOCKS_PER_TICK2) * AIR_DRAG
+}
+
+/// **How far a body may fall onto a climbable and still be caught by it**, in
+/// whole blocks (spec-0099 §3.5).
+///
+/// A climbable holds a body only on a tick that begins with the body's FEET in
+/// its cell (`onClimbable()` reads the block at `blockPosition()`). A body
+/// falling less than one block per tick cannot pass a one-block cell between
+/// two ticks, so it is caught; one falling faster can. Derived from the fall law
+/// ([`AIR_DRAG`], [`GRAVITY_BLOCKS_PER_TICK2`]): the distance fallen through the
+/// last tick whose step is still under one block, floored. Seven blocks: the
+/// fourteenth tick moves 0.966 and has fallen 7.56 in all, the fifteenth moves
+/// 1.025.
+#[must_use]
+pub fn climb_catch_fall_blocks() -> u32 {
+    let (mut v, mut fallen) = (0.0_f64, 0.0_f64);
+    loop {
+        let next = (v + GRAVITY_BLOCKS_PER_TICK2) * AIR_DRAG;
+        if next >= 1.0 {
+            return fallen.floor() as u32;
+        }
+        v = next;
+        fallen += v;
+    }
+}
+
 /// Ticks a walking player spends crossing one block on the flat.
 ///
 /// Derived rather than stored, because both operands are facts and nothing

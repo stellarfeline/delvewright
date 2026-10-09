@@ -74,13 +74,13 @@ def sixteenths(v: str) -> str:
     return str(f.numerator) if f.denominator == 1 else f"{f.numerator}/{f.denominator}"
 
 
-def collapse(states_tsv: pathlib.Path) -> tuple[list[tuple[str, str, str, int]], int]:
-    """Collapse every blockstate onto the properties that move its vertical
-    extent. Each row names the block and those properties only; within a row the
-    extent is asserted constant, so the row stands for every state it matches."""
-    per: dict[str, list[tuple[dict[str, str], tuple[str, str]]]] = collections.defaultdict(list)
+def read_states(states_tsv: pathlib.Path, width: int) -> dict[str, list[tuple[dict[str, str], tuple]]]:
+    """The dumper's per-blockstate lines, grouped by block: each state's
+    properties beside the `width` value columns that follow it on its line."""
+    per: dict[str, list[tuple[dict[str, str], tuple]]] = collections.defaultdict(list)
     for ln in states_tsv.read_text(encoding="utf8").splitlines():
-        s, lo, hi = ln.rsplit("\t", 2)
+        parts = ln.rsplit("\t", width)
+        s, values = parts[0], tuple(parts[1:])
         m = STATE_RE.match(s)
         if not m:
             fail(f"unparsable blockstate from the dumper: {s!r}")
@@ -89,9 +89,18 @@ def collapse(states_tsv: pathlib.Path) -> tuple[list[tuple[str, str, str, int]],
             for kv in m.group(2).split(","):
                 k, v = kv.split("=", 1)
                 props[k] = v
-        per[m.group(1)].append((props, (sixteenths(lo), sixteenths(hi))))
+        per[m.group(1)].append((props, values))
+    return per
 
-    rows: list[tuple[str, str, str, int]] = []
+
+def collapse_values(
+    per: dict[str, list[tuple[dict[str, str], tuple]]],
+) -> tuple[list[tuple[str, tuple, int]], int]:
+    """Collapse every blockstate onto the properties that move its value. Each
+    row names the block and those properties only; within a row the value is
+    asserted constant, so the row stands for every state it matches. The one
+    collapse every per-blockstate table this directory writes is made with."""
+    rows: list[tuple[str, tuple, int]] = []
     covered = 0
     for block in sorted(per):
         states = per[block]
@@ -110,17 +119,29 @@ def collapse(states_tsv: pathlib.Path) -> tuple[list[tuple[str, str, str, int]],
         for key in sorted(buckets):
             exts = set(buckets[key])
             if len(exts) != 1:
-                fail(f"{block}{key}: extent is not constant within the group: {exts}")
-            lo, hi = exts.pop()
+                fail(f"{block}{key}: value is not constant within the group: {exts}")
             name = f"minecraft:{block}" + (
                 "[" + ",".join(f"{k}={v}" for k, v in key) + "]" if key else ""
             )
-            rows.append((name, lo, hi, len(buckets[key])))
+            rows.append((name, exts.pop(), len(buckets[key])))
             covered += len(buckets[key])
     return rows, covered
 
 
-def generate(work: pathlib.Path) -> tuple[str, str]:
+def collapse(states_tsv: pathlib.Path) -> tuple[list[tuple[str, str, str, int]], int]:
+    """Collapse every blockstate onto the properties that move its vertical
+    extent: [`collapse_values`] over the two extent columns, in sixteenths."""
+    per = read_states(states_tsv, 2)
+    for block in per:
+        per[block] = [(props, (sixteenths(lo), sixteenths(hi))) for props, (lo, hi) in per[block]]
+    rows, covered = collapse_values(per)
+    return [(n, lo, hi, c) for n, (lo, hi), c in rows], covered
+
+
+def prepare(work: pathlib.Path) -> tuple[str, pathlib.Path, pathlib.Path, str, dict]:
+    """Fetch and verify the pinned jar and its mappings into `work`, unpack the
+    bundle, and return `(version, jar, mappings, classpath, parsed mappings)`:
+    the setup every dumper in this directory runs before it reflects anything."""
     pin = light.read_pin()
     version = pin["version"]
     work.mkdir(parents=True, exist_ok=True)
@@ -155,8 +176,11 @@ def generate(work: pathlib.Path) -> tuple[str, str]:
     classpath = ":".join(
         [str(inner[0])] + [str(p) for p in sorted((bundle / "META-INF" / "libraries").rglob("*.jar"))]
     )
+    return version, jar, mappings, classpath, light.parse_mappings(mappings)
 
-    maps = light.parse_mappings(mappings)
+
+def generate(work: pathlib.Path) -> tuple[str, str]:
+    version, jar, mappings, classpath, maps = prepare(work)
     args = []
     args += light.resolve(maps, CLASS_SHARED, methods=["tryDetectVersion"])
     args += light.resolve(maps, CLASS_BOOTSTRAP, methods=["bootStrap"])

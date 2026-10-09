@@ -91,6 +91,17 @@ third, second, first. The plan replays every press the way the datapack runs
 it, line by line, and the path presses first, second, third in front of the
 counter. A gate no press sequence can open is refused (`DW0985`).
 
+One place in the hall is climbed to, and a ladder is the only way up. The ferry
+cabin's roof stands four courses over the far hall's floor, past any step or jump,
+and four rungs hang on the cabin's east wall, facing east. After the party crosses
+the strait and is carried back out, `obj/climb-onto-the-cabin` sends it up the
+ladder onto the roof (`anchor/cabin-roof`) and `obj/reach-the-end` sends it back
+down — so the route proof climbs both ways, the exported legs carry a `climbs`
+entry each, and the bot drives both climbs rather than walking them (spec-0099).
+Turn the rungs to face into the wall, with the open hall behind them, and the
+world no longer keeps them: the build is refused `DW0991`, naming each rung and
+the sturdy face it lacks (`probes/a-ladder-with-nothing-behind-it`).
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor
@@ -200,6 +211,7 @@ holding them at once.
 | `a-stage-with-no-term` | `DW0953` | `validate` | emptying the lidded pit's `when` to `{}` — a stage with no term |
 | `a-stage-one-player-holds` | `DW0953` | `validate` | staging the lidded pit on the tokens, a datum each player holds for themselves |
 | `a-wait-longer-than-two-minutes` | `DW0925` | `validate` | making a fallen player wait 121 seconds before rejoining, one past the two minutes a wait may last |
+| `a-ladder-with-nothing-behind-it` | `DW0991` | `build` | turning the cabin ladder's four rungs to face into the cabin's wall, so each hangs on the open hall behind it |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

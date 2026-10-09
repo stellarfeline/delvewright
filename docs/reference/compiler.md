@@ -2723,7 +2723,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   harness replays these as successive nearby pathfinder goals so no single distant
   A* solve strands the bot on a large open cave (its pathfinder's `canOpenDoors`
   performs the gate click, and the harness's fence-lip waypoint filter stands as
-  defence-in-depth). **Validation metadata, not shipped gameplay** —
+  defence-in-depth). A leg whose route climbs (spec-0099) carries a `climbs`
+  array, in route order: each `{from, to, bottom, top, block, facing?}` — where
+  the body takes hold, where it lets go (both kept waypoints), the lowest and
+  highest cell it holds in, the block, and a ladder's facing. The cells held
+  between `from` and `to` are not waypoints (a waypoint is a place to stand), so
+  a climb is one hop, and the harness drives it. Omitted for a leg that climbs
+  nothing. **Validation metadata, not shipped gameplay** —
   excluded from the delve image (like `packtest-datapack/`); emitted only when a
   walked critical leg exists, so a fully-transported campaign stays
   byte-identical.
@@ -3076,7 +3082,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`compiler::nav::LeaveBinding`): `configurations` (distinct quest
   configurations judged), `route_cells` (the critical path's route cells the
   proof was rooted at, summed over them), `reached` (cells a body reaches from
-  them by walking, falling, jumping or swimming), `afloat` (of those, cells
+  them by walking, falling, jumping, swimming or climbing), `afloat` (of those, cells
   where the body floats at the top of water — the population the water half
   judges), and `trapped` (zero on a build that ships). Written only when the
   proof holds.
@@ -3662,6 +3668,7 @@ a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
 | `flower_pot`, `potted_*` | 6/16 | |
 | `lantern`, `soul_lantern`, `*copper_lantern` | 9/16, 10/16 `hanging=true` | two stacked boxes, the cap on top; a floor lantern is a step a mob takes onto a curb (content measurement: top at the cell floor + 0.5625). `sea_lantern` and `jack_o_lantern` are full cubes |
 | no-collision fixtures (`assembled::is_no_collision_fixture`) | 0/16 | torches (`torch`, `*_torch` — wall, soul and redstone alike), signs and banners (`*_sign`, `*_banner`), `lever`, `*_button`, rails (`rail`, `*_rail`), `redstone_wire`, `light`, `structure_void` — vanilla declares every one of them `noCollission()`. A wall torch occupies the air cell beside the wall it is fixed to, and a model that calls that cell a full cube severs a corridor. **Deliberately excluded, and not because they collide**: `fire`, `soul_fire`, `cobweb` and the portals also have empty collision boxes and stay full cubes here, because a body that *passes through* one is not a body that may be *routed* through one. Also excluded because their shapes are not read out of the pin: lanterns, chains, end rods, ladders. |
+| climbables (`blockshape::climbable`, every member of the pinned `#minecraft:climbable` but `scaffolding`) | — (class `Climbable`) | `ladder` (a 3/16 panel against its support), `vine`, `weeping_vines`, `twisting_vines`, `cave_vines` and their `_plant` bodies: a body passes the cell and never stands on it; what holds it there is the climb (spec-0099, below). `scaffolding` stays a full cube |
 | no-collision vegetation (`assembled::is_no_collision_plant`) | 0/16 | grasses/ferns, every small and tall flower, `pink_petals`/`wildflowers`/`leaf_litter`, saplings, crops, mushrooms and nether flora, kelp/seagrass, vines/`glow_lichen` — vanilla gives them an **empty** collision shape. Modelling them as full cubes makes a plant cell a phantom standable surface, which refuses valid geometry (a tuft on a terrace splits a 2-block riser into two climbable 1-block steps) and, worse, accepts invalid: a walkability proof that stands a body ON a tuft is unsound, and a flower cell measures light 0 as if it were opaque. The list is the **class**, never the ids one generator happens to scatter; lookalikes that DO collide (`azalea`, `big_dripleaf`, `bamboo`, `cactus`, `pointed_dripstone`, `sea_pickle`, leaves, …) keep a box a body cannot walk through: a full cube, or the measured floor height of the next row (`cactus` 15, an upward dripstone tip 11). Fidelity consequence: plant cells no longer dam the water-flood model either — vanilla water flows into and breaks them. |
 | every other block whose pinned collision box rests on the cell floor and tops out at 8–15/16 (`blockshape::measured_collision`) | the measured top | read from `crates/dsl/data/collision-tops-1.21.11.tsv`, the vertical extent of `BlockState.getCollisionShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)` for every blockstate of the pinned server jar (`tools/maintenance/dump-collision-tops.py`; 29,671 states in 5,724 rows). A property the name leaves out is read at the block's pinned default, so a bare `pointed_dripstone` is the upward tip it places: 11/16, the feet of a body standing on it 0.6875 into the tip's cell. Chests, beds, soul sand, mud, honey, cactus, cakes, lecterns, skulls and the rest of the class come in at their own tops by the same rule |
 | everything else | 16/16 | the conservative default: a box under 8/16 no row above names, a box that does not start at the cell floor (a downward dripstone tip is 5–16), a box over a block tall, or an empty box this table refuses to route through |
@@ -3676,6 +3683,33 @@ makes the nav step rule physical rather than cell-counting — see below.
 
 Modelled **precisely**: fences, walls, fence gates (open vs closed), trap
 triggers, thin decoration, free fluid and waterlogging, and partial floor heights.
+**A body climbs (spec-0099).** A climbable the assembled world **keeps** is a
+fourth kind of place beside standing, floating and falling: a body whose feet
+cell holds one, with its body's cells unoccupied, **holds** there
+(`World::climb_cell_fp`), standable or not. Which climbables the world keeps is
+read from each block's pinned `canSurvive` rule over the block map, to the fixed
+point the game's shape updates cascade to (`assembled::climb_holds`,
+`keep_climbs`): a ladder needs a sturdy face on the block behind it, a vine a
+full face beside one of its set faces or the vine above carrying the same face
+(its `up` face is not counted), a weeping, twisting or cave vine the same plant
+or a sturdy face on the block it grows from. Faces come from
+`crates/dsl/data/faces-1.21.11.tsv` (`dump-faces.py`). A climbable whose hold
+fails is air to the model and is recorded for `DW0991`; a runtime write that
+touches a climbable's cell or its hold takes the climb away (`World::drop_unheld_climbs`).
+The climb's moves (`World::climb_moves_fp`) are up, down, off the side (level,
+or one lower), over the top from the top rung onto a standable cell one higher,
+off the bottom onto the floor one under, and in from a standable cell beside (or
+one higher, the climbable catching the step off the brink). The route relation
+(`neighbors_fp`) takes them, so every route proof does; a body holding in mid-air
+walks nowhere. `body_moves` and `mob_moves` take them too, with a step off the
+side, letting go at the bottom of a run, and the **catch**: a fall is stopped by
+the first climb cell whose top is at most `metrics::climb_catch_fall_blocks()`
+(7, derived from the fall law: past it a body moves a block a tick and can pass a
+one-block cell between ticks) under the body's feet. `fatal_step_off` slides a
+caught body to the bottom of its run and asks the fall below it. Scaffolding and
+the open-trapdoor-over-ladder rule are not modelled (spec-0099 §3.3–3.4). A
+ladder dams a flood; a vine does not, and a flooded cell holds no climb.
+
 Modelled **conservatively** — treated as a full solid cube, never as
 walkable-through: stairs, doors, trapdoors, and every other partial-collision
 block whose box is not a floor at a measured height. The tall/gate classes keep the proof from standing a player ON TOP of a

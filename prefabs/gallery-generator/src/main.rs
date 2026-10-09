@@ -61,6 +61,22 @@ const CABIN_LANTERN: [i32; 3] = [2, 3, 27];
 /// stands in the cell under it). What the arrival view in the cabin frames.
 const CABIN_LAMP: [i32; 3] = [2, 2, 29];
 
+/// **The cabin ladder** (spec-0099): a ladder up the ferry cabin's outer east
+/// wall, `(x, z)`, one rung on each of the wall's three courses and one on the
+/// roof's edge, so its top rung stands beside the roof and a body climbing it
+/// steps off over the top onto the roof. Facing east: it hangs on the cabin's
+/// wall behind it, which is the hold its `canSurvive` asks for.
+///
+/// It is the gallery's one climb, and the cabin roof's only way up: the roof is
+/// four courses over the far hall's floor, past any step or jump, so the leg to
+/// `anchor/cabin-roof` is proven by climbing it or not at all. At `z = 28`, off
+/// the patrol lane's end at `z = 29` and clear of the lantern over the roof's
+/// middle (`[3, 6, 27]`), so the cell it lets go onto has a body's headroom.
+const CABIN_LADDER: (i32, i32) = (5, 28);
+
+/// The block state of every rung of [`CABIN_LADDER`].
+const CABIN_LADDER_STATE: &[(&str, &str)] = &[("facing", "east")];
+
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
 
@@ -673,6 +689,17 @@ const ANCHORS: &[Anchor] = &[
                looks at",
         role: None,
     },
+    Anchor {
+        name: "anchor/cabin-roof",
+        pos: [CABIN.1, CABIN_ROOF_Y + 1, CABIN.2 + 1],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "on the ferry cabin's roof, four courses over the far hall: the beat the \
+               cabin ladder is the only way up to (spec-0099). Two cells north of where the \
+               ladder lets go, so the walk onto it ends facing out over the far hall and \
+               its arrival frame shows the hall, not the wall behind the cabin",
+        role: None,
+    },
     // Kept clear of the outer wall on purpose: a POV camera stands on an anchor
     // and looks along the leg it is walking, so an anchor one or two blocks from
     // a wall renders the wall — a flat frame, or one framing nothing declared.
@@ -1117,6 +1144,9 @@ fn block_at(
             return ("minecraft:stone", None);
         }
         return ("minecraft:air", None);
+    }
+    if (x, z) == CABIN_LADDER && (1..=CABIN_ROOF_Y).contains(&y) {
+        return ("minecraft:ladder", Some(CABIN_LADDER_STATE));
     }
     if CONTAINERS.iter().any(|a| a.pos == [x, y, z]) {
         // Facing north, so the lid opens toward the walker coming down the hall.

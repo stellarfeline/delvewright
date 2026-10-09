@@ -843,6 +843,40 @@ test("a reach the landing completed passes on the marker it already has, walking
   );
 });
 
+test("a reach the landing completes consumes its leg, so the walks after the carry stay in lockstep", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("gallery");
+  // The gallery's exported legs around the cabin: the landing-to-anchor leg the
+  // reach completes unwalked, then the cabin tiller's stand leg.
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.4.0",
+      campaign_id: "gallery",
+      legs: [
+        { from: [2, 67, 27], to: [2, 67, 28], waypoints: [[2, 67, 27], [2, 67, 28]] },
+        { from: [2, 67, 28], to: [2, 67, 28], waypoints: [[2, 67, 28]] },
+      ],
+    }),
+  );
+  executor.beginStep(19);
+  bot.emit("messagestr", "[dw:complete gallery obj/cross-the-strait]");
+  executor.beginStep(20);
+  await within(
+    "executor.reach(landed)",
+    executor.reach({
+      action: "reach",
+      objective: "obj/cross-the-strait",
+      anchor: "anchor/cabin",
+      pos: [2, 67, 28],
+      radius: 1,
+      completion: { kind: "cube", lo: [1, 66, 27], hi: [3, 68, 29] },
+      completedOnLanding: true,
+    }),
+  );
+  assert.equal(executor.legCursor, 1, "the landing's leg is consumed, the stand leg is next");
+});
+
 test("a reach the landing was said to complete, with no marker, fails naming the claim", async () => {
   const bot = new FakeBot();
   const executor = attach(bot);

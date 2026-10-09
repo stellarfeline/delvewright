@@ -611,6 +611,8 @@ mod tests {
             partial: std::collections::BTreeMap::new(),
             waterloggable: std::collections::BTreeSet::new(),
             lava: std::collections::BTreeSet::new(),
+            climb: Default::default(),
+            unheld_climb: Default::default(),
         }
     }
 

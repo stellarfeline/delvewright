@@ -2233,6 +2233,108 @@ fn the_commons_is_walkable_ground_and_a_solid_site_has_none() {
     assert!(!dw0838(&b), "{:?}", errors_of(&b));
 }
 
+/// **A climbable on a wall a neighbour owns holds by the neighbour's wall**
+/// (spec-0098 beside spec-0099). The hall hangs a ladder on its first layer
+/// against the party plane the landing owns — a void in the hall's piece, so
+/// what stands behind the ladder in the world is the landing's wall — and the
+/// assembled world credits the climb with that wall as its hold. The
+/// perturbation: the landing's piece leaves that one wall cell air, and the
+/// same ladder holds nothing.
+#[test]
+fn a_ladder_on_a_neighbours_wall_holds_by_that_wall() {
+    let c = campaign_at(&blockout_dir());
+    let hall = detail::allocation(&c, &NodeId("node/hall".into())).unwrap();
+    let landing = detail::allocation(&c, &NodeId("node/landing".into())).unwrap();
+    let z = 10;
+    let behind_local = [0, hall.datum_y + 1, z];
+    assert!(
+        hall.voids.iter().any(|v| (0..3)
+            .all(|i| behind_local[i] >= v.cells[0][i] && behind_local[i] <= v.cells[1][i])),
+        "the cell behind the ladder is a void of the hall's frame — the landing's plane"
+    );
+    let behind = [
+        hall.world_min[0] + behind_local[0],
+        hall.world_min[1] + behind_local[1],
+        hall.world_min[2] + behind_local[2],
+    ];
+    let ladder = [1, hall.datum_y + 1, z];
+    let ladder_world = [
+        hall.world_min[0] + ladder[0],
+        hall.world_min[1] + ladder[1],
+        hall.world_min[2] + ladder[2],
+    ];
+    let landing_local = [
+        behind[0] - landing.world_min[0],
+        behind[1] - landing.world_min[1],
+        behind[2] - landing.world_min[2],
+    ];
+    let holds_at = |d: &Detailed| {
+        let c = campaign_at(&d.campaign);
+        let reg = PrefabRegistry::load_dir(&d.prefabs).unwrap();
+        let plan = Plan::build(&c, &reg).unwrap();
+        let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for area in &plan.areas {
+            for piece in &area.pieces {
+                for t in &piece.templates {
+                    if let Ok(bytes) = std::fs::read(d.prefabs.join(&t.structure_file)) {
+                        structures.insert(t.structure_file.clone(), bytes);
+                    }
+                }
+            }
+        }
+        let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);
+        delvec::compiler::assembled::climb_holds(&blocks)
+    };
+    let edit = |cut_wall: bool| {
+        move |n: &str, p: [i64; 3]| -> Option<String> {
+            if n == "node/hall" && p == ladder {
+                Some("minecraft:ladder[facing=east,waterlogged=false]".to_string())
+            } else if cut_wall && n == "node/landing" && p == landing_local {
+                Some("minecraft:air".to_string())
+            } else {
+                None
+            }
+        }
+    };
+    let tmp = tempdir("ladder-held");
+    let d = detailed_from(
+        &blockout_dir(),
+        &tmp,
+        &["node/hall", "node/landing"],
+        &edit(false),
+    );
+    let (held, _) = holds_at(&d);
+    let h = held
+        .get(&[
+            ladder_world[0] as i32,
+            ladder_world[1] as i32,
+            ladder_world[2] as i32,
+        ])
+        .unwrap_or_else(|| panic!("the ladder at {ladder_world:?} is not held: {held:?}"));
+    assert!(
+        h.holds.iter().any(|(_, hold)| matches!(hold,
+            delvec::compiler::assembled::Hold::Block(b)
+                if *b == [behind[0] as i32, behind[1] as i32, behind[2] as i32])),
+        "held by the landing's wall: {h:?}"
+    );
+    let tmp = tempdir("ladder-unheld");
+    let d = detailed_from(
+        &blockout_dir(),
+        &tmp,
+        &["node/hall", "node/landing"],
+        &edit(true),
+    );
+    let (held, _) = holds_at(&d);
+    assert!(
+        !held.contains_key(&[
+            ladder_world[0] as i32,
+            ladder_world[1] as i32,
+            ladder_world[2] as i32
+        ]),
+        "with the landing's wall cell gone, the ladder holds nothing"
+    );
+}
+
 /// **Criterion 22: a hole in a place's own wall that lets a body into
 /// another place where nothing allocated an opening is refused.** The landing
 /// owns the party plane it shares with the hall (its seam's `a`); its piece
