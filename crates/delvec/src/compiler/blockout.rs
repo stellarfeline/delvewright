@@ -2653,7 +2653,7 @@ fn owned_by_other(boxes: &[PlacedBox], me: &PlacedBox, cell: [i64; 3]) -> bool {
 /// physical rise between two standing surfaces. It models no free fall, and
 /// deliberately — a router that could fall would prove routes a body cannot
 /// come back from. A `drop` seam is exactly such a fall, and it is *designed*:
-/// the plan allocated it, `DW0831` held its depth under the policy cap, and
+/// the plan allocated it, `DW0831` held its depth under the survivable fall, and
 /// `DW0836` has just proved the hole is where the plan cut it. So the closure
 /// below seeds the far side of a drop whose near side is already reached, and
 /// iterates. That is the graph's own declaration carried into the bytes, the

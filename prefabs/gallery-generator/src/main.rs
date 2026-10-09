@@ -3221,10 +3221,6 @@ fn yard_metadata() -> serde_json::Value {
                 "note": "where a body stands when the campaign seats it in this place"
             }
         },
-        // The claim about what SIZE of box this piece is for, judged against its
-        // own bytes at admission and again wherever a detail plan consumes it
-        // (`DW0848`). 8×8 on the kit grid, three of clearance: an `alcove`.
-        "footprint_class": "alcove",
         // **The sides of this piece the player is meant to see** (`DW0885`).
         // The yard owns its outside (spec-0098): it stands as a plinth over
         // terrain that falls away to the east, south and west, and the faces

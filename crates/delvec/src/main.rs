@@ -166,7 +166,7 @@ enum Command {
         /// Generate the metrics gym (spec-0049 §2.3) into this directory: a
         /// site-plan campaign built FROM the table, one place per rung of the
         /// size-class ladder at each of its bounds, every standard opening, both
-        /// stair pitches and a designed fall at the drop policy's cap. Walking
+        /// stair pitches and a designed fall of one low storey. Walking
         /// it is what retires `DW0813`. Nothing in it is authored geometry — it
         /// compiles through the ordinary derivation.
         #[arg(long, value_name = "DIR")]
@@ -263,7 +263,7 @@ enum Command {
     /// read the allocation, bind it into the place's program
     /// (`programs/<place stem>.json` in the campaign, under the `handed/`
     /// parameter prefix), expand at the frame, run every gate — the grammar's
-    /// contract gates, `DW0843`–`DW0845`/`DW0848`, the admission audit, the
+    /// contract gates, `DW0843`–`DW0845`, the admission audit, the
     /// light probe — before any file is written, then freeze the piece into
     /// the prefab directory (`--prefabs`) with its gate report beside it and
     /// write the `details[]` row. The run ends by building the whole in

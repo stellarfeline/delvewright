@@ -28,7 +28,7 @@
 //! Hanging off the spine, the **vertical group**: two climbs that differ only in
 //! the run their host affords, so the derivation picks the gentle pitch for one
 //! and the steep one for the other and a walker compares two standards built to
-//! the same rise; and a designed fall at exactly the drop policy's cap, with a
+//! the same rise of one low storey; and a designed fall of that storey, with a
 //! way back up so the pit is not a strand.
 //!
 //! # What it cannot build, and why that is stated rather than remembered
@@ -54,7 +54,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use delvewright_dsl::metrics::{
-    Grid, MetricKind, MetricValue, Metrics, Opening, Pitch, Reads, SizeClass,
+    MetricKind, MetricValue, Metrics, Opening, Pitch, Reads, SizeClass,
 };
 use delvewright_dsl::{Diagnostic, DwCode, ExitTier};
 use serde_json::{Value, json};
@@ -72,12 +72,6 @@ delvewright_dsl::dw_code! {
 
 /// The plane the gym opens on.
 const GRADE_Y: i64 = 64;
-/// How far above grade the two climbs land. Chosen as the drop policy's cap so
-/// one landing serves both the climbs and the fall.
-fn landing_y(table: &Metrics, reads: &mut Reads) -> i64 {
-    GRADE_Y + i64::from(table.max_designed_drop_blocks(reads).unwrap_or(5))
-}
-
 /// The `dsl_version` every document this generator writes declares: the one
 /// number the engine accepts, never a typed literal.
 const GYM_DSL_VERSION: &str = delvewright_dsl::DSL_VERSION;
@@ -290,7 +284,9 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     // Two bays are asked to host a climb, so they need headroom for one. The
     // steep host is the one whose run is too short for the gentle pitch, which
     // is the whole point of the pair.
-    let rise = landing_y(table, &mut reads) - GRADE_Y;
+    // The climbs and the fall rise one low storey: a body walks up to a floor
+    // of the next storey, and one landing serves both the climbs and the fall.
+    let rise = storey_low;
     // The derivation picks the GENTLEST standard pitch the host affords, walking
     // the table in its own order. The gym's whole argument about pitch is a pair
     // of climbs to the same rise that come out at different pitches, so the two
@@ -317,41 +313,19 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     // ------------------------------------------------------------- the way bays
     //
     // A way class bounds a cross-section and leaves the run free, so a bay of one
-    // is a box at an instantiable WIDTH whose run exceeds the class's widest
-    // cross-section — the elongation `DW0832` demands, which is what makes the
-    // box a way rather than a room.
-    //
-    // **Instantiable** is doing work. A box's horizontal extents are multiples of
-    // the kit quantum (`DW0825`), so the widths a walker can be given are the
-    // multiples of `q` inside the class's range — which is fewer than the range
-    // states. The corridor's inherited floor of 2 sits under a quantum of 4 and
-    // is therefore not a width any plan can draw, and that is a real gap between
-    // two provisional numbers rather than a laziness here: which of the two moves
-    // is the walk's judgement, and the entry's own note asks for it. What this
-    // generator will not do is quietly round the floor up and present the walk
-    // with a bay it did not ask for.
+    // is a box at the class's narrowest and at its widest cross-section, each
+    // with a run one longer than the widest — long enough to read as a way.
     //
     // They are appended AFTER the climb hosts are chosen, deliberately: a way bay
     // is long by construction and would win `pick_host`'s length test, putting a
     // stair in a corridor and dissolving the pitch pair the gym exists to argue
     // about.
-    let q = table
-        .grid(&mut reads)
-        .map_or(1, |g| i64::from(g.quantum).max(1));
     for name in table.names_of(MetricKind::WayClass) {
         let w = way_class(table, &mut reads, name);
         let (lo, hi) = (i64::from(w.min_width), i64::from(w.max_width));
-        let widths: Vec<i64> = (lo..=hi).filter(|n| n % q == 0).collect();
-        assert!(
-            !widths.is_empty(),
-            "`way-class.{name}` admits widths {lo}..{hi} and none of them is a multiple of \
-             the kit quantum of {q}, so no plan can draw a way of this class at all and no \
-             bay can instantiate it"
-        );
-        // The shortest run that both exceeds the widest cross-section and lands
-        // on the grid — the least a box has to be to qualify, which is the
-        // interesting end for a walk about whether a way reads as one.
-        let run = ((hi + 1) + q - 1) / q * q;
+        let mut widths = vec![lo, hi];
+        widths.dedup();
+        let run = hi + 1;
         for width in widths {
             let extent = [width, run];
             let clearance = storeys
@@ -416,22 +390,10 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         ("gateway", gateway),
     ];
 
-    // The kit grid, read rather than assumed: `DW0825` refuses a box whose
-    // horizontal extents are not multiples of the quantum, and the gym's
-    // footprints come from the ladder — so if a rung is ever set off-grid, the
-    // generator is where that shows up rather than the checker.
-    if let Some(Grid { quantum, .. }) = table.grid(&mut reads) {
-        let q = i64::from(quantum).max(1);
-        for b in &bays {
-            assert!(
-                b.extent[0] % q == 0 && b.extent[1] % q == 0,
-                "the `{}` rung is {} by {}, which is not on the kit grid of {q}",
-                b.class,
-                b.extent[0],
-                b.extent[1],
-            );
-        }
-    }
+    // The datum convention every bay's floor is declared under: a box's floor
+    // SURFACE stands at its datum's `y`, which is what the walker reads each
+    // rung standing on.
+    let _ = table.datum(&mut reads);
 
     let mut nodes: Vec<Value> = Vec::new();
     let mut edges: Vec<Value> = Vec::new();
@@ -550,12 +512,12 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         }));
     }
 
-    // The designed fall, at exactly the policy cap, and the way back out of it.
+    // The designed fall, one low storey deep, and the way back out of it.
     nodes.push(node_entry(
         &pit,
         "designed fall",
         &format!(
-            "The floor of a {rise}-block drop — the deepest a designed one-way fall may be. The \
+            "The floor of a {rise}-block designed one-way drop. The \
              stair beside it is what stops the pit being a strand.",
         ),
     ));
@@ -839,9 +801,8 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                     "id": "fact/landing-datum",
                     "unit": "blocks",
                     "value": landing as f64,
-                    "note": "Where both climbs land, and the lip the designed fall goes over: the \
-                             drop policy's cap above grade, so one plane demonstrates three \
-                             standards.",
+                    "note": "Where both climbs land, and the lip the designed fall goes over: one \
+                             low storey above grade, so one plane demonstrates three things.",
                 },
             ] },
         }),
@@ -914,7 +875,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
 /// The first bay satisfying `want`, or the largest bay if none does.
 ///
 /// A fallback rather than a panic because the hosts are chosen **from the
-/// table**: change the drop cap or a rung's footprint and the pair that used to
+/// table**: change a storey height or a rung's footprint and the pair that used to
 /// straddle the gentle pitch's run may not exist. The gym still builds; what it
 /// stops demonstrating is the difference between the two pitches, and the pitch
 /// entry then goes unread, which is exactly what `DW0840` is for.

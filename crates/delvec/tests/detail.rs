@@ -582,8 +582,7 @@ fn a_row_read_and_a_place_bound_are_counted_apart() {
 
 /// **A piece that is not its frame suspends the FACE check and nothing else.**
 ///
-/// The owed anchors and the declared class depend on neither the extent nor the
-/// contract, so a wrong size must not suppress them — fixing the size would then
+/// The owed anchors depend on neither the extent nor the contract, so a wrong size must not suppress them — fixing the size would then
 /// produce a crop of refusals nobody had been shown, and the place's owed names
 /// would have been missing from the binding count while it happened.
 #[test]
@@ -592,7 +591,6 @@ fn a_wrong_extent_suspends_the_face_check_and_no_other() {
     let d = detailed(&tmp, &["node/exit"]);
     patch_piece(&d, "exit", |v| {
         v["structure"]["size"][0] = serde_json::json!(12);
-        v["footprint_class"] = serde_json::json!("expanse");
     });
     patch_detail_plan(&d, |v| {
         v["content"]["details"][0]["anchors"] = serde_json::json!({});
@@ -605,16 +603,11 @@ fn a_wrong_extent_suspends_the_face_check_and_no_other() {
         "the owed anchor is still asked for: {found:?}"
     );
     assert!(
-        found.contains(&"DW0848".to_string()),
-        "and the declared class is still judged: {found:?}"
-    );
-    assert!(
         !found.contains(&"DW0844".to_string()),
         "while the face check is suspended, because its cells come from a frame \
          this piece is not: {found:?}"
     );
     assert_eq!(binding.owed, 1, "and the owed name is IN the denominator");
-    assert_eq!(binding.classed, 1, "as is the declared class");
     assert_eq!(
         binding.seams_required, 0,
         "while the suspended check honestly says it examined nothing"
@@ -702,10 +695,6 @@ fn dw0844_refuses_a_face_answering_no_seam() {
 /// computed, so a plan whose own checks have already refused them makes a
 /// stage-6 line a true measurement against a number the map does not keep — and
 /// the primary is in ANOTHER document, where the reader cannot see the relation.
-/// Measured on a 24-place campaign: widening one box by one block printed
-/// `DW0825` and `DW0828` in the site plan and then `DW0843` and `DW0844` in the
-/// detail plan, five codes over three documents, with nothing saying which was
-/// the edit.
 ///
 /// The stage-6 lines keep their own refusals — each names a real mismatch, and
 /// suppressing them is how fixing one thing produces a fresh crop nobody was
@@ -714,25 +703,32 @@ fn dw0844_refuses_a_face_answering_no_seam() {
 fn a_stage_six_verdict_names_the_site_plan_refusal_it_stands_downstream_of() {
     let tmp = tempdir("upstream-refused");
     let d = detailed(&tmp, &["node/exit"]);
-    // One block wider on x: off the kit grid (`DW0825`), and the frame the piece
-    // is measured against moves with it.
+    // A pin on `node/exit` that the seam hanging it off `node/cell` does not
+    // agree with: the packing refuses the seam (`DW0883`), so the seam set the
+    // piece is answering is short of what the plan writes.
     common::patch_file(&d.campaign.join("site-plan.json"), |v| {
         let boxes = v["content"]["boxes"].as_array_mut().unwrap();
         let b = boxes
             .iter_mut()
             .find(|b| b["node"] == "node/exit")
             .expect("the fixture places `node/exit`");
-        let x = b["extent"][0].as_i64().unwrap();
-        b["extent"][0] = serde_json::json!(x + 1);
+        b["min"] = serde_json::json!([200, 200]);
     });
-    let e = check_and_expect(&d, "DW0843");
+    let (diags, _) = check_at(&d);
+    let e: Vec<&str> = diags
+        .iter()
+        .filter(|x| (x.code == "DW0843" || x.code == "DW0844") && x.severity == Severity::Error)
+        .map(|x| x.message.as_str())
+        .collect();
     assert!(
-        e.contains("is not the shape of the box"),
-        "the verdict still refuses on its own terms: {e}"
+        !e.is_empty(),
+        "the piece answers a seam set the plan changed: {:?}",
+        codes(&diags)
     );
     assert!(
-        e.contains("downstream of a site-plan refusal") && e.contains("DW0825"),
-        "and says what it is downstream of: {e}"
+        e.iter()
+            .all(|m| m.contains("downstream of a site-plan refusal") && m.contains("DW0883")),
+        "the verdict says what it is downstream of: {e:?}"
     );
 }
 
@@ -900,46 +896,6 @@ fn dw0842_refuses_a_gate_station_bound_to_a_cell() {
         e.contains("`point`"),
         "and must name the reachable remedy — change the kind: {e}"
     );
-}
-
-// ---------------------------------------------------------------------------
-// DW0848 — the declared footprint class, at the consumer door
-// ---------------------------------------------------------------------------
-
-#[test]
-fn dw0848_refuses_a_declared_class_the_bytes_contradict() {
-    let tmp = tempdir("dw0848");
-    let d = detailed(&tmp, &["node/exit"]);
-    // `node/exit` is an 8x8 alcove; `expanse` starts at 64x64.
-    patch_piece(&d, "exit", |v| {
-        v["footprint_class"] = serde_json::json!("expanse");
-    });
-    let e = check_and_expect(&d, "DW0848");
-    assert!(e.contains("could serve no box of that class"), "{e}");
-
-    // And the honest claim passes, so the check is not simply always red.
-    let tmp = tempdir("dw0848-green");
-    let d = detailed(&tmp, &["node/exit"]);
-    patch_piece(&d, "exit", |v| {
-        v["footprint_class"] = serde_json::json!("alcove");
-    });
-    let (diags, binding) = check_at(&d);
-    assert!(errors(&diags).is_empty(), "{:?}", codes(&diags));
-    assert_eq!(
-        binding.classed, 1,
-        "and the declaration was judged, not skipped"
-    );
-}
-
-#[test]
-fn dw0812_refuses_a_footprint_class_the_table_does_not_define() {
-    let tmp = tempdir("dw0848-unknown");
-    let d = detailed(&tmp, &["node/exit"]);
-    patch_piece(&d, "exit", |v| {
-        v["footprint_class"] = serde_json::json!("cathedral");
-    });
-    let e = check_and_expect(&d, "DW0812");
-    assert!(e.contains("cathedral"), "{e}");
 }
 
 // ---------------------------------------------------------------------------

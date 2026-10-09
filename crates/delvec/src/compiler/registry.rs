@@ -559,7 +559,7 @@ impl PrefabRegistry {
     ///
     /// The registry is otherwise read off a directory, and this is the one way a
     /// piece that is not on disk yet enters it: `delvec detail` judges the piece
-    /// it is about to write — `DW0843`–`DW0845`, `DW0848` — against the library
+    /// it is about to write — `DW0843`–`DW0845` — against the library
     /// plus that piece, **before** any file exists, with the same `detail::check`
     /// validation runs afterwards. The anchor index is kept in step so the
     /// binding checks read the piece exactly as they would read it from disk.

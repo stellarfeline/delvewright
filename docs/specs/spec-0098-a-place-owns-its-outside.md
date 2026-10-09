@@ -1024,7 +1024,7 @@ what a criterion asserts says so in the word *loosening*.
 
 ### Rulings
 
-Four rulings on this spec, applied as stated.
+Five rulings on this spec, applied as stated.
 
 1. **Compatibility is not a loosening.** Nothing owes compatibility to
    anything already built (CLAUDE.md), so a criterion asserting that stage 5 is
@@ -1090,6 +1090,40 @@ Four rulings on this spec, applied as stated.
    declares the loft scenery while the far hall's stair leads into it.
    Shown in `blockout.rs`
    `scenery_is_proven_not_reached_and_reachable_scenery_is_refused`.
+
+5. **A site-plan check confirms a declared intent and never restricts.**
+   The stage-4 rules that refused with no declaration behind them are
+   removed or turned into the author's own declaration:
+   - **No kit grid.** A box's footprint is any whole number of blocks;
+     `DW0825` and the metrics table's footprint quantum are removed, and the
+     table keeps only the datum convention (`datum`). The gym draws each way
+     class at its narrowest and widest cross-section, so it allocates 17
+     places, 13 of them plain-walk — spec-0058 criterion 6's census of 18
+     and 14 is restated at those numbers in
+     `the_gym_is_detailed_by_one_command`.
+   - **A class never refuses its box.** A box's extent and headroom are the
+     author's declaration and the piece may not exceed them (`DW0843`), so
+     `DW0832` (a box outside its size or way class, a way's elongation, a
+     class's clearance) and `DW0848` (a piece's `footprint_class` against
+     its bytes) are removed, with the `footprint_class` field. The ruling
+     goes further — `size_class`, `way_class`, `DW0875` and the class
+     entries are removed outright — and that part stands open: a sky-open
+     box's headroom is its class's `min_clearance`, the box-model work owns
+     that headroom, and replacing it with the passable clearance makes a
+     standard arch no longer fit an open box's face.
+   - **An opening is the author's.** A portal names a standard or declares
+     its own `{width, height}` — a one-cell rope-bridge end included — and
+     `DW0829` confirms it fits the shared face; a contact of any width is
+     legal, and `DW0876`'s floor at the broadest standard opening is
+     removed.
+   - **A drop cap is declared.** The metrics table's designed-drop cap is
+     removed; a plan may declare `max_drop`, which `DW0831` confirms, and
+     the unarmoured survivable fall holds every drop either way.
+   - **A stair the stand-in cannot pitch is a finding.** `DW0830`'s "no
+     standard pitch fits the run" is a warning about the stand-in, which
+     never ships: a bound piece's stair is judged over its bytes by
+     `DW0836`/`DW0837`, and an unbound host lays no treads and leaves the
+     place above it unreached (`DW0837`).
 
 ### Corrections
 

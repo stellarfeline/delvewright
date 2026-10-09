@@ -14,8 +14,8 @@ use super::*;
 /// reads it — on [`PlanBox`], whose schema description carries it — and the
 /// number itself is [`SHARED_FACE_GAP_CELLS`]. In short: a box is the **play
 /// space** of a place, the shell stands in the one-cell gap between two
-/// neighbours, `extent` is therefore the interior footprint the size-class
-/// ladder judges directly (`DW0832`), and two connected places sit exactly
+/// neighbours, `extent` is therefore the interior footprint the author
+/// declared, and two connected places sit exactly
 /// [`SHARED_FACE_GAP_CELLS`] apart on the face they share (`DW0828`).
 #[derive(Debug, Clone)]
 pub(super) struct Placed<'a> {
@@ -28,41 +28,8 @@ pub(super) struct Placed<'a> {
     /// Cells of headroom over the walk plane — the lid's clearance, or the
     /// sky-open place's declared courses of air.
     pub(super) clearance: u32,
-    /// How the place is classified, when the name resolved.
-    pub(super) class: Option<PlaceClass>,
     /// How its corner was obtained (spec-0059 §3).
     pub(super) by: Provenance,
-}
-
-/// **How a place is classified** — the two kinds of standard a box is judged
-/// against (spec-0053 §3).
-///
-/// The classification belongs to the PLACE, so it is one field of two kinds
-/// rather than two fields. Written as a second `Option<WayClass>` beside the
-/// first, every consumer would have had to remember to look at both, and the
-/// one that forgot would silently judge a road against nothing — which is the
-/// state this whole surface exists to end, reintroduced one layer down.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PlaceClass {
-    /// A rung of the size ladder: both horizontal extents bounded.
-    Size(SizeClass),
-    /// A way: the cross-section bounded, the run free.
-    Way(WayClass),
-}
-
-impl PlaceClass {
-    /// The least interior clearance the class demands.
-    ///
-    /// The one question both kinds answer identically, which is why a sky-open
-    /// box needs no arm: an open place claims exactly its class's minimum
-    /// headroom and nothing above it, and that sentence is true of a road as it
-    /// is of a hall.
-    pub(super) fn min_clearance(self) -> u32 {
-        match self {
-            PlaceClass::Size(c) => c.min_clearance,
-            PlaceClass::Way(w) => w.min_clearance,
-        }
-    }
 }
 
 impl Placed<'_> {
@@ -218,8 +185,8 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
 /// **The one place a seam's crossing rectangle is computed**, for either kind
 /// of connection (spec-0053 §4).
 ///
-/// A portal's rectangle is the named standard's `width × height` anchored at
-/// `at`. A contact's is its span: `at` plus the declared `extent`, or `at` to
+/// A portal's rectangle is its opening's `width × height` — the named
+/// standard's or the declared one — anchored at `at`. A contact's is its span: `at` plus the declared `extent`, or `at` to
 /// the far edge of the shared face when no extent is declared.
 ///
 /// One function rather than one per kind, and one call rather than a copy in
@@ -241,14 +208,8 @@ pub(super) fn crossing_rect(
     if s.contact.is_some() {
         return Some((Crossing::Contact, contact_extent(s, at, face)));
     }
-    let named = s.opening.as_ref()?;
-    let entry = table.resolve(MetricKind::Opening, named).ok()?;
-    match entry.value(reads) {
-        MetricValue::Opening(o) => {
-            Some((Crossing::Portal, [i64::from(o.width), i64::from(o.height)]))
-        }
-        _ => None,
-    }
+    let o = s.opening.as_ref()?.resolve(table, reads).ok()?;
+    Some((Crossing::Portal, [i64::from(o.width), i64::from(o.height)]))
 }
 
 /// **How big a contact's span is** — the one authority, read by

@@ -29,8 +29,8 @@
 //!    measured against something already refused, so it keeps its own line and
 //!    gains a clause naming what it is downstream of. Instances: `DW0818`'s
 //!    clause when stage 5 declares no quests (`crate::layout`), and
-//!    `crate::siteplan::off_grid_note` on every verdict computed from a box
-//!    `DW0825` has refused.
+//!    `crate::siteplan::refused_upstream` on every stage-6 verdict measured
+//!    against a seam the site plan wrote and did not resolve.
 //!
 //! What the rule never does is drop a code's ability to refuse. Folding changes
 //! how many lines say a thing, never whether the run stops: every fold above is

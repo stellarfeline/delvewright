@@ -248,6 +248,7 @@
       "fixture": "torch",
       "min_light": 7
     },
+    "max_drop": 5,
     "region": {
       "extent": [
         64,
@@ -365,9 +366,12 @@
         "at": 5,
         "edge": "edge/exit-arch",
         "face": "south",
-        "form": "a stone arch out of the far hall onto the open yard",
+        "form": "a stone arch out of the far hall onto the open yard, sized by the plan itself: two wide, three high",
         "meets": 2,
-        "opening": "arch"
+        "opening": {
+          "height": 3,
+          "width": 2
+        }
       },
       {
         "at": 15,

@@ -109,7 +109,7 @@ crate::dw_code! {
 /// No document declares a metrics version and no surface is gated by one. What
 /// it needs is that the number cannot stand still while the table moves, and
 /// that is the digest test.
-pub const METRICS_VERSION: u32 = 3;
+pub const METRICS_VERSION: u32 = 4;
 
 /// Player collision-box width in blocks (`0.6 × 0.6 × 1.8` standing).
 pub const PLAYER_WIDTH: f64 = 0.6;
@@ -477,8 +477,7 @@ pub fn walk_ticks_per_block() -> f64 {
 /// `ceil(d − 3) < 20` holds up to `d = 22`, which lands on one half-heart; 23
 /// blocks deals 20 and kills. Derived from [`FALL_DAMAGE_ONSET_BLOCKS`] and
 /// [`PLAYER_MAX_HEALTH`] so that moving either moves this, and it exists so the
-/// designed-drop policy beside it has a physical ceiling to be **tighter than**
-/// rather than a number chosen next to nothing.
+/// fall a designed drop may take has a physical ceiling (`DW0831`).
 #[must_use]
 pub fn unarmoured_survivable_fall_blocks() -> f64 {
     (FALL_DAMAGE_ONSET_BLOCKS + PLAYER_MAX_HEALTH - 1.0).floor()
@@ -793,15 +792,9 @@ pub struct WayClass {
     pub min_clearance: u32,
 }
 
-/// The kit grid: the quantum box extents are multiples of, and the datum
-/// convention that fixes what a declared `y` means.
+/// The datum convention: what a box's declared floor `y` names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct Grid {
-    /// The footprint quantum `q`, in blocks.
-    pub quantum: u32,
-    /// The axes extents are quantized on. Vertical extent is not quantized:
-    /// storey heights are their own entries and a box's height follows them.
-    pub axes: [&'static str; 2],
+pub struct Datum {
     /// What a box's declared datum `y` names. `floor-surface`: the walk plane is
     /// at `y`, and whatever stands in the box later puts its own floor there.
     pub datum: &'static str,
@@ -826,8 +819,8 @@ pub enum MetricValue {
     SizeClass(SizeClass),
     /// A way class — a route's cross-section.
     WayClass(WayClass),
-    /// The kit grid.
-    Grid(Grid),
+    /// The datum convention.
+    Datum(Datum),
 }
 
 /// One player metric: a fact of the pinned game.
@@ -1315,7 +1308,7 @@ impl Metrics {
                      full-health unarmoured body on one half-heart; 23 deals twenty and \
                      kills. The survivable ceiling is a function of health and armour, \
                      and this is its unarmoured, full-health case — the physical bound \
-                     the designed-drop policy is deliberately tighter than.",
+                     no designed drop may pass.",
                 ),
             ),
             (
@@ -1345,21 +1338,15 @@ impl Metrics {
 
         let building_entries: Vec<(&'static str, BuildingEntry)> = vec![
             building(
-                "grid",
-                MetricValue::Grid(Grid {
-                    quantum: 4,
-                    axes: ["x", "z"],
+                "datum",
+                MetricValue::Datum(Datum {
                     datum: "floor-surface",
                 }),
-                "blocks",
+                "none",
                 Provenance::Provisional,
-                "The footprint quantum every site-plan box's horizontal extents are \
-                 multiples of, and the datum convention: a box's floor SURFACE is at \
-                 its declared y, and whatever stands in the box later puts its walk \
-                 plane there. Four is a seed and nothing in the existing piece library \
-                 argues for it — the cave tileset is odd on every axis and the keep \
-                 tileset is even but not quartered — so what the gym is being asked is \
-                 whether a quantum this fine buys anything a coarser one would not.",
+                "The datum convention: a box's floor SURFACE is at its declared y, and \
+                 whatever stands in the box later puts its walk plane there. A box's \
+                 footprint is any whole number of blocks on either axis.",
             ),
             building(
                 "way-class.corridor",
@@ -1377,12 +1364,8 @@ impl Metrics {
                  and two blocks of clearance puts the ceiling on the walker's head — and \
                  they are fields here rather than entries of their own so that there is \
                  one authority for the narrow way rather than a class beside two loose \
-                 numbers nothing could spell. The gym walks widths one, two and three \
-                 and clearances two, three and four. It is also asked a question that \
-                 could not be posed while these numbers were unreachable: the kit \
-                 quantum beside them is 4 and every box extent is a multiple of it, so \
-                 the narrowest way any plan can currently DRAW is four cells, and the \
-                 walk decides whether the floor moves up or the quantum moves down.",
+                 numbers nothing could spell. The gym walks the class's narrowest and \
+                 widest cross-section.",
             ),
             building(
                 "way-class.road",
@@ -1578,18 +1561,6 @@ impl Metrics {
                  is what the walk is watching for.",
             ),
             building(
-                "drop.max-designed-rise",
-                MetricValue::Count(5),
-                "blocks",
-                Provenance::Provisional,
-                "The deepest fall a designed one-way drop edge may declare. A policy \
-                 cap, not a physical one: the unarmoured survivable fall beside it in \
-                 the player half is 22 blocks, and this is far tighter on purpose, \
-                 because a drop is a topology decision and should not also be a health \
-                 decision. Five costs two of twenty at full health, which is the seed \
-                 the walk argues with.",
-            ),
-            building(
                 "pacing.route-blocks-per-minute",
                 MetricValue::Count(60),
                 "blocks/minute",
@@ -1629,8 +1600,8 @@ impl Metrics {
     /// check downstream ever meets one.
     ///
     /// The other half of that guarantee is that no key string is spelled outside
-    /// this module. The entries no document names — the kit grid, the designed-
-    /// drop cap — are reached through the accessors below rather than by looking
+    /// this module. The entry no document names — the datum convention — is
+    /// reached through the accessors below rather than by looking
     /// the key up in [`Metrics::building`], which is public so that a *reporter*
     /// can walk the whole table (`delvec metrics` counts it; the tests iterate
     /// it). Reporting is not resolution: a caller that walks every entry cannot
@@ -1653,11 +1624,10 @@ impl Metrics {
             })
     }
 
-    /// The kit grid — the quantum a site-plan box's footprint is a multiple of,
-    /// and the datum convention that fixes what a declared floor `y` means.
+    /// The datum convention that fixes what a declared floor `y` means.
     ///
     /// One of the entries **no document names**: an author writes a number, not
-    /// the word `grid`, so it has no place in [`Metrics::resolve`]'s naming
+    /// the word `datum`, so it has no place in [`Metrics::resolve`]'s naming
     /// vocabulary and would need a [`MetricKind`] whose prefix is the empty
     /// string — which would make `names_of` return the whole table. An accessor
     /// instead, so the key string still lives here and nowhere else.
@@ -1665,53 +1635,11 @@ impl Metrics {
     /// `None` only if the table stopped defining it, which
     /// [`Metrics::self_check`] reports as an internal error.
     #[must_use]
-    pub fn grid(&self, reads: &mut Reads) -> Option<Grid> {
-        match self.building.get("grid")?.value(reads) {
-            MetricValue::Grid(g) => Some(*g),
+    pub fn datum(&self, reads: &mut Reads) -> Option<Datum> {
+        match self.building.get("datum")?.value(reads) {
+            MetricValue::Datum(g) => Some(*g),
             _ => None,
         }
-    }
-
-    /// The deepest fall a **designed** one-way drop may declare, in blocks — a
-    /// policy cap, deliberately tighter than the survivability fact in the
-    /// player half. See [`Metrics::grid`] for why this is an accessor.
-    #[must_use]
-    pub fn max_designed_drop_blocks(&self, reads: &mut Reads) -> Option<u32> {
-        match self.building.get("drop.max-designed-rise")?.value(reads) {
-            MetricValue::Count(n) => Some(*n),
-            _ => None,
-        }
-    }
-
-    /// The **widest** standard opening in the table, in cells — the floor a
-    /// contact seam's span must exceed (spec-0053 §4).
-    ///
-    /// Derived from the table rather than seeded, and that is the whole of why
-    /// the floor is honest: anything at or under this width **could have been a
-    /// portal**, so a doorway declared a contact to dodge the standard set is
-    /// refused by its own width. A seeded floor would be a number an author
-    /// could argue with; this one is a consequence of the standard set, and it
-    /// moves when the standard set moves.
-    ///
-    /// It walks every opening rather than naming one, so a broader standard
-    /// landing tomorrow raises the floor with no edit here — the failure mode a
-    /// hand-named `opening.gateway` would have is that the floor silently stops
-    /// being the broadest the day a broader one is added.
-    ///
-    /// `None` only if the table defines no opening at all, which
-    /// [`Metrics::self_check`] reports as an internal error.
-    #[must_use]
-    pub fn broadest_opening_width(&self, reads: &mut Reads) -> Option<u32> {
-        let mut widest: Option<u32> = None;
-        for name in self.names_of(MetricKind::Opening) {
-            let Ok(entry) = self.resolve(MetricKind::Opening, name) else {
-                continue;
-            };
-            if let MetricValue::Opening(o) = entry.value(reads) {
-                widest = Some(widest.map_or(o.width, |w: u32| w.max(o.width)));
-            }
-        }
-        widest
     }
 
     /// Every name defined for a kind, in table order.
@@ -1789,32 +1717,11 @@ impl Metrics {
             );
         }
 
-        // The contact floor is derived from the standard opening set (spec-0053
-        // §4), so an empty set would make that floor `None` and the refusal it
-        // is the floor for unable to separate a doorway from a front.
-        checked += 1;
-        if self.broadest_opening_width(&mut reads).is_none() {
-            failures.push(
-                "the table defines no standard opening, so a contact seam's width floor — \
-                 the width a front must exceed to be a front rather than a door — cannot \
-                 be derived"
-                    .to_string(),
-            );
+        if self.datum(&mut reads).is_some() {
+            checked += 1;
+        } else {
+            failures.push("the table defines no `datum` convention".to_string());
         }
-
-        let quantum = match self.grid(&mut reads) {
-            Some(g) => {
-                checked += 1;
-                if g.quantum == 0 {
-                    failures.push("the kit grid's quantum is zero".to_string());
-                }
-                g.quantum
-            }
-            None => {
-                failures.push("the table defines no kit `grid`".to_string());
-                1
-            }
-        };
 
         for (key, entry) in &self.building {
             match entry.value(&mut reads) {
@@ -1851,12 +1758,6 @@ impl Metrics {
                         if lo > hi {
                             failures
                                 .push(format!("`{key}` has a {axis} minimum above its maximum"));
-                        }
-                        if lo % quantum != 0 || hi % quantum != 0 {
-                            failures.push(format!(
-                                "`{key}` bounds its {axis} footprint at {lo}..{hi}, which is not \
-                                 on the kit grid's quantum of {quantum}"
-                            ));
                         }
                     }
                     if u64::from(c.min_clearance) < floor_h {
@@ -1899,24 +1800,6 @@ impl Metrics {
                             w.min_width, w.max_width
                         ));
                     }
-                    // `max_width` is the elongation floor as well as the widest
-                    // cross-section, and a box's horizontal extents are
-                    // multiples of the kit quantum (`DW0825`). A `max_width` off
-                    // the quantum is therefore a bound no plan can draw a way
-                    // AT, which makes the widest member of the class
-                    // uninstantiable and the gym unable to rule on it. The
-                    // narrow bound is deliberately NOT held to the quantum: the
-                    // corridor's inherited floor of 2 sits under a quantum of 4
-                    // and which of those two provisional numbers moves is the
-                    // walk's to decide, not this file's.
-                    if !w.max_width.is_multiple_of(quantum) {
-                        failures.push(format!(
-                            "`{key}` bounds its width at {}, which is not on the kit grid's \
-                             quantum of {quantum}, so no box can be drawn at the widest member \
-                             of the class",
-                            w.max_width
-                        ));
-                    }
                 }
                 _ => {}
             }
@@ -1938,19 +1821,6 @@ impl Metrics {
                 failures.push(format!(
                     "`{key}` is {n} blocks, which leaves no passable interior between a \
                      floor course and a ceiling course ({floor} is the floor)"
-                ));
-            }
-        }
-
-        // The policy cap is deliberately tighter than the physical one. A cap
-        // that reached the survivability ceiling would not be a policy.
-        if let Some(n) = self.max_designed_drop_blocks(&mut reads) {
-            checked += 1;
-            let physical = unarmoured_survivable_fall_blocks();
-            if f64::from(n) >= physical {
-                failures.push(format!(
-                    "`drop.max-designed-rise` is {n} blocks, at or past the unarmoured \
-                     survivable fall of {physical}, so it is not a policy cap at all"
                 ));
             }
         }

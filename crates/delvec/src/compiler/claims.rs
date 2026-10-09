@@ -69,9 +69,6 @@
 //!   the two sizes are one fact and the fix is to re-export.
 //! * `waterline_y` by [`DW0887`](super::seating).
 //! * the spatial contract by the admission door (spec-0036 §1c).
-//! * `footprint_class` by `DW0848`, which reads the declared structure size —
-//!   held to the blocks by `DW0803`, so that chain ends in the bytes rather than
-//!   in another declaration.
 
 use std::collections::BTreeMap;
 
@@ -823,7 +820,6 @@ mod tests {
             waterline_y: None,
             shown_faces: Vec::new(),
             spatial_contract: None,
-            footprint_class: None,
             extra: Default::default(),
         };
         (meta, s)
