@@ -99,6 +99,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
   "content": {
     "region": { "min": [0, 56, 0], "extent": [128, 32, 128] },
     "datums": [ { "id": "datum/grade", "y": 64 } ],
+    "fill": { "kind": "solid", "block": "minecraft:stone" },
     "boxes": [
       { "node": "node/porch", "min": [0, 0], "extent": [8, 8],
         "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 4 } },
@@ -114,11 +115,11 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 8 } }
     ],
     "seams": [
-      { "edge": "edge/porch-road", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
-      { "edge": "edge/road-hall", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
-      { "edge": "edge/hall-duct", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
-      { "edge": "edge/duct-vault", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
-      { "edge": "edge/court-hall", "face": "north", "contact": {} }
+      { "edge": "edge/porch-road", "form": "a doorway", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
+      { "edge": "edge/road-hall", "form": "a doorway", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
+      { "edge": "edge/hall-duct", "form": "a doorway", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
+      { "edge": "edge/duct-vault", "form": "a doorway", "face": "east", "at": 1, "meets": 1, "opening": "arch" },
+      { "edge": "edge/court-hall", "form": "a doorway", "face": "north", "contact": {} }
     ]
   }
 }"#,

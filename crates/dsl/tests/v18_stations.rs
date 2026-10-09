@@ -109,6 +109,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
   "content": {
     "region": { "min": [0, 60, 0], "extent": [64, 24, 64] },
     "datums": [ { "id": "datum/grade", "y": 64 } ],
+    "fill": { "kind": "solid", "block": "minecraft:stone" },
     "boxes": [
       { "node": "node/porch",  "min": [0, 0],  "extent": [8, 8],
         "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 4 } },

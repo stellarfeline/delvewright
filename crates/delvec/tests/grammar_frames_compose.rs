@@ -318,7 +318,6 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
         red,
         vec![
             "contract-coverage",
-            "contract-closure",
             "contract-no-body",
             "contract-reachability",
             "contract-no-body-majority",
@@ -326,7 +325,14 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
         "{:#?}",
         report.gates
     );
-    for id in ["contract-edge-proof", "contract-anchors"] {
+    // `contract-closure` is withheld too: the one space is `open`, so there is
+    // no envelope to examine (spec-0098 §6b, a declared loosening of the red
+    // this list used to carry for it).
+    for id in [
+        "contract-edge-proof",
+        "contract-anchors",
+        "contract-closure",
+    ] {
         assert!(
             !report.gates.iter().any(|g| g.id == id),
             "`{id}` printed a verdict over nothing instead of being withheld: {:#?}",

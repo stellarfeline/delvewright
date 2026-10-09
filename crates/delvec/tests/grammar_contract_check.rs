@@ -1155,11 +1155,17 @@ fn a_contract_with_nothing_to_examine_reds_rather_than_passing_quietly() {
     );
     c.edges.push(edge("nowhere", "exterior", "walk"));
     let report = check(&b.model, &c, &no_anchors());
-    for id in [
-        "contract-closure",
-        "contract-edge-proof",
-        "contract-reachability",
-    ] {
+    // Both spaces are `open`, so closure has no envelope to examine and is
+    // withheld with that zero stated — spec-0098 §6b's declared loosening of
+    // the refusal this test used to assert for it. The roofed place whose
+    // piece declares only open spaces is refused where the kind is known
+    // (`DW0989`, `tests/detail.rs`).
+    assert!(
+        !report.gates.iter().any(|g| g.id == "contract-closure"),
+        "closure printed a verdict over an all-open contract: {:?}",
+        report.gates
+    );
+    for id in ["contract-edge-proof", "contract-reachability"] {
         let g = gate(&report, id);
         assert_eq!(g.bound, 0, "{id}");
         assert!(
@@ -1173,7 +1179,7 @@ fn a_contract_with_nothing_to_examine_reds_rather_than_passing_quietly() {
             .iter()
             .filter(|f| f.contains("ZERO objects"))
             .count()
-            >= 3,
+            >= 2,
         "{:?}",
         report.findings
     );
