@@ -381,6 +381,20 @@ impl<'a> Site<'a> {
             && cell[1] <= self.ground_height(i, cell[0], cell[2])
     }
 
+    /// True when `cell` is **sky ring** of place `i`: a ring cell of an open
+    /// ground place above its floor course — the air its open headroom carries
+    /// beside its play space. It is the one claim that yields to a place hung
+    /// in it (departure 35); its ground (rule 0) and its floor course do not.
+    #[must_use]
+    pub fn is_sky_ring(&self, i: usize, cell: [i64; 3]) -> bool {
+        let b = &self.boxes[i];
+        b.open
+            && !self.is_aloft(i)
+            && b.is_ring_column(cell[0], cell[2])
+            && cell[1] > b.floor_course_y()
+            && cell[1] <= b.top()
+    }
+
     /// True when `cell` is in place `i`'s claim: in its shell, or in its roof
     /// zone — except an eaves cell standing in another place's shell (its play
     /// space, its walls, its lid), where the eave stops (spec-0098 §3).
@@ -434,7 +448,11 @@ impl<'a> Site<'a> {
     ///    the seams the plan allocates between two of them across a plane
     ///    through the cell agreeing, pair by pair, about which is `a`, the `a`
     ///    of the first of them in plan order (a designed connection is drawn by
-    ///    its first-named side); else contested — `DW0827`;
+    ///    its first-named side); else, exactly one of them aloft and every
+    ///    other claiming it only as a ground place's sky ring
+    ///    ([`Site::is_sky_ring`]), the aloft one's (a place hung in a yard's
+    ///    sky owns what it hangs in — spec-0098 §14 departure 35, between 3c
+    ///    and 3d); else contested (3d) — `DW0827`;
     /// 4. a cell no claim covers is nobody's.
     #[must_use]
     pub fn owner_among(&self, cell: [i64; 3], cand: &[usize]) -> Owner {
@@ -501,6 +519,24 @@ impl<'a> Site<'a> {
             && !pair_disagrees
         {
             return Owner::Place(first.a.clone());
+        }
+        // Between 3c and 3d (spec-0098 §14, departure 35) — a place hung in a
+        // ground place's sky. Where an aloft place's
+        // claim meets only the ring air an open ground place's headroom carries
+        // above its floor course, the hung place's — a stacked plane is the
+        // upper's (3a), and a ground place's open headroom is sky, not a wall
+        // it declared.
+        let aloft: Vec<usize> = claimants
+            .iter()
+            .copied()
+            .filter(|&i| self.is_aloft(i))
+            .collect();
+        if aloft.len() == 1
+            && claimants
+                .iter()
+                .all(|&i| i == aloft[0] || self.is_sky_ring(i, cell))
+        {
+            return Owner::Place(self.boxes[aloft[0]].node.clone());
         }
         let mut names: Vec<NodeId> = claimants
             .iter()
@@ -1096,8 +1132,9 @@ mod tests {
     /// (spec-0098 §2). The yard (floor 64, `open: 4`) claims air to y 67; the
     /// gantry (floor 69, aloft 0) claims from its floor course, y 68 — the
     /// cuboids touch and do not overlap. Hung one course lower, the gantry's
-    /// underside reaches the yard's air and its ring, and `DW0827` refuses
-    /// what no rule awards.
+    /// underside reaches the yard's air and its ring: the yard's play space
+    /// stays the yard's (rule 1), and the ring air the yard's headroom carries
+    /// is the gantry's, hung in it (departure 35) — nothing is contested.
     #[test]
     fn a_gantry_over_a_yard_meets_it_at_the_yards_headroom() {
         let yard = a_box("node/yard", [0, 7, 0, 7], 64, 4, true);
@@ -1116,9 +1153,71 @@ mod tests {
         );
         let boxes = vec![yard, hung(gantry, 1)];
         let site = Site::new(&boxes, &[], &g);
+        assert!(
+            site.contests().0.is_empty(),
+            "the hung place takes the sky ring"
+        );
+        assert_eq!(
+            site.owner([3, 67, -1]),
+            Owner::Place(NodeId("node/gantry".into())),
+            "the yard's ring air under the gantry"
+        );
+        assert_eq!(
+            site.owner([3, 67, 3]),
+            Owner::Place(NodeId("node/yard".into())),
+            "the yard's own sky"
+        );
+    }
+
+    /// **A place hung in a yard's sky owns what it hangs in** (departure 35,
+    /// spec-0098 §14). The Treehouse Camp's shape: a glade (ground, open
+    /// headroom to y 84 so its ladder reaches the house floor over it), a
+    /// house hung over it (floor 86) and a bridge hung off the house's east
+    /// face (floor 80, one underside course), the seam between house and
+    /// bridge on the plane x 22 — the glade's own ring column. The bridge's
+    /// underside (y 78) and its end ring (y 80..84) stand in the glade's ring
+    /// air; no seam joins glade and bridge. Each such cell is the bridge's,
+    /// and nothing is contested. Only sky ring yields: two open
+    /// ground yards one apart still contest their shared ring, and the
+    /// glade's ground and floor course never yield.
+    #[test]
+    fn a_place_hung_in_a_glades_sky_owns_what_it_hangs_in() {
+        let g = grass(71);
+        let glade = a_box("node/glade", [0, 21, 0, 21], 72, 13, true);
+        let house = hung(a_box("node/house", [-2, 21, -2, 21], 86, 8, true), 0);
+        let bridge = hung(a_box("node/bridge", [23, 44, 6, 8], 80, 9, true), 1);
+        let boxes = vec![glade, house, bridge];
+        let seams = vec![seam("node/house", "node/bridge", 0, 22)];
+        let site = Site::new(&boxes, &seams, &g);
         let (contests, _) = site.contests();
-        assert_eq!(contests.len(), 1, "the underside reaches the yard");
-        assert!(contests[0].1.iter().all(|c| c[1] == 67));
+        assert!(contests.is_empty(), "{contests:?}");
+        for y in [78, 80, 81, 82, 83, 84] {
+            for z in 5..=9 {
+                assert!(site.is_sky_ring(0, [22, y, z]));
+                assert_eq!(
+                    site.owner([22, y, z]),
+                    Owner::Place(NodeId("node/bridge".into())),
+                    "[22, {y}, {z}]"
+                );
+            }
+        }
+        assert_eq!(
+            site.owner([22, 72, 7]),
+            Owner::Place(NodeId("node/glade".into())),
+            "the glade's ring under the bridge is still its own"
+        );
+        assert!(
+            !site.is_sky_ring(0, [22, 71, 7]),
+            "the floor course is not sky"
+        );
+        assert!(
+            !site.is_sky_ring(0, [10, 78, 10]),
+            "the play space is not ring"
+        );
+        assert!(
+            !site.is_sky_ring(2, [22, 82, 7]),
+            "a hung place's ring is not sky"
+        );
     }
 
     #[test]

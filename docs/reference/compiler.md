@@ -782,7 +782,11 @@ place has none. Every other cell several
 claims share goes to the place whose floor course it is (3a), else to the one
 roofed place among them (3b), else to the `a` of the seams across that plane
 (3c — at a corner where connections led by different places meet, the first in
-seam order); a cell no rule awards is `DW0827`. A cell no claim covers holds the
+seam order), else, where exactly one claimant is aloft and every other claims
+the cell only as **sky ring** — an open ground place's ring above its floor
+course, the air its headroom carries — to the aloft place hung in it (spec-0098
+departure 35, `Site::is_sky_ring`; a ground place's ground, floor course and play space never
+yield); a cell no rule awards is `DW0827`. A cell no claim covers holds the
 declared volume or the site's `fill`. `siteplan::Site::owner` is the one
 derivation, and the frame, the stand-ins, the handout and the checks all read
 it.

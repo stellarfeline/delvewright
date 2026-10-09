@@ -55,12 +55,28 @@
     {
       "doc": "overlays/site-plan/site-plan.json",
       "op": "replace",
+      "path": "/content/boxes/5/floor",
+      "value": {
+        "y": 66
+      }
+    },
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "replace",
+      "path": "/content/boxes/5/ceiling",
+      "value": {
+        "open": 2
+      }
+    },
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "replace",
       "path": "/content/boxes/8/base",
       "value": {
-        "aloft": 1
+        "aloft": 4
       }
     }
   ],
   "units": [],
-  "why": "The gantry hung one course lower (`base: {\"aloft\": 1}`): its underside now reaches y 67, the yard's top course of sky, and the two places' cuboids overlap in the yard's ring where the gantry crosses it. Two open places, no connection across that course, no rule to award the cells — `DW0827`, naming the cuboids and the two remedies that fit a place over another: hang the upper place clear of the lower, or shorten the lower open place's headroom. It declares no unit: `base` is bound on the site-plan overlay's gantry, and what must not compile is two places claiming one block."
+  "why": "The yard raised on a two-course plinth (`floor: {\"y\": 66}`, `open: 2`, so its headroom still meets the gantry's floor course) and the gantry hung four courses under its floor course (`base: {\"aloft\": 4}`): its underside reaches y 64, down past the yard's sky into the plinth the yard stands on — the yard's own ground and the face of its ring. A place hung in a yard's sky owns the ring air it hangs in (spec-0098 §14, departure 35), and that air is all it takes: the gantry's cells at y 66–67 in the yard's ring are the gantry's, and the 36 plinth cells at y 64 are claimed by two open places with no connection across that course and no rule to award them — `DW0827`, naming the cuboids and the two remedies that fit a place over another: hang the upper place clear of the lower, or shorten the lower open place's headroom. It declares no unit: `base` is bound on the site-plan overlay's gantry, and what must not compile is two places claiming one block."
 }

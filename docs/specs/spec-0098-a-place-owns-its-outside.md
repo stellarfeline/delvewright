@@ -1011,6 +1011,34 @@ what a criterion asserts says so in the word *loosening*.
     `grammar_contract_check.rs`
     `two_openings_at_a_corner_open_through_each_other`.
 
+35. **A place hung in a ground place's sky owns what it hangs in**, between
+    rules 3c and 3d. A ground place's open headroom carries its ring up beside its play
+    space, so an aloft place hung beside that headroom — a bridge leaving a
+    house that stands over a glade, its underside and its end ring in the
+    glade's ring air — met it in cells no rule awarded, and rule 3d (`DW0827`) refused
+    the plan; the only remedies it named (hang the upper clear, shorten the
+    lower's headroom) took away the headroom a ladder through the house
+    floor needed. The ring fixes ground cells only (§2c), and above the floor
+    course an open place's ring is sky: no wall was declared there. So after
+    3c, where exactly one claimant is aloft and every other claims the cell
+    only as **sky ring** — an open ground place's ring cell above its floor
+    course, at most its play-space top — the cell is the aloft place's. The
+    choices weighed: an open place claiming no ring air at all shrinks every
+    open place's frame by its ring, so no yard could draw a kerb, a hedge or
+    the facade of rule 3c, and every bound open piece stops being its frame
+    (`DW0843`); claiming ring air only where the piece's shell needs it reads
+    an intent nothing declares. The rule chosen awards only cells 3d used to
+    refuse, so no plan that compiled moves a byte. What it changes: such a
+    yard cannot draw in the ring air a hung place takes (its piece voids
+    those cells), and a gantry whose underside reaches a yard's sky is no
+    longer refused — the probe `a-bridge-whose-underside-reaches-the-yard`
+    now hangs it down into the yard's plinth, which still is. Its ground,
+    floor course and play space never yield, and two ground places' sky
+    rings still contest. Shown in the `siteplan::claim` unit tests
+    `a_place_hung_in_a_glades_sky_owns_what_it_hangs_in` (the Treehouse
+    Camp's glade, house and bridge; red on the old rule) and
+    `a_gantry_over_a_yard_meets_it_at_the_yards_headroom`.
+
 | Criterion | Demonstrated in |
 |---|---|
 | 1 | `tests/blockout.rs` `the_ownership_rule_is_exhaustive_and_one_owner`; `crates/dsl` `siteplan::claim` tests |
