@@ -1710,11 +1710,16 @@ pub fn check_voids(
 pub struct Detailing {
     /// Every bound piece, at the frame the site plan computes for it.
     pub pieces: Vec<PiecePlacement>,
-    /// `(campaign anchor name, world cell, facing)` for every owed name a row
+    /// `(campaign anchor name, world cell, facing)` for every owed point a row
     /// binds — the re-binding of spec-0050 §6. The facing is the piece's,
     /// because which way a body faces when it arrives is a fact about the room
     /// it arrives in.
     pub anchors: Vec<(String, [i32; 3], Option<String>)>,
+    /// `(campaign anchor name, world low corner, world high corner, fill
+    /// block)` for every owed gate a row binds — a gate station, or a barred
+    /// seam's gate region the place owns the plane of (spec-0098 §2). The block
+    /// is the piece's own bar, the one `close-gate` writes back.
+    pub gates: Vec<(String, [i32; 3], [i32; 3], String)>,
 }
 
 /// **The one path from a `details[]` row to placed bytes.**
@@ -1767,6 +1772,18 @@ pub fn place(c: &Campaign, prefabs: &PrefabRegistry) -> Detailing {
             let Some(a) = meta.anchors.get(bound_to) else {
                 continue; // `DW0842` refused it.
             };
+            if let Some(r) = a.region.as_ref() {
+                let at = |c: [i32; 3]| [pos[0] + c[0], pos[1] + c[1], pos[2] + c[2]];
+                out.gates.push((
+                    name.clone(),
+                    at(r.from),
+                    at(r.to),
+                    a.block
+                        .clone()
+                        .unwrap_or_else(|| delvewright_dsl::siteplan::SEAM_BAR.to_string()),
+                ));
+                continue;
+            }
             let Some(p) = a.pos else {
                 continue; // `DW0845` refused it: an owed name is a place to stand.
             };

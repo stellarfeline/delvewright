@@ -1,0 +1,40 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "areas": [],
+    "atmospheres": [
+      {
+        "attributes": {
+          "visual/fog_color": "#8a9aa8",
+          "visual/sky_color": "#6f7f8f"
+        },
+        "id": "atmosphere/wet-court",
+        "precipitation": "rain"
+      }
+    ],
+    "boundary": {
+      "margin": 16,
+      "message": "The hall ends here."
+    },
+    "difficulty": "normal",
+    "horizon": {
+      "base": "valley",
+      "ratio": 2.5,
+      "rim_height": 48
+    },
+    "languages": [
+      "zh-cn"
+    ],
+    "min_players": 1,
+    "outro": "Every case in the hall has been read.",
+    "premise": "The same six places the gallery's hall is made of, standing as a derived blockout instead of as prefab pieces. Nothing here describes a block.",
+    "seed": 20260819,
+    "target_minutes": 5,
+    "theme": "A lit stone hall divided by a barred wall.",
+    "time": "day",
+    "title": "The Gallery, Derived",
+    "weather": "clear"
+  },
+  "dsl_version": "0.38.0",
+  "stage": "world"
+}

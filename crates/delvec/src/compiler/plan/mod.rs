@@ -871,6 +871,14 @@ impl<'a> Plan<'a> {
                         None,
                     )?;
                 }
+                for (name, from, to, block) in detailing.gates {
+                    anchors.place(
+                        &placement.area_id,
+                        &name,
+                        ResolvedAnchor::Gate { from, to, block },
+                        None,
+                    )?;
+                }
                 areas.push(placement);
                 Some(derived)
             }

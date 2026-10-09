@@ -1104,11 +1104,23 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
         }
     }
 
+    // **A piece whose every space is `open` encloses nothing, honestly**
+    // (spec-0098 §6b): a street, a mud flat. Its zero is stated rather than
+    // refused, and the question this refusal used to answer — did a room
+    // forget to say it is enclosed — is answered where the kind is known: a
+    // place with a lid is bound only to a piece carrying a space this gate
+    // examines (`DW0989`, from the site plan's `ceiling`, never the piece's own
+    // word). Declared as a loosening in spec-0098's own words.
+    let spaces = ix.contract.spaces.len();
+    let all_open = spaces > 0 && ix.contract.spaces.values().all(|d| d.envelope == "open");
+    let empty_ok = all_open.then(|| {
+        format!("0 of {spaces} space(s) declare an envelope closure examines; every space is open")
+    });
     Gate {
         id: "contract-closure",
-        state: verdict(breaches.is_empty() && examined > 0),
+        state: verdict(breaches.is_empty() && (examined > 0 || all_open)),
         undecided: 0,
-        empty_ok: None,
+        empty_ok,
         bound: examined,
         detail: if !breaches.is_empty() {
             breaches.join(" · ")

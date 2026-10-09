@@ -1,0 +1,19 @@
+{
+  "code": "DW0112",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "replace",
+      "path": "/content/fill/terrain",
+      "value": {
+        "datum": "datum/nowhere",
+        "kind": "flat"
+      }
+    }
+  ],
+  "units": [
+    "Terrain::flat",
+    "Terrain::flat.datum"
+  ],
+  "why": "A flat terrain standing on `datum/nowhere`, which the plan declares no `datums[]` entry for. The terrain's walk plane IS that datum — its surface block stands one under it — so a terrain on a plane nothing declares has no height at all, and the reference is refused as every dangling reference is, `DW0112`. This is where the `flat` terrain is written: the gallery's `open` point carries a heightmap, its `solid` point no terrain, so the flat form is refusal-proven here and built green on the engine's own blockout fixture."
+}

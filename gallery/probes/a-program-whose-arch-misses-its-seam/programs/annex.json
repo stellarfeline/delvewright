@@ -15,7 +15,12 @@
       }
     ],
     "entry": "hall",
-    "no_body": {},
+    "no_body": {
+      "roof": {
+        "reason": "the roof and the loft under it, which no one is meant to walk"
+      }
+    },
+    "no_body_majority_ack": "a building that owns its outside owns its roof, and a pitched roof is more standable surface than the room under it; nobody walks it",
     "spaces": {
       "hall": {
         "envelope": "enclosed"
@@ -24,21 +29,31 @@
   },
   "name": "gallery-annex",
   "palette": {
+    "ceiling": "minecraft:spruce_planks",
     "floor": "minecraft:stone_bricks",
     "furniture": "minecraft:chiseled_stone_bricks",
     "lamp": "minecraft:sea_lantern",
+    "roof_e": {
+      "local": "minecraft:dark_oak_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]"
+    },
+    "roof_w": {
+      "local": "minecraft:dark_oak_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]"
+    },
     "wall": "minecraft:stone_bricks"
   },
   "params": {
     "handed/datum-y": 1,
+    "handed/roof/eaves": 1,
+    "handed/roof/lid-y": 5,
+    "handed/roof/top-y": 14,
     "handed/seam/annex-arch/y0": 1,
     "handed/seam/annex-arch/y1": 3,
-    "handed/seam/annex-arch/z0": 1,
-    "handed/seam/annex-arch/z1": 2,
+    "handed/seam/annex-arch/z0": 3,
+    "handed/seam/annex-arch/z1": 4,
     "handed/seam/annex-chute/y0": 1,
     "handed/seam/annex-chute/y1": 3,
-    "handed/seam/annex-chute/z0": 9,
-    "handed/seam/annex-chute/z1": 10,
+    "handed/seam/annex-chute/z0": 11,
+    "handed/seam/annex-chute/z1": 12,
     "lamp_period": 4
   },
   "rules": {
@@ -55,63 +70,28 @@
             },
             {
               "op": "call",
-              "symbol": "body"
+              "symbol": "storey"
+            },
+            {
+              "op": "call",
+              "symbol": "roof"
             }
           ],
           "op": "split",
           "sizes": [
             {
               "blocks": {
-                "expr": "int",
-                "value": 1
+                "expr": "param",
+                "name": "handed/datum-y"
               },
               "size": "absolute"
             },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            }
-          ]
-        },
-        "weight": 1
-      }
-    ],
-    "arch": [
-      {
-        "body": {
-          "axis": "y",
-          "children": [
-            {
-              "material": {
-                "role": "wall"
-              },
-              "op": "fill"
-            },
-            {
-              "body": {
-                "op": "void"
-              },
-              "op": "claim",
-              "region": "arch-way"
-            },
-            {
-              "material": {
-                "role": "wall"
-              },
-              "op": "fill"
-            }
-          ],
-          "op": "split",
-          "sizes": [
             {
               "blocks": {
                 "expr": "arith",
                 "lhs": {
                   "expr": "param",
-                  "name": "handed/seam/annex-arch/y0"
+                  "name": "handed/roof/lid-y"
                 },
                 "op": "sub",
                 "rhs": {
@@ -122,82 +102,11 @@
               "size": "absolute"
             },
             {
-              "blocks": {
-                "expr": "arith",
-                "lhs": {
-                  "expr": "arith",
-                  "lhs": {
-                    "expr": "param",
-                    "name": "handed/seam/annex-arch/y1"
-                  },
-                  "op": "sub",
-                  "rhs": {
-                    "expr": "param",
-                    "name": "handed/seam/annex-arch/y0"
-                  }
-                },
-                "op": "add",
-                "rhs": {
-                  "expr": "int",
-                  "value": 1
-                }
-              },
-              "size": "absolute"
-            },
-            {
               "size": "relative",
               "weight": {
                 "expr": "int",
                 "value": 1
               }
-            }
-          ]
-        },
-        "weight": 1
-      }
-    ],
-    "body": [
-      {
-        "body": {
-          "axis": "x",
-          "children": [
-            {
-              "material": {
-                "role": "wall"
-              },
-              "op": "fill"
-            },
-            {
-              "op": "call",
-              "symbol": "mid"
-            },
-            {
-              "op": "call",
-              "symbol": "east_wall"
-            }
-          ],
-          "op": "split",
-          "sizes": [
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              },
-              "size": "absolute"
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 1
-              },
-              "size": "absolute"
             }
           ]
         },
@@ -327,18 +236,26 @@
         "weight": 1
       }
     ],
-    "core": [
+    "course": [
       {
         "body": {
-          "axis": "y",
+          "axis": "x",
           "children": [
             {
-              "op": "call",
-              "symbol": "room"
+              "material": {
+                "role": "roof_e"
+              },
+              "op": "fill"
             },
             {
               "op": "call",
-              "symbol": "ceiling"
+              "symbol": "gable_row"
+            },
+            {
+              "material": {
+                "role": "roof_w"
+              },
+              "op": "fill"
             }
           ],
           "op": "split",
@@ -346,7 +263,7 @@
             {
               "blocks": {
                 "expr": "int",
-                "value": 3
+                "value": 1
               },
               "size": "absolute"
             },
@@ -356,13 +273,20 @@
                 "expr": "int",
                 "value": 1
               }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
             }
           ]
         },
         "weight": 1
       }
     ],
-    "east_wall": [
+    "east_band": [
       {
         "body": {
           "axis": "z",
@@ -374,8 +298,11 @@
               "op": "fill"
             },
             {
-              "op": "call",
-              "symbol": "arch"
+              "body": {
+                "op": "void"
+              },
+              "op": "claim",
+              "region": "arch-way"
             },
             {
               "material": {
@@ -384,8 +311,11 @@
               "op": "fill"
             },
             {
-              "op": "call",
-              "symbol": "chute"
+              "body": {
+                "op": "void"
+              },
+              "op": "claim",
+              "region": "hall"
             },
             {
               "material": {
@@ -400,8 +330,24 @@
               "blocks": {
                 "expr": "arith",
                 "lhs": {
-                  "expr": "param",
-                  "name": "handed/seam/annex-arch/z0"
+                  "expr": "arith",
+                  "lhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-arch/z0"
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "expr": "arith",
+                    "lhs": {
+                      "expr": "param",
+                      "name": "handed/roof/eaves"
+                    },
+                    "op": "add",
+                    "rhs": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
                 },
                 "op": "add",
                 "rhs": {
@@ -500,6 +446,242 @@
         "weight": 1
       }
     ],
+    "east_col": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "east_band"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "arith",
+                "lhs": {
+                  "expr": "arith",
+                  "lhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-arch/y1"
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-arch/y0"
+                  }
+                },
+                "op": "add",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "gable": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "op": "call",
+              "symbol": "slope"
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "gable_row": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "void"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "inner": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "rooms"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
     "lamp_row": [
       {
         "body": {
@@ -548,24 +730,26 @@
         "weight": 1
       }
     ],
-    "mid": [
+    "lid_course": [
       {
         "body": {
-          "axis": "z",
+          "axis": "x",
           "children": [
             {
               "material": {
-                "role": "wall"
+                "role": "roof_e"
               },
               "op": "fill"
             },
             {
-              "op": "call",
-              "symbol": "core"
+              "material": {
+                "role": "ceiling"
+              },
+              "op": "fill"
             },
             {
               "material": {
-                "role": "wall"
+                "role": "roof_w"
               },
               "op": "fill"
             }
@@ -592,6 +776,72 @@
                 "value": 1
               },
               "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "party": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "chute"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/seam/annex-chute/z0"
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "arith",
+                "lhs": {
+                  "expr": "arith",
+                  "lhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-chute/z1"
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "expr": "param",
+                    "name": "handed/seam/annex-chute/z0"
+                  }
+                },
+                "op": "add",
+                "rhs": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
             }
           ]
         },
@@ -678,77 +928,395 @@
         "weight": 1
       }
     ],
+    "roof": [
+      {
+        "body": {
+          "body": {
+            "axis": "y",
+            "children": [
+              {
+                "op": "call",
+                "symbol": "lid_course"
+              },
+              {
+                "op": "call",
+                "symbol": "gable"
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            ]
+          },
+          "op": "claim",
+          "region": "roof"
+        },
+        "weight": 1
+      }
+    ],
     "room": [
       {
         "body": {
           "body": {
-            "body": {
-              "axis": "x",
-              "children": [
-                {
-                  "op": "void"
-                },
-                {
-                  "op": "call",
-                  "symbol": "plinth_row"
-                },
-                {
-                  "op": "void"
+            "axis": "x",
+            "children": [
+              {
+                "op": "void"
+              },
+              {
+                "op": "call",
+                "symbol": "plinth_row"
+              },
+              {
+                "op": "void"
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
                 }
-              ],
-              "op": "split",
-              "sizes": [
-                {
-                  "size": "relative",
-                  "weight": {
-                    "expr": "int",
-                    "value": 1
-                  }
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 2
                 },
-                {
-                  "blocks": {
-                    "expr": "int",
-                    "value": 2
-                  },
-                  "size": "absolute"
-                },
-                {
-                  "size": "relative",
-                  "weight": {
-                    "expr": "int",
-                    "value": 1
-                  }
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
                 }
-              ]
+              }
+            ]
+          },
+          "mark": {
+            "anchor": "node-annex",
+            "at": "offset",
+            "facing": "east",
+            "x": {
+              "expr": "int",
+              "value": 2
             },
-            "mark": {
-              "anchor": "node-annex",
-              "at": "offset",
-              "facing": "east",
-              "x": {
-                "expr": "int",
-                "value": 2
+            "y": {
+              "expr": "int",
+              "value": 0
+            },
+            "z": {
+              "expr": "int",
+              "value": 6
+            }
+          },
+          "op": "mark"
+        },
+        "weight": 1
+      }
+    ],
+    "room_main": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "body": {
+                "op": "call",
+                "symbol": "room"
               },
-              "y": {
+              "op": "claim",
+              "region": "hall"
+            },
+            {
+              "op": "call",
+              "symbol": "ceiling"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
                 "expr": "int",
-                "value": 0
+                "value": 3
               },
-              "z": {
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
                 "expr": "int",
-                "value": 6
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "rooms": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "room_main"
+            },
+            {
+              "op": "call",
+              "symbol": "east_col"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
               }
             },
-            "op": "mark"
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "slope": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "course"
+            },
+            {
+              "op": "call",
+              "symbol": "slope_up"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1,
+        "when": {
+          "cond": "all",
+          "of": [
+            {
+              "cond": "cmp",
+              "lhs": {
+                "dim": "y",
+                "expr": "dim"
+              },
+              "op": "ge",
+              "rhs": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "cond": "cmp",
+              "lhs": {
+                "dim": "x",
+                "expr": "dim"
+              },
+              "op": "ge",
+              "rhs": {
+                "expr": "int",
+                "value": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "body": {
+          "op": "void"
+        },
+        "weight": 1,
+        "when": {
+          "cond": "otherwise"
+        }
+      }
+    ],
+    "slope_up": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "op": "call",
+              "symbol": "slope"
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1,
+        "when": {
+          "cond": "cmp",
+          "lhs": {
+            "dim": "x",
+            "expr": "dim"
           },
-          "op": "claim",
-          "region": "hall"
+          "op": "ge",
+          "rhs": {
+            "expr": "int",
+            "value": 4
+          }
+        }
+      },
+      {
+        "body": {
+          "op": "void"
+        },
+        "weight": 1,
+        "when": {
+          "cond": "otherwise"
+        }
+      }
+    ],
+    "storey": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "void"
+            },
+            {
+              "material": {
+                "role": "wall"
+              },
+              "op": "fill"
+            },
+            {
+              "op": "call",
+              "symbol": "inner"
+            },
+            {
+              "op": "call",
+              "symbol": "party"
+            },
+            {
+              "op": "void"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "param",
+                "name": "handed/roof/eaves"
+              },
+              "size": "absolute"
+            }
+          ]
         },
         "weight": 1
       }
     ]
   },
   "shown_faces": [
-    "down"
+    "north",
+    "south",
+    "up",
+    "west"
   ],
   "start": "annex",
   "version": "1.9.0"

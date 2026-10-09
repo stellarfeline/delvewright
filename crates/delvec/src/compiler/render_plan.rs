@@ -763,6 +763,25 @@ impl<'c> Shots<'c> {
 /// The world y a body stands on outside the pieces, for a horizon that BUILT
 /// ground, or `None` for one that did not (`void`, `ocean` — nothing outside a
 /// piece but air or the level generator's own sea).
+/// The top of the ground a site plan declares at column `(x, z)`: the terrain's
+/// surface on an `open` site, the region's top on a `solid` one, and nothing
+/// for a campaign without a site plan.
+fn declared_fill_top(plan: &Plan, x: i32, z: i32) -> f64 {
+    let Some(b) = plan.blockout.as_ref() else {
+        return f64::MIN;
+    };
+    if !b.ground.is_declared() {
+        return f64::MIN;
+    }
+    if b.ground.is_open() {
+        return b
+            .ground
+            .top(i64::from(x), i64::from(z))
+            .map_or(f64::MIN, |t| t as f64 + 1.0);
+    }
+    b.ground.region().1[1] as f64 + 1.0
+}
+
 fn ground_plane(plan: &Plan) -> Option<f64> {
     plan.surround
         .as_ref()
@@ -859,6 +878,11 @@ pub fn render_plan(
             // make a picture come out; it is an overview standing over the
             // ground it is an overview of.
             let over = ground_plane(plan).map_or(max[1] as f64, |g| (max[1] as f64).max(g));
+            // The same reasoning, for the ground a site plan DECLARES
+            // (spec-0098 §2b): over an `open` site's terrain at the eye's own
+            // column, and over the whole region of a `solid` one, whose every
+            // unclaimed cell is rock.
+            let over = over.max(declared_fill_top(plan, min[0] - 2, min[2] - 2));
             let eye = [min[0] as f64 - 1.5, over + 3.0, min[2] as f64 - 1.5];
             let look = [cx, cy, cz];
             let lit = piece_is_lit(prefabs, &piece.prefab_id);

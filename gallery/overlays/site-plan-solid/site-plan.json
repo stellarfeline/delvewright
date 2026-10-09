@@ -43,11 +43,7 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/annex",
-        "roof": {
-          "courses": 9,
-          "eaves": 1
-        }
+        "node": "node/annex"
       },
       {
         "ceiling": {
@@ -113,13 +109,8 @@
       }
     ],
     "fill": {
-      "below": "minecraft:dirt",
-      "kind": "open",
-      "surface": "minecraft:grass_block",
-      "terrain": {
-        "datum": "datum/grade",
-        "kind": "flat"
-      }
+      "block": "minecraft:deepslate",
+      "kind": "solid"
     },
     "identities": [
       {
@@ -411,15 +402,16 @@
       },
       {
         "id": "volume/sky-over-the-exit",
+        "note": "The sky the exit is open to, kept clear down to the top of its headroom: in rock, a sky well.",
         "region": {
           "extent": [
             8,
-            20,
+            21,
             8
           ],
           "min": [
             24,
-            68,
+            67,
             38
           ]
         },

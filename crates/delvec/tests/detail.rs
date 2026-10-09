@@ -102,11 +102,25 @@ fn piece_cells(
             })
         })
     };
+    // The cells of the frame the place does not own (spec-0098 §2): a piece
+    // holds `structure_void` there, which is what makes it a piece.
+    let void = |p: [i64; 3]| {
+        a.voids
+            .iter()
+            .any(|v| (0..3).all(|i| p[i] >= v.cells[0][i] && p[i] <= v.cells[1][i]))
+    };
     let mut out = Vec::new();
     for x in 0..a.extent[0] {
         for y in 0..a.extent[1] {
             for z in 0..a.extent[2] {
                 let world = [a.world_min[0] + x, a.world_min[1] + y, a.world_min[2] + z];
+                if void([x, y, z]) {
+                    out.push((
+                        [x as i32, y as i32, z as i32],
+                        "minecraft:structure_void".to_string(),
+                    ));
+                    continue;
+                }
                 let mut block = mass
                     .get(&world)
                     .cloned()
@@ -128,10 +142,10 @@ fn piece_cells(
 fn standing_cell(a: &Allocation, cells: &[([i32; 3], String)]) -> [i32; 3] {
     let solid: std::collections::BTreeSet<[i32; 3]> = cells
         .iter()
-        .filter(|(_, b)| b != "minecraft:air")
+        .filter(|(_, b)| b != "minecraft:air" && b != "minecraft:structure_void")
         .map(|(p, _)| *p)
         .collect();
-    for y in 1..a.extent[1] as i32 {
+    for y in a.datum_y as i32..a.extent[1] as i32 {
         for x in 0..a.extent[0] as i32 {
             for z in 0..a.extent[2] as i32 {
                 if !solid.contains(&[x, y, z])
@@ -174,19 +188,30 @@ fn write_piece(dir: &Path, id: &str, a: &Allocation, cells: &[([i32; 3], String)
             })
         })
         .collect();
+    // An owed name is a place to stand — except a barred seam's gate region,
+    // owed by the place that owns the seam's plane (spec-0098 §2): that is a
+    // gate anchor over exactly the allocated cells, closed by the bar the
+    // piece (cut from the massing) already ships there.
     let anchors: serde_json::Map<String, serde_json::Value> = a
         .owed_anchors
         .iter()
         .enumerate()
-        .map(|(i, _)| {
-            (
-                format!("seat{i}"),
-                serde_json::json!({
+        .map(|(i, name)| {
+            let gate = name
+                .strip_prefix("anchor/seam-")
+                .and_then(|stem| a.seams.iter().find(|s| s.edge == format!("edge/{stem}")));
+            let value = match gate {
+                Some(sm) => serde_json::json!({
+                    "region": { "from": sm.cells[0], "to": sm.cells[1] },
+                    "block": "minecraft:iron_bars",
+                }),
+                None => serde_json::json!({
                     "pos": seat,
                     "facing": "north",
                     "resolves_to": "space:room",
                 }),
-            )
+            };
+            (format!("seat{i}"), value)
         })
         .collect();
     let meta = serde_json::json!({
@@ -1339,11 +1364,17 @@ fn the_allocation_verb_hands_out_the_frame_the_seams_and_the_owed_names() {
     );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("it prints JSON");
     assert_eq!(v["place"], "node/exit");
+    // The exit is 8x8 with four of headroom and a lid; it owns its ring on
+    // three sides, and the cell beyond its east party plane is the cell's (the
+    // seam between them names the cell first), so the frame is 9 wide, the
+    // floor course + 4 + the lid tall, and 10 deep (spec-0098 §2).
     assert_eq!(
         v["extent"],
-        serde_json::json!([8, 5, 8]),
-        "the frame is the box plus its floor course"
+        serde_json::json!([9, 6, 10]),
+        "the frame is the place's claim"
     );
+    assert_eq!(v["seams"][0]["owns_plane"], false, "the cell owns the plane");
+    assert!(v["seams"][0]["form"].as_str().is_some_and(|f| !f.is_empty()));
     assert_eq!(v["datum_y"], 1, "and the walk plane is one course up");
     assert_eq!(v["seams"][0]["edge"], "edge/cell-exit");
     assert_eq!(v["seams"][0]["face"], "east");
@@ -1733,7 +1764,7 @@ fn a_build_states_what_it_built_as_well_as_what_it_examined() {
         "the DERIVATION states what it bound to: {err}"
     );
     assert!(
-        err.contains("(1 detailed, so 6 massed by the derivation)"),
+        err.contains("(1 detailed, so 6 massed by the derivation;"),
         "and the split is the number stage 6 made load-bearing — a reader who \
          cannot see it cannot tell a fully detailed map from one binding nothing: \
          {err}"

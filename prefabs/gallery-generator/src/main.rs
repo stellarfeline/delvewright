@@ -3274,6 +3274,109 @@ fn write_yard(out: &Path) {
 }
 
 // ---------------------------------------------------------------------------
+// Two pieces that exist to be REFUSED (spec-0098 §11): each is bound only by a
+// gallery probe, and each is the precise shape of one defect
+// ---------------------------------------------------------------------------
+
+/// Write one probe piece: its bytes from `cell`, its document a minimal, valid
+/// detail-piece document with one open space over the whole box.
+fn write_probe_piece(
+    out: &Path,
+    id: &str,
+    size: [i32; 3],
+    cell: &dyn Fn([i32; 3]) -> &'static str,
+    why: &str,
+) {
+    let mut palette = Palette::new();
+    let mut blocks = Vec::new();
+    for x in 0..size[0] {
+        for y in 0..size[1] {
+            for z in 0..size[2] {
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(cell([x, y, z]), None),
+                });
+            }
+        }
+    }
+    let s = Structure {
+        data_version: DATA_VERSION,
+        size,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    };
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(id, &cells);
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{id}.nbt")), &framed).expect("write probe nbt");
+    let meta = serde_json::json!({
+        "prefab_id": format!("prefab/{id}"),
+        "structure": {
+            "file": format!("{id}.nbt"),
+            "id": id,
+            "size": size,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        "anchors": {},
+        "note": why,
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per \
+                     prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+        }
+    });
+    document::write_preserving(&out.join(format!("{id}.json")), &meta);
+    println!("{id}: probe piece written — {}x{}x{}", size[0], size[1], size[2]);
+}
+
+fn write_refused_pieces(out: &Path) {
+    // The yard as it stood when a frame was the play space and one floor
+    // course: 8x4x8, paving under three courses of air. Bound to the exit's
+    // frame — which now holds the ring and the ground under the plinth — it is
+    // `DW0843`'s refusal (`gallery/probes/a-yard-the-size-of-its-floor`).
+    write_probe_piece(
+        out,
+        "gallery-yard-floor",
+        [8, 4, 8],
+        &|p| {
+            if p[1] == 0 {
+                "minecraft:polished_andesite"
+            } else {
+                "minecraft:air"
+            }
+        },
+        "the exit's yard as it stood before a place owned its outside; refused by DW0843",
+    );
+    // A piece the annex's exact frame, voiding every cell except one: the
+    // near hall's party wall, at piece-local [18, 2, 3] — a cell the near hall
+    // owns, because the arch's connection names it first. A piece writing a
+    // neighbour's wall is `DW0987`'s refusal
+    // (`gallery/probes/a-wall-the-whole-already-owns`).
+    write_probe_piece(
+        out,
+        "gallery-annex-overreach",
+        [20, 15, 20],
+        &|p| {
+            if p == [18, 2, 3] {
+                "minecraft:stone_bricks"
+            } else {
+                "minecraft:structure_void"
+            }
+        },
+        "one stone in the near hall's party wall and nothing else; refused by DW0987",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The BANK: a SITE — one box holding a building and the ground it stands on
 // ---------------------------------------------------------------------------
 
@@ -4141,6 +4244,7 @@ fn main() {
     write_annex(out);
     write_shard(out);
     write_yard(out);
+    write_refused_pieces(out);
     write_quay(out);
     write_bank(out);
     write_rig(out);
