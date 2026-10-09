@@ -425,19 +425,38 @@ fn merging_a_stairs_two_ends_into_one_space_is_refused() {
     assert!(g.detail.contains("is ONE floor"), "{}", g.detail);
 }
 
-/// **A roofed room cannot be downgraded out of closure** (spec-0036 §2.3) — the
-/// adversary's second move, and the one an envelope keyword alone would buy.
+/// **A covered space declared `open` is taken as declared** (spec-0098 §14,
+/// an owner ruling: enclosed spaces are the author's declaration, and the
+/// check confirms intent rather than restricting it). The hall under its roof,
+/// declared `open`, is a covered space — a pavilion — and closure examines
+/// nothing of it; the covered cells are stated in the enumeration. The same
+/// hall declared `enclosed` is examined (the perturbation: the declaration is
+/// what binds the gate).
 #[test]
-fn a_roofed_space_declared_open_is_refused_and_a_sky_open_one_is_not() {
+fn a_covered_space_declared_open_is_taken_as_declared() {
     let (b, mut c) = hall();
+    let enclosed = check(&b.model, &c, &no_anchors());
+    assert!(
+        gate(&enclosed, "contract-closure").bound > 0,
+        "declared enclosed, the hall is examined"
+    );
     c.spaces.get_mut("hall").unwrap().envelope = "open".to_string();
     let report = check(&b.model, &c, &no_anchors());
-    let g = gate(&report, "contract-closure");
-    assert!(!g.passed(), "{}", g.detail);
     assert!(
-        g.detail.contains("blocks overhead"),
-        "the roof is what refuses it: {}",
-        g.detail
+        !report
+            .gates
+            .iter()
+            .any(|g| g.id == "contract-closure" && !g.passed()),
+        "{:#?}",
+        report.gates
+    );
+    assert!(
+        report
+            .enumeration
+            .iter()
+            .any(|e| e.contains("blocks overhead") && e.contains("a covered space")),
+        "the covered cells are stated: {:?}",
+        report.enumeration
     );
 
     // The same claim over a yard with sky above it is fine.
@@ -1155,11 +1174,9 @@ fn a_contract_with_nothing_to_examine_reds_rather_than_passing_quietly() {
     );
     c.edges.push(edge("nowhere", "exterior", "walk"));
     let report = check(&b.model, &c, &no_anchors());
-    // Both spaces are `open`, so closure has no envelope to examine and is
-    // withheld with that zero stated — spec-0098 §6b's declared loosening of
-    // the refusal this test used to assert for it. The roofed place whose
-    // piece declares only open spaces is refused where the kind is known
-    // (`DW0989`, `tests/detail.rs`).
+    // Both spaces are `open`: the author declared no enclosed space, so
+    // closure has nothing to confirm and is withheld with that zero stated
+    // (spec-0098 §14: enclosed spaces are the author's declaration).
     assert!(
         !report.gates.iter().any(|g| g.id == "contract-closure"),
         "closure printed a verdict over an all-open contract: {:?}",

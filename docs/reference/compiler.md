@@ -629,8 +629,9 @@ cells a bound place owns are a hole in what the whole writes, and the whole's
 stand-ins stand only in unbound places' owned cells. A seam whose plane the
 place owns is the piece's to cut, and a `barred` one's shut state the piece's to
 ship, bound to the gate region it owes; a seam a neighbour owns is answered on
-the place's own first layer beside the plane. A roofed place's piece carries a
-space the closure gate examines (`DW0989`).
+the place's own first layer beside the plane. Which spaces are enclosed is the
+piece's own declaration, and the closure gate confirms exactly those; a roofed
+place whose piece declares none — a pavilion, a covered market — is fine.
 
 **The fixture pass applies to derived interiors only.** A bound place lights
 itself; its cells leave the relight pass's deficiency set and go to the

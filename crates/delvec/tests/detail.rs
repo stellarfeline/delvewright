@@ -24,7 +24,7 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use delvec::compiler::blockout::{self, Perturb};
@@ -1969,30 +1969,31 @@ fn dw0990_refuses_a_piece_writing_the_rings_ground() {
     }
 }
 
-/// **Criterion 15, the binding's half: an all-open piece binds to an open
-/// place and not to a roofed one** (`DW0989`). The kind is the box's
-/// `ceiling`, never the piece's own word.
+/// **Criterion 15, the binding's half: an all-open piece binds to any place,
+/// roofed or open** (spec-0098 §14, an owner ruling: enclosed spaces are the
+/// author's declaration; a pavilion or a covered market is fine). Both the
+/// sky-open loft and the roofed exit bind a piece whose every space is
+/// `open` with no refusal. Vacuous if the patch did not reach the piece: its
+/// envelope set is read back as `{open}`.
 #[test]
-fn dw0989_refuses_an_all_open_piece_on_a_roofed_place() {
-    for (place, roofed) in [("node/loft", false), ("node/exit", true)] {
+fn an_all_open_piece_binds_to_a_roofed_place_and_an_open_one() {
+    for place in ["node/loft", "node/exit"] {
         let id = place.split('/').nth(1).unwrap();
-        let tmp = tempdir(&format!("dw0989-{id}"));
+        let tmp = tempdir(&format!("all-open-{id}"));
         let d = detailed(&tmp, &[place]);
+        let mut envelopes = BTreeSet::new();
         patch_piece(&d, id, |v| {
-            v["spatial_contract"]["spaces"]["room"]["envelope"] = serde_json::json!("open");
+            for (_, sp) in v["spatial_contract"]["spaces"].as_object_mut().unwrap() {
+                sp["envelope"] = serde_json::json!("open");
+            }
+            for (_, sp) in v["spatial_contract"]["spaces"].as_object().unwrap() {
+                envelopes.insert(sp["envelope"].as_str().unwrap().to_string());
+            }
         });
+        assert_eq!(envelopes, ["open".to_string()].into_iter().collect());
         let (diags, binding) = check_at(&d);
-        let refused = diags.iter().any(|x| x.code == "DW0989");
-        assert_eq!(refused, roofed, "{place}: {:?}", codes(&diags));
-        assert_eq!(binding.roofed, usize::from(roofed), "{}", binding.line());
-        if roofed {
-            let e = diags.iter().find(|x| x.code == "DW0989").unwrap();
-            assert!(
-                e.message.contains("`open`") && e.message.contains("clearance"),
-                "{}",
-                e.message
-            );
-        }
+        assert!(errors(&diags).is_empty(), "{place}: {:?}", codes(&diags));
+        assert_eq!(binding.bound, 1, "{}", binding.line());
     }
 }
 

@@ -1042,27 +1042,32 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
             }
         }
 
-        // An envelope that claims openness demands sky (spec-0036 §0/§2.3): a
-        // roofed room cannot be downgraded out of closure.
+        // A space the author declares `open` or `open_top` under the piece's
+        // own blocks is a covered space — a pavilion, a covered market, a
+        // covered bridge — and is taken as declared (spec-0098 §14, an owner
+        // ruling: a check confirms the author's intent and never limits it).
+        // The covered cells are stated, so a reviewer sees the roof the
+        // declaration leaves out of closure.
         if decl.envelope != "enclosed" {
             if decl.envelope == "open_top" {
                 enumeration.push(format!(
                     "envelope: space {name:?} is declared `open_top` — side faces still closed"
                 ));
             }
-            let roofed: BTreeSet<[i32; 3]> = space
+            let covered: BTreeSet<[i32; 3]> = space
                 .iter()
                 .filter(|c| ix.standable.contains(*c) && nav::sheltered(model, **c))
                 .copied()
                 .collect();
-            if !roofed.is_empty() {
-                breaches.push(format!(
-                    "space {name:?} is declared `{}` but {} of its standable cell(s) have this \
-                     piece's own blocks overhead ({}) — a roofed room cannot be downgraded out of \
-                     closure",
+            if !covered.is_empty() {
+                enumeration.push(format!(
+                    "envelope: space {name:?} is declared `{}` and {} of its standable cell(s) \
+                     have this piece's own blocks overhead ({}) — a covered space, taken as \
+                     declared; closure examines only the spaces declared `enclosed` or \
+                     `open_top`",
                     decl.envelope,
-                    roofed.len(),
-                    describe_cells(&roofed)
+                    covered.len(),
+                    describe_cells(&covered)
                 ));
             }
         }
@@ -1134,13 +1139,12 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
              own, judged by the whole's proofs over the assembled world"
         ));
     }
-    // **A piece whose every space is `open` encloses nothing, honestly**
-    // (spec-0098 §6b): a street, a mud flat. Its zero is stated rather than
-    // refused, and the question this refusal used to answer — did a room
-    // forget to say it is enclosed — is answered where the kind is known: a
-    // place with a lid is bound only to a piece carrying a space this gate
-    // examines (`DW0989`, from the site plan's `ceiling`, never the piece's own
-    // word). Declared as a loosening in spec-0098's own words.
+    // **The enclosed spaces are the author's declaration, and this gate
+    // confirms them** (spec-0098 §14, an owner ruling): a piece declares zero
+    // or more box-shaped `enclosed`/`open_top` spaces, and closure verifies
+    // exactly those. Zero declared — a street, a pavilion, a covered market —
+    // is legitimate and passes with its count stated; nothing infers an
+    // enclosure the author did not declare.
     let spaces = ix.contract.spaces.len();
     let all_open = spaces > 0 && ix.contract.spaces.values().all(|d| d.envelope == "open");
     let empty_ok = all_open.then(|| {

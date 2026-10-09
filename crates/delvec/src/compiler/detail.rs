@@ -80,12 +80,6 @@ delvewright_dsl::dw_code! {
     pub const DW_PAINTS_NEIGHBOUR: DwCode = DwCode::new("DW0987", ExitTier::Build);
 }
 
-delvewright_dsl::dw_code! {
-    /// `DW0989`: a roofed place bound to a piece that encloses nothing
-    /// (spec-0098 §6b).
-    pub const DW_ROOFED_ENCLOSES_NOTHING: DwCode = DwCode::new("DW0989", ExitTier::Build);
-}
-
 // ---------------------------------------------------------------------------
 // The frames, and what they hand out
 // ---------------------------------------------------------------------------
@@ -830,10 +824,6 @@ pub struct DetailBinding {
     pub owed: usize,
     /// Bound pieces declaring a `footprint_class` — `DW0848`.
     pub classed: usize,
-    /// Roofed places bound to a piece with a contract — `DW0989`.
-    pub roofed: usize,
-    /// Of those, pieces carrying an enclosing space.
-    pub enclosing: usize,
 }
 
 impl DetailBinding {
@@ -846,10 +836,7 @@ impl DetailBinding {
             "detail binding: {bd} of {b} place(s) bound over {r} `details[]` row(s), {m} \
              piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
              declared face(s) examined, {o} owed anchor name(s) checked, {cl} piece(s) \
-             declaring a footprint class, {rf} roofed place(s) bound ({en} with an enclosing \
-             space).",
-            rf = self.roofed,
-            en = self.enclosing,
+             declaring a footprint class.",
             bd = self.bound,
             b = self.boxes,
             r = self.rows,
@@ -1214,7 +1201,6 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
         };
         binding.bound += 1;
         let frame = Frame::of(&site, b);
-        let b = &boxes[b];
 
         let Some(meta) = prefabs.get(row.piece.as_str()) else {
             d.push(Diagnostic::error(
@@ -1303,53 +1289,6 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
                     piece = row.piece,
                 ),
             ));
-        }
-
-        // ---- DW0989: a roofed place's piece encloses something ----
-        //
-        // The kind is the object's — the box's `ceiling` — never the piece's
-        // own word: a place with a lid is bound to a piece carrying at least
-        // one space the closure gate examines.
-        if let Some(contract) = contract {
-            binding.roofed += usize::from(!b.open);
-            let enclosing = contract
-                .spaces
-                .values()
-                .filter(|sp| sp.envelope == "enclosed" || sp.envelope == "open_top")
-                .count();
-            binding.enclosing += usize::from(!b.open && enclosing > 0);
-            if !b.open && enclosing == 0 {
-                let envelopes: BTreeSet<&str> = contract
-                    .spaces
-                    .values()
-                    .map(|sp| sp.envelope.as_str())
-                    .collect();
-                d.push(Diagnostic::error(
-                    DW_ROOFED_ENCLOSES_NOTHING,
-                    STAGE,
-                    format!("{path}/piece"),
-                    format!(
-                        "`{place}` is a roofed place — its box has a `clearance` ceiling of {h} \
-                         — and `{piece}` declares no `enclosed` or `open_top` space: its \
-                         envelope(s) are {envs}. A lid is the place's reason for a roof, so \
-                         the room under it is in the piece, and the closure gate examines it. \
-                         Declare the room under the lid `enclosed` (or `open_top`), or make the \
-                         place open in the site plan (`\"ceiling\": \"open\"`).",
-                        place = row.place,
-                        piece = row.piece,
-                        h = b.clearance,
-                        envs = if envelopes.is_empty() {
-                            "none".to_string()
-                        } else {
-                            envelopes
-                                .iter()
-                                .map(|e| format!("`{e}`"))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        },
-                    ),
-                ));
-            }
         }
 
         // ---- DW0844: faces against seams, both directions ----

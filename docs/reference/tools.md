@@ -158,7 +158,7 @@ It is derived from the site plan on **every** invocation and is **an input to
 nothing**: no gate, no build step and no check ever reads what it prints, so a
 file made of it is a copy with no consumer and its staleness has no vector into
 the build. Every obligation it describes is recomputed from the plan itself at
-every validation (`DW0842`–`DW0845`, `DW0987`, `DW0989`, `DW0990`) and over the
+every validation (`DW0842`–`DW0845`, `DW0987`, `DW0990`) and over the
 built bytes at every build (`DW0836`–`DW0838`, `DW0990`). Two invocations print
 the same bytes. It exists for the authoring loop, on the creator's own machine.
 
