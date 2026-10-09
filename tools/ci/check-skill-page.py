@@ -2377,14 +2377,9 @@ def manifest_rules(rep: Report, pin_repo: str, ref: str, rev: str, tag_exists: b
     delivered_version_rule(rep, ref, rev, tag_exists, version)
 
 
-# The one pin whose tag was written before rule 11 derived the version: its
-# tree carries `plugin.json` 1.5.0 (and pins `delvec--v1.9.0`, because the pin
-# was moved onto the tag after the release rather than naming it before), which
-# is what every creator who installs while the pin names it receives. A tag
-# never moves, so this is a fact about history, keyed by the exact pair; it reds
-# as stale the moment the pin names anything else, so the pull request that
-# moves the pin deletes it.
-DELIVERED_BEFORE_THE_RULE = {"delvec--v1.10.0": "1.5.0"}
+# Pins whose tag was written before rule 11 derived the version, by exact
+# (tag, delivered version) pair; empty while the pin names a tag cut under the rule.
+DELIVERED_BEFORE_THE_RULE: dict[str, str] = {}
 
 # Where the plugin manifest sits in any tree of this repository, read once
 # from the real layout (the test fixture moves `PLUGIN_ROOT`, not history).
