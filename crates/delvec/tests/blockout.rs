@@ -1142,13 +1142,11 @@ fn the_owed_anchors_partition_the_synthesized_set() {
 // A place that is a route, and a hand-off that is not a door (spec-0053)
 // ---------------------------------------------------------------------------
 
-/// **The way builds.** `node/tunnel` is a `corridor`: four cells across and
-/// eight long, which no rung of the size ladder admits. It derives, assembles
-/// and passes the whole battery beside the size-classed places, through the
-/// SAME derivation and the same observer — no branch was added for it below the
-/// classification itself.
+/// **A long, narrow box builds.** `node/tunnel` is four cells across and eight
+/// long. It derives, assembles and passes the whole battery beside the other
+/// places, through the SAME derivation and the same observer.
 #[test]
-fn a_way_classed_box_builds_and_walks_like_any_other_place() {
+fn a_long_narrow_box_builds_and_walks_like_any_other_place() {
     let (b, _) = battery_under(Perturb::none());
     assert!(
         errors(&b).is_empty(),
@@ -1158,24 +1156,6 @@ fn a_way_classed_box_builds_and_walks_like_any_other_place() {
     assert_eq!(
         b.binding.nodes, 7,
         "every place is proven reached, the way among them"
-    );
-
-    // The way is read off the graph rather than asserted: if the fixture stopped
-    // declaring one, this says so instead of passing over a campaign that no
-    // longer exercises the surface.
-    let c = campaign();
-    let graph = c.layout_graph.as_ref().expect("the fixture has a graph");
-    let ways: Vec<&str> = graph
-        .content
-        .nodes
-        .iter()
-        .filter(|n| n.way_class.is_some())
-        .map(|n| n.id.0.as_str())
-        .collect();
-    assert_eq!(
-        ways,
-        vec!["node/tunnel"],
-        "the fixture declares exactly one way, and the battery above proved it"
     );
 }
 
@@ -2195,7 +2175,7 @@ fn scenery_is_proven_not_reached_and_reachable_scenery_is_refused() {
         common::patch_file(&dir.join("layout-graph.json"), |v| {
             let nodes = v["content"]["nodes"].as_array_mut().unwrap();
             nodes.push(serde_json::json!({
-                "id": "node/crown", "intent": "scenery", "size_class": "alcove",
+                "id": "node/crown", "intent": "scenery",
                 "reached": false
             }));
             if loft_scenery {

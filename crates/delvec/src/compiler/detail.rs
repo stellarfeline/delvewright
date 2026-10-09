@@ -294,8 +294,6 @@ pub struct HandedBrief {
     /// The node's `note`, when it has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// `size <class>` or `way <class>`.
-    pub class: String,
     /// The named places inside this one, each `<anchor> (<kind>)`.
     pub stations: Vec<String>,
     /// `roofed` or `open`.
@@ -560,13 +558,6 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
     let brief = HandedBrief {
         intent: graph_node.map(|n| n.intent.clone()).unwrap_or_default(),
         note: graph_node.and_then(|n| n.note.clone()),
-        class: graph_node
-            .map(|n| match (&n.size_class, &n.way_class) {
-                (Some(s), _) => format!("size {s}"),
-                (_, Some(w)) => format!("way {w}"),
-                _ => String::new(),
-            })
-            .unwrap_or_default(),
         stations: graph_node
             .map(|n| {
                 n.stations
@@ -1989,7 +1980,7 @@ mod tests {
     }
 
     /// **Criterion 14: two seams at a corner bind** — the Narrows' shape. A
-    /// way-classed strip with a contact along its whole west face and another
+    /// long strip with a contact along its whole west face and another
     /// across its north end, both naming the strip first, answers each at its
     /// own party plane: the two openings meet only at the ring's corner column,
     /// which neither shared face reaches, so they are disjoint; and a piece whose

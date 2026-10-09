@@ -37,8 +37,8 @@ static STRANDED: LazyLock<String> = LazyLock::new(|| {
   "stage": "layout-graph",
   "content": {
     "nodes": [
-      { "id": "node/porch", "intent": "threshold", "size_class": "alcove" },
-      { "id": "node/pit", "intent": "oubliette", "size_class": "alcove" }
+      { "id": "node/porch", "intent": "threshold" },
+      { "id": "node/pit", "intent": "oubliette" }
     ],
     "edges": [
       { "id": "edge/pit-drop", "class": "drop", "a": "node/porch", "b": "node/pit",

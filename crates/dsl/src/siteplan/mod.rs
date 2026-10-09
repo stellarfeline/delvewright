@@ -706,10 +706,9 @@ impl Base {
 /// `DW0828` refuses. Worked: a box at `min: [4, 4]` with `extent: [4, 4]`
 /// occupies x 4..7, so its eastern neighbour's `min` x is 9, never 8.
 ///
-/// Two consequences follow, and they are what make the checks say what they look
-/// like they say: `extent` is the play space the author declared; and a plan
-/// never
-/// states a wall's thickness anywhere, because the gap is where the wall is.
+/// The consequence is what makes the checks say what they look like they say:
+/// `extent` is the play space the author declared, and a plan never states a
+/// wall's thickness anywhere, because the gap is where the wall is.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlanBox {
@@ -907,8 +906,7 @@ pub struct Seam {
     /// The width of a front where two places meet is a fact of those two boxes'
     /// shared face — per-campaign geometry, continuous — so it is never a named
     /// standard. A table that enumerated it would gain a new entry per campaign,
-    /// which is the size ladder's own failure mode reproduced in the opening
-    /// set: an `opening.gate-front` of 21×4 is content wearing a standard's
+    /// which is content reproduced in the opening set as a standard: an `opening.gate-front` of 21×4 is content wearing a standard's
     /// clothes (spec-0053 §7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact: Option<Contact>,

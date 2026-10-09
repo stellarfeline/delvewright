@@ -58,10 +58,10 @@ static GREEN: LazyLock<String> = LazyLock::new(|| {
   "stage": "layout-graph",
   "content": {
     "nodes": [
-      { "id": "node/porch", "intent": "threshold", "size_class": "alcove" },
-      { "id": "node/hall", "intent": "hub", "size_class": "room", "note": "where the keeper stands" },
-      { "id": "node/cellar", "intent": "cache", "size_class": "alcove" },
-      { "id": "node/vault", "intent": "goal-chamber", "size_class": "alcove" }
+      { "id": "node/porch", "intent": "threshold" },
+      { "id": "node/hall", "intent": "hub", "note": "where the keeper stands" },
+      { "id": "node/cellar", "intent": "cache" },
+      { "id": "node/vault", "intent": "goal-chamber" }
     ],
     "edges": [
       { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },
@@ -199,7 +199,6 @@ fn the_binding_ledger_counts_what_the_document_holds() {
     assert_eq!(b.beats, 2);
     assert_eq!(b.spine_beats, 2, "the one quest is the finale");
     assert_eq!(b.path_steps, 2);
-    assert_eq!(b.metric_refs, 4, "one size class per place");
     assert_eq!(b.brief_facts, 1);
     assert!(b.line().contains("4 node(s)"));
     assert!(b.line().contains("1 fact(s)"));
@@ -320,21 +319,9 @@ fn dw0100_a_field_the_class_does_not_read() {
     assert!(validate(Some(g)).contains(&"DW0100".to_string()));
 }
 
-// ---------------------------------------------------------------------------
-// DW0812 — the metrics table is the single authority for the vocabulary
-// ---------------------------------------------------------------------------
-
-#[test]
-fn dw0812_a_size_class_the_table_does_not_define() {
-    let g = graph_with(|v| nodes(v)[0]["size_class"] = json!("cathedral"));
-    let got = validate(Some(g));
-    assert!(got.contains(&"DW0812".to_string()), "{got:?}");
-}
-
-/// The provisional notice has a document-side binding at this version, which is
-/// the residual the metrics round named and could not close: the graph's checks
-/// read the size-class ladder and the pacing coefficient through one run-scoped
-/// ledger, so `DW0813` names exactly those.
+/// The provisional notice has a document-side binding: the graph's checks read
+/// the pacing coefficient through one run-scoped ledger, so `DW0813` names
+/// exactly that.
 #[test]
 fn dw0813_names_the_standards_this_graph_rested_on() {
     let raw = campaign(Some(GREEN.to_string()), Some(BRIEF.to_string()));
@@ -342,16 +329,13 @@ fn dw0813_names_the_standards_this_graph_rested_on() {
         .into_iter()
         .find(|d| d.code == "DW0813")
         .expect("the graph reads building metrics, so the notice is owed");
-    for named in [
-        "size-class.alcove",
-        "size-class.room",
-        "pacing.route-blocks-per-minute",
-    ] {
-        assert!(notice.message.contains(named), "{named} not named");
-    }
-    // Falsifiable in the direction that matters: a graph whose places never
-    // resolve a size class reads no ladder entry, and the notice shrinks.
-    assert!(!notice.message.contains("size-class.hall"));
+    assert!(
+        notice.message.contains("pacing.route-blocks-per-minute"),
+        "the coefficient is named: {}",
+        notice.message
+    );
+    // Falsifiable in the direction that matters: no other standard was read.
+    assert!(!notice.message.contains("opening."), "{}", notice.message);
 }
 
 // ---------------------------------------------------------------------------
@@ -519,11 +503,9 @@ fn dw0820_reads_the_loop_spatially() {
 // DW0822 — the pacing projection, and its lack of a threshold
 // ---------------------------------------------------------------------------
 
-/// Hand-computed from the table's own seeds: `alcove` is 6 nominal blocks and
-/// `room` is 12, so `porch → hall → vault` is 6 + 12 + 6 = 24 blocks, and at 60
-/// blocks a minute that is one minute. Written out rather than recomputed here,
-/// which is what makes this a check on the projection rather than a restatement
-/// of it.
+/// A graph with no site plan has no boxes, so every leg of `porch → hall →
+/// vault` is unprojected and the projection says so rather than inventing a
+/// number.
 #[test]
 fn dw0822_projects_the_route_and_refuses_nothing() {
     let raw = campaign(Some(GREEN.to_string()), Some(BRIEF.to_string()));
@@ -532,10 +514,9 @@ fn dw0822_projects_the_route_and_refuses_nothing() {
         .find(|d| d.code == "DW0822")
         .expect("the projection is printed on every graph");
     assert_eq!(d.severity, delvewright_dsl::Severity::Warning);
-    assert!(d.message.contains("3 place(s)"));
+    assert!(d.message.contains("0 place(s)"), "{}", d.message);
     assert!(d.message.contains("2 step(s)"));
-    assert!(d.message.contains("24 blocks"), "{}", d.message);
-    assert!(d.message.contains("about 1 minute(s)"), "{}", d.message);
+    assert!(d.message.contains("3 leg(s) UNPROJECTED"), "{}", d.message);
     assert!(
         d.message
             .contains("carries no threshold and refuses nothing"),
@@ -552,20 +533,6 @@ fn dw0822_projects_the_route_and_refuses_nothing() {
             .iter()
             .any(|d| d.severity == delvewright_dsl::Severity::Error)
     );
-}
-
-/// The projection moves when the map moves. A figure that did not would be the
-/// constant-and-fixture-move-together defect wearing a measurement's clothes.
-#[test]
-fn dw0822_moves_when_the_places_do() {
-    let g = graph_with(|v| nodes(v)[0]["size_class"] = json!("hall"));
-    let raw = campaign(Some(g), Some(BRIEF.to_string()));
-    let d = check_campaign(&raw)
-        .into_iter()
-        .find(|d| d.code == "DW0822")
-        .expect("projection");
-    // `hall` is 24 nominal blocks against `alcove`'s 6, so 24 becomes 42.
-    assert!(d.message.contains("42 blocks"), "{}", d.message);
 }
 
 // ---------------------------------------------------------------------------
@@ -679,8 +646,8 @@ fn dw0816_the_closure_crosses_a_gated_carry_once_granted_and_not_before() {
     use delvewright_dsl::layout::{Closure, Grant, Grants, LayoutGraphContent};
     let graph: LayoutGraphContent = serde_json::from_value(json!({
         "nodes": [
-            { "id": "node/jetty", "intent": "jetty", "size_class": "room" },
-            { "id": "node/far-shore", "intent": "landing", "size_class": "room" }
+            { "id": "node/jetty", "intent": "jetty" },
+            { "id": "node/far-shore", "intent": "landing" }
         ],
         "edges": [
             { "id": "edge/strait", "class": "carry", "a": "node/jetty", "b": "node/far-shore",

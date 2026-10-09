@@ -5,9 +5,8 @@
 //!
 //! The campaign brief this vocabulary was written for says *"one cut ledge, one
 //! body wide, climbing across the whole seaward face"*. `node/cliff-road` below
-//! is that ledge: **4 by 72**, declared `way_class: "road"`. The box's extent
-//! is the author's declaration and no class refuses it
-//! (`a_declared_class_never_refuses_the_box_it_classifies`).
+//! is that ledge: **4 by 72**. A box is the author's declaration of its own
+//! size, so the ledge is written as the box it is and nothing classifies it.
 //!
 //! # How these tests are kept falsifiable
 //!
@@ -25,10 +24,9 @@ use std::sync::LazyLock;
 
 /// The graph the tests perturb.
 ///
-/// * **`node/cliff-road`** — the motivating shape. A way, `road`, 4 by 72.
-/// * **`node/duct`** — a `corridor`, 4 by 8: the narrow way.
-/// * The rest are ordinary size-classed places, so that the two vocabularies are
-///   exercised side by side in one document rather than in two.
+/// * **`node/cliff-road`** — the motivating shape, 4 by 72.
+/// * **`node/duct`** — 4 by 8: the narrow way.
+/// * The rest are ordinary rooms.
 static GRAPH: LazyLock<String> = LazyLock::new(|| {
     common::at_dsl_version(
         r#"{
@@ -37,13 +35,13 @@ static GRAPH: LazyLock<String> = LazyLock::new(|| {
   "stage": "layout-graph",
   "content": {
     "nodes": [
-      { "id": "node/porch", "intent": "threshold", "size_class": "alcove" },
-      { "id": "node/cliff-road", "intent": "approach", "way_class": "road",
+      { "id": "node/porch", "intent": "threshold" },
+      { "id": "node/cliff-road", "intent": "approach",
         "note": "One cut ledge, one body wide, climbing across the whole seaward face." },
-      { "id": "node/hall", "intent": "hub", "size_class": "room" },
-      { "id": "node/duct", "intent": "crawl", "way_class": "corridor" },
-      { "id": "node/vault", "intent": "goal-chamber", "size_class": "alcove" },
-      { "id": "node/court", "intent": "vista", "size_class": "hall" }
+      { "id": "node/hall", "intent": "hub" },
+      { "id": "node/duct", "intent": "crawl" },
+      { "id": "node/vault", "intent": "goal-chamber" },
+      { "id": "node/court", "intent": "vista" }
     ],
     "edges": [
       { "id": "edge/porch-road", "class": "walk", "a": "node/porch", "b": "node/cliff-road" },
@@ -198,10 +196,6 @@ fn with_code<'a>(
     d.iter().filter(|x| x.code == code).collect()
 }
 
-fn node(v: &mut Value, i: usize) -> &mut Value {
-    &mut v["content"]["nodes"][i]
-}
-
 fn seam(v: &mut Value, i: usize) -> &mut Value {
     &mut v["content"]["seams"][i]
 }
@@ -216,167 +210,26 @@ fn boxx(v: &mut Value, i: usize) -> &mut Value {
 
 /// **The green.** Every red below is one edit away from this.
 ///
-/// Binding: 6 places, of which **2 are ways**; 5 seams, of which **1 is a
-/// contact**.
+/// Binding: 6 places; 5 seams, of which **1 is a contact**.
 #[test]
 fn the_green_states_a_one_body_wide_route_and_a_front_and_validates() {
     let d = graph_with(|_| {});
-    let ours: Vec<_> = d
-        .iter()
-        .filter(|x| matches!(x.code.as_str(), "DW0875" | "DW0876"))
-        .collect();
+    let ours = with_code(&d, "DW0876");
     assert!(
         ours.is_empty(),
-        "the green document must raise no way or contact refusal: {ours:#?}"
+        "the green document must raise no contact refusal: {ours:#?}"
     );
 
     // The binding this test claims, computed from the documents rather than
     // written down beside them.
-    let g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
     let p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
-    let ways = g["content"]["nodes"]
-        .as_array()
-        .expect("nodes")
-        .iter()
-        .filter(|n| n.get("way_class").is_some())
-        .count();
     let contacts = p["content"]["seams"]
         .as_array()
         .expect("seams")
         .iter()
         .filter(|s| s.get("contact").is_some())
         .count();
-    assert_eq!(ways, 2, "the green declares two ways");
     assert_eq!(contacts, 1, "the green declares one contact");
-}
-
-// ---------------------------------------------------------------------------
-// DW0875 — a place is classified exactly once
-// ---------------------------------------------------------------------------
-
-#[test]
-fn dw0875_refuses_a_place_that_is_classified_twice() {
-    let d = graph_with(|v| node(v, 1)["size_class"] = json!("hall"));
-    let refusals = with_code(&d, "DW0875");
-    assert_eq!(
-        refusals.len(),
-        1,
-        "exactly the doubly-classified place is refused: {:?}",
-        codes(&d)
-    );
-    assert!(
-        refusals[0].message.contains("BOTH")
-            && refusals[0]
-                .message
-                .contains("delete whichever one this place is not"),
-        "{}",
-        refusals[0].message
-    );
-}
-
-#[test]
-fn dw0875_refuses_a_place_classified_by_nothing() {
-    let d = graph_with(|v| {
-        node(v, 1)
-            .as_object_mut()
-            .expect("node")
-            .remove("way_class");
-    });
-    let refusals = with_code(&d, "DW0875");
-    assert_eq!(refusals.len(), 1, "{:?}", codes(&d));
-    // The remedy names both vocabularies, because the author's next action is
-    // choosing from one of them.
-    let m = &refusals[0].message;
-    assert!(
-        m.contains("Defined size classes:") && m.contains("hall"),
-        "{m}"
-    );
-    assert!(
-        m.contains("Defined way classes:") && m.contains("road"),
-        "{m}"
-    );
-}
-
-/// `DW0812` answers a misspelled way class exactly as it answers a misspelled
-/// rung — the resolve widened to the object class rather than gaining a second
-/// path (spec-0053 §6, last row).
-#[test]
-fn dw0812_refuses_an_unknown_way_class_and_names_the_defined_set() {
-    let d = graph_with(|v| node(v, 1)["way_class"] = json!("highway"));
-    let refusals = with_code(&d, "DW0812");
-    assert_eq!(refusals.len(), 1, "{:?}", codes(&d));
-    let m = &refusals[0].message;
-    assert!(m.contains("way class") && m.contains("highway"), "{m}");
-    assert!(
-        m.contains("corridor") && m.contains("road"),
-        "the refusal names the whole defined set: {m}"
-    );
-    assert_eq!(refusals[0].path, "/content/nodes/1/way_class");
-}
-
-// ---------------------------------------------------------------------------
-// A class never refuses the box it classifies
-// ---------------------------------------------------------------------------
-
-/// The box's extent and headroom are the author's declaration, and the piece
-/// detailed into it may not exceed it — so a class range beside them would
-/// confirm nothing. The motivating ledge declared at every rung of the size
-/// ladder, a square way, a way wider than its class and a way under its class's
-/// clearance are each accepted with no refusal naming the class.
-#[test]
-fn a_declared_class_never_refuses_the_box_it_classifies() {
-    let mut cases: Vec<(String, RawCampaign)> = Vec::new();
-    for rung in ["alcove", "room", "hall", "arena", "expanse"] {
-        let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
-        let n = &mut g["content"]["nodes"][1];
-        n.as_object_mut().expect("node").remove("way_class");
-        n["size_class"] = json!(rung);
-        cases.push((
-            format!("the 4x72 ledge declared `{rung}`"),
-            campaign(
-                serde_json::to_string(&g).expect("serialize"),
-                PLAN.to_string(),
-            ),
-        ));
-    }
-    for (what, extent, ceiling) in [
-        ("a square road", json!([8, 8]), json!({ "clearance": 8 })),
-        (
-            "a road wider than its class",
-            json!([32, 72]),
-            json!({ "clearance": 8 }),
-        ),
-        (
-            "a road under its class's clearance",
-            json!([4, 72]),
-            json!({ "clearance": 5 }),
-        ),
-    ] {
-        let mut p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
-        boxx(&mut p, 1)["extent"] = extent;
-        boxx(&mut p, 1)["ceiling"] = ceiling;
-        cases.push((
-            what.to_string(),
-            campaign(
-                GRAPH.to_string(),
-                serde_json::to_string(&p).expect("serialize"),
-            ),
-        ));
-    }
-    for (what, raw) in &cases {
-        let d = check_campaign(raw);
-        let refusing: Vec<_> = d
-            .iter()
-            .filter(|x| {
-                x.severity == delvewright_dsl::Severity::Error && x.message.contains("class")
-            })
-            .collect();
-        assert!(
-            refusing.is_empty(),
-            "{what} is refused for its class: {refusing:#?}"
-        );
-    }
-    assert_eq!(cases.len(), 8, "every case was examined");
 }
 
 // ---------------------------------------------------------------------------
@@ -574,46 +427,37 @@ fn no_door_check_applies_to_a_contact() {
 // §7 — what the engine must NOT learn
 // ---------------------------------------------------------------------------
 
-/// **The engine does not know a route's LENGTH.**
+/// **The engine does not know the size of a place as a standard.**
 ///
-/// A way class's entry has three fields and none of them is a length; and the
-/// table's whole standard vocabulary contains no entry whose value is the run of
-/// anything. A `max_length` added tomorrow would red this.
-///
-/// It is asserted over the exported table rather than over the struct, because
-/// the export is what a consumer outside this crate reads and is where such a
-/// field would first become a standard somebody could build against.
+/// A box is the author's declaration of its own size, and the piece may not
+/// exceed it — so a class range beside it would confirm nothing. The table
+/// holds no entry that bounds a place's footprint, its cross-section or its
+/// run; a size or way class added back would red this.
 #[test]
-fn no_standard_states_the_length_of_a_route() {
-    use delvewright_dsl::metrics::{MetricKind, Metrics};
+fn no_standard_states_the_size_of_a_place() {
+    use delvewright_dsl::metrics::Metrics;
     let table = Metrics::table();
     let export = delvewright_dsl::metrics::export(&table);
     let building = export["building"].as_object().expect("the building half");
-
-    let mut examined = 0usize;
-    for name in table.names_of(MetricKind::WayClass) {
-        let key = format!("way-class.{name}");
-        let v = building[&key]["value"].as_object().expect("a way class");
-        examined += 1;
-        let mut fields: Vec<&str> = v.keys().map(String::as_str).collect();
-        fields.sort_unstable();
-        assert_eq!(
-            fields,
-            ["max_width", "min_clearance", "min_width"],
-            "`{key}` bounds the cross-section and nothing else"
-        );
-    }
-    assert!(examined > 0, "the way vocabulary is not empty");
-
-    // And nowhere else in the table either: no entry names a length, a run or a
-    // traverse of a WAY. (`nominal_traverse_blocks` on a size class is the
-    // ladder's own, and is exactly what a way class deliberately lacks.)
+    assert!(!building.is_empty(), "the building half is not empty");
     for (key, entry) in building {
-        let text = serde_json::to_string(entry).expect("serialize");
         assert!(
-            !text.contains("max_length") && !text.contains("max_run"),
-            "`{key}` states the length of something: {text}"
+            !key.starts_with("size-class.") && !key.starts_with("way-class."),
+            "`{key}` classifies a place"
         );
+        let text = serde_json::to_string(entry).expect("serialize");
+        for field in [
+            "min_footprint",
+            "max_footprint",
+            "max_width",
+            "max_length",
+            "max_run",
+        ] {
+            assert!(
+                !text.contains(field),
+                "`{key}` bounds a place's size: {text}"
+            );
+        }
     }
 }
 
@@ -657,33 +501,4 @@ fn a_contacts_width_is_the_plans_business_and_is_never_prescribed() {
             codes(&d)
         );
     }
-}
-
-// ---------------------------------------------------------------------------
-// The perturbation proofs — the green depends on each rule's SAFETY
-// ---------------------------------------------------------------------------
-
-/// Made vacuous, the exactly-one rule refuses the green document.
-///
-/// The rule is `both || neither`. The vacuous shape a careless author would
-/// reach for is *"a node must declare `size_class`"* — which is what the field
-/// was before — and under it every way in the green graph is a refusal. This
-/// asserts from OUTSIDE that the green's two ways depend on the rule comparing a
-/// node's two fields rather than demanding one of them.
-#[test]
-fn perturbing_the_place_class_rule_to_the_vacuous_shape_goes_red() {
-    let g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
-    let vacuous: Vec<&Value> = g["content"]["nodes"]
-        .as_array()
-        .expect("nodes")
-        .iter()
-        .filter(|n| n.get("size_class").is_none())
-        .collect();
-    assert_eq!(
-        vacuous.len(),
-        2,
-        "a rule demanding `size_class` would refuse these {} place(s), which is what makes \
-         the real rule's comparison load-bearing: {vacuous:#?}",
-        vacuous.len()
-    );
 }

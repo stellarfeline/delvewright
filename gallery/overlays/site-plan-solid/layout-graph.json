@@ -165,7 +165,6 @@
         "id": "node/near-hall",
         "intent": "hub",
         "note": "Everything the delve opens with stands here: the Curator, the case, the stall counter. It is the one place a body returns to.",
-        "size_class": "hall",
         "stations": [
           {
             "anchor": "anchor/reading-desk",
@@ -181,30 +180,25 @@
       {
         "id": "node/annex",
         "intent": "side-gallery",
-        "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one.",
-        "size_class": "room"
+        "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one."
       },
       {
         "id": "node/far-hall",
         "intent": "arena",
-        "note": "Behind the barred wall: the muster forms up here and the loft looks down on it.",
-        "size_class": "hall"
+        "note": "Behind the barred wall: the muster forms up here and the loft looks down on it."
       },
       {
         "id": "node/loft",
-        "intent": "vista",
-        "size_class": "alcove"
+        "intent": "vista"
       },
       {
         "id": "node/undercroft",
         "intent": "cache",
-        "note": "No beat happens here, which is deliberate: a place off the mandatory spine is what makes the critical path's spine obligation say something.",
-        "size_class": "alcove"
+        "note": "No beat happens here, which is deliberate: a place off the mandatory spine is what makes the critical path's spine obligation say something."
       },
       {
         "id": "node/exit",
         "intent": "goal-chamber",
-        "size_class": "alcove",
         "stations": [
           {
             "anchor": "anchor/exit-stone",
@@ -215,8 +209,7 @@
       {
         "id": "node/causeway",
         "intent": "approach",
-        "note": "A place that is a ROUTE: eight cells across and twenty-four long, bounded in one axis and free in the other. No rung of the size ladder admits it and no calibration of the ladder could — for a rung to span 8..24 on an axis, an alcove and a hall would be the same thing.",
-        "way_class": "road"
+        "note": "A place that is a ROUTE: eight cells across and twenty-four long; a box is the author's declaration of its own size."
       }
     ]
   },

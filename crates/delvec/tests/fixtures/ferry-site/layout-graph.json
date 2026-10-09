@@ -61,7 +61,6 @@
         "id": "node/near",
         "intent": "boathouse",
         "note": "The near boathouse: a jetty, and the near ferry moored at it.",
-        "size_class": "room",
         "stations": [
           {
             "anchor": "anchor/hull",
@@ -84,7 +83,6 @@
         "id": "node/far",
         "intent": "boathouse",
         "note": "The far boathouse across the strait, with its own ferry.",
-        "size_class": "room",
         "stations": [
           {
             "anchor": "anchor/far-landing",

@@ -170,8 +170,8 @@ fn a_carry_between_two_areas_is_realised_by_the_crossing_the_route_takes() {
             "stage": "layout-graph",
             "content": {
                 "nodes": [
-                    { "id": "node/keep", "intent": "hub", "size_class": "room" },
-                    { "id": "node/landing", "intent": "landing", "size_class": "room" }
+                    { "id": "node/keep", "intent": "hub" },
+                    { "id": "node/landing", "intent": "landing" }
                 ],
                 "edges": edges,
                 "entry": "node/keep", "goal": "node/landing",

@@ -9,8 +9,8 @@
 //! merely forbidden (spec-0049 §7.2) — there is nothing to author early.
 //!
 //! Both authored documents are named because both reach the bytes: a seam is
-//! cut to air or filled with the bar by its edge's `class`, and a sky-open box
-//! takes its headroom from its node's `size_class`.
+//! cut to air or filled with the bar by its edge's `class`, and every box's
+//! extent and headroom are the plan's own declaration.
 //!
 //! # Where it enters the build
 //!
@@ -3718,8 +3718,8 @@ pub fn built_centre(
 /// `DW0822`'s **second call site**: the route the critical path really is, in
 /// blocks, measured over the built world.
 ///
-/// The stage-3 site printed a PROJECTION — nominal traverse lengths from the
-/// size-class ladder, summed and divided by an uncalibrated coefficient. This
+/// The stage-3 site printed a PROJECTION — each place's long horizontal
+/// extent, summed and divided by an uncalibrated coefficient. This
 /// prints the MEASUREMENT: the A* route a body actually walks from one place's
 /// anchor to the next, over the blockout, under the compiler's own step rule. It
 /// carries no threshold either, and for the same reason — the two numbers exist
@@ -3782,7 +3782,7 @@ fn pacing(
              {minutes} minute(s){un}. Like the projection printed over the graph, this figure \
              carries NO threshold and refuses nothing: the coefficient is uncalibrated until the \
              metrics gym has been walked and a full playtest has run. The two are printed so they \
-             can be set side by side — the projection is what the size-class ladder says the map \
+             can be set side by side — the projection is what the boxes' extents say the map \
              should cost, and this is what it costs.",
                 legs = binding.legs,
                 minutes = (blocks as u64).div_euclid(rate)

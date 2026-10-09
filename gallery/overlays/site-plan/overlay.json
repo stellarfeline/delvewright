@@ -56,7 +56,6 @@
     "Measure::region-extent",
     "Measure::region-extent.axis",
     "Node.reached",
-    "Node.way_class",
     "PlanAxis::x",
     "PlanAxis::z",
     "PlanBox.atmosphere",

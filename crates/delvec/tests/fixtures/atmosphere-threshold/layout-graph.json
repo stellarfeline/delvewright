@@ -32,14 +32,12 @@
       {
         "id": "node/near",
         "intent": "threshold",
-        "note": "An ordinary afternoon: the horizon's own sky over an open hall.",
-        "size_class": "hall"
+        "note": "An ordinary afternoon: the horizon's own sky over an open hall."
       },
       {
         "id": "node/far",
         "intent": "goal-chamber",
-        "note": "The same hall past the door, under the wrong sky from the first tick, with a bell in the middle.",
-        "size_class": "hall"
+        "note": "The same hall past the door, under the wrong sky from the first tick, with a bell in the middle."
       }
     ]
   },

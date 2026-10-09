@@ -18,6 +18,4 @@ The line names **one** entry:
   verdict reads it and nothing is built from it.
 
 An unreached entry is a gap in the **vocabulary**, not in the gym, which a bigger
-gym cannot fix. The corridor's width and clearance are the corridor way class's
-own fields, the generator instantiates a bay per way class at each width the kit
-grid admits, and the walk can rule on them.
+gym cannot fix.

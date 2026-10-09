@@ -49,12 +49,12 @@ static GRAPH: LazyLock<String> = LazyLock::new(|| {
   "stage": "layout-graph",
   "content": {
     "nodes": [
-      { "id": "node/porch", "intent": "threshold", "size_class": "alcove" },
-      { "id": "node/hall", "intent": "hub", "size_class": "room" },
-      { "id": "node/vault", "intent": "goal-chamber", "size_class": "alcove" },
-      { "id": "node/cellar", "intent": "cache", "size_class": "room" },
-      { "id": "node/yard", "intent": "vista", "size_class": "hall" },
-      { "id": "node/pit", "intent": "sump", "size_class": "alcove" }
+      { "id": "node/porch", "intent": "threshold" },
+      { "id": "node/hall", "intent": "hub" },
+      { "id": "node/vault", "intent": "goal-chamber" },
+      { "id": "node/cellar", "intent": "cache" },
+      { "id": "node/yard", "intent": "vista" },
+      { "id": "node/pit", "intent": "sump" }
     ],
     "edges": [
       { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },
@@ -1229,6 +1229,29 @@ fn a_drop_that_rises_is_refused() {
         v["content"]["boxes"][box_of("node/pit")]["floor"] = json!({ "y": 70 });
     });
     assert!(has(&got, "DW0831") || has(&got, "DW0828"), "{got:?}");
+}
+
+// ---------------------------------------------------------------------------
+// DW0822 — the pacing projection reads the boxes
+// ---------------------------------------------------------------------------
+
+/// Hand-computed: the critical path `porch → hall → vault` crosses boxes whose
+/// long extents are 8, 16 and 8, so 32 blocks; widening the hall to 24 makes
+/// it 40. The figure moves when the map moves.
+#[test]
+fn dw0822_is_the_boxes_long_extents_and_moves_with_them() {
+    let projected = |d: &[delvewright_dsl::Diagnostic]| {
+        d.iter()
+            .find(|x| x.code == "DW0822")
+            .map(|x| x.message.clone())
+            .expect("the projection is printed")
+    };
+    let m = projected(&plan_diags(|_| {}));
+    assert!(m.contains("3 place(s)") && m.contains("32 blocks"), "{m}");
+    let m = projected(&plan_diags(|v| {
+        boxes(v)[box_of("node/hall")]["extent"] = json!([24, 16]);
+    }));
+    assert!(m.contains("40 blocks"), "{m}");
 }
 
 // ---------------------------------------------------------------------------

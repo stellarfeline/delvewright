@@ -1085,7 +1085,7 @@ impl PrefabMeta {
             walk_y: None,
             waterline_y: None,
             // A freshly admitted piece shows nothing, for the same reason it
-            // claims no size class: which of its sides are finished surface is
+            // claims nothing else about itself: which of its sides are finished surface is
             // the author's claim about what the piece is FOR, and reading it off
             // the bytes would be this document inferring intent from material.
             shown_faces: Vec::new(),

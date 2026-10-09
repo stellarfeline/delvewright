@@ -50,26 +50,22 @@
       {
         "id": "node/arrival",
         "intent": "threshold",
-        "note": "the mud flat beside the wound in the west flank, where the party arrives",
-        "size_class": "room"
+        "note": "the mud flat beside the wound in the west flank, where the party arrives"
       },
       {
         "id": "node/flat",
         "intent": "hub",
-        "note": "the mud flat on the west side, where the keeper stands",
-        "size_class": "room"
+        "note": "the mud flat on the west side, where the keeper stands"
       },
       {
         "id": "node/inside",
         "intent": "side-gallery",
-        "note": "the room inside the body, floored by the mud it lies on",
-        "size_class": "room"
+        "note": "the room inside the body, floored by the mud it lies on"
       },
       {
         "id": "node/back",
         "intent": "side-gallery",
-        "note": "the top of the back, reached by the stair cut up the east flank",
-        "size_class": "room"
+        "note": "the top of the back, reached by the stair cut up the east flank"
       }
     ]
   },

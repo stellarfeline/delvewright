@@ -74,7 +74,7 @@ use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 
 crate::dw_code! {
     /// `DW0812`: a document names a metrics entry the table does not define — a
-    /// `size_class`, an `opening` or a `pitch` that resolves to nothing.
+    /// seam `opening`, a `pitch` or a storey that resolves to nothing.
     pub const DW_METRIC_UNKNOWN: DwCode = DwCode::new("DW0812", ExitTier::Build);
 }
 
@@ -494,11 +494,7 @@ pub fn passable_width_cells() -> u32 {
 /// This is a **player** metric and the spec's building half listed it, which is
 /// the correction worth naming: the width and clearance at which a body can pass
 /// at all are functions of the collision box, so no walk can change them and
-/// `calibrated` would mean nothing on them. What the gym calibrates is the
-/// *designed* minimum — a way class's `min_width` and `min_clearance` — which is
-/// a comfort judgement and can never be chosen below this floor —
-/// [`Metrics::self_check`] is what holds it there, over every way class the
-/// table defines rather than over the two entries that used to stand alone.
+/// `calibrated` would mean nothing on them.
 #[must_use]
 pub fn passable_clearance_cells() -> u32 {
     PLAYER_HEIGHT.ceil() as u32
@@ -727,71 +723,6 @@ pub struct Pitch {
     pub realization: &'static str,
 }
 
-/// A rung of the size-class ladder — the vocabulary a layout-graph node declares
-/// and a site-plan box is judged against.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct SizeClass {
-    /// Smallest interior footprint, `[x, z]` in cells, inclusive.
-    pub min_footprint: [u32; 2],
-    /// Largest interior footprint, `[x, z]` in cells, inclusive.
-    pub max_footprint: [u32; 2],
-    /// Least interior clearance, in cells.
-    pub min_clearance: u32,
-    /// Nominal blocks of route a body walks crossing a place of this class —
-    /// the per-leg length the pacing projection sums over a critical path
-    /// (spec-0049 §3.3).
-    ///
-    /// The code that reads it is not named here on purpose: a `DW` number in a
-    /// source comment is a code as far as `tools/ci/check-dw-codes.py` is
-    /// concerned, and one whose check lands two rounds from now has no catalog
-    /// row to match, so naming it early reds the docs job on a rule nothing has
-    /// written yet.
-    pub nominal_traverse_blocks: u32,
-}
-
-/// A **way class** — the vocabulary a layout-graph node declares for a place
-/// whose footprint is bounded in one axis and free in the other: a road, a
-/// causeway, a corridor, a duct (spec-0053 §3).
-///
-/// # Why it is a second kind of classification and not a rung
-///
-/// The size-class ladder classifies a place by both horizontal extents at once,
-/// and that is what it is for. A route has no second extent to classify: a cut
-/// ledge one body wide climbing a whole seaward face is 4 by 90, and for any
-/// rung to admit it that rung would have to span 4..90 on an axis — a class in
-/// which an alcove and an expanse are the same thing has stopped classifying.
-/// The failure is by KIND, not by margin, which is why no calibration of the
-/// ladder reaches it.
-///
-/// # What it bounds, and what it deliberately does not
-///
-/// A way class bounds the **cross-section** — the axis a body feels walking it
-/// — and says nothing whatever about the run. A route's length is per-campaign
-/// geometry, not a standard: a village lane, a canyon rim trail, a ship's
-/// gangway and a mine gallery are the same class of thing at four wildly
-/// different lengths, and a `max_length` here would be this month's map wearing
-/// a standard's clothes. The run is *measured*, into pacing, and is never
-/// compared against anything (spec-0053 §7).
-///
-/// The elongation demand a way-classed box must satisfy is therefore
-/// **structural rather than a constant**: the run must exceed
-/// [`Self::max_width`], which is exactly what a room cannot supply. A square box
-/// can never qualify, because its "run" equals its width and one number cannot
-/// both be `<= max_width` and exceed it. That is what makes "declare it a way to
-/// escape the ladder" refused by the object's own shape rather than by a rule
-/// the author could satisfy by choosing differently.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct WayClass {
-    /// Narrowest cross-section, in cells, inclusive. Never below the physical
-    /// passable width — [`Metrics::self_check`] holds it there.
-    pub min_width: u32,
-    /// Widest cross-section, in cells, inclusive. Doubles as the elongation
-    /// floor: a way-classed box's run must **exceed** this.
-    pub max_width: u32,
-    /// Least interior clearance, in cells.
-    pub min_clearance: u32,
-}
-
 /// The datum convention: what a box's declared floor `y` names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Datum {
@@ -815,10 +746,6 @@ pub enum MetricValue {
     Opening(Opening),
     /// A named stair pitch.
     Pitch(Pitch),
-    /// A rung of the size-class ladder.
-    SizeClass(SizeClass),
-    /// A way class — a route's cross-section.
-    WayClass(WayClass),
     /// The datum convention.
     Datum(Datum),
 }
@@ -963,7 +890,7 @@ pub struct ReadBinding {
 /// read the compiler.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownMetric {
-    /// The kind of entry the document was naming (`size class`, `opening`, …).
+    /// The kind of entry the document was naming (`opening`, `stair pitch`, …).
     pub kind: &'static str,
     /// The same kind, plural — carried rather than derived, because three of the
     /// six nouns end in a sibilant and `{kind}s` is wrong for them.
@@ -1025,15 +952,6 @@ pub enum MetricKind {
     Opening,
     /// A stair pitch (`pitch.<name>`).
     Pitch,
-    /// A rung of the size-class ladder (`size-class.<name>`).
-    SizeClass,
-    /// A way class (`way-class.<name>`) — the second kind of place
-    /// classification (spec-0053 §3). A [`MetricKind`] rather than a lookup of
-    /// its own for the reason [`Metrics::resolve`] gives: this is a name a
-    /// DOCUMENT writes, so it goes through the one path from a name to an entry
-    /// and a name the table does not define is `DW0812` here exactly as it is
-    /// for a size class.
-    WayClass,
     /// A storey height (`storey.<name>`).
     Storey,
     /// A pacing coefficient (`pacing.<name>`) — blocks of route per minute of
@@ -1052,8 +970,6 @@ impl MetricKind {
         match self {
             MetricKind::Opening => "opening.",
             MetricKind::Pitch => "pitch.",
-            MetricKind::SizeClass => "size-class.",
-            MetricKind::WayClass => "way-class.",
             MetricKind::Storey => "storey.",
             MetricKind::Pacing => "pacing.",
         }
@@ -1062,16 +978,13 @@ impl MetricKind {
     /// What the kind is called in a refusal, **plural**.
     ///
     /// A fact about the kind rather than an `s` appended where a message needed
-    /// one: three of the six nouns end in a sibilant, so `{noun}s` reads
-    /// `size classs`, `stair pitchs` and `way classs`. Written out here, a kind
+    /// one: `{noun}s` reads `stair pitchs`. Written out here, a kind
     /// added later cannot inherit that by default — it has to answer.
     #[must_use]
     pub fn plural(self) -> &'static str {
         match self {
             MetricKind::Opening => "seam openings",
             MetricKind::Pitch => "stair pitches",
-            MetricKind::SizeClass => "size classes",
-            MetricKind::WayClass => "way classes",
             MetricKind::Storey => "storey heights",
             MetricKind::Pacing => "pacing coefficients",
         }
@@ -1083,8 +996,6 @@ impl MetricKind {
         match self {
             MetricKind::Opening => "seam opening",
             MetricKind::Pitch => "stair pitch",
-            MetricKind::SizeClass => "size class",
-            MetricKind::WayClass => "way class",
             MetricKind::Storey => "storey height",
             MetricKind::Pacing => "pacing coefficient",
         }
@@ -1318,9 +1229,7 @@ impl Metrics {
                     "cells",
                     Provenance::Derived,
                     "`ceil(0.6)`: one cell is the narrowest a standing body fits \
-                     through. This is a fact, not a standard — no walk can change it, \
-                     and it is the floor the designed corridor minimum may never be \
-                     chosen below.",
+                     through. This is a fact, not a standard — no walk can change it.",
                 ),
             ),
             (
@@ -1347,42 +1256,6 @@ impl Metrics {
                 "The datum convention: a box's floor SURFACE is at its declared y, and \
                  whatever stands in the box later puts its walk plane there. A box's \
                  footprint is any whole number of blocks on either axis.",
-            ),
-            building(
-                "way-class.corridor",
-                MetricValue::WayClass(WayClass {
-                    min_width: 2,
-                    max_width: 4,
-                    min_clearance: 3,
-                }),
-                "cells",
-                Provenance::Provisional,
-                "The narrow way: a passage, a duct, a gallery cut through rock. Its \
-                 `min_width` and `min_clearance` ARE the two numbers this table used to \
-                 publish as `corridor.min-width` and `corridor.min-clearance` — one \
-                 cell is passable and reads as a crawlspace, two lets two bodies pass, \
-                 and two blocks of clearance puts the ceiling on the walker's head — and \
-                 they are fields here rather than entries of their own so that there is \
-                 one authority for the narrow way rather than a class beside two loose \
-                 numbers nothing could spell. The gym walks the class's narrowest and \
-                 widest cross-section.",
-            ),
-            building(
-                "way-class.road",
-                MetricValue::WayClass(WayClass {
-                    min_width: 4,
-                    max_width: 16,
-                    min_clearance: 6,
-                }),
-                "cells",
-                Provenance::Provisional,
-                "The broad way: a village lane, a causeway, a quay, a ledge cut across a \
-                 cliff face. Wide enough that a party walks it abreast and something can \
-                 come the other way, which is the difference from the corridor beside it \
-                 and is what the walk is being asked to place. The clearance seed is \
-                 higher than the corridor's because a way this wide reads as roofless \
-                 even when it is not, and a low ceiling over a broad floor is the one \
-                 combination that reads as a mistake.",
             ),
             building(
                 "opening.door",
@@ -1492,73 +1365,6 @@ impl Metrics {
                 "The storey a hall gets, where the height itself is the effect. The seed \
                  is deliberately at the point where volume starts costing walking time \
                  for nothing, because that is the trade the walk has to judge.",
-            ),
-            building(
-                "size-class.alcove",
-                MetricValue::SizeClass(SizeClass {
-                    min_footprint: [4, 4],
-                    max_footprint: [8, 8],
-                    min_clearance: 3,
-                    nominal_traverse_blocks: 6,
-                }),
-                "cells",
-                Provenance::Provisional,
-                "A place a body stands in rather than crosses: a shrine, a landing, a \
-                 cell. The smallest rung of the ladder, and the whole ladder's bounds \
-                 are seeds — what the walk fixes is where one class stops feeling like \
-                 the next.",
-            ),
-            building(
-                "size-class.room",
-                MetricValue::SizeClass(SizeClass {
-                    min_footprint: [8, 8],
-                    max_footprint: [16, 16],
-                    min_clearance: 4,
-                    nominal_traverse_blocks: 12,
-                }),
-                "cells",
-                Provenance::Provisional,
-                "A place with a purpose and something in it: a guardroom, a chapel, a \
-                 workshop.",
-            ),
-            building(
-                "size-class.hall",
-                MetricValue::SizeClass(SizeClass {
-                    min_footprint: [16, 16],
-                    max_footprint: [32, 32],
-                    min_clearance: 8,
-                    nominal_traverse_blocks: 24,
-                }),
-                "cells",
-                Provenance::Provisional,
-                "A place a fight or a crowd fits in, and the smallest rung whose height \
-                 is doing work of its own.",
-            ),
-            building(
-                "size-class.arena",
-                MetricValue::SizeClass(SizeClass {
-                    min_footprint: [32, 32],
-                    max_footprint: [64, 64],
-                    min_clearance: 12,
-                    nominal_traverse_blocks: 48,
-                }),
-                "cells",
-                Provenance::Provisional,
-                "A place built around one encounter, with room to retreat and re-approach.",
-            ),
-            building(
-                "size-class.expanse",
-                MetricValue::SizeClass(SizeClass {
-                    min_footprint: [64, 64],
-                    max_footprint: [128, 128],
-                    min_clearance: 16,
-                    nominal_traverse_blocks: 96,
-                }),
-                "cells",
-                Provenance::Provisional,
-                "A shore, a valley floor, a cavern — a place whose job is that crossing \
-                 it takes time. The rung most at risk of being a big empty room, which \
-                 is what the walk is watching for.",
             ),
             building(
                 "pacing.route-blocks-per-minute",
@@ -1702,21 +1508,6 @@ impl Metrics {
         let floor_w = u64::from(passable_width_cells());
         let floor_h = u64::from(passable_clearance_cells());
 
-        // A place that is a route must be spellable at all. Zero way classes is
-        // the state spec-0053 was written to end — the metrics gym reported
-        // `corridor.min-width` and `corridor.min-clearance` unreachable because
-        // no document could name a place that is not a box with a size class —
-        // so an empty way vocabulary is an internal error rather than a table
-        // that happens to be short one kind.
-        checked += 1;
-        if self.names_of(MetricKind::WayClass).is_empty() {
-            failures.push(
-                "the table defines no way class, so no document can state a place that is \
-                 a route"
-                    .to_string(),
-            );
-        }
-
         if self.datum(&mut reads).is_some() {
             checked += 1;
         } else {
@@ -1747,58 +1538,6 @@ impl Metrics {
                     }
                     if p.rise == 0 || p.run == 0 {
                         failures.push(format!("`{key}` has a zero rise or run"));
-                    }
-                }
-                MetricValue::SizeClass(c) => {
-                    checked += 1;
-                    for (axis, lo, hi) in [
-                        ("x", c.min_footprint[0], c.max_footprint[0]),
-                        ("z", c.min_footprint[1], c.max_footprint[1]),
-                    ] {
-                        if lo > hi {
-                            failures
-                                .push(format!("`{key}` has a {axis} minimum above its maximum"));
-                        }
-                    }
-                    if u64::from(c.min_clearance) < floor_h {
-                        failures.push(format!(
-                            "`{key}` allows a clearance of {}, under the passable floor of \
-                             {floor_h}",
-                            c.min_clearance
-                        ));
-                    }
-                    if c.nominal_traverse_blocks == 0 {
-                        failures.push(format!("`{key}` has a nominal traverse of zero"));
-                    }
-                }
-                MetricValue::WayClass(w) => {
-                    checked += 1;
-                    // The two floors the freestanding `corridor.min-*` entries
-                    // used to be checked at, re-asserted here against every way
-                    // class rather than against the one that inherited them: a
-                    // designed minimum is a comfort judgement and a standard
-                    // under the physical passable size would be a standard
-                    // nothing can use, which is true of a road exactly as it is
-                    // of a corridor.
-                    if u64::from(w.min_width) < floor_w {
-                        failures.push(format!(
-                            "`{key}` allows a width of {}, under the `passable.width` floor of \
-                             {floor_w}",
-                            w.min_width
-                        ));
-                    }
-                    if u64::from(w.min_clearance) < floor_h {
-                        failures.push(format!(
-                            "`{key}` allows a clearance of {}, under the `passable.clearance` \
-                             floor of {floor_h}",
-                            w.min_clearance
-                        ));
-                    }
-                    if w.min_width > w.max_width {
-                        failures.push(format!(
-                            "`{key}` bounds its width at {}..{}, a minimum above its maximum",
-                            w.min_width, w.max_width
-                        ));
                     }
                 }
                 _ => {}
@@ -1982,25 +1721,20 @@ mod tests {
     fn an_undefined_name_is_dw0812_and_names_what_is_defined() {
         let m = Metrics::table();
         let err = m
-            .resolve(MetricKind::SizeClass, "cathedral")
-            .expect_err("`cathedral` is not a size class");
-        let d = err.diagnostic("layout-graph", "/nodes/0/size_class");
+            .resolve(MetricKind::Opening, "cathedral")
+            .expect_err("`cathedral` is not an opening");
+        let d = err.diagnostic("site-plan", "/content/seams/0/opening");
         assert_eq!(d.code, "DW0812");
         assert!(d.message.contains("cathedral"));
-        assert!(d.message.contains("room"), "the defined set is named");
-        assert_eq!(d.stage, "layout-graph");
-        assert_eq!(d.path, "/nodes/0/size_class");
+        assert!(d.message.contains("arch"), "the defined set is named");
+        assert_eq!(d.stage, "site-plan");
+        assert_eq!(d.path, "/content/seams/0/opening");
     }
 
     #[test]
     fn every_kind_resolves_at_least_one_defined_name() {
         let m = Metrics::table();
-        for kind in [
-            MetricKind::Opening,
-            MetricKind::Pitch,
-            MetricKind::SizeClass,
-            MetricKind::Storey,
-        ] {
+        for kind in [MetricKind::Opening, MetricKind::Pitch, MetricKind::Storey] {
             let names = m.names_of(kind);
             assert!(
                 !names.is_empty(),

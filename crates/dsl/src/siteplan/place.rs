@@ -1,4 +1,4 @@
-//! The plan resolved once — every box's footprint, plane, headroom and class —
+//! The plan resolved once — every box's footprint, plane and headroom —
 //! and the resolved plan in world cells that the checks, the derivation and the
 //! battery all read: placed boxes, placed seams, and the stair run.
 

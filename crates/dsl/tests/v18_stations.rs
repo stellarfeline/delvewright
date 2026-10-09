@@ -40,20 +40,20 @@ static GRAPH: LazyLock<String> = LazyLock::new(|| {
   "stage": "layout-graph",
   "content": {
     "nodes": [
-      { "id": "node/porch", "intent": "threshold", "size_class": "alcove",
+      { "id": "node/porch", "intent": "threshold",
         "stations": [
           { "anchor": "anchor/fire-pit", "kind": "point",
             "note": "The camp's fire, which the story names and the box centre is not." },
           { "anchor": "anchor/kit-shelf", "kind": "point" }
         ] },
-      { "id": "node/hall", "intent": "hub", "size_class": "room",
+      { "id": "node/hall", "intent": "hub",
         "stations": [
           { "anchor": "anchor/vestry-door", "kind": "gate" }
         ] },
-      { "id": "node/vault", "intent": "goal-chamber", "size_class": "alcove" },
-      { "id": "node/cellar", "intent": "cache", "size_class": "room" },
-      { "id": "node/yard", "intent": "vista", "size_class": "hall" },
-      { "id": "node/pit", "intent": "sump", "size_class": "alcove" }
+      { "id": "node/vault", "intent": "goal-chamber" },
+      { "id": "node/cellar", "intent": "cache" },
+      { "id": "node/yard", "intent": "vista" },
+      { "id": "node/pit", "intent": "sump" }
     ],
     "edges": [
       { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },

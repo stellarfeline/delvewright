@@ -88,42 +88,35 @@
       {
         "id": "node/landing",
         "intent": "arrival",
-        "note": "Where a body starts, and the only place on the map it has not chosen to be.",
-        "size_class": "alcove"
+        "note": "Where a body starts, and the only place on the map it has not chosen to be."
       },
       {
         "id": "node/hall",
         "intent": "hub",
-        "note": "The keeper stands here; every other place is entered from it.",
-        "size_class": "room"
+        "note": "The keeper stands here; every other place is entered from it."
       },
       {
         "id": "node/loft",
         "intent": "vista",
-        "note": "Climbed by the stair and left by the fall, which is what makes the fall a shortcut.",
-        "size_class": "alcove"
+        "note": "Climbed by the stair and left by the fall, which is what makes the fall a shortcut."
       },
       {
         "id": "node/cell",
-        "intent": "gate-house",
-        "size_class": "alcove"
+        "intent": "gate-house"
       },
       {
         "id": "node/exit",
-        "intent": "goal-chamber",
-        "size_class": "alcove"
+        "intent": "goal-chamber"
       },
       {
         "id": "node/undercroft",
         "intent": "cache",
-        "note": "Under the cell, entered by a hole punched in its floor — the one place on the map a body reaches by climbing DOWN into it.",
-        "size_class": "alcove"
+        "note": "Under the cell, entered by a hole punched in its floor — the one place on the map a body reaches by climbing DOWN into it."
       },
       {
         "id": "node/tunnel",
         "intent": "service-way",
-        "note": "A place that is a ROUTE: four cells across and eight long, which no rung of the size ladder admits and no calibration of it could.",
-        "way_class": "corridor"
+        "note": "A place that is a ROUTE: four cells across and eight long."
       }
     ]
   },

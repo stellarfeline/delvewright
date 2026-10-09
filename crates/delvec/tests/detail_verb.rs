@@ -773,7 +773,7 @@ fn after_a_plan_edit_detail_all_refits_the_piece_from_its_program() {
             .unwrap();
     assert_eq!(first["structure"]["size"], json!([9, 6, 10]));
 
-    // The exit box shrinks inside its size class, keeping its one seam on the
+    // The exit box shrinks, keeping its one seam on the
     // face; the same program re-fits the new frame.
     common::patch_file(&campaign.join("site-plan.json"), |v| {
         let boxes = v["content"]["boxes"].as_array_mut().unwrap();
@@ -850,14 +850,14 @@ fn the_gym_is_detailed_by_one_command() {
     // The census is asserted EXACTLY, not as a floor. This read `>= 8`, and a
     // floor is not a measurement: spec-0058 §9 criterion 6 carried 15 where the
     // instrument says 14 for as long as the criterion existed, and nothing could
-    // redden. The gym allocates 17 places — ten rungs, each way class at its
-    // narrowest and widest cross-section, and three in the vertical group — and
+    // redden. The gym allocates 8 places — five spine bays (one per standard
+    // opening the table defines, plus one) and three in the vertical group — and
     // 4 of them want more than a walk — the two climb hosts, the drop's top and
-    // the pit (§10) — so 13 are
+    // the pit (§10) — so 4 are
     // answerable by a plain-walk program, and a gym that grows a place or moves
     // a seam class reds here instead of drifting.
-    assert_eq!(allocations.len(), 17, "the gym's places");
-    assert_eq!(places.len(), 13, "the gym's plain-walk places: {places:?}");
+    assert_eq!(allocations.len(), 8, "the gym's places");
+    assert_eq!(places.len(), 4, "the gym's plain-walk places: {places:?}");
 
     let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
     assert_eq!(code(&out), 0, "{}", text(&out));

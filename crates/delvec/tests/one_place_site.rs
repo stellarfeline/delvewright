@@ -57,7 +57,6 @@ fn campaign(dir: &Path) {
                 "id": "node/house",
                 "intent": "the whole site",
                 "note": "One place whose piece carries three rooms.",
-                "size_class": "hall",
                 "stations": [
                     {"anchor": "anchor/hearth", "kind": "point"},
                     {"anchor": "anchor/bench", "kind": "point"}

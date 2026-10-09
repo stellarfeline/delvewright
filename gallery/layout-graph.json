@@ -278,36 +278,30 @@
       {
         "id": "node/near-hall",
         "intent": "hub",
-        "note": "Everything the delve opens with stands here: the Curator, the case, the stall counter. It is the one place a body returns to.",
-        "size_class": "hall"
+        "note": "Everything the delve opens with stands here: the Curator, the case, the stall counter. It is the one place a body returns to."
       },
       {
         "id": "node/annex",
         "intent": "side-gallery",
-        "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one.",
-        "size_class": "room"
+        "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one."
       },
       {
         "id": "node/far-hall",
         "intent": "arena",
-        "note": "Behind the barred wall: the muster forms up here and the loft looks down on it.",
-        "size_class": "hall"
+        "note": "Behind the barred wall: the muster forms up here and the loft looks down on it."
       },
       {
         "id": "node/loft",
-        "intent": "vista",
-        "size_class": "alcove"
+        "intent": "vista"
       },
       {
         "id": "node/undercroft",
         "intent": "cache",
-        "note": "No beat happens here, which is deliberate: a place off the mandatory spine is what makes the critical path's spine obligation say something.",
-        "size_class": "alcove"
+        "note": "No beat happens here, which is deliberate: a place off the mandatory spine is what makes the critical path's spine obligation say something."
       },
       {
         "id": "node/exit",
         "intent": "goal-chamber",
-        "size_class": "alcove",
         "stations": [
           {
             "anchor": "anchor/ferry-deck",
@@ -325,7 +319,6 @@
         "id": "node/ferry-cabin",
         "intent": "cabin",
         "note": "sealed: only the ferry's link reaches it",
-        "size_class": "alcove",
         "stations": [
           {
             "anchor": "anchor/ferry-landing",
@@ -337,14 +330,12 @@
       {
         "id": "node/long-gallery",
         "intent": "side-gallery",
-        "note": "The long gallery on the hall's roof, up a stair from the far hall: three identical bays a body is returned through until it has crossed enough (spec-0086).",
-        "size_class": "room"
+        "note": "The long gallery on the hall's roof, up a stair from the far hall: three identical bays a body is returned through until it has crossed enough (spec-0086)."
       },
       {
         "id": "node/long-hall",
         "intent": "side-gallery",
-        "note": "Station 4's hall in its own area: the party is carried in at the porch and runs until the loop lets it go.",
-        "size_class": "hall"
+        "note": "Station 4's hall in its own area: the party is carried in at the porch and runs until the loop lets it go."
       }
     ]
   },

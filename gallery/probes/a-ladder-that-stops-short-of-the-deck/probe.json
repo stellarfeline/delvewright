@@ -8,8 +8,7 @@
       "value": {
         "id": "node/gantry",
         "intent": "crossing",
-        "note": "A plank gantry hung over the yard (`base: aloft`): it owns no ground, so the yard's sky under it and the open ground beyond the yard's edge stay the commons. Climbed from the yard through a hole in its deck, walked to the perch.",
-        "way_class": "corridor"
+        "note": "A plank gantry hung over the yard (`base: aloft`): it owns no ground, so the yard's sky under it and the open ground beyond the yard's edge stay the commons. Climbed from the yard through a hole in its deck, walked to the perch."
       }
     },
     {
@@ -19,8 +18,7 @@
       "value": {
         "id": "node/perch",
         "intent": "lookout",
-        "note": "A small roofed lookout hung at the gantry's far end, over the open ground south of the yard.",
-        "size_class": "alcove"
+        "note": "A small roofed lookout hung at the gantry's far end, over the open ground south of the yard."
       }
     },
     {

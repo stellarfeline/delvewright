@@ -571,9 +571,9 @@ fn ferry_graph(edges: Value) -> Value {
         "campaign_id": "ferry", "dsl_version": delvewright_dsl::DSL_VERSION, "stage": "layout-graph",
         "content": {
             "nodes": [
-                {"id": "node/west-shore", "intent": "jetty", "size_class": "room",
+                {"id": "node/west-shore", "intent": "jetty",
                  "stations": [{"anchor": "anchor/boat", "kind": "point"}]},
-                {"id": "node/east-shore", "intent": "landing", "size_class": "room",
+                {"id": "node/east-shore", "intent": "landing",
                  "stations": [{"anchor": "anchor/far-landing", "kind": "point"}]}
             ],
             "edges": edges,

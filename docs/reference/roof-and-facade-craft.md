@@ -68,9 +68,9 @@ storey being about 4–5 blocks; a 20-wide building under a 45° gable gets a ro
 rise to about 5–7. A one-block parapet and a one-block walkway bring the apparent
 height down by about three. (Minecraft Wiki.)
 
-**[authored]** For the engine's size ladder: an `alcove` or `room` (clearance
+**[authored]** By a place's size: a small room (clearance
 3–4, footprint 8–16) carries a 45° gable of 4–8 courses, which is a roof roughly
-as tall as its walls; a `hall` (clearance 8, footprint 16–32) at 45° would rise
+as tall as its walls; a hall (clearance 8, footprint 16–32) at 45° would rise
 8–16 courses and reads as a barn, so a hall is either sectioned across its short
 axis (several gables), given the 22.5° slab pitch (4–8 courses), or roofed flat
 behind a parapet. The plan declares `courses` from this table and the engine
