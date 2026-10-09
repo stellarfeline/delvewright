@@ -647,13 +647,8 @@ fn contains_point(p: &Placed<'_>, at: [i64; 3]) -> bool {
     if at[0] < p.x0() || at[0] > p.x1() || at[2] < p.z0() || at[2] > p.z1() {
         return false;
     }
-    match p.y_span() {
-        Some((lo, hi)) => at[1] >= lo && at[1] <= hi,
-        // A sky-open place whose class did not resolve has no stated headroom;
-        // `DW0812` already refused the name, and inventing a bound here would be
-        // a second refusal for one defect.
-        None => at[1] >= p.floor,
-    }
+    let (lo, hi) = p.y_span();
+    at[1] >= lo && at[1] <= hi
 }
 
 /// **The clause a stage-6 verdict owes when the allocation it measured against

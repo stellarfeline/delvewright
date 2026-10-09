@@ -1944,6 +1944,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
             floor: 64,
             clearance: 4,
             open: false,
+            base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         },
         delvewright_dsl::siteplan::PlacedBox {
@@ -1952,6 +1953,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
             floor: 64,
             clearance: 4,
             open: false,
+            base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
         },
     ];
@@ -2141,4 +2143,84 @@ fn scenery_is_proven_not_reached_and_reachable_scenery_is_refused() {
             .collect::<Vec<_>>()
     );
     assert_eq!(b.binding.scenery, 2, "{}", b.binding.line());
+}
+
+/// **An aloft place owns no ground, and the battery says so** (spec-0098 §14,
+/// correction 3). The fixture's loft hung from its floor course (`base:
+/// {"aloft": 0}`): its claim stops at y 68, so the crack shape counts it and
+/// does not judge it, it hands no fixed ring, and the ground under it joins
+/// the commons — more standable cells outside every claim than on the plan
+/// where the loft stands on the ground.
+#[test]
+fn an_aloft_place_is_counted_not_stitched_and_its_ground_is_the_commons() {
+    let grounded = common::campaign_at(&variant("loft-grounded", |_| {}, None));
+    let ground = battery_of_with(&grounded, Perturb::none());
+    assert_eq!(ground.binding.aloft, 0);
+    let dir = variant(
+        "loft-aloft",
+        |v| v["content"]["boxes"][2]["base"] = serde_json::json!({"aloft": 0}),
+        None,
+    );
+    let hung = common::campaign_at(&dir);
+    let b = battery_of_with(&hung, Perturb::none());
+    assert!(
+        !errors(&b).contains(&"DW0990".to_string()),
+        "{:?}",
+        errors(&b)
+    );
+    assert_eq!(b.binding.aloft, 1, "the loft is counted aloft");
+    assert!(
+        b.binding.fixed_cells < ground.binding.fixed_cells,
+        "the loft hands no fixed ring: {} vs {}",
+        b.binding.fixed_cells,
+        ground.binding.fixed_cells
+    );
+    assert!(
+        b.binding.unclaimed_standable > ground.binding.unclaimed_standable,
+        "the ground under the loft is the commons: {} vs {}",
+        b.binding.unclaimed_standable,
+        ground.binding.unclaimed_standable
+    );
+    assert!(
+        b.binding
+            .line()
+            .contains("1 aloft place(s) with no ground to stitch")
+    );
+}
+
+/// **`DW0990`'s third shape: an aloft place standing in the earth.** The loft
+/// hung six courses under its floor course reaches y 62, under the flat
+/// terrain's surface at 63: refused at validation, naming the place and its
+/// bottom. Hung from its floor course it is clear, and the binding states
+/// one aloft place and its columns.
+#[test]
+fn an_aloft_place_whose_underside_reaches_the_terrain_is_dw0990() {
+    let deep = common::campaign_at(&variant(
+        "loft-in-earth",
+        |v| v["content"]["boxes"][2]["base"] = serde_json::json!({"aloft": 6}),
+        None,
+    ));
+    let (d, bind) = delvec::compiler::detail::check_aloft(&deep);
+    let m = d
+        .iter()
+        .find(|x| x.code == "DW0990")
+        .unwrap_or_else(|| panic!("no DW0990: {d:?}"));
+    assert!(
+        m.message.contains("node/loft")
+            && m.message.contains("stands in the earth")
+            && m.message.contains("y 62"),
+        "{}",
+        m.message
+    );
+    assert_eq!((bind.aloft, bind.columns), (1, 100));
+    assert_eq!(bind.in_earth, 100, "every column under footprint and ring");
+    let clear = common::campaign_at(&variant(
+        "loft-clear",
+        |v| v["content"]["boxes"][2]["base"] = serde_json::json!({"aloft": 0}),
+        None,
+    ));
+    let (d, bind) = delvec::compiler::detail::check_aloft(&clear);
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!((bind.aloft, bind.in_earth), (1, 0));
+    assert!(bind.line().contains("1 aloft place(s)"));
 }

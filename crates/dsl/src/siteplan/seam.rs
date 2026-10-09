@@ -27,9 +27,6 @@ pub(super) enum NotShared {
     /// They are neighbours, but the face they would share is empty because their
     /// spans miss each other on one of the two in-plane axes.
     NoCommonArea { axis: &'static str },
-    /// One of them is sky-open with no stated headroom, so it has no ceiling or
-    /// floor plane for a horizontal seam to sit in.
-    NoPlane { which: &'static str },
 }
 
 /// Do these two boxes share `face` **of `a`**, and where?
@@ -38,7 +35,7 @@ pub(super) enum NotShared {
 /// which the derivation writes once. See [`Placed`] for why the box is the play
 /// space rather than the play space plus its shell.
 /// The geometry a shared-face question needs of one box: its footprint and its
-/// vertical span, when it has one.
+/// vertical span.
 ///
 /// A tiny value rather than `&Placed` so that the **one** implementation of "do
 /// these two boxes share this face" serves both readers of the resolved plan:
@@ -49,7 +46,7 @@ pub(super) enum NotShared {
 #[derive(Clone, Copy)]
 struct FaceSide {
     foot: [i64; 4],
-    y: Option<(i64, i64)>,
+    y: (i64, i64),
 }
 
 impl Placed<'_> {
@@ -66,7 +63,7 @@ impl PlacedBox {
         let (lo, hi) = self.space();
         FaceSide {
             foot: self.foot,
-            y: Some((lo[1], hi[1])),
+            y: (lo[1], hi[1]),
         }
     }
 }
@@ -114,12 +111,7 @@ fn shared_face(a: FaceSide, b: FaceSide, face: Face) -> Result<SharedFace, NotSh
             let u = overlap(a_along, b_along).ok_or(NotShared::NoCommonArea {
                 axis: if along == 0 { "x" } else { "z" },
             })?;
-            let (ya, yb) = match (a.y, b.y) {
-                (Some(ya), Some(yb)) => (ya, yb),
-                (None, _) => return Err(NotShared::NoPlane { which: "a" }),
-                (_, None) => return Err(NotShared::NoPlane { which: "b" }),
-            };
-            let v = overlap(ya, yb).ok_or(NotShared::NoCommonArea { axis: "y" })?;
+            let v = overlap(a.y, b.y).ok_or(NotShared::NoCommonArea { axis: "y" })?;
             Ok(SharedFace {
                 plane,
                 u,
@@ -129,11 +121,7 @@ fn shared_face(a: FaceSide, b: FaceSide, face: Face) -> Result<SharedFace, NotSh
             })
         }
         Face::Up | Face::Down => {
-            let (Some(ya), Some(yb)) = (a.y, b.y) else {
-                return Err(NotShared::NoPlane {
-                    which: if a.y.is_none() { "a" } else { "b" },
-                });
-            };
+            let (ya, yb) = (a.y, b.y);
             let (plane, gap) = if face == Face::Up {
                 (ya.1 + 1, yb.0 - ya.1 - 1)
             } else {
@@ -299,6 +287,25 @@ fn not_shared(
             "they overlap by {} cell(s) across it rather than standing one apart",
             -gap
         ),
+        NotShared::NotAdjacent { gap } if matches!(s.face, Face::Up | Face::Down) => {
+            let (low, high) = if s.face == Face::Up { (a, b) } else { (b, a) };
+            let (_, top) = low.y_span();
+            let open = matches!(low.plan.ceiling, Ceiling::Open(_));
+            let want = i64::from(low.clearance) + gap - SHARED_FACE_GAP_CELLS;
+            format!(
+                "there are {gap} cells between them across that face where a shared wall is \
+                 exactly {SHARED_FACE_GAP_CELLS}: `{ln}`'s headroom tops out at y {top} and \
+                 `{hn}`'s floor course is y {fc}, so the one course between them is the upper's \
+                 floor only when the lower's top is y {want_top}. A climb or a hole through a \
+                 floor needs the lower place's headroom to reach one course under the upper's \
+                 floor course — give `{ln}` `{kind}: {want}`, or move `{hn}`'s floor",
+                ln = low.plan.node,
+                hn = high.plan.node,
+                fc = high.floor - 1,
+                want_top = high.floor - 2,
+                kind = if open { "open" } else { "clearance" },
+            )
+        }
         NotShared::NotAdjacent { gap } => format!(
             "there are {gap} cells between them across that face where a shared wall is exactly \
              {SHARED_FACE_GAP_CELLS}"
@@ -306,10 +313,6 @@ fn not_shared(
         NotShared::NoCommonArea { axis } => format!(
             "they are neighbours across it, but their spans on {axis} miss each other entirely, \
              so the face they share has no area to cut an opening in"
-        ),
-        NotShared::NoPlane { which } => format!(
-            "the `{which}` end is sky-open with no stated headroom, so it has no ceiling or floor \
-             plane for a horizontal seam to sit in"
         ),
     };
     Diagnostic::error(

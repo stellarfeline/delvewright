@@ -228,8 +228,10 @@
     "site-plan.en:datapack/data/gallery/structure/gallery-beacon.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-causeway.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-far-hall.nbt",
+    "site-plan.en:datapack/data/gallery/structure/gallery-gantry.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-loft.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-near-hall.nbt",
+    "site-plan.en:datapack/data/gallery/structure/gallery-perch.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-undercroft.nbt",
     "site-plan.en:validation/blockout.json"
   ],
@@ -298,6 +300,7 @@
     "site-plan.en:creator-datapack/layout.json",
     "site-plan.en:critical-path.json",
     "site-plan.en:datapack/data/gallery/function/activate_o_read_the_label.mcfunction",
+    "site-plan.en:datapack/data/gallery/function/atmosphere_bootstrap.mcfunction",
     "site-plan.en:datapack/data/gallery/function/bonfire_rest_0.mcfunction",
     "site-plan.en:datapack/data/gallery/function/bonfire_save_0.mcfunction",
     "site-plan.en:datapack/data/gallery/function/boundary_tick.mcfunction",
@@ -317,6 +320,7 @@
     "site-plan.en:datapack/data/gallery/function/world_build.mcfunction",
     "site-plan.en:datapack/data/gallery/structure/gallery-annex.nbt",
     "site-plan.en:datapack/data/gallery/structure/gallery-yard.nbt",
+    "site-plan.en:packtest-datapack/data/gallery/test/atmosphere_places.mcfunction",
     "site-plan.en:packtest-datapack/data/gallery/test/boundary_exempt_cutscene.mcfunction",
     "site-plan.en:packtest-datapack/data/gallery/test/boundary_exempt_free.mcfunction",
     "site-plan.en:packtest-datapack/data/gallery/test/class_apply_wanderer.mcfunction",
@@ -333,6 +337,7 @@
     "site-plan.en:packtest-datapack/data/gallery/test/v06_checkpoint_reseat.mcfunction",
     "site-plan.en:packtest-datapack/data/gallery/test/v06_checkpoint_respawn.mcfunction",
     "site-plan.en:render-plan.json",
+    "site-plan.en:validation/biome-map.json",
     "site-plan.en:validation/chain-length.json",
     "site-plan.en:validation/combat-plan.json",
     "site-plan.en:validation/critical-path-waypoints.json",
@@ -362,12 +367,12 @@
     "void-horizon.en:validation/death-plan.json"
   ],
   "classes": {
-    "PackTest": 61,
+    "PackTest": 62,
     "creator overlay": 24,
-    "datapack function": 286,
+    "datapack function": 289,
     "other": 23,
     "server config": 4,
-    "validation ledger": 87
+    "validation ledger": 88
   },
   "removed": [
     "site-plan.en:datapack/data/gallery/structure/horizon/valley/m0.nbt",

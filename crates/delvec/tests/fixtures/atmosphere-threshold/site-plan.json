@@ -3,7 +3,9 @@
   "content": {
     "boxes": [
       {
-        "ceiling": "open",
+        "ceiling": {
+          "open": 8
+        },
         "extent": [
           16,
           20
@@ -19,7 +21,9 @@
       },
       {
         "atmosphere": "atmosphere/wrong-place",
-        "ceiling": "open",
+        "ceiling": {
+          "open": 8
+        },
         "extent": [
           16,
           20

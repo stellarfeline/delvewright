@@ -88,9 +88,8 @@ pub(super) fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<
         if !within((p.x0(), p.x1()), spans[0]) {
             bad.push(("x", p.x0(), p.x1()));
         }
-        if let Some(y) = p.y_span()
-            && !within(y, spans[1])
-        {
+        let y = p.y_span();
+        if !within(y, spans[1]) {
             bad.push(("y", y.0, y.1));
         }
         if !within((p.z0(), p.z1()), spans[2]) {
@@ -259,7 +258,7 @@ fn named_overruns(items: &[Overrun<'_>]) -> String {
 pub(super) fn roofs(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
     for p in placed {
         let Some(roof) = p.plan.roof else { continue };
-        if matches!(p.plan.ceiling, Ceiling::Open) {
+        if matches!(p.plan.ceiling, Ceiling::Open(_)) {
             d.push(Diagnostic::error(
                 DW_ROOF_NO_ROOM,
                 "site-plan",
@@ -277,7 +276,7 @@ pub(super) fn roofs(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
             ));
             continue;
         }
-        let Some((_, top)) = p.y_span() else { continue };
+        let (_, top) = p.y_span();
         if roof.courses == 0 {
             continue;
         }
@@ -292,7 +291,7 @@ pub(super) fn roofs(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
             }
             // The neighbour's play space (its footprint, floor to top) and its
             // floor course (its shell footprint, one course under its floor).
-            let q_top = q.y_span().map_or(q.floor, |(_, t)| t);
+            let q_top = q.y_span().1;
             let in_space = overlap((sx0, sx1), (q.x0(), q.x1()))
                 .zip(overlap((sz0, sz1), (q.z0(), q.z1())))
                 .zip(overlap((rlo, rhi), (q.floor, q_top)));
@@ -343,15 +342,8 @@ pub(super) fn disjoint(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
             ) else {
                 continue;
             };
-            let y = match (a.y_span(), b.y_span()) {
-                (Some(ya), Some(yb)) => match overlap(ya, yb) {
-                    Some(y) => y,
-                    None => continue,
-                },
-                // One of them is sky-open with an unresolved class; `DW0812`
-                // owns that name, and the footprints alone are enough to say
-                // the two places stand in each other.
-                _ => (a.floor.min(b.floor), a.floor.max(b.floor)),
+            let Some(y) = overlap(a.y_span(), b.y_span()) else {
+                continue;
             };
             d.push(Diagnostic::error(
                 DW_BOXES_OVERLAP,
@@ -394,8 +386,7 @@ pub(super) fn volumes_outside_boxes(
             ) else {
                 continue;
             };
-            let Some(py) = p.y_span() else { continue };
-            let Some(y) = overlap((v.region.min[1], vmax[1]), py) else {
+            let Some(y) = overlap((v.region.min[1], vmax[1]), p.y_span()) else {
                 continue;
             };
             d.push(Diagnostic::error(

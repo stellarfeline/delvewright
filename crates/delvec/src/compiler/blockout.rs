@@ -1757,6 +1757,9 @@ pub struct BatteryBinding {
     pub boundary_columns: usize,
     /// Of those, cracks.
     pub cracks: usize,
+    /// Aloft places, which stand on no ground and have none to stitch —
+    /// counted, never judged, by `DW0990`'s crack shape.
+    pub aloft: usize,
     /// Standable cells inside the region and outside every claim. On an
     /// `open` site they are the **commons** (spec-0098 §14, a ruling):
     /// ordinary walkable ground every place may open onto. On a `solid` site
@@ -1783,7 +1786,8 @@ impl BatteryBinding {
              proven reached ({sc} of them scenery, proven not reached), {c} standable cell(s) classified over {p} place pair(s), \
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
              {l} critical-path leg(s) measured; {fx} fixed ring ground cell(s) handed, {bc} \
-             plot-edge column(s) examined, {ck} crack(s) (DW0990); {uc} standable cell(s) \
+             plot-edge column(s) examined, {ck} crack(s), {al} aloft place(s) with no ground \
+             to stitch (DW0990); {uc} standable cell(s) \
              outside every claim ({kind}), {cp} place pair(s) joined through the commons \
              (DW0838).",
             kind = if self.commons {
@@ -1795,6 +1799,7 @@ impl BatteryBinding {
             fx = self.fixed_cells,
             bc = self.boundary_columns,
             ck = self.cracks,
+            al = self.aloft,
             uc = self.unclaimed_standable,
             s = self.seams,
             ct = self.contacts,
@@ -3164,7 +3169,8 @@ fn crossings(
 /// the two surfaces under the higher edge — an edge nothing holds up. A column
 /// with no standable cell in range offers no surface to compare and is counted
 /// but not judged. A stand-in shell and a piece are judged alike: nothing here
-/// asks who wrote the bytes.
+/// asks who wrote the bytes. An aloft place stands on no ground and has none
+/// to stitch: it is counted in the binding and not judged.
 fn stitches(
     b: &Blockout,
     world: &crate::compiler::nav::World,
@@ -3173,6 +3179,10 @@ fn stitches(
 ) {
     let site = Site::new(&b.boxes, &b.seams, &b.ground);
     for (i, p) in b.boxes.iter().enumerate() {
+        if site.is_aloft(i) {
+            binding.aloft += 1;
+            continue;
+        }
         binding.fixed_cells += site.fixed_cells(i).len();
         let bottom = site.bottom(i);
         let top = p.top();

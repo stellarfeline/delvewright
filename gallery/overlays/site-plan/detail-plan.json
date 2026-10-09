@@ -65,6 +65,20 @@
         "anchors": {},
         "piece": "prefab/gallery-beacon",
         "place": "node/beacon"
+      },
+      {
+        "anchors": {
+          "anchor/node-gantry": "anchor/node-gantry"
+        },
+        "piece": "prefab/gallery-gantry",
+        "place": "node/gantry"
+      },
+      {
+        "anchors": {
+          "anchor/node-perch": "anchor/node-perch"
+        },
+        "piece": "prefab/gallery-perch",
+        "place": "node/perch"
       }
     ],
     "palette": {

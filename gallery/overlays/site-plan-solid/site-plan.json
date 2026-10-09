@@ -73,7 +73,9 @@
       },
       {
         "atmosphere": "atmosphere/wet-court",
-        "ceiling": "open",
+        "ceiling": {
+          "open": 3
+        },
         "extent": [
           8,
           8

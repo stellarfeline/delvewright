@@ -286,6 +286,7 @@ mod tests {
             floor: 64,
             clearance: 8,
             open: false,
+            base: crate::siteplan::Base::Ground,
             roof: None,
         }
     }

@@ -77,7 +77,10 @@
       },
       {
         "atmosphere": "atmosphere/wet-court",
-        "ceiling": "open",
+        "base": "ground",
+        "ceiling": {
+          "open": 4
+        },
         "extent": [
           8,
           8
@@ -116,6 +119,38 @@
           44
         ],
         "node": "node/beacon"
+      },
+      {
+        "base": {
+          "aloft": 0
+        },
+        "ceiling": {
+          "open": 3
+        },
+        "extent": [
+          4,
+          12
+        ],
+        "floor": {
+          "datum": "datum/loft"
+        },
+        "node": "node/gantry"
+      },
+      {
+        "base": {
+          "aloft": 0
+        },
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/loft"
+        },
+        "node": "node/perch"
       }
     ],
     "datums": [
@@ -346,6 +381,28 @@
         "face": "south",
         "form": "an open front, six wide, where the road leaves the far hall",
         "meets": 0
+      },
+      {
+        "at": [
+          3,
+          5
+        ],
+        "edge": "edge/gantry-ladder",
+        "face": "up",
+        "form": "rope ladder up to the gantry, 4",
+        "meets": [
+          1,
+          1
+        ],
+        "opening": "door"
+      },
+      {
+        "at": 1,
+        "edge": "edge/perch-walk",
+        "face": "south",
+        "form": "an arch off the gantry's far end into the perch",
+        "meets": 3,
+        "opening": "arch"
       }
     ],
     "sightlines": [
@@ -432,12 +489,12 @@
         "region": {
           "extent": [
             8,
-            20,
+            16,
             8
           ],
           "min": [
             24,
-            68,
+            72,
             38
           ]
         },

@@ -495,6 +495,14 @@ pub(super) fn validate_loaded(
                     examined.push(vbind.line());
                 }
                 diags.extend(vd);
+                // spec-0098 §2: an aloft place claims no ground, so terrain
+                // reaching into its claim is refused (`DW0990`, third shape),
+                // read off the plan and its terrain.
+                if campaign.site_plan.is_some() {
+                    let (ad, abind) = delvec::compiler::detail::check_aloft(&campaign);
+                    examined.push(abind.line());
+                    diags.extend(ad);
+                }
             }
             // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
             // declared branch is enumerated and every static proof re-run under

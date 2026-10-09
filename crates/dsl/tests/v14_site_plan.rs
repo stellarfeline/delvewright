@@ -207,7 +207,9 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "node": "node/cellar"
       },
       {
-        "ceiling": "open",
+        "ceiling": {
+          "open": 8
+        },
         "extent": [
           16,
           16

@@ -652,21 +652,61 @@ pub enum Ceiling {
     /// Cells of headroom over the walk plane. A body's feet are at the floor and
     /// the ceiling course sits at `floor + clearance`.
     Clearance(NonZeroU32),
-    /// A sky-open place — a courtyard, a shore, a summit.
-    ///
-    /// The plan claims the ground and its size class's own minimum clearance,
-    /// and **nothing above that**: an open place is precisely one that makes no
-    /// claim on the air over it, so a `clearance` volume above a courtyard is
-    /// the whole reserving sky rather than two authorities over one cell.
-    Open,
+    /// A sky-open place — a courtyard, a shore, a summit, a bridge's deck:
+    /// exactly this many courses of air over the walk plane are claimed, and
+    /// **nothing above them**. An open place is precisely one that makes no
+    /// claim on the air over its headroom, so a `clearance` volume above a
+    /// courtyard is the whole reserving sky rather than two authorities over
+    /// one cell, and a place hung over the yard stands in the yard's sky.
+    Open(NonZeroU32),
 }
 
-/// One place, embedded: a footprint standing on a plane.
+/// What a place stands on (spec-0098 §2).
 ///
-/// **A box is a plan, not a prism.** Its `min`/`extent` are the two horizontal
-/// axes and its vertical position is [`PlanBox::floor`] — one authority for the
-/// plane, where a `y` inside `min` beside a declared floor would have been two
-/// numbers with no rule about which the derivation believes.
+/// The third declared plane of a box's cuboid, beside [`PlanBox::floor`] (the
+/// walk plane) and [`PlanBox::ceiling`] (the headroom).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Base {
+    /// The place stands on the site's ground: its claim reaches down, column
+    /// by column, to the terrain under its plot or its floor course, whichever
+    /// is lower, and the whole hands it that ground and fixes its ring.
+    #[default]
+    Ground,
+    /// The place hangs — a bridge, a gantry, a treehouse: its claim stops this
+    /// many courses under its floor course (`0` is the floor course alone). It
+    /// is handed no ground and no fixed ring, and the space under it is
+    /// whoever claims it, else the site's fill. Terrain reaching into the claim
+    /// is refused (`DW0990`).
+    Aloft(u32),
+}
+
+impl Base {
+    /// The underside courses under the floor course, on an aloft place.
+    #[must_use]
+    pub fn aloft(self) -> Option<u32> {
+        match self {
+            Base::Ground => None,
+            Base::Aloft(n) => Some(n),
+        }
+    }
+
+    /// True on the default, so a plan that does not state it does not print it.
+    #[must_use]
+    pub fn is_ground(&self) -> bool {
+        matches!(self, Base::Ground)
+    }
+}
+
+/// One place, embedded: a cuboid of the world.
+///
+/// **A box is a 3D region.** Its `min`/`extent` are the two horizontal axes;
+/// its vertical extent is three declared planes — [`PlanBox::floor`], the one
+/// authority for the walk plane; [`PlanBox::ceiling`], the headroom over it
+/// (a lid, or exactly `n` courses of sky); and [`PlanBox::base`], what it
+/// stands on (the site's ground, or `n` underside courses hung in the air).
+/// Two places conflict only where their cuboids overlap (`DW0827`); a cell no
+/// place claims is the whole's — on an `open` site, walkable ground and sky.
 ///
 /// **A box is the PLAY SPACE, and connected boxes are separated by exactly one
 /// cell.** `extent` is the interior a body can stand in; the shell the blockout
@@ -712,6 +752,9 @@ pub struct PlanBox {
     pub floor: Floor,
     /// What closes it overhead.
     pub ceiling: Ceiling,
+    /// What it stands on: `"ground"` (the default) or `{"aloft": n}`.
+    #[serde(default, skip_serializing_if = "Base::is_ground")]
+    pub base: Base,
     /// **The sky this place stands under from the first tick** (spec-0080
     /// §3.2): one of `world.atmospheres[]`, painted at world setup over the
     /// box's play space grown as far as the client's biome blend reads — the
@@ -964,8 +1007,7 @@ pub enum Measure {
         axis: PlanAxis,
     },
     /// One place's headroom over its walk plane, in blocks. A sky-open place
-    /// measures its size class's own minimum clearance — the least air the
-    /// ladder says such a place has.
+    /// measures the courses of air its ceiling declares.
     BoxHeight {
         /// The place.
         node: NodeId,

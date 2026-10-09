@@ -120,7 +120,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       { "node": "node/cellar", "min": [12, 20], "extent": [8, 8],
         "floor": { "y": 56 }, "ceiling": { "clearance": 4 } },
       { "node": "node/yard",   "min": [44, 0], "extent": [16, 16],
-        "floor": { "datum": "datum/grade" }, "ceiling": "open" },
+        "floor": { "datum": "datum/grade" }, "ceiling": { "open": 8 } },
       { "node": "node/pit",    "min": [44, 20], "extent": [8, 8],
         "floor": { "y": 56 }, "ceiling": { "clearance": 4 } }
     ],

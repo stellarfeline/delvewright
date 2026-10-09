@@ -150,20 +150,7 @@ fn measure(
             None => missing_node(node),
         },
         Measure::BoxHeight { node } => match by_node.get(node.0.as_str()) {
-            Some(p) => match p.clearance {
-                Some(c) => Measured::Value(f64::from(c)),
-                None => Measured::Unresolved(Diagnostic::error(
-                    DW_PLAN_AGREEMENT,
-                    "site-plan",
-                    format!("/content/identities/{i}/measure"),
-                    format!(
-                        "this identity measures the height of `{node}`, which is sky-open and \
-                         whose size class did not resolve — so the plan states no headroom for \
-                         it at all. Fix the class name the layout graph declares (`DW0812` names \
-                         it) and the height becomes the class's own minimum."
-                    ),
-                )),
-            },
+            Some(p) => Measured::Value(f64::from(p.clearance)),
             None => missing_node(node),
         },
         Measure::DistanceXz { from, to } => {
