@@ -67,8 +67,6 @@ TOP_LEVEL = {
     "shown_faces": ["north"],
     # spec-0036's contract, written by an exporter after the fact.
     "spatial_contract": {"entry": "hall", "spaces": {}, "no_body": {}, "edges": []},
-    # spec-0050 §5, `DW0848`.
-    "footprint_class": "size-class.room",
     # A key this engine does not model at all: kept as `PrefabMeta::extra`
     # (`DW0543`), which is the forward-compatibility half of the same rule.
     "x_added_by_a_newer_producer": {"note": "kept verbatim"},

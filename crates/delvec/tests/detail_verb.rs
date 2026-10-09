@@ -526,14 +526,14 @@ fn one_verb_writes_the_piece_the_report_and_the_row() {
     assert_eq!(rows[0]["anchors"]["anchor/node-exit"], "anchor/node-exit");
     // The row carries no coordinate — the document's shape is unchanged.
     assert_eq!(rows[0].as_object().unwrap().len(), 3, "{}", rows[0]);
-    // The piece: the frame's shape, the class stamped, the light measured.
+    // The piece: the frame's shape and the light measured, and no class claim.
     let meta: Value =
         serde_json::from_str(&std::fs::read_to_string(prefabs.join("blockout-exit.json")).unwrap())
             .unwrap();
     // The exit's claim: its ring on three sides, the floor course, four of
     // headroom and the lid (spec-0098 §2).
     assert_eq!(meta["structure"]["size"], json!([9, 6, 10]));
-    assert_eq!(meta["footprint_class"], "alcove");
+    assert!(meta.get("footprint_class").is_none(), "{meta}");
     assert_eq!(meta["lighting"]["profile"], "lit");
     assert_eq!(
         meta["license"]["generated_by"]["params"]["handed/seam/cell-exit/z0"], 3,

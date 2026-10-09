@@ -475,7 +475,7 @@ fn detail_one(
     };
     // Re-read through the one reader that defines the document, whichever
     // packaging the frame needed, then fill what the export could not know: the
-    // size class the box is for, and the light the piece was measured to have.
+    // light the piece was measured to have.
     let mut meta = match PrefabMeta::from_json(exported.metadata_json()) {
         Ok(m) => m,
         Err(e) => {
@@ -483,11 +483,6 @@ fn detail_one(
             return Err(EXIT_INTERNAL);
         }
     };
-    meta.footprint_class = campaign
-        .layout_graph
-        .as_ref()
-        .and_then(|g| g.content.nodes.iter().find(|n| &n.id == node))
-        .and_then(|n| n.size_class.clone());
     let tiles: Vec<(TilePart, Structure)> = match structures_of(&exported, &meta) {
         Ok(t) => t,
         Err(e) => {

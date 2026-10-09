@@ -25,7 +25,6 @@
 //! | check | event it is bound to |
 //! |---|---|
 //! | `DW0842`–`DW0845` ([`check`]) | `validate_loaded` in `delvec`'s `main` — the one funnel every subcommand's validation goes through, `build` included |
-//! | `DW0848` | `delvec prefab audit`, and [`check`] wherever a row consumes the piece |
 //! | the frame, and the piece's bytes | [`place`], inside `Plan::build` |
 //!
 //! There is no flag, no subcommand and no checklist line.
@@ -43,7 +42,6 @@ use serde::Serialize;
 
 use delvewright_dsl::detailplan::Frame;
 use delvewright_dsl::layout::{Direction, Edge};
-use delvewright_dsl::metrics::Reads;
 use delvewright_dsl::prefab::ContractFace;
 use delvewright_dsl::siteplan::{PlacedBox, PlacedSeam, SitePlan};
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
@@ -827,8 +825,6 @@ pub struct DetailBinding {
     pub faces_examined: usize,
     /// Owed anchor names checked over every bound place — `DW0845`.
     pub owed: usize,
-    /// Bound pieces declaring a `footprint_class` — `DW0848`.
-    pub classed: usize,
 }
 
 impl DetailBinding {
@@ -840,8 +836,7 @@ impl DetailBinding {
         format!(
             "detail binding: {bd} of {b} place(s) bound over {r} `details[]` row(s), {m} \
              piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
-             declared face(s) examined, {o} owed anchor name(s) checked, {cl} piece(s) \
-             declaring a footprint class.",
+             declared face(s) examined, {o} owed anchor name(s) checked.",
             bd = self.bound,
             b = self.boxes,
             r = self.rows,
@@ -849,7 +844,6 @@ impl DetailBinding {
             sr = self.seams_required,
             fe = self.faces_examined,
             o = self.owed,
-            cl = self.classed,
         )
     }
 }
@@ -1048,27 +1042,7 @@ fn check_owed(
     }
 }
 
-/// **`DW0848`'s consumer door, for one row** — see [`check_owed`] for why it is
-/// a helper.
-fn check_class(
-    d: &mut Vec<Diagnostic>,
-    binding: &mut DetailBinding,
-    meta: &delvewright_dsl::PrefabMeta,
-    reads: &mut Reads,
-    path: &str,
-) {
-    if meta.footprint_class.is_none() {
-        return;
-    }
-    binding.classed += 1;
-    if let Some(f) =
-        delvewright_dsl::prefab::check_footprint_class(meta, STAGE, &format!("{path}/piece"), reads)
-    {
-        d.push(f);
-    }
-}
-
-/// **`DW0842`–`DW0845` and `DW0848`'s consumer door, over a whole campaign.**
+/// **`DW0842`–`DW0845`, over a whole campaign.**
 ///
 /// Validation tier: a diagnostic here is exit 1, before any byte is written.
 /// Bound in `validate_loaded`, which every `delvec` subcommand's validation goes
@@ -1103,7 +1077,6 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
         return (d, binding);
     };
 
-    let mut reads = Reads::new();
     let plan = SitePlan::of(c);
     let site = plan.site();
     let boxes = &plan.boxes;
@@ -1319,7 +1292,6 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
         let mut answered: BTreeSet<usize> = BTreeSet::new();
         let Some(contract) = contract.filter(|_| got64 == want) else {
             check_owed(c, &mut d, &mut binding, row, meta, &path, &gates);
-            check_class(&mut d, &mut binding, meta, &mut reads, &path);
             continue;
         };
         for (s, out) in &mine {
@@ -1445,7 +1417,6 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
         }
 
         check_owed(c, &mut d, &mut binding, row, meta, &path, &gates);
-        check_class(&mut d, &mut binding, meta, &mut reads, &path);
     }
     (d, binding)
 }

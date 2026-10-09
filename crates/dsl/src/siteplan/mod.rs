@@ -178,11 +178,6 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// `DW0832`: a box violates its node's size class.
-    pub const DW_SIZE_CLASS: DwCode = DwCode::new("DW0832", ExitTier::Build);
-}
-
-crate::dw_code! {
     /// `DW0833`: a brief identity does not hold.
     pub const DW_IDENTITY_FALSE: DwCode = DwCode::new("DW0833", ExitTier::Build);
 }
@@ -674,8 +669,8 @@ pub enum Ceiling {
 /// occupies x 4..7, so its eastern neighbour's `min` x is 9, never 8.
 ///
 /// Two consequences follow, and they are what make the checks say what they look
-/// like they say: the size-class ladder judges `extent` directly (`DW0832`);
-/// and a plan never
+/// like they say: `extent` is the play space the author declared; and a plan
+/// never
 /// states a wall's thickness anywhere, because the gap is where the wall is.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

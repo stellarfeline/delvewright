@@ -582,8 +582,7 @@ fn a_row_read_and_a_place_bound_are_counted_apart() {
 
 /// **A piece that is not its frame suspends the FACE check and nothing else.**
 ///
-/// The owed anchors and the declared class depend on neither the extent nor the
-/// contract, so a wrong size must not suppress them — fixing the size would then
+/// The owed anchors depend on neither the extent nor the contract, so a wrong size must not suppress them — fixing the size would then
 /// produce a crop of refusals nobody had been shown, and the place's owed names
 /// would have been missing from the binding count while it happened.
 #[test]
@@ -592,7 +591,6 @@ fn a_wrong_extent_suspends_the_face_check_and_no_other() {
     let d = detailed(&tmp, &["node/exit"]);
     patch_piece(&d, "exit", |v| {
         v["structure"]["size"][0] = serde_json::json!(12);
-        v["footprint_class"] = serde_json::json!("expanse");
     });
     patch_detail_plan(&d, |v| {
         v["content"]["details"][0]["anchors"] = serde_json::json!({});
@@ -605,16 +603,11 @@ fn a_wrong_extent_suspends_the_face_check_and_no_other() {
         "the owed anchor is still asked for: {found:?}"
     );
     assert!(
-        found.contains(&"DW0848".to_string()),
-        "and the declared class is still judged: {found:?}"
-    );
-    assert!(
         !found.contains(&"DW0844".to_string()),
         "while the face check is suspended, because its cells come from a frame \
          this piece is not: {found:?}"
     );
     assert_eq!(binding.owed, 1, "and the owed name is IN the denominator");
-    assert_eq!(binding.classed, 1, "as is the declared class");
     assert_eq!(
         binding.seams_required, 0,
         "while the suspended check honestly says it examined nothing"
@@ -898,46 +891,6 @@ fn dw0842_refuses_a_gate_station_bound_to_a_cell() {
         e.contains("`point`"),
         "and must name the reachable remedy — change the kind: {e}"
     );
-}
-
-// ---------------------------------------------------------------------------
-// DW0848 — the declared footprint class, at the consumer door
-// ---------------------------------------------------------------------------
-
-#[test]
-fn dw0848_refuses_a_declared_class_the_bytes_contradict() {
-    let tmp = tempdir("dw0848");
-    let d = detailed(&tmp, &["node/exit"]);
-    // `node/exit` is an 8x8 alcove; `expanse` starts at 64x64.
-    patch_piece(&d, "exit", |v| {
-        v["footprint_class"] = serde_json::json!("expanse");
-    });
-    let e = check_and_expect(&d, "DW0848");
-    assert!(e.contains("could serve no box of that class"), "{e}");
-
-    // And the honest claim passes, so the check is not simply always red.
-    let tmp = tempdir("dw0848-green");
-    let d = detailed(&tmp, &["node/exit"]);
-    patch_piece(&d, "exit", |v| {
-        v["footprint_class"] = serde_json::json!("alcove");
-    });
-    let (diags, binding) = check_at(&d);
-    assert!(errors(&diags).is_empty(), "{:?}", codes(&diags));
-    assert_eq!(
-        binding.classed, 1,
-        "and the declaration was judged, not skipped"
-    );
-}
-
-#[test]
-fn dw0812_refuses_a_footprint_class_the_table_does_not_define() {
-    let tmp = tempdir("dw0848-unknown");
-    let d = detailed(&tmp, &["node/exit"]);
-    patch_piece(&d, "exit", |v| {
-        v["footprint_class"] = serde_json::json!("cathedral");
-    });
-    let e = check_and_expect(&d, "DW0812");
-    assert!(e.contains("cathedral"), "{e}");
 }
 
 // ---------------------------------------------------------------------------

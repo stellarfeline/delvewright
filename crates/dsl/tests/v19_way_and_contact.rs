@@ -5,12 +5,9 @@
 //!
 //! The campaign brief this vocabulary was written for says *"one cut ledge, one
 //! body wide, climbing across the whole seaward face"*. `node/cliff-road` below
-//! is that ledge: **4 by 72**, declared `way_class: "road"`. Every rung of the
-//! size-class ladder refuses it and no calibration of the ladder could admit it
-//! — for a rung to span 4..72 on an axis, an alcove and an expanse would have to
-//! be the same thing. `the_old_way_of_stating_it_is_refused_with_a_reachable_remedy`
-//! is the other half of that pair: the same ledge stated as a `size_class`, and
-//! what the engine tells the author to write instead.
+//! is that ledge: **4 by 72**, declared `way_class: "road"`. The box's extent
+//! is the author's declaration and no class refuses it
+//! (`a_declared_class_never_refuses_the_box_it_classifies`).
 //!
 //! # How these tests are kept falsifiable
 //!
@@ -227,7 +224,7 @@ fn the_green_states_a_one_body_wide_route_and_a_front_and_validates() {
     let d = graph_with(|_| {});
     let ours: Vec<_> = d
         .iter()
-        .filter(|x| matches!(x.code.as_str(), "DW0875" | "DW0876" | "DW0832"))
+        .filter(|x| matches!(x.code.as_str(), "DW0875" | "DW0876"))
         .collect();
     assert!(
         ours.is_empty(),
@@ -252,47 +249,6 @@ fn the_green_states_a_one_body_wide_route_and_a_front_and_validates() {
         .count();
     assert_eq!(ways, 2, "the green declares two ways");
     assert_eq!(contacts, 1, "the green declares one contact");
-}
-
-/// **The motivating shape, and the old way of stating it.**
-///
-/// `node/cliff-road` is 4 by 72. Stated as a way it is accepted; stated the only
-/// way the vocabulary had before — a rung of the size ladder — it is refused,
-/// and the refusal has to name a remedy the author can actually perform.
-///
-/// The remedy is checked by PERFORMING it: the same box, declared `way_class`,
-/// goes green. A refusal whose prescription does not clear it is a refusal that
-/// sends the author to read the compiler.
-#[test]
-fn the_old_way_of_stating_it_is_refused_with_a_reachable_remedy() {
-    // Every rung, so this is "the ladder cannot classify it" and not "the author
-    // picked the wrong rung".
-    for rung in ["alcove", "room", "hall", "arena", "expanse"] {
-        let d = graph_with(|v| {
-            let n = node(v, 1);
-            n.as_object_mut().expect("node").remove("way_class");
-            n["size_class"] = json!(rung);
-        });
-        let refusals = with_code(&d, "DW0832");
-        assert!(
-            !refusals.is_empty(),
-            "a 4x72 box declared `{rung}` must be refused: {:?}",
-            codes(&d)
-        );
-        assert!(
-            refusals[0].message.contains("size class"),
-            "the refusal must say which vocabulary it judged against: {}",
-            refusals[0].message
-        );
-    }
-
-    // The remedy, performed.
-    let d = graph_with(|_| {});
-    assert!(
-        with_code(&d, "DW0832").is_empty(),
-        "the same box declared a way must be accepted: {:?}",
-        codes(&d)
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -360,81 +316,49 @@ fn dw0812_refuses_an_unknown_way_class_and_names_the_defined_set() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0832's way branch — the three trips spec-0053 §6 names
+// A class never refuses the box it classifies
 // ---------------------------------------------------------------------------
 
-/// Trip 1: the cross-section is outside the class's range.
-///
-/// A 32x40 box declared `corridor`, which is spec-0053 §6's own named trip.
+/// The box's extent and headroom are the author's declaration, and the piece
+/// detailed into it may not exceed it — so a class range beside them would
+/// confirm nothing. The motivating ledge declared at every rung of the size
+/// ladder, a square way, a way wider than its class and a way under its class's
+/// clearance are each accepted with no refusal naming the class.
 #[test]
-fn dw0832_refuses_a_way_whose_cross_section_is_off_its_class() {
-    let d = plan_with(|v| {
-        boxx(v, 1)["extent"] = json!([32, 40]);
-    });
-    let refusals = with_code(&d, "DW0832");
-    assert!(!refusals.is_empty(), "{:?}", codes(&d));
-    assert!(
-        refusals[0].message.contains("cross-section")
-            && refusals[0].message.contains("shorter extent"),
-        "the refusal says which extent it measured: {}",
-        refusals[0].message
-    );
-}
-
-/// Trip 2: **a square box can never be a way**, and that is structural.
-///
-/// The run must exceed `max_width` and the cross-section must not, so one number
-/// cannot satisfy both. This is the opt-out property `CLAUDE.md` demands: the
-/// defect — declaring a room a way to escape the ladder — is incapable of
-/// supplying the proof the way branch asks for.
-#[test]
-fn a_square_box_can_never_be_a_way_at_any_class() {
-    for (class, side) in [("corridor", 4), ("road", 8), ("road", 16)] {
-        let d = plan_with(|v| {
-            boxx(v, 1)["extent"] = json!([side, side]);
-        });
-        let d = {
-            // The box's node must declare the class under test.
-            let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
-            node(&mut g, 1)["way_class"] = json!(class);
-            let mut p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
-            boxx(&mut p, 1)["extent"] = json!([side, side]);
-            let _ = d;
-            check_campaign(&campaign(
-                serde_json::to_string(&g).expect("re-serialize"),
-                serde_json::to_string(&p).expect("re-serialize"),
-            ))
-        };
-        let refusals = with_code(&d, "DW0832");
-        assert!(
-            !refusals.is_empty(),
-            "a {side}x{side} box declared `{class}` must be refused: {:?}",
-            codes(&d)
-        );
-        assert!(
-            refusals.iter().any(|x| x
-                .message
-                .contains("does not exceed the class's widest cross-section")),
-            "the refusal must be about the elongation: {:#?}",
-            refusals
-        );
+fn a_declared_class_never_refuses_the_box_it_classifies() {
+    let mut cases: Vec<(String, RawCampaign)> = Vec::new();
+    for rung in ["alcove", "room", "hall", "arena", "expanse"] {
+        let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
+        let n = &mut g["content"]["nodes"][1];
+        n.as_object_mut().expect("node").remove("way_class");
+        n["size_class"] = json!(rung);
+        cases.push((
+            format!("the 4x72 ledge declared `{rung}`"),
+            campaign(serde_json::to_string(&g).expect("serialize"), PLAN.to_string()),
+        ));
     }
-}
-
-/// Trip 3: a box one cell under the class's clearance.
-#[test]
-fn dw0832_refuses_a_way_one_cell_under_its_clearance() {
-    let d = plan_with(|v| {
-        // `road` seeds `min_clearance` at 6; the green declares 8.
-        boxx(v, 1)["ceiling"] = json!({ "clearance": 5 });
-    });
-    let refusals = with_code(&d, "DW0832");
-    assert!(!refusals.is_empty(), "{:?}", codes(&d));
-    assert!(
-        refusals[0].message.contains("headroom"),
-        "{}",
-        refusals[0].message
-    );
+    for (what, extent, ceiling) in [
+        ("a square road", json!([8, 8]), json!({ "clearance": 8 })),
+        ("a road wider than its class", json!([32, 72]), json!({ "clearance": 8 })),
+        ("a road under its class's clearance", json!([4, 72]), json!({ "clearance": 5 })),
+    ] {
+        let mut p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
+        boxx(&mut p, 1)["extent"] = extent;
+        boxx(&mut p, 1)["ceiling"] = ceiling;
+        cases.push((
+            what.to_string(),
+            campaign(GRAPH.to_string(), serde_json::to_string(&p).expect("serialize")),
+        ));
+    }
+    for (what, raw) in &cases {
+        let d = check_campaign(raw);
+        let refusing: Vec<_> = d
+            .iter()
+            .filter(|x| x.severity == delvewright_dsl::Severity::Error && x.message.contains("class"))
+            .collect();
+        assert!(refusing.is_empty(), "{what} is refused for its class: {refusing:#?}");
+    }
+    assert_eq!(cases.len(), 8, "every case was examined");
 }
 
 // ---------------------------------------------------------------------------

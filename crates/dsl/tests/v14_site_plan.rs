@@ -1190,35 +1190,6 @@ fn a_drop_that_rises_is_refused() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0832 — the size-class ladder becomes geometry
-// ---------------------------------------------------------------------------
-
-/// The hall is a `room`, whose footprint runs 8..16; a 32-block hall is not one.
-#[test]
-fn a_box_outside_its_size_class_is_refused() {
-    let d = plan_diags(|v| boxes(v)[box_of("node/hall")]["extent"] = json!([32, 16]));
-    let msg = d
-        .iter()
-        .find(|x| x.code == "DW0832")
-        .map(|x| x.message.clone())
-        .unwrap_or_default();
-    assert!(!msg.is_empty(), "{d:?}");
-    assert!(msg.contains("outside the class's 8..16"), "{msg}");
-}
-
-/// Headroom answers to the class too.
-///
-/// Shown on the `yard`, whose class (`hall`) asks for eight cells — not on the
-/// hall itself, whose class (`room`) asks for four, so four is legal there. The
-/// first draft of this test asserted the wrong one and went green on an
-/// identity failure instead, which is what a hand-stated fixture is for.
-#[test]
-fn a_box_under_its_class_clearance_is_refused() {
-    let got = plan_with(|v| boxes(v)[box_of("node/yard")]["ceiling"] = json!({ "clearance": 4 }));
-    assert!(has(&got, "DW0832"), "{got:?}");
-}
-
-// ---------------------------------------------------------------------------
 // DW0833 / DW0834 — the plan held to the brief
 // ---------------------------------------------------------------------------
 

@@ -5,9 +5,9 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../c
 
 ## Diagnostics
 
-### DW0842–DW0845, DW0848 and DW0882 — the detail plan (`compiler::detail` + `dsl::prefab` + `delvec detail`; spec-0050, spec-0058)
+### DW0842–DW0845 and DW0882 — the detail plan (`compiler::detail` + `dsl::prefab` + `delvec detail`; spec-0050, spec-0058)
 
-This module's rows of a section whose prose is on the [`delvec::compiler::detail` page](compiler/detail.md#dw0842dw0845-dw0848-and-dw0882--the-detail-plan-compilerdetail--dslprefab--delvec-detail-spec-0050-spec-0058).
+This module's rows of a section whose prose is on the [`delvec::compiler::detail` page](compiler/detail.md#dw0842dw0845-and-dw0882--the-detail-plan-compilerdetail--dslprefab--delvec-detail-spec-0050-spec-0058).
 
 | Code | Rule |
 |---|---|

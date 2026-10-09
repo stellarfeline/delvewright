@@ -11,9 +11,9 @@
 
 pub use delvewright_dsl::prefab::{
     Anchor, AnchorEdit, AnchorRole, Connector, ContractBar, ContractEdge, ContractFace,
-    ContractNoBody, ContractSpace, ContractVolume, ContractWay, DW_FOOTPRINT_CLASS, GeneratedBy,
+    ContractNoBody, ContractSpace, ContractVolume, ContractWay, GeneratedBy,
     License, POOLS_FILE, PieceTemplate, PrefabMeta, Region, SpatialContract, StructureMeta,
-    UNMEASURED, check_footprint_class,
+    UNMEASURED,
 };
 
 /// The `lighting` block, which the DSL owns outright: it is the same type the

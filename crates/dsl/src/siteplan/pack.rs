@@ -668,7 +668,6 @@ pub(super) fn resolve<'a>(
             ],
             floor,
             clearance,
-            class,
             by: pb.by.clone(),
         });
     }

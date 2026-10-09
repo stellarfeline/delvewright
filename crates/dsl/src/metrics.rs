@@ -109,7 +109,7 @@ crate::dw_code! {
 /// No document declares a metrics version and no surface is gated by one. What
 /// it needs is that the number cannot stand still while the table moves, and
 /// that is the digest test.
-pub const METRICS_VERSION: u32 = 3;
+pub const METRICS_VERSION: u32 = 4;
 
 /// Player collision-box width in blocks (`0.6 × 0.6 × 1.8` standing).
 pub const PLAYER_WIDTH: f64 = 0.6;

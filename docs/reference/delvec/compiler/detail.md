@@ -5,7 +5,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ## Diagnostics
 
-### DW0842–DW0845, DW0848 and DW0882 — the detail plan (`compiler::detail` + `dsl::prefab` + `delvec detail`; spec-0050, spec-0058)
+### DW0842–DW0845 and DW0882 — the detail plan (`compiler::detail` + `dsl::prefab` + `delvec detail`; spec-0050, spec-0058)
 
 Stage 6 of the map pipeline: a place is detailed inside the box the whole gave
 it. The document is `detail-plan.json` (§2); this is what judges it.
@@ -13,13 +13,11 @@ it. The document is `detail-plan.json` (§2); this is what judges it.
 **What invokes each check, and what happens without it.** `DW0842`–`DW0845` run
 in `validate_loaded`, the one funnel every `delvec` subcommand's validation goes
 through — `build` included — so a defect cannot reach a datapack by skipping
-`delvec validate`. `delvec detail` (spec-0058) runs `DW0843`–`DW0845` and `DW0848`
+`delvec validate`. `delvec detail` (spec-0058) runs `DW0843`–`DW0845`
 once more, through the same `check`, over the piece it is about to write and the
 row it is about to write — an in-memory registry holding the library plus that
 piece — so every one of them refuses **before any file is written**, in the
-words validation prints afterwards. `DW0848` runs at `delvec prefab audit` — the admission
-event, where the library's integrity lives — and again wherever a `details[]` row
-consumes the piece, so a piece admitted without the check cannot be consumed unjudged. The
+words validation prints afterwards. The
 frame itself is computed in `Plan::build`, which is the only constructor a world
 can be reached through.
 

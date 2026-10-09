@@ -777,7 +777,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     // prefab library and what the admission procedure runs on every piece — and
     // it is bound in EVERY arm, because the arm it was missing from is the one a
     // composed zone arrives through.
-    let (mut rep, diags, door, footprint, waterline, claims) =
+    let (mut rep, diags, door, waterline, claims) =
         if nbt.extension().and_then(|s| s.to_str()) == Some("json") {
             let (set, tiles) = match read_zone(nbt) {
                 Ok(pair) => pair,
@@ -803,7 +803,6 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
                 rep,
                 diags,
                 door,
-                audit::footprint_class(nbt),
                 waterline,
                 claims,
             )
@@ -844,7 +843,6 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
                 rep,
                 diags,
                 door,
-                audit::footprint_class(&meta_path),
                 waterline,
                 claims,
             )
@@ -855,15 +853,6 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     for d in &door.diagnostics() {
         d.print(json);
     }
-    // `DW0848` (spec-0050 §5), bound to `audit` for the reason the contract door
-    // is: `audit` is what CI runs over the prefab library and what the admission
-    // procedure runs on every piece, so a claim about what a piece is FOR cannot
-    // enter the library unjudged. The binding line is stated whether or not
-    // anything declared a class.
-    if let Some(d) = &footprint.finding {
-        d.print(json);
-    }
-    eprintln!("{}", footprint.line());
     // `DW0887` at the SAME event, and for the same reason. spec-0060 §5 says
     // this code binds "wherever a prefab document and its `.nbt` are read
     // together"; the only door that ran it was the whole-library sweep, and
@@ -885,7 +874,6 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     }
     eprintln!("{}", claims.binding.line());
     let contract_failed = door.is_refusal()
-        || footprint.is_refusal()
         || waterline.is_refusal()
         || claims.binding.is_refusal()
         || !claim_findings.is_empty();

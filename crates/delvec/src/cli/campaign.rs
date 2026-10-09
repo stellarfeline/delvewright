@@ -474,8 +474,7 @@ pub(super) fn validate_loaded(
             }
             // spec-0050 (DSL v0.15): the detail plan. `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its
-            // openings are the plan's seams, its anchors have standing) and
-            // `DW0848`'s consumer door. Bound HERE because this is the one
+            // openings are the plan's seams, its anchors have standing). Bound HERE because this is the one
             // funnel every subcommand's validation goes through — `build`
             // included — so a defect cannot reach a datapack by skipping
             // `delvec validate`. No-op for a campaign with no `detail-plan`, and

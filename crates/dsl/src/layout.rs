@@ -236,8 +236,7 @@ pub struct Node {
     ///
     /// It classifies the **cross-section** and nothing else. The run is
     /// per-campaign geometry: the site plan states it by putting the box where
-    /// it put it, `DW0832` demands only that it EXCEED the class's widest
-    /// cross-section, and the pacing measurement reads it. There is no length
+    /// it put it, and the pacing measurement reads it. There is no length
     /// standard here and there is not going to be one (spec-0053 §7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub way_class: Option<String>,
@@ -1399,9 +1398,9 @@ fn place_classes(graph: &LayoutGraphContent, table: &Metrics, d: &mut Vec<Diagno
             (
                 "declares neither `size_class` nor `way_class`".to_string(),
                 format!(
-                    "give it one. A place with no standard is a place nothing can judge — \
-                     `DW0832` has nothing to hold its extents to and the pacing projection \
-                     has nothing to cross it in. Defined size classes: {sizes}. Defined way \
+                    "give it one. A place with no standard is a place the pacing \
+                     projection has nothing to cross it in, and a sky-open box has no \
+                     headroom to claim. Defined size classes: {sizes}. Defined way \
                      classes: {ways}",
                     sizes = sizes,
                     ways = ways,
@@ -1726,8 +1725,7 @@ fn pacing(
         if let Some(way) = node.way_class.as_ref() {
             // The resolve is still made, and still recorded: the way class is a
             // standard this verdict rests on even though the number crossed is
-            // measured, because whether this box is a way AT ALL is the class's
-            // judgement (`DW0832`). A name the table does not define is already
+            // measured, because the author declared this place a way. A name the table does not define is already
             // `DW0812`'s.
             let Ok(entry) = table.resolve(MetricKind::WayClass, way) else {
                 continue;

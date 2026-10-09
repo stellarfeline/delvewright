@@ -1,5 +1,5 @@
-//! The boxes against the region and each other: `DW0826`, `DW0827`, `DW0835`
-//! and the size and way classes (`DW0832`).
+//! The boxes against the region and each other: `DW0826`, `DW0827` and
+//! `DW0835`.
 
 use super::*;
 
@@ -376,98 +376,5 @@ pub(super) fn volumes_outside_boxes(
                 ),
             ));
         }
-    }
-}
-
-/// `DW0832`: a box is built to its place's class — **either kind** (spec-0053
-/// §3).
-///
-/// # The way branch, and why its third demand is structural
-///
-/// A size class bounds both horizontal extents and this is the one place that
-/// becomes geometry. A way class bounds only the **cross-section**, which is the
-/// box's *shorter* horizontal extent — the axis a body feels — and then demands
-/// that the **run**, the longer extent, strictly EXCEED the class's
-/// `max_width`.
-///
-/// That third demand is the elongation, and it is deliberately derived from the
-/// class's own widest cross-section rather than seeded as a constant, because it
-/// is exactly what a room cannot supply. A square box can never satisfy it: its
-/// run equals its width, and one number cannot both be `<= max_width` and exceed
-/// it. So "declare a room a way to escape the size ladder" is refused **by the
-/// object's own shape** rather than by a rule the author could satisfy by
-/// choosing differently — the property `CLAUDE.md` demands of an opt-out, since
-/// the defect this branch exists to catch is structurally incapable of
-/// producing its proof.
-///
-/// There is no maximum run and there is not going to be one: a route's length is
-/// per-campaign geometry, never a standard (spec-0053 §7).
-pub(super) fn size_classes(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
-    for p in placed {
-        let Some(class) = p.class else {
-            continue; // `DW0812` refused the name.
-        };
-        let (kind, mut bad) = match class {
-            PlaceClass::Size(sc) => {
-                let mut bad: Vec<String> = Vec::new();
-                for (axis, name) in [(0usize, "x"), (1, "z")] {
-                    let e = p.plan.extent[axis].get();
-                    if e < sc.min_footprint[axis] || e > sc.max_footprint[axis] {
-                        bad.push(format!(
-                            "{e} blocks on {name}, outside the class's {}..{}",
-                            sc.min_footprint[axis], sc.max_footprint[axis]
-                        ));
-                    }
-                }
-                ("size", bad)
-            }
-            PlaceClass::Way(w) => {
-                let mut bad: Vec<String> = Vec::new();
-                let (dx, dz) = (p.plan.extent[0].get(), p.plan.extent[1].get());
-                let (width, run) = (dx.min(dz), dx.max(dz));
-                let axis = if dx <= dz { "x" } else { "z" };
-                if width < w.min_width || width > w.max_width {
-                    bad.push(format!(
-                        "a cross-section of {width} blocks (its shorter extent, on {axis}), \
-                         outside the class's {}..{}",
-                        w.min_width, w.max_width
-                    ));
-                }
-                if run <= w.max_width {
-                    bad.push(format!(
-                        "a run of {run} blocks, which does not exceed the class's widest \
-                         cross-section of {}. A way is a place that is longer than it is wide \
-                         by kind and not by margin, so this box is a room — give it a \
-                         `size_class` instead, or make it longer",
-                        w.max_width
-                    ));
-                }
-                ("way", bad)
-            }
-        };
-        if let Ceiling::Clearance(c) = p.plan.ceiling
-            && c.get() < class.min_clearance()
-        {
-            bad.push(format!(
-                "{c} cells of headroom, under the class's minimum of {}",
-                class.min_clearance()
-            ));
-        }
-        if bad.is_empty() {
-            continue;
-        }
-        d.push(Diagnostic::error(
-            DW_SIZE_CLASS,
-            "site-plan",
-            format!("/content/boxes/{}", p.index),
-            format!(
-                "the box for `{node}` is not built to its declared {kind} class: {bad}. The \
-                 class is the vocabulary the graph chose this place's scale in, and this is the \
-                 one place it becomes geometry — either build the box to it, or declare the \
-                 place a different class in the layout graph and say so there.",
-                node = p.plan.node,
-                bad = bad.join("; "),
-            ),
-        ));
     }
 }

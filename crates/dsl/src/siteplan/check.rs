@@ -16,7 +16,7 @@ use super::*;
 /// about how many places there are.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct PlanBinding {
-    /// Places embedded — what `DW0826` and `DW0832` examine.
+    /// Places embedded — what `DW0826` examines.
     pub boxes: usize,
     /// Unordered box pairs — what `DW0827` examines. Zero at one box, which is
     /// the honest count and not a pass.
@@ -242,7 +242,6 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     fillcheck::fill(c, plan, d);
     fillcheck::claims(c, plan, d);
     seams(plan, graph, &placed, &packed, &table, reads, d);
-    size_classes(&placed, d);
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
     lighting(plan, d);

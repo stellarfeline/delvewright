@@ -14,8 +14,8 @@ use super::*;
 /// reads it — on [`PlanBox`], whose schema description carries it — and the
 /// number itself is [`SHARED_FACE_GAP_CELLS`]. In short: a box is the **play
 /// space** of a place, the shell stands in the one-cell gap between two
-/// neighbours, `extent` is therefore the interior footprint the size-class
-/// ladder judges directly (`DW0832`), and two connected places sit exactly
+/// neighbours, `extent` is therefore the interior footprint the author
+/// declared, and two connected places sit exactly
 /// [`SHARED_FACE_GAP_CELLS`] apart on the face they share (`DW0828`).
 #[derive(Debug, Clone)]
 pub(super) struct Placed<'a> {
@@ -28,8 +28,6 @@ pub(super) struct Placed<'a> {
     /// Cells of headroom over the walk plane, or `None` when the place is
     /// sky-open and its classification did not resolve.
     pub(super) clearance: Option<u32>,
-    /// How the place is classified, when the name resolved.
-    pub(super) class: Option<PlaceClass>,
     /// How its corner was obtained (spec-0059 §3).
     pub(super) by: Provenance,
 }
