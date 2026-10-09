@@ -799,13 +799,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             );
             let waterline = waterline_door(nbt, &grid, &facts);
             let claims = claims_door(nbt, &grid, &facts);
-            (
-                rep,
-                diags,
-                door,
-                waterline,
-                claims,
-            )
+            (rep, diags, door, waterline, claims)
         } else {
             // ...and pointing it at ONE tile of a set is refused. The verdict would
             // be correct about that file and would be read as a verdict about the
@@ -839,13 +833,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             let facts = settling::ByteFacts::of(&[([0, 0, 0], &structure)]);
             let waterline = waterline_door(&meta_path, &grid, &facts);
             let claims = claims_door(&meta_path, &grid, &facts);
-            (
-                rep,
-                diags,
-                door,
-                waterline,
-                claims,
-            )
+            (rep, diags, door, waterline, claims)
         };
     for d in &diags {
         d.print(json);

@@ -675,11 +675,7 @@ fn contains_point(p: &Placed<'_>, at: [i64; 3]) -> bool {
 /// Empty when the plan settled every seam, which is the ordinary case and costs one
 /// pass over the plan's seams.
 #[must_use]
-pub fn refused_upstream(
-    c: &Campaign,
-    node: &NodeId,
-    resolved: &[PlacedSeam],
-) -> String {
+pub fn refused_upstream(c: &Campaign, node: &NodeId, resolved: &[PlacedSeam]) -> String {
     let Some(plan) = c.site_plan.as_ref().map(|p| &p.content) else {
         return String::new();
     };

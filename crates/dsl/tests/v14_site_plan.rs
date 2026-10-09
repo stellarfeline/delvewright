@@ -1086,19 +1086,27 @@ fn a_sill_a_body_cannot_reach_is_refused() {
 ///
 /// The green plan's `hall|cellar` stair climbs 5. Sink the cellar four more —
 /// one field — and the courses have to carry 9, which no standard pitch fits in
-/// the eight blocks of run the cellar affords. The refusal names the rise, the
-/// run needed and the run available, which are the numbers a plan edit needs.
+/// the eight blocks of run the cellar affords. The stand-in cannot lay that
+/// stair, which is a finding about the stand-in and never a refusal of the plan:
+/// a piece detailed into the cellar carries its own stair, judged over its bytes.
+/// The finding names the rise, the run needed and the run available.
 /// The sill is derived (the higher floor), so the climb the treads carry is the
 /// rise the floors state: one arithmetic, and this check reads it.
 #[test]
-fn a_stair_that_no_standard_pitch_fits_is_refused_with_its_numbers() {
+fn a_stair_no_standard_pitch_fits_is_a_stand_in_finding_with_its_numbers() {
     let d = plan_diags(|v| boxes(v)[box_of("node/cellar")]["floor"] = json!({ "y": 55 }));
+    assert!(
+        !d.iter()
+            .any(|x| x.code == "DW0830" && x.severity == delvewright_dsl::Severity::Error),
+        "the plan is not refused for its stand-in's pitch: {d:?}"
+    );
     let msg = d
         .iter()
-        .find(|x| x.code == "DW0830")
+        .find(|x| x.code == "DW0830" && x.severity == delvewright_dsl::Severity::Warning)
         .map(|x| x.message.clone())
         .unwrap_or_default();
     assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("stand-in cannot"), "{msg}");
     assert!(msg.contains("climbs 9 block(s)"), "{msg}");
     assert!(msg.contains("for a climb of 9"), "{msg}");
     assert!(msg.contains("affords 8"), "{msg}");
@@ -1157,16 +1165,25 @@ fn a_stair_with_no_host_is_refused() {
     assert!(has(&got, "DW0830"), "{got:?}");
 }
 
-/// The designed-drop cap is a **policy** cap, deliberately far tighter than what
-/// a body survives. The green plan's two drops sit exactly on it; one deeper is
-/// refused.
+/// **A drop cap is the author's declaration.** The green plan declares none,
+/// so a drop one block deeper than its two is accepted; with `max_drop: 5`
+/// declared, the same drop is refused naming the declared cap.
 #[test]
-fn a_drop_past_the_designed_cap_is_refused_as_policy() {
-    let d = plan_diags(|v| {
+fn a_drop_past_the_plans_declared_max_drop_is_refused() {
+    let sink = |v: &mut Value| {
         // Sink the pit one block. Its ceiling course still meets the yard's
         // floor course, so the face stays shared and only the fall grows.
         boxes(v)[box_of("node/pit")]["floor"] = json!({ "y": 58 });
         boxes(v)[box_of("node/pit")]["ceiling"] = json!({ "clearance": 5 });
+    };
+    let d = plan_diags(sink);
+    assert!(
+        !d.iter().any(|x| x.code == "DW0831"),
+        "no cap declared: {d:?}"
+    );
+    let d = plan_diags(|v| {
+        sink(v);
+        v["content"]["max_drop"] = json!(5);
     });
     let msg = d
         .iter()
@@ -1175,7 +1192,30 @@ fn a_drop_past_the_designed_cap_is_refused_as_policy() {
         .unwrap_or_default();
     assert!(!msg.is_empty(), "{d:?}");
     assert!(msg.contains("drops 6 blocks"), "{msg}");
-    assert!(msg.contains("policy"), "{msg}");
+    assert!(
+        msg.contains("`max_drop` caps a designed fall at 5"),
+        "{msg}"
+    );
+}
+
+/// **The survivable fall holds every drop**, declared cap or not: a drop deeper
+/// than an unarmoured body survives at full health is refused.
+#[test]
+fn a_drop_deeper_than_a_body_survives_is_refused_without_a_declared_cap() {
+    let d = plan_diags(|v| {
+        boxes(v)[box_of("node/pit")]["floor"] = json!({ "y": 41 });
+        boxes(v)[box_of("node/pit")]["ceiling"] = json!({ "clearance": 22 });
+    });
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0831")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(
+        msg.contains("drops 23 blocks") && msg.contains("survives a fall of 22"),
+        "{msg}"
+    );
 }
 
 /// A drop that rises is a mislabelled stair.

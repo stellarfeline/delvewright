@@ -28,7 +28,7 @@
 //! Hanging off the spine, the **vertical group**: two climbs that differ only in
 //! the run their host affords, so the derivation picks the gentle pitch for one
 //! and the steep one for the other and a walker compares two standards built to
-//! the same rise; and a designed fall at exactly the drop policy's cap, with a
+//! the same rise of one low storey; and a designed fall of that storey, with a
 //! way back up so the pit is not a strand.
 //!
 //! # What it cannot build, and why that is stated rather than remembered
@@ -72,12 +72,6 @@ delvewright_dsl::dw_code! {
 
 /// The plane the gym opens on.
 const GRADE_Y: i64 = 64;
-/// How far above grade the two climbs land. Chosen as the drop policy's cap so
-/// one landing serves both the climbs and the fall.
-fn landing_y(table: &Metrics, reads: &mut Reads) -> i64 {
-    GRADE_Y + i64::from(table.max_designed_drop_blocks(reads).unwrap_or(5))
-}
-
 /// The `dsl_version` every document this generator writes declares: the one
 /// number the engine accepts, never a typed literal.
 const GYM_DSL_VERSION: &str = delvewright_dsl::DSL_VERSION;
@@ -290,7 +284,9 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     // Two bays are asked to host a climb, so they need headroom for one. The
     // steep host is the one whose run is too short for the gentle pitch, which
     // is the whole point of the pair.
-    let rise = landing_y(table, &mut reads) - GRADE_Y;
+    // The climbs and the fall rise one low storey: a body walks up to a floor
+    // of the next storey, and one landing serves both the climbs and the fall.
+    let rise = storey_low;
     // The derivation picks the GENTLEST standard pitch the host affords, walking
     // the table in its own order. The gym's whole argument about pitch is a pair
     // of climbs to the same rise that come out at different pitches, so the two
@@ -516,12 +512,12 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         }));
     }
 
-    // The designed fall, at exactly the policy cap, and the way back out of it.
+    // The designed fall, one low storey deep, and the way back out of it.
     nodes.push(node_entry(
         &pit,
         "designed fall",
         &format!(
-            "The floor of a {rise}-block drop — the deepest a designed one-way fall may be. The \
+            "The floor of a {rise}-block designed one-way drop. The \
              stair beside it is what stops the pit being a strand.",
         ),
     ));
@@ -805,9 +801,8 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                     "id": "fact/landing-datum",
                     "unit": "blocks",
                     "value": landing as f64,
-                    "note": "Where both climbs land, and the lip the designed fall goes over: the \
-                             drop policy's cap above grade, so one plane demonstrates three \
-                             standards.",
+                    "note": "Where both climbs land, and the lip the designed fall goes over: one \
+                             low storey above grade, so one plane demonstrates three things.",
                 },
             ] },
         }),
@@ -880,7 +875,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
 /// The first bay satisfying `want`, or the largest bay if none does.
 ///
 /// A fallback rather than a panic because the hosts are chosen **from the
-/// table**: change the drop cap or a rung's footprint and the pair that used to
+/// table**: change a storey height or a rung's footprint and the pair that used to
 /// straddle the gentle pitch's run may not exist. The gym still builds; what it
 /// stops demonstrating is the difference between the two pitches, and the pitch
 /// entry then goes unread, which is exactly what `DW0840` is for.

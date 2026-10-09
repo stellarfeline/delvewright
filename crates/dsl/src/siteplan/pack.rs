@@ -99,14 +99,11 @@ fn centring_width(s: &Seam, table: &Metrics, reads: &mut Reads) -> Result<Option
             .extent
             .map(|e| [i64::from(e[0].get()), i64::from(e[1].get())]));
     }
-    let Some(name) = s.opening.as_deref() else {
+    let Some(spec) = s.opening.as_ref() else {
         return Err(());
     };
-    let entry = table.resolve(MetricKind::Opening, name).map_err(|_| ())?;
-    match entry.value(reads) {
-        MetricValue::Opening(o) => Ok(Some([i64::from(o.width), i64::from(o.height)])),
-        _ => Err(()),
-    }
+    let o = spec.resolve(table, reads).map_err(|_| ())?;
+    Ok(Some([i64::from(o.width), i64::from(o.height)]))
 }
 
 /// Why an offset is not a position on its face.

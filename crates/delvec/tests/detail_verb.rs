@@ -850,12 +850,14 @@ fn the_gym_is_detailed_by_one_command() {
     // The census is asserted EXACTLY, not as a floor. This read `>= 8`, and a
     // floor is not a measurement: spec-0058 §9 criterion 6 carried 15 where the
     // instrument says 14 for as long as the criterion existed, and nothing could
-    // redden. The gym allocates 18 places and 4 of them want more than a walk —
-    // the two climb hosts, the drop's top and the pit (§10) — so 14 are
+    // redden. The gym allocates 17 places — ten rungs, each way class at its
+    // narrowest and widest cross-section, and three in the vertical group — and
+    // 4 of them want more than a walk — the two climb hosts, the drop's top and
+    // the pit (§10) — so 13 are
     // answerable by a plain-walk program, and a gym that grows a place or moves
     // a seam class reds here instead of drifting.
-    assert_eq!(allocations.len(), 18, "the gym's places");
-    assert_eq!(places.len(), 14, "the gym's plain-walk places: {places:?}");
+    assert_eq!(allocations.len(), 17, "the gym's places");
+    assert_eq!(places.len(), 13, "the gym's plain-walk places: {places:?}");
 
     let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
     assert_eq!(code(&out), 0, "{}", text(&out));

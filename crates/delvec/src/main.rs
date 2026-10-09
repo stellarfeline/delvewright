@@ -166,7 +166,7 @@ enum Command {
         /// Generate the metrics gym (spec-0049 §2.3) into this directory: a
         /// site-plan campaign built FROM the table, one place per rung of the
         /// size-class ladder at each of its bounds, every standard opening, both
-        /// stair pitches and a designed fall at the drop policy's cap. Walking
+        /// stair pitches and a designed fall of one low storey. Walking
         /// it is what retires `DW0813`. Nothing in it is authored geometry — it
         /// compiles through the ordinary derivation.
         #[arg(long, value_name = "DIR")]

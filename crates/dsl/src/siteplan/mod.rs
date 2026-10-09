@@ -145,7 +145,8 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// `DW0831`: a drop seam falls outside the drop policy.
+    /// `DW0831`: a drop seam falls the wrong way, past the survivable fall, or
+    /// past the plan's declared `max_drop`.
     pub const DW_DROP_POLICY: DwCode = DwCode::new("DW0831", ExitTier::Build);
 }
 
@@ -153,27 +154,18 @@ crate::dw_code! {
     /// `DW0876`: a seam does not declare a connection this engine builds
     /// (spec-0053 §6).
     ///
-    /// **One code, four shapes of one claim** — the claim being that this seam
+    /// **One code, three shapes of one claim** — the claim being that this seam
     /// states a crossing the derivation can build and the observer can measure:
     ///
     /// 1. it declares neither an `opening` nor a `contact`, or both;
     /// 2. its contact's span leaves the shared face `DW0828` established;
-    /// 3. its contact's span is not **wider than the broadest standard opening**;
-    /// 4. it is a contact on a `stair`, `barred` or `vision` connection.
+    /// 3. it is a contact on a `stair`, `barred` or `vision` connection.
     ///
-    /// They are one code rather than four because the author's next action is the
-    /// same in every case — say which kind of hand-off this is and give it a shape
-    /// the engine has — and because a seam exhibiting one of them has no crossing
-    /// for any rule below to judge. It is the shape `DW0830` already carries for a
-    /// stair ("three shapes of one claim") and `DW0829` for an opening ("two halves
-    /// of one claim that the opening is usable").
-    ///
-    /// Shape 3 is the floor that keeps the whole surface honest, and it is
-    /// **structural rather than seeded**: it is derived from the standard opening
-    /// set, so anything at or under it COULD have been a portal, and a doorway
-    /// declared a contact to dodge the standard set is refused by its own width.
-    /// That is the property `CLAUDE.md` demands of an escape hatch — the defect this
-    /// exists to catch is incapable of supplying the hatch's proof obligation.
+    /// They are one code rather than three because the author's next action is
+    /// the same in every case — say which kind of hand-off this is and give it a
+    /// shape the engine has — and because a seam exhibiting one of them has no
+    /// crossing for any rule below to judge. A contact's width is the author's:
+    /// a front one cell wide is as legal as one fifty-five wide.
     pub const DW_CONTACT: DwCode = DwCode::new("DW0876", ExitTier::Build);
 }
 
@@ -526,6 +518,12 @@ pub struct SitePlanContent {
     /// what kind of site this is, and that judgement is the author's. Per
     /// region it is overridden by `volumes[]`, exactly as before.
     pub fill: Fill,
+    /// **The deepest fall a designed drop in this plan may take**, in blocks —
+    /// the author's own policy, when they have one (`DW0831` confirms every
+    /// drop seam falls no further). Absent, no policy cap applies; the
+    /// survivable fall of an unarmoured body holds every drop either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_drop: Option<NonZeroU32>,
 }
 
 /// What undeclared space becomes (spec-0098 §2b).
@@ -849,13 +847,15 @@ pub struct Seam {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meets: Option<Offset>,
     /// **A PORTAL**: a named opening from the metrics table's standard set
-    /// (`DW0812` on a name the table does not define, `DW0829` on one that does
-    /// not fit). A body crosses at exactly the cells `at` and this standard
+    /// (`DW0812` on a name the table does not define), or a size the seam
+    /// declares itself, `{"width": w, "height": h}` — the author's own opening,
+    /// a rope bridge's end one cell wide included. `DW0829` confirms either fits
+    /// the shared face. A body crosses at exactly the cells `at` and the opening
     /// allocate.
     ///
     /// **Exactly one of this and [`Seam::contact`]** (`DW0876`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opening: Option<String>,
+    pub opening: Option<OpeningSpec>,
     /// **A CONTACT**: the two places simply meet along a front, rather than
     /// through a doorway (spec-0053 §4).
     ///
@@ -879,6 +879,66 @@ pub struct Seam {
     /// joins, so each designs its side of the interface knowing what meets it.
     /// Never player-facing, so never translated.
     pub form: String,
+}
+
+/// **A portal's opening**: a named standard, or a size the seam declares.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum OpeningSpec {
+    /// A named standard from the metrics table's opening set.
+    Named(String),
+    /// A size the seam declares itself.
+    Declared(DeclaredOpening),
+}
+
+/// An opening the seam sizes itself: cells on the face's own two in-plane
+/// axes — along the wall and up it on a vertical face, `x` and `z` through a
+/// floor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeclaredOpening {
+    /// Clear width, in cells.
+    pub width: NonZeroU32,
+    /// Clear height, in cells.
+    pub height: NonZeroU32,
+}
+
+impl OpeningSpec {
+    /// The opening's size: the named standard's, through [`Metrics::resolve`]
+    /// (the one path from a name to an entry), or the declared one.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::metrics::UnknownMetric`] for a name the table does not define,
+    /// which the caller turns into `DW0812`.
+    pub fn resolve(
+        &self,
+        table: &Metrics,
+        reads: &mut Reads,
+    ) -> Result<crate::metrics::Opening, crate::metrics::UnknownMetric> {
+        match self {
+            OpeningSpec::Named(name) => {
+                let entry = table.resolve(MetricKind::Opening, name)?;
+                match entry.value(reads) {
+                    MetricValue::Opening(o) => Ok(*o),
+                    _ => unreachable!("an opening entry carries an opening"),
+                }
+            }
+            OpeningSpec::Declared(o) => Ok(crate::metrics::Opening {
+                width: o.width.get(),
+                height: o.height.get(),
+            }),
+        }
+    }
+
+    /// How the opening reads in a message: the standard's name, or `WxH`.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self {
+            OpeningSpec::Named(name) => format!("`{name}`"),
+            OpeningSpec::Declared(o) => format!("declared {}x{}", o.width, o.height),
+        }
+    }
 }
 
 /// A mass the whole itself owns.

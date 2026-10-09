@@ -20,7 +20,7 @@ use delvewright_dsl::metrics::{
 /// string, both in the commit that moved the table. Nothing else in the tree
 /// refuses either edit — in particular the emission baseline never sees this,
 /// because no build reads the building half at this version.
-const CANONICAL_DIGEST: &str = "52ee005118bd33c95509de9b77b0b2b378076014560756ab0aeaf637d835006d";
+const CANONICAL_DIGEST: &str = "59791da0be66975de522fc9a4eb362835cd6be9a57fab3c703ccb8f4985abc12";
 
 /// A tiny SHA-256, so the digest above needs no dependency this crate does not
 /// already have. `delvewright-dsl` ships serde and nothing else, and adding a

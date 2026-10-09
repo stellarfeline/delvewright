@@ -82,9 +82,8 @@ static BRIEF: LazyLock<String> = LazyLock::new(|| {
 
 /// The plan the tests perturb.
 ///
-/// `node/court` meets `node/hall` along a **contact** — a front 16 cells wide,
-/// which is wider than the broadest standard opening (`opening.gateway`, 5) and
-/// therefore could not have been a portal. Every other seam is an ordinary
+/// `node/court` meets `node/hall` along a **contact** — a front 16 cells wide.
+/// Every other seam is an ordinary
 /// portal, so both kinds are resolved, derived and measured in one plan.
 static PLAN: LazyLock<String> = LazyLock::new(|| {
     common::at_dsl_version(
@@ -334,29 +333,48 @@ fn a_declared_class_never_refuses_the_box_it_classifies() {
         n["size_class"] = json!(rung);
         cases.push((
             format!("the 4x72 ledge declared `{rung}`"),
-            campaign(serde_json::to_string(&g).expect("serialize"), PLAN.to_string()),
+            campaign(
+                serde_json::to_string(&g).expect("serialize"),
+                PLAN.to_string(),
+            ),
         ));
     }
     for (what, extent, ceiling) in [
         ("a square road", json!([8, 8]), json!({ "clearance": 8 })),
-        ("a road wider than its class", json!([32, 72]), json!({ "clearance": 8 })),
-        ("a road under its class's clearance", json!([4, 72]), json!({ "clearance": 5 })),
+        (
+            "a road wider than its class",
+            json!([32, 72]),
+            json!({ "clearance": 8 }),
+        ),
+        (
+            "a road under its class's clearance",
+            json!([4, 72]),
+            json!({ "clearance": 5 }),
+        ),
     ] {
         let mut p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
         boxx(&mut p, 1)["extent"] = extent;
         boxx(&mut p, 1)["ceiling"] = ceiling;
         cases.push((
             what.to_string(),
-            campaign(GRAPH.to_string(), serde_json::to_string(&p).expect("serialize")),
+            campaign(
+                GRAPH.to_string(),
+                serde_json::to_string(&p).expect("serialize"),
+            ),
         ));
     }
     for (what, raw) in &cases {
         let d = check_campaign(raw);
         let refusing: Vec<_> = d
             .iter()
-            .filter(|x| x.severity == delvewright_dsl::Severity::Error && x.message.contains("class"))
+            .filter(|x| {
+                x.severity == delvewright_dsl::Severity::Error && x.message.contains("class")
+            })
             .collect();
-        assert!(refusing.is_empty(), "{what} is refused for its class: {refusing:#?}");
+        assert!(
+            refusing.is_empty(),
+            "{what} is refused for its class: {refusing:#?}"
+        );
     }
     assert_eq!(cases.len(), 8, "every case was examined");
 }
@@ -393,37 +411,38 @@ fn dw0876_refuses_a_seam_that_declares_neither_kind() {
     );
 }
 
-/// **The floor that keeps the surface honest** (spec-0053 §4, §6 row 3).
-///
-/// A contact must be WIDER than the broadest standard opening, so anything at or
-/// under that width could have been a portal. `opening.gateway` is 5 wide, so a
-/// 3-wide contact — a door dodging the standard set — is refused by its own
-/// width, and a 5-wide one is too: the floor is exclusive on purpose.
+/// **A contact's width is the author's.** A front one, two or three cells
+/// wide — a rope bridge's end — is as legal as a wide one: no floor derived from
+/// the standard opening set refuses it.
 #[test]
-fn dw0876_refuses_a_contact_no_wider_than_the_broadest_standard_opening() {
-    for width in [3u32, 5] {
-        let d = plan_with(|v| seam(v, 4)["contact"] = json!({ "extent": [width, 8] }));
-        let refusals = with_code(&d, "DW0876");
-        assert_eq!(
-            refusals.len(),
-            1,
-            "a {width}-wide contact must be refused: {:?}",
+fn a_contact_of_any_width_is_the_authors() {
+    for width in [1u32, 2, 3, 5] {
+        let d = plan_with(|v| seam(v, 4)["contact"] = json!({ "extent": [width, 3] }));
+        assert!(
+            with_code(&d, "DW0876").is_empty(),
+            "a {width}-wide contact is the author's: {:?}",
             codes(&d)
         );
-        let m = &refusals[0].message;
-        assert!(
-            m.contains("not wider than the broadest standard opening"),
-            "{m}"
-        );
-        assert!(
-            m.contains("could have been one"),
-            "the refusal must say WHY the floor is there: {m}"
-        );
     }
-    // Six is wider than five, and goes green — the pair, so the assertion above
-    // is about the floor and not about contacts in general.
-    let d = plan_with(|v| seam(v, 4)["contact"] = json!({ "extent": [6, 8] }));
-    assert!(with_code(&d, "DW0876").is_empty(), "{:?}", codes(&d));
+}
+
+/// **A portal may declare its own size**, and `DW0829` confirms it fits the
+/// shared face: a 1x2 opening is accepted, and the same opening declared taller
+/// than the face is refused as a standard that does not fit would be.
+#[test]
+fn a_seam_declares_its_own_opening_and_dw0829_confirms_it_fits() {
+    let d = plan_with(|v| seam(v, 0)["opening"] = json!({ "width": 1, "height": 2 }));
+    for code in ["DW0812", "DW0829", "DW0876", "DW0100"] {
+        assert!(with_code(&d, code).is_empty(), "{code}: {:?}", codes(&d));
+    }
+    let d = plan_with(|v| seam(v, 0)["opening"] = json!({ "width": 1, "height": 20 }));
+    let refusals = with_code(&d, "DW0829");
+    assert_eq!(refusals.len(), 1, "{:?}", codes(&d));
+    assert!(
+        refusals[0].message.contains("declared 1x20"),
+        "{}",
+        refusals[0].message
+    );
 }
 
 /// Spec-0053 §6 row 3, second half: a span leaving the face `DW0828`
@@ -623,9 +642,7 @@ fn no_standard_opening_states_a_measured_front() {
 }
 
 /// A contact's span is never compared against a table entry that PRESCRIBES a
-/// width. The only table number it meets is the derived floor, which refuses
-/// narrowness and prescribes nothing — demonstrated by the pair: a span of 6, of
-/// 16 and of the whole face are all equally acceptable.
+/// width: a span of 6, of 16 and of the whole face are all equally acceptable.
 #[test]
 fn a_contacts_width_is_the_plans_business_and_is_never_prescribed() {
     for extent in [
@@ -668,63 +685,5 @@ fn perturbing_the_place_class_rule_to_the_vacuous_shape_goes_red() {
         "a rule demanding `size_class` would refuse these {} place(s), which is what makes \
          the real rule's comparison load-bearing: {vacuous:#?}",
         vacuous.len()
-    );
-}
-
-/// Made vacuous, the contact floor refuses the green document.
-///
-/// The floor is *"wider than the broadest standard opening"*, derived from the
-/// table. The vacuous shape is a CONSTANT — and this asserts that the green's
-/// contact would be refused by a floor set anywhere above the standard set,
-/// which is what makes "derived from the table" the load-bearing half rather
-/// than "some number".
-#[test]
-fn perturbing_the_contact_floor_to_a_constant_goes_red() {
-    use delvewright_dsl::metrics::{MetricKind, Metrics, Reads};
-    let table = Metrics::table();
-    let mut reads = Reads::new();
-    let derived = table
-        .broadest_opening_width(&mut reads)
-        .expect("the table defines openings");
-
-    // The green's contact spans the whole shared face of two 16-wide boxes.
-    let p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
-    let court = p["content"]["boxes"][5]["extent"][0]
-        .as_u64()
-        .expect("extent") as u32;
-    assert!(
-        court > derived,
-        "the green's front is {court} wide against a derived floor of {derived}, so it \
-         clears the floor BECAUSE the floor comes from the opening set"
-    );
-
-    // A floor set at the front's own width refuses it: the demonstration that
-    // the number is what decides, not the shape of the check.
-    let d = plan_with(|v| seam(v, 4)["contact"] = json!({ "extent": [derived, 8] }));
-    assert!(
-        !with_code(&d, "DW0876").is_empty(),
-        "a span at exactly the derived floor is refused, so the comparison is strict: {:?}",
-        codes(&d)
-    );
-
-    // And the whole opening set is what the floor is taken over, not one name.
-    let widths: Vec<u32> = table
-        .names_of(MetricKind::Opening)
-        .into_iter()
-        .filter_map(|n| {
-            match table
-                .resolve(MetricKind::Opening, n)
-                .ok()?
-                .value(&mut reads)
-            {
-                delvewright_dsl::metrics::MetricValue::Opening(o) => Some(o.width),
-                _ => None,
-            }
-        })
-        .collect();
-    assert_eq!(
-        widths.iter().copied().max(),
-        Some(derived),
-        "the floor is the MAXIMUM over the whole opening set: {widths:?}"
     );
 }

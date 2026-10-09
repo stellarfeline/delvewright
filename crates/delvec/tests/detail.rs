@@ -720,9 +720,14 @@ fn a_stage_six_verdict_names_the_site_plan_refusal_it_stands_downstream_of() {
         .filter(|x| (x.code == "DW0843" || x.code == "DW0844") && x.severity == Severity::Error)
         .map(|x| x.message.as_str())
         .collect();
-    assert!(!e.is_empty(), "the piece answers a seam set the plan changed: {:?}", codes(&diags));
     assert!(
-        e.iter().all(|m| m.contains("downstream of a site-plan refusal") && m.contains("DW0883")),
+        !e.is_empty(),
+        "the piece answers a seam set the plan changed: {:?}",
+        codes(&diags)
+    );
+    assert!(
+        e.iter()
+            .all(|m| m.contains("downstream of a site-plan refusal") && m.contains("DW0883")),
         "the verdict says what it is downstream of: {e:?}"
     );
 }

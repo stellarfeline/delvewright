@@ -121,8 +121,7 @@ compile (`DW0812`).
 **`delvec metrics --gym <dir>` writes the metrics gym** — a whole site-plan
 campaign generated from the table, with no authored geometry: a bay per rung of
 the size-class ladder at each of its bounds, seams cycling every standard
-opening, a climb at each stair pitch and a designed fall at the drop policy's
-cap. It is what a walk calibrates the standard on, and walking it is what retires
+opening, a climb at each stair pitch and a designed fall of one low storey. It is what a walk calibrates the standard on, and walking it is what retires
 `DW0813`. The run states how many of the table's building entries the gym is
 actually built from, against the whole table, and names the rest (`DW0840`) —
 read that line, because an entry the gym instantiates nothing of is one no walk

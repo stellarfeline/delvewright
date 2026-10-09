@@ -217,8 +217,8 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
 /// **The one place a seam's crossing rectangle is computed**, for either kind
 /// of connection (spec-0053 §4).
 ///
-/// A portal's rectangle is the named standard's `width × height` anchored at
-/// `at`. A contact's is its span: `at` plus the declared `extent`, or `at` to
+/// A portal's rectangle is its opening's `width × height` — the named
+/// standard's or the declared one — anchored at `at`. A contact's is its span: `at` plus the declared `extent`, or `at` to
 /// the far edge of the shared face when no extent is declared.
 ///
 /// One function rather than one per kind, and one call rather than a copy in
@@ -240,14 +240,8 @@ pub(super) fn crossing_rect(
     if s.contact.is_some() {
         return Some((Crossing::Contact, contact_extent(s, at, face)));
     }
-    let named = s.opening.as_ref()?;
-    let entry = table.resolve(MetricKind::Opening, named).ok()?;
-    match entry.value(reads) {
-        MetricValue::Opening(o) => {
-            Some((Crossing::Portal, [i64::from(o.width), i64::from(o.height)]))
-        }
-        _ => None,
-    }
+    let o = s.opening.as_ref()?.resolve(table, reads).ok()?;
+    Some((Crossing::Portal, [i64::from(o.width), i64::from(o.height)]))
 }
 
 /// **How big a contact's span is** — the one authority, read by

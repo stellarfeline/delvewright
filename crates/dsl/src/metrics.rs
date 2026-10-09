@@ -477,8 +477,7 @@ pub fn walk_ticks_per_block() -> f64 {
 /// `ceil(d − 3) < 20` holds up to `d = 22`, which lands on one half-heart; 23
 /// blocks deals 20 and kills. Derived from [`FALL_DAMAGE_ONSET_BLOCKS`] and
 /// [`PLAYER_MAX_HEALTH`] so that moving either moves this, and it exists so the
-/// designed-drop policy beside it has a physical ceiling to be **tighter than**
-/// rather than a number chosen next to nothing.
+/// fall a designed drop may take has a physical ceiling (`DW0831`).
 #[must_use]
 pub fn unarmoured_survivable_fall_blocks() -> f64 {
     (FALL_DAMAGE_ONSET_BLOCKS + PLAYER_MAX_HEALTH - 1.0).floor()
@@ -1309,7 +1308,7 @@ impl Metrics {
                      full-health unarmoured body on one half-heart; 23 deals twenty and \
                      kills. The survivable ceiling is a function of health and armour, \
                      and this is its unarmoured, full-health case — the physical bound \
-                     the designed-drop policy is deliberately tighter than.",
+                     no designed drop may pass.",
                 ),
             ),
             (
@@ -1562,18 +1561,6 @@ impl Metrics {
                  is what the walk is watching for.",
             ),
             building(
-                "drop.max-designed-rise",
-                MetricValue::Count(5),
-                "blocks",
-                Provenance::Provisional,
-                "The deepest fall a designed one-way drop edge may declare. A policy \
-                 cap, not a physical one: the unarmoured survivable fall beside it in \
-                 the player half is 22 blocks, and this is far tighter on purpose, \
-                 because a drop is a topology decision and should not also be a health \
-                 decision. Five costs two of twenty at full health, which is the seed \
-                 the walk argues with.",
-            ),
-            building(
                 "pacing.route-blocks-per-minute",
                 MetricValue::Count(60),
                 "blocks/minute",
@@ -1613,8 +1600,8 @@ impl Metrics {
     /// check downstream ever meets one.
     ///
     /// The other half of that guarantee is that no key string is spelled outside
-    /// this module. The entries no document names — the datum convention, the designed-
-    /// drop cap — are reached through the accessors below rather than by looking
+    /// this module. The entry no document names — the datum convention — is
+    /// reached through the accessors below rather than by looking
     /// the key up in [`Metrics::building`], which is public so that a *reporter*
     /// can walk the whole table (`delvec metrics` counts it; the tests iterate
     /// it). Reporting is not resolution: a caller that walks every entry cannot
@@ -1653,48 +1640,6 @@ impl Metrics {
             MetricValue::Datum(g) => Some(*g),
             _ => None,
         }
-    }
-
-    /// The deepest fall a **designed** one-way drop may declare, in blocks — a
-    /// policy cap, deliberately tighter than the survivability fact in the
-    /// player half. See [`Metrics::datum`] for why this is an accessor.
-    #[must_use]
-    pub fn max_designed_drop_blocks(&self, reads: &mut Reads) -> Option<u32> {
-        match self.building.get("drop.max-designed-rise")?.value(reads) {
-            MetricValue::Count(n) => Some(*n),
-            _ => None,
-        }
-    }
-
-    /// The **widest** standard opening in the table, in cells — the floor a
-    /// contact seam's span must exceed (spec-0053 §4).
-    ///
-    /// Derived from the table rather than seeded, and that is the whole of why
-    /// the floor is honest: anything at or under this width **could have been a
-    /// portal**, so a doorway declared a contact to dodge the standard set is
-    /// refused by its own width. A seeded floor would be a number an author
-    /// could argue with; this one is a consequence of the standard set, and it
-    /// moves when the standard set moves.
-    ///
-    /// It walks every opening rather than naming one, so a broader standard
-    /// landing tomorrow raises the floor with no edit here — the failure mode a
-    /// hand-named `opening.gateway` would have is that the floor silently stops
-    /// being the broadest the day a broader one is added.
-    ///
-    /// `None` only if the table defines no opening at all, which
-    /// [`Metrics::self_check`] reports as an internal error.
-    #[must_use]
-    pub fn broadest_opening_width(&self, reads: &mut Reads) -> Option<u32> {
-        let mut widest: Option<u32> = None;
-        for name in self.names_of(MetricKind::Opening) {
-            let Ok(entry) = self.resolve(MetricKind::Opening, name) else {
-                continue;
-            };
-            if let MetricValue::Opening(o) = entry.value(reads) {
-                widest = Some(widest.map_or(o.width, |w: u32| w.max(o.width)));
-            }
-        }
-        widest
     }
 
     /// Every name defined for a kind, in table order.
@@ -1768,19 +1713,6 @@ impl Metrics {
             failures.push(
                 "the table defines no way class, so no document can state a place that is \
                  a route"
-                    .to_string(),
-            );
-        }
-
-        // The contact floor is derived from the standard opening set (spec-0053
-        // §4), so an empty set would make that floor `None` and the refusal it
-        // is the floor for unable to separate a doorway from a front.
-        checked += 1;
-        if self.broadest_opening_width(&mut reads).is_none() {
-            failures.push(
-                "the table defines no standard opening, so a contact seam's width floor — \
-                 the width a front must exceed to be a front rather than a door — cannot \
-                 be derived"
                     .to_string(),
             );
         }
@@ -1889,19 +1821,6 @@ impl Metrics {
                 failures.push(format!(
                     "`{key}` is {n} blocks, which leaves no passable interior between a \
                      floor course and a ceiling course ({floor} is the floor)"
-                ));
-            }
-        }
-
-        // The policy cap is deliberately tighter than the physical one. A cap
-        // that reached the survivability ceiling would not be a policy.
-        if let Some(n) = self.max_designed_drop_blocks(&mut reads) {
-            checked += 1;
-            let physical = unarmoured_survivable_fall_blocks();
-            if f64::from(n) >= physical {
-                failures.push(format!(
-                    "`drop.max-designed-rise` is {n} blocks, at or past the unarmoured \
-                     survivable fall of {physical}, so it is not a policy cap at all"
                 ));
             }
         }
