@@ -825,12 +825,17 @@ what a criterion asserts says so in the word *loosening*.
    on terrain at its floor would claim two courses of ground and §2's sentence
    "the claim of a place with no `roof` is its stage-5 shell exactly" would be
    false.
-2. **The ground under a plot stops above a place stacked under it.** A claim's
-   bottom is raised to one course over the highest claim of any place lying
-   wholly below its floor under its shell footprint, then capped at its own
-   floor course. Otherwise an upper place over open, low terrain claims a column
-   of ground straight through the place beneath it, and rule 3a's stacked plane
-   never arises.
+2. **The ground under a plot stops above a place stacked under it, column by
+   column.** A ground place's claim bottom is taken per shell column: the lower
+   of the terrain in that column and the floor course, raised to one course over
+   the highest claim of any place lying wholly below its floor whose shell
+   footprint covers that column, then capped at its own floor course. Otherwise
+   an upper place over open, low terrain claims a column of ground straight
+   through the place beneath it, and rule 3a's stacked plane never arises; and
+   raised as one box, a hall over a small cellar owns no ground on the sides
+   beside the cellar, its ring keeps no fixed ground there, and the earth
+   between is nobody's. Shown in the `siteplan::claim` unit test
+   `a_hall_over_a_cellar_keeps_its_ground_beside_the_cellar`.
 3. **Rule 3c at a corner three places share.** The seams the plan allocates
    between any two of the claimants across a plane through the cell are read
    together: where the seams between one pair disagree about `a`, the cell is
@@ -1057,7 +1062,9 @@ Defects found after the rulings, corrected on the spec where they were made.
    it. The fixed ground is the terrain's ground. Only a seam at grade — its
    sill one course over the terrain or less, or below it — levels the ring to
    its sill; a seam aloft fixes no earth, and the column between the terrain
-   and the sill is the owner's by §2's rules. The handout's `ground_y` under a
+   and the sill is the owner's by §2's rules. This is a ground place's seam
+   standing high over the terrain; a place that hangs declares `base: aloft`
+   (correction 3), owns no ground and has no ring to fix. The handout's `ground_y` under a
    seam reports that ground. Shown in the `siteplan::claim` unit test
    `an_aloft_seam_fixes_no_earth_under_it_and_a_grade_seam_levels`, and the
    blockout test of criterion 23 now checks both cases on its slope.
@@ -1079,4 +1086,32 @@ Defects found after the rulings, corrected on the spec where they were made.
    a ladder its program hangs, topped in the hall's hole. Shown in
    `v14_site_plan.rs` `a_climb_carries_a_rise_and_a_climb_on_one_level_is_dw0992`
    and `blockout.rs` `a_climb_is_laddered_at_stage_five_and_a_deep_walk_is_refused`.
-
+3. **A box is a cuboid.** A box's vertical extent was its floor and, on a
+   sky-open place, its size class's own minimum headroom; a place could not
+   hang, so a bridge, a gantry or a treehouse claimed the ground under it to
+   the terrain, and a sky-open box whose class did not resolve had no extent
+   at all. A box is now three declared planes: `floor`, the walk plane;
+   `ceiling`, `{"clearance": n}` (a lid at `floor + n`) or `{"open": n}`
+   (exactly `n` courses of air claimed, nothing above); and `base`, `"ground"`
+   (the default: the claim reaches the ground per column, departure 2, and the
+   whole hands that ground and fixes the ring) or `{"aloft": n}` (the claim
+   stops `n` underside courses under the floor course, everywhere; no ground
+   handed, no ring fixed, the terrain never consulted). The claim is that
+   cuboid: footprint grown by the ring, from its bottom to its open top, lid
+   or roof zone. Two places conflict only where their cuboids overlap
+   (`DW0827`, which names hanging the upper place and shortening the lower open
+   place's headroom); the space under and between aloft places is nobody's —
+   on an `open` site the commons, on a `solid` one the rock. Terrain reaching
+   into an aloft claim is refused at validation (`DW0990`, third shape:
+   *an aloft place stands in the earth*); the crack shape judges ground places
+   only and counts the aloft. A climb from a ground place into an aloft one is
+   a hole through the upper's floor course, which the lower's open headroom
+   reaches; one course short is `DW0828`, naming the gap. The gallery binds it
+   on the open site-plan point: a gantry hung over the yard, walked from the
+   loft to a perch, climbed from the yard on a ladder the yard hangs. Shown in
+   the `siteplan::claim` unit tests
+   `an_aloft_place_owns_no_ground_and_the_space_under_it_is_the_commons` and
+   `a_gantry_over_a_yard_meets_it_at_the_yards_headroom`, and by the probes
+   `a-bridge-whose-underside-reaches-the-yard`,
+   `an-aloft-place-standing-in-the-earth` and
+   `a-ladder-that-stops-short-of-the-deck`.

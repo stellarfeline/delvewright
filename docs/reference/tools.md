@@ -145,7 +145,9 @@ record, or its named absence until step 9) and the whole's reference sheet; the
 frame's extent, the walk plane's piece-local `y`, its world position and the
 play space piece-local (`space`); every neighbour by side with its kind, floor
 and roof; the plan views that see the place, each with the `delvec snapshot
---camera` that frames it; the **ground** — the fill kind, the claim's bottom,
+--camera` that frames it; the **ground** — the fill kind, the place's `base`
+(`ground`, or `{"aloft": n}`: an aloft place is handed no fixed cells, no
+columns and no seam `ground_y`, and its bottom is its underside), the claim's bottom,
 the terrain along the perimeter with its min and max, every fixed ring cell with
 its block (the piece writes `structure_void` there), and the terrain-shaped
 columns under the plot the piece may reshape; the declared **roof** (courses,

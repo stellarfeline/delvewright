@@ -3068,30 +3068,34 @@ const YARD_ID: &str = "gallery-yard";
 /// **The frame the whole gives `node/exit`**, and every number here is a
 /// consequence of it rather than a choice (spec-0098 §4).
 ///
-/// The site-plan overlay gives that place an 8×8 footprint at the `alcove`
-/// rung with no ceiling, on an `open` site whose terrain stands one to four
-/// courses under its floor. A place owns its outside, so its frame is its
-/// claim: the ring its edge may stand in on the three sides it does not share,
-/// and the ground under its plot down to the lowest terrain around it. The far
-/// hall owns the party plane on the north (the arch's connection names it
-/// first, and it is roofed where the yard is open), so the frame stops at the
-/// play space there. `delvec allocation node/exit` hands exactly 10×8×9 with
-/// the walk plane at local y=5, and `DW0843` refuses a cell either way.
-const YARD_SIZE: [i32; 3] = [10, 8, 9];
+/// The site-plan overlay gives that place an 8×8 footprint with four courses
+/// of sky (`ceiling: {"open": 4}`, so its top course is one under the gantry's
+/// floor course), on an `open` site whose terrain stands one to four courses
+/// under its floor. A place owns its outside, so its frame is its claim: the
+/// ring its edge may stand in on the three sides it does not share, and the
+/// ground under its plot, column by column, down to the terrain. The far hall
+/// owns the party plane on the north (the arch's connection names it first,
+/// and it is roofed where the yard is open), so the frame stops at the play
+/// space there. `delvec allocation node/exit` hands exactly 10×9×9 with the
+/// walk plane at local y=5, and `DW0843` refuses a cell either way.
+const YARD_SIZE: [i32; 3] = [10, 9, 9];
 
 /// The walk plane's local `y` — `datum_y` in the handout.
 const YARD_FLOOR: i32 = 5;
 
-/// **The ring's fixed ground inside the frame** — the handout's voids, every
-/// one owned by the whole: the terrain continued to the plot's edge. The piece
-/// holds `structure_void` there and writes no block (`DW0990`).
+/// **The cells of the frame the yard does not own** — the handout's voids:
+/// the ring's fixed ground, owned by the whole (the terrain continued to the
+/// plot's edge, `DW0990`), and the earth under the north row, whose terrain
+/// stands higher than the frame's lowest course, so the yard's claim in those
+/// columns starts at the terrain and the cells below are the site's fill. The
+/// piece holds `structure_void` there and writes no block (`DW0987`).
 const YARD_VOIDS: [([i32; 3], [i32; 3]); 6] = [
     ([0, 0, 0], [0, 1, 8]),
     ([0, 2, 0], [0, 2, 0]),
-    ([1, 0, 8], [9, 0, 8]),
-    ([9, 0, 0], [9, 1, 7]),
-    ([9, 1, 8], [9, 1, 8]),
+    ([1, 0, 8], [8, 0, 8]),
+    ([9, 0, 0], [9, 1, 8]),
     ([9, 2, 0], [9, 2, 0]),
+    ([1, 0, 0], [8, 1, 0]),
 ];
 
 /// The way in, in piece-local cells: the seam the plan cut in the far hall's
@@ -3104,6 +3108,17 @@ const YARD_WAY: ([i32; 3], [i32; 3]) = ([3, 5, 0], [4, 7, 0]);
 /// Where a body stands when a quest seats it here — `anchor/node-exit` after the
 /// re-binding. Open paving, clear of the plinth.
 const YARD_SEAT: [i32; 3] = [2, 5, 4];
+
+/// **The climb up to the gantry** (spec-0099): the seam the plan cut through
+/// the gantry's deck, answered on the yard's top course under it, as
+/// `delvec allocation` states it. The lower place hangs the climbable in its
+/// own claim, so the yard raises a stone post and hangs a ladder on its south
+/// face from the paving up to the hole.
+const YARD_CLIMB: ([i32; 3], [i32; 3]) = ([4, 8, 5], [4, 8, 6]);
+
+/// The post the ladder hangs on, and the ladder's column beside it.
+const YARD_POST: [i32; 2] = [4, 4];
+const YARD_LADDER: [i32; 2] = [4, 5];
 
 fn yard_void(p: [i32; 3]) -> bool {
     YARD_VOIDS
@@ -3134,12 +3149,25 @@ fn build_yard() -> Structure {
                     "minecraft:stone_bricks"
                 } else if y == YARD_FLOOR - 1 {
                     "minecraft:polished_andesite"
+                } else if y >= YARD_FLOOR && [x, z] == YARD_POST {
+                    // The post the ladder hangs on, from the paving to the
+                    // course under the hole.
+                    "minecraft:chiseled_stone_bricks"
+                } else if y >= YARD_FLOOR && [x, z] == YARD_LADDER {
+                    blocks.push(BlockEntry {
+                        pos: [x, y, z],
+                        state: palette.idx("minecraft:ladder", Some(&[("facing", "south")])),
+                    });
+                    continue;
                 } else if y == YARD_FLOOR && (4..=5).contains(&x) && (3..=4).contains(&z) {
                     "minecraft:chiseled_stone_bricks"
-                } else if (YARD_FLOOR..=YARD_FLOOR + 1).contains(&y)
-                    && (x == 1 || x == sx - 2)
-                    && (z == 0 || z == sz - 2)
+                } else if y == YARD_FLOOR + 1 && (x == 1 || x == sx - 2) && (z == 0 || z == sz - 2)
                 {
+                    // Each corner post carries a lantern: the gantry hung
+                    // over the yard shades the paving under it, so the sky
+                    // alone no longer lights the whole floor at night.
+                    "minecraft:sea_lantern"
+                } else if y == YARD_FLOOR && (x == 1 || x == sx - 2) && (z == 0 || z == sz - 2) {
                     "minecraft:polished_blackstone_bricks"
                 } else {
                     // Air is AUTHORED rather than omitted: a detail piece
@@ -3170,6 +3198,7 @@ fn build_yard() -> Structure {
 /// and reds on the second.
 fn yard_metadata() -> serde_json::Value {
     let (wl, wh) = YARD_WAY;
+    let (cl, ch) = YARD_CLIMB;
     serde_json::json!({
         "prefab_id": format!("prefab/{YARD_ID}"),
         "structure": {
@@ -3225,10 +3254,17 @@ fn yard_metadata() -> serde_json::Value {
                     "b": "exterior",
                     "class": "walk",
                     "via": { "region": "yard-arch", "boxes": [region(wl, wh)] }
+                },
+                {
+                    "a": "yard",
+                    "b": "exterior",
+                    "class": "walk",
+                    "via": { "region": "yard-climb", "boxes": [region(cl, ch)] }
                 }
             ],
             "faces": [
-                { "space": "yard", "class": "walk", "dir": "north", "opening": region(wl, wh) }
+                { "space": "yard", "class": "walk", "dir": "north", "opening": region(wl, wh) },
+                { "space": "yard", "class": "walk", "dir": "up", "opening": region(cl, ch) }
             ]
         },
         "lighting": {
@@ -3236,7 +3272,7 @@ fn yard_metadata() -> serde_json::Value {
             "measured_min_light": 15,
             "measured": "2026-08-21",
             "method": "derived: an open-top courtyard under the site plan's own sky volume, \
-                       so its floor takes full daylight and needs no fixture"
+                       its floor under the gantry lit by a lantern on each corner post"
         },
         "license": {
             "source": "original",

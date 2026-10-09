@@ -1,0 +1,516 @@
+{
+  "contract": {
+    "edges": [
+      {
+        "a": "deck",
+        "b": "exterior",
+        "class": "walk",
+        "via": "gantry-ladder"
+      },
+      {
+        "a": "deck",
+        "b": "exterior",
+        "class": "walk",
+        "via": "perch-walk"
+      }
+    ],
+    "entry": "deck",
+    "spaces": {
+      "deck": {
+        "envelope": "open"
+      }
+    }
+  },
+  "name": "gallery-gantry",
+  "palette": {
+    "deck": "minecraft:spruce_planks",
+    "ladder": "minecraft:ladder[facing=south,waterlogged=false]",
+    "rail": "minecraft:spruce_fence[east=false,north=false,south=false,waterlogged=false,west=false]"
+  },
+  "params": {},
+  "rules": {
+    "air-course": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "open-air"
+            },
+            {
+              "axis": "z",
+              "children": [
+                {
+                  "op": "call",
+                  "symbol": "open-air"
+                },
+                {
+                  "op": "call",
+                  "symbol": "walk-way"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "op": "call",
+              "symbol": "open-air"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "arch-row": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "deck-air"
+            },
+            {
+              "op": "call",
+              "symbol": "perch-walk-air"
+            },
+            {
+              "op": "call",
+              "symbol": "deck-air"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "deck": [
+      {
+        "body": {
+          "material": {
+            "role": "deck"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "deck-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "deck"
+        },
+        "weight": 1
+      }
+    ],
+    "deck-course": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "deck"
+            },
+            {
+              "op": "call",
+              "symbol": "hole-column"
+            },
+            {
+              "op": "call",
+              "symbol": "deck"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "hole-column": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "deck"
+            },
+            {
+              "op": "call",
+              "symbol": "ladder-hole"
+            },
+            {
+              "op": "call",
+              "symbol": "ladder-air"
+            },
+            {
+              "op": "call",
+              "symbol": "deck"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "ladder-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "gantry-ladder"
+        },
+        "weight": 1
+      }
+    ],
+    "ladder-hole": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "ladder"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "gantry-ladder"
+        },
+        "weight": 1
+      }
+    ],
+    "open-air": [
+      {
+        "body": {
+          "op": "void"
+        },
+        "weight": 1
+      }
+    ],
+    "perch-walk-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "perch-walk"
+        },
+        "weight": 1
+      }
+    ],
+    "place": [
+      {
+        "body": {
+          "body": {
+            "axis": "y",
+            "children": [
+              {
+                "op": "call",
+                "symbol": "deck-course"
+              },
+              {
+                "op": "call",
+                "symbol": "rail-course"
+              },
+              {
+                "op": "call",
+                "symbol": "air-course"
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            ]
+          },
+          "mark": {
+            "anchor": "node-gantry",
+            "at": "offset",
+            "facing": "south",
+            "x": {
+              "expr": "int",
+              "value": 2
+            },
+            "y": {
+              "expr": "int",
+              "value": 1
+            },
+            "z": {
+              "expr": "int",
+              "value": 8
+            }
+          },
+          "op": "mark"
+        },
+        "weight": 1
+      }
+    ],
+    "rail": [
+      {
+        "body": {
+          "material": {
+            "role": "rail"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "rail-course": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "rail"
+            },
+            {
+              "axis": "z",
+              "children": [
+                {
+                  "op": "call",
+                  "symbol": "rail"
+                },
+                {
+                  "op": "call",
+                  "symbol": "walk-way"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "op": "call",
+              "symbol": "rail"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "walk-way": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "deck-air"
+            },
+            {
+              "op": "call",
+              "symbol": "arch-row"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 11
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ]
+  },
+  "shown_faces": [
+    "down",
+    "east",
+    "north",
+    "west"
+  ],
+  "start": "place",
+  "version": "1.9.0"
+}
