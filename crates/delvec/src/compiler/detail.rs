@@ -1264,7 +1264,7 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
                      voids and every seam this place must answer.{upstream}",
                     piece = row.piece,
                     place = row.place,
-                    upstream = delvewright_dsl::refused_upstream(c, &row.place, seams, &mut reads),
+                    upstream = delvewright_dsl::refused_upstream(c, &row.place, seams),
                     gx = got64[0],
                     gy = got64[1],
                     gz = got64[2],
@@ -1423,7 +1423,7 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
                      leaves the map's own graph. `{place}` is allocated {n} seam(s): {list}. \
                      Either seal this face in the piece, or allocate the connection in the layout \
                      graph and the site plan — which is a plan edit.{upstream}",
-                    upstream = delvewright_dsl::refused_upstream(c, &row.place, seams, &mut reads),
+                    upstream = delvewright_dsl::refused_upstream(c, &row.place, seams),
                     piece = row.piece,
                     class = f.class,
                     place = row.place,

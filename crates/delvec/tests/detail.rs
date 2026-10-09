@@ -702,10 +702,6 @@ fn dw0844_refuses_a_face_answering_no_seam() {
 /// computed, so a plan whose own checks have already refused them makes a
 /// stage-6 line a true measurement against a number the map does not keep — and
 /// the primary is in ANOTHER document, where the reader cannot see the relation.
-/// Measured on a 24-place campaign: widening one box by one block printed
-/// `DW0825` and `DW0828` in the site plan and then `DW0843` and `DW0844` in the
-/// detail plan, five codes over three documents, with nothing saying which was
-/// the edit.
 ///
 /// The stage-6 lines keep their own refusals — each names a real mismatch, and
 /// suppressing them is how fixing one thing produces a fresh crop nobody was
@@ -714,25 +710,27 @@ fn dw0844_refuses_a_face_answering_no_seam() {
 fn a_stage_six_verdict_names_the_site_plan_refusal_it_stands_downstream_of() {
     let tmp = tempdir("upstream-refused");
     let d = detailed(&tmp, &["node/exit"]);
-    // One block wider on x: off the kit grid (`DW0825`), and the frame the piece
-    // is measured against moves with it.
+    // A pin on `node/exit` that the seam hanging it off `node/cell` does not
+    // agree with: the packing refuses the seam (`DW0883`), so the seam set the
+    // piece is answering is short of what the plan writes.
     common::patch_file(&d.campaign.join("site-plan.json"), |v| {
         let boxes = v["content"]["boxes"].as_array_mut().unwrap();
         let b = boxes
             .iter_mut()
             .find(|b| b["node"] == "node/exit")
             .expect("the fixture places `node/exit`");
-        let x = b["extent"][0].as_i64().unwrap();
-        b["extent"][0] = serde_json::json!(x + 1);
+        b["min"] = serde_json::json!([200, 200]);
     });
-    let e = check_and_expect(&d, "DW0843");
+    let (diags, _) = check_at(&d);
+    let e: Vec<&str> = diags
+        .iter()
+        .filter(|x| (x.code == "DW0843" || x.code == "DW0844") && x.severity == Severity::Error)
+        .map(|x| x.message.as_str())
+        .collect();
+    assert!(!e.is_empty(), "the piece answers a seam set the plan changed: {:?}", codes(&diags));
     assert!(
-        e.contains("is not the shape of the box"),
-        "the verdict still refuses on its own terms: {e}"
-    );
-    assert!(
-        e.contains("downstream of a site-plan refusal") && e.contains("DW0825"),
-        "and says what it is downstream of: {e}"
+        e.iter().all(|m| m.contains("downstream of a site-plan refusal") && m.contains("DW0883")),
+        "the verdict says what it is downstream of: {e:?}"
     );
 }
 

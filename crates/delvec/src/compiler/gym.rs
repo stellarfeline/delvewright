@@ -54,7 +54,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use delvewright_dsl::metrics::{
-    Grid, MetricKind, MetricValue, Metrics, Opening, Pitch, Reads, SizeClass,
+    MetricKind, MetricValue, Metrics, Opening, Pitch, Reads, SizeClass,
 };
 use delvewright_dsl::{Diagnostic, DwCode, ExitTier};
 use serde_json::{Value, json};
@@ -317,41 +317,19 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     // ------------------------------------------------------------- the way bays
     //
     // A way class bounds a cross-section and leaves the run free, so a bay of one
-    // is a box at an instantiable WIDTH whose run exceeds the class's widest
-    // cross-section — the elongation `DW0832` demands, which is what makes the
-    // box a way rather than a room.
-    //
-    // **Instantiable** is doing work. A box's horizontal extents are multiples of
-    // the kit quantum (`DW0825`), so the widths a walker can be given are the
-    // multiples of `q` inside the class's range — which is fewer than the range
-    // states. The corridor's inherited floor of 2 sits under a quantum of 4 and
-    // is therefore not a width any plan can draw, and that is a real gap between
-    // two provisional numbers rather than a laziness here: which of the two moves
-    // is the walk's judgement, and the entry's own note asks for it. What this
-    // generator will not do is quietly round the floor up and present the walk
-    // with a bay it did not ask for.
+    // is a box at the class's narrowest and at its widest cross-section, each
+    // with a run one longer than the widest — long enough to read as a way.
     //
     // They are appended AFTER the climb hosts are chosen, deliberately: a way bay
     // is long by construction and would win `pick_host`'s length test, putting a
     // stair in a corridor and dissolving the pitch pair the gym exists to argue
     // about.
-    let q = table
-        .grid(&mut reads)
-        .map_or(1, |g| i64::from(g.quantum).max(1));
     for name in table.names_of(MetricKind::WayClass) {
         let w = way_class(table, &mut reads, name);
         let (lo, hi) = (i64::from(w.min_width), i64::from(w.max_width));
-        let widths: Vec<i64> = (lo..=hi).filter(|n| n % q == 0).collect();
-        assert!(
-            !widths.is_empty(),
-            "`way-class.{name}` admits widths {lo}..{hi} and none of them is a multiple of \
-             the kit quantum of {q}, so no plan can draw a way of this class at all and no \
-             bay can instantiate it"
-        );
-        // The shortest run that both exceeds the widest cross-section and lands
-        // on the grid — the least a box has to be to qualify, which is the
-        // interesting end for a walk about whether a way reads as one.
-        let run = ((hi + 1) + q - 1) / q * q;
+        let mut widths = vec![lo, hi];
+        widths.dedup();
+        let run = hi + 1;
         for width in widths {
             let extent = [width, run];
             let clearance = storeys
@@ -416,22 +394,10 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         ("gateway", gateway),
     ];
 
-    // The kit grid, read rather than assumed: `DW0825` refuses a box whose
-    // horizontal extents are not multiples of the quantum, and the gym's
-    // footprints come from the ladder — so if a rung is ever set off-grid, the
-    // generator is where that shows up rather than the checker.
-    if let Some(Grid { quantum, .. }) = table.grid(&mut reads) {
-        let q = i64::from(quantum).max(1);
-        for b in &bays {
-            assert!(
-                b.extent[0] % q == 0 && b.extent[1] % q == 0,
-                "the `{}` rung is {} by {}, which is not on the kit grid of {q}",
-                b.class,
-                b.extent[0],
-                b.extent[1],
-            );
-        }
-    }
+    // The datum convention every bay's floor is declared under: a box's floor
+    // SURFACE stands at its datum's `y`, which is what the walker reads each
+    // rung standing on.
+    let _ = table.datum(&mut reads);
 
     let mut nodes: Vec<Value> = Vec::new();
     let mut edges: Vec<Value> = Vec::new();

@@ -847,21 +847,18 @@ fn stair_massing_in_a_third_place_is_refused() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0825 / DW0826 / DW0827 — the boxes and the region
+// DW0826 / DW0827 — the boxes and the region
 // ---------------------------------------------------------------------------
 
-/// The quantum is 4, so a 6-block footprint is off the grid. The refusal carries
-/// the two multiples an author would move to.
+/// A box's footprint is any whole number of blocks: a 6-block extent is
+/// written as the author wrote it, and nothing refuses it for its size.
 #[test]
-fn a_box_off_the_kit_grid_is_refused_with_both_numbers() {
+fn a_box_at_any_footprint_is_not_refused_for_its_size() {
     let d = plan_diags(|v| boxes(v)[box_of("node/porch")]["extent"] = json!([6, 8]));
-    let msg = d
-        .iter()
-        .find(|x| x.code == "DW0825")
-        .map(|x| x.message.clone())
-        .unwrap_or_default();
-    assert!(!msg.is_empty(), "{d:?}");
-    assert!(msg.contains('4') && msg.contains('8'), "{msg}");
+    assert!(
+        !d.iter().any(|x| x.message.contains("quantum")),
+        "no rule holds a footprint to a quantum: {d:?}"
+    );
 }
 
 /// The region is the brief's number flowing down, and a box is never grounds to

@@ -1,52 +1,7 @@
-//! The boxes against the kit grid, the region and each other: `DW0825`,
-//! `DW0826`, `DW0827`, `DW0835` and the size and way classes (`DW0832`).
+//! The boxes against the region and each other: `DW0826`, `DW0827`, `DW0835`
+//! and the size and way classes (`DW0832`).
 
 use super::*;
-
-/// `DW0825`: every box's footprint is a multiple of the kit grid's quantum.
-pub(super) fn grid(
-    placed: &[Placed<'_>],
-    table: &Metrics,
-    reads: &mut Reads,
-    d: &mut Vec<Diagnostic>,
-) {
-    let Some(grid) = table.grid(reads) else {
-        return; // `Metrics::self_check` owns a table that defines no grid.
-    };
-    let q = grid.quantum;
-    if q == 0 {
-        return;
-    }
-    for p in placed {
-        for (axis, name) in [(0usize, "x"), (1usize, "z")] {
-            let e = p.plan.extent[axis].get();
-            if !off_grid(e, q) {
-                continue;
-            }
-            d.push(Diagnostic::error(
-                DW_BOX_OFF_GRID,
-                "site-plan",
-                format!("/content/boxes/{}/extent/{axis}", p.index),
-                format!(
-                    "box for `{node}` is {e} blocks on {name}, and the kit grid's quantum is \
-                     {q} — so it is not a multiple of it. Every box's footprint is a whole \
-                     number of quanta on both horizontal axes, which is what lets a kit piece \
-                     land in one without being cut. The nearest multiples are {lo} and {hi}.",
-                    node = p.plan.node,
-                    lo = e - e % q,
-                    hi = e - e % q + q,
-                ),
-            ));
-        }
-    }
-}
-
-/// **`DW0825`'s own test, for one footprint on one axis.** One function so that
-/// a verdict computed from a box can ask the SAME question the refusal asked,
-/// rather than re-deriving the kit-grid rule beside it.
-pub(super) fn off_grid(extent: u32, quantum: u32) -> bool {
-    quantum != 0 && !extent.is_multiple_of(quantum)
-}
 
 /// `DW0826`: nothing the plan places leaves the region.
 ///

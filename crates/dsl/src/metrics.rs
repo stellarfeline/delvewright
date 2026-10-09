@@ -793,15 +793,9 @@ pub struct WayClass {
     pub min_clearance: u32,
 }
 
-/// The kit grid: the quantum box extents are multiples of, and the datum
-/// convention that fixes what a declared `y` means.
+/// The datum convention: what a box's declared floor `y` names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct Grid {
-    /// The footprint quantum `q`, in blocks.
-    pub quantum: u32,
-    /// The axes extents are quantized on. Vertical extent is not quantized:
-    /// storey heights are their own entries and a box's height follows them.
-    pub axes: [&'static str; 2],
+pub struct Datum {
     /// What a box's declared datum `y` names. `floor-surface`: the walk plane is
     /// at `y`, and whatever stands in the box later puts its own floor there.
     pub datum: &'static str,
@@ -826,8 +820,8 @@ pub enum MetricValue {
     SizeClass(SizeClass),
     /// A way class — a route's cross-section.
     WayClass(WayClass),
-    /// The kit grid.
-    Grid(Grid),
+    /// The datum convention.
+    Datum(Datum),
 }
 
 /// One player metric: a fact of the pinned game.
@@ -1345,21 +1339,15 @@ impl Metrics {
 
         let building_entries: Vec<(&'static str, BuildingEntry)> = vec![
             building(
-                "grid",
-                MetricValue::Grid(Grid {
-                    quantum: 4,
-                    axes: ["x", "z"],
+                "datum",
+                MetricValue::Datum(Datum {
                     datum: "floor-surface",
                 }),
-                "blocks",
+                "none",
                 Provenance::Provisional,
-                "The footprint quantum every site-plan box's horizontal extents are \
-                 multiples of, and the datum convention: a box's floor SURFACE is at \
-                 its declared y, and whatever stands in the box later puts its walk \
-                 plane there. Four is a seed and nothing in the existing piece library \
-                 argues for it — the cave tileset is odd on every axis and the keep \
-                 tileset is even but not quartered — so what the gym is being asked is \
-                 whether a quantum this fine buys anything a coarser one would not.",
+                "The datum convention: a box's floor SURFACE is at its declared y, and \
+                 whatever stands in the box later puts its walk plane there. A box's \
+                 footprint is any whole number of blocks on either axis.",
             ),
             building(
                 "way-class.corridor",
@@ -1377,12 +1365,8 @@ impl Metrics {
                  and two blocks of clearance puts the ceiling on the walker's head — and \
                  they are fields here rather than entries of their own so that there is \
                  one authority for the narrow way rather than a class beside two loose \
-                 numbers nothing could spell. The gym walks widths one, two and three \
-                 and clearances two, three and four. It is also asked a question that \
-                 could not be posed while these numbers were unreachable: the kit \
-                 quantum beside them is 4 and every box extent is a multiple of it, so \
-                 the narrowest way any plan can currently DRAW is four cells, and the \
-                 walk decides whether the floor moves up or the quantum moves down.",
+                 numbers nothing could spell. The gym walks the class's narrowest and \
+                 widest cross-section.",
             ),
             building(
                 "way-class.road",
@@ -1629,7 +1613,7 @@ impl Metrics {
     /// check downstream ever meets one.
     ///
     /// The other half of that guarantee is that no key string is spelled outside
-    /// this module. The entries no document names — the kit grid, the designed-
+    /// this module. The entries no document names — the datum convention, the designed-
     /// drop cap — are reached through the accessors below rather than by looking
     /// the key up in [`Metrics::building`], which is public so that a *reporter*
     /// can walk the whole table (`delvec metrics` counts it; the tests iterate
@@ -1653,11 +1637,10 @@ impl Metrics {
             })
     }
 
-    /// The kit grid — the quantum a site-plan box's footprint is a multiple of,
-    /// and the datum convention that fixes what a declared floor `y` means.
+    /// The datum convention that fixes what a declared floor `y` means.
     ///
     /// One of the entries **no document names**: an author writes a number, not
-    /// the word `grid`, so it has no place in [`Metrics::resolve`]'s naming
+    /// the word `datum`, so it has no place in [`Metrics::resolve`]'s naming
     /// vocabulary and would need a [`MetricKind`] whose prefix is the empty
     /// string — which would make `names_of` return the whole table. An accessor
     /// instead, so the key string still lives here and nowhere else.
@@ -1665,16 +1648,16 @@ impl Metrics {
     /// `None` only if the table stopped defining it, which
     /// [`Metrics::self_check`] reports as an internal error.
     #[must_use]
-    pub fn grid(&self, reads: &mut Reads) -> Option<Grid> {
-        match self.building.get("grid")?.value(reads) {
-            MetricValue::Grid(g) => Some(*g),
+    pub fn datum(&self, reads: &mut Reads) -> Option<Datum> {
+        match self.building.get("datum")?.value(reads) {
+            MetricValue::Datum(g) => Some(*g),
             _ => None,
         }
     }
 
     /// The deepest fall a **designed** one-way drop may declare, in blocks — a
     /// policy cap, deliberately tighter than the survivability fact in the
-    /// player half. See [`Metrics::grid`] for why this is an accessor.
+    /// player half. See [`Metrics::datum`] for why this is an accessor.
     #[must_use]
     pub fn max_designed_drop_blocks(&self, reads: &mut Reads) -> Option<u32> {
         match self.building.get("drop.max-designed-rise")?.value(reads) {
@@ -1802,19 +1785,11 @@ impl Metrics {
             );
         }
 
-        let quantum = match self.grid(&mut reads) {
-            Some(g) => {
-                checked += 1;
-                if g.quantum == 0 {
-                    failures.push("the kit grid's quantum is zero".to_string());
-                }
-                g.quantum
-            }
-            None => {
-                failures.push("the table defines no kit `grid`".to_string());
-                1
-            }
-        };
+        if self.datum(&mut reads).is_some() {
+            checked += 1;
+        } else {
+            failures.push("the table defines no `datum` convention".to_string());
+        }
 
         for (key, entry) in &self.building {
             match entry.value(&mut reads) {
@@ -1851,12 +1826,6 @@ impl Metrics {
                         if lo > hi {
                             failures
                                 .push(format!("`{key}` has a {axis} minimum above its maximum"));
-                        }
-                        if lo % quantum != 0 || hi % quantum != 0 {
-                            failures.push(format!(
-                                "`{key}` bounds its {axis} footprint at {lo}..{hi}, which is not \
-                                 on the kit grid's quantum of {quantum}"
-                            ));
                         }
                     }
                     if u64::from(c.min_clearance) < floor_h {
@@ -1897,24 +1866,6 @@ impl Metrics {
                         failures.push(format!(
                             "`{key}` bounds its width at {}..{}, a minimum above its maximum",
                             w.min_width, w.max_width
-                        ));
-                    }
-                    // `max_width` is the elongation floor as well as the widest
-                    // cross-section, and a box's horizontal extents are
-                    // multiples of the kit quantum (`DW0825`). A `max_width` off
-                    // the quantum is therefore a bound no plan can draw a way
-                    // AT, which makes the widest member of the class
-                    // uninstantiable and the gym unable to rule on it. The
-                    // narrow bound is deliberately NOT held to the quantum: the
-                    // corridor's inherited floor of 2 sits under a quantum of 4
-                    // and which of those two provisional numbers moves is the
-                    // walk's to decide, not this file's.
-                    if !w.max_width.is_multiple_of(quantum) {
-                        failures.push(format!(
-                            "`{key}` bounds its width at {}, which is not on the kit grid's \
-                             quantum of {quantum}, so no box can be drawn at the widest member \
-                             of the class",
-                            w.max_width
                         ));
                     }
                 }

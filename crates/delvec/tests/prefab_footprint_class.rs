@@ -13,7 +13,7 @@
 //! is synthesised rather than exported from a grammar program for one reason:
 //! the property under test is a relation between a declared class and a
 //! FOOTPRINT, so the footprint has to be chosen, and no program in the corpus
-//! happens to expand to one on the kit grid.
+//! happens to expand to exactly a rung's frame.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -31,7 +31,7 @@ fn prefab() -> Command {
 
 /// An 8×8 footprint, five cells tall: exactly a frame of the `alcove` rung
 /// (footprint 4..=8 on both axes, clearance 3, plus the one floor course a piece
-/// owns), and a multiple of the kit grid's quantum of 4.
+/// owns).
 const SIZE: [i32; 3] = [8, 5, 8];
 
 fn scratch(tag: &str) -> PathBuf {

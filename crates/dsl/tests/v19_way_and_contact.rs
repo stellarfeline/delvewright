@@ -29,8 +29,7 @@ use std::sync::LazyLock;
 /// The graph the tests perturb.
 ///
 /// * **`node/cliff-road`** — the motivating shape. A way, `road`, 4 by 72.
-/// * **`node/duct`** — a `corridor`, 4 by 8: the narrow way, at the one width
-///   the kit quantum lets a plan draw it.
+/// * **`node/duct`** — a `corridor`, 4 by 8: the narrow way.
 /// * The rest are ordinary size-classed places, so that the two vocabularies are
 ///   exercised side by side in one document rather than in two.
 static GRAPH: LazyLock<String> = LazyLock::new(|| {

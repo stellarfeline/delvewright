@@ -99,11 +99,6 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// `DW0825`: a box leaves the kit grid.
-    pub const DW_BOX_OFF_GRID: DwCode = DwCode::new("DW0825", ExitTier::Build);
-}
-
-crate::dw_code! {
     /// `DW0826`: a box leaves the region.
     pub const DW_BOX_LEAVES_REGION: DwCode = DwCode::new("DW0826", ExitTier::Build);
 }
@@ -679,8 +674,8 @@ pub enum Ceiling {
 /// occupies x 4..7, so its eastern neighbour's `min` x is 9, never 8.
 ///
 /// Two consequences follow, and they are what make the checks say what they look
-/// like they say: the size-class ladder judges `extent` directly (`DW0832`),
-/// its smallest rung `4 × 4` being exactly one kit quantum; and a plan never
+/// like they say: the size-class ladder judges `extent` directly (`DW0832`);
+/// and a plan never
 /// states a wall's thickness anywhere, because the gap is where the wall is.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -701,7 +696,7 @@ pub struct PlanBox {
     /// numbers, never three — the vertical position is `floor`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min: Option<[i64; 2]>,
-    /// Interior footprint `[dx, dz]`, in blocks, on the kit grid (`DW0825`).
+    /// Interior footprint `[dx, dz]`, in blocks — any whole number on either axis.
     /// Two horizontal numbers, never three — the vertical size is `ceiling`.
     ///
     /// **This is play space, not the building.** The box covers `min` to
