@@ -1,0 +1,116 @@
+# Labels a new issue with its kind (bug, idea or debt), read from its title and
+# body by a model through the Copilot CLI. The kinds are defined once, in
+# .github/issue-kinds.md, and the prompt is built from that file.
+#
+# Not a CI gate: it runs on issue events and by hand, never on a pull request.
+#
+# Authentication is the workflow's own token with `copilot-requests: write`; in
+# a personally-owned repository the requests are billed to the owner's Copilot
+# seat. No secret is read. The job that runs the model holds no write access to
+# issues: the issue text is untrusted, so only the second job, which runs no
+# model, may label.
+#
+# workflow_dispatch classifies an existing issue. With dry_run (the default) it
+# only writes the answer and the issue's current kind to the job summary, which
+# is how agreement with hand-set labels is measured.
+name: issue kind
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to classify"
+        required: true
+        type: number
+      dry_run:
+        description: "Classify only; never apply a label"
+        required: false
+        type: boolean
+        default: true
+
+permissions: {}
+
+env:
+  NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.issue || github.event.issue.number }}
+
+jobs:
+  classify:
+    name: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      copilot-requests: write
+    outputs:
+      answer: ${{ steps.infer.outputs.response }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: install the Copilot CLI
+        run: npm install -g @github/copilot@1.0.88
+      - name: read the issue and build the prompt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .issue-kind
+          gh issue view "$NUMBER" -R "$GITHUB_REPOSITORY" --json number,title,body,labels > .issue-kind/issue.json
+          python3 .github/scripts/issue_kind.py prompt .issue-kind/issue.json .github/issue-kinds.md .issue-kind
+      - name: classify
+        id: infer
+        uses: actions/ai-inference@v3
+        with:
+          prompt-file: .issue-kind/prompt.txt
+          system-prompt-file: .issue-kind/system.txt
+          model: auto
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: report a failure
+        if: failure()
+        run: |
+          echo "#$NUMBER: no answer from the model (Copilot authentication or the API failed); no label applied" >> "$GITHUB_STEP_SUMMARY"
+
+  label:
+    name: label
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANSWER: ${{ needs.classify.outputs.answer }}
+        run: |
+          set -euo pipefail
+          mkdir -p .issue-kind
+          printf '%s' "$ANSWER" > .issue-kind/answer.txt
+          # Read the labels now: a kind a person set while the model ran wins.
+          gh issue view "$NUMBER" -R "$GITHUB_REPOSITORY" --json number,title,body,labels > .issue-kind/issue.json
+          python3 .github/scripts/issue_kind.py decide .issue-kind/issue.json .github/issue-kinds.md .issue-kind/answer.txt "$DRY_RUN"
+      - name: apply
+        if: steps.decide.outputs.label != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABEL: ${{ steps.decide.outputs.label }}
+        run: gh issue edit "$NUMBER" -R "$GITHUB_REPOSITORY" --add-label "$LABEL"
+      # `decide` writes its own line; this one covers every other failed step.
+      - name: report a failure
+        if: failure() && steps.decide.outcome != 'failure'
+        run: |
+          echo "#$NUMBER: the run failed before the kind was applied (reading the issue or the label call); no label applied" >> "$GITHUB_STEP_SUMMARY"
