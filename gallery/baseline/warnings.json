@@ -926,7 +926,7 @@
       "stage": "quests"
     }
   ],
-  "site-plan.en": [
+  "site-plan-solid.en": [
     {
       "code": "DW0822",
       "pointer": "/content/critical_path",
@@ -963,9 +963,51 @@
       "stage": "world"
     },
     {
-      "code": "DW0821",
-      "pointer": "/content/sightlines[edge/loft-sightline]",
+      "code": "DW0822",
+      "pointer": "/content/boxes",
       "stage": "site-plan"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
+      "stage": "quests"
+    }
+  ],
+  "site-plan.en": [
+    {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/curator",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/factor",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/marshal",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/warden",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "12 of the 12 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "site-plan:"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
     },
     {
       "code": "DW0822",
