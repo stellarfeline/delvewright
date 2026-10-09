@@ -2175,8 +2175,8 @@ fn portal_crossing(
                  stairwell beside it in the same wall), {na} step into `{a}` and {nb} into `{b}` \
                  — measured under the compiler's step rule with every bar open. What stands \
                  past the hole is massing or a fall a body cannot walk, so a party that opens \
-                 this way meets a wall, and every route proof between these places goes round by \
-                 another way and stays green. The repair is in the plan: move this seam along \
+                 this way meets a wall, and where another way joins these places every route \
+                 proof goes round by it and stays green. The repair is in the plan: move this seam along \
                  its face (`at`), or move what stands flush behind it — a stair laid in either \
                  place moves with its own edge's `at`/`meets`, and a detailed place's piece is \
                  re-detailed — so that the opening meets floor on the side that has none.",
