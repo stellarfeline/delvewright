@@ -25,7 +25,7 @@
     "void-horizon.en:datapack/data/gallery/function/complete_o_climb_onto_the_cabin.mcfunction",
     "void-horizon.en:packtest-datapack/data/gallery/test/obj_activate_climb_onto_the_cabin.mcfunction"
   ],
-  "base_commit": "d44b3a5d4d826322e81ff6d44e09298a7eed4bf8",
+  "base_commit": "fb62d18088838c0e31be6e0d0e88e003a1ed8870",
   "changed": [
     "easy.en:SKINS.md",
     "easy.en:creator-datapack/data/gallery/function/creator/emit.mcfunction",

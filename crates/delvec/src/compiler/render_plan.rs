@@ -269,7 +269,12 @@ pub fn eye_cell(eye: [f64; 3]) -> [i32; 3] {
 pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
     let mut shots = Vec::new();
     for (leg, route) in routes.iter().enumerate() {
-        let wps = crate::compiler::waypoints::thin(&route.cells, &route.use_gates);
+        // The cells a climb holds in between its ends are no stop (spec-0099):
+        // the same rule the waypoint export takes.
+        let wps: Vec<[i32; 3]> = crate::compiler::waypoints::thin(&route.cells, &route.use_gates)
+            .into_iter()
+            .filter(|c| !crate::compiler::waypoints::held_inside(route, c))
+            .collect();
         if wps.is_empty() {
             continue;
         }
@@ -277,6 +282,19 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
         let ctx = leg_context(plan, route, objective.as_deref());
         let last = wps.len() - 1;
         for (wp, &cell) in wps.iter().enumerate() {
+            // A climb's take-hold cell is not a view (spec-0099): the hop from it
+            // is the climb, and a body taking hold faces the wall the climbable
+            // hangs on — the frame is that wall, a blank rectangle, measured on
+            // the gallery's cabin ladder. The shot before it frames the climb
+            // ahead. The id keeps its index, so the stops around it do not move.
+            if wp < last
+                && route
+                    .climbs
+                    .iter()
+                    .any(|r| r.from == cell && r.to == wps[wp + 1])
+            {
+                continue;
+            }
             let eye = [
                 cell[0] as f64 + 0.5,
                 cell[1] as f64 + EYE_HEIGHT,

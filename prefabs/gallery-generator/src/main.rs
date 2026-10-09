@@ -691,11 +691,13 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/cabin-roof",
-        pos: [2, CABIN_ROOF_Y + 1, CABIN_LADDER.1],
-        facing: Some("east"),
+        pos: [CABIN.1, CABIN_ROOF_Y + 1, CABIN.2 + 1],
+        facing: Some("north"),
         trigger_block: None,
         note: "on the ferry cabin's roof, four courses over the far hall: the beat the \
-               cabin ladder is the only way up to (spec-0099)",
+               cabin ladder is the only way up to (spec-0099). Two cells north of where the \
+               ladder lets go, so the walk onto it ends facing out over the far hall and \
+               its arrival frame shows the hall, not the wall behind the cabin",
         role: None,
     },
     // Kept clear of the outer wall on purpose: a POV camera stands on an anchor

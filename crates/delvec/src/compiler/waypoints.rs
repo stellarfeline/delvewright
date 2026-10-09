@@ -47,17 +47,9 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
                 keep.push(run.from);
                 keep.push(run.to);
             }
-            // …and the cells a climb holds in between them are not waypoints at
-            // all: a waypoint is a place to stand, and a body halfway up a ladder
-            // stands on nothing. The climb is one hop, `from` to `to`.
-            let held_inside = |c: &[i32; 3]| {
-                leg.climbs
-                    .iter()
-                    .any(|r| r.cells.contains(c) && *c != r.from && *c != r.to)
-            };
             let wps: Vec<Value> = leg_waypoints(&leg.cells, &keep, &gates)
                 .into_iter()
-                .filter(|c| !held_inside(c))
+                .filter(|c| !held_inside(leg, c))
                 .map(|c| json!(c))
                 .collect();
             let mut leg_json = json!({
@@ -120,6 +112,19 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
         );
     }
     root
+}
+
+/// Whether `c` is a cell a climb on `leg` holds in strictly between where the
+/// body takes hold and where it lets go (spec-0099). Such a cell is never a
+/// stop: a waypoint is a place to stand, and a body halfway up a ladder stands
+/// on nothing — the climb is one hop. The one rule both readers of the thinned
+/// route take, the waypoint export and the POV planner
+/// ([`crate::compiler::render_plan::pov_shots`]), so a camera is never stood
+/// where the bot is never sent.
+pub(crate) fn held_inside(leg: &LegRoute, c: &[i32; 3]) -> bool {
+    leg.climbs
+        .iter()
+        .any(|r| r.cells.contains(c) && *c != r.from && *c != r.to)
 }
 
 /// One exported climb (spec-0099): where the body takes hold and lets go, the
