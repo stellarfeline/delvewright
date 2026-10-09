@@ -113,7 +113,33 @@ not allocate (`DW0838`), stand a solid side in the party's open air without
 declaring it shown (`DW0885`), or paint the party wall a neighbour owns
 (`DW0987`).
 
-## 7. The gap this record leaves
+## 7. Where two grounds meet — stitching
+
+**[cited]** Terrain rendered as tiles that are each meshed on their own opens
+cracks at tile boundaries; the fixes are to hang a skirt down from each edge or
+to make neighbouring tiles agree on the heights along their shared edge, and
+the second is the proper one (Ulrich's chunked LOD, as summarised in the TUM
+terrain-rendering tutorial, [`Terrain.pdf`](https://www.cs.cit.tum.de/fileadmin/w00cfj/cg/Research/Tutorials/Terrain.pdf),
+and [a Khronos forum answer on chunked-LOD cracks](https://community.khronos.org/t/chunked-lod-cracks/72110)).
+
+**[cited]** The GDMC settlement challenge judges a generated settlement on its
+*adaptability* to the terrain it was given, beside functionality, narrative and
+aesthetics ([arXiv 1803.09853](https://arxiv.org/abs/1803.09853)); its entries
+read the world's heightmap first and build on it, and a report on one notes
+that vanilla village paths ignoring terrain height leave buildings unreachable
+([williamcwi/GDMC](https://github.com/williamcwi/GDMC)). Landscape first, then
+structures, is the order the practice settled on.
+
+**[authored]** Translated to this engine: the site's terrain is one heightfield
+the whole owns, and every place is a tile stitched to it along its boundary —
+the place's edge ground meets the terrain within one block, or a solid face
+stands between them (a plinth's retaining wall, a sunken yard's revetment), or
+a seam declares the crossing. Inside its boundary a place shapes its ground
+freely. What is refused is the crack: air between the two surfaces under the
+higher edge, which is Ulrich's gap in blocks. There is no skirt: a skirt hides
+a crack and this engine refuses one.
+
+## 8. The gap this record leaves
 
 No source read here states a rule for **window spacing** or for a facade's
 **base / body / top** proportion; both were searched for and not found in a

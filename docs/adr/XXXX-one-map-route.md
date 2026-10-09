@@ -84,6 +84,12 @@ of it.
   or `open` (a town: ground at a datum under sky) — required with no default,
   overridden per region by the plan's volumes. The engine fills only what was
   declared.
+- Landscape first: an open site's ground is one declared heightfield the whole
+  owns, and every scene is stitched to it along its boundary — its edge meets
+  the terrain within a block, or faces it with a wall it drew, or a seam
+  declares the crossing; a crack between two grounds is refused over bytes. No
+  connector between two heights is ever engine-generated: the whole declares
+  the difference and the owning piece draws what crosses it.
 - Research into single-building craft is bounded: route A has demonstrated the
   building; the open craft questions are composition — how scenes meet, how a
   town's ground reads — and are researched when a campaign reaches them.
