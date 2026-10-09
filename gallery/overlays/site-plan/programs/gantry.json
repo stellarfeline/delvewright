@@ -27,7 +27,9 @@
     "ladder": "minecraft:ladder[facing=south,waterlogged=false]",
     "rail": "minecraft:spruce_fence[east=false,north=false,south=false,waterlogged=false,west=false]"
   },
-  "params": {},
+  "params": {
+    "handed/datum-y": 1
+  },
   "rules": {
     "air-course": [
       {
@@ -328,6 +330,10 @@
             "children": [
               {
                 "op": "call",
+                "symbol": "deck"
+              },
+              {
+                "op": "call",
                 "symbol": "deck-course"
               },
               {
@@ -342,25 +348,32 @@
             "op": "split",
             "sizes": [
               {
-                "blocks": {
-                  "expr": "int",
-                  "value": 1
-                },
-                "size": "absolute"
-              },
-              {
-                "blocks": {
-                  "expr": "int",
-                  "value": 1
-                },
-                "size": "absolute"
-              },
-              {
                 "size": "relative",
                 "weight": {
                   "expr": "int",
                   "value": 1
                 }
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 2
+                },
+                "size": "absolute"
               }
             ]
           },
@@ -373,8 +386,8 @@
               "value": 2
             },
             "y": {
-              "expr": "int",
-              "value": 1
+              "expr": "param",
+              "name": "handed/datum-y"
             },
             "z": {
               "expr": "int",

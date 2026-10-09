@@ -22,7 +22,9 @@
     "lid": "minecraft:spruce_planks",
     "wall": "minecraft:polished_blackstone_bricks"
   },
-  "params": {},
+  "params": {
+    "handed/datum-y": 1
+  },
   "rules": {
     "arch-wall": [
       {
@@ -372,6 +374,10 @@
             "children": [
               {
                 "op": "call",
+                "symbol": "wall"
+              },
+              {
+                "op": "call",
                 "symbol": "floor-course"
               },
               {
@@ -385,6 +391,13 @@
             ],
             "op": "split",
             "sizes": [
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
               {
                 "blocks": {
                   "expr": "int",
@@ -400,11 +413,11 @@
                 "size": "absolute"
               },
               {
-                "size": "relative",
-                "weight": {
+                "blocks": {
                   "expr": "int",
                   "value": 1
-                }
+                },
+                "size": "absolute"
               }
             ]
           },
@@ -417,8 +430,8 @@
               "value": 4
             },
             "y": {
-              "expr": "int",
-              "value": 1
+              "expr": "param",
+              "name": "handed/datum-y"
             },
             "z": {
               "expr": "int",
