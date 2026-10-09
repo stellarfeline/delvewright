@@ -1,5 +1,6 @@
 // MineflayerExecutor: the repaint plan and its verdicts.
 
+import { CLIENT_VIEW_DISTANCE } from "../client-loaded.ts";
 import { RepaintWatch, type RepaintPlan, type RepaintVerdict } from "../repaint.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
@@ -19,7 +20,7 @@ export const methods = {
    * a `chunk_biomes` for each held chunk of its volume, and no `map_chunk`.
    */
   useRepaintPlan(this: MineflayerExecutor, plan: RepaintPlan): void {
-    this.repaintWatch = new RepaintWatch(plan);
+    this.repaintWatch = new RepaintWatch(plan, CLIENT_VIEW_DISTANCE);
   },
 
   /** The repaint verdicts so far; empty when the build repaints nothing. */

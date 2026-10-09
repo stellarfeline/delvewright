@@ -93,42 +93,88 @@ export async function loadRepaintPlanForCriticalPath(
   return parseRepaintPlan(JSON.parse(text) as unknown);
 }
 
-/** One chunk packet the client received. */
+/** One packet the ledger keeps: a chunk packet, or the client dropping every chunk. */
 interface ChunkEvent {
   readonly at: number;
-  readonly kind: "biomes" | "map" | "unload";
+  /** `reset`: a `login` or `respawn` — the client discards every chunk it held,
+   * and the server tracks the new body from nothing, with no `unload_chunk`. */
+  readonly kind: "biomes" | "map" | "unload" | "reset";
   readonly chunks: readonly string[];
 }
 
+/** One completion marker: when it arrived and where the bot stood. */
+interface MarkerSighting {
+  readonly at: number;
+  /** The bot's position when the marker arrived; `undefined` when unknown. */
+  readonly pos: readonly [number, number, number] | undefined;
+}
+
 const key = (x: number, z: number): string => `${x},${z}`;
+
+/** Blocks per chunk on the horizontal axes. */
+const CHUNK_BLOCKS = 16;
+
+/**
+ * Whether chunk `(cx, cz)` is inside the disc the server is sure to send a body
+ * standing in chunk `(bx, bz)` at a served view distance of `served` chunks: the
+ * chunk-offset distance strictly under `served`. The pinned server sends one more
+ * ring than its `view-distance` (spec-0091's measurement), so this disc is inside
+ * what it sends by at least that ring; a chunk outside it is one the client holds
+ * or not by where in its chunk the body stands and how far streaming has got.
+ */
+export function insideServedDisc(
+  bx: number,
+  bz: number,
+  cx: number,
+  cz: number,
+  served: number,
+): boolean {
+  const dx = cx - bx;
+  const dz = cz - bz;
+  return dx * dx + dz * dz < served * served;
+}
 
 /** What one repaint's check concluded. */
 export interface RepaintVerdict {
   readonly effect: string;
   /** Whether the bundle that fires it was seen to fire. */
   readonly performed: boolean;
-  /** Chunks of the volume the client held when it fired — the denominator. */
+  /** Chunks of the painted volume — the denominator of every count below. */
+  readonly chunks: number;
+  /** Of them, inside the served disc around the bot when it fired — what any
+   * client standing there is sure to be sent. */
+  readonly owed: number;
+  /** Of them, held by the client when it fired, wherever they lie. */
   readonly held: number;
-  /** Of those, how many a `chunk_biomes` named inside the window. */
+  /** Held AND owed: the binding. A chunk held only at the server's margin is
+   * judged when held but binds nothing, because whether it is held is luck. */
+  readonly bound: number;
+  /** Of the held chunks, how many a `chunk_biomes` named inside the window. */
   readonly told: number;
-  /** Of those, how many a `map_chunk` resent inside the window. */
+  /** Of the held chunks, how many a `map_chunk` resent inside the window. */
   readonly resent: number;
   /** Why it failed, when it did. */
   readonly failure?: string;
 }
 
 /**
- * The client-reach ledger: every `chunk_biomes`, `map_chunk` and `unload_chunk`
- * packet, and every completion marker, with the time it arrived.
+ * The client-reach ledger: every `chunk_biomes`, `map_chunk`, `unload_chunk`,
+ * `login` and `respawn` packet, the view distance the server serves, and every
+ * completion marker with the time it arrived and where the bot stood.
  */
 export class RepaintWatch {
   private readonly events: ChunkEvent[] = [];
-  private readonly markers = new Map<string, number>();
+  private readonly markers = new Map<string, MarkerSighting>();
+  /** The server's `view-distance`, from `login` and `update_view_distance`. */
+  private serverViewDistance: number | undefined;
 
   private readonly plan: RepaintPlan;
+  /** The view distance the client asks for; the server serves the lesser. */
+  private readonly clientViewDistance: number;
 
-  constructor(plan: RepaintPlan) {
+  constructor(plan: RepaintPlan, clientViewDistance: number) {
     this.plan = plan;
+    this.clientViewDistance = clientViewDistance;
   }
 
   /** Feed one raw packet (`bot._client.on("packet", (data, meta) => …)`). */
@@ -148,19 +194,35 @@ export class RepaintWatch {
       if (typeof x === "number" && typeof z === "number") {
         this.events.push({ at, kind: name === "map_chunk" ? "map" : "unload", chunks: [key(x, z)] });
       }
+    } else if (name === "login" || name === "respawn") {
+      this.events.push({ at, kind: "reset", chunks: [] });
+      if (name === "login" && typeof d["viewDistance"] === "number") {
+        this.serverViewDistance = d["viewDistance"];
+      }
+    } else if (name === "update_view_distance" && typeof d["viewDistance"] === "number") {
+      this.serverViewDistance = d["viewDistance"];
     }
   }
 
-  /** Record a completion marker's token; first arrival wins. */
-  marker(token: string, at: number): void {
-    if (!this.markers.has(token)) this.markers.set(token, at);
+  /** The view distance the client is served: the lesser of what it asked for and
+   * what the server serves; `undefined` until the server has said. */
+  served(): number | undefined {
+    if (this.serverViewDistance === undefined) return undefined;
+    return Math.min(this.clientViewDistance, this.serverViewDistance);
   }
 
-  /** Which chunks the client held at `at`: loaded and not since unloaded. */
+  /** Record a completion marker's token and where the bot stood; first arrival wins. */
+  marker(token: string, at: number, pos?: readonly [number, number, number]): void {
+    if (!this.markers.has(token)) this.markers.set(token, { at, pos });
+  }
+
+  /** Which chunks the client held at `at`: loaded, not since unloaded, and not
+   * dropped by a `login`/`respawn` since. */
   private heldAt(at: number): Set<string> {
     const held = new Set<string>();
     for (const e of this.events) {
       if (e.at > at) break;
+      if (e.kind === "reset") held.clear();
       for (const c of e.chunks) {
         if (e.kind === "map") held.add(c);
         else if (e.kind === "unload") held.delete(c);
@@ -171,13 +233,29 @@ export class RepaintWatch {
 
   /** Judge every repaint whose bundle was seen to fire. */
   verdicts(windowMs = REPAINT_WINDOW_MS): RepaintVerdict[] {
+    const served = this.served();
     return this.plan.repaints.map((r): RepaintVerdict => {
-      const fired = r.after === null ? undefined : this.markers.get(r.after);
-      if (fired === undefined) {
-        return { effect: r.effect, performed: false, held: 0, told: 0, resent: 0 };
+      const chunks = r.chunks.length;
+      const sighting = r.after === null ? undefined : this.markers.get(r.after);
+      if (sighting === undefined) {
+        return { effect: r.effect, performed: false, chunks, owed: 0, held: 0, bound: 0, told: 0, resent: 0 };
       }
-      const held = this.heldAt(fired);
-      const volume = r.chunks.map(([x, z]) => key(x, z)).filter((c) => held.has(c));
+      const fired = sighting.at;
+      const heldNow = this.heldAt(fired);
+      const volume = r.chunks.map(([x, z]) => key(x, z));
+      const held = volume.filter((c) => heldNow.has(c));
+      const pos = sighting.pos;
+      const owedSet = new Set<string>();
+      let nearest = Number.POSITIVE_INFINITY;
+      if (pos !== undefined && served !== undefined) {
+        const bx = Math.floor(pos[0] / CHUNK_BLOCKS);
+        const bz = Math.floor(pos[2] / CHUNK_BLOCKS);
+        for (const [x, z] of r.chunks) {
+          nearest = Math.min(nearest, Math.hypot(x - bx, z - bz));
+          if (insideServedDisc(bx, bz, x, z, served)) owedSet.add(key(x, z));
+        }
+      }
+      const bound = held.filter((c) => owedSet.has(c));
       // The marker and the paint leave the server in one tick, marker first,
       // so a biome packet a moment before it is still this repaint's; a chunk
       // the client LOADED before the marker is what it held, never a resend.
@@ -191,13 +269,30 @@ export class RepaintWatch {
           .filter((e) => e.kind === "map" && e.at > fired && e.at <= fired + windowMs)
           .flatMap((e) => e.chunks),
       );
-      const missing = volume.filter((c) => !told.has(c));
-      const reloaded = volume.filter((c) => resent.has(c));
+      const missing = held.filter((c) => !told.has(c));
+      const reloaded = held.filter((c) => resent.has(c));
       const failures: string[] = [];
-      if (volume.length === 0) {
+      if (pos === undefined || served === undefined) {
         failures.push(
-          `the client held none of the ${r.chunks.length} chunk(s) of the painted volume when ` +
-            `its bundle fired, so nothing was measured — a zero binding is not a pass`,
+          `${pos === undefined ? "where the bot stood when its bundle fired" : "the view distance the server serves"} ` +
+            `is unknown, so which of the ${chunks} chunk(s) of the painted volume the client was ` +
+            `owed cannot be said and nothing binds — a zero binding is not a pass`,
+        );
+      } else if (owedSet.size === 0) {
+        failures.push(
+          `every one of the ${chunks} chunk(s) of the painted volume lies beyond the ${served}-chunk ` +
+            `view distance the client is served, from the chunk the bot stood in when its bundle ` +
+            `fired (the nearest ${nearest.toFixed(1)} chunks away), so no client standing there is ` +
+            `sure to be sent any of it and nothing binds — a zero binding is not a pass` +
+            (held.length > 0
+              ? ` (${held.length} were held at the server's margin, which is luck, not a binding)`
+              : ""),
+        );
+      } else if (bound.length === 0) {
+        failures.push(
+          `the client held none of the ${owedSet.size} chunk(s) of the painted volume inside its ` +
+            `${served}-chunk served view distance when its bundle fired, so nothing was measured — ` +
+            `a zero binding is not a pass`,
         );
       }
       if (missing.length > 0) {
@@ -209,8 +304,11 @@ export class RepaintWatch {
       return {
         effect: r.effect,
         performed: true,
-        held: volume.length,
-        told: volume.length - missing.length,
+        chunks,
+        owed: owedSet.size,
+        held: held.length,
+        bound: bound.length,
+        told: held.length - missing.length,
         resent: reloaded.length,
         ...(failures.length > 0
           ? { failure: `set-atmosphere at ${r.effect} (${r.biome}): ${failures.join("; ")}` }
@@ -224,12 +322,12 @@ export class RepaintWatch {
 export function repaintBindingLine(plan: RepaintPlan, verdicts: readonly RepaintVerdict[]): string {
   const observable = plan.repaints.filter((r) => r.after !== null).length;
   const performed = verdicts.filter((v) => v.performed);
-  const held = performed.reduce((n, v) => n + v.held, 0);
-  const told = performed.reduce((n, v) => n + v.told, 0);
-  const resent = performed.reduce((n, v) => n + v.resent, 0);
+  const sum = (f: (v: RepaintVerdict) => number): number => performed.reduce((n, v) => n + f(v), 0);
   return (
     `atmosphere repaints: ${plan.repaints.length} in the build, ${observable} with a marker, ` +
-    `${performed.length} performed; ${told} of ${held} held chunk(s) told by chunk_biomes, ` +
-    `${resent} resent by map_chunk`
+    `${performed.length} performed; ${sum((v) => v.bound)} bound chunk(s) (held inside the ` +
+    `served view distance) of ${sum((v) => v.owed)} owed of ${sum((v) => v.chunks)} painted; ` +
+    `${sum((v) => v.told)} of ${sum((v) => v.held)} held chunk(s) told by chunk_biomes, ` +
+    `${sum((v) => v.resent)} resent by map_chunk`
   );
 }

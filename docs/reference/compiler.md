@@ -2804,8 +2804,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   later `sequence` step or another deferred list, gated by `when`, or fired from
   a root no marker announces. `harness/src/repaint.ts` reds a performed repaint
   whose held chunks no `chunk_biomes` named within 10 s, any held chunk a
-  `map_chunk` resent, or one over chunks the client held none of, and prints
-  `atmosphere repaints: … told by chunk_biomes, … resent by map_chunk`. Emitted
+  `map_chunk` resent, or one that binds no chunk held inside the view distance
+  the client is served from where it stood when the bundle fired (see
+  `docs/reference/tools.md` §8). Emitted
   only for a campaign that repaints.
 - `<out>/validation/biome-map.json` (spec-0080 §5.3): the biome map's place
   paints — `{ground, places: [{place, atmosphere, biome, precipitates,

@@ -445,6 +445,74 @@ export function retainStandableWaypoints(
 }
 
 /**
+ * The longest hop, in blocks along its run, the harness hands the pathfinder.
+ *
+ * mineflayer-pathfinder searches only blocks the client holds: a goal in a chunk
+ * the client has not been sent exhausts the search over what it has and answers
+ * "No path to the goal!" a few blocks into the hop. The client holds the chunks
+ * within the served view distance, which the campaign declares and whose floor is
+ * `delvewright_dsl::viewdistance::FLOOR` (10 chunks, 160 blocks). 64 blocks puts
+ * a hop's goal at most 5 chunks from the chunk the hop starts in, inside the
+ * served radius at the floor with room to spare, so no hop the plan can emit
+ * depends on how far the client sees.
+ */
+export const MAX_HOP_BLOCKS = 64;
+
+/** What {@link subdivideStraightRuns} did: the cells, and its binding counts. */
+export interface Subdivision {
+  readonly cells: readonly Vec3Tuple[];
+  /** Hops longer than the bound that were straight runs, and so were split. */
+  readonly split: number;
+  /** Proven cells inserted into them. */
+  readonly inserted: number;
+  /** Hops longer than the bound that are NOT one straight equal-step run, left whole. */
+  readonly unsplittable: readonly (readonly [Vec3Tuple, Vec3Tuple])[];
+}
+
+/**
+ * Split every hop longer than `maxHop` into hops of at most `maxHop` blocks, using
+ * the proven cells of its own run.
+ *
+ * The compiler thins a proven route to its corners (`waypoints::thin`): between two
+ * consecutive exported cells the route is ONE straight run of equal unit steps, so
+ * every cell `a + k·step` between them is a cell the compiler proved. A pair is
+ * split only when it has exactly that shape — each component of `b − a` is 0 or
+ * ±n for the run's length n — and the inserted cells are those proven cells, never
+ * a point the compiler did not walk. A long pair of any other shape is left whole
+ * and reported. Pure.
+ */
+export function subdivideStraightRuns(
+  cells: readonly Vec3Tuple[],
+  maxHop: number = MAX_HOP_BLOCKS,
+): Subdivision {
+  const out: Vec3Tuple[] = [];
+  const unsplittable: (readonly [Vec3Tuple, Vec3Tuple])[] = [];
+  let split = 0;
+  let inserted = 0;
+  cells.forEach((b, i) => {
+    const a = i > 0 ? cells[i - 1] : undefined;
+    if (a !== undefined) {
+      const d: Vec3Tuple = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const n = Math.max(Math.abs(d[0]), Math.abs(d[1]), Math.abs(d[2]));
+      if (n > maxHop) {
+        if (d.every((c) => c === 0 || Math.abs(c) === n)) {
+          const step: Vec3Tuple = [d[0] / n, d[1] / n, d[2] / n];
+          for (let k = maxHop; k < n; k += maxHop) {
+            out.push([a[0] + step[0] * k, a[1] + step[1] * k, a[2] + step[2] * k]);
+            inserted += 1;
+          }
+          split += 1;
+        } else {
+          unsplittable.push([a, b]);
+        }
+      }
+    }
+    out.push(b);
+  });
+  return { cells: out, split, inserted, unsplittable };
+}
+
+/**
  * The ordered pathfinder goals for a walk to `pos` at `finalRange`: the given proven
  * waypoint hops (each at {@link WAYPOINT_RANGE}) followed by the final destination
  * goal. When `legWaypoints` is `undefined` (no leg matched), just the single

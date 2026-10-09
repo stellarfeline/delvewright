@@ -10,6 +10,7 @@ import {
   parseWaypointsJson,
   nextLegWaypoints,
   retainStandableWaypoints,
+  subdivideStraightRuns,
   walkGoals,
   WaypointsParseError,
   WAYPOINT_RANGE,
@@ -172,6 +173,57 @@ test("walkGoals falls back to a single destination goal when no leg matched", ()
   const goals = walkGoals(undefined, [999, 64, 999], 3);
   assert.equal(goals.length, 1);
   assert.deepEqual([goals[0]!.x, goals[0]!.y, goals[0]!.z, goals[0]!.range], [999, 64, 999, 3]);
+});
+
+test("a straight run longer than the bound is split at its own proven cells", () => {
+  // the-stranding r6, the Run's bank: one thinned hop of 268 blocks.
+  const sub = subdivideStraightRuns([
+    [210, 64, 848],
+    [210, 64, 580],
+  ]);
+  assert.deepEqual(sub.cells, [
+    [210, 64, 848],
+    [210, 64, 784],
+    [210, 64, 720],
+    [210, 64, 656],
+    [210, 64, 592],
+    [210, 64, 580],
+  ]);
+  assert.equal(sub.split, 1);
+  assert.equal(sub.inserted, 4);
+  assert.deepEqual(sub.unsplittable, []);
+});
+
+test("a straight stair run splits on its own diagonal, every inserted cell on the run", () => {
+  const sub = subdivideStraightRuns(
+    [
+      [0, 60, 0],
+      [10, 70, 0],
+    ],
+    4,
+  );
+  assert.deepEqual(sub.cells, [
+    [0, 60, 0],
+    [4, 64, 0],
+    [8, 68, 0],
+    [10, 70, 0],
+  ]);
+});
+
+test("a hop within the bound, or of a shape that is not one straight run, is left whole", () => {
+  const short: Vec3Tuple[] = [
+    [0, 64, 0],
+    [64, 64, 0],
+  ];
+  assert.deepEqual(subdivideStraightRuns(short).cells, short, "exactly the bound is not split");
+  const bent: Vec3Tuple[] = [
+    [0, 64, 0],
+    [100, 64, 3],
+  ];
+  const sub = subdivideStraightRuns(bent);
+  assert.deepEqual(sub.cells, bent, "never a point the compiler did not walk");
+  assert.equal(sub.split, 0);
+  assert.deepEqual(sub.unsplittable, [[[0, 64, 0], [100, 64, 3]]], "and it is reported");
 });
 
 test("retainStandableWaypoints drops a fence-top proven cell, keeps the rest in order", () => {

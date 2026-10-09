@@ -29,6 +29,17 @@ import { installResourcePack, type PackBot, type ResourcePackState } from "./res
 /** The vanilla client's `LevelLoadTracker.CLIENT_WAIT_TIMEOUT_MS`: 30 seconds. */
 export const CLIENT_WAIT_TIMEOUT_MS = 30_000;
 
+/**
+ * The view distance every harness bot asks for, in chunks: vanilla's ceiling. The
+ * server serves the lesser of this and its own `view-distance`, which is the
+ * campaign's declared `world.view_distance` (floor 10), so the bot holds exactly
+ * what the delve serves a player at the game's largest render distance — not
+ * mineflayer's default `far` (12), under which a campaign declaring more was
+ * never seen past 192 blocks. The host meets the cost the build states for the
+ * declared distance (`delvec` `served`).
+ */
+export const CLIENT_VIEW_DISTANCE = 32;
+
 /** The server's own fallback (`clientLoadedTimeoutTimer`), in server ticks. */
 export const SERVER_LOAD_TIMEOUT_TICKS = 60;
 
@@ -151,7 +162,7 @@ export interface HarnessBot {
  * server's 60-tick fallback after its join and after every respawn.
  */
 export function createHarnessBot(options: BotOptions): HarnessBot {
-  const bot = createBot(options);
+  const bot = createBot({ viewDistance: CLIENT_VIEW_DISTANCE, ...options });
   const loaded = installClientLoaded(bot as unknown as LoadedBot);
   // A served pack (spec-0084 §11) is pushed in configuration and the server
   // holds the player there until the client answers, so every bot answers.
