@@ -15,7 +15,8 @@
 - **Refines**: spec-0050 §3 (the frame), §4 (the handing), §7.6 (`DW0821`'s
   pair). Nothing here revisits spec-0049's stage 5: the blockout stays derived
   and authored by no one.
-- **DSL**: `dsl_version` **0.38.0**. The site plan's `boxes[]` gain `roof`, and
+- **DSL**: the next minor `dsl_version` (this spec states no version literal). The
+  site plan's `boxes[]` gain `roof`, its `seams[]` gain `form` (§2c), and
   the plan gains a required `fill` — what every cell no place claims becomes
   (§2b) — whose `open` kind carries the site's **terrain**, a declared
   heightfield (§2c).
