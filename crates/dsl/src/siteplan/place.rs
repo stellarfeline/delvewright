@@ -180,6 +180,8 @@ pub struct PlacedSeam {
     pub rise: i64,
     /// Which place hosts the stair massing, on a `stair`.
     pub stair_in: Option<NodeId>,
+    /// The crossing's declared form ([`Seam::form`]), handed to both places.
+    pub form: String,
 }
 
 /// The plan's boxes, resolved by the code the stage-4 checks judge with.
@@ -552,6 +554,7 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
             crossing,
             rise: b.floor - a.floor,
             stair_in: s.stair_in.clone(),
+            form: s.form.clone(),
         });
     }
     out

@@ -15,7 +15,7 @@ use delvec::compiler::load::{
 };
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Diagnostic, DwCode, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Diagnostic, DwCode, validate_campaign_with};
 
 use crate::EXIT_INTERNAL;
 use crate::cli::report::{print_build_error, print_diags, report_binding_notes};
@@ -111,7 +111,7 @@ pub(crate) fn run_textures(
         Ok(l) => l,
         Err(code) => return ExitCode::from(code),
     };
-    let campaign = match parse_campaign(&loaded.raw) {
+    let campaign = match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(c) => c,
         Err(diags) => {
             print_diags(&diags, json);
@@ -221,7 +221,7 @@ pub(super) fn validate_loaded(
     // (157 ids, same misode/mcmeta provenance as the item registry).
     let entities = FullEntityRegistry::v1_21_11();
 
-    match parse_campaign(&loaded.raw) {
+    match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(campaign) => {
             let mut diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
             // **What this run examined, held back until the author's lines are

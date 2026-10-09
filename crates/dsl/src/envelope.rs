@@ -160,6 +160,12 @@ pub struct Campaign {
     /// ships no `design.json`, which is a measured zero of an optional surface
     /// at validation and a refusal at staging.
     pub design: Option<Envelope<DesignContent>>,
+    /// The site plan's heightmap as the loader read it (spec-0098 §2c), or
+    /// `None` when nothing has read one — every campaign whose terrain is not a
+    /// heightmap, and a campaign parsed from documents alone. A plan whose
+    /// terrain IS a heightmap and whose image was never read is refused at
+    /// validation (`DW0826`) rather than built over a guessed ground.
+    pub heightmap: Option<crate::siteplan::HeightmapRead>,
 }
 
 /// The stage documents as raw JSON strings (compiler input): six required, the
@@ -330,6 +336,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
                 site_plan,
                 detail_plan,
                 design,
+                heightmap: None,
             };
             // spec-0016 §3: expand the `ambush` sugar into real environment
             // triggers, ONCE, at the DSL boundary. Every downstream consumer —

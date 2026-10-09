@@ -4,8 +4,6 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use delvewright_dsl::parse_campaign;
-
 use crate::EXIT_INTERNAL;
 use crate::cli::campaign::load_or_refuse;
 use crate::cli::report::print_diags;
@@ -66,7 +64,7 @@ pub(crate) fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) ->
         Ok(l) => l,
         Err(exit) => return ExitCode::from(exit),
     };
-    let campaign = match parse_campaign(&loaded.raw) {
+    let campaign = match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(c) => c,
         Err(diags) => {
             print_diags(&diags, json);
@@ -194,7 +192,7 @@ pub(crate) fn run_l10n_apply(
         Ok(l) => l,
         Err(exit) => return ExitCode::from(exit),
     };
-    let campaign = match parse_campaign(&loaded.raw) {
+    let campaign = match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(c) => c,
         Err(diags) => {
             print_diags(&diags, json);

@@ -96,23 +96,6 @@ pub(super) fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<
         if !within((p.z0(), p.z1()), spans[2]) {
             bad.push(("z", p.z0(), p.z1()));
         }
-        // The roof zone the plan places over a roofed box (spec-0098 §3): its
-        // courses and its eaves are placed as much as the play space is.
-        if let (Some(roof), Some((_, top))) = (p.plan.roof, p.y_span())
-            && !matches!(p.plan.ceiling, Ceiling::Open)
-        {
-            let e = i64::from(roof.eaves);
-            let zone = [
-                (p.x0() - 1 - e, p.x1() + 1 + e),
-                (top + 1, top + 1 + i64::from(roof.courses)),
-                (p.z0() - 1 - e, p.z1() + 1 + e),
-            ];
-            for (axis, name) in [(0usize, "roof x"), (1, "roof y"), (2, "roof z")] {
-                if !within(zone[axis], spans[axis]) {
-                    bad.push((name, zone[axis].0, zone[axis].1));
-                }
-            }
-        }
         if !bad.is_empty() {
             boxes_out.push(Overrun {
                 index: p.index,

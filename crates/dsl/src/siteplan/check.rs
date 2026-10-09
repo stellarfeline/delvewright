@@ -45,6 +45,11 @@ pub struct PlanBinding {
     pub components: usize,
     /// Boxes declaring a `roof` — what `DW0988` examines (spec-0098).
     pub roofs: usize,
+    /// Cells two claims share that a rule awarded — what `DW0827`'s widened
+    /// quantifier examined and found owned (spec-0098 §2).
+    pub contested_awarded: usize,
+    /// The fill's kind, `solid` or `open` (spec-0098 §2b).
+    pub fill: &'static str,
 }
 
 impl PlanBinding {
@@ -99,6 +104,11 @@ impl PlanBinding {
             sightlines: plan.sightlines.len(),
             views: plan.views.len(),
             roofs: plan.boxes.iter().filter(|b| b.roof.is_some()).count(),
+            contested_awarded: SitePlan::of(c).site().contests().1,
+            fill: match plan.fill {
+                Fill::Solid { .. } => "solid",
+                Fill::Open { .. } => "open",
+            },
         }
     }
 
@@ -107,9 +117,16 @@ impl PlanBinding {
     pub fn line(&self) -> String {
         format!(
             "site-plan binding: {b} box(es) ({p} pair(s) compared; {pn} pinned, {dv} derived, \
-             in {cc} component(s); {r} roofed), {s} seam(s) ({st} stair, {sd} drop), {d} datum(s), {v} \
-             whole-owned volume(s), {i} identity(ies), {sl} sightline(s), {w} view(s).",
+             in {cc} component(s); {r} roofed; {ca} shared claim cell(s) awarded), {s} seam(s) \
+             ({st} stair, {sd} drop), {d} datum(s), {v} whole-owned volume(s), {i} \
+             identity(ies), {sl} sightline(s), {w} view(s); fill `{fill}`.",
             r = self.roofs,
+            ca = self.contested_awarded,
+            fill = if self.fill.is_empty() {
+                "none"
+            } else {
+                self.fill
+            },
             pn = self.pinned,
             dv = self.derived,
             cc = self.components,
@@ -223,6 +240,8 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     region(plan, &placed, d);
     disjoint(&placed, d);
     roofs(&placed, d);
+    fillcheck::fill(c, plan, d);
+    fillcheck::claims(c, plan, d);
     seams(plan, graph, &placed, &packed, &table, reads, d);
     size_classes(&placed, d);
     volumes_outside_boxes(plan, &placed, d);

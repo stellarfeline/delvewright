@@ -1,49 +1,80 @@
-//! **A place's claim, and who owns a cell two claims cover** (spec-0098 §2).
+//! **A place's claim, and who owns a cell** (spec-0098 §2).
 //!
-//! A place owns everything a body can see of it from outside — its floor
-//! course, its play space, the one-cell ring its walls stand in and, roofed, its
-//! lid and the roof zone the plan declares — and the whole owns only what two
-//! places would otherwise both write. This module is the one derivation of both
-//! halves: [`PlacedBox::claim_cells`] says what a place would write if nothing
-//! stood beside it, [`owner`] says who writes a cell several places claim, and
-//! [`Frame::of`](crate::detailplan::Frame::of) is built on nothing else.
+//! A place owns everything a body can see of it from outside — the ground
+//! under its plot, its floor course, its play space, the one-cell ring its
+//! walls may stand in and, roofed, its lid and the roof zone the plan declares —
+//! minus the ring's **fixed ground**, which is the whole's terrain continued to
+//! the plot's edge, and minus every cell the ownership rule awards to a
+//! neighbour. This module is the one derivation of both halves: [`Site::claims`]
+//! says what a place would write if nothing stood beside it, [`Site::owner`]
+//! says who writes a cell, and [`crate::detailplan::Frame::of`] is built on
+//! nothing else.
 //!
-//! Every reader — the blockout's holes, the handing, `DW0843`/`DW0844`/
-//! `DW0987`, the light pass — calls [`owner`] or a function of it. Two of them
-//! deciding "whose cell is this" independently is how a builder and its observer
-//! come to agree about a world neither describes.
+//! Every reader — the blockout's stand-ins and holes, the handout,
+//! `DW0827`/`DW0843`/`DW0844`/`DW0987`/`DW0990` — calls [`Site::owner`] or a
+//! function of it. Two of them deciding "whose cell is this" independently is
+//! how a builder and its observer come to agree about a world neither
+//! describes.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::envelope::Campaign;
 use crate::ids::NodeId;
 
-use super::{PlacedBox, PlacedSeam};
+use super::{Ground, PlacedBox, PlacedSeam};
 
 /// An inclusive world AABB, `(lo, hi)`.
 pub type Aabb = ([i64; 3], [i64; 3]);
 
-/// Who writes a cell.
+/// Who writes a cell (spec-0098 §2, rules 0–4).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Owner {
-    /// The derivation: structure neither place designs.
-    Whole,
-    /// The named place — its piece once bound, the derivation while not.
+    /// The named place — its piece once bound, its stand-in while not.
     Place(NodeId),
+    /// The ring's fixed ground (rule 0): the whole's terrain, written by no
+    /// piece.
+    Ground,
+    /// Nobody (rule 4): what a volume declares there, else the site's fill.
+    Nobody,
+    /// Two or more places claim the cell and no rule awards it (rule 3d) — a
+    /// plan `DW0827` refuses. Named so that a refused plan still answers.
+    Contested(Vec<NodeId>),
 }
 
 impl Owner {
-    /// The spelling the handing and the refusals use.
+    /// The spelling the handout and the refusals use.
     #[must_use]
     pub fn describe(&self) -> String {
         match self {
-            Owner::Whole => "the whole".to_string(),
             Owner::Place(n) => format!("`{n}`"),
+            Owner::Ground => "the whole's fixed ground".to_string(),
+            Owner::Nobody => "nobody (the site's fill)".to_string(),
+            Owner::Contested(ns) => format!(
+                "no one — contested by {}",
+                ns.iter()
+                    .map(|n| format!("`{n}`"))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            ),
         }
     }
 }
 
 fn inside(cell: [i64; 3], (lo, hi): Aabb) -> bool {
     (0..3).all(|i| cell[i] >= lo[i] && cell[i] <= hi[i])
+}
+
+fn intersect(a: Aabb, b: Aabb) -> Option<Aabb> {
+    let lo = [a.0[0].max(b.0[0]), a.0[1].max(b.0[1]), a.0[2].max(b.0[2])];
+    let hi = [a.1[0].min(b.1[0]), a.1[1].min(b.1[1]), a.1[2].min(b.1[2])];
+    (0..3).all(|i| lo[i] <= hi[i]).then_some((lo, hi))
+}
+
+fn cells(a: Aabb) -> impl Iterator<Item = [i64; 3]> {
+    let (lo, hi) = a;
+    (lo[0]..=hi[0]).flat_map(move |x| {
+        (lo[1]..=hi[1]).flat_map(move |y| (lo[2]..=hi[2]).map(move |z| [x, y, z]))
+    })
 }
 
 impl PlacedBox {
@@ -53,20 +84,15 @@ impl PlacedBox {
         self.floor + i64::from(self.clearance) - 1
     }
 
-    /// The shell: the play space grown one cell on every side — floor course,
-    /// ring and, on a roofed place, the lid. An open place has no lid, so its
-    /// shell stops at the top of its play space.
+    /// The highest course of the shell: the lid on a roofed place, the top of
+    /// the play space on an open one.
     #[must_use]
-    pub fn shell(&self) -> Aabb {
-        let (lo, hi) = self.space();
-        (
-            [lo[0] - 1, lo[1] - 1, lo[2] - 1],
-            [
-                hi[0] + 1,
-                if self.open { hi[1] } else { hi[1] + 1 },
-                hi[2] + 1,
-            ],
-        )
+    pub fn shell_top(&self) -> i64 {
+        if self.open {
+            self.top()
+        } else {
+            self.top() + 1
+        }
     }
 
     /// The roof zone the plan declares, before any neighbour clips its eaves:
@@ -79,148 +105,354 @@ impl PlacedBox {
         if self.open {
             return None;
         }
-        let (lo, hi) = self.shell();
         let e = i64::from(roof.eaves);
+        let lid = self.top() + 1;
         Some((
-            [lo[0] - e, hi[1], lo[2] - e],
-            [hi[0] + e, hi[1] + i64::from(roof.courses), hi[2] + e],
+            [self.foot[0] - 1 - e, lid, self.foot[2] - 1 - e],
+            [
+                self.foot[1] + 1 + e,
+                lid + i64::from(roof.courses),
+                self.foot[3] + 1 + e,
+            ],
         ))
     }
 
-    /// The roof proper — the roof zone's courses over the shell footprint, above
-    /// the lid. Never clipped: a course of it inside another place is `DW0988`.
+    /// The highest course this place could claim.
     #[must_use]
-    pub fn roof_proper(&self) -> Option<Aabb> {
-        let roof = self.roof?;
-        if self.open || roof.courses == 0 {
-            return None;
-        }
-        let (lo, hi) = self.shell();
-        Some((
-            [lo[0], hi[1] + 1, lo[2]],
-            [hi[0], hi[1] + i64::from(roof.courses), hi[2]],
-        ))
+    pub fn claim_top(&self) -> i64 {
+        self.roof_zone().map_or(self.shell_top(), |(_, hi)| hi[1])
     }
 
-    /// The floor course: the shell footprint at `floor − 1`.
+    /// The floor course's world `y`.
     #[must_use]
-    pub fn floor_course(&self) -> Aabb {
-        let (lo, hi) = self.shell();
-        ([lo[0], lo[1], lo[2]], [hi[0], lo[1], hi[2]])
+    pub fn floor_course_y(&self) -> i64 {
+        self.floor - 1
     }
 
-    /// True when `cell` is one this place would write if nothing stood beside
-    /// it: in its shell, or in its roof zone — except an eaves cell standing in
-    /// another place's play space, where the eave stops (spec-0098 §3).
+    /// True when `(x, z)` is one of the ring's columns: inside the shell
+    /// footprint and outside the play space's.
     #[must_use]
-    pub fn claims(&self, cell: [i64; 3], boxes: &[PlacedBox]) -> bool {
-        if inside(cell, self.shell()) {
-            return true;
-        }
-        let Some(zone) = self.roof_zone() else {
-            return false;
-        };
-        if !inside(cell, zone) {
-            return false;
-        }
-        let (slo, shi) = self.shell();
-        let over_shell =
-            cell[0] >= slo[0] && cell[0] <= shi[0] && cell[2] >= slo[2] && cell[2] <= shi[2];
-        if over_shell {
-            return true;
-        }
-        // An eaves cell: stops at a neighbour's play space.
-        !boxes
+    pub fn is_ring_column(&self, x: i64, z: i64) -> bool {
+        let [x0, x1, z0, z1] = self.foot;
+        let in_shell = x >= x0 - 1 && x <= x1 + 1 && z >= z0 - 1 && z <= z1 + 1;
+        let in_foot = x >= x0 && x <= x1 && z >= z0 && z <= z1;
+        in_shell && !in_foot
+    }
+}
+
+/// The whole plan, resolved for ownership: every place, every seam, the site's
+/// ground, and each place's claim bottom.
+#[derive(Debug, Clone)]
+pub struct Site<'a> {
+    /// The plan's places.
+    pub boxes: &'a [PlacedBox],
+    /// The plan's connections.
+    pub seams: &'a [PlacedSeam],
+    /// The site's fill.
+    pub ground: &'a Ground,
+    bottoms: Vec<i64>,
+}
+
+impl<'a> Site<'a> {
+    /// Resolve the claim bottoms of `boxes` over `ground`.
+    ///
+    /// A claim reaches down to the lower of its floor course and the lowest
+    /// terrain under its footprint and ring, so the ring's fixed ground is in
+    /// it (spec-0098 §2) — but never into a place stacked under it: the bottom
+    /// stops one course above the highest claim of any place whose claim lies
+    /// wholly below this one's floor and under its shell footprint, so the plane
+    /// between two stacked places is the upper's floor course (rule 3a) and not
+    /// a column of ground through the lower.
+    #[must_use]
+    pub fn new(boxes: &'a [PlacedBox], seams: &'a [PlacedSeam], ground: &'a Ground) -> Site<'a> {
+        let bottoms = boxes
             .iter()
-            .any(|o| o.node != self.node && inside(cell, o.space()))
+            .map(|b| {
+                let [x0, x1, z0, z1] = b.foot;
+                let mut bottom = b.floor_course_y();
+                if ground.is_open() {
+                    for x in x0 - 1..=x1 + 1 {
+                        for z in z0 - 1..=z1 + 1 {
+                            if let Some(t) = ground.top(x, z) {
+                                bottom = bottom.min(t);
+                            }
+                        }
+                    }
+                }
+                for q in boxes {
+                    if q.node == b.node {
+                        continue;
+                    }
+                    let overlaps = q.foot[0] - 1 <= x1 + 1
+                        && q.foot[1] + 1 >= x0 - 1
+                        && q.foot[2] - 1 <= z1 + 1
+                        && q.foot[3] + 1 >= z0 - 1;
+                    if overlaps && q.claim_top() < b.floor {
+                        bottom = bottom.max(q.claim_top() + 1);
+                    }
+                }
+                bottom.min(b.floor_course_y())
+            })
+            .collect();
+        Site {
+            boxes,
+            seams,
+            ground,
+            bottoms,
+        }
     }
 
-    /// The bounding box of everything this place might claim — what a reader
-    /// iterates to find its cells.
+    /// The index of `node`'s box.
     #[must_use]
-    pub fn claim_bounds(&self) -> Aabb {
-        let (mut lo, mut hi) = self.shell();
-        if let Some((zlo, zhi)) = self.roof_zone() {
-            for i in 0..3 {
-                lo[i] = lo[i].min(zlo[i]);
-                hi[i] = hi[i].max(zhi[i]);
+    pub fn index_of(&self, node: &NodeId) -> Option<usize> {
+        self.boxes.iter().position(|b| &b.node == node)
+    }
+
+    /// Place `i`'s claim bottom.
+    #[must_use]
+    pub fn bottom(&self, i: usize) -> i64 {
+        self.bottoms[i]
+    }
+
+    /// Place `i`'s shell: the ground under its plot from its claim bottom, its
+    /// floor course, its play space and its ring, and on a roofed place its lid.
+    #[must_use]
+    pub fn shell(&self, i: usize) -> Aabb {
+        let b = &self.boxes[i];
+        (
+            [b.foot[0] - 1, self.bottoms[i], b.foot[2] - 1],
+            [b.foot[1] + 1, b.shell_top(), b.foot[3] + 1],
+        )
+    }
+
+    /// Everything place `i` might claim, as one box — what a reader iterates.
+    #[must_use]
+    pub fn claim_bounds(&self, i: usize) -> Aabb {
+        let (mut lo, mut hi) = self.shell(i);
+        if let Some((zlo, zhi)) = self.boxes[i].roof_zone() {
+            for a in 0..3 {
+                lo[a] = lo[a].min(zlo[a]);
+                hi[a] = hi[a].max(zhi[a]);
             }
         }
         (lo, hi)
     }
 
-    /// Every cell of this place's claim, in a fixed order.
+    /// The ground height `G` of place `i`'s ring column `(x, z)` (spec-0098
+    /// §2 rule 0): where a vertical seam of this place crosses the column, the
+    /// seam's sill minus one, flat across the opening's width; else, on an
+    /// `open` site, the terrain's surface `y`; on a `solid` site the floor
+    /// course.
     #[must_use]
-    pub fn claim_cells(&self, boxes: &[PlacedBox]) -> Vec<[i64; 3]> {
-        let (lo, hi) = self.claim_bounds();
+    pub fn ground_height(&self, i: usize, x: i64, z: i64) -> i64 {
+        let b = &self.boxes[i];
+        for s in self.seams {
+            if s.normal_axis == 1 || (s.a != b.node && s.b != b.node) {
+                continue;
+            }
+            let along = if s.normal_axis == 0 { z } else { x };
+            let across = if s.normal_axis == 0 { x } else { z };
+            let other = if s.normal_axis == 0 { 2 } else { 0 };
+            if across == s.plane && along >= s.opening.0[other] && along <= s.opening.1[other] {
+                return s.opening.0[1] - 1;
+            }
+        }
+        if self.ground.is_open()
+            && let Some(t) = self.ground.top(x, z)
+        {
+            return t;
+        }
+        b.floor_course_y()
+    }
+
+    /// True when `cell` is fixed ground of place `i`: a ring cell of its shell
+    /// at or under the column's ground height.
+    #[must_use]
+    pub fn is_fixed(&self, i: usize, cell: [i64; 3]) -> bool {
+        inside(cell, self.shell(i))
+            && self.boxes[i].is_ring_column(cell[0], cell[2])
+            && cell[1] <= self.ground_height(i, cell[0], cell[2])
+    }
+
+    /// True when `cell` is in place `i`'s claim: in its shell, or in its roof
+    /// zone — except an eaves cell standing in another place's play space,
+    /// where the eave stops (spec-0098 §3).
+    #[must_use]
+    pub fn claims(&self, i: usize, cell: [i64; 3]) -> bool {
+        if inside(cell, self.shell(i)) {
+            return true;
+        }
+        let b = &self.boxes[i];
+        let Some(zone) = b.roof_zone() else {
+            return false;
+        };
+        if !inside(cell, zone) {
+            return false;
+        }
+        let over_shell = cell[0] >= b.foot[0] - 1
+            && cell[0] <= b.foot[1] + 1
+            && cell[2] >= b.foot[2] - 1
+            && cell[2] <= b.foot[3] + 1;
+        over_shell
+            || !self
+                .boxes
+                .iter()
+                .any(|o| o.node != b.node && inside(cell, o.space()))
+    }
+
+    /// The places whose claim bounds meet `bounds` — the only places a cell
+    /// inside `bounds` can be claimed by.
+    #[must_use]
+    pub fn near(&self, bounds: Aabb) -> Vec<usize> {
+        (0..self.boxes.len())
+            .filter(|i| intersect(self.claim_bounds(*i), bounds).is_some())
+            .collect()
+    }
+
+    /// **Who writes `cell`** — spec-0098 §2's rule, in its order, over every
+    /// place.
+    #[must_use]
+    pub fn owner(&self, cell: [i64; 3]) -> Owner {
+        let all: Vec<usize> = (0..self.boxes.len()).collect();
+        self.owner_among(cell, &all)
+    }
+
+    /// [`Site::owner`] over `cand` only — every place whose claim could reach
+    /// `cell` must be in it ([`Site::near`]).
+    ///
+    /// 0. a ring cell at or under its ground height is the whole's fixed ground;
+    /// 1. a cell inside a place's play space is that place's;
+    /// 2. a cell exactly one claim covers is that place's;
+    /// 3. a cell several claims cover: in exactly one of their floor courses,
+    ///    that place's (a stacked plane is the upper's floor); else, exactly one
+    ///    of them roofed, that one's (the facade onto an open place); else,
+    ///    exactly two of them, and every seam the plan allocates between the two
+    ///    across that plane naming one `a`, that place's (a designed connection
+    ///    is drawn by its first-named side); else contested — `DW0827`;
+    /// 4. a cell no claim covers is nobody's.
+    #[must_use]
+    pub fn owner_among(&self, cell: [i64; 3], cand: &[usize]) -> Owner {
+        if cand.iter().any(|&i| self.is_fixed(i, cell)) {
+            return Owner::Ground;
+        }
+        if let Some(&i) = cand.iter().find(|&&i| inside(cell, self.boxes[i].space())) {
+            return Owner::Place(self.boxes[i].node.clone());
+        }
+        let claimants: Vec<usize> = cand
+            .iter()
+            .copied()
+            .filter(|&i| self.claims(i, cell))
+            .collect();
+        match claimants.len() {
+            0 => return Owner::Nobody,
+            1 => return Owner::Place(self.boxes[claimants[0]].node.clone()),
+            _ => {}
+        }
+        // 3a — a floor course.
+        let floors: Vec<usize> = claimants
+            .iter()
+            .copied()
+            .filter(|&i| cell[1] == self.boxes[i].floor_course_y())
+            .collect();
+        if floors.len() == 1 {
+            return Owner::Place(self.boxes[floors[0]].node.clone());
+        }
+        // 3b — exactly one roofed.
+        let roofed: Vec<usize> = claimants
+            .iter()
+            .copied()
+            .filter(|&i| !self.boxes[i].open)
+            .collect();
+        if roofed.len() == 1 {
+            return Owner::Place(self.boxes[roofed[0]].node.clone());
+        }
+        // 3c — the connection's `a`.
+        if claimants.len() == 2 {
+            let (p, q) = (
+                &self.boxes[claimants[0]].node,
+                &self.boxes[claimants[1]].node,
+            );
+            let across: Vec<&PlacedSeam> = self
+                .seams
+                .iter()
+                .filter(|s| {
+                    ((&s.a == p && &s.b == q) || (&s.a == q && &s.b == p))
+                        && cell[s.normal_axis] == s.plane
+                })
+                .collect();
+            if let Some(first) = across.first()
+                && across.iter().all(|s| s.a == first.a)
+            {
+                return Owner::Place(first.a.clone());
+            }
+        }
+        let mut names: Vec<NodeId> = claimants
+            .iter()
+            .map(|&i| self.boxes[i].node.clone())
+            .collect();
+        names.sort();
+        Owner::Contested(names)
+    }
+
+    /// Every cell of place `i`'s claim, in a fixed order.
+    #[must_use]
+    pub fn claim_cells(&self, i: usize) -> Vec<[i64; 3]> {
+        cells(self.claim_bounds(i))
+            .filter(|c| self.claims(i, *c))
+            .collect()
+    }
+
+    /// Every fixed ground cell of place `i`, with its column's ground height,
+    /// in a fixed order — what the terrain pass writes and the handout hands.
+    #[must_use]
+    pub fn fixed_cells(&self, i: usize) -> Vec<([i64; 3], i64)> {
+        let b = &self.boxes[i];
+        let (lo, hi) = self.shell(i);
         let mut out = Vec::new();
         for x in lo[0]..=hi[0] {
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    let c = [x, y, z];
-                    if self.claims(c, boxes) {
-                        out.push(c);
-                    }
+            for z in lo[2]..=hi[2] {
+                if !b.is_ring_column(x, z) {
+                    continue;
+                }
+                let g = self.ground_height(i, x, z);
+                for y in lo[1]..=g.min(hi[1]) {
+                    out.push(([x, y, z], g));
                 }
             }
         }
         out
     }
-}
 
-/// **Who writes `cell`** — spec-0098 §2's rule, in its order:
-///
-/// 1. a cell inside a place's play space is that place's;
-/// 2. a cell exactly one claim covers is that place's;
-/// 3. a cell several claims cover: in exactly one of their floor courses, that
-///    place's (a stacked plane is the upper's floor); else, exactly one of them
-///    roofed, that one's (a facade onto an open place); else, every seam the
-///    plan allocates between the pair across that plane naming one `a`, that
-///    place's (a designed connection is drawn by its first-named side); else
-///    the whole's;
-/// 4. a cell no claim covers is the whole's.
-#[must_use]
-pub fn owner(cell: [i64; 3], boxes: &[PlacedBox], seams: &[PlacedSeam]) -> Owner {
-    if let Some(b) = boxes.iter().find(|b| inside(cell, b.space())) {
-        return Owner::Place(b.node.clone());
-    }
-    let claimants: Vec<&PlacedBox> = boxes.iter().filter(|b| b.claims(cell, boxes)).collect();
-    match claimants.len() {
-        0 => return Owner::Whole,
-        1 => return Owner::Place(claimants[0].node.clone()),
-        _ => {}
-    }
-    // 3a — a floor course.
-    let floors: Vec<&&PlacedBox> = claimants
-        .iter()
-        .filter(|b| inside(cell, b.floor_course()))
-        .collect();
-    if floors.len() == 1 {
-        return Owner::Place(floors[0].node.clone());
-    }
-    // 3b — exactly one roofed.
-    let roofed: Vec<&&PlacedBox> = claimants.iter().filter(|b| !b.open).collect();
-    if roofed.len() == 1 {
-        return Owner::Place(roofed[0].node.clone());
-    }
-    // 3c — the connection's `a` side, where exactly two places contest the cell
-    // and every seam between them across this plane agrees.
-    if claimants.len() == 2 {
-        let (p, q) = (claimants[0], claimants[1]);
-        let across: Vec<&PlacedSeam> = seams
-            .iter()
-            .filter(|s| {
-                ((s.a == p.node && s.b == q.node) || (s.a == q.node && s.b == p.node))
-                    && cell[s.normal_axis] == s.plane
-            })
-            .collect();
-        if let Some(first) = across.first()
-            && across.iter().all(|s| s.a == first.a)
-        {
-            return Owner::Place(first.a.clone());
+    /// The cells two places both claim that no rule awards (rule 3d), per
+    /// unordered pair in plan order — what `DW0827` refuses — and how many
+    /// contested cells the rule did award, for the binding.
+    #[must_use]
+    pub fn contests(&self) -> (Vec<(usize, usize, Vec<[i64; 3]>)>, usize) {
+        let mut out = Vec::new();
+        let mut awarded = 0usize;
+        for i in 0..self.boxes.len() {
+            for j in i + 1..self.boxes.len() {
+                let Some(meet) = intersect(self.claim_bounds(i), self.claim_bounds(j)) else {
+                    continue;
+                };
+                let cand = self.near(meet);
+                let mut bad = Vec::new();
+                for c in cells(meet) {
+                    if !(self.claims(i, c) && self.claims(j, c)) {
+                        continue;
+                    }
+                    match self.owner_among(c, &cand) {
+                        Owner::Contested(_) => bad.push(c),
+                        _ => awarded += 1,
+                    }
+                }
+                if !bad.is_empty() {
+                    out.push((i, j, bad));
+                }
+            }
         }
+        (out, awarded)
     }
-    Owner::Whole
 }
 
 /// Greedy merge of a cell set into disjoint AABBs, in one fixed order: take the
@@ -272,8 +504,9 @@ pub fn merge_cells(cells: &BTreeSet<[i64; 3]>) -> Vec<Aabb> {
 /// does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Void {
-    /// The cells, inclusive, in world coordinates.
+    /// Low corner, inclusive, in world coordinates.
     pub lo: [i64; 3],
+    /// High corner, inclusive.
     pub hi: [i64; 3],
     /// Who writes them.
     pub owner: Owner,
@@ -283,8 +516,9 @@ pub struct Void {
 /// the whole plan. The one computation behind `Frame::of`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ownership {
-    /// Inclusive bounding box of the owned cells.
+    /// Inclusive low corner of the owned cells' bounding box.
     pub lo: [i64; 3],
+    /// Inclusive high corner.
     pub hi: [i64; 3],
     /// The owned cells, merged.
     pub owned: Vec<Aabb>,
@@ -293,91 +527,131 @@ pub struct Ownership {
     /// Every cell of the bounding box the place does not own, merged per owner,
     /// in owner order then cell order.
     pub voids: Vec<Void>,
+    /// The fixed ground cells inside the bounding box, each with the block the
+    /// whole writes there, in cell order.
+    pub fixed: Vec<([i64; 3], String)>,
     /// Eaves cells the plan clipped at a neighbour's play space, merged, with
     /// the neighbour.
     pub clipped: Vec<(Aabb, NodeId)>,
 }
 
-/// What `b` owns, and what inside its frame it does not.
-#[must_use]
-pub fn ownership(b: &PlacedBox, boxes: &[PlacedBox], seams: &[PlacedSeam]) -> Ownership {
-    let me = Owner::Place(b.node.clone());
-    let owned: BTreeSet<[i64; 3]> = b
-        .claim_cells(boxes)
-        .into_iter()
-        .filter(|c| owner(*c, boxes, seams) == me)
-        .collect();
-    let (lo, hi) = owned
-        .iter()
-        .fold(([i64::MAX; 3], [i64::MIN; 3]), |(mut lo, mut hi), c| {
-            for i in 0..3 {
-                lo[i] = lo[i].min(c[i]);
-                hi[i] = hi[i].max(c[i]);
-            }
-            (lo, hi)
-        });
-    let mut by_owner: BTreeMap<Owner, BTreeSet<[i64; 3]>> = BTreeMap::new();
-    if !owned.is_empty() {
-        for x in lo[0]..=hi[0] {
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    let c = [x, y, z];
-                    if !owned.contains(&c) {
-                        by_owner
-                            .entry(owner(c, boxes, seams))
-                            .or_default()
-                            .insert(c);
-                    }
+impl Site<'_> {
+    /// What place `i` owns, and what inside its frame it does not.
+    #[must_use]
+    pub fn ownership(&self, i: usize) -> Ownership {
+        let b = &self.boxes[i];
+        let me = Owner::Place(b.node.clone());
+        let bounds = self.claim_bounds(i);
+        let cand = self.near(bounds);
+        let owned: BTreeSet<[i64; 3]> = self
+            .claim_cells(i)
+            .into_iter()
+            .filter(|c| self.owner_among(*c, &cand) == me)
+            .collect();
+        let (lo, hi) = owned
+            .iter()
+            .fold(([i64::MAX; 3], [i64::MIN; 3]), |(mut lo, mut hi), c| {
+                for a in 0..3 {
+                    lo[a] = lo[a].min(c[a]);
+                    hi[a] = hi[a].max(c[a]);
                 }
-            }
-        }
-    }
-    let voids: Vec<Void> = by_owner
-        .iter()
-        .flat_map(|(o, cells)| {
-            merge_cells(cells).into_iter().map(move |(lo, hi)| Void {
-                lo,
-                hi,
-                owner: o.clone(),
-            })
-        })
-        .collect();
-    // Eaves the plan clipped: roof-zone cells outside the shell footprint that
-    // lie in a neighbour's play space.
-    let mut clipped_by: BTreeMap<NodeId, BTreeSet<[i64; 3]>> = BTreeMap::new();
-    if let Some((zlo, zhi)) = b.roof_zone() {
-        let (slo, shi) = b.shell();
-        for x in zlo[0]..=zhi[0] {
-            for y in zlo[1]..=zhi[1] {
-                for z in zlo[2]..=zhi[2] {
-                    let over_shell = x >= slo[0] && x <= shi[0] && z >= slo[2] && z <= shi[2];
-                    if over_shell {
-                        continue;
-                    }
-                    if let Some(o) = boxes
+                (lo, hi)
+            });
+        let mut by_owner: BTreeMap<Owner, BTreeSet<[i64; 3]>> = BTreeMap::new();
+        let mut fixed: Vec<([i64; 3], String)> = Vec::new();
+        if !owned.is_empty() {
+            let fcand = self.near((lo, hi));
+            for c in cells((lo, hi)) {
+                if owned.contains(&c) {
+                    continue;
+                }
+                let o = self.owner_among(c, &fcand);
+                if o == Owner::Ground {
+                    let g = fcand
                         .iter()
-                        .find(|o| o.node != b.node && inside([x, y, z], o.space()))
-                    {
-                        clipped_by
-                            .entry(o.node.clone())
-                            .or_default()
-                            .insert([x, y, z]);
-                    }
+                        .find(|&&k| self.is_fixed(k, c))
+                        .map_or(c[1], |&k| self.ground_height(k, c[0], c[2]));
+                    fixed.push((c, self.ground.ground_block(c, g).to_string()));
+                }
+                by_owner.entry(o).or_default().insert(c);
+            }
+        }
+        let voids: Vec<Void> = by_owner
+            .iter()
+            .flat_map(|(o, cells)| {
+                merge_cells(cells).into_iter().map(move |(lo, hi)| Void {
+                    lo,
+                    hi,
+                    owner: o.clone(),
+                })
+            })
+            .collect();
+        // Eaves the plan clipped: roof-zone cells outside the shell footprint
+        // that lie in a neighbour's play space.
+        let mut clipped_by: BTreeMap<NodeId, BTreeSet<[i64; 3]>> = BTreeMap::new();
+        if let Some(zone) = b.roof_zone() {
+            for c in cells(zone) {
+                let over_shell = c[0] >= b.foot[0] - 1
+                    && c[0] <= b.foot[1] + 1
+                    && c[2] >= b.foot[2] - 1
+                    && c[2] <= b.foot[3] + 1;
+                if over_shell {
+                    continue;
+                }
+                if let Some(o) = self
+                    .boxes
+                    .iter()
+                    .find(|o| o.node != b.node && inside(c, o.space()))
+                {
+                    clipped_by.entry(o.node.clone()).or_default().insert(c);
                 }
             }
         }
+        let clipped: Vec<(Aabb, NodeId)> = clipped_by
+            .iter()
+            .flat_map(|(n, cells)| merge_cells(cells).into_iter().map(move |r| (r, n.clone())))
+            .collect();
+        Ownership {
+            lo,
+            hi,
+            owned_cells: owned.len(),
+            owned: merge_cells(&owned),
+            voids,
+            fixed,
+            clipped,
+        }
     }
-    let clipped: Vec<(Aabb, NodeId)> = clipped_by
-        .iter()
-        .flat_map(|(n, cells)| merge_cells(cells).into_iter().map(move |r| (r, n.clone())))
-        .collect();
-    Ownership {
-        lo,
-        hi,
-        owned_cells: owned.len(),
-        owned: merge_cells(&owned),
-        voids,
-        clipped,
+}
+
+/// A campaign's resolved plan, owned: what a [`Site`] borrows.
+#[derive(Debug, Clone)]
+pub struct SitePlan {
+    /// The plan's places.
+    pub boxes: Vec<PlacedBox>,
+    /// The plan's connections.
+    pub seams: Vec<PlacedSeam>,
+    /// The site's fill.
+    pub ground: Ground,
+}
+
+impl SitePlan {
+    /// Resolve a campaign's plan.
+    #[must_use]
+    pub fn of(c: &Campaign) -> SitePlan {
+        let mut reads = crate::metrics::Reads::new();
+        let boxes = super::placed_boxes(c, &mut reads);
+        let seams = super::placed_seams(c, &boxes, &mut reads);
+        SitePlan {
+            boxes,
+            seams,
+            ground: Ground::of(c),
+        }
+    }
+
+    /// The ownership view over it.
+    #[must_use]
+    pub fn site(&self) -> Site<'_> {
+        Site::new(&self.boxes, &self.seams, &self.ground)
     }
 }
 
@@ -407,12 +681,17 @@ mod tests {
             face: Face::East,
             normal_axis: axis,
             plane,
-            opening: ([plane, 0, 0], [plane, 0, 0]),
-            shared: ([plane, 0, 0], [plane, 0, 0]),
+            opening: ([plane, 64, 2], [plane, 66, 3]),
+            shared: ([plane, 64, 0], [plane, 67, 7]),
             crossing: Crossing::Portal,
             rise: 0,
             stair_in: None,
+            form: "a doorway".into(),
         }
+    }
+
+    fn solid() -> Ground {
+        Ground::solid("minecraft:stone")
     }
 
     /// A house (x 0..7) and the street east of it (x 9..16), one cell apart.
@@ -426,24 +705,26 @@ mod tests {
     #[test]
     fn the_party_plane_between_a_house_and_a_street_is_the_facade() {
         let boxes = house_and_street();
-        // The wall column x = 8, at floor height, inside both rings.
+        let g = solid();
+        let site = Site::new(&boxes, &[], &g);
         assert_eq!(
-            owner([8, 65, 3], &boxes, &[]),
+            site.owner([8, 65, 3]),
             Owner::Place(NodeId("node/house".into()))
         );
-        // Above the house's lid the street's ring still reaches (its headroom
-        // is 6, the house's 4): one claimant, the street's.
         assert_eq!(
-            owner([8, 69, 3], &boxes, &[]),
+            site.owner([8, 63, 3]),
+            Owner::Ground,
+            "the ring's ground is fixed"
+        );
+        assert_eq!(
+            site.owner([8, 69, 3]),
             Owner::Place(NodeId("node/street".into()))
         );
-        // The street's far ring is its own.
         assert_eq!(
-            owner([17, 65, 3], &boxes, &[]),
+            site.owner([17, 65, 3]),
             Owner::Place(NodeId("node/street".into()))
         );
-        // Nobody's: the whole's.
-        assert_eq!(owner([30, 65, 3], &boxes, &[]), Owner::Whole);
+        assert_eq!(site.owner([30, 65, 3]), Owner::Nobody);
     }
 
     #[test]
@@ -452,21 +733,24 @@ mod tests {
             a_box("node/yard-a", [0, 7, 0, 7], 64, 3, true),
             a_box("node/yard-b", [9, 16, 0, 7], 64, 3, true),
         ];
-        assert_eq!(
-            owner([8, 65, 3], &boxes, &[]),
-            Owner::Whole,
+        let g = solid();
+        let site = Site::new(&boxes, &[], &g);
+        assert!(
+            matches!(site.owner([8, 65, 1]), Owner::Contested(_)),
             "nothing connects them"
         );
         let s = [seam("node/yard-b", "node/yard-a", 0, 8)];
+        let site = Site::new(&boxes, &s, &g);
         assert_eq!(
-            owner([8, 65, 3], &boxes, &s),
+            site.owner([8, 65, 1]),
             Owner::Place(NodeId("node/yard-b".into()))
         );
         let disagree = [
             seam("node/yard-b", "node/yard-a", 0, 8),
             seam("node/yard-a", "node/yard-b", 0, 8),
         ];
-        assert_eq!(owner([8, 65, 3], &boxes, &disagree), Owner::Whole);
+        let site = Site::new(&boxes, &disagree, &g);
+        assert!(matches!(site.owner([8, 65, 1]), Owner::Contested(_)));
     }
 
     #[test]
@@ -474,8 +758,10 @@ mod tests {
         let lower = a_box("node/crypt", [0, 7, 0, 7], 60, 3, false); // top 62, lid 63
         let upper = a_box("node/chapel", [0, 7, 0, 7], 64, 6, false); // floor course 63
         let boxes = vec![lower, upper];
+        let g = solid();
+        let site = Site::new(&boxes, &[], &g);
         assert_eq!(
-            owner([3, 63, 3], &boxes, &[]),
+            site.owner([3, 63, 3]),
             Owner::Place(NodeId("node/chapel".into()))
         );
     }
@@ -487,42 +773,24 @@ mod tests {
             courses: 4,
             eaves: 1,
         });
-        // The house: play 64..67, lid 68, roof 68..72, zone x -2..9.
-        let h = &boxes[0];
-        assert_eq!(h.roof_zone(), Some(([-2, 68, -2], [9, 72, 9])));
-        // An eaves cell over the street's play space (x 9, y 68 is inside the
-        // street's headroom 64..69): clipped, so the street owns it alone.
-        assert!(!h.claims([9, 68, 3], &boxes));
+        let g = solid();
+        let site = Site::new(&boxes, &[], &g);
+        assert_eq!(boxes[0].roof_zone(), Some(([-2, 68, -2], [9, 72, 9])));
+        assert!(!site.claims(0, [9, 68, 3]));
         assert_eq!(
-            owner([9, 68, 3], &boxes, &[]),
+            site.owner([9, 68, 3]),
             Owner::Place(NodeId("node/street".into()))
         );
-        // The same eave above the street's headroom is the house's.
-        assert!(h.claims([9, 71, 3], &boxes));
+        assert!(site.claims(0, [9, 71, 3]));
         assert_eq!(
-            owner([9, 71, 3], &boxes, &[]),
+            site.owner([9, 71, 3]),
             Owner::Place(NodeId("node/house".into()))
         );
-        let o = ownership(h, &boxes, &[]);
+        let o = site.ownership(0);
         assert_eq!(o.lo, [-2, 63, -2]);
         assert_eq!(o.hi, [9, 72, 9]);
         assert!(o.clipped.iter().any(|(_, n)| n.0 == "node/street"));
-        // Every void inside the frame names an owner, and no owned cell is a void.
-        let owned: BTreeSet<[i64; 3]> = o
-            .owned
-            .iter()
-            .flat_map(|(lo, hi)| {
-                let mut v = Vec::new();
-                for x in lo[0]..=hi[0] {
-                    for y in lo[1]..=hi[1] {
-                        for z in lo[2]..=hi[2] {
-                            v.push([x, y, z]);
-                        }
-                    }
-                }
-                v
-            })
-            .collect();
+        let owned: BTreeSet<[i64; 3]> = o.owned.iter().flat_map(|a| cells(*a)).collect();
         assert_eq!(owned.len(), o.owned_cells, "the merge is exact");
         for v in &o.voids {
             assert!(!owned.contains(&v.lo));

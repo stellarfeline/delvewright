@@ -655,6 +655,9 @@ struct Placed {
 /// passable; a closed one is passable-with-use), plus the per-gate world-load
 /// measurement ([`GateSeal`]) taken immediately before the gate clear. Kept
 /// separate from settling so unit tests can exercise each half.
+/// The block a template holds where it places nothing.
+const STRUCTURE_VOID: &str = "minecraft:structure_void";
+
 fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed {
     let mut blocks: BlockMap = BTreeMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -720,6 +723,14 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
             },
             |cells| {
                 for (cell, name, open) in cells {
+                    // A template's `structure_void` is a cell the game does
+                    // not place (spec-0098 §7): whatever stood there shows
+                    // through, exactly as at a cell the template omits.
+                    // Writing it as a block would model a voided cell as
+                    // passable while the server keeps the wall under it.
+                    if base_id(&name) == STRUCTURE_VOID {
+                        continue;
+                    }
                     if is_fence_gate(&name) && open == Some(true) {
                         open_gates.insert(cell);
                     } else {
@@ -781,6 +792,14 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
             },
             |cells| {
                 for (cell, name, open) in cells {
+                    // A template's `structure_void` is a cell the game does
+                    // not place (spec-0098 §7): whatever stood there shows
+                    // through, exactly as at a cell the template omits.
+                    // Writing it as a block would model a voided cell as
+                    // passable while the server keeps the wall under it.
+                    if base_id(&name) == STRUCTURE_VOID {
+                        continue;
+                    }
                     if is_fence_gate(&name) && open == Some(true) {
                         open_gates.insert(cell);
                     } else {

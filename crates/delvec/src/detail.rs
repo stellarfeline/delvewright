@@ -41,9 +41,7 @@ use delvec::grammar::{
 use delvewright_dsl::detailplan::{Detail, DetailPlanContent};
 use delvewright_dsl::prefab::PrefabMeta;
 use delvewright_dsl::split::TilePart;
-use delvewright_dsl::{
-    Campaign, Diagnostic, DwCode, Envelope, ExitTier, NodeId, PrefabId, Stage, parse_campaign,
-};
+use delvewright_dsl::{Campaign, Diagnostic, DwCode, Envelope, ExitTier, NodeId, PrefabId, Stage};
 use sha2::{Digest, Sha256};
 
 use crate::EXIT_INTERNAL;
@@ -100,7 +98,7 @@ fn run(
     // Parsed rather than fully validated, on `allocation`'s precedent: the
     // campaign is validated in full at the end of the run, over the pieces this
     // run wrote, which is the verdict that matters.
-    let campaign = match parse_campaign(&loaded.raw) {
+    let campaign = match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(c) => c,
         Err(diags) => {
             print_diags(&diags, json);
