@@ -35,6 +35,7 @@ edit. Template at the bottom.
 | [0028](0028-three-things-released-by-name.md) | Three things, each released by its name and its version: `<name>--v<semver>` tags for `delvec`, `delvewright-dsl` and the `delvewright` plugin | Accepted; §3 superseded by ADR-0029 |
 | [0029](0029-the-page-ships-at-a-tag.md) | The page ships at a tag — the marketplace serves the plugin from the engine release the page pins | Accepted |
 | [0031](0031-a-module-per-object-class.md) | A module per object class — no file that every feature touches | Proposed |
+| [0032](0032-one-map-route.md) | One map route — a site is a plan of scenes, each drawn whole with route A's freedom, on a terrain the whole owns; the engine writes nothing undeclared and only checks | Proposed |
 
 ## Template
 

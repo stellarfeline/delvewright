@@ -19,11 +19,10 @@
   the plan gains a required `fill` — what every cell no place claims becomes
   (§2b) — whose `open` kind carries the site's **terrain**, a declared
   heightfield (§2c).
-- **Diagnostics**: **DW0987**, **DW0988** and **DW0989**, all used below;
-  `DW0827`'s quantifier widens from play spaces to claims (§2 rule 3d);
-  `DW0838`'s widens to ground outside every claim (§2c). **One more code is
-  needed** for the stitching check (§2c, written as `DW09xx`): the handed range
-  is spent, so this spec stops at the placeholder and asks for it.
+- **Diagnostics**: **DW0987**, **DW0988**, **DW0989** and **DW0990**, all used
+  below; `DW0827`'s quantifier widens from play spaces to claims (§2 rule 3d);
+  `DW0838`'s widens to ground outside every claim (§2c).
+- **Decision record**: ADR-0032 (one map route).
 - **Research**: rooflines and facades at Minecraft scale are researched, not
   invented — `docs/reference/roof-and-facade-craft.md` carries the record with
   every rule marked cited or authored. This spec consumes two of its findings
@@ -36,9 +35,10 @@
 - **The finding this answers**: two neighbouring places may each shape their
   own ground — a plinth beside a slope — and where they meet, a step or an open
   gap appears along the boundary that no check sees unless a route crosses it.
-  One flat datum makes it worse. So the whole owns a terrain and every place is
-  stitched to it (§2c), and undulating ground is in this design's core, not a
-  follow-on.
+  One flat datum makes it worse. So the whole owns a terrain, **the ring of
+  ground around every place is fixed by the whole and may not be written by the
+  piece**, every plot is stitched into the map by construction (§2c), and
+  undulating ground is in this design's core, not a follow-on.
 - **Non-goals**: retiring `areas[]`; the per-piece drawing medium (ADR-0030's
   question, §9); dressing the declared terrain (trees, paths — stage 7, §10);
   jigsaw connectors.
@@ -72,9 +72,9 @@ it, computed from its resolved box (`PlacedBox`) alone:
 
 | Cells | Open place | Roofed place |
 |---|---|---|
-| the floor course under the shell footprint (`y = floor − 1`) | yes | yes |
+| the ground under the plot, from the claim's **bottom** — `min(lowest terrain under the footprint and ring, floor) − 1` — up to the floor course (`y = floor − 1`); the whole hands it terrain-shaped, and the piece reshapes it inside the ring | yes | yes |
 | the play space | yes | yes |
-| the ring: the one-cell wall position on every side, `floor ..= top of play space` | yes | yes |
+| the ring: the one-cell position on every side, from the claim's bottom to the top of the play space — its **ground cells are fixed** (§2 rule 0) and only what stands above them is the place's | yes | yes |
 | the ceiling course over the shell footprint | — | yes |
 | the roof zone: the shell footprint grown by `roof.eaves` on every horizontal side, from the ceiling course up `roof.courses` courses | — | when `roof` is declared |
 
@@ -85,6 +85,14 @@ claim of an open place is that shell without its lid.
 box of the plan — one function, `siteplan::claim::owner`, and every reader
 below calls it:
 
+0. A cell of the **fixed ground** is the whole's, written as the declared
+   terrain and written by no piece (`DW0990`). The fixed ground is every ring
+   column's cells at or below its ground height `G`: on an `open` site the
+   terrain's height there; on a `solid` site the floor course, `floor − 1`.
+   Where a seam crosses the ring, `G` at the seam's columns is derived from the
+   seam's two floors instead — the sill minus one, flat across the opening's
+   width (`floor − 1` where the two are equal) — so neither side has to edit
+   the ground a doorway, a stair's landing or a drop's brink stands on (§2c).
 1. A cell inside a place's **play space** is that place's. Nothing else may
    claim it (`DW0988`, `DW0827`).
 2. A cell exactly **one** claim covers is that place's.
@@ -210,21 +218,47 @@ minimum and its maximum — and a box's `floor` is the designer's choice against
 those numbers (a plinth stands above them, a sunken yard below, a cottage on a
 slope at one and steps down at the other).
 
-**The stitching rule, read off bytes.** A place shapes its interior freely.
-Along its boundary — the outer face of the ring it owns, and the plane where a
-neighbour's claim begins — the two ground surfaces either side must **meet**:
-the standable surface on the place's edge column and the surface on the column
-beyond it differ by at most one block (a step a body walks), **or** a solid face
-stands from the lower surface to the higher (a retaining element the piece
-drew — a plinth's wall, a revetment), **or** a seam across that boundary
-declares the crossing (a `drop` with its rise, a `stair`, a portal). What is
-refused is **the crack**: along a boundary segment, air between the two surfaces
-on the higher side — an edge nothing holds up, Ulrich's tile gap in blocks.
-Named with the boundary segment, both heights and both owners, build tier
-(exit 3) in the stage-5 battery beside `DW0836`, read from the assembled bytes
-with no knowledge of who wrote them, so a stand-in shell and a piece are judged
-alike. **Code: `DW09xx`** — the handed range is spent; the number is requested.
-Binding: boundary columns examined, cracks.
+**Stitching is by construction: the ring of ground is fixed.** Every ring
+column's cells at or below its ground height (§2 rule 0) are the whole's — the
+terrain continued to the plot's edge, block for block, in the `surface` and
+`below` blocks the site declared — and the allocation hands them to the piece
+as fixed: their 3D coordinates and their material. The piece writes
+`structure_void` there (as at every cell it does not own) and may not write a
+block; a piece that does is refused at validation, where the piece's own bytes
+are read beside `DW0987` (**`DW0990`**, first shape, naming the cell and the
+terrain block it displaced). Inside the ring the place shapes its ground
+freely from the handed initial ground — a plinth above it, a sunken yard below,
+a slope that follows it — and its edge meets the fixed ring on the place's own
+terms: within a block, or faced by a wall the piece drew. So two neighbouring
+plots meet the same terrain along their shared ring, and the map's ground runs
+unbroken through every plot edge whether or not either plot is detailed. That
+is stronger than refusing a crack after the fact, and the crack check is kept
+as the **measurement over bytes** that proves it held.
+
+**The crack check, read off bytes.** Along every claim boundary — the fixed
+ring against the plot inside it, and every seam opening against the ground it
+stands on — the two standable surfaces either side differ by at most one block
+(a step a body walks), **or** a solid face stands from the lower surface to the
+higher (a retaining element the piece drew), **or** a seam across that boundary
+declares the crossing. What is refused is **the crack**: air between the two
+surfaces under the higher edge — an edge nothing holds up, Ulrich's tile gap in
+blocks (**`DW0990`**, second shape, build tier in the stage-5 battery beside
+`DW0836`, naming the boundary segment, both heights and both owners, read from
+the assembled bytes with no knowledge of who wrote them, so a stand-in shell and
+a piece are judged alike). Binding: fixed ring cells handed and examined,
+boundary columns examined, cracks.
+
+**Crossings over the ring.** The ring fixes ground cells only; everything above
+the ground course — a doorway, a wall, a plinth's face, a gate's bar — belongs
+to the owner §2 rule 3 names. A stair or a ramp that spans a height difference
+is laid **inside** a place by its piece and arrives at the seam's opening; it
+never edits the ring. Where a seam crosses the ring the whole derives the ring's
+ground there from the seam's two floors rather than from the terrain — the
+sill's course, flat across the opening — so a doorway stands on ground neither
+side has to cut, a stair's landing meets its opening at grade, and a `drop`'s
+brink is level; the fall itself is answered by the **higher** place's own face
+inside its claim, which is the one policy about drops this engine has
+(`DW0877`, `DW0837`, `DW0986`).
 
 **The faced cliff is already refused where it matters, by the proofs that read
 reach.** A body can walk off a plinth's edge: onto a neighbouring place, which
@@ -296,19 +330,47 @@ wall through both roof zones; it goes to the place their connection names `a`
 houses a gap apart share nothing: each owns its own ring and roof, and the gap
 is ground and sky. A building whose roof should run unbroken over several rooms
 is **one place** whose piece declares several spaces — which is also how §5
-says a route-A site is written.
+says a route-A site is written. Under every wall the ring's ground is the
+whole's (§2 rule 0): a facade stands on the terrain, a party wall on the sill's
+course where a door crosses it, and the piece's ownership begins one block up.
 
-## 4. What the handing says now
+## 4. The handout: what the whole hands a place, produced by a tool and never typed
 
-`delvec allocation <place>` (spec-0050 §4) gains: the roof zone's extent in
-piece-local cells, or its absence; every void cell as a list of piece-local
-AABBs, each naming who owns it (`whole`, or the neighbouring place); every
-eaves cell the plan clipped, naming the place it stopped at; and the frame's
-cell count beside its owned-cell count. `delvec detail` binds the same values
-under `handed/` (`handed/roof/y0`, `handed/roof/y1`, `handed/roof/eaves`) and
-voids the handed cells after expansion and before the piece is frozen. The
-program paints a stand-in wall at a void column so that its own contract gates
-judge a closed building; the stand-in never ships.
+`delvec allocation <place>` (spec-0050 §4) becomes the **handout** the agent
+that designs a place works from — one JSON document per place, derived from the
+plan on every invocation, an input to nothing (`DW0842`–`DW0845`, `DW0987`,
+`DW0990` and the battery recompute every obligation from the plan). It carries:
+
+- **what is built here, and in what style**: the layout-graph node's `intent`,
+  `note`, size or way class and stations; the detail plan's `palette`; the
+  design record's style lines that bind the campaign (`design.json`).
+- **the place's own concept reference**: the path of the approved image for
+  this place under `design/places/<stem>/` and its `design.json` row. It is
+  **generated at step 9, after the walk**, anchored on the whole's reference
+  sheet and on this handout's position and ground — never before the blockout,
+  because per-place imagery authored ahead of the whole is style authority only
+  (ADR-0022), and a place's concept drawn against the plot it really has is the
+  one that can be built.
+- **where it stands in the whole**: the frame's world position; each neighbour
+  by face with its kind, floor and roof; the terrain's height along the
+  perimeter; the plan's `views[]` that see it, each with the `delvec snapshot
+  --shot` that frames the plot in the stage-5 whole.
+- **the whole's concept reference sheet**: the stage-2 sheet's approved images
+  by path, from `design.json`.
+- **its initial ground**: every fixed ring cell — `[x, y, z]` and block — and
+  the terrain-shaped ground inside the ring as columns `{x, z, top, blocks[]}`
+  the piece may reshape; the claim's bottom; the floor's piece-local `y`.
+- **its seams and owed anchors**: every seam piece-local with face, cells,
+  class, rise and the answering face class (spec-0050 §3's table), the ring's
+  derived ground at each seam; every owed name, the seam gate regions now among
+  them (§2); the frame's extent and its void cells, each with its owner.
+
+`delvec detail` reads the same object and binds the same values under
+`handed/` (`handed/datum-y`, `handed/seam/…`, `handed/roof/…`,
+`handed/ground/min-y`, `handed/ground/max-y`), voids the fixed ring and every
+other cell the place does not own after expansion, and runs every gate before
+a file is written. The skill's step 9 opens with the handout and the concept
+image, and types nothing from either.
 
 ## 5. Pure route A is the degenerate case, with no switch
 
@@ -445,6 +507,7 @@ the reference is corrected to the handing's own words with the pin bump.
 | Code | Rule |
 |---|---|
 | `DW0987` | **A piece paints a cell it does not own.** A bound piece's template holds a block other than `minecraft:structure_void` at a void cell of its frame — a neighbour's facade, the party wall a connection gave the other side, a clipped eave, a gap cell. Read off the piece's own `.nbt` at validation, where `DW0888` already opens it, and named per cell with the owner the plan awards it to. Air counts as painting: the game places a template's air, so an air cell over a neighbour's wall would carve it. Validation tier (exit 1). **Binding: bound pieces opened, void cells examined, painted.** |
+| `DW0990` | **The plot does not stitch.** Two shapes of one claim — that a place meets the ground the whole gave it. *A piece writes a fixed ring cell*: its template holds a block (air included) at a cell of the fixed ground (§2 rule 0), read off the piece's own `.nbt` at validation beside `DW0987`, named per cell with the terrain block it displaced. *A crack*: along a claim boundary the two standable surfaces differ by more than one block with air under the higher edge and no seam declaring the crossing — measured over the assembled bytes in the stage-5 battery, naming the boundary segment, both heights and both owners. Declared build tier (the battery's); the first shape is raised at validation on `DW0886`'s precedent. **Binding: fixed ring cells handed and examined; boundary columns examined, cracks.** |
 | `DW0827` (widened) | **Two owners for one block, and no rule to pick by.** Its claim is unchanged and its quantifier grows from play spaces to claims: two places whose claims share a cell that none of §2's rules 3a–3c awards — exactly one cell apart with no connection across that plane, or with connections that disagree about `a`. Named with both places, the shared cells and the three remedies (connect them, stand them apart, make them one). The engine neither arbitrates nor writes. Validation tier (exit 1). **Binding: box pairs compared, contested cells awarded.** |
 | `DW0989` | **A roofed place bound to a piece that encloses nothing.** The place's box has a `clearance` ceiling and the bound piece's spatial contract declares no `enclosed` or `open_top` space, so the closure gate had nothing of it to examine and the room that is the place's reason for a lid is not in the piece. Read from metadata at validation beside `DW0843`. An open box is never this refusal. Validation tier (exit 1). **Binding: roofed places bound, pieces with an enclosing space.** |
 | `DW0988` | **A roof the plan has no room for.** Two shapes of one claim, both read off the plan before any geometry: `roof` on a box whose `ceiling` is `open` — an open place has no lid to put a roof on; and a roof zone's course over the shell footprint lying in another place's play space or floor course — the stacked case, named with both places and the colliding courses. Eaves are not this refusal: they stop at a neighbour (§3). Validation tier (exit 1). **Binding: roofs declared, courses examined against places.** |
@@ -468,10 +531,13 @@ bricks, the roof block — so that a walker sees massing and not a building, and
 they stand only in the claim of an **unbound** place, where a piece will stand.
 A bound place's claim is written by its piece and by nothing else.
 
-- **a box**: the stand-in shell in the claim the place owns — floor course,
-  ring, lid — exactly where its piece will draw; every seam opening the place
-  owns cut in it, its frame ring and its bar as now; nothing written in a
-  neighbour's cells and nothing in a gap.
+- **a box**: the stand-in shell in the claim the place owns — a flat floor at
+  the walk plane over the handed ground, the ring above its fixed ground cells,
+  the lid — exactly where its piece will draw; every seam opening the place
+  owns cut in it, its frame ring and its bar as now; nothing written in the
+  fixed ground, in a neighbour's cells or in a gap. The fixed ring is written
+  by the terrain pass, bound or not, so the plot's edge is the same ground at
+  stage 5 as in the shipped world.
 - **a roof**: for an unbound box declaring `roof`, the roof zone massed solid
   in the roof palette block, so the skyline is walked before it is drawn.
 - **the gaps**: what `fill` and `volumes[]` declare, at stage 5 exactly as in
@@ -668,8 +734,8 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     `Terrain::flat` and `Terrain::heightmap` with their fields.
 21. **A crack is refused and a faced plinth is not.** On the blockout fixture
     under a sloped terrain, a place bound to a piece whose edge ground stands
-    two above the terrain with air under its edge is refused `DW09xx` naming
-    the boundary segment and both heights; the same piece with its edge faced
+    two above the terrain with air under its edge is refused `DW0990` (second
+    shape) naming the boundary segment and both heights; the same piece with its edge faced
     down to the terrain passes; the same edge with a declared `drop` seam
     across it passes; a step of exactly one passes. Vacuous if the edge is not
     above the terrain: the test asserts the two heights first. Perturbation
@@ -679,6 +745,27 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     unclaimed cell reached; closing the ring, or declaring that ground a place
     with a seam, passes; on a `solid` site the shape's binding line reads zero
     cells examined. Instrument: `tests/blockout.rs`.
+
+23. **The ring is fixed, and the ground runs through every plot edge.** On the
+    blockout fixture under a sloped terrain, every fixed ring cell the handout
+    names holds the terrain's block in the assembled bytes with every place
+    bound and with none; a bound piece that writes stone, and separately air,
+    at one fixed cell is refused `DW0990` (first shape) naming the cell and the
+    displaced block; at a door seam the ring's ground is the sill's course, flat
+    across the opening, and a stair host's treads lie inside its play space and
+    write no ring cell. Vacuous if the fixture's terrain is flat at the floor
+    (every fixed cell would be the floor course anyway): the test asserts the
+    terrain's range across the plot exceeds one. Instrument: `tests/blockout.rs`
+    and `tests/detail.rs`.
+24. **The handout is complete and typed by nobody.** `delvec allocation` on the
+    gallery's site-plan overlay emits, for every place, each field of §4 —
+    intent and style, the concept reference path (or its named absence before
+    step 9), position and neighbours, the whole's sheet, the initial ground
+    with its fixed cells, seams and owed anchors — and `delvec detail` binds
+    the `handed/ground/*` values from it; the output is byte-identical across
+    two invocations. Vacuous if a field is optional and absent: the test
+    asserts every field present on a place with a roof, a seam and a station.
+    Instrument: `tests/detail_verb.rs`.
 
 ## 12. Proof renders
 
@@ -698,5 +785,5 @@ and the free wall the program drew). Paths in the implementation report.
    then docs, the baseline, the version. `fill` and `terrain` land in step 1
    (schema, `DW0100`, the heightmap read through the `image` crate the engine
    already carries) and step 2 (the derivation lays the terrain in place of
-   `MASSIF`/`GROUND`; the stitching check and `DW0838`'s second shape join the
-   battery).
+   `MASSIF`/`GROUND`, the fixed ring as rule 0, the handout's ground; `DW0990`
+   at validation and in the battery, and `DW0838`'s second shape).

@@ -1,6 +1,6 @@
-# ADR-XXXX: One map route — a site is a plan of scenes, and a scene is drawn whole
+# ADR-0032: One map route — a site is a plan of scenes, and a scene is drawn whole
 
-- **Status**: Proposed (draft — a direction check; the number is allocated by the planner)
+- **Status**: Proposed (draft — a direction check; finalised against what is built)
 - **Source**: the owner's direction on spec-0098; the work products of the three
   campaigns that reached a designed exterior (two released on `areas[]` with one
   whole-site piece, one in flight on a site plan with 3 of 53 places detailed);
@@ -85,11 +85,19 @@ of it.
   overridden per region by the plan's volumes. The engine fills only what was
   declared.
 - Landscape first: an open site's ground is one declared heightfield the whole
-  owns, and every scene is stitched to it along its boundary — its edge meets
-  the terrain within a block, or faces it with a wall it drew, or a seam
-  declares the crossing; a crack between two grounds is refused over bytes. No
-  connector between two heights is ever engine-generated: the whole declares
-  the difference and the owning piece draws what crosses it.
+  owns; the ring of ground cells around every scene is fixed by the whole,
+  derived from the terrain, and no piece may write it, so every plot stitches
+  into the map by construction; a crack between two grounds is still measured
+  over bytes. The ring fixes ground only — what stands above it is the owner's,
+  a stair or ramp lands inside a place, and at a seam the ring's ground is
+  derived from the seam's two floors. No connector between two heights is ever
+  engine-generated: the whole declares the difference and the owning piece
+  draws what crosses it.
+- The agent that designs a scene works from a handout `delvec allocation`
+  emits and nobody types: what is built and in what style, the scene's own
+  concept reference (generated after the walk, anchored on the whole's sheet),
+  its position in the whole, the whole's sheet, its initial ground with the
+  fixed ring, its seams and owed anchors.
 - Research into single-building craft is bounded: route A has demonstrated the
   building; the open craft questions are composition — how scenes meet, how a
   town's ground reads — and are researched when a campaign reaches them.
