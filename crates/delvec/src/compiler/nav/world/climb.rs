@@ -147,11 +147,31 @@ impl World {
     /// are — the counterfactual `DW0991` routes over to learn that a missing
     /// hold, not the geometry, closed a leg. Only ever a question, never a
     /// world a proof passes over.
+    ///
+    /// Each credited climbable is held by its own cell, so it survives every
+    /// runtime write that leaves it alone and goes with one that overwrites it
+    /// — the counterfactual changes the hold and nothing else.
     pub(in crate::compiler::nav) fn with_unheld_climbs(&self) -> World {
         let mut w = self.with_cleared(&BTreeSet::new());
-        for c in self.unheld_climb.keys() {
+        if self.unheld_climb.is_empty() {
+            return w;
+        }
+        let mut holds: BTreeMap<[i32; 3], ClimbHold> = (*self.climb_holds).clone();
+        for (c, block) in self.unheld_climb.iter() {
+            let Some(kind) = delvewright_dsl::blockshape::climbable(block) else {
+                continue;
+            };
+            holds.insert(
+                *c,
+                ClimbHold {
+                    block: block.clone(),
+                    kind,
+                    holds: vec![(None, crate::compiler::assembled::Hold::Block(*c))],
+                },
+            );
             w.climb.insert(*c);
         }
+        w.climb_holds = Arc::new(holds);
         w
     }
 

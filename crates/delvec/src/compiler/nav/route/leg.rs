@@ -778,6 +778,67 @@ pub(in crate::compiler::nav) fn route_with_links(
             cur = *next;
             continue;
         }
+        // The climb counterfactual, through the links (spec-0099): a leg whose
+        // walk the unheld-climb credit alone cannot mend (`judge_leg` asked that)
+        // may still be one the credit mends once the party is carried part of the
+        // way — out of a sealed cabin, then up a ladder that is not there.
+        if world.has_unheld_climbs() && e.code != DW_CLIMB_UNHELD {
+            let credited = world.with_unheld_climbs();
+            let (mut used2, mut misses2, mut faults2) = (Vec::new(), BTreeMap::new(), Vec::new());
+            if decompose(
+                &credited,
+                &cur,
+                next,
+                cur.src_step,
+                region_events,
+                ancestor,
+                carries,
+                &mut used2,
+                &mut misses2,
+                &mut faults2,
+            ) {
+                let mut cells: Vec<[i32; 3]> = Vec::new();
+                let mut at = cur.pos;
+                let mut talk = false;
+                let ends: Vec<([i32; 3], [i32; 3])> = used2
+                    .iter()
+                    .map(|(li, stand)| (*stand, carries.links[*li].to))
+                    .collect();
+                for (stand, to) in ends
+                    .iter()
+                    .copied()
+                    .chain(std::iter::once((next.pos, next.pos)))
+                {
+                    if stand == next.pos {
+                        talk = next.talk_to;
+                    }
+                    if let (Some(a), Some(b)) = (
+                        credited.snap_endpoint(at, false),
+                        credited.snap_endpoint(stand, talk),
+                    ) && let Some(path) = credited.find_path(a, b)
+                    {
+                        cells.extend(path);
+                    }
+                    at = to;
+                }
+                result = Err(Failure {
+                    code: DW_CLIMB_UNHELD,
+                    message: format!(
+                        "critical path: the party cannot get from {:?} to {:?}, walking or \
+                         carried, and the way it would take climbs a climbable the world does \
+                         not keep — {}. The game removes a ladder or a vine whose hold fails at \
+                         the first shape update that reaches it, so the climb the piece shows is \
+                         not there to take. Give it its hold — a full face on the block it hangs \
+                         on — or route the forced path another way; do NOT move the objective \
+                         to dodge the climb.",
+                        cur.pos,
+                        next.pos,
+                        world.unheld_climbs_words(&cells),
+                    ),
+                });
+                break;
+            }
+        }
         if let Some((li, why)) = faults.first() {
             let l = &carries.links[*li];
             result = Err(Failure {
