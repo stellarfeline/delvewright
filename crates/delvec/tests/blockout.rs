@@ -1880,9 +1880,11 @@ fn the_ring_is_the_terrain_and_a_door_stands_on_its_sill() {
 
 /// The gallery's site-plan overlay point, materialised the way
 /// `tools/ci/gallery_domain.py` does: the primary minus its non-campaign
-/// directories, the overlay's files laid over it.
-fn gallery_site_plan() -> Campaign {
-    let dir = std::env::temp_dir().join("dw-place-shell-gallery-site-plan");
+/// directories, the overlay's files laid over it. Each caller names its own
+/// `tag`: the materialisation deletes and regenerates its directory, so two
+/// tests sharing one would delete each other's generator output mid-write.
+fn gallery_site_plan(tag: &str) -> Campaign {
+    let dir = std::env::temp_dir().join(format!("dw-place-shell-gallery-site-plan-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     common::gallery_site_plan_at(&dir);
     common::campaign_at(&dir)
@@ -1939,7 +1941,7 @@ fn the_ownership_rule_is_exhaustive_and_one_owner() {
     };
     let bo = SitePlan::of(&campaign());
     assert!(check("blockout", &bo) > 1000);
-    let gallery = gallery_site_plan();
+    let gallery = gallery_site_plan("ownership");
     let gp = SitePlan::of(&gallery);
     assert!(check("gallery", &gp) > 1000);
 
@@ -2417,7 +2419,7 @@ fn bound_only(c: &Campaign, keep: &[&str]) -> Campaign {
 /// are both there — the union of the two halves.
 #[test]
 fn the_rung_in_a_hung_places_floor_hole_is_the_hung_places() {
-    let c = gallery_site_plan();
+    let c = gallery_site_plan("hung-rung");
     let plan = SitePlan::of(&c);
     let site = plan.site();
     let gantry = &plan.boxes[site
