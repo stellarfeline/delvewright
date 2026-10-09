@@ -948,6 +948,23 @@ what a criterion asserts says so in the word *loosening*.
     stair rising through a neighbour's hole answers the seam (`DW0844`); and
     the light probe of `delvec detail` walks in through the place's seams, so
     a cellar entered only from above is measured (`DW0752`).
+29. **`DW0833`'s `distance-xz` measures a place's floor centre**: the midpoint
+    of the extent the place's standable cells span at its realized walk plane,
+    over its own play space. One probe column through the box's centre read a
+    stand-in's ladder pillar as the room's edge and rounded to the integer
+    centre where the probe cell held a block, so an exact identity reddened on
+    a correctly built map. A room built a course narrower still moves the
+    reading. Shown in `blockout.rs`
+    `the_centre_measure_reads_the_floor_and_not_one_column`.
+30. **The rung in a floor's hole is the hole owner's.** A stand-in that cut the
+    hole of a `climb` through a floor hangs the rung in it whatever the lower
+    place's binding; a bound lower piece hangs its ladder up to its own
+    ceiling. Shown in `blockout.rs`
+    `the_rung_in_the_hole_is_the_hole_owners_whatever_the_lower_binding`.
+31. **The overview camera stands over a stack** (departure 23 extended): an
+    `interior` overview's eye also clears every placement and site-plan place
+    standing over its column, ceiling course and roof out to its eaves. Shown in
+    `emit.rs` `an_interior_overview_stands_over_a_place_stacked_over_its_eye`.
 
 | Criterion | Demonstrated in |
 |---|---|

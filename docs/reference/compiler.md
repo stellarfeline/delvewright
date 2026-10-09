@@ -950,7 +950,7 @@ about it is what it BUILDS, which is fixed:
 | the ring's ground | For every place, bound or not, its fixed ground cells — the terrain continued to the plot's edge in the fill's `surface`/`below` (or `solid` block); at the columns of a seam at grade (its sill one course over the terrain or less) the ground is the sill minus one, flat across the opening; a seam aloft — a bridge's deck, a door high in a wall — fixes no earth under it, and the column between the terrain and the sill is the owner's. |
 | a seam | Where the place owning the seam's plane is a stand-in: a frame of contrasting wall around the opening, in that place's own cells, and the opening itself cut to air — or filled with the bar, on a `barred` way, which the world-load seal model then measures shut exactly as it measures a prefab-authored gate. Where a piece owns the plane, nothing: the piece cuts its own opening and ships its own bar. |
 | a stair | A stepped run inside the box the plan named, at the **gentlest standard pitch the run really has room for** — chosen by `siteplan::gentlest_pitch` over the run `siteplan::stair_run` reports, which are the two calls `DW0830` refuses with, so the plan-time verdict and the built geometry cannot disagree. Laid only in a host no piece fills. |
-| a climb | A ladder in the lower place when it is a stand-in: through a floor, from the lower floor up into the hole's first cell, hung on a pillar the stand-in raises beside it (and, in the hole, on the floor course); up a wall, against the wall under the opening up to the sill's course. Proven by the climb moves of the nav model (spec-0099) — `DW0837` reaches over it and `DW0986` crosses the opening on it. Where the lower place is bound, its piece hangs the ladder. |
+| a climb | A ladder in the lower place when it is a stand-in: through a floor, from the lower floor up into the hole's first cell, hung on a pillar the stand-in raises beside it (and, in the hole, on the floor course); up a wall, against the wall under the opening up to the sill's course. Proven by the climb moves of the nav model (spec-0099) — `DW0837` reaches over it and `DW0986` crosses the opening on it. Where the lower place is bound, its piece hangs the ladder up to its own ceiling; the rung in a floor's hole is the hole owner's, so a stand-in that cut the hole hangs it whatever the lower place's binding. |
 | a stairwell | Over every run through a punched **floor**, the floor cut away wherever a body climbing the run needs it gone (`blockout::stairwell`). |
 | a volume | Mass of its own `block`, else of the fill's block of its kind; a `clearance` kept empty. |
 | the order | The fill, the volumes, every stand-in, every stand-in's interior cleared, every place's fixed ground, every seam's frame, every stair, then **the openings**, and the stairwells after them, because a stairwell is measured over the holes it opens off. |
@@ -3324,7 +3324,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `camera.requested_pos` and `camera.standoff` on that shot. `pov` is never
   moved — that eye IS the player's — so a `pov` violation stays a build error
   against the derivation. The plan carries the proof's binding counts:
-  `"camera_eye_proof": {"cameras": N, "pulled_in": M}`.
+  `"camera_eye_proof": {"cameras": N, "pulled_in": M}`. An `interior`
+  overview's eye stands three courses over the highest of: its piece's top, a
+  horizon's ground, the site's declared fill at the eye's column, and every
+  placement or site-plan place stacked over that column (its ceiling course and
+  roof, out to its eaves) — a place over another is a stack the overview looks
+  down into, never a block its eye stands inside.
 - **Every showcase camera photographs the scene** (`DW0724`, second shape;
   spec-0069). When the campaign has `design/cameras.json` (read by the loader,
   hashed into the manifest's inputs), `render_plan` proves each of its cameras

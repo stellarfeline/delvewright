@@ -850,7 +850,8 @@ pub fn derive_with(
     // wall: a ladder against the wall under the opening, up to the sill's own
     // course, so a body on it steps into the opening. Written after the
     // openings so the hole it climbs into is the last word only where the
-    // ladder stands.
+    // ladder stands. The rung in a floor's hole is the hole's owner's: a
+    // stand-in that cut the hole hangs it whatever the lower place's binding.
     let mut climbs = 0usize;
     for (k, s) in seams.iter().enumerate() {
         if s.class != "climb" {
@@ -868,25 +869,39 @@ pub fn derive_with(
             pb
         };
         let low = &boxes[lo_i];
-        if bound.contains(low.node.0.as_str()) || boxes[pa].floor == boxes[pb].floor {
+        if boxes[pa].floor == boxes[pb].floor {
             continue;
         }
+        let low_is_stand_in = !bound.contains(low.node.0.as_str());
         let mask = owned[lo_i].clone();
         let (olo, _) = (s.opening.0, s.opening.1);
         if s.normal_axis == 1 {
             let (x, z, top) = (olo[0], olo[2], olo[1]);
             let ladder = "minecraft:ladder[facing=east,waterlogged=false]";
-            mass.write_within(
-                [x - 1, low.floor, z],
-                [x - 1, top - 1, z],
-                palette::WALL,
-                &mask,
-                0,
-            );
-            mass.write_within([x, low.floor, z], [x, top - 1, z], ladder, &mask, 0);
-            if cut_by_derivation(k) {
+            // The rung in the hole belongs to whoever cut the hole, and the
+            // run under it to the lower place: each writer is asked about
+            // its own cells only. A bound lower piece hangs its ladder up to
+            // its own ceiling and no further, so a rung left to the lower
+            // place's binding is a rung nobody writes.
+            let hole_is_ours = cut_by_derivation(k);
+            if !low_is_stand_in && !hole_is_ours {
+                continue;
+            }
+            if low_is_stand_in {
+                mass.write_within(
+                    [x - 1, low.floor, z],
+                    [x - 1, top - 1, z],
+                    palette::WALL,
+                    &mask,
+                    0,
+                );
+                mass.write_within([x, low.floor, z], [x, top - 1, z], ladder, &mask, 0);
+            }
+            if hole_is_ours {
                 mass.write([x, top, z], [x, top, z], ladder);
             }
+        } else if !low_is_stand_in {
+            continue;
         } else {
             let a = s.normal_axis;
             let (lc, hc) = low.space();
@@ -3454,9 +3469,15 @@ fn identities(
             delvewright_dsl::siteplan::Measure::DistanceXz { from, to } => {
                 match (by_node.get(from.0.as_str()), by_node.get(to.0.as_str())) {
                     (Some(p), Some(q)) => {
-                        let a = built_centre(p, world);
-                        let e = built_centre(q, world);
-                        Some(((e.0 - a.0).powi(2) + (e.1 - a.1).powi(2)).sqrt())
+                        match (
+                            built_centre(p, &b.boxes, world),
+                            built_centre(q, &b.boxes, world),
+                        ) {
+                            (Some(a), Some(e)) => {
+                                Some(((e.0 - a.0).powi(2) + (e.1 - a.1).powi(2)).sqrt())
+                            }
+                            _ => None,
+                        }
                     }
                     _ => None,
                 }
@@ -3643,13 +3664,45 @@ fn built_height(
     Some(best)
 }
 
-/// The centre of a place's built interior, on the two horizontal axes.
-fn built_centre(b: &PlacedBox, world: &crate::compiler::nav::World) -> (f64, f64) {
-    let mid = |axis: usize, fallback: i64| {
-        built_span(b, world, axis).map_or(fallback as f64, |(lo, hi)| (lo as f64 + hi as f64) / 2.0)
+/// **The centre of a place's built floor**, on the two horizontal axes: the
+/// midpoint of the extent its standable cells span at its realized walk plane,
+/// over its own play space and none of another place's. `None` when nothing in
+/// the place is stood on at all — a place with no footing, whose own refusal is
+/// `DW0837`.
+///
+/// # A place, and not one column of it
+///
+/// This measured one probe: the run of clear cells through the box's centre at
+/// the top course, and the box's INTEGER centre wherever that centre cell held
+/// a block. Both readings answered a column rather than the place. A solid
+/// centre cell gave `(x0 + x1) / 2` rounded down — 42 for a footprint whose
+/// centre is 42.5 — so an exact identity reddened on the rounding; and a
+/// stand-in's ladder pillar standing in the probe's run cut the run short on
+/// one side and moved the midpoint off the place it was measuring. The floor's
+/// extent is what a body standing in the place meets, it is what the plan's
+/// centre is the centre OF, and furniture inside the room cannot narrow it
+/// unless it fills a whole edge course — which is a room built narrower.
+///
+/// Public so the instrument is demonstrable on its own: a test reads it over a
+/// derived world and over the same world perturbed, and the identity it feeds
+/// is `DW0833`'s `distance-xz`.
+#[must_use]
+pub fn built_centre(
+    b: &PlacedBox,
+    boxes: &[PlacedBox],
+    world: &crate::compiler::nav::World,
+) -> Option<(f64, f64)> {
+    let plane = built_plane(b, boxes, world)?;
+    let (lo, hi) = b.space();
+    let floor: Vec<[i64; 3]> = cells_of([lo[0], plane, lo[2]], [hi[0], plane, hi[2]])
+        .filter(|c| !owned_by_other(boxes, b, *c) && world.is_standable(narrow(*c)))
+        .collect();
+    let mid = |axis: usize| -> Option<f64> {
+        let lo = floor.iter().map(|c| c[axis]).min()?;
+        let hi = floor.iter().map(|c| c[axis]).max()?;
+        Some((lo as f64 + hi as f64) / 2.0)
     };
-    let c = b.centre();
-    (mid(0, c[0]), mid(2, c[2]))
+    Some((mid(0)?, mid(2)?))
 }
 
 /// `DW0822`'s **second call site**: the route the critical path really is, in

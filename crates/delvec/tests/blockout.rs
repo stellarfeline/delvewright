@@ -359,6 +359,59 @@ fn the_headroom_measure_reads_the_place_and_not_its_centre_column() {
     );
 }
 
+/// **`DW0833`'s `distance-xz` reads a place's floor, not one column of it.**
+///
+/// Every place of the fixture — and of its climb variant, whose undercroft
+/// carries a stand-in's ladder and the pillar it hangs on — measures exactly
+/// the centre the plan gives its footprint. The instrument this replaced read
+/// one probe through the box's centre at its top course, and answered the
+/// box's INTEGER centre wherever that cell held a block, or a midpoint moved by
+/// whatever stood in the probe's run. The perturbation: one edge course of the
+/// hall's floor walled up — a room built a block narrower — moves the measured
+/// centre half a block, so the identity can still red a real spacing defect.
+#[test]
+fn the_centre_measure_reads_the_floor_and_not_one_column() {
+    let exact = |b: &PlacedBox| {
+        (
+            (b.foot[0] + b.foot[1]) as f64 / 2.0,
+            (b.foot[2] + b.foot[3]) as f64 / 2.0,
+        )
+    };
+    let mut measured = 0usize;
+    for c in [campaign(), cell_undercroft_as("climb", "centre")] {
+        let reg = prefabs();
+        let plan = Plan::build(&c, &reg).expect("the fixture plans");
+        let world = delvec::compiler::nav::World::from_plan(&plan, &BTreeMap::new());
+        let boxes = &plan.blockout.as_ref().expect("a blockout").boxes;
+        for b in boxes {
+            assert_eq!(
+                blockout::built_centre(b, boxes, &world),
+                Some(exact(b)),
+                "`{}` measures the centre of its footprint",
+                b.node
+            );
+            measured += 1;
+        }
+    }
+    assert_eq!(measured, 14, "seven places, twice");
+
+    let (boxes, world) = derived_world();
+    let hall = box_of(&boxes, "node/hall");
+    let mut edge = std::collections::BTreeSet::new();
+    for z in hall.foot[2]..=hall.foot[3] {
+        for dy in 0..2 {
+            edge.insert(cell([hall.foot[0], hall.floor + dy, z]));
+        }
+    }
+    let narrowed = world.with_extra_solid(&edge);
+    let (x, z) = exact(hall);
+    assert_eq!(
+        blockout::built_centre(hall, &boxes, &narrowed),
+        Some((x + 0.5, z)),
+        "a hall built a course narrower on its west side is measured half a block east"
+    );
+}
+
 /// `DW0833`: a ceiling closed one course into the play space, and nothing else
 /// moved.
 ///
@@ -2000,6 +2053,31 @@ fn dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them() {
     );
 }
 
+/// The fixture with its link down from the cell to the undercroft declared
+/// `class` — the stair the fixture hosts there taken out. `tag` names the
+/// scratch copy, so tests running at once never share one.
+fn cell_undercroft_as(class: &str, tag: &str) -> Campaign {
+    let dir = variant(
+        &format!("climb-{class}-{tag}"),
+        |v| {
+            for s in v["content"]["seams"].as_array_mut().unwrap() {
+                if s["edge"] == "edge/cell-undercroft" {
+                    s.as_object_mut().unwrap().remove("stair_in");
+                }
+            }
+        },
+        None,
+    );
+    common::patch_file(&dir.join("layout-graph.json"), |v| {
+        for e in v["content"]["edges"].as_array_mut().unwrap() {
+            if e["id"] == "edge/cell-undercroft" {
+                e["class"] = serde_json::json!(class);
+            }
+        }
+    });
+    common::campaign_at(&dir)
+}
+
 /// **A climb's stand-in is a ladder, and the climb is proven on it**
 /// (spec-0098 §2c, spec-0099). The fixture's link down from the cell to the
 /// undercroft declared a `climb`: the derivation hangs a ladder from the
@@ -2010,28 +2088,7 @@ fn dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them() {
 /// because nothing carries a body between the two.
 #[test]
 fn a_climb_is_laddered_at_stage_five_and_a_deep_walk_is_refused() {
-    let as_class = |class: &str| {
-        let dir = variant(
-            &format!("climb-{class}"),
-            |v| {
-                for s in v["content"]["seams"].as_array_mut().unwrap() {
-                    if s["edge"] == "edge/cell-undercroft" {
-                        s.as_object_mut().unwrap().remove("stair_in");
-                    }
-                }
-            },
-            None,
-        );
-        common::patch_file(&dir.join("layout-graph.json"), |v| {
-            for e in v["content"]["edges"].as_array_mut().unwrap() {
-                if e["id"] == "edge/cell-undercroft" {
-                    e["class"] = serde_json::json!(class);
-                }
-            }
-        });
-        common::campaign_at(&dir)
-    };
-    let c = as_class("climb");
+    let c = cell_undercroft_as("climb", "laddered");
     let mut reads = delvewright_dsl::metrics::Reads::new();
     let mut d = Vec::new();
     delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
@@ -2058,7 +2115,7 @@ fn a_climb_is_laddered_at_stage_five_and_a_deep_walk_is_refused() {
         .collect();
     assert!(errs.is_empty(), "{errs:?}");
 
-    let c = as_class("walk");
+    let c = cell_undercroft_as("walk", "laddered");
     let mut d = Vec::new();
     delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
     let deep = d
@@ -2066,6 +2123,47 @@ fn a_climb_is_laddered_at_stage_five_and_a_deep_walk_is_refused() {
         .find(|x| x.code == "DW0829" && x.message.contains("hole in a floor"))
         .unwrap_or_else(|| panic!("{:?}", d.iter().map(|x| x.code.clone()).collect::<Vec<_>>()));
     assert!(deep.message.contains("`climb`"), "{}", deep.message);
+}
+
+/// **The rung in a floor's hole is the hole owner's, whatever the lower
+/// place's binding** (spec-0098 §2c). The climb above hangs its ladder from the
+/// undercroft's floor up into the hole in the cell's floor, whose top rung
+/// stands IN the hole. With the undercroft bound, the piece there hangs its
+/// ladder up to its own ceiling and no further — so the stand-in that cut the
+/// hole still owes the rung in it, and writes exactly that one cell. The
+/// perturbation the other way: with the cell bound, the hole is the piece's,
+/// and the stand-in below writes its run and never the rung.
+#[test]
+fn the_rung_in_the_hole_is_the_hole_owners_whatever_the_lower_binding() {
+    let c = cell_undercroft_as("climb", "rung");
+    let ladders = |c: &Campaign| -> Vec<[i64; 3]> {
+        mass_map(c)
+            .into_iter()
+            .filter(|(_, b)| b.starts_with("minecraft:ladder"))
+            .map(|(cell, _)| cell)
+            .collect()
+    };
+    let all = ladders(&c);
+    let rung = *all
+        .iter()
+        .max_by_key(|cell| cell[1])
+        .expect("the unbound climb hangs a ladder");
+    assert!(all.len() >= 2, "a run and a rung: {all:?}");
+
+    let lower_bound = ladders(&with_bound(&c, &["node/undercroft"]));
+    assert_eq!(
+        lower_bound,
+        vec![rung],
+        "the bound undercroft hangs its own run; the cell's stand-in, which cut \
+         the hole, hangs the rung in it"
+    );
+
+    let upper_bound = ladders(&with_bound(&c, &["node/cell"]));
+    assert!(
+        !upper_bound.contains(&rung) && upper_bound.len() == all.len() - 1,
+        "the bound cell owns its hole and its rung; the undercroft's stand-in \
+         writes the run under it: {upper_bound:?} against {all:?}"
+    );
 }
 
 /// **Scenery is confirmed not reached** (spec-0098 §14, a ruling). A place
