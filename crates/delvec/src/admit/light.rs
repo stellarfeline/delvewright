@@ -284,6 +284,21 @@ impl<'a> Zone<'a> {
         Zone { size, names }
     }
 
+    /// The zone standing on the ground it is handed (spec-0098 §2): each
+    /// listed cell holds the block the whole writes there — the ring's fixed
+    /// ground a piece voids — so a doorway over its sill is probed standing on
+    /// the ground it will stand on in the world, not over the void the piece
+    /// leaves for the whole to fill.
+    pub fn on_ground(mut self, ground: &'a [([i32; 3], &'a str)]) -> Zone<'a> {
+        let [_, sy, sz] = self.size;
+        for (p, block) in ground {
+            if (0..3).all(|a| p[a] >= 0 && p[a] < self.size[a]) {
+                self.names[((p[0] * sy + p[1]) * sz + p[2]) as usize] = block;
+            }
+        }
+        self
+    }
+
     /// The zone's extent.
     pub fn size(&self) -> [i32; 3] {
         self.size

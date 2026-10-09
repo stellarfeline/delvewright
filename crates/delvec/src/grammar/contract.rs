@@ -376,7 +376,17 @@ impl<'a> Index<'a> {
             contingency,
             all_space_cells,
             all_no_body_cells,
-            standable: nav::standable_cells(model),
+            // A `structure_void` cell is not the piece's (spec-0098 §2): no
+            // body stands in it on this piece's account, whatever the whole
+            // writes there, so it is not floor the contract owes an answer for.
+            standable: nav::standable_cells(model)
+                .into_iter()
+                .filter(|c| {
+                    !model
+                        .get(*c)
+                        .is_some_and(|b| b.name == "minecraft:structure_void")
+                })
+                .collect(),
         }
     }
 
@@ -1013,6 +1023,7 @@ fn coverage(ix: &Index) -> Gate {
 
 fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
     let mut examined = 0usize;
+    let mut voided = 0usize;
     let mut breaches: Vec<String> = Vec::new();
 
     for (name, decl) in &ix.contract.spaces {
@@ -1089,6 +1100,19 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
                 }
                 examined += 1;
                 if nav::passable(model, n) && !excused.contains(&n) {
+                    // A `structure_void` is a cell the piece does not own
+                    // (spec-0098 §2): a neighbour's wall, the ring's fixed
+                    // ground, the site's fill. What stands there is the
+                    // whole's to say, and the whole's proofs over the
+                    // assembled bytes judge it (`DW0836`, `DW0838`); the piece
+                    // alone cannot, so it is counted, not refused.
+                    if model
+                        .get(n)
+                        .is_some_and(|b| b.name == "minecraft:structure_void")
+                    {
+                        voided += 1;
+                        continue;
+                    }
                     open.insert(n);
                 }
             }
@@ -1104,6 +1128,12 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
         }
     }
 
+    if voided > 0 {
+        enumeration.push(format!(
+            "closure: {voided} boundary cell(s) are `structure_void` — cells the piece does not \
+             own, judged by the whole's proofs over the assembled world"
+        ));
+    }
     // **A piece whose every space is `open` encloses nothing, honestly**
     // (spec-0098 §6b): a street, a mud flat. Its zero is stated rather than
     // refused, and the question this refusal used to answer — did a room

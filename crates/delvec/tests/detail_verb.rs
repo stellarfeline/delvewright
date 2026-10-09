@@ -224,13 +224,23 @@ fn program_for(a: &Allocation, shift: Option<(&str, i64)>, marks: bool) -> Value
             x >= s.cells[0][0] && x <= s.cells[1][0] && z >= s.cells[0][2] && z <= s.cells[1][2]
         })
     };
-    let mut cells = (0..a.extent[0]).map(|x| (x, 0));
-    let mut carved = if a.seams.is_empty() {
+    // The play space, piece-local, and how much of the place's ring the frame
+    // carries on each side (one cell where the place owns its ring there, none
+    // where a neighbour owns the plane).
+    let [slo, shi] = a.space;
+    let (rw, re) = (slo[0], a.extent[0] - 1 - shi[0]);
+    let (rn, rs) = (slo[2], a.extent[2] - 1 - shi[2]);
+    let clearance = shi[1] - slo[1] + 1;
+    // The seams this place answers inside its play space (the plane is a
+    // neighbour's), and the ones it owns and cuts in its own ring.
+    let inside: Vec<_> = a.seams.iter().filter(|s| !s.owns_plane).collect();
+    let mut cells = (0..shi[0] - slo[0] + 1).map(|x| (x, 0));
+    let mut carved = if inside.is_empty() {
         room()
     } else {
         carve(
-            a.seams.iter().collect(),
-            &[("x", int(0)), ("z", int(0)), ("y", datum.clone())],
+            inside,
+            &[("x", int(slo[0])), ("z", int(slo[2])), ("y", datum.clone())],
             shift,
         )
     };
@@ -238,7 +248,7 @@ fn program_for(a: &Allocation, shift: Option<(&str, i64)>, marks: bool) -> Value
         for owed in &a.owed_anchors {
             let (x, z) = cells
                 .by_ref()
-                .find(|(x, z)| !on_a_seam(*x, *z))
+                .find(|(x, z)| !on_a_seam(*x + slo[0], *z + slo[2]))
                 .expect("a cell no seam claims");
             let stem = owed.strip_prefix("anchor/").unwrap_or(owed);
             carved = json!({
@@ -249,20 +259,110 @@ fn program_for(a: &Allocation, shift: Option<(&str, i64)>, marks: bool) -> Value
         }
     }
 
-    // The frame: the floor course the piece owns, and the play space over it.
-    // Walls and ceiling are the whole's party planes — a course laid inside
-    // the play space would move a brief identity the whole holds this place to
-    // (`DW0833`) — so the place lights itself from the floor, with standing
-    // lamps on a grid.
+    // The frame: the ground and floor course under the walk plane, the storey
+    // — the place's own ring walls around its play space — and the lid over
+    // it. A place owns its outside (spec-0098), so its walls are its own; a
+    // ring side a neighbour owns is not in the frame at all.
     let mut rules = serde_json::Map::new();
     rules.insert(
         "piece".into(),
         rule(split(
             "y",
-            vec![abs(int(1)), rel()],
-            vec![fill("floor"), call("room")],
+            vec![abs(datum.clone()), abs(int(clearance)), rel()],
+            vec![fill("floor"), call("storey"), call("roof")],
         )),
     );
+    // The lid, and whatever of the frame stands over it: where the frame
+    // reaches above the lid, the top of the lid is a roof a body could stand
+    // on, declared out of walk.
+    let over_lid = a.extent[1] - (a.datum_y + clearance) > 1;
+    rules.insert(
+        "roof".into(),
+        rule(if over_lid {
+            json!({"op": "claim", "region": "roof", "body": split(
+                "y",
+                vec![abs(min(int(1), dim("y"))), rel()],
+                vec![fill("floor"), json!({"op": "void"})],
+            )})
+        } else {
+            fill("floor")
+        }),
+    );
+    rules.insert(
+        "storey".into(),
+        rule(split(
+            "x",
+            vec![abs(int(rw)), rel(), abs(int(re))],
+            vec![call("ring_west"), call("mid"), call("ring_east")],
+        )),
+    );
+    rules.insert(
+        "mid".into(),
+        rule(split(
+            "z",
+            vec![abs(int(rn)), rel(), abs(int(rs))],
+            vec![call("ring_north"), call("room"), call("ring_south")],
+        )),
+    );
+    // A ring side: wall, with every owned seam on that side cut through it.
+    for (side, along, base) in [
+        ("west", "z", 0),
+        ("east", "z", 0),
+        ("north", "x", rw),
+        ("south", "x", rw),
+    ] {
+        let owned: Vec<_> = a
+            .seams
+            .iter()
+            .filter(|s| s.owns_plane && s.face == side)
+            .collect();
+        let body = if owned.is_empty() {
+            fill("wall")
+        } else {
+            let mut sizes = Vec::new();
+            let mut children = Vec::new();
+            let mut at = int(base);
+            let idx = if along == "x" { 0 } else { 2 };
+            let mut owned = owned;
+            owned.sort_by_key(|s| s.cells[0][idx]);
+            for s2 in owned {
+                let lo = param(&seam_param(&s2.edge, &format!("{along}0")));
+                let hi = param(&seam_param(&s2.edge, &format!("{along}1")));
+                sizes.push(abs(sub(lo.clone(), at.clone())));
+                children.push(fill("wall"));
+                sizes.push(abs(add(sub(hi.clone(), lo), int(1))));
+                let stem = s2
+                    .edge
+                    .strip_prefix("edge/")
+                    .unwrap_or(&s2.edge)
+                    .to_string();
+                children.push(split(
+                    "y",
+                    vec![
+                        abs(sub(param(&seam_param(&s2.edge, "y0")), datum.clone())),
+                        abs(add(
+                            sub(
+                                param(&seam_param(&s2.edge, "y1")),
+                                param(&seam_param(&s2.edge, "y0")),
+                            ),
+                            int(1),
+                        )),
+                        rel(),
+                    ],
+                    vec![
+                        fill("wall"),
+                        json!({"op": "claim", "region": format!("way/{stem}"), "body": {"op": "void"}}),
+                        fill("wall"),
+                    ],
+                ));
+                at = add(hi, int(1));
+            }
+            sizes.push(rel());
+            children.push(fill("wall"));
+            split(along, sizes, children)
+        };
+        rules.insert(format!("ring_{side}"), rule(body));
+    }
     rules.insert("room".into(), rule(carved));
     // The lamp grid's period is clamped to the strip it is laid in, so a piece
     // narrower than one period — a corridor, the smallest alcove, the sliver
@@ -298,25 +398,39 @@ fn program_for(a: &Allocation, shift: Option<(&str, i64)>, marks: bool) -> Value
         })
         .collect();
 
+    let mut shown: Vec<&str> = [("east", re), ("north", rn), ("south", rs), ("west", rw)]
+        .into_iter()
+        .filter(|(_, ring)| *ring > 0)
+        .map(|(side, _)| side)
+        .collect();
+    shown.push("up");
+    shown.sort_unstable();
+    let no_body = if over_lid {
+        json!({"roof": {"reason": "the place's own roof, which nobody walks"}})
+    } else {
+        json!({})
+    };
     json!({
         "version": "1.9.0",
         "name": format!("generated for {}", a.place),
         "start": "piece",
         "params": params,
-        // The fixture's horizon is `void`, which buries nothing, and a box the
-        // plan stands on its own has its floor in air a party can reach, so the
-        // piece says which side that is (`DW0885`) through the program-level
-        // list the grammar writes into every exported prefab.
-        "shown_faces": ["down"],
+        // A place owns its outside (spec-0098), so the sides of the piece the
+        // party sees from the open site are its own walls and its lid: every
+        // side the frame carries the place's ring on, and the top (`DW0885`,
+        // through the program-level list the grammar writes into every
+        // exported prefab). Its underside stands on the ground.
+        "shown_faces": shown,
         "palette": {
             "floor": "minecraft:stone",
+            "wall": "minecraft:stone_bricks",
             "lamp": "minecraft:sea_lantern"
         },
         "rules": rules,
         "contract": {
             "entry": "room",
             "spaces": {"room": {"envelope": "enclosed"}},
-            "no_body": {},
+            "no_body": no_body,
             "edges": edges
         }
     })
@@ -416,12 +530,14 @@ fn one_verb_writes_the_piece_the_report_and_the_row() {
     let meta: Value =
         serde_json::from_str(&std::fs::read_to_string(prefabs.join("blockout-exit.json")).unwrap())
             .unwrap();
-    assert_eq!(meta["structure"]["size"], json!([8, 5, 8]));
+    // The exit's claim: its ring on three sides, the floor course, four of
+    // headroom and the lid (spec-0098 §2).
+    assert_eq!(meta["structure"]["size"], json!([9, 6, 10]));
     assert_eq!(meta["footprint_class"], "alcove");
     assert_eq!(meta["lighting"]["profile"], "lit");
     assert_eq!(
-        meta["license"]["generated_by"]["params"]["handed/seam/cell-exit/z0"],
-        2
+        meta["license"]["generated_by"]["params"]["handed/seam/cell-exit/z0"], 3,
+        "one cell in from the play space's edge, which the ring stands outside"
     );
 
     // Determinism (ADR-0006): the second run moves no byte.
@@ -655,7 +771,7 @@ fn after_a_plan_edit_detail_all_refits_the_piece_from_its_program() {
     let first: Value =
         serde_json::from_str(&std::fs::read_to_string(prefabs.join("blockout-exit.json")).unwrap())
             .unwrap();
-    assert_eq!(first["structure"]["size"], json!([8, 5, 8]));
+    assert_eq!(first["structure"]["size"], json!([9, 6, 10]));
 
     // The exit box shrinks inside its size class, keeping its one seam on the
     // face; the same program re-fits the new frame.
@@ -669,7 +785,7 @@ fn after_a_plan_edit_detail_all_refits_the_piece_from_its_program() {
     let second: Value =
         serde_json::from_str(&std::fs::read_to_string(prefabs.join("blockout-exit.json")).unwrap())
             .unwrap();
-    assert_eq!(second["structure"]["size"], json!([8, 5, 4]));
+    assert_eq!(second["structure"]["size"], json!([9, 6, 6]));
     // No creator input: the program on disk is the one written before the edit.
     assert_eq!(
         first["license"]["generated_by"]["program_hash"],
@@ -797,4 +913,179 @@ fn a_gate_report_beside_a_piece_is_skipped_by_name_and_a_malformed_metadata_file
     ]);
     assert_eq!(code(&out), 1, "{}", text(&out));
     assert!(text(&out).contains("DW0346"), "{}", text(&out));
+}
+
+// ---------------------------------------------------------------------------
+// spec-0098 §4: the handout
+// ---------------------------------------------------------------------------
+
+/// The gallery's site-plan overlay point, materialised as
+/// `tools/ci/gallery_domain.py` does it.
+fn gallery_site_plan(root: &Path) -> PathBuf {
+    let dir = root.join("site-plan");
+    let gallery = common::repo_root().join("gallery");
+    common::copy_dir_all(&gallery, &dir);
+    for junk in ["baseline", "forms", "overlays", "probes"] {
+        let _ = std::fs::remove_dir_all(dir.join(junk));
+    }
+    common::copy_dir_all(&gallery.join("overlays/site-plan"), &dir);
+    let _ = std::fs::remove_file(dir.join("overlay.json"));
+    dir
+}
+
+/// **Criteria 24 and 25: the handout is complete, typed by nobody, and
+/// carries every seam's form to both sides.** `delvec allocation --all` on the
+/// gallery's site-plan overlay hands every place every field of §4; the annex —
+/// a place with a roof, seams and a station — carries each of them non-empty;
+/// both places a seam joins carry its form; two invocations are byte-identical;
+/// and the ground values `delvec detail` binds are the handout's. Vacuous if a
+/// field were optional and absent: each is asserted present, by name.
+#[test]
+fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
+    let tmp = tempdir("handout");
+    let dir = gallery_site_plan(&tmp);
+    let ds = dir.to_str().unwrap();
+    let first = delvec(&["allocation", ds, "--all"]);
+    assert_eq!(code(&first), 0, "{}", text(&first));
+    let second = delvec(&["allocation", ds, "--all"]);
+    assert_eq!(first.stdout, second.stdout, "two invocations, one handout");
+    let all: Vec<Value> = serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(all.len(), 7, "one handout per place");
+    const FIELDS: [&str; 14] = [
+        "place",
+        "brief",
+        "concept",
+        "sheet",
+        "extent",
+        "datum_y",
+        "world_min",
+        "space",
+        "neighbours",
+        "views",
+        "ground",
+        "seams",
+        "owed_anchors",
+        "voids",
+    ];
+    for h in &all {
+        for f in FIELDS {
+            assert!(h.get(f).is_some(), "`{}` lacks `{f}`", h["place"]);
+        }
+        for f in [
+            "fill",
+            "bottom_y",
+            "floor_y",
+            "perimeter",
+            "min_y",
+            "max_y",
+            "fixed",
+            "columns",
+        ] {
+            assert!(
+                h["ground"].get(f).is_some(),
+                "`{}` lacks `ground.{f}`",
+                h["place"]
+            );
+        }
+        let c = &h["concept"];
+        assert!(c["row"].is_object() || c["absent"].is_string(), "{c}");
+    }
+    let annex = all.iter().find(|h| h["place"] == "node/annex").unwrap();
+    assert!(annex["roof"].is_object(), "the annex declares a roof");
+    assert!(!annex["seams"].as_array().unwrap().is_empty());
+    assert_eq!(
+        annex["brief"]["stations"],
+        json!(["anchor/annex-bench (point)"])
+    );
+    assert!(!annex["brief"]["intent"].as_str().unwrap().is_empty());
+    assert!(!annex["palette"].as_object().unwrap().is_empty());
+    assert!(!annex["neighbours"].as_array().unwrap().is_empty());
+    assert!(!annex["ground"]["fixed"].as_array().unwrap().is_empty());
+    assert!(!annex["ground"]["columns"].as_array().unwrap().is_empty());
+    assert!(!annex["voids"].as_array().unwrap().is_empty());
+
+    // Every seam's form, on both sides of it.
+    let mut joined = 0usize;
+    for h in &all {
+        for s in h["seams"].as_array().unwrap() {
+            let form = s["form"].as_str().expect("a seam's form");
+            assert!(!form.is_empty(), "{s}");
+            let other = all.iter().find(|o| o["place"] == s["other"]).unwrap();
+            let theirs = other["seams"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|t| t["edge"] == s["edge"])
+                .expect("the other side carries the seam");
+            assert_eq!(theirs["form"], s["form"], "both sides of `{}`", s["edge"]);
+            joined += 1;
+        }
+    }
+    assert!(
+        joined >= 24,
+        "{joined} seam side(s) compared — twelve seams, two sides each"
+    );
+
+    // What `delvec detail` binds under `handed/ground/` is the handout's.
+    let a: Vec<Allocation> = {
+        let c = common::campaign_at(&dir);
+        vec![detail::allocation(&c, &NodeId("node/annex".into())).unwrap()]
+    };
+    let prog: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("programs/annex.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        prog["params"]["handed/roof/lid-y"],
+        json!(a[0].roof.as_ref().unwrap().lid_y)
+    );
+    let mut p = prog.clone();
+    for (k, v) in [
+        ("handed/ground/min-y", a[0].ground.min_y),
+        ("handed/ground/max-y", a[0].ground.max_y),
+        ("handed/ground/bottom-y", a[0].ground.bottom_y),
+    ] {
+        p["params"][k] = json!(v + 7); // a wrong default the verb must overwrite
+    }
+    std::fs::write(
+        dir.join("programs/annex.json"),
+        serde_json::to_string_pretty(&p).unwrap() + "\n",
+    )
+    .unwrap();
+    // The yard's piece is the gallery generator's, which this test does not
+    // run; the annex alone is detailed.
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|r| r["place"] == "node/annex");
+    });
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    // The verb binds the handed values before anything else can refuse; the
+    // export's provenance records what it bound.
+    let out = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        ds,
+        "node/annex",
+    ]);
+    let t = text(&out);
+    assert!(
+        t.contains("of 18 handed name(s) bound") || t.contains("handed name(s) bound"),
+        "{t}"
+    );
+    let meta = std::fs::read_to_string(prefabs.join("gallery-annex.json"));
+    if let Ok(meta) = meta {
+        let meta: Value = serde_json::from_str(&meta).unwrap();
+        let params = &meta["license"]["generated_by"]["params"];
+        assert_eq!(params["handed/ground/min-y"], json!(a[0].ground.min_y));
+        assert_eq!(params["handed/ground/max-y"], json!(a[0].ground.max_y));
+        assert_eq!(
+            params["handed/ground/bottom-y"],
+            json!(a[0].ground.bottom_y)
+        );
+    } else {
+        panic!("the annex was not written: {t}");
+    }
 }

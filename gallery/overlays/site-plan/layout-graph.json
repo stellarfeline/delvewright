@@ -182,7 +182,14 @@
         "id": "node/annex",
         "intent": "side-gallery",
         "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one.",
-        "size_class": "room"
+        "size_class": "room",
+        "stations": [
+          {
+            "anchor": "anchor/annex-bench",
+            "kind": "point",
+            "note": "The bench at the annex's far end: the room's own place to sit, answered by the annex program's own mark."
+          }
+        ]
       },
       {
         "id": "node/far-hall",

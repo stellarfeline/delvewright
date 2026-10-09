@@ -1836,3 +1836,164 @@ fn the_ring_is_the_terrain_and_a_door_stands_on_its_sill() {
         );
     }
 }
+
+/// The gallery's site-plan overlay point, materialised the way
+/// `tools/ci/gallery_domain.py` does: the primary minus its non-campaign
+/// directories, the overlay's files laid over it.
+fn gallery_site_plan() -> Campaign {
+    let dir = std::env::temp_dir().join("dw-place-shell-gallery-site-plan");
+    let _ = std::fs::remove_dir_all(&dir);
+    let gallery = common::repo_root().join("gallery");
+    common::copy_dir_all(&gallery, &dir);
+    for junk in ["baseline", "forms", "overlays", "probes"] {
+        let _ = std::fs::remove_dir_all(dir.join(junk));
+    }
+    common::copy_dir_all(&gallery.join("overlays/site-plan"), &dir);
+    let _ = std::fs::remove_file(dir.join("overlay.json"));
+    common::campaign_at(&dir)
+}
+
+/// **Criterion 1: the ownership rule is exhaustive and one-owner.** Over the
+/// blockout fixture, the gallery's site-plan overlay and a hand-built stacked
+/// pair, the owned-cell sets of distinct places are disjoint and every claimed
+/// cell is owned by exactly one of them, by the ring's fixed ground, or is
+/// contested (none is, on a plan that validates); the enumerated count equals
+/// the union of the claims. Each of rules 3a–3c is reached by a named cell on
+/// these plans, and 3d by the hand-built pair.
+#[test]
+fn the_ownership_rule_is_exhaustive_and_one_owner() {
+    let check = |label: &str, plan: &SitePlan| -> usize {
+        let site = plan.site();
+        let mut union: std::collections::BTreeSet<[i64; 3]> = std::collections::BTreeSet::new();
+        for i in 0..plan.boxes.len() {
+            union.extend(site.claim_cells(i));
+        }
+        let mut owned: BTreeMap<[i64; 3], String> = BTreeMap::new();
+        let mut counted = 0usize;
+        for i in 0..plan.boxes.len() {
+            let o = site.ownership(i);
+            for (lo, hi) in &o.owned {
+                for c in blockout::cells_of(*lo, *hi) {
+                    counted += 1;
+                    let prev = owned.insert(c, plan.boxes[i].node.0.clone());
+                    assert!(
+                        prev.is_none(),
+                        "{label}: {c:?} owned by {prev:?} and {}",
+                        plan.boxes[i].node
+                    );
+                }
+            }
+        }
+        let mut enumerated = 0usize;
+        for c in &union {
+            enumerated += 1;
+            match site.owner(*c) {
+                Owner::Place(n) => assert_eq!(owned.get(c), Some(&n.0), "{label}: {c:?}"),
+                Owner::Ground => assert!(!owned.contains_key(c)),
+                other => panic!("{label}: {c:?} is {other:?}"),
+            }
+        }
+        assert_eq!(enumerated, union.len(), "{label}");
+        assert_eq!(counted, owned.len(), "{label}");
+        assert!(
+            counted > 0 && counted <= union.len(),
+            "{label}: {counted} of {}",
+            union.len()
+        );
+        union.len()
+    };
+    let bo = SitePlan::of(&campaign());
+    assert!(check("blockout", &bo) > 1000);
+    let gallery = gallery_site_plan();
+    let gp = SitePlan::of(&gallery);
+    assert!(check("gallery", &gp) > 1000);
+
+    // 3a — a stacked floor: the cell over the undercroft is the cell's floor
+    // course, which is also the undercroft's lid.
+    let site = bo.site();
+    let by = |n: &str| &bo.boxes[site.index_of(&delvewright_dsl::NodeId(n.into())).unwrap()];
+    let cell = by("node/cell");
+    let under = by("node/undercroft");
+    let plane = [under.foot[0] + 1, cell.floor - 1, under.foot[2] + 1];
+    assert_eq!(
+        under.top() + 1,
+        plane[1],
+        "the undercroft's lid is that plane"
+    );
+    assert_eq!(site.owner(plane), Owner::Place(cell.node.clone()), "3a");
+    // 3b — a facade onto an open place: the hall's wall beside the open loft,
+    // off every seam, above the loft's floor course.
+    let (hall, loft) = (by("node/hall"), by("node/loft"));
+    let facade = [hall.foot[1] + 1, loft.floor + 2, loft.foot[3]];
+    assert!(site.claims(site.index_of(&loft.node).unwrap(), facade));
+    assert_eq!(site.owner(facade), Owner::Place(hall.node.clone()), "3b");
+    // 3c — between two roofed places a seam joins: the landing (its `a`) draws
+    // the party wall with the hall.
+    let landing = by("node/landing");
+    let party = [landing.foot[1] + 1, landing.floor + 3, landing.foot[2]];
+    assert!(site.claims(site.index_of(&hall.node).unwrap(), party));
+    assert_eq!(site.owner(party), Owner::Place(landing.node.clone()), "3c");
+    // 3d — two roofed places one apart with nothing joining them.
+    let g = delvewright_dsl::siteplan::Ground::solid("minecraft:stone");
+    let pair = vec![
+        delvewright_dsl::siteplan::PlacedBox {
+            node: delvewright_dsl::NodeId("node/a".into()),
+            foot: [0, 7, 0, 7],
+            floor: 64,
+            clearance: 4,
+            open: false,
+            roof: None,
+        },
+        delvewright_dsl::siteplan::PlacedBox {
+            node: delvewright_dsl::NodeId("node/b".into()),
+            foot: [9, 16, 0, 7],
+            floor: 64,
+            clearance: 4,
+            open: false,
+            roof: None,
+        },
+    ];
+    let site = delvewright_dsl::siteplan::Site::new(&pair, &[], &g);
+    assert!(matches!(site.owner([8, 65, 3]), Owner::Contested(_)), "3d");
+}
+
+/// **Criterion 16, at the campaign: `DW0827` refuses two places one cell
+/// apart with no connection.** Hanging the exit four cells further north off
+/// the cell's west face stands it one cell from the landing, which nothing
+/// joins it to; the refusal names both. The fixture as written — the same two
+/// places three cells apart — is green (the remedies at the rule are proven in
+/// `crates/dsl`'s claim tests).
+#[test]
+fn dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them() {
+    let dir = variant(
+        "one-apart",
+        |v| {
+            for s in v["content"]["seams"].as_array_mut().unwrap() {
+                if s["edge"] == "edge/cell-exit" {
+                    s["meets"] = serde_json::json!(6);
+                }
+            }
+        },
+        None,
+    );
+    let c = common::campaign_at(&dir);
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let e = d
+        .iter()
+        .find(|x| {
+            x.code == "DW0827"
+                && x.message.contains("node/landing")
+                && x.message.contains("node/exit")
+        })
+        .unwrap_or_else(|| panic!("{:?}", d.iter().map(|x| &x.message).collect::<Vec<_>>()));
+    assert!(e.message.contains("no rule awards them"), "{}", e.message);
+
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&campaign(), &mut reads, &mut d);
+    assert!(
+        !d.iter().any(|x| x.code == "DW0827"),
+        "the fixture as written"
+    );
+}

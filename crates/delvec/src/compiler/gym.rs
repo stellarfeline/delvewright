@@ -514,6 +514,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         // same cells as ever, stated from each box's own corner.
         seams.push(json!({
             "edge": id, "face": "east", "at": 1, "meets": 1, "opening": name,
+            "form": format!("a standard `{name}` between two rungs, on one plane"),
         }));
         let _ = i;
     }
@@ -538,9 +539,14 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
         boxes.push(box_entry(top, landing));
         let id = format!("edge/{}-climb", slug(&top.node));
         edges.push(json!({ "id": id, "a": h.node, "b": top.node, "class": "stair" }));
+        // The landing hangs one cell west of its host's corner, so it stands
+        // two cells clear of the next rung east rather than one: two places one
+        // cell apart that nothing joins would both claim the ring between them
+        // (`DW0827`, spec-0098 §2 rule 3d).
         seams.push(json!({
-            "edge": id, "face": "south", "at": 1, "meets": 1,
+            "edge": id, "face": "south", "at": 1, "meets": 2,
             "opening": gate, "stair_in": h.node,
+            "form": format!("a standard `{gate}` at the head of a {rise}-block climb"),
         }));
     }
 
@@ -560,13 +566,18 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
     }));
     seams.push(json!({
         "edge": "edge/the-fall", "face": "south", "at": 1, "meets": 1, "opening": "arch",
+        "form": format!("an arch over a {rise}-block designed fall"),
     }));
+    // Named from the landing's side, as the fall is: two connections across one
+    // plane that disagreed about which place comes first would leave nobody to
+    // draw the wall between them (`DW0827`, spec-0098 §2 rule 3c).
     edges.push(json!({
-        "id": "edge/out-of-the-pit", "a": pit.node, "b": gentle_top.node, "class": "stair",
+        "id": "edge/out-of-the-pit", "a": gentle_top.node, "b": pit.node, "class": "stair",
     }));
     seams.push(json!({
-        "edge": "edge/out-of-the-pit", "face": "north", "at": 8, "meets": 8, "opening": "arch",
+        "edge": "edge/out-of-the-pit", "face": "south", "at": 8, "meets": 8, "opening": "arch",
         "stair_in": pit.node,
+        "form": format!("an arch at the head of the {rise}-block stair out of the pit"),
     }));
 
     // ------------------------------------------------------------- the region
@@ -879,6 +890,14 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                       "measure": { "of": "datum-y", "datum": "datum/landing" } },
                 ],
                 "lighting": { "fixture": "torch", "min_light": 7 },
+                // Open ground at grade between the rungs, so the walker sees each
+                // one stand on the same plane (spec-0098 §2b).
+                "fill": {
+                    "kind": "open",
+                    "terrain": { "kind": "flat", "datum": "datum/grade" },
+                    "surface": "minecraft:grass_block",
+                    "below": "minecraft:dirt",
+                },
             },
         }),
     );

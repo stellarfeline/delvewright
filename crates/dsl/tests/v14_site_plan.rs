@@ -242,6 +242,10 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "y": 59
       }
     ],
+    "fill": {
+      "block": "minecraft:deepslate",
+      "kind": "solid"
+    },
     "identities": [
       {
         "cmp": "eq",
@@ -306,6 +310,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       {
         "at": 2,
         "edge": "edge/porch-hall",
+        "form": "a doorway",
         "face": "east",
         "meets": 2,
         "opening": "arch"
@@ -313,6 +318,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       {
         "at": 2,
         "edge": "edge/hall-vault",
+        "form": "a doorway",
         "face": "east",
         "meets": 2,
         "opening": "door"
@@ -320,6 +326,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       {
         "at": 10,
         "edge": "edge/hall-cellar",
+        "form": "a doorway",
         "face": "west",
         "meets": 1,
         "opening": "passage",
@@ -327,12 +334,14 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       },
       {
         "edge": "edge/porch-cellar",
+        "form": "a doorway",
         "face": "south",
         "opening": "passage"
       },
       {
         "at": 2,
         "edge": "edge/vault-yard",
+        "form": "a doorway",
         "face": "south",
         "meets": 2,
         "opening": "arch"
@@ -343,6 +352,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
           3
         ],
         "edge": "edge/yard-pit",
+        "form": "a doorway",
         "face": "down",
         "meets": [
           0,
@@ -356,6 +366,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
           0
         ],
         "edge": "edge/pit-yard",
+        "form": "a doorway",
         "face": "up",
         "meets": [
           2,
@@ -644,7 +655,9 @@ fn the_binding_ledger_counts_what_the_plan_holds() {
     );
     let line = b.plan.line();
     assert!(
-        line.contains("6 box(es) (15 pair(s) compared; 1 pinned, 5 derived, in 1 component(s))"),
+        line.contains(
+            "6 box(es) (15 pair(s) compared; 1 pinned, 5 derived, in 1 component(s); 0 roofed;"
+        ),
         "{line}"
     );
     assert!(line.contains("7 seam(s) (2 stair, 2 drop)"), "{line}");
@@ -2091,5 +2104,73 @@ fn one_extent_edit_raises_findings_about_that_box_alone() {
             .iter()
             .any(|l| l.contains("`node/vault` stands at [34, 4]")),
         "{lines:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0098: what undeclared space becomes, the seam's form, and the roof
+// ---------------------------------------------------------------------------
+
+/// **Criterion 19's first half: `fill` is required.** A plan with no `fill`
+/// does not parse, and the refusal names the field.
+#[test]
+fn a_plan_without_a_fill_is_refused_naming_the_field() {
+    let d = plan_diags(|v| {
+        v["content"].as_object_mut().unwrap().remove("fill");
+    });
+    let e = d.iter().find(|x| x.code == "DW0100").expect("a DW0100");
+    assert!(e.message.contains("missing field `fill`"), "{}", e.message);
+}
+
+/// A seam's form is a creative judgement the plan states once, never a
+/// default: a seam with none does not parse.
+#[test]
+fn a_seam_without_a_form_is_refused_naming_the_field() {
+    let d = plan_diags(|v| {
+        seams(v)[0].as_object_mut().unwrap().remove("form");
+    });
+    let e = d.iter().find(|x| x.code == "DW0100").expect("a DW0100");
+    assert!(e.message.contains("missing field `form`"), "{}", e.message);
+}
+
+/// **Criterion 8: `DW0988` in both shapes, and eaves that stop.** A roof on the
+/// open yard is refused; a roof over the pit, under the yard, is refused naming
+/// both; a roof over the vault passes, its eaves stopping at the neighbours'
+/// shells rather than being refused.
+#[test]
+fn dw0988_refuses_a_roof_over_the_sky_and_under_a_place_and_passes_a_free_one() {
+    let open = plan_diags(|v| {
+        boxes(v)[box_of("node/yard")]["roof"] = json!({"courses": 2, "eaves": 1});
+    });
+    let e = open
+        .iter()
+        .find(|x| x.code == "DW0988")
+        .expect("a DW0988 on the yard");
+    assert!(
+        e.message.contains("`node/yard`") && e.message.contains("`open`"),
+        "{}",
+        e.message
+    );
+
+    let stacked = plan_diags(|v| {
+        boxes(v)[box_of("node/pit")]["roof"] = json!({"courses": 2, "eaves": 0});
+    });
+    let e = stacked
+        .iter()
+        .find(|x| x.code == "DW0988")
+        .expect("a DW0988 under the yard");
+    assert!(
+        e.message.contains("`node/pit`") && e.message.contains("`node/yard`"),
+        "{}",
+        e.message
+    );
+
+    let free = plan_with(|v| {
+        boxes(v)[box_of("node/vault")]["roof"] = json!({"courses": 3, "eaves": 1});
+    });
+    assert!(!has(&free, "DW0988"), "{free:?}");
+    assert!(
+        !has(&free, "DW0827"),
+        "the eaves stop; they are not contested: {free:?}"
     );
 }

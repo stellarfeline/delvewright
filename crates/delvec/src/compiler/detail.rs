@@ -464,6 +464,9 @@ pub struct Allocation {
     pub datum_y: i64,
     /// The frame's world position.
     pub world_min: [i64; 3],
+    /// The play space's two opposite corner cells, piece-local, inclusive —
+    /// where a body is; everything else the place owns is its outside.
+    pub space: [[i64; 3]; 2],
     /// Every place whose claim meets this one's, by side.
     pub neighbours: Vec<Neighbour>,
     /// The plan views that see this place.
@@ -745,6 +748,10 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
         extent: frame.extent(),
         datum_y: frame.datum_y(),
         world_min: frame.lo,
+        space: {
+            let (lo, hi) = b.space();
+            [local(lo), local(hi)]
+        },
         neighbours,
         views,
         ground,

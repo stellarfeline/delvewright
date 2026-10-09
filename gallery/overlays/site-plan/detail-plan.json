@@ -12,6 +12,7 @@
       },
       {
         "anchors": {
+          "anchor/annex-bench": "anchor/annex-bench",
           "anchor/node-annex": "anchor/node-annex"
         },
         "piece": "prefab/gallery-annex",

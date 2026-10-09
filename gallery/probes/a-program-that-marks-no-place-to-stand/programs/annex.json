@@ -954,43 +954,63 @@
     "room": [
       {
         "body": {
-          "axis": "x",
-          "children": [
-            {
-              "op": "void"
-            },
-            {
-              "op": "call",
-              "symbol": "plinth_row"
-            },
-            {
-              "op": "void"
-            }
-          ],
-          "op": "split",
-          "sizes": [
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
-              }
-            },
-            {
-              "blocks": {
-                "expr": "int",
-                "value": 2
+          "body": {
+            "axis": "x",
+            "children": [
+              {
+                "op": "void"
               },
-              "size": "absolute"
-            },
-            {
-              "size": "relative",
-              "weight": {
-                "expr": "int",
-                "value": 1
+              {
+                "op": "call",
+                "symbol": "plinth_row"
+              },
+              {
+                "op": "void"
               }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 2
+                },
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            ]
+          },
+          "mark": {
+            "anchor": "annex-bench",
+            "at": "offset",
+            "facing": "west",
+            "x": {
+              "expr": "int",
+              "value": 12
+            },
+            "y": {
+              "expr": "int",
+              "value": 0
+            },
+            "z": {
+              "expr": "int",
+              "value": 12
             }
-          ]
+          },
+          "op": "mark"
         },
         "weight": 1
       }

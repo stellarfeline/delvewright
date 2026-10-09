@@ -488,7 +488,18 @@ fn detail_one(
         }
     };
     let sky = light::SkyClaim::of(meta.spatial_contract.as_ref());
-    let zone = Zone::from_tiles(meta.size(), &tiles);
+    let ground: Vec<([i32; 3], &str)> = a
+        .ground
+        .fixed
+        .iter()
+        .map(|f| {
+            (
+                [f.cell[0] as i32, f.cell[1] as i32, f.cell[2] as i32],
+                f.block.as_str(),
+            )
+        })
+        .collect();
+    let zone = Zone::from_tiles(meta.size(), &tiles).on_ground(&ground);
     let probe = light::probe(&zone, DEFAULT_DARK_THRESHOLD, sky);
     if probe.is_unbound() {
         eprintln!(

@@ -811,6 +811,53 @@ mod tests {
         }
     }
 
+    /// **Criterion 16, at the ownership rule.** Two roofed places exactly one
+    /// cell apart with no connection share the column their rings stand in,
+    /// and no rule awards it (rule 3d — `DW0827` refuses the plan). Each remedy
+    /// the refusal names parts or awards it: a seam between them awards the
+    /// plane to its `a`; standing them two apart leaves their claims disjoint,
+    /// the gap the site's fill; one place has no pair.
+    #[test]
+    fn two_roofed_places_one_apart_are_contested_and_each_remedy_parts_them() {
+        let g = solid();
+        let a = a_box("node/west-room", [0, 7, 0, 7], 64, 4, false);
+        let b = a_box("node/east-room", [9, 16, 0, 7], 64, 4, false);
+        let boxes = vec![a.clone(), b.clone()];
+        let site = Site::new(&boxes, &[], &g);
+        let (contests, _) = site.contests();
+        assert_eq!(contests.len(), 1, "one pair contests");
+        assert!(!contests[0].1.is_empty(), "and the claims really intersect");
+        assert!(
+            contests[0].1.iter().all(|c| c[0] == 8),
+            "in the shared ring column"
+        );
+
+        let s = [seam("node/west-room", "node/east-room", 0, 8)];
+        let site = Site::new(&boxes, &s, &g);
+        assert!(
+            site.contests().0.is_empty(),
+            "a connection awards the plane"
+        );
+        assert_eq!(
+            site.owner([8, 65, 5]),
+            Owner::Place(NodeId("node/west-room".into()))
+        );
+
+        let apart = vec![
+            a.clone(),
+            a_box("node/east-room", [10, 17, 0, 7], 64, 4, false),
+        ];
+        let site = Site::new(&apart, &[], &g);
+        assert!(site.contests().0.is_empty(), "two apart, nothing is shared");
+        assert_eq!(
+            site.owner([9, 65, 5]),
+            Owner::Place(NodeId("node/east-room".into()))
+        );
+
+        let one = vec![a_box("node/one-room", [0, 16, 0, 7], 64, 4, false)];
+        assert!(Site::new(&one, &[], &g).contests().0.is_empty());
+    }
+
     #[test]
     fn merge_is_exact_and_deterministic() {
         let cells: BTreeSet<[i64; 3]> = [[0, 0, 0], [0, 0, 1], [1, 0, 0], [1, 0, 1], [5, 5, 5]]
