@@ -1060,6 +1060,27 @@ what a criterion asserts says so in the word *loosening*.
     (the gallery beacon re-cut as 100 standable leaf tops with no light;
     `reached: false` taken off, the verb judges its floor and writes nothing).
 
+37. **A void ships as no block, and scenery has no place anchor.** Two of
+    this spec's premises did not hold in the built world. §2's "vanilla's own
+    semantics for `structure_void`" is the structure block's save, which never
+    lists a void; the pinned `/place template` places every block a template
+    lists, so a piece shipped with its voids wrote them over its neighbours —
+    the Treehouse Camp's server save held 6,607 `structure_void` blocks the
+    model did not, deleting the Low Bridge's last deck rows, while every proof
+    over the model passed. The emitter now ships each template with its void
+    cells omitted (`admit::structure::as_placed`), which is the shape §7's
+    model already read. And departure 36's "the build's `DW0210` is unchanged"
+    did not hold: the blockout synthesized `anchor/node-<place>` for scenery
+    too, and the darkness survey floods from every anchor, so it graded an
+    unlit scenery crown from inside it. Scenery has no place anchor now
+    (`synthesized_anchor_kinds`, the one authority, names none; the blockout
+    writes exactly its names). The first can only have let something ship; the
+    second could only turn a proof red. Shown in
+    `tests/structure_void_shipped.rs` and `detail_verb.rs`
+    `an_unlit_leafy_scenery_room_is_never_surveyed_for_light` (the gallery
+    beacon with its lamp swapped for leaves; red on the old synthesis with
+    `DW0210` over 64 cells).
+
 | Criterion | Demonstrated in |
 |---|---|
 | 1 | `tests/blockout.rs` `the_ownership_rule_is_exhaustive_and_one_owner`; `crates/dsl` `siteplan::claim` tests |

@@ -122,15 +122,13 @@ def test_the_override_is_never_reachable_from_here():
 # ----------------------------------------------------- the gallery stays unstaged
 
 
-def test_the_token_is_written_outside_every_build_tree(tmp_path):
-    work = tmp_path / "work"
-    out = work / "delve-output-gallery-primary-en"
-    admit = cgs.admission_path(work, "primary.en")
-    assert not admit.is_relative_to(out), (
-        "the admission token lands inside the build tree, which is where the compose staging "
-        "path looks for one — a green gallery point would then be servable (spec-0039 §2)"
-    )
-    assert admit.is_relative_to(work)
+def test_the_gate_is_asked_coverage_only_and_mints_no_token():
+    """A gallery point is judged, never admitted: the gate runs `--coverage-only`,
+    which writes no token anywhere, so a green point is not a servable one
+    (spec-0039 §2)."""
+    text = (TOOLS / "ci" / "check-gallery-stageable.py").read_text()
+    assert '"--coverage-only"' in text
+    assert '"--admit"' not in text
 
 
 def test_a_token_in_a_build_tree_is_seen(tmp_path):

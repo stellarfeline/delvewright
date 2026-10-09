@@ -17,7 +17,8 @@
 // run behaves exactly as before (stderr only). Deterministic key order, so two
 // runs of the same delve diff cleanly.
 
-import { writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import type {
   DeathTrial,
   DieRetryBinding,
@@ -642,8 +643,37 @@ export function reportPathFromEnv(env = process.env): string | undefined {
   return raw !== undefined && raw.length > 0 ? raw : undefined;
 }
 
-export async function writeRunReport(path: string, report: RunReport): Promise<void> {
-  await writeFile(path, `${JSON.stringify(report.toJSON(), null, 2)}\n`, "utf8");
+/**
+ * **Which build this run walked**: the sha256 of the build's `manifest.json`
+ * (`DELVEWRIGHT_MANIFEST`), the compiler's index over the whole output tree and
+ * the same fingerprint the staging gate stamps into its admission token. A
+ * verdict carries the identity of what it judged, so a green run cannot be
+ * presented for another tree (`tools/creator/staging-gate.py --run-report`).
+ * `null` when no manifest is named or it cannot be read — which the staging
+ * gate refuses as a run of no identifiable build.
+ */
+export async function buildIdentity(
+  env = process.env,
+): Promise<{ manifest: string | null; manifest_sha256: string | null }> {
+  const manifest = env["DELVEWRIGHT_MANIFEST"];
+  if (manifest === undefined || manifest.length === 0) {
+    return { manifest: null, manifest_sha256: null };
+  }
+  try {
+    const bytes = await readFile(manifest);
+    return { manifest, manifest_sha256: createHash("sha256").update(bytes).digest("hex") };
+  } catch {
+    return { manifest, manifest_sha256: null };
+  }
+}
+
+export async function writeRunReport(
+  path: string,
+  report: RunReport,
+  env = process.env,
+): Promise<void> {
+  const doc = { ...report.toJSON(), build: await buildIdentity(env) };
+  await writeFile(path, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
 }
 
 /** The error a run with red stages ends on: every red stage, with its failures. */

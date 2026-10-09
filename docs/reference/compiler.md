@@ -624,7 +624,8 @@ course, its play space, its ring above the fixed ground and, roofed, its lid and
 declared roof zone. Every other cell of the frame is a **void** — a neighbour's
 cell, the ring's fixed ground, nobody's — where the piece holds
 `minecraft:structure_void` and the owner's block shows through, in the game and
-in the model alike (`DW0987`, `DW0990`). In the derivation this is one rule: the
+in the model alike (`DW0987`, `DW0990`); the game agrees because the template
+ships with its void cells omitted (*A template places what the game places*). In the derivation this is one rule: the
 cells a bound place owns are a hole in what the whole writes, and the whole's
 stand-ins stand only in unbound places' owned cells. A seam whose plane the
 place owns is the piece's to cut, and a `barred` one's shut state the piece's to
@@ -3556,6 +3557,19 @@ not own, and the model reads the neighbour's wall, the ring's fixed ground or
 the fill standing there. (The surround's templates do not carve the map: the
 map wins the argument, and the surround is read without its air.)
 
+**The template ships the way the model reads it.** The pinned game's `/place
+template` places every block a template lists, a listed `structure_void`
+included — `PlaceCommand.placeTemplate` builds a bare `StructurePlaceSettings`
+and `StructureTemplate.placeInWorld` names no block (1.21.11 server, Mojang
+mappings) — so a void shipped as a block deletes the floor it lands on. Vanilla's
+own save never lists one: the structure block hands `structure_void` to
+`fillFromWorld` as a block to skip. Every template the datapack ships (and the
+admission gallery's) therefore goes through `admit::structure::as_placed`: each
+`structure_void` cell is dropped from the block list and the palette re-indexed
+without it; everything else in the file is carried, and a template holding no
+void ships byte-identical. The placement sentinel is read off the shipped bytes
+and never picks a void.
+
 **Socket sealing is a property of a placed piece, not of the layout solver.**
 `solver::seal_layout` runs over the placed pieces of **every** area, pool or
 single-prefab: a mated socket's jigsaw block is cleared to air, leaving a clean
@@ -5525,7 +5539,10 @@ over its region files in name order is printed. No light arrays, heightmaps,
 entities, block entities or ticks. **`--world` is gone**: a showcase frame has
 one world source. The server save (`validation/world-save.sh`) is the
 instrument that checks the writer (`DW0955`, `tools/ci/check-written-world.py`),
-and stays the world source of `delvec scene` and `delvec panorama`.
+and stays the world source of `delvec scene` and `delvec panorama`. The check is
+bound to staging: `check-written-world.py --record` writes its verdict named by
+the build's manifest sha256, and `tools/creator/staging-gate.py` mints no
+admission token without a passing record of that build (`--written-world`).
 
 **What a frame does not show, by name** (spec-0089 §6): entities (the pinned
 core draws none of the kinds the engine summons, from any world); block-entity

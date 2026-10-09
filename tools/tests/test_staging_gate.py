@@ -633,9 +633,41 @@ def test_a_row_may_not_declare_its_own_binding_as_its_precondition(gate, tmp_pat
         gate.load_ledger(bad)
 
 
+def proofs(tree, *, critical_path=True, world=True, other_build=False):
+    """The two machine-proof records the gate demands before it mints a token,
+    written BESIDE `tree` for its current `manifest.json`: a bot ladder run
+    report whose critical path passed, and a written-world record that passed.
+    Each keyword perturbs one of them toward what the gate must refuse."""
+    import hashlib as _h
+
+    tree = pathlib.Path(tree)
+    m = tree / "manifest.json"
+    sha = _h.sha256(m.read_bytes()).hexdigest() if m.is_file() else None
+    if other_build and sha:
+        sha = "0" * 64
+    where = tree.parent / f"{tree.name}.proofs"
+    where.mkdir(parents=True, exist_ok=True)
+    run = where / "run-report.json"
+    run.write_text(json.dumps({
+        "version": 1, "campaign_id": "c", "difficulty": "normal", "harness_crash": None,
+        "stages": [{"stage": "critical-path", "ran": True, "passed": critical_path,
+                    "findings": [], "failures": [] if critical_path else ["step 4: No path to the goal!"]}],
+        "build": {"manifest": str(m), "manifest_sha256": sha},
+    }))
+    ww = where / "written-world.json"
+    ww.write_text(json.dumps({
+        "check": "written-world", "code": "DW0955", "verdict": "pass" if world else "fail",
+        "manifest_sha256": sha, "compared": 100,
+        "classes": {"gravity": 0, "fluid": 0, "re-derived": 0, "clock": 0, "model": 0 if world else 7},
+        "model_sample": [] if world else [{"cell": [30, 86, 48], "written": "minecraft:oak_planks",
+                                            "server": "minecraft:structure_void"}],
+    }))
+    return ["--run-report", str(run), "--written-world", str(ww)]
+
+
 def stage(camp, tree, ledger, *extra):
     return subprocess.run(
-        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree), *proofs(tree),
          "--ledger", str(ledger), *extra],
         capture_output=True, text=True,
     )
@@ -1738,7 +1770,7 @@ def admitted_tree(tmp_path, gate, *, overridden=False):
     ledger.write_text(json.dumps({"findings": rows}))
     cmd = [
         sys.executable, str(SCRIPT),
-        "--campaign", str(camp), "--build", str(tree), "--ledger", str(ledger),
+        "--campaign", str(camp), "--build", str(tree), *proofs(tree), "--ledger", str(ledger),
     ]
     if overridden:
         cmd += [
@@ -1774,7 +1806,7 @@ def test_a_refusal_revokes_an_existing_token(gate, tmp_path):
     red = tmp_path / "red.json"
     red.write_text(json.dumps({"findings": [{"id": "r", "finding": "uncovered", "carrier": None}]}))
     proc = subprocess.run(
-        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree), *proofs(tree),
          "--ledger", str(red)],
         capture_output=True, text=True,
     )
@@ -1799,7 +1831,7 @@ def test_a_build_with_no_manifest_cannot_be_admitted(gate, tmp_path):
     ledger = tmp_path / "led.json"
     ledger.write_text(json.dumps({"findings": [dict(BOUND_ROW, id="ok")]}))
     proc = subprocess.run(
-        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree), *proofs(tree),
          "--ledger", str(ledger)],
         capture_output=True, text=True,
     )
@@ -1859,7 +1891,7 @@ def _red_setup(tmp_path):
 
 def _gate(tree, camp, ledger, reason, ack):
     return subprocess.run(
-        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree), *proofs(tree),
          "--ledger", str(ledger), "--stage-anyway", reason, "--acknowledge-red", ack],
         capture_output=True, text=True,
     )
@@ -1941,7 +1973,7 @@ def gate_cli(tmp_path, where, objectives, rows, *extra):
     ledger = root / "led.json"
     ledger.write_text(json.dumps({"findings": rows}))
     proc = subprocess.run(
-        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree), *proofs(tree),
          "--ledger", str(ledger), *extra],
         capture_output=True, text=True,
     )
@@ -2314,7 +2346,7 @@ def test_a_report_written_inside_the_build_tree_is_refused(gate, tmp_path):
         [
             sys.executable, str(SCRIPT),
             "--campaign", str(tmp_path / "inside" / "camp"),
-            "--build", str(tree),
+            "--build", str(tree), *proofs(tree),
             "--ledger", str(tmp_path / "inside" / "led.json"),
             "--report", str(tree / "staging-gate.md"),
         ],
@@ -2335,7 +2367,7 @@ def test_a_json_verdict_file_inside_the_build_tree_is_refused_too(gate, tmp_path
         [
             sys.executable, str(SCRIPT),
             "--campaign", str(tmp_path / "jsoninside" / "camp"),
-            "--build", str(tree),
+            "--build", str(tree), *proofs(tree),
             "--ledger", str(tmp_path / "jsoninside" / "led.json"),
             "--json", str(tree / "verdicts.json"),
         ],
@@ -2359,7 +2391,7 @@ def test_the_admission_token_may_live_there_and_only_under_its_one_name(gate, tm
         [
             sys.executable, str(SCRIPT),
             "--campaign", str(tmp_path / "admit" / "camp"),
-            "--build", str(tree),
+            "--build", str(tree), *proofs(tree),
             "--ledger", str(tmp_path / "admit" / "led.json"),
             "--admit", str(tree / "elsewhere.json"),
         ],
@@ -2461,7 +2493,7 @@ def test_the_red_count_does_not_move_between_two_runs_of_one_tree(gate, tmp_path
         return subprocess.run(
             [
                 sys.executable, str(SCRIPT),
-                "--campaign", str(camp), "--build", str(tree),
+                "--campaign", str(camp), "--build", str(tree), *proofs(tree),
                 "--ledger", str(ledger), "--report", str(report), *extra,
             ],
             capture_output=True, text=True,
@@ -2518,7 +2550,7 @@ def test_the_stale_count_guard_still_refuses(gate, tmp_path):
     ]}))
     proc = subprocess.run(
         [
-            sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+            sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree), *proofs(tree),
             "--ledger", str(ledger),
             "--stage-anyway", "a deliberate look at one beat, not a QC round",
             "--acknowledge-red", "1",
@@ -2541,3 +2573,85 @@ def test_the_staging_surface_writes_its_report_outside_the_tree(gate):
     assert '"$OUT_DIR/staging-gate.md"' not in server, (
         "the report is a sibling of the build tree, never a child of it"
     )
+
+
+# ---------------------------------------------------------------------------
+# The machine proofs: no token without a green critical path and a world that
+# is the engine's model, both for THIS build. The Treehouse Camp was admitted
+# with its bot red and 6,607 `structure_void` blocks in its server save.
+# ---------------------------------------------------------------------------
+
+
+def _proof_subject(tmp_path, *, red_ledger=False):
+    tree = tmp_path / "out"
+    (tree / "validation").mkdir(parents=True, exist_ok=True)
+    (tree / "manifest.json").write_text('{"outputs": {"a": "b"}}')
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    ledger = tmp_path / "led.json"
+    rows = [dict(BOUND_ROW, id="ok")]
+    if red_ledger:
+        rows.append({"id": "red", "finding": "an uncovered class", "carrier": None})
+    ledger.write_text(json.dumps({"findings": rows}))
+    base = [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+            "--ledger", str(ledger)]
+    return tree, base
+
+
+def _run_gate(cmd):
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def test_no_token_without_the_two_proof_records(gate, tmp_path):
+    tree, base = _proof_subject(tmp_path)
+    proc = _run_gate(base)
+    assert proc.returncode == 1, proc.stderr
+    assert "not proven completable" in proc.stderr
+    assert "no bot ladder run report was presented" in proc.stderr
+    assert "no written-world record was presented" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+    assert verify(tree).returncode == 1
+
+
+@pytest.mark.parametrize(
+    "perturb, said",
+    [
+        ({"critical_path": False}, "stage `critical-path` is RED (1 failure(s)): step 4: No path to the goal!"),
+        ({"world": False}, "7 cell(s) of 100 compared differ; first [30, 86, 48]: written minecraft:oak_planks / server minecraft:structure_void"),
+        ({"other_build": True}, "is a run of another build"),
+    ],
+)
+def test_a_red_or_foreign_proof_refuses_and_the_override_does_not_reach_it(gate, tmp_path, perturb, said):
+    tree, base = _proof_subject(tmp_path)
+    proc = _run_gate(base + proofs(tree, **perturb))
+    assert proc.returncode == 1, proc.stderr
+    assert said in proc.stderr, proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+    # The same proofs under the ledger override: still refused.
+    tree, base = _proof_subject(tmp_path / "o", red_ledger=True)
+    proc = _run_gate(base + proofs(tree, **perturb) + [
+        "--stage-anyway", "a deliberate look at one beat, not a QC round", "--acknowledge-red", "1",
+    ])
+    assert proc.returncode == 1, proc.stderr
+    assert "`--stage-anyway` does not reach this refusal" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+
+def test_the_token_records_what_the_proofs_established(gate, tmp_path):
+    tree, base = _proof_subject(tmp_path)
+    proc = _run_gate(base + proofs(tree))
+    assert proc.returncode == 0, proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["proven"]["stages"] == {"critical-path": True}
+    assert token["proven"]["written_world"]["model"] == 0
+    assert len(token["proven"]["run_report_sha256"]) == 64
+
+
+def test_coverage_only_judges_the_ledger_and_mints_nothing(gate, tmp_path):
+    tree, base = _proof_subject(tmp_path)
+    proc = _run_gate(base + ["--coverage-only"])
+    assert proc.returncode == 0, proc.stderr
+    assert "coverage only: no admission token written" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+    proc = _run_gate(base + ["--coverage-only", "--admit", str(tmp_path / "t.json")])
+    assert proc.returncode == 2, proc.stderr
+    assert not (tmp_path / "t.json").exists()

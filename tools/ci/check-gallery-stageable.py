@@ -25,11 +25,11 @@ nothing had ever said so, because nothing had ever run the gate.
 ## The gallery is still never STAGED, and this does not change that
 
 spec-0039 §2, and `tools/tests/test_gallery_not_shippable.py` is what keeps it
-true. A pass writes an admission token, and a token inside a gallery build tree
-is exactly what the compose staging path looks for — so every token this tool
-mints goes to `--work`, never into a build tree, and each build tree is then
-asserted to hold none. Judging a build is a question about coverage; it is not
-an act of handing anything to anybody.
+true. The gate is run `--coverage-only`: it judges the ledger and writes no
+admission token at all — a build is admitted only with its bot ladder and
+written-world records, which a push does not make here — and each build tree is
+then asserted to hold none. Judging a build is a question about coverage; it is
+not an act of handing anything to anybody.
 
 ## The domain is enumerated, never typed
 
@@ -141,16 +141,6 @@ def uncovered_points(rows: list[tuple[str, str]], declared: list[str]) -> list[s
     return [p for p in declared if p not in have]
 
 
-def admission_path(work: Path, key: str) -> Path:
-    """Where the token for one point goes — outside every build tree, always.
-
-    The staging gate's default is `<build>/staging-admission.json`, and that is
-    exactly the file the compose staging path looks for. Taking the default here
-    would make each green gallery point a servable one.
-    """
-    return work / "admission" / f"{key}.json"
-
-
 def token_in_tree(out: Path) -> bool:
     """Whether a build tree carries an admission token (spec-0039 §2: never)."""
     return (out / ADMISSION).is_file()
@@ -210,7 +200,6 @@ def run_judge(
 ) -> subprocess.CompletedProcess:
     """The staging gate's run on one point, saying nothing; its files are named by the point."""
     key = build_id(None if point == PRIMARY else point, lang)
-    admit = admission_path(work, key)
     report = work / "reports" / f"{key}.md"
     verdicts = work / "reports" / f"{key}.json"
     return subprocess.run(
@@ -223,8 +212,7 @@ def run_judge(
             str(out),
             "--ledger",
             str(ledger),
-            "--admit",
-            str(admit),
+            "--coverage-only",
             "--report",
             str(report),
             "--json",
@@ -238,7 +226,6 @@ def run_judge(
 def judged(work: Path, out: Path, point: str, lang: str, r: subprocess.CompletedProcess) -> dict:
     """What the staging gate decided for one point, read from what it wrote."""
     key = build_id(None if point == PRIMARY else point, lang)
-    admit = admission_path(work, key)
     report = work / "reports" / f"{key}.md"
     verdicts = work / "reports" / f"{key}.json"
     if r.returncode == 2:
@@ -256,7 +243,6 @@ def judged(work: Path, out: Path, point: str, lang: str, r: subprocess.Completed
         "inapplicable": sum(1 for x in rows if x["verdict"] == "INAPPLICABLE"),
         "stderr": r.stderr,
         "report": report,
-        "admitted": admit.is_file(),
         "token_in_tree": token_in_tree(out),
     }
 

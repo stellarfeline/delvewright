@@ -125,8 +125,17 @@ datapack actually loaded before it says READY:
 
 ```sh
 "$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
-    --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve"
+    --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve" \
+    --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
+    --written-world .out/written-world.json
 ```
+
+**`--run-report` and `--written-world` are step 10's two records**, and the gate
+admits only on them: the bot's critical path green, and the server's world equal
+to the engine's model, each for a build with this build's manifest. The build
+this command makes is that build when nothing changed since step 10 — the build
+is deterministic. A record of another build, a red one, or none is refused, and
+`--stage-anyway` does not reach that refusal.
 
 **`--delvec` is optional; this prints it so the command is exact.** Without
 it the script uses the `delvec` already on `PATH` when that binary IS this
@@ -163,7 +172,8 @@ building a fresh one:
 ```sh
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py" --campaign campaigns/<id> \
     --build "$DELVEWRIGHT_ENGINE/validation/delve-output" \
-    --report .out/round-1-gate.md
+    --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
+    --written-world .out/written-world.json --report .out/round-1-gate.md
 EULA=TRUE docker compose -f "$DELVEWRIGHT_ENGINE/validation/compose.yaml" \
     -f "$DELVEWRIGHT_ENGINE/validation/owner-play.yaml" --profile play up
 ```
@@ -245,7 +255,9 @@ they will actually use, below. It also carries:
 
 # play — one command: build, gate, serve, and print the connect line
 "$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
-    --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve"
+    --prefabs "$DELVEWRIGHT_PREFABS" --delvec "$(command -v delvec)" --out "$PWD/.out/delve" \
+    --run-report "$DELVEWRIGHT_ENGINE/validation/run-out/dw-<campaign>-r1/run-report.json" \
+    --written-world .out/written-world.json
 
 # playtest, with in-game notes
 EULA=TRUE CREATOR_NAME=<mc name> docker compose -f "$DELVEWRIGHT_ENGINE/validation/compose.yaml" \

@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RunReport, STAGES, redRunMessage, reportPathFromEnv } from "../src/report.ts";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
+import {
+  RunReport,
+  STAGES,
+  redRunMessage,
+  reportPathFromEnv,
+  writeRunReport,
+} from "../src/report.ts";
 import {
   waveAttribution,
   type DeathTrial,
@@ -205,6 +215,30 @@ test("the report is written only when the environment names a path", () => {
   assert.equal(reportPathFromEnv({}), undefined);
   assert.equal(reportPathFromEnv({ DELVEWRIGHT_RUN_REPORT: "" }), undefined);
   assert.equal(reportPathFromEnv({ DELVEWRIGHT_RUN_REPORT: "/out/run.json" }), "/out/run.json");
+});
+
+// The staging gate admits a build only on a run of THAT build: the report names
+// the sha256 of the manifest it walked, the fingerprint the gate stamps.
+test("the written report names the build it walked by its manifest's sha256", async () => {
+  const dir = await mkdtemp(nodePath.join(tmpdir(), "dw-report-"));
+  const manifest = nodePath.join(dir, "manifest.json");
+  const bytes = '{"delvec_version":"x","outputs":{}}\n';
+  await writeFile(manifest, bytes, "utf8");
+  const out = nodePath.join(dir, "run-report.json");
+  await writeRunReport(out, new RunReport("c", "normal"), { DELVEWRIGHT_MANIFEST: manifest });
+  const doc = JSON.parse(await readFile(out, "utf8")) as { build: Record<string, unknown> };
+  assert.deepEqual(doc.build, {
+    manifest,
+    manifest_sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+  await writeRunReport(out, new RunReport("c", "normal"), {});
+  const none = JSON.parse(await readFile(out, "utf8")) as { build: Record<string, unknown> };
+  assert.deepEqual(none.build, { manifest: null, manifest_sha256: null });
+  await writeRunReport(out, new RunReport("c", "normal"), {
+    DELVEWRIGHT_MANIFEST: nodePath.join(dir, "absent.json"),
+  });
+  const absent = JSON.parse(await readFile(out, "utf8")) as { build: Record<string, unknown> };
+  assert.equal(absent.build["manifest_sha256"], null);
 });
 
 

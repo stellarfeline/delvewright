@@ -57,7 +57,7 @@ massing nobody authored):
 | Name | What it is |
 |---|---|
 | `spawn` | The entry place's footing. The derivation **declares** it, exactly as a prefab does: the anchor arrives carrying `"role": "entry"`, so the graph's own `entry` node is what decides, and the spelling is a name content may address rather than the thing resolution reads. |
-| `anchor/node-<place>` | A place's own footing. `node/near-hall` becomes `anchor/node-near-hall`, because a campaign reaches an anchor through `anchor/<kebab>` and `node/<id>` is not a name any document could write. |
+| `anchor/node-<place>` | A place's own footing. `node/near-hall` becomes `anchor/node-near-hall`, because a campaign reaches an anchor through `anchor/<kebab>` and `node/<id>` is not a name any document could write. Scenery (`reached: false`) has none: no body stands in it, so nothing seeds a flood from inside it (`DW0210`'s survey, the fixture pass) and a document naming one is refused at validation. |
 | `anchor/seam-<edge>` | A `barred` seam's gate region, filled at world load with the bar and measured shut by the same gate-seal model a prefab-authored gate is. `open-gate` and `shortcut` address it. Synthesized only while the place owning the seam's plane is a stand-in; once a piece fills that place, the name is the piece's gate anchor, bound through its `details[]` row. |
 | `anchor/unlock-<edge>` | The far-side affordance's footing, on the side a one-sided `barred` seam opens from. Absent on an `either` seam, which needs none. |
 

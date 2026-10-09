@@ -1511,6 +1511,145 @@ def build_fingerprint(build: pathlib.Path) -> str | None:
     return hashlib.sha256(m.read_bytes()).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# The machine proofs: the build is completable, and its world is its model
+# ---------------------------------------------------------------------------
+#
+# The ledger question above is COVERAGE. A build can carry a live check for
+# every class and still not be completable, or still place a world the proofs
+# never saw: the Treehouse Camp was admitted with its bot critical path red and
+# 6,607 `structure_void` blocks in its server save that the engine's model did
+# not hold. So no token is minted without two records of THIS build, each named
+# by the sha256 of its `manifest.json` (the fingerprint the token binds):
+#
+# - `--run-report`: the bot ladder's `run-report.json` (`validation/bot-run.sh`),
+#   whose `build.manifest_sha256` the harness stamps. Refused when absent, for
+#   another build, a harness crash, without a `critical-path` stage that ran and
+#   passed, or with any stage that ran red.
+# - `--written-world`: `tools/ci/check-written-world.py --record` (`DW0955`),
+#   the world the pinned server built compared cell by cell with the world the
+#   engine writes. Refused when absent, for another build, or not a pass.
+#
+# Neither is reachable by `--stage-anyway`: that override admits classes the
+# ledger cannot cover; a red critical path is a build a bot already failed,
+# and the owner's QA hour is never spent on one. `--coverage-only` asks the
+# ledger question alone and writes no token at all, so it cannot stage anything.
+
+
+def _read_record(path: pathlib.Path | None, flag: str, what: str) -> tuple[dict | None, str | None]:
+    if path is None:
+        return None, f"no {what} was presented ({flag} <path>)"
+    if not path.is_file():
+        return None, f"{flag} {path} does not exist"
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return None, f"{flag} {path} is not readable JSON ({e})"
+    if not isinstance(doc, dict):
+        return None, f"{flag} {path} is not a JSON object"
+    return doc, None
+
+
+def proof_refusals(
+    fingerprint: str | None,
+    run_report: pathlib.Path | None,
+    written_world: pathlib.Path | None,
+) -> tuple[list[str], dict]:
+    """Every reason the two machine proofs do not admit this build, and what
+    they established (carried into the token). Empty list = both proven."""
+    reasons: list[str] = []
+    proven: dict = {}
+    short = (fingerprint or "none")[:12]
+
+    doc, err = _read_record(run_report, "--run-report", "bot ladder run report")
+    if err:
+        reasons.append(f"critical path: {err}")
+    else:
+        build = doc.get("build") if isinstance(doc.get("build"), dict) else {}
+        sha = build.get("manifest_sha256")
+        stages = {s.get("stage"): s for s in doc.get("stages") or [] if isinstance(s, dict)}
+        cp = stages.get("critical-path")
+        red = [
+            name for name, s in stages.items()
+            if s.get("ran") and (not s.get("passed") or s.get("failures"))
+        ]
+        if not sha:
+            reasons.append(
+                f"critical path: {run_report} names no build (`build.manifest_sha256` is "
+                "absent) — a run of no identifiable tree proves nothing about this one"
+            )
+        elif sha != fingerprint:
+            reasons.append(
+                f"critical path: {run_report} is a run of another build (manifest "
+                f"{sha[:12]}…, this tree {short}…) — run the ladder on this build"
+            )
+        if doc.get("harness_crash"):
+            reasons.append(
+                f"critical path: the harness crashed ({doc['harness_crash']}) — the run "
+                "reached no verdict"
+            )
+        if cp is None or not cp.get("ran"):
+            reasons.append(f"critical path: {run_report} records no critical-path stage that ran")
+        for name in red:
+            fails = stages[name].get("failures") or []
+            reasons.append(
+                f"critical path: stage `{name}` is RED ({len(fails)} failure(s))"
+                + (f": {fails[0]}" if fails else "")
+            )
+        proven["run_report_sha256"] = hashlib.sha256(run_report.read_bytes()).hexdigest()
+        proven["stages"] = {n: bool(s.get("ran") and s.get("passed") and not s.get("failures")) for n, s in sorted(stages.items()) if s.get("ran")}
+
+    doc, err = _read_record(written_world, "--written-world", "written-world record")
+    if err:
+        reasons.append(f"written world (DW0955): {err}")
+    else:
+        sha = doc.get("manifest_sha256")
+        classes = doc.get("classes") if isinstance(doc.get("classes"), dict) else {}
+        if doc.get("check") != "written-world":
+            reasons.append(f"written world (DW0955): {written_world} is not a written-world record")
+        elif sha != fingerprint:
+            reasons.append(
+                f"written world (DW0955): {written_world} compares another build (manifest "
+                f"{(sha or 'none')[:12]}…, this tree {short}…)"
+            )
+        if doc.get("verdict") != "pass":
+            sample = doc.get("model_sample") or []
+            first = (
+                f"; first {sample[0].get('cell')}: written {sample[0].get('written')} / server "
+                f"{sample[0].get('server')}"
+                if sample
+                else ""
+            )
+            reasons.append(
+                f"written world (DW0955): the server's world is not the engine's model — "
+                f"{classes.get('model', '?')} cell(s) of {doc.get('compared', '?')} compared "
+                f"differ{first}"
+            )
+        proven["written_world"] = {
+            "record_sha256": hashlib.sha256(written_world.read_bytes()).hexdigest(),
+            "compared": doc.get("compared"),
+            "model": classes.get("model"),
+        }
+    return reasons, proven
+
+
+def refuse_unproven(reasons: list[str], subj: Subject, report: pathlib.Path | None) -> int:
+    """Print the proof refusal (and append it to the report); exit 1."""
+    lines = [
+        f"staging-gate: REFUSED — `{subj.name}` is not proven completable on this build "
+        f"({len(reasons)} reason(s)); `--stage-anyway` does not reach this refusal:",
+        *[f"  {r}" for r in reasons],
+        "  Run the ladder and the written-world comparison on THIS build "
+        "(`validation/bot-run.sh`, `validation/world-save.sh`, `delvec cameras`, "
+        "`tools/ci/check-written-world.py --record`) and present both records.",
+    ]
+    if report is not None and report.is_file():
+        with report.open("a", encoding="utf-8") as f:
+            f.write("\n## REFUSED — not proven completable\n\n" + "\n".join(f"- {r}" for r in reasons) + "\n")
+    print("\n".join(lines), file=sys.stderr)
+    return 1
+
+
 def write_admission(
     path: pathlib.Path,
     subj: Subject,
@@ -1518,6 +1657,7 @@ def write_admission(
     fingerprint: str,
     ledger_digest: str,
     override: dict | None,
+    proven: dict | None = None,
 ) -> None:
     """Mint the token the owner-facing paths require.
 
@@ -1549,6 +1689,9 @@ def write_admission(
         "inapplicable": [r["id"] for r in inap],
         "overridden": override is not None,
         "override": override,
+        # What the two machine proofs established on this build, each with the
+        # hash of the record it was read from.
+        "proven": proven,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -1620,6 +1763,31 @@ def main() -> int:
         ),
     )
     ap.add_argument(
+        "--run-report",
+        type=pathlib.Path,
+        help=(
+            "the bot ladder's run-report.json for THIS build (validation/bot-run.sh; "
+            "its build.manifest_sha256 must be this tree's). Required to admit."
+        ),
+    )
+    ap.add_argument(
+        "--written-world",
+        type=pathlib.Path,
+        help=(
+            "the written-world record for THIS build (tools/ci/check-written-world.py "
+            "--record, DW0955). Required to admit."
+        ),
+    )
+    ap.add_argument(
+        "--coverage-only",
+        action="store_true",
+        help=(
+            "judge the ledger alone and write NO admission token: the question asked of "
+            "a build nobody serves (tools/ci/check-gallery-stageable.py). Nothing it "
+            "produces can stage a build."
+        ),
+    )
+    ap.add_argument(
         "--stage-anyway",
         metavar="REASON",
         help=(
@@ -1638,6 +1806,14 @@ def main() -> int:
         ),
     )
     args = ap.parse_args()
+
+    if args.coverage_only and (args.stage_anyway is not None or args.admit is not None):
+        print(
+            "staging-gate: --coverage-only writes no admission token, so --admit and "
+            "--stage-anyway mean nothing beside it",
+            file=sys.stderr,
+        )
+        return 2
 
     if not args.campaign.is_dir():
         print(f"staging-gate: no campaign dir {args.campaign}", file=sys.stderr)
@@ -1751,8 +1927,9 @@ def main() -> int:
     ledger_digest = hashlib.sha256(args.ledger.read_bytes()).hexdigest()
 
     # A stale token must never survive a refusal: if this build was admitted
-    # once and has since gone red, the old token is the bypass.
-    if admit_path.is_file():
+    # once and has since gone red, the old token is the bypass. A coverage-only
+    # run admits nothing and judges no admission, so it leaves the tree alone.
+    if admit_path.is_file() and not args.coverage_only:
         admit_path.unlink()
 
     if fail:
@@ -1764,6 +1941,8 @@ def main() -> int:
         for r in fail:
             print(f"  {r['id']:<14} {r['verdict']:<16} {r['detail']}", file=sys.stderr)
 
+        if args.coverage_only:
+            return 1
         if args.stage_anyway is None:
             print(
                 "staging-gate: this build is NOT stageable. Fix the red list, or "
@@ -1833,6 +2012,9 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
+        unproven, proven = proof_refusals(fingerprint, args.run_report, args.written_world)
+        if unproven:
+            return refuse_unproven(unproven, subj, args.report)
         write_admission(
             admit_path,
             subj,
@@ -1840,6 +2022,7 @@ def main() -> int:
             fingerprint,
             ledger_digest,
             {"reason": reason, "acknowledged_red": len(fail)},
+            proven,
         )
         print(f"staging-gate: admitted UNDER OVERRIDE -> {admit_path}", file=sys.stderr)
         return 0
@@ -1851,6 +2034,14 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if args.coverage_only:
+        print(
+            f"staging-gate: {subj.name} — all {len(results)} findings carry a live, binding "
+            "check or a justified exemption (coverage only: no admission token written; a "
+            "build is admitted only with its ladder and written-world records)",
+            file=sys.stderr,
+        )
+        return 0
     if fingerprint is None:
         print(
             f"staging-gate: {subj.name} is clean, but the build tree has no "
@@ -1858,7 +2049,10 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
-    write_admission(admit_path, subj, results, fingerprint, ledger_digest, None)
+    unproven, proven = proof_refusals(fingerprint, args.run_report, args.written_world)
+    if unproven:
+        return refuse_unproven(unproven, subj, args.report)
+    write_admission(admit_path, subj, results, fingerprint, ledger_digest, None, proven)
     print(
         f"staging-gate: {subj.name} is stageable — all {len(results)} findings carry a "
         f"live, binding check or a justified exemption; admitted -> {admit_path}",

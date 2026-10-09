@@ -18,7 +18,28 @@ EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/bot-run.sh" --project dw-<campaign>-r1
 ```
 
 Both must exit 0. Then read `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/run-report.json` — it is
-project-scoped, so two ladders can never overwrite each other's.
+project-scoped, so two ladders can never overwrite each other's. Keep its path:
+the staging gate in step 13 admits only on it (`--run-report`), and only while
+its `build.manifest_sha256` is the build being staged.
+
+**Then the world the server built, against the world the engine models.** Every
+proof walks the engine's model; this is the one comparison with what the pinned
+server actually placed (`DW0955`). Mandatory on the build that ships:
+
+```sh
+EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/world-save.sh" "$DELVEWRIGHT_ENGINE/validation/delve-output" \
+    --project dw-<campaign>-r1-world
+delvec --prefabs "$DELVEWRIGHT_PREFABS" cameras "$DELVEWRIGHT_ENGINE/validation/delve-output" \
+    --campaign campaigns/<id> -o .out/written-world
+"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/ci/check-written-world.py" \
+    "$DELVEWRIGHT_ENGINE/validation/delve-output" .out/written-world/worlds/at-load \
+    "$DELVEWRIGHT_ENGINE/validation/delve-output/world" --record .out/written-world.json
+```
+
+It must exit 0. A red names every cell the server holds differently from the
+model, by state pair: that is a toolchain bug (the engine's model or emission
+is wrong), never a campaign to rearrange. Keep `.out/written-world.json` for the
+staging gate (`--written-world`).
 
 - The bot ladder has two labelled stages once the delve has mandatory combat:
   `critical-path` and `die-retry`. The die-retry stage adds two scripted deaths
