@@ -201,6 +201,28 @@ not third-party reconstructions.
   dumper's state count equals the rows' coverage, and `--check` diffs against the
   committed file; two runs of one jar give the same bytes.
 
+- **`faces-1.21.11.tsv`** (in `crates/dsl/data/`) — which of every 1.21.11
+  blockstate's six faces are **full**, asked two ways inside the pinned server
+  jar (same jar sha256 and mappings sha1 as the collision table, both recorded in
+  the file's header): `sturdy` is the game's own
+  `BlockState.isFaceSturdy(EmptyBlockGetter.INSTANCE, BlockPos.ZERO, face)`
+  (`SupportType.FULL`: the support shape's face is the whole square), and `full`
+  is `Block.isFaceFull(getCollisionShape(...), face)`. 29,671 states collapse
+  onto the properties that move either answer: 4,256 rows.
+  **Why it exists**: a block that hangs on another stays only while the face it
+  hangs on is full (spec-0099). A ladder asks `sturdy` of the block behind it, a
+  weeping, twisting or cave vine of the block it grows from, and a vine accepts
+  either — so leaves, whose support shape is empty and whose collision is a full
+  cube, hold a vine and not a ladder. A vertical extent cannot answer that, and a
+  rule written from block names would. Consumed by
+  `delvewright_dsl::blockshape::face_is_sturdy` / `face_is_full`, which the
+  compiler's climb model reads to decide which climbables the world keeps.
+  **Reproduce it**: `python3 tools/maintenance/dump-faces.py [--check] [--work
+  DIR]` (JDK ≥ 21 on `PATH`, network for the mappings). Its pin, fetch, mapping
+  and collapse steps are `dump-collision-tops.py`'s own, imported;
+  `tools/maintenance/collision/FaceDump.java` names no obfuscated member; the
+  dumper's state count must equal the rows' coverage.
+
 - **`block-renames-1.21.11.json`** (in `crates/dsl/data/`) — the block-id
   **renames** the pinned game's DataFixerUpper applies on load: an id 1.21.11
   does not have → the id it becomes, with the greatest `DataVersion` at which
@@ -543,6 +565,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `block-renames-1.21.11.json` | `255937f801a71bb38fe92e7a5c16da74de934b88311b7ba68b62a0929e6756b5` |
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
 | `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
+| `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
 
 ## Not committed
