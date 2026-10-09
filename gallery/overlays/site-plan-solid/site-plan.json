@@ -1,5 +1,5 @@
 {
-  "campaign_id": "gallery",
+  "campaign_id": "gallery-rock",
   "content": {
     "boxes": [
       {
@@ -326,12 +326,12 @@
         "edge": "edge/loft-sightline",
         "from": [
           28,
-          66,
+          70,
           10
         ],
         "to": [
           43,
-          70,
+          71,
           16
         ]
       }
@@ -413,6 +413,23 @@
             24,
             67,
             38
+          ]
+        },
+        "role": "clearance"
+      },
+      {
+        "id": "volume/the-vista-through-the-rock",
+        "note": "The air the near hall's window keeps open through the rock between it and the loft, so the vista reads.",
+        "region": {
+          "extent": [
+            1,
+            1,
+            3
+          ],
+          "min": [
+            38,
+            70,
+            13
           ]
         },
         "role": "clearance"

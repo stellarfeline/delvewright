@@ -5,8 +5,9 @@
 
 The gallery commits no piece. Its hand-built pieces — the hall, the annex kit,
 the yard, the skins — are written by `prefabs/gallery-generator`; its
-program-detailed place, `node/annex` of the site-plan overlay, is written by
-`delvec detail` from `gallery/overlays/site-plan/programs/annex.json`
+program-detailed places — every place of the `site-plan` and `site-plan-solid`
+overlays (spec-0098: a stand-in never ships, so a stageable point binds every
+place) — are written by `delvec detail` from each overlay's `programs/`
 (spec-0058); its sculpted body, the carcass the `carcass` overlay walks, is
 written by `delvec sculpt` from `gallery/forms/` (spec-0087). Every tool that builds the gallery takes `--prefabs <dir>` and
 expects both to be there, and until this file existed the second half had no
@@ -19,7 +20,7 @@ validates the site-plan overlay as `DW0842` — a piece the library does not hol
    texture images to `gallery/textures` (spec-0084), which is where every
    materialised point carries them from (gitignored, generated), and the
    design records it reads stand at `gallery/design`.
-2. Materialises the site-plan overlay into a scratch directory, exactly as the
+2. Materialises each program-detailed overlay into a scratch directory, exactly as the
    coverage gate, the baseline and `gallery-build.py` materialise it
    (`tools/ci/gallery_domain.py`), and runs `delvec detail <point> --all
    --prefabs <out>` over it.
@@ -59,7 +60,10 @@ from gallery_domain import GALLERY, PatchError, apply_patch, materialise  # noqa
 
 REPO = Path(__file__).resolve().parents[2]
 GENERATOR = REPO / "prefabs" / "gallery-generator" / "Cargo.toml"
-POINT = "site-plan"
+# The overlay points whose places are detailed from programs, in order. Each
+# names its pieces by its own campaign id (`<campaign id>-<place stem>`), so
+# the two never write the same piece.
+POINTS = ("site-plan", "site-plan-solid")
 
 
 def die(msg: str) -> None:
@@ -99,18 +103,34 @@ def generate(out: Path, skins: Path, design: Path, textures: Path, terrain: Path
     return sum(1 for p in out.iterdir() if p.suffix == ".nbt")
 
 
-def detail(delvec: Path, out: Path) -> tuple[int, int]:
-    """Detail every program-bound place of the site-plan point into `out`.
+def detail(delvec: Path, out: Path, name: str) -> tuple[int, int]:
+    """Detail every program-bound place of one overlay point into `out`.
 
     Returns (places detailed, rows compared to the committed document).
     """
-    overlay = GALLERY / "overlays" / POINT
+    overlay = GALLERY / "overlays" / name
     committed = json.loads((overlay / "detail-plan.json").read_text())
     with tempfile.TemporaryDirectory(prefix="gallery-detail-") as tmp:
-        point = Path(tmp) / POINT
+        point = Path(tmp) / name
         n = materialise(point, overlay)
         if n == 0:
-            die(f"materialising `{POINT}` wrote ZERO files")
+            die(f"materialising `{name}` wrote ZERO files")
+        # The verb writes every program place's row; the committed rows it is
+        # about to write are taken out of the materialised plan first, so a
+        # place is never judged against a row naming a piece this run has not
+        # made yet. The rows it writes are compared to the committed ones below.
+        stems = {p.stem for p in (overlay / "programs").glob("*.json")}
+        plan_path = point / "detail-plan.json"
+        plan = json.loads(plan_path.read_text())
+        kept = [r for r in plan["content"]["details"] if r["place"].split("/", 1)[1] not in stems]
+        stripped = len(plan["content"]["details"]) - len(kept)
+        if stripped != len(stems):
+            die(
+                f"`{overlay.relative_to(REPO)}/detail-plan.json` commits {stripped} row(s) for the "
+                f"{len(stems)} program(s) under `programs/`; every program place's row is committed"
+            )
+        plan["content"]["details"] = kept
+        plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
         r = subprocess.run(
             [str(delvec), "--prefabs", str(out), "detail", str(point), "--all"],
             capture_output=True,
@@ -119,7 +139,7 @@ def detail(delvec: Path, out: Path) -> tuple[int, int]:
         sys.stderr.write(r.stderr)
         if r.returncode != 0:
             die(
-                f"`delvec detail {POINT} --all` exited {r.returncode}. The gallery's "
+                f"`delvec detail {name} --all` exited {r.returncode}. The gallery's "
                 "program-detailed place did not detail, so the prefab directory is "
                 "incomplete.\n" + r.stdout
             )
@@ -235,7 +255,11 @@ def main() -> int:
     )
     if pieces == 0:
         die("the generator wrote ZERO pieces")
-    places, compared = detail(delvec, out)
+    places = compared = 0
+    for point in POINTS:
+        p, c = detail(delvec, out, point)
+        places += p
+        compared += c
     forms = sculpt(delvec, out)
     if forms == 0:
         die("`gallery/forms/` holds ZERO forms, so nothing exercised `delvec sculpt`")

@@ -918,18 +918,35 @@ what a criterion asserts says so in the word *loosening*.
 24. **`DW0838` examines** the standable cells of the region outside every
     claim: on an `open` site they are the commons (ruling 2); on a
     `solid` site that keeps a sky volume, the rock's top under the sky is such
-    ground, and a place reaching it is refused. **Recorded debt**: the
-    solid-site refusal is not shown red in test — on the blockout fixture a
-    solid site's ring is the whole's rock, so no piece's opening reaches ground
-    outside every claim, and no fixture yet has a sky-open place that can climb
-    to the rock's top under a kept sky. Its message names its remedies (close
-    the edge, make the ground a place, declare the fill `open`).
+    ground, and a place reaching it is refused — shown red in test, with its
+    `fill: open` remedy taken green. Binding the solid point found that the
+    walk looking for that ground excluded exactly those cells on a solid site,
+    so the shape could never fire; fixed with the test.
 25. **The gallery's annex** declares nine roof courses with one cell of eaves:
     the eaves course sits level with the lid, so a stepped 45° gable over twenty
     columns peaks nine courses above it. Its free walls are three (north, west,
     south), not two. It carries a station, `anchor/annex-bench`, so one place
     holds a roof, seams and a station for criterion 24.
 26. **`form` is required**, never defaulted.
+27. **Every place of both site-plan points is detailed** (criterion 18 as
+    written): a stand-in never ships, so a stageable point binds every place.
+    The open point's halls, loft, undercroft and causeway, and every place of
+    the solid point, are plain programs under each overlay's `programs/`
+    (a stone shell, a lantern-lit lid, an opening at every seam, the barred
+    doors and the reliquary grille as gates, the stairs as flights). The
+    solid point is its own campaign, `gallery-rock`, so the verb's piece names
+    (`<campaign id>-<place stem>`) never collide with the open point's; the
+    vista from the near hall to the loft is raised to head height in both and
+    passes through a window in each wall, and on the solid point through a
+    one-cell clearance in the rock between them.
+28. **What the program path gained, found by binding the gallery**: a bar is
+    exported as the gate anchor of its region, so a program can ship a gate a
+    campaign names (spec-0058 §2.6 binds by stem); a `stair`, `drop` or
+    `barred` edge's face is every via cell on the plane, treads and bars
+    included, and a `barred` edge with no via faces out through its bar, so a
+    stair rising through a neighbour's hole answers the seam (`DW0844`); and
+    the light probe of `delvec detail` walks in through the place's seams, so
+    a cellar entered only from above is measured (`DW0752`).
 
 | Criterion | Demonstrated in |
 |---|---|
@@ -951,7 +968,7 @@ what a criterion asserts says so in the word *loosening*.
 | 16 | `tests/blockout.rs` `dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them`; `siteplan::claim` `two_roofed_places_one_apart_are_contested_and_each_remedy_parts_them` |
 | 17 | `tests/detail.rs` `the_commons_is_walkable_ground_and_a_solid_site_has_none` |
 | 22 | `tests/detail.rs` `dw0838_refuses_a_hole_between_two_places_nothing_allocated`; `tests/cli.rs` `perturb_short_walls_reddens_dw0838_beside_dw0836` (the stand-in leak) |
-| 18 | `tools/tests/test_staging_gate.py` `test_a_stand_in_never_ships` |
+| 18 | `tools/tests/test_staging_gate.py` `test_a_stand_in_never_ships`; `tools/ci/check-gallery-stageable.py` over both site-plan points, every place bound |
 | 19 | `crates/dsl/tests/v14_site_plan.rs` `a_plan_without_a_fill_is_refused_naming_the_field`; `tests/blockout.rs` `both_fills_derive_and_differ_only_where_no_place_owns`; overlays `site-plan` and `site-plan-solid` |
 | 20 | `tests/blockout.rs` `the_terrain_is_the_heightmap_column_for_column`; probe `a-terrain-on-a-datum-the-plan-does-not-name` |
 | 21 | `tests/detail.rs` `dw0990_refuses_a_crack_and_passes_a_faced_edge_and_a_step`; `tests/blockout.rs` `a_hollow_edge_reddens_dw0990_alone` |

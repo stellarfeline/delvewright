@@ -1,0 +1,67 @@
+{
+  "campaign_id": "gallery-rock",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/node-causeway": "anchor/node-causeway"
+        },
+        "piece": "prefab/gallery-rock-causeway",
+        "place": "node/causeway"
+      },
+      {
+        "anchors": {
+          "anchor/node-far-hall": "anchor/node-far-hall",
+          "anchor/unlock-east-door": "anchor/unlock-east-door"
+        },
+        "piece": "prefab/gallery-rock-far-hall",
+        "place": "node/far-hall"
+      },
+      {
+        "anchors": {
+          "anchor/node-loft": "anchor/node-loft"
+        },
+        "piece": "prefab/gallery-rock-loft",
+        "place": "node/loft"
+      },
+      {
+        "anchors": {
+          "anchor/node-near-hall": "anchor/node-near-hall",
+          "anchor/reading-desk": "anchor/reading-desk",
+          "anchor/reliquary-grille": "anchor/reliquary-grille",
+          "anchor/seam-centre-door": "anchor/seam-centre-door",
+          "anchor/seam-east-door": "anchor/seam-east-door",
+          "anchor/seam-west-door": "anchor/seam-west-door",
+          "anchor/unlock-west-door": "anchor/unlock-west-door",
+          "spawn": "anchor/spawn"
+        },
+        "piece": "prefab/gallery-rock-near-hall",
+        "place": "node/near-hall"
+      },
+      {
+        "anchors": {
+          "anchor/node-annex": "anchor/node-annex"
+        },
+        "piece": "prefab/gallery-rock-annex",
+        "place": "node/annex"
+      },
+      {
+        "anchors": {
+          "anchor/exit-stone": "anchor/exit-stone",
+          "anchor/node-exit": "anchor/node-exit"
+        },
+        "piece": "prefab/gallery-rock-exit",
+        "place": "node/exit"
+      },
+      {
+        "anchors": {
+          "anchor/node-undercroft": "anchor/node-undercroft"
+        },
+        "piece": "prefab/gallery-rock-undercroft",
+        "place": "node/undercroft"
+      }
+    ]
+  },
+  "dsl_version": "0.38.0",
+  "stage": "detail-plan"
+}

@@ -492,6 +492,14 @@ producing the same name are expansion errors — the collision names both rules.
 Two marks on the same **cell** under different names are legal, as in the
 hand-built prefabs.
 
+**A gate is a bar, not a mark** (spec-0098). A `mark` names one cell; a gate
+names a region and the block that fills it shut. Every `barred` edge's bar is
+exported as the gate anchor `anchor/<bar region>` — its cells, its block and
+`resolves_to: bar:<region>` — when the boxes the program claims for it fill one
+box together, so a campaign can name the gate a piece ships (a gate station, or
+the gate over a barred seam whose plane the place owns) exactly as it names a
+mark. A mark of the same name keeps the name.
+
 ## 2c. The idiom index — how the constructs make shapes
 
 §2 is the list of constructs. What an author is missing is not that list: it is
@@ -1040,7 +1048,7 @@ contract; there is no flag.
 | `contract-no-body` | every standable cell of every out-of-walk region earns a **computed** kind, strongest first — `sealed` (the cell's whole passable component lies inside the declared out-of-walk cells and touches no cell of the model's outer layer, so what closes it is this piece's blocks and never the edge of the world), `posted` (within Chebyshev 2 of an anchor declared inside the cell's own region), `facade` (the air outside the piece reaches the cell, and the cell lies inside no declared space). A cell earning none reds its region, naming the cells and the clause each demand refused them with; a region holding no standable cell is red too. The enumeration reports the per-region breakdown by cell count | regions |
 | `contract-reachability` | every standable cell of every space, minus nested out-of-walk cells, plus every standable cell of a transit volume, is reached from the entry space by a walk **confined to declared spaces and crossing only through declared edges** — ways shut, drops forward only. The walk then re-runs with the ways opened **cumulatively by name**, and what is proved is the **union** over those states: a cell is red only when no opening state reaches it. Each state's target set is recomputed over its own blocks, because a laid way's whole point is that the cells a body stands on did not exist before it was laid. Every space reached only under an opening is named with what opens it — *reached only once `<way>` is laid* | target cells |
 | `contract-anchors` | every declared anchor lands in a contract element, and the element is written into the metadata as the anchor's `resolves_to` | anchors |
-| `contract-exterior-faces` | every `exterior` edge exports a face with cells on it — a claim nothing can mate with is not a face. A face lies on the region's outer layer, or — for a declared via lying wholly in one plane inside the region, on no outer layer (a place whose frame reaches past a party plane it does not own, spec-0098) — on that plane, pointing away from the side its space's cells are on | exterior edges |
+| `contract-exterior-faces` | every `exterior` edge exports a face with cells on it — a claim nothing can mate with is not a face. A face is the via's cells on the plane that are passable; a `stair`, `drop` or `barred` edge's face is every via cell on the plane, treads and bars included (spec-0098: where a stair rises through a hole a neighbour cuts, its top step stands under that hole), and a `barred` edge with no via faces out through its bar. A face lies on the region's outer layer, or — for a declared via lying wholly in one plane inside the region, on no outer layer (a place whose frame reaches past a party plane it does not own, spec-0098) — on that plane, pointing away from the side its space's cells are on | exterior edges |
 | `contract-no-body-majority` | a piece mostly out of walk says so | standable cells |
 
 **A binding of zero is red, unless the gate can compute why the emptiness is

@@ -963,11 +963,6 @@
       "stage": "world"
     },
     {
-      "code": "DW0821",
-      "pointer": "/content/sightlines[edge/loft-sightline]",
-      "stage": "site-plan"
-    },
-    {
       "code": "DW0822",
       "pointer": "/content/boxes",
       "stage": "site-plan"
@@ -1013,11 +1008,6 @@
       "code": "DW0781",
       "pointer": "/areas",
       "stage": "world"
-    },
-    {
-      "code": "DW0821",
-      "pointer": "/content/sightlines[edge/loft-sightline]",
-      "stage": "site-plan"
     },
     {
       "code": "DW0822",

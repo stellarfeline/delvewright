@@ -1,0 +1,695 @@
+{
+  "contract": {
+    "edges": [
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "stair",
+        "rise": 0,
+        "via": "undercroft-stair"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "stair",
+        "rise": 0,
+        "via": "undercroft-crawl"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "undercroft-shaft"
+      }
+    ],
+    "entry": "room",
+    "spaces": {
+      "room": {
+        "envelope": "enclosed"
+      }
+    }
+  },
+  "name": "gallery-undercroft",
+  "palette": {
+    "floor": "minecraft:polished_andesite",
+    "lamp": "minecraft:sea_lantern",
+    "tread": "minecraft:polished_diorite",
+    "wall": "minecraft:polished_blackstone_bricks"
+  },
+  "params": {},
+  "rules": {
+    "floor": [
+      {
+        "body": {
+          "material": {
+            "role": "floor"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "lamp": [
+      {
+        "body": {
+          "material": {
+            "role": "lamp"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "part-1": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "room-air"
+            },
+            {
+              "op": "call",
+              "symbol": "room-tread"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 5
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-2": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "room-tread"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "place": [
+      {
+        "body": {
+          "body": {
+            "axis": "y",
+            "children": [
+              {
+                "axis": "z",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "floor"
+                  },
+                  {
+                    "axis": "x",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "lamp"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "lamp"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "floor"
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 6
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "axis": "x",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "room-air"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-1"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-2"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "room-air"
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 3
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 3
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "axis": "x",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "room-air"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-1"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "room-air"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-2"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "room-air"
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 2
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 2
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 2
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "axis": "x",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "room-air"
+                  },
+                  {
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-shaft-air"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-stair-tread"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 2
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-stair-air"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 5
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-crawl-air"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-crawl-tread"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "room-air"
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 2
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 2
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "size": "relative",
+                "weight": {
+                  "expr": "int",
+                  "value": 1
+                }
+              }
+            ]
+          },
+          "mark": {
+            "anchor": "node-undercroft",
+            "at": "offset",
+            "facing": "north",
+            "x": {
+              "expr": "int",
+              "value": 3
+            },
+            "y": {
+              "expr": "int",
+              "value": 1
+            },
+            "z": {
+              "expr": "int",
+              "value": 3
+            }
+          },
+          "op": "mark"
+        },
+        "weight": 1
+      }
+    ],
+    "room-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "room"
+        },
+        "weight": 1
+      }
+    ],
+    "room-tread": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "tread"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "room"
+        },
+        "weight": 1
+      }
+    ],
+    "undercroft-crawl-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "undercroft-crawl"
+        },
+        "weight": 1
+      }
+    ],
+    "undercroft-crawl-tread": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "tread"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "undercroft-crawl"
+        },
+        "weight": 1
+      }
+    ],
+    "undercroft-shaft-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "undercroft-shaft"
+        },
+        "weight": 1
+      }
+    ],
+    "undercroft-stair-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "undercroft-stair"
+        },
+        "weight": 1
+      }
+    ],
+    "undercroft-stair-tread": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "tread"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "undercroft-stair"
+        },
+        "weight": 1
+      }
+    ]
+  },
+  "shown_faces": [],
+  "start": "place",
+  "version": "1.9.0"
+}

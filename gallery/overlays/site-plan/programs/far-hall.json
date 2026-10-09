@@ -1,0 +1,2002 @@
+{
+  "contract": {
+    "edges": [
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "annex-chute"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "west-door"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "centre-door"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "east-door"
+      },
+      {
+        "a": "room",
+        "b": "loft-landing",
+        "class": "stair",
+        "rise": 5,
+        "via": "loft-flight"
+      },
+      {
+        "a": "loft-landing",
+        "b": "exterior",
+        "class": "walk",
+        "via": "loft-stair"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "loft-drop"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "undercroft-stair-way"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "exit-arch-way"
+      },
+      {
+        "a": "room",
+        "b": "exterior",
+        "class": "walk",
+        "via": "causeway-front-way"
+      }
+    ],
+    "entry": "room",
+    "spaces": {
+      "loft-landing": {
+        "envelope": "open"
+      },
+      "room": {
+        "envelope": "open"
+      }
+    }
+  },
+  "name": "gallery-far-hall",
+  "palette": {
+    "floor": "minecraft:polished_andesite",
+    "lamp": "minecraft:sea_lantern",
+    "lid": "minecraft:spruce_planks",
+    "tread": "minecraft:polished_diorite",
+    "wall": "minecraft:polished_blackstone_bricks"
+  },
+  "params": {},
+  "rules": {
+    "annex-chute-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "annex-chute"
+        },
+        "weight": 1
+      }
+    ],
+    "causeway-front-way-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "causeway-front-way"
+        },
+        "weight": 1
+      }
+    ],
+    "centre-door-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "centre-door"
+        },
+        "weight": 1
+      }
+    ],
+    "east-door-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "east-door"
+        },
+        "weight": 1
+      }
+    ],
+    "exit-arch-way-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "exit-arch-way"
+        },
+        "weight": 1
+      }
+    ],
+    "floor": [
+      {
+        "body": {
+          "material": {
+            "role": "floor"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "lamp": [
+      {
+        "body": {
+          "material": {
+            "role": "lamp"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "lid": [
+      {
+        "body": {
+          "material": {
+            "role": "lid"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "loft-drop-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "loft-drop"
+        },
+        "weight": 1
+      }
+    ],
+    "loft-flight-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "loft-flight"
+        },
+        "weight": 1
+      }
+    ],
+    "loft-flight-tread": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "tread"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "loft-flight"
+        },
+        "weight": 1
+      }
+    ],
+    "loft-landing-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "loft-landing"
+        },
+        "weight": 1
+      }
+    ],
+    "loft-stair-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "loft-stair"
+        },
+        "weight": 1
+      }
+    ],
+    "part-1": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "floor"
+            },
+            {
+              "op": "call",
+              "symbol": "undercroft-stair-way-air"
+            },
+            {
+              "op": "call",
+              "symbol": "floor"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 25
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-2": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            },
+            {
+              "op": "call",
+              "symbol": "loft-flight-tread"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 20
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 9
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-3": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "annex-chute-air"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            },
+            {
+              "op": "call",
+              "symbol": "loft-flight-tread"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 19
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 9
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-4": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            },
+            {
+              "op": "call",
+              "symbol": "loft-flight-air"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 20
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 9
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-5": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
+            },
+            {
+              "op": "call",
+              "symbol": "lid"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-6": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "floor"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 32
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "place": [
+      {
+        "body": {
+          "body": {
+            "body": {
+              "axis": "z",
+              "children": [
+                {
+                  "axis": "x",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "wall"
+                    },
+                    {
+                      "axis": "y",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "loft-stair-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 6
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 3
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "wall"
+                    },
+                    {
+                      "axis": "y",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "loft-drop-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 5
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 3
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "wall"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 21
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 3
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 2
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "y",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "part-1"
+                    },
+                    {
+                      "axis": "x",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "west-door-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "centre-door-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "east-door-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "loft-flight-tread"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 2
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 6
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 2
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 2
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 6
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 3
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 9
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "axis": "x",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "east-door-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "loft-flight-tread"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 12
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 2
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 6
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 3
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 9
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-2"
+                    },
+                    {
+                      "axis": "x",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "loft-landing-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 20
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 3
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 9
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "axis": "x",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "lid"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 32
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 2
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 2
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 3
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "y",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "part-1"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-3"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-2"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-4"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-5"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 3
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 4
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "y",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "part-1"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-3"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-4"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-5"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 3
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 5
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "y",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "part-6"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-2"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-4"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-5"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 2
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 6
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "y",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "part-6"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-2"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-4"
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-5"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 7
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "y",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "part-6"
+                    },
+                    {
+                      "axis": "x",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 32
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "part-5"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 8
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "x",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "wall"
+                    },
+                    {
+                      "axis": "y",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "floor"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "room-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "lid"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 8
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "wall"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 1
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 32
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "axis": "x",
+                  "children": [
+                    {
+                      "op": "call",
+                      "symbol": "wall"
+                    },
+                    {
+                      "axis": "y",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "exit-arch-way-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 3
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "wall"
+                    },
+                    {
+                      "axis": "y",
+                      "children": [
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "causeway-front-way-air"
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "wall"
+                        }
+                      ],
+                      "op": "split",
+                      "sizes": [
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 6
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "size": "relative",
+                          "weight": {
+                            "expr": "int",
+                            "value": 1
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "op": "call",
+                      "symbol": "wall"
+                    }
+                  ],
+                  "op": "split",
+                  "sizes": [
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 6
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 2
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 8
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "blocks": {
+                        "expr": "int",
+                        "value": 6
+                      },
+                      "size": "absolute"
+                    },
+                    {
+                      "size": "relative",
+                      "weight": {
+                        "expr": "int",
+                        "value": 1
+                      }
+                    }
+                  ]
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 10
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            "mark": {
+              "anchor": "unlock-east-door",
+              "at": "offset",
+              "facing": "north",
+              "x": {
+                "expr": "int",
+                "value": 13
+              },
+              "y": {
+                "expr": "int",
+                "value": 1
+              },
+              "z": {
+                "expr": "int",
+                "value": 3
+              }
+            },
+            "op": "mark"
+          },
+          "mark": {
+            "anchor": "node-far-hall",
+            "at": "offset",
+            "facing": "north",
+            "x": {
+              "expr": "int",
+              "value": 20
+            },
+            "y": {
+              "expr": "int",
+              "value": 1
+            },
+            "z": {
+              "expr": "int",
+              "value": 8
+            }
+          },
+          "op": "mark"
+        },
+        "weight": 1
+      }
+    ],
+    "room-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "room"
+        },
+        "weight": 1
+      }
+    ],
+    "undercroft-stair-way-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "undercroft-stair-way"
+        },
+        "weight": 1
+      }
+    ],
+    "wall": [
+      {
+        "body": {
+          "material": {
+            "role": "wall"
+          },
+          "op": "fill"
+        },
+        "weight": 1
+      }
+    ],
+    "west-door-air": [
+      {
+        "body": {
+          "body": {
+            "op": "void"
+          },
+          "op": "claim",
+          "region": "west-door"
+        },
+        "weight": 1
+      }
+    ]
+  },
+  "shown_faces": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "start": "place",
+  "version": "1.9.0"
+}
