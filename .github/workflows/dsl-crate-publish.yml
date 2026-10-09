@@ -66,6 +66,10 @@ jobs:
   plan:
     name: the format version at a main commit, and what it still owes
     runs-on: ubuntu-latest
+    permissions:
+      # The changelog endpoint renders text and creates nothing, but GitHub asks
+      # contents: write of the caller; no step here writes a tag or a Release.
+      contents: write
     outputs:
       publish: ${{ steps.release.outputs.publish }}
       version: ${{ steps.plan.outputs.version }}
@@ -170,6 +174,45 @@ jobs:
             echo "asking for the publish approval: registry $REGISTRY, Release $state."
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
+      # The notes the approval is asked for, written once here and published
+      # verbatim by `publish`: the opening this tree states, then the changelog
+      # GitHub generates for the tag-to-be. A Release that already exists as a
+      # draft keeps its own body, so that body is what is shown.
+      - name: the notes the approval page shows
+        if: steps.release.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+          PREVIOUS: ${{ steps.release.outputs.previous }}
+        run: |
+          set -euo pipefail
+          rc=0
+          state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$TAG")" || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::could not read the state of Release $TAG"; exit 1; }
+          if [ "$state" = "draft" ]; then
+            gh release view "$TAG" --json body --jq .body > notes.md
+          else
+            python3 tools/ci/release-notes.py delvewright-dsl --commit "$COMMIT" > notes.md
+            python3 tools/lib/github_releases.py notes "$GITHUB_REPOSITORY" "$TAG" "$COMMIT" "$PREVIOUS" > generated.md
+            { echo ""; cat generated.md; } >> notes.md
+          fi
+          if [ ! -s notes.md ]; then
+            echo "::error::the notes for $TAG are empty; there is nothing to approve."
+            exit 1
+          fi
+          {
+            echo "### changelog to be published for $TAG"
+            echo ""
+            cat notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: carry the notes to the gated job
+        if: steps.release.outputs.publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: notes.md
+          if-no-files-found: error
 
   publish:
     name: publish delvewright-dsl (owner approval)
@@ -225,6 +268,10 @@ jobs:
           mkdir -p dist
           python3 tools/lib/crates_index.py download delvewright-dsl "$VERSION" "dist/delvewright-dsl-$VERSION.crate"
           (cd dist && sha256sum "delvewright-dsl-$VERSION.crate" > SHA256SUMS && cat SHA256SUMS)
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: approved-notes
       - uses: ./.github/actions/write-release-tag
         with:
           tag: ${{ needs.plan.outputs.tag }}
@@ -242,16 +289,14 @@ jobs:
           rc=0
           state="$(python3 tools/lib/github_releases.py state "$GITHUB_REPOSITORY" "$TAG")" || rc=$?
           [ "$rc" -eq 0 ] || { echo "::error::could not read the state of Release $TAG"; exit 1; }
-          python3 tools/ci/release-notes.py delvewright-dsl --commit "$COMMIT" > notes.md
+          # The notes the approval page showed, byte for byte; a missing file is a refusal.
+          cp approved-notes/notes.md notes.md
+          [ -s notes.md ] || { echo "::error::the approved notes are missing or empty"; exit 1; }
           title="$(python3 tools/lib/release_tags.py title "$TAG")"
           crate="dist/delvewright-dsl-$VERSION.crate"
           case "$state" in
             absent)
-              if [ -n "$PREVIOUS" ]; then
-                gh release create "$TAG" "$crate" dist/SHA256SUMS --verify-tag --title "$title" --notes-file notes.md --generate-notes --notes-start-tag "$PREVIOUS" --latest=false
-              else
-                gh release create "$TAG" "$crate" dist/SHA256SUMS --verify-tag --title "$title" --notes-file notes.md --latest=false
-              fi
+              gh release create "$TAG" "$crate" dist/SHA256SUMS --verify-tag --title "$title" --notes-file notes.md --latest=false
               ;;
             draft)
               gh release upload "$TAG" "$crate" dist/SHA256SUMS --clobber
