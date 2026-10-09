@@ -140,6 +140,11 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// `DW0992`: a climb that climbs nothing (spec-0098 §2c).
+    pub const DW_CLIMB_RISES_NOTHING: DwCode = DwCode::new("DW0992", ExitTier::Build);
+}
+
+crate::dw_code! {
     /// `DW0830`: a stair seam cannot be built at standard pitch.
     pub const DW_STAIR_PITCH: DwCode = DwCode::new("DW0830", ExitTier::Build);
 }

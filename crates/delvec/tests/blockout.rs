@@ -1999,3 +1999,71 @@ fn dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them() {
         "the fixture as written"
     );
 }
+
+/// **A climb's stand-in is a ladder, and the climb is proven on it**
+/// (spec-0098 §2c, spec-0099). The fixture's link down from the cell to the
+/// undercroft declared a `climb`: the derivation hangs a ladder from the
+/// undercroft's floor up into the hole, on a pillar it raises beside it, and
+/// the battery proves the undercroft reached and the opening crossed on the
+/// climb moves — no `DW0837`, no `DW0986`. The perturbation: the same link a
+/// `walk` through a floor five blocks deep is refused at the plan (`DW0829`),
+/// because nothing carries a body between the two.
+#[test]
+fn a_climb_is_laddered_at_stage_five_and_a_deep_walk_is_refused() {
+    let as_class = |class: &str| {
+        let dir = variant(
+            &format!("climb-{class}"),
+            |v| {
+                for s in v["content"]["seams"].as_array_mut().unwrap() {
+                    if s["edge"] == "edge/cell-undercroft" {
+                        s.as_object_mut().unwrap().remove("stair_in");
+                    }
+                }
+            },
+            None,
+        );
+        common::patch_file(&dir.join("layout-graph.json"), |v| {
+            for e in v["content"]["edges"].as_array_mut().unwrap() {
+                if e["id"] == "edge/cell-undercroft" {
+                    e["class"] = serde_json::json!(class);
+                }
+            }
+        });
+        common::campaign_at(&dir)
+    };
+    let c = as_class("climb");
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    assert!(
+        !d.iter()
+            .any(|x| x.severity == delvewright_dsl::Severity::Error),
+        "{:?}",
+        d.iter().map(|x| x.code.clone()).collect::<Vec<_>>()
+    );
+    let ladders = mass_map(&c)
+        .values()
+        .filter(|b| b.starts_with("minecraft:ladder"))
+        .count();
+    assert!(
+        ladders >= 5,
+        "a ladder from the undercroft's floor into the hole: {ladders}"
+    );
+    let b = battery_of(&c);
+    let errs: Vec<String> = b
+        .findings
+        .iter()
+        .filter(|(_, x)| x.severity == delvewright_dsl::Severity::Error)
+        .map(|(_, x)| x.code.clone())
+        .collect();
+    assert!(errs.is_empty(), "{errs:?}");
+
+    let c = as_class("walk");
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let deep = d
+        .iter()
+        .find(|x| x.code == "DW0829" && x.message.contains("hole in a floor"))
+        .unwrap_or_else(|| panic!("{:?}", d.iter().map(|x| x.code.clone()).collect::<Vec<_>>()));
+    assert!(deep.message.contains("`climb`"), "{}", deep.message);
+}

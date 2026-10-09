@@ -257,6 +257,7 @@ pub(super) fn seams(
         }
         match edge {
             Edge::Stair { .. } => stair(&ctx, table, reads, d),
+            Edge::Climb { .. } => climb(&ctx, d),
             Edge::Drop { falls, .. } => drop_seam(&ctx, *falls, table, reads, d),
             Edge::Walk { .. } | Edge::Barred { .. } => {
                 if let Some(opening) = opening {
@@ -556,7 +557,33 @@ fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec
 fn sill(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnostic>) {
     let (i, s, edge, a, b, face) = (ctx.index, ctx.seam, ctx.edge, ctx.a, ctx.b, &ctx.face);
     if face.v_axis != "y" {
-        return; // a horizontal seam has no sill; the fall or the treads own it.
+        // A seam in a floor has no sill, but a body walking it still has to
+        // get from one floor to the other: a walk through a floor between two
+        // planes further apart than a jump is a connection nobody can take.
+        let rise = (b.floor - a.floor).abs();
+        let max_rise = MAX_JUMP_RISE_16 / crate::metrics::FULL_16;
+        if rise > max_rise {
+            d.push(Diagnostic::error(
+                DW_SEAM_OPENING,
+                "site-plan",
+                format!("/content/seams/{i}"),
+                format!(
+                    "the seam for `{id}` is a hole in a floor between `{an}` (floor {af}) and \
+                     `{bn}` (floor {bf}), {rise} blocks apart, and it is a `{class}`: a body \
+                     reaches at most {max_rise} block(s) by jumping, so nothing carries it \
+                     between the two. Declare the connection a `climb` (a ladder or a vine \
+                     the lower place hangs), a `stair` (treads the plan allocates), or a \
+                     `drop`.",
+                    id = s.edge,
+                    an = edge.a(),
+                    bn = edge.b(),
+                    af = a.floor,
+                    bf = b.floor,
+                    class = edge.class(),
+                ),
+            ));
+        }
+        return;
     }
     let sources: Vec<(&NodeId, &Placed<'_>)> = match edge.direction() {
         Some(crate::layout::Direction::AToB) => vec![(edge.a(), a)],
@@ -590,6 +617,33 @@ fn sill(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnos
             ),
         ));
     }
+}
+
+/// `DW0992`: a climb rises: the two floors the plan put its ends on differ.
+/// A climb has no treads and no sill — the ladder or vine the lower place
+/// hangs carries the whole rise, and the proofs that move a body count the
+/// climb (spec-0099) — so the one thing the plan can get wrong is a climb
+/// between two places at one level.
+fn climb(ctx: &SeamCtx<'_>, d: &mut Vec<Diagnostic>) {
+    let (i, s, edge, a, b) = (ctx.index, ctx.seam, ctx.edge, ctx.a, ctx.b);
+    if b.floor != a.floor {
+        return;
+    }
+    d.push(Diagnostic::error(
+        DW_CLIMB_RISES_NOTHING,
+        "site-plan",
+        format!("/content/seams/{i}"),
+        format!(
+            "`{id}` is a climb, and `{an}` and `{bn}` are both on plane y {f} — so it climbs \
+             nothing. A climb's rise is the difference between the two floors the plan has \
+             already chosen, and a ladder between two places at one level is a doorway that \
+             has been called a climb. Move one floor, or declare the connection a `walk`.",
+            id = s.edge,
+            an = edge.a(),
+            bn = edge.b(),
+            f = a.floor,
+        ),
+    ));
 }
 
 /// `DW0830`: the stair the plan allocated can be built at a standard pitch,

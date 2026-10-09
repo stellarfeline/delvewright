@@ -2174,3 +2174,52 @@ fn dw0988_refuses_a_roof_over_the_sky_and_under_a_place_and_passes_a_free_one() 
         "the eaves stop; they are not contested: {free:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The climb (spec-0098 §2c, beside spec-0099)
+// ---------------------------------------------------------------------------
+
+/// The green campaign with one graph edge's class replaced and the plan
+/// patched.
+fn climb_codes(edge: &str, class: &str, patch: impl FnOnce(&mut Value)) -> Vec<String> {
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    patch(&mut v);
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("the green graph parses");
+    let mut hit = 0;
+    for e in g["content"]["edges"].as_array_mut().unwrap() {
+        if e["id"] == edge {
+            e["class"] = json!(class);
+            e.as_object_mut().unwrap().remove("shortcut");
+            hit += 1;
+        }
+    }
+    assert_eq!(hit, 1, "the edge {edge} is in the graph");
+    codes_of(&campaign(
+        Some(serde_json::to_string(&v).unwrap()),
+        Some(serde_json::to_string(&g).unwrap()),
+        Some(BRIEF.to_string()),
+    ))
+}
+
+/// **A climb carries a rise with no treads; a climb that rises nothing is
+/// `DW0992`.** The hall's connection down to the cellar, declared a `climb`
+/// with no `stair_in`, raises nothing beyond the green plan's two advisories:
+/// no pitch, no run and no sill is asked of a ladder. The perturbation: the
+/// porch's walk to the hall — two places on one plane — declared a climb is
+/// refused, because a ladder between two places at one level climbs nothing.
+#[test]
+fn a_climb_carries_a_rise_and_a_climb_on_one_level_is_dw0992() {
+    let got = climb_codes("edge/hall-cellar", "climb", |v| {
+        seams(v)[seam_of("edge/hall-cellar")]
+            .as_object_mut()
+            .unwrap()
+            .remove("stair_in");
+    });
+    assert_eq!(
+        got,
+        vec!["DW0822".to_string(), "DW0813".to_string()],
+        "{got:?}"
+    );
+    let got = climb_codes("edge/porch-hall", "climb", |_| {});
+    assert!(has(&got, "DW0992"), "{got:?}");
+}

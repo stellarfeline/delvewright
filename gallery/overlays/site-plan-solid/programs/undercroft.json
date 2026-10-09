@@ -11,8 +11,7 @@
       {
         "a": "room",
         "b": "exterior",
-        "class": "stair",
-        "rise": 0,
+        "class": "walk",
         "via": "undercroft-crawl"
       },
       {
@@ -32,6 +31,7 @@
   "name": "gallery-undercroft",
   "palette": {
     "floor": "minecraft:polished_andesite",
+    "ladder": "minecraft:ladder[facing=east,waterlogged=false]",
     "lamp": "minecraft:sea_lantern",
     "tread": "minecraft:polished_diorite",
     "wall": "minecraft:polished_blackstone_bricks"
@@ -63,11 +63,100 @@
     "part-1": [
       {
         "body": {
-          "axis": "x",
+          "axis": "y",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "floor"
+            },
+            {
+              "op": "call",
+              "symbol": "room-air"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-2": [
+      {
+        "body": {
+          "axis": "z",
           "children": [
             {
               "op": "call",
               "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "part-1"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 8
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-3": [
+      {
+        "body": {
+          "axis": "z",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "floor"
+            },
+            {
+              "op": "call",
+              "symbol": "lamp"
             },
             {
               "op": "call",
@@ -90,7 +179,21 @@
             {
               "blocks": {
                 "expr": "int",
-                "value": 8
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 6
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
               },
               "size": "absolute"
             },
@@ -106,14 +209,14 @@
         "weight": 1
       }
     ],
-    "part-2": [
+    "part-4": [
       {
         "body": {
-          "axis": "x",
+          "axis": "y",
           "children": [
             {
               "op": "call",
-              "symbol": "wall"
+              "symbol": "floor"
             },
             {
               "op": "call",
@@ -121,7 +224,7 @@
             },
             {
               "op": "call",
-              "symbol": "wall"
+              "symbol": "undercroft-crawl-air"
             }
           ],
           "op": "split",
@@ -136,7 +239,7 @@
             {
               "blocks": {
                 "expr": "int",
-                "value": 8
+                "value": 2
               },
               "size": "absolute"
             },
@@ -156,342 +259,25 @@
       {
         "body": {
           "body": {
-            "axis": "y",
+            "axis": "x",
             "children": [
               {
-                "axis": "z",
-                "children": [
-                  {
-                    "op": "call",
-                    "symbol": "wall"
-                  },
-                  {
-                    "op": "call",
-                    "symbol": "part-1"
-                  },
-                  {
-                    "axis": "x",
-                    "children": [
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "floor"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "lamp"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "floor"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "lamp"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "floor"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      }
-                    ],
-                    "op": "split",
-                    "sizes": [
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 3
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 2
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "size": "relative",
-                        "weight": {
-                          "expr": "int",
-                          "value": 1
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "op": "call",
-                    "symbol": "part-1"
-                  },
-                  {
-                    "op": "call",
-                    "symbol": "wall"
-                  }
-                ],
-                "op": "split",
-                "sizes": [
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 1
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 1
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 6
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 1
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "size": "relative",
-                    "weight": {
-                      "expr": "int",
-                      "value": 1
-                    }
-                  }
-                ]
+                "op": "call",
+                "symbol": "wall"
               },
               {
-                "axis": "z",
-                "children": [
-                  {
-                    "op": "call",
-                    "symbol": "wall"
-                  },
-                  {
-                    "axis": "x",
-                    "children": [
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-tread"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      }
-                    ],
-                    "op": "split",
-                    "sizes": [
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 4
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 3
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "size": "relative",
-                        "weight": {
-                          "expr": "int",
-                          "value": 1
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "op": "call",
-                    "symbol": "part-2"
-                  },
-                  {
-                    "axis": "x",
-                    "children": [
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-tread"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      }
-                    ],
-                    "op": "split",
-                    "sizes": [
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 3
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 4
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "size": "relative",
-                        "weight": {
-                          "expr": "int",
-                          "value": 1
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "op": "call",
-                    "symbol": "wall"
-                  }
-                ],
-                "op": "split",
-                "sizes": [
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 1
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 3
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 2
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 3
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "size": "relative",
-                    "weight": {
-                      "expr": "int",
-                      "value": 1
-                    }
-                  }
-                ]
+                "op": "call",
+                "symbol": "part-2"
               },
               {
-                "axis": "z",
+                "axis": "y",
                 "children": [
                   {
                     "op": "call",
-                    "symbol": "wall"
+                    "symbol": "part-3"
                   },
                   {
-                    "axis": "x",
+                    "axis": "z",
                     "children": [
                       {
                         "op": "call",
@@ -504,10 +290,6 @@
                       {
                         "op": "call",
                         "symbol": "room-tread"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
                       },
                       {
                         "op": "call",
@@ -533,14 +315,7 @@
                       {
                         "blocks": {
                           "expr": "int",
-                          "value": 2
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
+                          "value": 3
                         },
                         "size": "absolute"
                       },
@@ -554,133 +329,11 @@
                     ]
                   },
                   {
-                    "op": "call",
-                    "symbol": "part-2"
-                  },
-                  {
-                    "axis": "x",
+                    "axis": "z",
                     "children": [
                       {
                         "op": "call",
                         "symbol": "wall"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-tread"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      }
-                    ],
-                    "op": "split",
-                    "sizes": [
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 2
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 5
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "size": "relative",
-                        "weight": {
-                          "expr": "int",
-                          "value": 1
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "op": "call",
-                    "symbol": "wall"
-                  }
-                ],
-                "op": "split",
-                "sizes": [
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 1
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 3
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 2
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 3
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "size": "relative",
-                    "weight": {
-                      "expr": "int",
-                      "value": 1
-                    }
-                  }
-                ]
-              },
-              {
-                "axis": "z",
-                "children": [
-                  {
-                    "op": "call",
-                    "symbol": "wall"
-                  },
-                  {
-                    "axis": "x",
-                    "children": [
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
                       },
                       {
                         "op": "call",
@@ -692,203 +345,15 @@
                       },
                       {
                         "op": "call",
-                        "symbol": "undercroft-crawl-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "undercroft-crawl-tread"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      }
-                    ],
-                    "op": "split",
-                    "sizes": [
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 2
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 2
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "size": "relative",
-                        "weight": {
-                          "expr": "int",
-                          "value": 1
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "axis": "x",
-                    "children": [
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "undercroft-crawl-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "undercroft-crawl-tread"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      }
-                    ],
-                    "op": "split",
-                    "sizes": [
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 4
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 2
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "size": "relative",
-                        "weight": {
-                          "expr": "int",
-                          "value": 1
-                        }
-                      }
-                    ]
-                  },
-                  {
-                    "op": "call",
-                    "symbol": "part-2"
-                  },
-                  {
-                    "axis": "x",
-                    "children": [
-                      {
-                        "op": "call",
-                        "symbol": "wall"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
                         "symbol": "undercroft-stair-tread"
                       },
                       {
                         "op": "call",
-                        "symbol": "undercroft-stair-air"
-                      },
-                      {
-                        "op": "call",
-                        "symbol": "room-air"
-                      },
-                      {
-                        "op": "call",
                         "symbol": "wall"
                       }
                     ],
                     "op": "split",
                     "sizes": [
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
-                      {
-                        "blocks": {
-                          "expr": "int",
-                          "value": 1
-                        },
-                        "size": "absolute"
-                      },
                       {
                         "blocks": {
                           "expr": "int",
@@ -906,7 +371,92 @@
                       {
                         "blocks": {
                           "expr": "int",
-                          "value": 4
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 2
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "axis": "z",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "wall"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-1"
+                  },
+                  {
+                    "axis": "y",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-tread"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-stair-air"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 2
                         },
                         "size": "absolute"
                       },
@@ -936,21 +486,7 @@
                   {
                     "blocks": {
                       "expr": "int",
-                      "value": 2
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 1
-                    },
-                    "size": "absolute"
-                  },
-                  {
-                    "blocks": {
-                      "expr": "int",
-                      "value": 2
+                      "value": 5
                     },
                     "size": "absolute"
                   },
@@ -969,10 +505,475 @@
                     }
                   }
                 ]
+              },
+              {
+                "axis": "z",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "wall"
+                  },
+                  {
+                    "axis": "y",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-1"
+                  },
+                  {
+                    "axis": "y",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-tread"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-stair-air"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "wall"
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 4
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 3
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "axis": "z",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "wall"
+                  },
+                  {
+                    "axis": "y",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-ladder"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-crawl-ladder"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 2
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-4"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-1"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "wall"
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 2
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 5
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "axis": "y",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "part-3"
+                  },
+                  {
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 8
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "undercroft-crawl-air"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 5
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 2
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "axis": "z",
+                "children": [
+                  {
+                    "op": "call",
+                    "symbol": "wall"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-4"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "part-1"
+                  },
+                  {
+                    "op": "call",
+                    "symbol": "wall"
+                  }
+                ],
+                "op": "split",
+                "sizes": [
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 1
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 3
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "blocks": {
+                      "expr": "int",
+                      "value": 5
+                    },
+                    "size": "absolute"
+                  },
+                  {
+                    "size": "relative",
+                    "weight": {
+                      "expr": "int",
+                      "value": 1
+                    }
+                  }
+                ]
+              },
+              {
+                "op": "call",
+                "symbol": "part-2"
+              },
+              {
+                "op": "call",
+                "symbol": "wall"
               }
             ],
             "op": "split",
             "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 1
+                },
+                "size": "absolute"
+              },
               {
                 "blocks": {
                   "expr": "int",
@@ -1037,6 +1038,21 @@
         "weight": 1
       }
     ],
+    "room-ladder": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "ladder"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "room"
+        },
+        "weight": 1
+      }
+    ],
     "room-tread": [
       {
         "body": {
@@ -1064,12 +1080,12 @@
         "weight": 1
       }
     ],
-    "undercroft-crawl-tread": [
+    "undercroft-crawl-ladder": [
       {
         "body": {
           "body": {
             "material": {
-              "role": "tread"
+              "role": "ladder"
             },
             "op": "fill"
           },

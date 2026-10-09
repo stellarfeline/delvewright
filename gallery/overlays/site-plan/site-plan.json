@@ -288,13 +288,12 @@
         ],
         "edge": "edge/undercroft-crawl",
         "face": "up",
-        "form": "a hole up through the near hall's floor, reached by a stair from below",
+        "form": "a ladder up through the near hall's floor",
         "meets": [
           7,
           12
         ],
-        "opening": "passage",
-        "stair_in": "node/undercroft"
+        "opening": "passage"
       },
       {
         "at": [

@@ -78,6 +78,7 @@
     "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
     "floor": "minecraft:polished_andesite",
     "furniture": "minecraft:chiseled_stone_bricks",
+    "ladder": "minecraft:ladder[facing=east,waterlogged=false]",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
     "wall": "minecraft:polished_blackstone_bricks"
@@ -143,7 +144,7 @@
     "part-1": [
       {
         "body": {
-          "axis": "x",
+          "axis": "z",
           "children": [
             {
               "op": "call",
@@ -777,7 +778,7 @@
                   "axis": "y",
                   "children": [
                     {
-                      "axis": "z",
+                      "axis": "x",
                       "children": [
                         {
                           "op": "call",
@@ -788,7 +789,7 @@
                           "symbol": "part-1"
                         },
                         {
-                          "axis": "x",
+                          "axis": "z",
                           "children": [
                             {
                               "op": "call",
@@ -805,6 +806,69 @@
                             {
                               "op": "call",
                               "symbol": "floor"
+                            },
+                            {
+                              "op": "call",
+                              "symbol": "wall"
+                            }
+                          ],
+                          "op": "split",
+                          "sizes": [
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 1
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 12
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 2
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "blocks": {
+                                "expr": "int",
+                                "value": 2
+                              },
+                              "size": "absolute"
+                            },
+                            {
+                              "size": "relative",
+                              "weight": {
+                                "expr": "int",
+                                "value": 1
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "op": "call",
+                          "symbol": "part-1"
+                        },
+                        {
+                          "axis": "z",
+                          "children": [
+                            {
+                              "op": "call",
+                              "symbol": "wall"
+                            },
+                            {
+                              "op": "call",
+                              "symbol": "floor"
+                            },
+                            {
+                              "op": "call",
+                              "symbol": "undercroft-crawl-way-ladder"
                             },
                             {
                               "op": "call",
@@ -831,7 +895,7 @@
                             {
                               "blocks": {
                                 "expr": "int",
-                                "value": 4
+                                "value": 12
                               },
                               "size": "absolute"
                             },
@@ -852,14 +916,7 @@
                             {
                               "blocks": {
                                 "expr": "int",
-                                "value": 3
-                              },
-                              "size": "absolute"
-                            },
-                            {
-                              "blocks": {
-                                "expr": "int",
-                                "value": 6
+                                "value": 1
                               },
                               "size": "absolute"
                             },
@@ -873,7 +930,7 @@
                           ]
                         },
                         {
-                          "axis": "x",
+                          "axis": "z",
                           "children": [
                             {
                               "op": "call",
@@ -908,7 +965,7 @@
                             {
                               "blocks": {
                                 "expr": "int",
-                                "value": 7
+                                "value": 12
                               },
                               "size": "absolute"
                             },
@@ -922,7 +979,7 @@
                             {
                               "blocks": {
                                 "expr": "int",
-                                "value": 6
+                                "value": 1
                               },
                               "size": "absolute"
                             },
@@ -956,7 +1013,14 @@
                         {
                           "blocks": {
                             "expr": "int",
-                            "value": 12
+                            "value": 4
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 1
                           },
                           "size": "absolute"
                         },
@@ -977,7 +1041,14 @@
                         {
                           "blocks": {
                             "expr": "int",
-                            "value": 1
+                            "value": 2
+                          },
+                          "size": "absolute"
+                        },
+                        {
+                          "blocks": {
+                            "expr": "int",
+                            "value": 6
                           },
                           "size": "absolute"
                         },
@@ -1915,6 +1986,21 @@
         "body": {
           "body": {
             "op": "void"
+          },
+          "op": "claim",
+          "region": "undercroft-crawl-way"
+        },
+        "weight": 1
+      }
+    ],
+    "undercroft-crawl-way-ladder": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "ladder"
+            },
+            "op": "fill"
           },
           "op": "claim",
           "region": "undercroft-crawl-way"

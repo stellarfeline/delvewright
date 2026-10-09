@@ -252,6 +252,8 @@ pub struct Binding {
     /// derivation laid**. A stair hosted in a bound box is the piece's to build,
     /// so it is not counted here — the count means what it says.
     pub stairs: usize,
+    /// Of those, climbs whose ladder this derivation hung in a stand-in.
+    pub climbs: usize,
     /// Cells of a floor cut over a through-floor stair's run beyond the hole the
     /// plan allocated — the stairwell [`stairwell`] measured the climb to need.
     /// Zero on a plan whose every through-floor run already climbs inside its
@@ -287,7 +289,7 @@ impl Binding {
         format!(
             "blockout binding: {b} place(s) massed ({de} detailed, so {un} massed by the \
              derivation; {r} roof zone(s) massed), {fx} fixed ring ground cell(s) laid, {s} \
-             seam(s) cut ({st} stair, {ba} barred), {sw} stairwell cell(s) cut over \
+             seam(s) cut ({st} stair, {cl} climb, {ba} barred), {sw} stairwell cell(s) cut over \
              through-floor runs, {v} whole-owned volume(s), {a} anchor(s) synthesized, {f} \
              region write(s) over {c} cell(s).",
             r = self.roofs,
@@ -297,6 +299,7 @@ impl Binding {
             b = self.boxes,
             s = self.seams,
             st = self.stairs,
+            cl = self.climbs,
             sw = self.stairwell_cells,
             ba = self.barred,
             v = self.volumes,
@@ -840,6 +843,74 @@ pub fn derive_with(
         }
     }
 
+    // (6b) **Every climb's ladder**, in the lower place when it is a stand-in
+    // (spec-0098 §2c, spec-0099). Through a floor: a ladder rises from the
+    // lower floor up into the hole's first cell, hung on a pillar the stand-in
+    // raises beside it and, in the hole, on the floor course itself. Up a
+    // wall: a ladder against the wall under the opening, up to the sill's own
+    // course, so a body on it steps into the opening. Written after the
+    // openings so the hole it climbs into is the last word only where the
+    // ladder stands.
+    let mut climbs = 0usize;
+    for (k, s) in seams.iter().enumerate() {
+        if s.class != "climb" {
+            continue;
+        }
+        let (Some(pa), Some(pb)) = (
+            boxes.iter().position(|b| b.node == s.a),
+            boxes.iter().position(|b| b.node == s.b),
+        ) else {
+            continue;
+        };
+        let lo_i = if boxes[pa].floor <= boxes[pb].floor {
+            pa
+        } else {
+            pb
+        };
+        let low = &boxes[lo_i];
+        if bound.contains(low.node.0.as_str()) || boxes[pa].floor == boxes[pb].floor {
+            continue;
+        }
+        let mask = owned[lo_i].clone();
+        let (olo, _) = (s.opening.0, s.opening.1);
+        if s.normal_axis == 1 {
+            let (x, z, top) = (olo[0], olo[2], olo[1]);
+            let ladder = "minecraft:ladder[facing=east,waterlogged=false]";
+            mass.write_within(
+                [x - 1, low.floor, z],
+                [x - 1, top - 1, z],
+                palette::WALL,
+                &mask,
+                0,
+            );
+            mass.write_within([x, low.floor, z], [x, top - 1, z], ladder, &mask, 0);
+            if cut_by_derivation(k) {
+                mass.write([x, top, z], [x, top, z], ladder);
+            }
+        } else {
+            let a = s.normal_axis;
+            let (lc, hc) = low.space();
+            let toward = if (lc[a] + hc[a]) / 2 > s.plane { 1 } else { -1 };
+            let facing = match (a, toward) {
+                (0, 1) => "east",
+                (0, _) => "west",
+                (_, 1) => "south",
+                _ => "north",
+            };
+            let ladder = format!("minecraft:ladder[facing={facing},waterlogged=false]");
+            let mut at = olo;
+            at[a] = s.plane + toward;
+            mass.write_within(
+                [at[0], low.floor, at[2]],
+                [at[0], olo[1], at[2]],
+                &ladder,
+                &mask,
+                0,
+            );
+        }
+        climbs += 1;
+    }
+
     // The deliberate defect `Perturb::bury_barred` names: the far side of every
     // barred door walled flush behind its opening.
     if perturb.bury_barred {
@@ -973,6 +1044,7 @@ pub fn derive_with(
         detailed,
         seams: seams.len(),
         stairs,
+        climbs,
         stairwell_cells,
         barred: seams.iter().filter(|s| s.class == "barred").count(),
         volumes: plan.volumes.len(),
@@ -2320,9 +2392,12 @@ fn portal_crossing(
     // The floor of the opening: its standable cells, and every standable cell of
     // the same wall a body walks to from them without leaving the wall's plane.
     let (lo, hi) = s.opening;
+    // A `climb` is crossed on its ladder: a cell of the opening a body holds
+    // on (spec-0099) is a cell it is in, and the climb moves step it out.
+    let climb = s.class == "climb";
     let mut floor: BTreeSet<[i32; 3]> = cells_of(lo, hi)
         .map(narrow)
-        .filter(|c| world.is_standable(*c))
+        .filter(|c| world.is_standable(*c) || (climb && world.holds_body(*c)))
         .collect();
     let mut frontier: Vec<[i32; 3]> = floor.iter().copied().collect();
     while let Some(c) = frontier.pop() {

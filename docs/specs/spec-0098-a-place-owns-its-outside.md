@@ -1038,4 +1038,22 @@ Defects found after the rulings, corrected on the spec where they were made.
    seam reports that ground. Shown in the `siteplan::claim` unit test
    `an_aloft_seam_fixes_no_earth_under_it_and_a_grade_seam_levels`, and the
    blockout test of criterion 23 now checks both cases on its slope.
+2. **A ladder had no seam kind.** A vertical link that is a ladder could be
+   declared only as a `walk` — which through a floor asked no sill, got no
+   stage-5 stand-in, and left the lower place unreached at stage 5 (`DW0837`,
+   `DW0986`, reproduced on the blockout fixture with its cell-to-undercroft
+   link as a five-deep `walk`) — or as a `stair`, which masses treads the
+   design does not have. The layout graph gains a `climb` class: a way a body
+   climbs on a ladder or a vine the lower place hangs (spec-0099), through a
+   floor or to a door high in a wall, with no treads and no sill; a climb
+   between two places on one plane is `DW0992`. At stage 5 the derivation
+   hangs a ladder in the lower place when it is a stand-in, and the climb
+   moves prove it (`DW0837` reaches over it, `DW0986` crosses the opening on
+   it); a bound lower place's piece hangs its own. A `walk` or `barred` seam
+   in a floor between two floors further apart than a jump is now refused
+   (`DW0829`), naming `climb`, `stair` and `drop`. The gallery binds the class
+   on both site-plan points: the undercroft's crawl up into the near hall is
+   a ladder its program hangs, topped in the hall's hole. Shown in
+   `v14_site_plan.rs` `a_climb_carries_a_rise_and_a_climb_on_one_level_is_dw0992`
+   and `blockout.rs` `a_climb_is_laddered_at_stage_five_and_a_deep_walk_is_refused`.
 

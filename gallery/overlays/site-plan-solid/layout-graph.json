@@ -122,7 +122,7 @@
       {
         "a": "node/undercroft",
         "b": "node/near-hall",
-        "class": "stair",
+        "class": "climb",
         "id": "edge/undercroft-crawl",
         "one_way": "a-to-b",
         "shortcut": true

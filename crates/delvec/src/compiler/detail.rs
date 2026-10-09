@@ -157,6 +157,9 @@ fn required_face_class(
 ) -> Vec<&'static str> {
     match s.class {
         "walk" => vec!["walk"],
+        // A climb's ladder is the lower piece's to hang and the hole the
+        // plane owner's to cut; both answer with the way a body comes through.
+        "climb" => vec!["walk"],
         "stair" => {
             if s.stair_in.as_ref() == Some(node) {
                 // The treads are the piece's; a piece that meets the opening at

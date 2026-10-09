@@ -451,6 +451,27 @@ pub enum Edge {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gating: Option<EdgeGating>,
     },
+    /// A way a body climbs, on a ladder or a vine (spec-0099): a hole through
+    /// a floor, or a door high in a wall, reached by a climbable the lower
+    /// place hangs (spec-0098 §2c). No treads and no sill: the climb carries
+    /// the rise, and the proofs that move a body count it.
+    Climb {
+        /// Edge id (`edge/<kebab>`), unique within the graph.
+        id: EdgeId,
+        /// One end.
+        a: NodeId,
+        /// The other end.
+        b: NodeId,
+        /// Declared directionality; absent means a body passes both ways.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        one_way: Option<Direction>,
+        /// This connection exists to close a loop (`DW0820`).
+        #[serde(default, skip_serializing_if = "is_false")]
+        shortcut: bool,
+        /// What a body must hold to pass.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gating: Option<EdgeGating>,
+    },
     /// A fall. One-way **by construction**, which is why the direction is
     /// required here and optional on its siblings: a body that has dropped
     /// cannot climb back up the way it came.
@@ -539,6 +560,7 @@ impl Edge {
         match self {
             Edge::Walk { id, .. }
             | Edge::Stair { id, .. }
+            | Edge::Climb { id, .. }
             | Edge::Drop { id, .. }
             | Edge::Barred { id, .. }
             | Edge::Carry { id, .. }
@@ -552,6 +574,7 @@ impl Edge {
         match self {
             Edge::Walk { a, .. }
             | Edge::Stair { a, .. }
+            | Edge::Climb { a, .. }
             | Edge::Drop { a, .. }
             | Edge::Barred { a, .. }
             | Edge::Carry { a, .. }
@@ -565,6 +588,7 @@ impl Edge {
         match self {
             Edge::Walk { b, .. }
             | Edge::Stair { b, .. }
+            | Edge::Climb { b, .. }
             | Edge::Drop { b, .. }
             | Edge::Barred { b, .. }
             | Edge::Carry { b, .. }
@@ -578,6 +602,7 @@ impl Edge {
         match self {
             Edge::Walk { .. } => "walk",
             Edge::Stair { .. } => "stair",
+            Edge::Climb { .. } => "climb",
             Edge::Drop { .. } => "drop",
             Edge::Barred { .. } => "barred",
             Edge::Carry { .. } => "carry",
@@ -606,6 +631,7 @@ impl Edge {
         match self {
             Edge::Walk { one_way, .. }
             | Edge::Stair { one_way, .. }
+            | Edge::Climb { one_way, .. }
             | Edge::Barred { one_way, .. }
             | Edge::Carry { one_way, .. } => *one_way,
             Edge::Drop { falls, .. } => Some(*falls),
@@ -619,6 +645,7 @@ impl Edge {
         match self {
             Edge::Walk { shortcut, .. }
             | Edge::Stair { shortcut, .. }
+            | Edge::Climb { shortcut, .. }
             | Edge::Drop { shortcut, .. }
             | Edge::Barred { shortcut, .. } => *shortcut,
             Edge::Carry { .. } | Edge::Vision { .. } => false,
@@ -629,9 +656,10 @@ impl Edge {
     #[must_use]
     pub fn gating(&self) -> Option<&EdgeGating> {
         match self {
-            Edge::Walk { gating, .. } | Edge::Stair { gating, .. } | Edge::Drop { gating, .. } => {
-                gating.as_ref()
-            }
+            Edge::Walk { gating, .. }
+            | Edge::Stair { gating, .. }
+            | Edge::Climb { gating, .. }
+            | Edge::Drop { gating, .. } => gating.as_ref(),
             Edge::Barred { gating, .. } | Edge::Carry { gating, .. } => Some(gating),
             Edge::Vision { .. } => None,
         }
