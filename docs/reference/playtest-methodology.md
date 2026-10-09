@@ -108,11 +108,14 @@ to where the body stands — never guessed from a radius around an anchor:
 - a body of the wave the die-retry stage is proving is removed when that wave
   re-seats on respawn: the next scripted death brings it back whole, the fidelity
   verdict is read at that landing, and a body the party fells after the landing is
-  counted (by the census's credit) as the fight re-engaging;
+  counted (by the census's credit) as the fight re-engaging — except the LAST body
+  standing (by the census at the hit), which is left standing: removing it clears
+  the encounter, and the clear fires the objective's completion, which can act on
+  the anchor while the next re-seat lands and be read as a wounded re-seat;
 - a body of a wave that does NOT re-seat is left standing while the die-retry stage
   proves it — it persists across both lives and is the fight the next life must
-  find. This is the one place a body can still kill the bot outside a scripted
-  death, and the log says so each time it hits.
+  find. These two holds are the only places a body can still kill the bot outside
+  a scripted death, and the log says so each time it hits.
 
 A removed body's blows are refunded: the health the server named that body as
 taking is given back with instant health, rounded UP to vanilla's units

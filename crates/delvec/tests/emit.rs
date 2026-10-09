@@ -1304,7 +1304,10 @@ mod health_bar {
         let mut c = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
         for w in &mut c.quests.content.waves {
             if w.id.as_str() == "wave/guards" {
+                // One body under the bar, and a name tag on it: a name marks a
+                // single body, never the fixture's unnamed pair.
                 w.mobs[0].count = 1;
+                w.mobs[0].name = Some("Keep Guard".to_string());
                 w.health_bar = wave_bar
                     .clone()
                     .map(|b| serde_json::from_value(b).expect("bar parses"));

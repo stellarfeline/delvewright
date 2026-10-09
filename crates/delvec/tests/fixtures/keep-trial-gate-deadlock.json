@@ -112,9 +112,13 @@
             "id": "wave/guards",
             "mobs": [
               {
-                "count": 2,
+                "count": 1,
                 "entity": "minecraft:zombie",
                 "name": "Keep Guard"
+              },
+              {
+                "count": 1,
+                "entity": "minecraft:zombie"
               }
             ]
           }

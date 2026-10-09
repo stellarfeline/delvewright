@@ -151,6 +151,7 @@ fn skinned_puppet_is_a_mannequin() {
     a.skin = Some(delvewright_dsl::NpcSkin {
         texture_id: "giant-idle".to_string(),
         model: delvewright_dsl::SkinModel::Wide,
+        hidden_layers: vec![],
     });
     let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
     assert!(
@@ -159,6 +160,49 @@ fn skinned_puppet_is_a_mannequin() {
     );
     assert!(s.contains("profile:{texture:\"delvewright:npc/giant-idle\",model:\"wide\"}"));
     assert!(s.contains("dw_pup_keeper"));
+}
+
+/// spec-0097 §5: a skin's hidden layers ride both mannequin summons, in
+/// authored order, and an empty list writes nothing at all.
+#[test]
+fn a_mannequin_hides_the_layers_its_skin_names() {
+    use delvewright_dsl::SkinLayer;
+    let mut a = mk_actor("actor/keeper", "minecraft:warden", false);
+    a.skin = Some(delvewright_dsl::NpcSkin {
+        texture_id: "giant-idle".to_string(),
+        model: delvewright_dsl::SkinModel::Wide,
+        hidden_layers: vec![SkinLayer::Hat, SkinLayer::Jacket],
+    });
+    let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+    assert!(
+        s.contains("model:\"wide\"},hidden_layers:[\"hat\",\"jacket\"],immovable:1b"),
+        "{s}"
+    );
+    a.skin.as_mut().unwrap().hidden_layers.clear();
+    let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+    assert!(!s.contains("hidden_layers"), "{s}");
+}
+
+/// spec-0096 × spec-0097: a skinned actor's styled name rides its mannequin
+/// `description` as a styled SNBT component — never as raw brackets — beside the
+/// layers its skin hides.
+#[test]
+fn a_skinned_actor_wears_a_styled_name_and_its_hidden_layers() {
+    use delvewright_dsl::SkinLayer;
+    let mut a = mk_actor("actor/keeper", "minecraft:warden", false);
+    a.name = Some("The [[bold|Keeper]]".to_string());
+    a.skin = Some(delvewright_dsl::NpcSkin {
+        texture_id: "giant-idle".to_string(),
+        model: delvewright_dsl::SkinModel::Wide,
+        hidden_layers: vec![SkinLayer::Hat],
+    });
+    let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+    assert!(s.contains("hidden_layers:[\"hat\"]"), "{s}");
+    assert!(
+        s.contains("description:{extra:[{text:\"The \"},{bold:true,text:\"Keeper\"}],text:\"\"}"),
+        "{s}"
+    );
+    assert!(!s.contains("[["), "no markup reaches the summon: {s}");
 }
 
 /// A `skin` is a costume, not a lobotomy: a skinned actor is the same body
@@ -172,6 +216,7 @@ fn a_skinned_puppet_keeps_everything_declared_about_its_body() {
     a.skin = Some(delvewright_dsl::NpcSkin {
         texture_id: "guard".to_string(),
         model: delvewright_dsl::SkinModel::Wide,
+        hidden_layers: vec![],
     });
     a.equipment = Some(delvewright_dsl::MobEquipment {
         head: Some(EquipItem::Plain("minecraft:netherite_helmet".to_string())),

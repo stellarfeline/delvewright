@@ -37,8 +37,8 @@ languages are delivered as sidecars.
    ```
 
    It writes the sidecar in canonical form (it runs `delvec fmt` on it),
-   fact-checks every line (placeholders, numbers, one rendering per declared
-   name) and validates. **Review the refused rows it names**: each is printed
+   fact-checks every line (placeholders, styled-span markers, numbers, one
+   rendering per declared name) and validates. **Review the refused rows it names**: each is printed
    with its English, the line refused and what failed, and is missing from the
    sidecar; write those lines yourself through `delvec l10n-apply` (3 below)
    and re-validate. Then go to 4. Generation-time only — a shipped delve never
@@ -54,6 +54,8 @@ languages are delivered as sidecars.
    `l10n/<code>.json` — it addresses the keys, so an inserted effect that shifts
    an `fx.` key cannot re-attach a line to the wrong English. It prints `N of M rows
    translated` and every English still missing; exit 1 until none is.
+   Keep every `[[<styles>|…]]` span of the English: its opener byte for byte,
+   its text transcreated, placed where your line puts that phrase.
    Write each line from its `kind`, speaker and `situation` with the English as
    the fact source — `$DELVEWRIGHT_ENGINE/docs/reference/game-writing.md` §4 for
    Chinese — honour each NPC's `persona.speech_style`, and cover the inventory

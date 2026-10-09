@@ -171,14 +171,18 @@
         "id": "wave/guards",
         "mobs": [
           {
-            "count": 2,
+            "count": 1,
             "entity": "minecraft:zombie",
             "name": "Keep Guard"
+          },
+          {
+            "count": 1,
+            "entity": "minecraft:zombie"
           }
         ]
       }
     ]
   },
-  "dsl_version": "0.36.1",
+  "dsl_version": "0.37.0",
   "stage": "quests"
 }

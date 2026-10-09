@@ -951,7 +951,7 @@ fn a_wave_that_can_drop_into_a_staged_pit_is_dw0922_as_live() {
         ..Room::default()
     };
     let wave = r#", "waves": [{ "id": "wave/sentries", "anchor": "anchor/lid-top",
-        "mobs": [{ "entity": "minecraft:zombie", "count": 2, "name": "Sentry" }] }]"#;
+        "mobs": [{ "entity": "minecraft:zombie", "count": 2 }] }]"#;
     let spawn = r#"{ "type": "spawn-wave", "wave": "wave/sentries" }"#;
     let (code, msg) = refusal(
         &Case::new(PIT_STAGED)

@@ -16,6 +16,6 @@
     "title": "The Keeper's Door",
     "weather": "clear"
   },
-  "dsl_version": "0.36.1",
+  "dsl_version": "0.37.0",
   "stage": "world"
 }

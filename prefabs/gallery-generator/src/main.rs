@@ -1927,13 +1927,86 @@ fn write_piece(out: &Path) {
 
 /// The mannequin skins the gallery's `skin.texture_id` declarations name.
 ///
-/// `(texture_id, base_rgb, belt_rgb)`. Two, because `NpcSkin.model` has two
-/// members and a `slim` skin and a `wide` skin must both exist for the pair to
-/// be written.
-const SKINS: [(&str, [u8; 3], [u8; 3]); 2] = [
-    ("curator", [0x3A, 0x3F, 0x55], [0xC9, 0xA2, 0x27]),
-    ("bearer", [0x5A, 0x3A, 0x2E], [0xB8, 0xC4, 0xCF]),
+/// `(texture_id, base_rgb, belt_rgb, model)`. Two, because `NpcSkin.model` has
+/// two members and a `slim` skin and a `wide` skin must both exist for the pair
+/// to be written; the model is the one `npcs.json` / `quests.json` wears it on,
+/// because a skin is drawn to its model's boxes (spec-0097).
+const SKINS: [(&str, [u8; 3], [u8; 3], &str); 2] = [
+    (
+        "curator",
+        [0x3A, 0x3F, 0x55],
+        [0xC9, 0xA2, 0x27],
+        "player_slim",
+    ),
+    ("bearer", [0x5A, 0x3A, 0x2E], [0xB8, 0xC4, 0xCF], "player"),
 ];
+
+/// The model-part table the engine judges every skin and entity texture by
+/// (spec-0097 §3), read rather than restated: the gallery's sheets paint where
+/// the pinned client's boxes are because they are cut from the same rows.
+const MODEL_PARTS: &str = include_str!("../../../crates/delvec/data/model-parts-1.21.11.json");
+
+/// The six face rectangles `(x, y, w, h)` of every box of `model` that `keep`
+/// admits, at scale 1, with the box's face name.
+fn model_faces(
+    model: &str,
+    keep: impl Fn(&serde_json::Value) -> bool,
+) -> Vec<(&'static str, u32, u32, u32, u32)> {
+    let table: serde_json::Value =
+        serde_json::from_str(MODEL_PARTS).expect("the model-part table parses");
+    let cubes = table["models"][model]["cubes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the model-part table has no model `{model}`"));
+    let mut out = Vec::new();
+    for c in cubes.iter().filter(|c| keep(c)) {
+        let n = |k: &str| c[k].as_u64().expect("a whole-texel box") as u32;
+        let (u, v, w, h, d) = (n("u"), n("v"), n("w"), n("h"), n("d"));
+        out.extend([
+            ("up", u + d, v, w, d),
+            ("down", u + d + w, v, w, d),
+            ("left", u, v + d, d, h),
+            ("front", u + d, v + d, w, h),
+            ("right", u + d + w, v + d, d, h),
+            ("back", u + 2 * d + w, v + d, w, h),
+        ]);
+    }
+    out
+}
+
+/// The base boxes of a model: grow 0.
+fn is_base(c: &serde_json::Value) -> bool {
+    c["grow"].as_f64() == Some(0.0)
+}
+
+/// A `w`×`h` 8-bit RGBA PNG whose pixel at `(x, y)` is `px(x, y)`.
+fn rgba_png(w: u32, h: u32, px: impl Fn(u32, u32) -> [u8; 4]) -> Vec<u8> {
+    let mut raw = Vec::with_capacity((h * (1 + w * 4)) as usize);
+    for y in 0..h {
+        raw.push(0); // filter type 0 (None) on every scanline
+        for x in 0..w {
+            raw.extend_from_slice(&px(x, y));
+        }
+    }
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), Compression::new(6));
+    z.write_all(&raw).expect("zlib write");
+    let idat = z.finish().expect("zlib finish");
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&w.to_be_bytes());
+    ihdr.extend_from_slice(&h.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8-bit, RGBA, deflate, no filter, no interlace
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"IDAT", &idat));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+    png
+}
+
+/// Whether `(x, y)` lies on one of `faces`.
+fn on_faces(faces: &[(&'static str, u32, u32, u32, u32)], x: u32, y: u32) -> bool {
+    faces
+        .iter()
+        .any(|&(_, fx, fy, fw, fh)| (fx..fx + fw).contains(&x) && (fy..fy + fh).contains(&y))
+}
 
 /// Standard CRC-32 (PNG's, and gzip's). Written out rather than pulled in: the
 /// generators deliberately carry a small third-party dependency set, and one
@@ -1964,40 +2037,21 @@ fn png_chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
     out
 }
 
-/// A 64×64 RGBA mannequin skin, flat-coloured with a belt band.
+/// A 64×64 RGBA mannequin skin, flat-coloured with a belt band, painted on
+/// exactly the faces of `model`'s base boxes and transparent everywhere else —
+/// so the overlay is present and empty, and no pixel lands where no box reads.
 ///
 /// Deliberately not art. A skin here exists so `NpcSkin.texture_id` names
 /// something that resolves and `DW0309` has a file to find; the *look* of a
 /// mannequin is a campaign's business, and the gallery having an opinion about
 /// it would be authored content wearing a test surface's clothes.
-fn skin_png(base: [u8; 3], belt: [u8; 3]) -> Vec<u8> {
-    const W: usize = 64;
-    const H: usize = 64;
-    let mut raw = Vec::with_capacity(H * (1 + W * 4));
-    for y in 0..H {
-        raw.push(0); // filter type 0 (None) on every scanline
-        for x in 0..W {
-            // Transparent outside the 64×32-style body block, so the skin reads
-            // as a mannequin rather than a full sheet of colour.
-            let opaque = y < 32 || (8..56).contains(&x);
-            let c = if (20..24).contains(&y) { belt } else { base };
-            raw.extend_from_slice(&[c[0], c[1], c[2], if opaque { 0xFF } else { 0x00 }]);
-        }
-    }
-    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), Compression::new(6));
-    z.write_all(&raw).expect("zlib write");
-    let idat = z.finish().expect("zlib finish");
-
-    let mut ihdr = Vec::new();
-    ihdr.extend_from_slice(&(W as u32).to_be_bytes());
-    ihdr.extend_from_slice(&(H as u32).to_be_bytes());
-    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8-bit, RGBA, deflate, no filter, no interlace
-
-    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
-    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
-    png.extend_from_slice(&png_chunk(b"IDAT", &idat));
-    png.extend_from_slice(&png_chunk(b"IEND", &[]));
-    png
+fn skin_png(base: [u8; 3], belt: [u8; 3], model: &str) -> Vec<u8> {
+    let faces = model_faces(model, is_base);
+    rgba_png(64, 64, |x, y| {
+        let c = if (20..24).contains(&y) { belt } else { base };
+        let a = if on_faces(&faces, x, y) { 0xFF } else { 0x00 };
+        [c[0], c[1], c[2], a]
+    })
 }
 
 /// **The shore variants**: the same pieces, built to stand on an ocean.
@@ -2369,11 +2423,56 @@ fn write_textures(out: &Path) {
         ("hall-stone", flat_png(16, 16, [0xB0, 0x30, 0x6A])),
         ("wrong-shape", flat_png(24, 24, [0xB0, 0x30, 0x6A])),
         ("blank", blank_png()),
+        ("drowned-wrap", drowned_sheet(DrownedSheet::BasePositions)),
+        (
+            "drowned-player-layout",
+            drowned_sheet(DrownedSheet::PlayerOverlay),
+        ),
+        ("drowned-crown", drowned_sheet(DrownedSheet::CrownOnly)),
     ] {
         let path = out.join(format!("{id}.png"));
         std::fs::write(&path, bytes).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
         println!("wrote {}", path.display());
     }
+}
+
+/// Which `minecraft:entity/zombie/drowned_outer_layer` sheet to write (spec-0097 §7).
+enum DrownedSheet {
+    /// `drowned-wrap`, the row the gallery ships: one flat colour on the torso
+    /// and limb faces of the outer model's own boxes, which sit at the BASE
+    /// positions. The head and its hat are left clear, so the drowned's face
+    /// reads through.
+    BasePositions,
+    /// `drowned-player-layout`, for `a-texture-drawn-to-another-model`: the
+    /// same colour on the player's jacket, sleeve and pants positions — the
+    /// layout The Stranding's sheet was drawn to, which the outer model never
+    /// samples.
+    PlayerOverlay,
+    /// `drowned-crown`, for `a-texture-painted-on-the-crown`: the colour on the
+    /// outer hat's top face only — sampled, and seen by nobody standing level
+    /// with the mob.
+    CrownOnly,
+}
+
+fn drowned_sheet(which: DrownedSheet) -> Vec<u8> {
+    let part = |c: &serde_json::Value| c["part"].as_str().unwrap_or("").to_string();
+    let faces = match which {
+        DrownedSheet::BasePositions => model_faces("drowned_outer_layer", |c| {
+            let p = part(c);
+            p != "head" && p != "head/hat"
+        }),
+        DrownedSheet::PlayerOverlay => {
+            model_faces("player", |c| !is_base(c) && part(c) != "head/hat")
+        }
+        DrownedSheet::CrownOnly => model_faces("drowned_outer_layer", |c| part(c) == "head/hat")
+            .into_iter()
+            .filter(|f| f.0 == "up")
+            .collect(),
+    };
+    rgba_png(64, 64, |x, y| {
+        let a = if on_faces(&faces, x, y) { 0xFF } else { 0x00 };
+        [0x3E, 0x6B, 0x5A, a]
+    })
 }
 
 /// A `w`×`h` opaque RGB image of one colour.
@@ -2419,12 +2518,29 @@ fn blank_png() -> Vec<u8> {
 
 fn write_skins(out: &Path) {
     std::fs::create_dir_all(out).unwrap_or_else(|e| panic!("mkdir {}: {e}", out.display()));
-    for (id, base, belt) in SKINS {
+    for (id, base, belt, model) in SKINS {
         let path = out.join(format!("{id}.png"));
-        std::fs::write(&path, skin_png(base, belt))
+        std::fs::write(&path, skin_png(base, belt, model))
             .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
         println!("wrote {}", path.display());
     }
+    // `a-skin-painted-off-its-boxes` (spec-0097 §7): the curator's skin with one
+    // more opaque pixel in the head unwrap's top-left corner, which no box of
+    // either player model samples.
+    let (_, base, belt, model) = SKINS[0];
+    let faces = model_faces(model, is_base);
+    let stray = rgba_png(64, 64, |x, y| {
+        let c = if (20..24).contains(&y) { belt } else { base };
+        let a = if on_faces(&faces, x, y) || (x, y) == (0, 0) {
+            0xFF
+        } else {
+            0x00
+        };
+        [c[0], c[1], c[2], a]
+    });
+    let path = out.join("curator-stray.png");
+    std::fs::write(&path, stray).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    println!("wrote {}", path.display());
 }
 
 // ---------------------------------------------------------------- the annex --

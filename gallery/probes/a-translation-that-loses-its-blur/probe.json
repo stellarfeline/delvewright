@@ -1,0 +1,13 @@
+{
+  "code": "DW0976",
+  "patch": [
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/content/cast.near-hall.factor.0.bark.2",
+      "value": "[[italic,color=dark_purple|入夜]]以后，账本由别的什么人记。"
+    }
+  ],
+  "units": [],
+  "why": "The zh-cn rendering of the counter's third bark with its obfuscated span dropped: the Chinese line reads, and a Chinese player would never see the words blur. The style rides on the component, not in the language file, so a translation only places and words each span of the English and may not lose, add or restyle one. It declares no unit: the sidecar row is bound by the primary; what the engine refuses here is a translation whose spans are not the English's."
+}

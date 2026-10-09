@@ -134,6 +134,14 @@
         "id": "actor/standard-bearer",
         "name": "The Standard Bearer",
         "skin": {
+          "hidden_layers": [
+            "hat",
+            "jacket",
+            "left_sleeve",
+            "right_sleeve",
+            "left_pants_leg",
+            "right_pants_leg"
+          ],
           "model": "wide",
           "texture_id": "bearer"
         },
@@ -635,7 +643,8 @@
             "dialogue": {
               "barks": [
                 "Everything on the counter is priced.",
-                "The emeralds are the hall's, not mine."
+                "The emeralds are the hall's, not mine.",
+                "The ledger is kept by [[obfuscated|someone else]] at [[italic,color=dark_purple|night]]."
               ]
             },
             "doing": "minding the counter"
@@ -4168,8 +4177,7 @@
               "main_hand": {
                 "item": "minecraft:wooden_sword"
               }
-            },
-            "name": "Muster Hand"
+            }
           },
           {
             "count": 1,
@@ -4194,7 +4202,8 @@
       {
         "anchor": "anchor/lane-west",
         "health_bar": {
-          "range": 16
+          "range": 16,
+          "title": "The Lane Patrol"
         },
         "id": "wave/lane",
         "lane": {
@@ -4215,8 +4224,7 @@
                 "item": "minecraft:arrow"
               }
             ],
-            "entity": "minecraft:pillager",
-            "name": "Lane Pillager"
+            "entity": "minecraft:pillager"
           }
         ],
         "on_kill": {
@@ -4234,6 +4242,9 @@
       },
       {
         "anchor": "anchor/lane-east",
+        "health_bar": {
+          "range": 12
+        },
         "id": "wave/edge",
         "mobs": [
           {
@@ -4241,7 +4252,8 @@
               "follow_range": 12.0
             },
             "count": 1,
-            "entity": "minecraft:skeleton"
+            "entity": "minecraft:skeleton",
+            "name": "The Edge Sentry"
           }
         ],
         "on_kill": {
@@ -4274,6 +4286,6 @@
       }
     ]
   },
-  "dsl_version": "0.36.1",
+  "dsl_version": "0.37.0",
   "stage": "quests"
 }
