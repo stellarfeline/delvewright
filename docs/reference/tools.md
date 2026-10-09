@@ -135,22 +135,32 @@ delvec metrics                    # the table on stdout, the verdicts on stderr
 delvec metrics --gym /tmp/gym     # + write the gym campaign into /tmp/gym
 ```
 
-**`delvec allocation <place>` / `--all` is what the whole hands a part**, and
-it is what `delvec detail` reads. It remains for reading — a program is written
-against it — and it prints, as JSON on stdout, everything a creator needs to
-build the piece that fills one of a site plan's places: the frame's extents (the box's play space plus
-the one floor course a piece owns), the datum in piece-local coordinates, every
-seam of that box in piece-local coordinates with its face, cells, class, rise and
-the class of face the piece must answer it with, the synthesized anchor names the
-place owes, and the detail plan's `palette`.
+**`delvec allocation <place>` / `--all` is the handout: what the whole hands a
+part** (spec-0098 §4), and it is what `delvec detail` reads. It remains for
+reading — a program and a place's concept are both made against it — and it
+prints, as JSON on stdout, one document per place: what is built here (the
+node's intent, note, class, stations, roofed or open) and the detail plan's
+`palette`; the place's own concept row (`concept/<place stem>` in the design
+record, or its named absence until step 9) and the whole's reference sheet; the
+frame's extent, the walk plane's piece-local `y`, its world position and the
+play space piece-local (`space`); every neighbour by side with its kind, floor
+and roof; the plan views that see the place, each with the `delvec snapshot
+--camera` that frames it; the **ground** — the fill kind, the claim's bottom,
+the terrain along the perimeter with its min and max, every fixed ring cell with
+its block (the piece writes `structure_void` there), and the terrain-shaped
+columns under the plot the piece may reshape; the declared **roof** (courses,
+eaves, the lid and top `y`, every clipped eave); every seam piece-local with its
+declared `form`, the place on its other side, face, cells, class, rise, the
+answering class, whether this place owns the plane, and the ring's ground under
+it; the owed anchor names; and every **void** of the frame with its owner.
 
 It is derived from the site plan on **every** invocation and is **an input to
 nothing**: no gate, no build step and no check ever reads what it prints, so a
 file made of it is a copy with no consumer and its staleness has no vector into
 the build. Every obligation it describes is recomputed from the plan itself at
-every validation (`DW0842`–`DW0845`) and over the built bytes at every build
-(`DW0836`–`DW0838`). It exists for the authoring loop, on the creator's own
-machine.
+every validation (`DW0842`–`DW0845`, `DW0987`, `DW0989`, `DW0990`) and over the
+built bytes at every build (`DW0836`–`DW0838`, `DW0990`). Two invocations print
+the same bytes. It exists for the authoring loop, on the creator's own machine.
 
 ```
 delvec allocation <campaign-dir> node/near-hall   # one place
@@ -162,14 +172,20 @@ delvec allocation <campaign-dir> --all            # every place, in plan order
 to have typed is derived. It computes the allocation from the site plan (the same
 function `allocation` prints from), binds it into the
 place's program — `programs/<place stem>.json` inside the campaign — under the
-`handed/` parameter prefix (`handed/datum-y`; per seam
-`handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`, keyed by the layout-graph
-edge without its `edge/` prefix), rebinds every program role the plan's
+`handed/` parameter prefix (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`;
+on a roofed place with a declared roof `handed/roof/{courses,eaves,lid-y,top-y}`;
+per seam `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`, keyed by the
+layout-graph edge without its `edge/` prefix), rebinds every program role the plan's
 `palette` names as `role/<stem>`, expands at the frame's extent at a seed derived
-from the place id, runs the grammar's contract gates, then judges the piece it
+from the place id, writes `minecraft:structure_void` at every void of the frame
+after the expansion (a derivation, never typed: the cells a neighbour, the
+ring's fixed ground or nobody owns), runs the grammar's contract gates — a voided
+cell is not floor the contract owes and a voided boundary cell is the whole's to
+judge — then judges the piece it
 would write and the row it would write with the same `detail::check` validation
 runs — `DW0843`, `DW0844` naming the seam and the face, `DW0845`, `DW0848` — then
-the admission audit and the light probe, **all before any file is written**.
+the admission audit and the light probe (taken with the piece standing on its
+handed fixed ground), **all before any file is written**.
 Then it freezes the piece into `--prefabs` (`<campaign id>-<place stem>`, with
 `footprint_class` stamped from the node's `size_class` and the lighting profile
 measured), writes `<id>.report.json` beside it, writes the `details[]` row

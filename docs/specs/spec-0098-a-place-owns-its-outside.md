@@ -261,6 +261,22 @@ brink is level; the fall itself is answered by the **higher** place's own face
 inside its claim, which is the one policy about drops this engine has
 (`DW0877`, `DW0837`, `DW0986`).
 
+**Every seam declares its form, and both sides read it.** A seam carries
+`form`, a short declared description of the crossing — "a wooden arch bridge, 3
+wide", "a stone stair, down 4", "rope ladder, up 6". It is a creative judgement
+the plan states once, on the seam (the site plan already owns the seam's kind
+and cells), never player-facing and therefore never translated, and required:
+a crossing whose two sides are designed apart is designed by both against the
+same sentence. The handout (§4) gives it to **both** places the seam joins, so
+each designs its side of the interface knowing what meets it.
+
+**A connector that is itself a structure is a place.** A bridge across a gap, a
+long stair down a cliff, a rope walk between two trees: each is a way-classed
+place of its own (spec-0053) with its own piece, and its neighbours provide only
+a landing or an opening at each seam. No new mechanism is needed: the bridge's
+piece owns its deck, rails and supports like any place owns its outside, and the
+seams at either end are ordinary seams.
+
 **The faced cliff is already refused where it matters, by the proofs that read
 reach.** A body can walk off a plinth's edge: onto a neighbouring place, which
 is `DW0838` (a connection nothing allocated) unless a `drop` seam declares it;
@@ -361,7 +377,8 @@ plan on every invocation, an input to nothing (`DW0842`–`DW0845`, `DW0987`,
 - **its initial ground**: every fixed ring cell — `[x, y, z]` and block — and
   the terrain-shaped ground inside the ring as columns `{x, z, top, blocks[]}`
   the piece may reshape; the claim's bottom; the floor's piece-local `y`.
-- **its seams and owed anchors**: every seam piece-local with face, cells,
+- **its seams and owed anchors**: every seam piece-local with its declared
+  `form` (§2c), the place on its other side, face, cells,
   class, rise and the answering face class (spec-0050 §3's table), the ring's
   derived ground at each seam; every owed name, the seam gate regions now among
   them (§2); the frame's extent and its void cells, each with its owner.
@@ -768,6 +785,12 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     asserts every field present on a place with a roof, a seam and a station.
     Instrument: `tests/detail_verb.rs`.
 
+25. **The handout carries every seam's form to both sides.** `delvec
+    allocation --all` on the gallery's site-plan overlay hands each seam, on
+    each of the two places it joins, the same non-empty `form`. Vacuous if the
+    string is absent from either side: the test compares every seam side and
+    asserts the count of sides compared. Instrument: `tests/detail_verb.rs`.
+
 ## 12. Proof renders
 
 Two frames of the gallery's annex from one eye position on the yard side, at
@@ -788,3 +811,152 @@ and the free wall the program drew). Paths in the implementation report.
    already carries) and step 2 (the derivation lays the terrain in place of
    `MASSIF`/`GROUND`, the fixed ring as rule 0, the handout's ground; `DW0990`
    at validation and in the battery, and `DW0838`'s second shape).
+
+## 14. Departures, and where each criterion is demonstrated
+
+Recorded at implementation, each with its reason. A departure that reduces
+what a criterion asserts says so in the word *loosening*.
+
+1. **What a terrain's height is.** Every terrain height is the `y` of the
+   **surface block**; a `flat` terrain on a datum stands its surface block at
+   the datum's `y − 1`, so the datum is the terrain's walk plane, exactly as it
+   is a box's. The claim's bottom (§2) is therefore the lower of the lowest
+   surface `y` under the footprint and ring and the floor course — §2's formula
+   with "terrain" read as the terrain's walk plane. Without the reading, a place
+   on terrain at its floor would claim two courses of ground and §2's sentence
+   "the claim of a place with no `roof` is its stage-5 shell exactly" would be
+   false.
+2. **The ground under a plot stops above a place stacked under it.** A claim's
+   bottom is raised to one course over the highest claim of any place lying
+   wholly below its floor under its shell footprint, then capped at its own
+   floor course. Otherwise an upper place over open, low terrain claims a column
+   of ground straight through the place beneath it, and rule 3a's stacked plane
+   never arises.
+3. **Rule 3c at a corner three places share.** The seams the plan allocates
+   between any two of the claimants across a plane through the cell are read
+   together: where the seams between one pair disagree about `a`, the cell is
+   refused (rule 3d, as written); otherwise it is the `a` of the first of them in
+   the plan's seam order. With two claimants this is §2's rule exactly. A
+   T-junction — a room beside two rooms that are beside each other, joined
+   pairwise — always meets connections led by different places at one corner
+   column, and §2 as written refuses every one; the designer's own order decides
+   instead, never the engine.
+4. **An eave stops at a neighbour's shell**, not only at its play space (§3).
+   An eaves cell over a taller neighbour's ring or lid is in both claims with no
+   rule to award it, so every eave beside a taller neighbour would be refused.
+5. **The terrain's spelling is a tagged union**: `{"kind": "flat", "datum"}`
+   and `{"kind": "heightmap", "heightmap", "base_y", "range"}`. §2c's literal
+   spellings are not tagged variants, so the export would enumerate no
+   `Terrain::flat` or `Terrain::heightmap` unit and criterion 20's coverage
+   binding would bind nothing.
+6. **A volume may name its own block** (`volumes[].block`, §2b's "unless it
+   names its own"). Where the fill has no block of the volume's kind, the fill's
+   own mass block is taken: a `massif` on an `open` site is the fill's `below`, a
+   `ground` on a `solid` site its `block`. A `clearance` naming a block is
+   `DW0193`.
+7. **A heightmap's refusals are `DW0826`**: unread (a campaign handed to the
+   checks without its directory), unreadable, not exactly the region's `x × z`
+   pixels (naming both sizes), or a surface outside the region's `y` span.
+8. **Criterion 11, a loosening.** `fill` is required and writes every unclaimed
+   cell and the ring's fixed ground, so a campaign with no `roof` and no detail
+   plan does not derive byte-identical fills to the engine before this spec. What
+   is asserted instead: a campaign that binds nothing masses byte-identically to
+   the same campaign with an empty detail plan (`tests/detail.rs`), the
+   derivation is deterministic and seedless (`tests/blockout.rs`), and every cell
+   a place owns under both fills derives identically (criterion 19).
+9. **`DW0848`, a loosening.** A frame is a claim, never smaller than its box and
+   wider by whichever ring cells and eaves the place owns, which no piece's
+   bytes know; `footprint_class` is now held only to the class's narrowest box
+   and its shallowest frame, with no upper bound and no kit-grid test.
+10. **Where a seam is answered.** The place that owns the plane answers at the
+    plane; the other place at its own first layer beside the plane. A declared
+    via lying wholly in one plane inside a frame exports a face pointing away
+    from its space, so a frame reaching past a plane it does not own (its eaves,
+    its ring beyond a shorter neighbour) can still answer the seam.
+11. **The seam gate is the plane owner's.** `owed_anchors` owes
+    `anchor/seam-<edge>` to the place owning the plane; the row binds it to a
+    gate anchor whose region is exactly the allocated cells (`DW0842` refuses
+    another region), and `Plan::build` seats it with the piece's own `block`.
+    The static `close-gate` check (`DW0343`) still answers the derivation's bar
+    for a synthesized name; the runtime fill is the piece's.
+12. **Criterion 9, retargeted.** A vista into an open place crosses only the
+    plane it shares with its neighbour, which rule 3b gives to the roofed
+    neighbour, so an open place's own wall never blocks one; and the fixture's
+    vista is blocked by the hall's stair treads and the door sill's fixed ground.
+    The pair is demonstrated where it is reachable: a vista from the landing to
+    the exit, blocked at stage 5 by both stand-ins' facing walls, clears when both
+    places are bound to pieces carving a window in the ring each owns.
+13. **Criterion 14 at the unit.** No fixture carries the Narrows' shape; the
+    test builds it from resolved boxes and seams and judges the piece with the
+    grammar's own contract check and face export.
+14. **Criterion 16's remedies at the rule.** On a fixture whose graph reaches
+    every place, removing the seam between two adjacent places changes the
+    graph; so the refusal is shown at the campaign (the exit hung one cell from
+    the landing) and each remedy — connect, stand apart, make one — at the
+    ownership rule (`crates/dsl` claim tests).
+15. **Criteria 17 and 22, a loosening.** The fixture's gap cannot carry a third
+    place on the kit grid, so the remedy *the gap becomes a place with two seams*
+    is not taken in test; the refusal names it, and closing the edge is taken
+    green. **Criterion 21, a loosening**: the crossing exemption applies to any
+    seam's columns and is not separately shown with a `drop`.
+16. **Criterion 1's instrument** is `tests/blockout.rs`: the gallery overlay's
+    terrain is a heightmap the loader reads, which the `dsl` crate's tests do not.
+17. **The model places template air** (§7): every cell a template names is
+    written, air included, except `structure_void`. Before this, the model
+    dropped a template's air, so it was more solid than the world; the
+    correction can only turn a false red green, and is held by criterion 10.
+18. **The concept reference and the sheet** are the design record's own rows:
+    a place's image is the row `concept/<place stem>` (the record admits only
+    `concept/` and `reference/` names), the whole's sheet its `reference/` rows,
+    and their `shows` sentences the style lines §4 asks for (the record carries
+    no other).
+19. **Views that see a place** are those whose eye has the place's frame centre
+    within 35° of its line to `look_at`, each handed as `delvec snapshot
+    --camera <eye, yaw, pitch>`: a plan view is not a render-plan shot `--shot`
+    can name.
+20. **The contract gates read `structure_void` as the whole's.** A voided cell
+    is not floor the contract owes (`contract-coverage`), and a voided boundary
+    cell is counted rather than refused (`contract-closure`): the whole's
+    proofs over the assembled world judge it.
+21. **The light probe stands a piece on its handed ground**: the fixed ring
+    cells hold the whole's block, so a doorway over its sill has a floor.
+22. **The staging gate reads a third instrument**, the build's
+    `validation/blockout.json`, and fails closed on a site-plan build without one.
+23. **The overview camera stands over the declared fill** (the region's top on
+    a `solid` site, the terrain at its column on an `open` one), as it already
+    stood over a horizon's ground.
+24. **`DW0838`'s second shape examines** the standable cells of the region
+    outside every claim; on a `solid` site that keeps a sky volume, the rock's
+    top under the sky is such ground and is examined.
+25. **The gallery's annex** declares nine roof courses with one cell of eaves:
+    the eaves course sits level with the lid, so a stepped 45° gable over twenty
+    columns peaks nine courses above it. Its free walls are three (north, west,
+    south), not two. It carries a station, `anchor/annex-bench`, so one place
+    holds a roof, seams and a station for criterion 24.
+26. **`form` is required**, never defaulted.
+
+| Criterion | Demonstrated in |
+|---|---|
+| 1 | `tests/blockout.rs` `the_ownership_rule_is_exhaustive_and_one_owner`; `crates/dsl` `siteplan::claim` tests |
+| 2 | `crates/dsl` `detailplan` tests |
+| 3 | `tests/blockout.rs` `the_derivation_writes_only_stand_ins_and_only_in_unbound_claims` |
+| 4 | the gallery's site-plan overlay (`gallery/overlays/site-plan/programs/annex.json`), its build, the proof renders, and the `courses` perturbation measured in the commit that regenerates the baseline |
+| 5 | the gallery overlay's yard piece; probe `a-yard-the-size-of-its-floor` |
+| 6 | `tests/one_place_site.rs` `a_one_box_site_is_route_a` |
+| 7 | `tests/detail.rs` `dw0987_refuses_a_piece_painting_a_neighbours_cell`; probe `a-wall-the-whole-already-owns` |
+| 8 | `crates/dsl/tests/v14_site_plan.rs` `dw0988_refuses_…`; probes `a-roof-over-the-open-sky`, `a-roof-under-the-hall` |
+| 9 | `tests/detail.rs` `dw0821_clears_when_the_places_own_walls_are_carved` (departure 12) |
+| 10 | `tests/one_place_site.rs` `the_model_reads_structure_void_as_the_game_does` |
+| 11 | departure 8 |
+| 12 | the gallery build over the overlay (the battery, `DW0885`, `DW0210`, `DW0891`, `DW0921`) |
+| 13 | `tools/ci/check-dw-codes.py`; the reference pages; `docs/demo-levels.md`; the skill text in the round's scratch file |
+| 14 | `compiler::detail` test `two_contacts_at_a_corner_answer_at_their_own_planes` (departure 13) |
+| 15 | `tests/grammar_contract_check.rs` `an_all_open_piece_states_its_zero_and_passes`; `tests/detail.rs` `dw0989_refuses_an_all_open_piece_on_a_roofed_place` |
+| 16 | `tests/blockout.rs` `dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them`; `siteplan::claim` `two_roofed_places_one_apart_are_contested_and_each_remedy_parts_them` |
+| 17, 22 | `tests/detail.rs` `dw0838_refuses_ground_outside_every_claim_and_a_gap_nothing_allocated` (departure 15) |
+| 18 | `tools/tests/test_staging_gate.py` `test_a_stand_in_never_ships` |
+| 19 | `crates/dsl/tests/v14_site_plan.rs` `a_plan_without_a_fill_is_refused_naming_the_field`; `tests/blockout.rs` `both_fills_derive_and_differ_only_where_no_place_owns`; overlays `site-plan` and `site-plan-solid` |
+| 20 | `tests/blockout.rs` `the_terrain_is_the_heightmap_column_for_column`; probe `a-terrain-on-a-datum-the-plan-does-not-name` |
+| 21 | `tests/detail.rs` `dw0990_refuses_a_crack_and_passes_a_faced_edge_and_a_step`; `tests/blockout.rs` `a_hollow_edge_reddens_dw0990_alone` |
+| 23 | `tests/blockout.rs` `the_ring_is_the_terrain_and_a_door_stands_on_its_sill`; `tests/detail.rs` `dw0990_refuses_a_piece_writing_the_rings_ground` |
+| 24, 25 | `tests/detail_verb.rs` `the_handout_is_complete_and_hands_each_seams_form_to_both_sides` |
