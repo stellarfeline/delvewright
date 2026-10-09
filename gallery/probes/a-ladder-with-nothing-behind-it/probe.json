@@ -1,0 +1,57 @@
+{
+  "code": "DW0991",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/cabin-ladder",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                5,
+                6,
+                28
+              ],
+              "min": [
+                5,
+                3,
+                28
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "matching": [
+              "minecraft:ladder"
+            ],
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:ladder[facing=west]",
+                  "weight": 1.0
+                }
+              ],
+              "scale": 1.0
+            },
+            "region": "region/cabin-ladder",
+            "verb": "replace"
+          }
+        ],
+        "id": "batch/turn-the-cabin-ladder",
+        "note": "The cabin ladder's four rungs turned to face west, into the cabin's wall, with their backs to the open hall."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A ladder the piece shows and the world does not keep. Every rung of the cabin ladder is still there, in the same cells, and the critical path still climbs it to `anchor/cabin-roof` — the only way up. What this batch changes is which way the rungs face: west, into the cabin's wall, so the block each one hangs on is the air of the open hall behind it. A ladder stays only while the block behind it shows it a sturdy face, and the game removes this one at the first shape update that reaches it, so the climb the piece shows is not there to take. The leg is unroutable, and it is NOT the generic `DW0311`: re-routed with every unheld climbable credited as if it hung, it routes, so the refusal names the four rungs and the sturdy east face each one lacks. It declares no unit, because climbing is the nav model's reading of vanilla blocks and states no DSL surface."
+}

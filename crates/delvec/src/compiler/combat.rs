@@ -1723,6 +1723,8 @@ mod tests {
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
             lava: BTreeSet::new(),
+            climb: BTreeMap::new(),
+            unheld_climb: BTreeMap::new(),
         }
     }
 

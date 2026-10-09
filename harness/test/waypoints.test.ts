@@ -467,3 +467,90 @@ test("nearestIndex finds where along a leg a crossing lies, ties to the earlier 
   assert.equal(nearestIndex(cells, [7, 64, 0]), 1, "equidistant from 8 and 6: the earlier");
   assert.equal(nearestIndex([], [0, 0, 0]), 0);
 });
+
+// spec-0099: the gallery's cabin-ladder legs, as the compiler exports them — up
+// the ladder onto the roof, and back down.
+const CLIMBING = {
+  version: "0.4.0",
+  campaign_id: "gallery",
+  legs: [
+    {
+      from: [11, 67, 25],
+      to: [2, 71, 28],
+      waypoints: [
+        [11, 67, 25],
+        [5, 67, 28],
+        [4, 71, 28],
+        [2, 71, 28],
+      ],
+      climbs: [
+        {
+          block: "minecraft:ladder[facing=east]",
+          bottom: [5, 67, 28],
+          facing: "east",
+          from: [5, 67, 28],
+          to: [4, 71, 28],
+          top: [5, 70, 28],
+        },
+      ],
+    },
+    {
+      from: [2, 71, 28],
+      to: [11, 67, 25],
+      waypoints: [
+        [2, 71, 28],
+        [4, 71, 28],
+        [5, 67, 27],
+        [11, 67, 25],
+      ],
+      climbs: [
+        {
+          block: "minecraft:ladder[facing=east]",
+          bottom: [5, 68, 28],
+          facing: "east",
+          from: [4, 71, 28],
+          to: [5, 67, 27],
+          top: [5, 70, 28],
+        },
+      ],
+    },
+  ],
+};
+
+test("a leg's climbs parse, and the hop between a climb's ends carries it (spec-0099)", async () => {
+  const { climbDirection, supportCell } = await import("../src/waypoints.ts");
+  const wp = parseWaypoints(CLIMBING);
+  assert.equal(wp.legs[0]!.climbs.length, 1);
+  const up = wp.legs[0]!.climbs[0]!;
+  assert.equal(climbDirection(up), "up");
+  assert.equal(climbDirection(wp.legs[1]!.climbs[0]!), "down");
+  // The ladder faces east, so the block it hangs on — what the bot pushes — is west.
+  assert.deepEqual(supportCell(up, 69), [4, 69, 28]);
+  const goals = walkGoals(wp.legs[0]!.waypoints, [2, 71, 28], 1, wp.legs[0]!.climbs);
+  const driven = goals.filter((g) => g.climb !== undefined);
+  assert.equal(driven.length, 1, "exactly the from→to hop is the climb");
+  assert.deepEqual([driven[0]!.x, driven[0]!.y, driven[0]!.z], [4, 71, 28]);
+  // The match hands the climbs over with the waypoints, and an artifact without
+  // them parses to none.
+  const m = nextLegWaypoints(wp.legs, 0, [2, 71, 28]);
+  assert.equal(m.climbs.length, 1);
+  assert.equal(parseWaypoints(VALID).legs[0]!.climbs.length, 0);
+  // A climb with nothing in its column, or ends that are not the leg's waypoints,
+  // is a structural fault, never a climb walked by the pathfinder in silence.
+  const bad = structuredClone(CLIMBING);
+  bad.legs[0]!.climbs[0]!.to = [9, 99, 9];
+  assert.throws(() => parseWaypoints(bad), WaypointsParseError);
+  const skew = structuredClone(CLIMBING);
+  skew.legs[0]!.climbs[0]!.top = [6, 70, 28];
+  assert.throws(() => parseWaypoints(skew), WaypointsParseError);
+});
+
+test("the climb executor refuses what the bot's physics cannot climb (spec-0099)", async () => {
+  const { clientClimbs, climbBudgetMs } = await import("../src/executor/climb.ts");
+  assert.ok(clientClimbs("minecraft:ladder[facing=east]"));
+  assert.ok(clientClimbs("minecraft:vine[west=true]"));
+  assert.ok(!clientClimbs("minecraft:weeping_vines_plant"));
+  assert.ok(!clientClimbs("minecraft:twisting_vines"));
+  const c = parseWaypoints(CLIMBING).legs[0]!.climbs[0]!;
+  assert.ok(climbBudgetMs(c) >= 6_000 + 4 * 1_000);
+});

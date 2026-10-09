@@ -16,6 +16,7 @@ import {
   retainStandableWaypoints,
   subdivideStraightRuns,
   walkGoals,
+  type Climb,
   type GoalSpec,
   type TimedGate,
   type Waypoints,
@@ -392,6 +393,16 @@ export const methods = {
       // this volume, so the objective completed on that landing. Nothing is
       // walked; the marker is asserted, and its absence is the compiler's claim
       // failing, never a reason to go looking for the volume.
+      //
+      // The compiler still exported this position's leg (from the landing to the
+      // anchor), so the lockstep cursor consumes it unwalked. Left in place, the
+      // next walk's leg sits one behind: on the gallery the cabin tiller's stand
+      // walk took this leg, its own was never consumed, and both walks after the
+      // carry — up the cabin ladder and on to the exit — ran with no proven leg.
+      if (this.waypoints) {
+        const landed = nextLegWaypoints(this.waypoints.legs, this.legCursor, reachGoal(step.completion).pos);
+        this.legCursor = landed.cursor;
+      }
       const done = this.completedObjectives.get(step.objective);
       if (done !== undefined) {
         process.stderr.write(
@@ -551,6 +562,7 @@ export const methods = {
       // as walked; a non-matching walk (a sub-walk, or a post-transport step) does
       // not consume and falls back to the single destination goal.
       let legWaypoints: readonly Vec3Tuple[] | undefined;
+      let legClimbs: readonly Climb[] = [];
       // spec-0016 §4: the timed gates that bind THIS walk. A gate is a world fact
       // the compiler exports for the whole campaign; a proven leg's `timed_gates`
       // narrows that table to the subset its route crosses. A walk with no proven
@@ -572,6 +584,7 @@ export const methods = {
           this.feetCell(),
         );
         legWaypoints = match.waypoints;
+        legClimbs = match.climbs;
         if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
           legWaypoints = legWaypoints.slice(this.legResume.from);
           this.legResume = undefined;
@@ -669,14 +682,30 @@ export const methods = {
         }
         legWaypoints = kept;
       }
-      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r);
+      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r, legClimbs);
+      const climbHops = goalsList.filter((g) => g.climb !== undefined).length;
+      if (legClimbs.length > 0 || climbHops > 0) {
+        // Stated binding count: the climbs the proven leg takes, and how many of
+        // them reach a hop the climb executor drives (spec-0099). A climb whose
+        // ends did not survive to adjacent hops is walked by the pathfinder, and
+        // the line says so rather than leaving it to be inferred.
+        process.stderr.write(
+          `[climb] ${label}: ${legClimbs.length} climb(s) on the proven leg, ${climbHops} driven ` +
+            `as a climb hop\n`,
+        );
+      }
       await replayLegWithRecovery(
         goalsList,
         label,
         // Every hop of a walked leg is staged (see gotoStaged) — a body that has
         // latched onto the bot is removed and the leg resumes, so what the leg
         // reports on is the route rather than on whatever was standing in it.
-        (spec, glabel) => this.gotoStaged(spec, glabel, sneak),
+        // A climb hop is driven by the climb (spec-0099), raced against death like
+        // every other raw phase; every other hop is staged (see gotoStaged).
+        (spec, glabel) =>
+          spec.climb
+            ? this.raceDeath(() => this.climbHop(spec, glabel))
+            : this.gotoStaged(spec, glabel, sneak),
         (target) => this.unstickToward(target),
         walkGates.length > 0
           ? {

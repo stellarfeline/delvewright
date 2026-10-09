@@ -1673,7 +1673,7 @@
           },
           {
             "after": [
-              "obj/cross-the-strait"
+              "obj/climb-onto-the-cabin"
             ],
             "anchor": "anchor/exit",
             "announcement": "hidden",
@@ -1735,6 +1735,26 @@
               "flag/muster-cleared"
             ],
             "title": "Cross to the ferry cabin",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/cross-the-strait"
+            ],
+            "anchor": "anchor/cabin-roof",
+            "happening": {
+              "subject": "anchor/cabin-roof",
+              "text": "They climb the ladder on the cabin's wall and come out on its roof.",
+              "verb": "arrives"
+            },
+            "hint": "Up the ladder on the cabin's east wall.",
+            "id": "obj/climb-onto-the-cabin",
+            "radius": 1,
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "stealth": false,
+            "title": "Climb onto the cabin's roof",
             "type": "reach-anchor"
           },
           {

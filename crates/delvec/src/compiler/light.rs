@@ -431,6 +431,11 @@ pub fn passes_light(name: &str) -> bool {
     use delvewright_dsl::blockshape::{Collision, collision_class};
     match collision_class(name) {
         Collision::Air | Collision::Thin(_) | Collision::FenceGate | Collision::Fluid => true,
+        // A climbable is a cell a body is in (spec-0099), so it must pass light
+        // or a player holding on a ladder is measured at light 0. Vanilla agrees:
+        // `filterLight = 0` for `ladder`, `vine`, `weeping_vines`, `twisting_vines`
+        // and `cave_vines` in the same vendored `minecraft-data` table.
+        Collision::Climbable => true,
         Collision::TallBarrier | Collision::PartialFloor(_) | Collision::FullCube => {
             let id = base_id(name);
             matches!(

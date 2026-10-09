@@ -703,6 +703,61 @@
       "kind": "pov"
     },
     {
+      "area": "area/hall",
+      "id": "pov/leg22/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg22/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg22/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg22/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg22/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg23/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg23/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg23/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg23/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg23/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg23/wp6",
+      "kind": "pov"
+    },
+    {
       "area": "",
       "id": "pov/leg3/wp0",
       "kind": "pov"

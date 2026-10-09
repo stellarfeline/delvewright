@@ -35,7 +35,7 @@ impl LeaveBinding {
     pub fn line(&self) -> String {
         format!(
             "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
-             by walking, falling, jumping or swimming ({} of them afloat), {} it cannot leave; {} \
+             by walking, falling, jumping, swimming or climbing ({} of them afloat), {} it cannot leave; {} \
              link stand cell(s) served as a way out",
             self.configurations,
             self.route_cells,
@@ -304,9 +304,9 @@ fn verify_bodies_can_leave(
              or take away what they jumped in from); do not fence walkable-looking ground with an \
              invisible barrier. A body afloat climbs out only onto ground one cell above the \
              water's top, and does not dive. A room the story is meant to shut the party into \
-             holds the objective the story waits on, and is not this. Moves are cardinal: a \
-             diagonal jump or a climb (ladder, vine) is not counted, so a place left only that way \
-             reads as a trap.",
+             holds the objective the story waits on, and is not this. Moves are cardinal, and a \
+             climb counts only on a ladder or vine the world keeps: a diagonal jump is not counted, \
+             so a place left only that way reads as a trap.",
             pockets.join("; ")
         ),
     });
@@ -677,6 +677,45 @@ mod leave_tests {
         assert_eq!(b.afloat, 9);
     }
 
+    /// **A ladder out of a pit is a way out of it** (spec-0099). Ground five
+    /// courses deep with a one-cell shaft four deep in it: a body walks off the
+    /// brink and survives the fall, and with nothing to climb it cannot leave
+    /// (`DW0921`). Hang a ladder on the shaft's wall and the same body climbs
+    /// out — and the fall in is caught by the ladder on the way down.
+    #[test]
+    fn a_ladder_is_a_way_out_of_a_pit() {
+        let pit = |ladder: bool| {
+            let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+            for x in 0..7 {
+                for z in 0..7 {
+                    for y in -4..=0 {
+                        if (x, z) == (3, 3) && y > -4 {
+                            if ladder {
+                                cells.push(([x, y, z], "minecraft:ladder[facing=east]"));
+                            }
+                            continue;
+                        }
+                        cells.push(([x, y, z], "minecraft:stone"));
+                    }
+                }
+            }
+            crate::compiler::nav::testkit::blocks_world(&cells)
+        };
+        let (_, verdict) = judge(&pit(false), &[[1, 1, 1]]);
+        assert_eq!(
+            verdict.expect_err("the shaft holds a body").code.id(),
+            "DW0921"
+        );
+        let laddered = pit(true);
+        assert!(
+            laddered.body_moves([2, 1, 3]).contains(&[3, 0, 3]),
+            "caught at the top rung"
+        );
+        let (b, verdict) = judge(&laddered, &[[1, 1, 1]]);
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert!(b.reached > 0 && b.trapped == 0, "{b:?}");
+    }
+
     #[test]
     fn lava_is_never_a_place_a_body_floats() {
         let mut solid = yard(6, 6);
@@ -690,6 +729,8 @@ mod leave_tests {
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
             lava: [[3, 0, 3]].into_iter().collect(),
+            climb: Default::default(),
+            unheld_climb: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert!(!w.body_moves([2, 1, 3]).contains(&[3, 0, 3]));
@@ -711,6 +752,8 @@ mod leave_tests {
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
             lava: [[3, 0, 3]].into_iter().collect(),
+            climb: Default::default(),
+            unheld_climb: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert_eq!(w.fatal_step_off([2, 1, 3]), Some(([3, 1, 3], true)));

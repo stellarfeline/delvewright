@@ -32,6 +32,8 @@ fn floored_with_furniture(
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
             lava: BTreeSet::new(),
+            climb: Default::default(),
+            unheld_climb: Default::default(),
         },
         Premises {
             ambient: Ambient::Void,
