@@ -121,6 +121,9 @@ pub struct PlacedBox {
     /// what [`PlacedBox::clearance`] holds); what it makes no claim on is the
     /// air above that.
     pub open: bool,
+    /// The roof the plan reserves over this place (spec-0098 §3), when it
+    /// declares one. Never present on an open box (`DW0988`).
+    pub roof: Option<super::Roof>,
 }
 
 impl PlacedBox {
@@ -205,6 +208,7 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
                 floor: p.floor,
                 clearance: p.clearance?,
                 open: matches!(p.plan.ceiling, Ceiling::Open),
+                roof: p.plan.roof,
             })
         })
         .collect()

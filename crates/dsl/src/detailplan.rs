@@ -37,7 +37,7 @@ use crate::envelope::Campaign;
 use crate::ids::{NodeId, PrefabId};
 #[cfg(doc)]
 use crate::owed_anchors;
-use crate::siteplan::PlacedBox;
+use crate::siteplan::{PlacedBox, PlacedSeam};
 
 // ---------------------------------------------------------------------------
 // The document (spec-0050 §1)
@@ -121,52 +121,60 @@ impl DetailPlanContent {
 /// [`Frame::of`], [`Frame::datum_y`] and every reader of either move together.
 pub const FLOOR_COURSE: i64 = 1;
 
-/// **What a piece owns**: the box's play space, grown [`FLOOR_COURSE`] downward
-/// to take in the floor the walk plane stands on.
+/// **What a piece owns**: the place's shell — its floor course, its play space,
+/// the one-cell ring its walls stand in and, roofed, its lid and the roof zone
+/// the plan declares — minus every cell spec-0098 §2's ownership rule awards to
+/// another place or to the whole (`siteplan::owner`).
 ///
-/// One derivation, [`Frame::of`], and four readers that must not disagree: the
-/// exactness check (`DW0843`), the face check (`DW0844`), the placement inside
-/// `Plan::build`, and `delvec allocation`. Two of them computing "where does
-/// this piece go" independently is how a builder and its observer come to agree
-/// about a world neither describes — the failure `PlacedBox`'s own note records
-/// one layer down.
+/// One derivation, [`Frame::of`], and every reader that must not disagree: the
+/// exactness check (`DW0843`), the face check (`DW0844`), the void check
+/// (`DW0987`), the blockout's holes, the light pass, the placement inside
+/// `Plan::build`, and `delvec allocation`. Two of them computing "whose cell is
+/// this" independently is how a builder and its observer come to agree about a
+/// world neither describes.
 ///
-/// What is **not** in here is as load-bearing as what is: every vertical party
-/// plane, every unshared shell face, every derived stair in an unbound host and
-/// every bar in a vertical-plane seam stay whole-owned. The piece dresses its
-/// side of a wall from within its own frame; the party plane is structure, and
-/// structure is the whole's.
-///
-/// A seam's FRAME is whole-owned on the same terms and with one recorded
-/// exception: where two boxes stack, the horizontal party plane between them is
-/// the upper box's floor course, so a bound upper box owns the frame cut in it
-/// along with the rest of its floor. That is spec-0050 §3's own stacked-box
-/// sentence; the reasoning is at `blockout::Mass::holes`, where the choice is
-/// made.
+/// The frame is the **bounding box** of the owned cells, because a piece is a
+/// structure template and a template is a box. Cells inside it the place does
+/// not own are its [`Frame::voids`]: the piece holds `structure_void` there and
+/// the owner's block shows through, in the game and in the model alike.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     /// The place this frames.
     pub node: NodeId,
-    /// Inclusive low corner in world cells — the floor course.
+    /// Inclusive low corner in world cells.
     pub lo: [i64; 3],
-    /// Inclusive high corner in world cells — the top of the play space.
+    /// Inclusive high corner in world cells.
     pub hi: [i64; 3],
+    /// The walk plane's world `y`.
+    pub floor: i64,
+    /// The cells the place owns, merged into disjoint AABBs — what the
+    /// derivation does not write.
+    pub owned: Vec<crate::siteplan::Aabb>,
+    /// How many cells the place owns.
+    pub owned_cells: usize,
+    /// Every cell of the frame the place does not own, with who does.
+    pub voids: Vec<crate::siteplan::Void>,
+    /// Eaves cells the plan clipped at a neighbour's play space.
+    pub clipped: Vec<(crate::siteplan::Aabb, NodeId)>,
 }
 
 impl Frame {
-    /// The frame a detailed place's piece must exactly fill.
-    ///
-    /// The play space plus the floor course under it, and nothing else. A
-    /// floor's material is the place's own voice — the datum convention already
-    /// says the walk plane is the plan's, so the handing states the datum in
-    /// piece-local coordinates and the seam-rise proofs hold it.
+    /// The frame a detailed place's piece must exactly fill, derived from the
+    /// whole plan: `boxes` and `seams` are the plan's resolved places and
+    /// connections (`siteplan::placed_boxes`, `siteplan::placed_seams`),
+    /// because who owns a party plane depends on what stands on its other side.
     #[must_use]
-    pub fn of(b: &PlacedBox) -> Frame {
-        let (lo, hi) = b.space();
+    pub fn of(b: &PlacedBox, boxes: &[PlacedBox], seams: &[PlacedSeam]) -> Frame {
+        let o = crate::siteplan::ownership(b, boxes, seams);
         Frame {
             node: b.node.clone(),
-            lo: [lo[0], lo[1] - FLOOR_COURSE, lo[2]],
-            hi,
+            lo: o.lo,
+            hi: o.hi,
+            floor: b.floor,
+            owned: o.owned,
+            owned_cells: o.owned_cells,
+            voids: o.voids,
+            clipped: o.clipped,
         }
     }
 
@@ -182,15 +190,12 @@ impl Frame {
     }
 
     /// The walk plane's **piece-local** `y` — where the piece's own floor
-    /// surface must be.
-    ///
-    /// It is [`FLOOR_COURSE`] because the frame is the play space grown exactly
-    /// that many courses downward, so the number is a consequence of
-    /// [`Frame::of`] and moves with it rather than being a literal repeated at
-    /// four call sites.
+    /// surface must be. [`FLOOR_COURSE`] whenever the place owns its own floor
+    /// course, which every place does: the floor under the play space is
+    /// contested by nothing.
     #[must_use]
     pub fn datum_y(&self) -> i64 {
-        FLOOR_COURSE
+        self.floor - self.lo[1]
     }
 
     /// A world cell in this frame's local coordinates.
@@ -207,6 +212,27 @@ impl Frame {
     #[must_use]
     pub fn contains(&self, world: [i64; 3]) -> bool {
         (0..3).all(|i| world[i] >= self.lo[i] && world[i] <= self.hi[i])
+    }
+
+    /// True when `world` is a cell the place owns — inside the frame and in no
+    /// void.
+    #[must_use]
+    pub fn owns(&self, world: [i64; 3]) -> bool {
+        self.owned
+            .iter()
+            .any(|(lo, hi)| (0..3).all(|i| world[i] >= lo[i] && world[i] <= hi[i]))
+    }
+
+    /// Every frame of a campaign's plan, in plan document order.
+    #[must_use]
+    pub fn all(c: &Campaign) -> Vec<(Frame, PlacedBox)> {
+        let mut reads = crate::metrics::Reads::new();
+        let boxes = crate::siteplan::placed_boxes(c, &mut reads);
+        let seams = crate::siteplan::placed_seams(c, &boxes, &mut reads);
+        boxes
+            .iter()
+            .map(|b| (Frame::of(b, &boxes, &seams), b.clone()))
+            .collect()
     }
 }
 
@@ -251,7 +277,7 @@ pub fn is_bound(c: &Campaign, node: &NodeId) -> bool {
 mod tests {
     use super::*;
     use crate::ids::NodeId;
-    use crate::siteplan::PlacedBox;
+    use crate::siteplan::{PlacedBox, PlacedSeam};
 
     fn a_box() -> PlacedBox {
         PlacedBox {
@@ -260,39 +286,71 @@ mod tests {
             floor: 64,
             clearance: 8,
             open: false,
+            roof: None,
         }
     }
 
     #[test]
-    fn a_frame_is_the_play_space_plus_one_course_below() {
+    fn a_frame_is_the_shell_when_nothing_stands_beside_it() {
         let b = a_box();
+        let boxes = vec![b.clone()];
         let (lo, hi) = b.space();
-        let f = Frame::of(&b);
+        let f = Frame::of(&b, &boxes, &[]);
         assert_eq!(
             f.lo,
-            [lo[0], lo[1] - 1, lo[2]],
-            "one course below the walk plane"
+            [lo[0] - 1, lo[1] - 1, lo[2] - 1],
+            "the floor course and the ring"
         );
-        assert_eq!(f.hi, hi, "and nothing above the play space");
         assert_eq!(
-            f.extent(),
-            [16, 9, 16],
-            "footprint by clearance + the floor course"
+            f.hi,
+            [hi[0] + 1, hi[1] + 1, hi[2] + 1],
+            "the ring and the lid"
         );
+        assert_eq!(f.extent(), [18, 10, 18], "16 + 2 walls, 8 + floor + lid");
         assert_eq!(
             f.datum_y(),
-            1,
-            "the walk plane sits one course up, piece-local"
+            FLOOR_COURSE,
+            "the walk plane sits one course up"
         );
-        assert_eq!(f.to_local([lo[0], b.floor, lo[2]]), [0, 1, 0]);
+        assert_eq!(f.to_local([lo[0], b.floor, lo[2]]), [1, 1, 1]);
         assert!(
-            f.contains([lo[0], b.floor - 1, lo[2]]),
-            "the floor course is the piece's"
+            f.owns([lo[0] - 1, b.floor, lo[2]]),
+            "the wall is the piece's"
         );
         assert!(
-            !f.contains([lo[0], b.floor - 2, lo[2]]),
-            "and nothing under it is"
+            !f.contains([lo[0] - 2, b.floor, lo[2]]),
+            "and nothing beyond it is"
         );
+        assert!(f.voids.is_empty(), "nothing contests a lone place");
+        assert_eq!(f.owned_cells, 18 * 10 * 18);
+    }
+
+    #[test]
+    fn an_open_frame_has_no_lid_and_a_roofed_one_rises_by_its_roof() {
+        let mut open = a_box();
+        open.open = true;
+        open.clearance = 3;
+        let f = Frame::of(&open, std::slice::from_ref(&open), &[]);
+        assert_eq!(f.extent(), [18, 4, 18], "floor course + 3, no lid");
+        let mut roofed = a_box();
+        roofed.roof = Some(crate::siteplan::Roof {
+            courses: 4,
+            eaves: 1,
+        });
+        let f = Frame::of(&roofed, std::slice::from_ref(&roofed), &[]);
+        assert_eq!(
+            f.extent(),
+            [20, 14, 20],
+            "eaves 1 each side; floor + 8 + lid + 4"
+        );
+        assert_eq!(f.datum_y(), FLOOR_COURSE);
+        // The columns beyond the walls under the eaves are nobody's: voids.
+        assert!(
+            f.voids
+                .iter()
+                .all(|v| v.owner == crate::siteplan::Owner::Whole)
+        );
+        assert!(!f.voids.is_empty());
     }
 
     /// The schema's absence is the design, so it is asserted rather than

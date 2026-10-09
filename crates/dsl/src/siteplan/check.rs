@@ -43,6 +43,8 @@ pub struct PlanBinding {
     pub derived: usize,
     /// Connected components of the seam graph.
     pub components: usize,
+    /// Boxes declaring a `roof` — what `DW0988` examines (spec-0098).
+    pub roofs: usize,
 }
 
 impl PlanBinding {
@@ -96,6 +98,7 @@ impl PlanBinding {
             identities: plan.identities.len(),
             sightlines: plan.sightlines.len(),
             views: plan.views.len(),
+            roofs: plan.boxes.iter().filter(|b| b.roof.is_some()).count(),
         }
     }
 
@@ -104,8 +107,9 @@ impl PlanBinding {
     pub fn line(&self) -> String {
         format!(
             "site-plan binding: {b} box(es) ({p} pair(s) compared; {pn} pinned, {dv} derived, \
-             in {cc} component(s)), {s} seam(s) ({st} stair, {sd} drop), {d} datum(s), {v} \
+             in {cc} component(s); {r} roofed), {s} seam(s) ({st} stair, {sd} drop), {d} datum(s), {v} \
              whole-owned volume(s), {i} identity(ies), {sl} sightline(s), {w} view(s).",
+            r = self.roofs,
             pn = self.pinned,
             dv = self.derived,
             cc = self.components,
@@ -218,6 +222,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     grid(&placed, &table, reads, d);
     region(plan, &placed, d);
     disjoint(&placed, d);
+    roofs(&placed, d);
     seams(plan, graph, &placed, &packed, &table, reads, d);
     size_classes(&placed, d);
     volumes_outside_boxes(plan, &placed, d);

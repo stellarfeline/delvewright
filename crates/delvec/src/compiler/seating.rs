@@ -1801,6 +1801,7 @@ mod tests {
             floor: i64::from(floor),
             clearance: 4,
             open: false,
+            roof: None,
         }
     }
 

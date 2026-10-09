@@ -1057,6 +1057,7 @@ mod tests {
             floor,
             clearance: 3,
             open: false,
+            roof: None,
         }
     }
 

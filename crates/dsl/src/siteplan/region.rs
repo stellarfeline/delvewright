@@ -96,6 +96,23 @@ pub(super) fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<
         if !within((p.z0(), p.z1()), spans[2]) {
             bad.push(("z", p.z0(), p.z1()));
         }
+        // The roof zone the plan places over a roofed box (spec-0098 §3): its
+        // courses and its eaves are placed as much as the play space is.
+        if let (Some(roof), Some((_, top))) = (p.plan.roof, p.y_span())
+            && !matches!(p.plan.ceiling, Ceiling::Open)
+        {
+            let e = i64::from(roof.eaves);
+            let zone = [
+                (p.x0() - 1 - e, p.x1() + 1 + e),
+                (top + 1, top + 1 + i64::from(roof.courses)),
+                (p.z0() - 1 - e, p.z1() + 1 + e),
+            ];
+            for (axis, name) in [(0usize, "roof x"), (1, "roof y"), (2, "roof z")] {
+                if !within(zone[axis], spans[axis]) {
+                    bad.push((name, zone[axis].0, zone[axis].1));
+                }
+            }
+        }
         if !bad.is_empty() {
             boxes_out.push(Overrun {
                 index: p.index,
@@ -199,7 +216,7 @@ pub(super) fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<
 fn against_region(bad: &[(&'static str, i64, i64)], spans: &[(i64, i64); 3]) -> String {
     bad.iter()
         .map(|(name, lo, hi)| {
-            let axis = match *name {
+            let axis = match name.rsplit(' ').next().unwrap_or(name) {
                 "x" => 0,
                 "y" => 1,
                 _ => 2,
@@ -247,6 +264,85 @@ fn named_overruns(items: &[Overrun<'_>]) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// `DW0988`: a roof the plan has no room for (spec-0098 §3, §7).
+///
+/// Two shapes of one claim, both read off the plan before any geometry:
+/// `roof` on a box whose ceiling is `open` — an open place has no lid to put a
+/// roof on; and a course of the roof proper (over the shell footprint, above
+/// the lid) lying in another place's play space or floor course — the stacked
+/// case. Eaves are not this refusal: an eave stops at a neighbour's wall.
+pub(super) fn roofs(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
+    for p in placed {
+        let Some(roof) = p.plan.roof else { continue };
+        if matches!(p.plan.ceiling, Ceiling::Open) {
+            d.push(Diagnostic::error(
+                DW_ROOF_NO_ROOM,
+                "site-plan",
+                format!("/content/boxes/{}/roof", p.index),
+                format!(
+                    "the box for `{node}` declares a roof ({c} course(s), eaves {e}) and its \
+                     ceiling is `open`. A sky-open place has no lid to put a roof on: it claims \
+                     its ground and its headroom and nothing above that. Remove the roof, or \
+                     give the place a `clearance` ceiling so the whole can reserve a roof over \
+                     it.",
+                    node = p.plan.node,
+                    c = roof.courses,
+                    e = roof.eaves,
+                ),
+            ));
+            continue;
+        }
+        let Some((_, top)) = p.y_span() else { continue };
+        if roof.courses == 0 {
+            continue;
+        }
+        // The roof proper: the shell footprint, from one above the lid to the
+        // top course. The lid itself is the shell's and a stacked upper box's
+        // floor course by rule 3a; the courses above it are what need room.
+        let (rlo, rhi) = ((top + 2), (top + 1 + i64::from(roof.courses)));
+        let (sx0, sx1, sz0, sz1) = (p.x0() - 1, p.x1() + 1, p.z0() - 1, p.z1() + 1);
+        for q in placed {
+            if q.index == p.index {
+                continue;
+            }
+            let (Some(x), Some(z)) = (
+                overlap((sx0, sx1), (q.x0() - 1, q.x1() + 1)),
+                overlap((sz0, sz1), (q.z0() - 1, q.z1() + 1)),
+            ) else {
+                continue;
+            };
+            // The neighbour's floor course and play space.
+            let q_lo = q.floor - 1;
+            let q_hi = q.y_span().map_or(q.floor, |(_, t)| t);
+            let Some(y) = overlap((rlo, rhi), (q_lo, q_hi)) else {
+                continue;
+            };
+            d.push(Diagnostic::error(
+                DW_ROOF_NO_ROOM,
+                "site-plan",
+                format!("/content/boxes/{}/roof", p.index),
+                format!(
+                    "the roof over `{a}` rises into `{b}`: its courses y {ry0}..{ry1} meet \
+                     `{b}`'s floor and play space at x {x0}..{x1}, y {y0}..{y1}, z {z0}..{z1}. \
+                     A roof is the whole reserving the volume a building will take, and that \
+                     volume cannot be a place somebody stands in. Declare fewer courses, raise \
+                     `{b}`, or make the two one place whose piece carries both.",
+                    a = p.plan.node,
+                    b = q.plan.node,
+                    ry0 = rlo,
+                    ry1 = rhi,
+                    x0 = x.0,
+                    x1 = x.1,
+                    y0 = y.0,
+                    y1 = y.1,
+                    z0 = z.0,
+                    z1 = z.1,
+                ),
+            ));
+        }
+    }
 }
 
 /// `DW0827`: the boxes are disjoint.

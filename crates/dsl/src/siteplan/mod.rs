@@ -75,6 +75,7 @@ use crate::metrics::{
 };
 
 mod check;
+mod claim;
 mod measure;
 mod pack;
 mod place;
@@ -82,6 +83,7 @@ mod region;
 mod seam;
 
 pub use check::*;
+pub use claim::*;
 use measure::*;
 pub use pack::*;
 pub use place::*;
@@ -196,6 +198,12 @@ crate::dw_code! {
     /// `DW0839`: two placement authorities in one campaign — a `site-plan.json` and
     /// a non-empty `areas[]` both present.
     pub const DW_TWO_AUTHORITIES: DwCode = DwCode::new("DW0839", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `DW0988`: a roof the plan has no room for (spec-0098 §7) — declared on
+    /// a sky-open box, or rising into another place.
+    pub const DW_ROOF_NO_ROOM: DwCode = DwCode::new("DW0988", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -626,6 +634,32 @@ pub struct PlanBox {
     /// other class of place with a world box. Absent: the horizon's biome.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atmosphere: Option<crate::ids::AtmosphereId>,
+    /// **The roof the whole reserves over this place** (spec-0098 §3): how
+    /// many courses it rises above the ceiling course and how far it overhangs
+    /// the shell on each horizontal side. Massed solid at stage 5 so a walker
+    /// sees the volume the building will take; drawn by the place's own piece
+    /// once detailed. Absent: a flat lid one course thick, which the piece owns
+    /// too. Refused on a sky-open box, and where its courses rise into another
+    /// place (`DW0988`); its eaves stop at a neighbour's wall.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roof: Option<Roof>,
+}
+
+/// The roof a roofed place carries above its lid (spec-0098 §3).
+///
+/// Both numbers are judgements the plan states against the research record
+/// (`docs/reference/roof-and-facade-craft.md`): a 45° gable over a roof span of
+/// `W` cells rises `⌈(W − 1) / 2⌉` courses, and an eave of one cell is the
+/// idiom. Neither is inferred by the engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Roof {
+    /// Courses the roof rises above the ceiling course. `0` is a flat roof whose
+    /// only course is the lid.
+    pub courses: u32,
+    /// Cells the roof zone overhangs the shell footprint on every horizontal
+    /// side, from the ceiling course up. `0` is a roof flush with the walls.
+    pub eaves: u32,
 }
 
 /// Which side of a box a seam sits on.
