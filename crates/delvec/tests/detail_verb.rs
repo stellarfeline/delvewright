@@ -1093,3 +1093,156 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
         panic!("the annex was not written: {t}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Cross-feature pairs of the assembled map route (spec-0098): a hung place
+// and the contract instruments that judge its piece.
+// ---------------------------------------------------------------------------
+
+/// A gallery program re-cut for a hung frame: the courses under the floor
+/// course that its ground place stood on — the first child of the top-level
+/// `y` split — are removed, the place's anchor mark moves down with them, and
+/// the underside is declared shown. When `hollow` is given, the play space is
+/// cut to that many courses.
+fn hung_program(name: &str, hollow: Option<i64>) -> Value {
+    let path = common::repo_root().join(format!("gallery/overlays/site-plan/programs/{name}.json"));
+    let mut p: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let place = &mut p["rules"]["place"][0]["body"];
+    let marked = place["op"] == "mark";
+    let split = if marked {
+        &mut place["body"]
+    } else {
+        &mut *place
+    };
+    assert_eq!(split["axis"], "y", "`{name}` stacks its courses on y");
+    let under = split["sizes"][0]["blocks"]["value"].as_i64().unwrap();
+    split["sizes"].as_array_mut().unwrap().remove(0);
+    split["children"].as_array_mut().unwrap().remove(0);
+    if let Some(h) = hollow {
+        split["sizes"][1]["blocks"]["value"] = json!(h);
+    }
+    if marked && place["mark"]["y"]["expr"] == "int" {
+        let y = place["mark"]["y"]["value"].as_i64().unwrap();
+        place["mark"]["y"]["value"] = json!(y - under);
+    }
+    let faces = p["shown_faces"].as_array_mut().unwrap();
+    if !faces.contains(&json!("down")) {
+        faces.push(json!("down"));
+    }
+    p
+}
+
+/// **A climb inside one place survives the place being hung, and hung
+/// scenery with no floor states its zero.** The gallery's site-plan point,
+/// with the causeway — whose program raises a lookout reached by a ladder,
+/// declared as a `climb` edge in its spatial contract — hung from its floor
+/// course (`base: {"aloft": 0}`), and the beacon, a scenery place
+/// (`reached: false`), hung at y 70 and cut to a one-course hollow so no cell
+/// of it is stood in. Only those two places are detailed (every other place
+/// stands in), each from its own program re-cut for the hung frame.
+/// `delvec detail --all` writes both and the whole builds with them: the
+/// causeway's contract proves its one interior edge over the hung frame, and
+/// the beacon's contract states, by name and count, the zero standable cells
+/// scenery owes nothing for. Vacuous unless both are hung: the run's aloft
+/// binding names them.
+#[test]
+fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
+    let tmp = tempdir("hung-pair");
+    let dir = gallery_site_plan(&tmp);
+    common::patch_file(&dir.join("site-plan.json"), |v| {
+        for b in v["content"]["boxes"].as_array_mut().unwrap() {
+            if b["node"] == "node/causeway" {
+                b["base"] = json!({"aloft": 0});
+            }
+            if b["node"] == "node/beacon" {
+                b["base"] = json!({"aloft": 0});
+                b["floor"] = json!({"y": 70});
+            }
+        }
+    });
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"] = json!([]);
+    });
+    let programs = dir.join("programs");
+    std::fs::remove_dir_all(&programs).unwrap();
+    std::fs::create_dir_all(&programs).unwrap();
+    for (name, hollow) in [("causeway", None), ("beacon", Some(1))] {
+        std::fs::write(
+            programs.join(format!("{name}.json")),
+            serde_json::to_string_pretty(&hung_program(name, hollow)).unwrap(),
+        )
+        .unwrap();
+    }
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let out = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        dir.to_str().unwrap(),
+        "--all",
+    ]);
+    let t = text(&out);
+    assert_eq!(code(&out), 0, "{t}");
+    assert!(t.contains("detail: 2 place(s) detailed of 2 named"), "{t}");
+    assert!(
+        t.contains("detail: the whole builds with the piece(s) this run wrote."),
+        "{t}"
+    );
+    assert!(
+        t.contains("aloft binding: 4 aloft place(s) of 10"),
+        "the causeway and the beacon hang beside the gantry and the perch: {t}"
+    );
+
+    let report = |piece: &str| -> Value {
+        serde_json::from_str(
+            &std::fs::read_to_string(prefabs.join(format!("{piece}.report.json"))).unwrap(),
+        )
+        .unwrap()
+    };
+    let gate = |r: &Value, id: &str| -> Option<Value> {
+        r["gates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|g| g["id"] == id)
+            .cloned()
+    };
+
+    let causeway = report("gallery-causeway");
+    assert_eq!(causeway["verdict"], "pass");
+    let proof = gate(&causeway, "contract-edge-proof").expect("the edge proof is emitted");
+    assert_eq!(proof["state"], "pass", "{proof}");
+    assert_eq!(proof["bound"], 1, "the lookout's climb, proved: {proof}");
+    let reach = gate(&causeway, "contract-reachability").expect("reachability is emitted");
+    assert_eq!(reach["state"], "pass", "{reach}");
+    assert!(reach["bound"].as_u64().unwrap() > 0, "{reach}");
+
+    let beacon = report("gallery-beacon");
+    assert_eq!(beacon["verdict"], "pass");
+    assert!(
+        gate(&beacon, "contract-reachability").is_none(),
+        "no floor, no reachability gate: {beacon}"
+    );
+    let closure = gate(&beacon, "contract-closure").expect("closure judges the shell");
+    assert!(closure["bound"].as_u64().unwrap() > 0, "{closure}");
+    let zero: BTreeSet<&str> = beacon["enumeration"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|l| l.contains("is scenery") && l.contains("0 standable cell(s)"))
+        .filter_map(|l| l.strip_prefix("gate `")?.split('`').next())
+        .collect();
+    assert_eq!(
+        zero,
+        BTreeSet::from([
+            "contract-coverage",
+            "contract-no-body",
+            "contract-no-body-majority",
+            "contract-reachability",
+        ]),
+        "the four floor gates each state the scenery zero: {}",
+        beacon["enumeration"]
+    );
+}

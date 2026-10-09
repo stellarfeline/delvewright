@@ -2302,3 +2302,272 @@ fn an_aloft_place_whose_underside_reaches_the_terrain_is_dw0990() {
     assert_eq!((bind.aloft, bind.in_earth), (1, 0));
     assert!(bind.line().contains("1 aloft place(s)"));
 }
+
+// ---------------------------------------------------------------------------
+// Cross-feature pairs of the assembled map route (spec-0098): a cuboid box
+// meeting the relaxed checks and the instruments that read a place.
+// ---------------------------------------------------------------------------
+
+/// The fixture with its loft hung from its floor course and the hall→loft
+/// seam's opening declared by the plan itself, `width` cells wide.
+fn hung_loft_with_declared_opening(tag: &str, width: u32) -> Campaign {
+    common::campaign_at(&variant(
+        &format!("hung-loft-opening-{tag}"),
+        |v| {
+            let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+            let loft = boxes.iter_mut().find(|b| b["node"] == "node/loft").unwrap();
+            loft["base"] = serde_json::json!({"aloft": 0});
+            for s in v["content"]["seams"].as_array_mut().unwrap() {
+                if s["edge"] == "edge/hall-loft" {
+                    s["opening"] = serde_json::json!({"width": width, "height": 3});
+                }
+            }
+        },
+        None,
+    ))
+}
+
+/// **A declared `{width, height}` opening on a seam between a hung place and
+/// a ground place is built to the size the plan wrote.** The hall stands on
+/// the ground; the loft hangs (`base: {"aloft": 0}`). The seam between them
+/// declares a 4×3 opening where the standard arch is 2×3: the plan validates,
+/// the allocated opening spans 4 cells along the wall and 3 courses up from
+/// the loft's floor, and the battery — which compares the built world to that
+/// allocation (`DW0836`) and walks the stair through it (`DW0837`) — is green
+/// with the loft counted aloft. Perturbation: the same opening declared 9 wide
+/// runs off the 8-cell face the two share and is refused by `DW0829`.
+#[test]
+fn a_declared_opening_between_a_hung_place_and_a_ground_place_is_built_to_its_size() {
+    let c = hung_loft_with_declared_opening("fits", 4);
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let errs: Vec<&Diagnostic> = d
+        .iter()
+        .filter(|x| x.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    assert!(errs.is_empty(), "{errs:#?}");
+
+    let plan = SitePlan::of(&c);
+    let seam = plan
+        .seams
+        .iter()
+        .find(|s| s.edge.0 == "edge/hall-loft")
+        .expect("the seam is placed");
+    let (lo, hi) = seam.opening;
+    assert_eq!(seam.normal_axis, 0, "the seam is in the hall's east wall");
+    assert_eq!(hi[2] - lo[2] + 1, 4, "4 wide along the wall, as declared");
+    assert_eq!(hi[1] - lo[1] + 1, 3, "3 high, as declared");
+    let site = plan.site();
+    let loft = &plan.boxes[site
+        .index_of(&delvewright_dsl::NodeId("node/loft".into()))
+        .unwrap()];
+    assert!(loft.aloft().is_some(), "the loft hangs");
+    assert_eq!(
+        lo[1], loft.floor,
+        "the sill is the higher floor, the loft's"
+    );
+
+    let b = battery_of(&c);
+    assert!(errors(&b).is_empty(), "{:?}", errors(&b));
+    assert_eq!(b.binding.aloft, 1, "{}", b.binding.line());
+    assert!(b.binding.portals > 0, "{}", b.binding.line());
+
+    let wide = hung_loft_with_declared_opening("too-wide", 9);
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&wide, &mut reads, &mut d);
+    let refusal = d
+        .iter()
+        .find(|x| x.code == "DW0829")
+        .unwrap_or_else(|| panic!("a 9-wide opening on an 8-cell face is refused: {d:#?}"));
+    assert!(
+        refusal.message.contains("9x3")
+            && refusal.message.contains("`node/hall`")
+            && refusal.message.contains("`node/loft`"),
+        "{}",
+        refusal.message
+    );
+}
+
+/// The campaign with its detail plan narrowed to the rows binding `keep`;
+/// every other place is left to a stand-in.
+fn bound_only(c: &Campaign, keep: &[&str]) -> Campaign {
+    let mut c = c.clone();
+    let mut doc = serde_json::to_value(c.detail_plan.as_ref().expect("a detail plan")).unwrap();
+    doc["content"]["details"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|r| keep.iter().any(|k| r["place"] == *k));
+    assert_eq!(
+        doc["content"]["details"].as_array().unwrap().len(),
+        keep.len(),
+        "every kept place had a row"
+    );
+    c.detail_plan = Some(serde_json::from_value(doc).expect("a detail plan parses"));
+    c
+}
+
+/// **The rung in a hung place's floor hole is the hung place's.** The
+/// gallery's yard (a ground place, open headroom) climbs into the gantry hung
+/// over it (`base: {"aloft": 0}`) through a hole in the gantry's deck. With the
+/// yard bound and the gantry left to a stand-in, the stand-in that cut the
+/// hole hangs exactly the rung in it, in the gantry's floor course. With the
+/// gantry bound, its piece owns the hole and the rung: the yard's stand-in
+/// writes its run and never the rung. Unbound both ways, the run and the rung
+/// are both there — the union of the two halves.
+#[test]
+fn the_rung_in_a_hung_places_floor_hole_is_the_hung_places() {
+    let c = gallery_site_plan();
+    let plan = SitePlan::of(&c);
+    let site = plan.site();
+    let gantry = &plan.boxes[site
+        .index_of(&delvewright_dsl::NodeId("node/gantry".into()))
+        .unwrap()];
+    assert!(gantry.aloft().is_some(), "the gantry hangs");
+    let ladders = |c: &Campaign| -> Vec<[i64; 3]> {
+        mass_map(c)
+            .into_iter()
+            .filter(|(_, b)| b.starts_with("minecraft:ladder"))
+            .map(|(cell, _)| cell)
+            .collect()
+    };
+    let in_footprint = |p: &[i64; 3]| {
+        p[0] >= gantry.foot[0]
+            && p[0] <= gantry.foot[1]
+            && p[2] >= gantry.foot[2]
+            && p[2] <= gantry.foot[3]
+    };
+
+    let under_gantry = |cells: Vec<[i64; 3]>| -> Vec<[i64; 3]> {
+        cells.into_iter().filter(|p| in_footprint(p)).collect()
+    };
+    let yard_bound = under_gantry(ladders(&bound_only(&c, &["node/exit"])));
+    assert_eq!(
+        yard_bound.len(),
+        1,
+        "the gantry's stand-in hangs exactly the rung in its hole: {yard_bound:?}"
+    );
+    let rung = yard_bound[0];
+    assert_eq!(
+        rung[1],
+        gantry.floor - 1,
+        "the rung is in the gantry's floor course"
+    );
+    assert!(in_footprint(&rung), "{rung:?} lies under the gantry");
+
+    let gantry_bound = under_gantry(ladders(&bound_only(&c, &["node/gantry"])));
+    assert!(
+        !gantry_bound.is_empty() && !gantry_bound.contains(&rung),
+        "the yard's stand-in writes its run and never the bound gantry's rung: {gantry_bound:?}"
+    );
+
+    let neither = under_gantry(ladders(&bound_only(&c, &[])));
+    let mut union = gantry_bound.clone();
+    union.push(rung);
+    union.sort_unstable();
+    let mut got = neither.clone();
+    got.sort_unstable();
+    assert_eq!(got, union, "unbound, the run and the rung");
+}
+
+/// The fixture without the sky its loft's silhouette keeps clear — so an
+/// overview eye is not lifted over that volume — and, when `canopy` is given,
+/// with a hung scenery canopy over its column, its floor course at `floor - 1`.
+fn canopy_over(tag: &str, canopy: Option<([i64; 2], i64)>) -> Campaign {
+    let dir = variant(
+        &format!("canopy-{tag}"),
+        |v| {
+            v["content"]["volumes"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|x| x["id"] != "volume/sky");
+            let Some((column, floor)) = canopy else {
+                return;
+            };
+            v["content"]["boxes"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "node": "node/canopy",
+                    "min": column,
+                    "extent": [1, 1],
+                    "floor": {"y": floor},
+                    "ceiling": {"clearance": 2},
+                    "base": {"aloft": 0}
+                }));
+        },
+        None,
+    );
+    if canopy.is_some() {
+        common::patch_file(&dir.join("layout-graph.json"), |v| {
+            v["content"]["nodes"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "id": "node/canopy", "intent": "scenery", "reached": false
+                }));
+        });
+    }
+    common::campaign_at(&dir)
+}
+
+/// The interior overview the render plan gives a place's piece.
+fn overview_of(c: &Campaign, prefab: &str) -> serde_json::Value {
+    let reg = prefabs();
+    let plan = Plan::build(c, &reg).expect("the variant plans");
+    let world = delvec::compiler::nav::World::from_plan(&plan, &BTreeMap::new());
+    let (rp, _) = delvec::compiler::render_plan::render_plan(&plan, &reg, &[], &world, None)
+        .expect("every camera's eye is proven clear");
+    rp["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "interior" && s["prefab"] == prefab)
+        .unwrap_or_else(|| panic!("no interior shot of `{prefab}`"))["camera"]
+        .clone()
+}
+
+/// **An interior overview stands over a hung place stacked over its eye.**
+/// The exit's overview eye, on the fixture without its sky volume, stands at
+/// some column and height. A scenery canopy hung (`base: {"aloft": 0}`) over exactly that
+/// column, its claim spanning the eye's height, is a place stacked over the
+/// eye: the overview rises over the canopy's lid rather than being pulled in
+/// through it, and still stands where it asked to (no `requested_pos`). Vacuous
+/// unless the canopy really covers the eye: the eye's first height is asserted
+/// inside the canopy's claim.
+#[test]
+fn an_interior_overview_stands_over_a_hung_place_over_its_eye() {
+    let bare = overview_of(&canopy_over("bare", None), "blockout/node/exit");
+    let pos = |cam: &serde_json::Value, i: usize| cam["pos"][i].as_f64().unwrap();
+    let column = [pos(&bare, 0).floor() as i64, pos(&bare, 2).floor() as i64];
+    let eye_y = pos(&bare, 1).floor() as i64;
+    let floor = eye_y; // floor course eye_y - 1, lid eye_y + 2
+    let c = canopy_over("eye", Some((column, floor)));
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let errs: Vec<&Diagnostic> = d
+        .iter()
+        .filter(|x| x.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    assert!(errs.is_empty(), "{errs:#?}");
+    let (ad, ab) = delvec::compiler::detail::check_aloft(&c);
+    assert!(ad.is_empty(), "{ad:?}");
+    assert_eq!(ab.aloft, 1);
+    let lid = floor + 2;
+    assert!(
+        (floor - 1..=lid).contains(&eye_y),
+        "the canopy's claim ({}..={lid}) spans the bare eye at y {eye_y}",
+        floor - 1
+    );
+
+    let cam = overview_of(&c, "blockout/node/exit");
+    assert!(
+        cam["requested_pos"].is_null(),
+        "the overview stands where it asked to, over the stack: {cam}"
+    );
+    assert!(
+        pos(&cam, 1) > lid as f64,
+        "the eye is over the hung canopy's lid (y {lid}): {cam}"
+    );
+}
