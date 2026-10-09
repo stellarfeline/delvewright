@@ -51,6 +51,28 @@ export interface TimedGate {
   readonly crush: boolean;
 }
 
+/** A horizontal face, as a ladder's `facing` names it. */
+export type Face = "north" | "south" | "west" | "east";
+
+/**
+ * One climb a compiler-proven route takes (spec-0099): where the body takes hold
+ * (`from`) and lets go (`to`) — both kept waypoints of the leg — the lowest and
+ * highest cell it holds in, the block, and a ladder's facing (a body climbing it
+ * pushes the other way, against the block it hangs on). The harness drives the
+ * hop `from → to` itself ({@link climbDirection}): mineflayer-pathfinder 2.4.5
+ * plans a ladder (`Movements.climbables` holds `ladder` alone, `vine` commented
+ * out) but steers a straight-up hop at an undefined yaw and takes `|dy| < 1` as
+ * arrival, so neither a descent nor a vine is something it executes on cue.
+ */
+export interface Climb {
+  readonly from: Vec3Tuple;
+  readonly to: Vec3Tuple;
+  readonly bottom: Vec3Tuple;
+  readonly top: Vec3Tuple;
+  readonly block: string;
+  readonly facing: Face | undefined;
+}
+
 /** One walked critical-path leg: the ordered waypoint polyline connecting `from` to
  * `to`, both raw visited anchor cells (matching `critical-path.json` step `pos`).
  * `timedGates` are the gates the compiler proved this leg's route walks THROUGH —
@@ -60,6 +82,9 @@ export interface WaypointLeg {
   readonly to: Vec3Tuple;
   readonly waypoints: readonly Vec3Tuple[];
   readonly timedGates: readonly TimedGate[];
+  /** The climbs the leg's route takes, in route order — empty for a leg that
+   * climbs nothing, and for every artifact that predates spec-0099. */
+  readonly climbs: readonly Climb[];
 }
 
 /** The parsed waypoints artifact. Legs are in critical-path order — the compiler
@@ -82,6 +107,9 @@ export interface GoalSpec {
   readonly y: number;
   readonly z: number;
   readonly range: number;
+  /** Set when this hop is a climb the compiler proved: the hop from `climb.from`
+   * to this goal (`climb.to`) is driven by the climb, never by the pathfinder. */
+  readonly climb?: Climb;
 }
 
 /**
@@ -195,6 +223,40 @@ function parseTimedGates(raw: Record<string, unknown>): TimedGate[] {
   });
 }
 
+const FACES: readonly Face[] = ["north", "south", "west", "east"];
+
+/** Parse a leg's optional `climbs` (spec-0099). Absent → `[]`. */
+function parseClimbs(entry: Record<string, unknown>, pointer: string): Climb[] {
+  const value = entry["climbs"];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(`${pointer}/climbs`, `must be an array, got ${describe(value)}`);
+  }
+  return value.map((c, j) => {
+    const at = `${pointer}/climbs/${j}`;
+    if (!isRecord(c)) {
+      fail(at, `must be an object, got ${describe(c)}`);
+    }
+    const facing = c["facing"];
+    if (facing !== undefined && !FACES.includes(facing as Face)) {
+      fail(`${at}/facing`, `must be one of ${FACES.join(", ")}, got ${JSON.stringify(facing)}`);
+    }
+    const bottom = requireVec3(c["bottom"], `${at}/bottom`);
+    const top = requireVec3(c["top"], `${at}/top`);
+    if (bottom[0] !== top[0] || bottom[2] !== top[2] || bottom[1] > top[1]) {
+      fail(at, "bottom and top must be one column, bottom not above top");
+    }
+    return {
+      from: requireVec3(c["from"], `${at}/from`),
+      to: requireVec3(c["to"], `${at}/to`),
+      bottom,
+      top,
+      block: requireString(c, "block", at),
+      facing: facing as Face | undefined,
+    };
+  });
+}
+
 /** Validate and normalize a parsed JSON value into a {@link Waypoints}. */
 export function parseWaypoints(raw: unknown): Waypoints {
   if (!isRecord(raw)) {
@@ -247,7 +309,18 @@ export function parseWaypoints(raw: unknown): Waypoints {
         return gate;
       });
     }
-    return { from, to, waypoints, timedGates: legGates };
+    const climbs = parseClimbs(entry, pointer);
+    // A climb's two ends are waypoints of its own leg by contract: the hop
+    // between them is the climb. One that is not is a structural fault — the run
+    // would otherwise walk a climb with the pathfinder and never say so.
+    for (const [j, c] of climbs.entries()) {
+      for (const end of ["from", "to"] as const) {
+        if (!waypoints.some((w) => samePos(w, c[end]))) {
+          fail(`${pointer}/climbs/${j}/${end}`, "is not one of the leg's waypoints");
+        }
+      }
+    }
+    return { from, to, waypoints, timedGates: legGates, climbs };
   });
 
   return { version, campaignId, timedGates, legs };
@@ -350,6 +423,8 @@ export interface LegMatch {
    * when no leg matched — an unmatched walk has no proven route to narrow the
    * campaign's declared table with). */
   readonly timedGates: readonly TimedGate[];
+  /** The climbs the matched leg's route takes (empty when none, or no match). */
+  readonly climbs: readonly Climb[];
   readonly cursor: number;
   /**
    * Whether the walk starts where the matched leg was proven from: within
@@ -401,6 +476,7 @@ export function nextLegWaypoints(
       matched: true,
       waypoints: leg.waypoints,
       timedGates: leg.timedGates,
+      climbs: leg.climbs,
       cursor: cursor + 1,
       startsOnLeg: startOffset === undefined || startOffset <= LEG_START_REACH,
       startOffset,
@@ -410,6 +486,7 @@ export function nextLegWaypoints(
     matched: false,
     waypoints: undefined,
     timedGates: [],
+    climbs: [],
     cursor,
     startsOnLeg: true,
     startOffset: undefined,
@@ -523,15 +600,46 @@ export function walkGoals(
   legWaypoints: readonly Vec3Tuple[] | undefined,
   pos: Vec3Tuple,
   finalRange: number,
+  climbs: readonly Climb[] = [],
 ): readonly GoalSpec[] {
   const out: GoalSpec[] = [];
   if (legWaypoints) {
     for (const [x, y, z] of legWaypoints) {
-      out.push({ x, y, z, range: WAYPOINT_RANGE });
+      const prev = out[out.length - 1];
+      // The hop whose start is a climb's `from` and whose end is its `to` IS the
+      // climb (spec-0099): it carries the climb, so the executor drives it.
+      const climb = climbs.find(
+        (c) => samePos(c.to, [x, y, z]) && prev !== undefined && samePos(c.from, [prev.x, prev.y, prev.z]),
+      );
+      out.push(climb ? { x, y, z, range: WAYPOINT_RANGE, climb } : { x, y, z, range: WAYPOINT_RANGE });
     }
   }
   out.push({ x: pos[0], y: pos[1], z: pos[2], range: finalRange });
   return out;
+}
+
+/** Which way a climb goes, from where it takes hold to where it lets go. */
+export function climbDirection(climb: Climb): "up" | "down" {
+  return climb.to[1] > climb.from[1] ? "up" : "down";
+}
+
+/**
+ * The cell a climbing body pushes toward: for a ladder, the block it hangs on —
+ * one step against its `facing` from the column — at the height of `at`. A body
+ * pushing into a ladder collides horizontally, and vanilla gives a body on a
+ * climbable that collides (or holds jump) its climbing speed. `undefined` for a
+ * climbable with no facing (a vine), which the body climbs by holding jump.
+ */
+export function supportCell(climb: Climb, at: number): Vec3Tuple | undefined {
+  const step: Record<Face, readonly [number, number]> = {
+    north: [0, 1], // the ladder faces north; the block behind it is south
+    south: [0, -1],
+    west: [1, 0],
+    east: [-1, 0],
+  };
+  if (climb.facing === undefined) return undefined;
+  const [dx, dz] = step[climb.facing];
+  return [climb.bottom[0] + dx, at, climb.bottom[2] + dz];
 }
 
 function describe(value: unknown): string {

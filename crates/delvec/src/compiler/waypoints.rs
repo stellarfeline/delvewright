@@ -47,8 +47,17 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
                 keep.push(run.from);
                 keep.push(run.to);
             }
+            // …and the cells a climb holds in between them are not waypoints at
+            // all: a waypoint is a place to stand, and a body halfway up a ladder
+            // stands on nothing. The climb is one hop, `from` to `to`.
+            let held_inside = |c: &[i32; 3]| {
+                leg.climbs
+                    .iter()
+                    .any(|r| r.cells.contains(c) && *c != r.from && *c != r.to)
+            };
             let wps: Vec<Value> = leg_waypoints(&leg.cells, &keep, &gates)
                 .into_iter()
+                .filter(|c| !held_inside(c))
                 .map(|c| json!(c))
                 .collect();
             let mut leg_json = json!({

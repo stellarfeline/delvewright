@@ -73,6 +73,11 @@
         "quest": "quest/far-hall"
       },
       {
+        "node": "node/exit",
+        "objective": "obj/climb-onto-the-cabin",
+        "quest": "quest/far-hall"
+      },
+      {
         "node": "node/long-gallery",
         "objective": "obj/walk-the-long-gallery",
         "quest": "quest/far-hall"

@@ -48,6 +48,7 @@ import { methods as classMethods } from "./executor/class.ts";
 import { methods as talkMethods } from "./executor/talk.ts";
 import { methods as walkMethods } from "./executor/walk.ts";
 import { methods as timedGateMethods } from "./executor/timed-gate.ts";
+import { methods as climbMethods } from "./executor/climb.ts";
 import { methods as cutsceneMethods } from "./executor/cutscene.ts";
 import { methods as transportMethods } from "./executor/transport.ts";
 import { methods as loopMethods } from "./executor/loop.ts";
@@ -550,6 +551,7 @@ type Methods = typeof connectionMethods &
   typeof talkMethods &
   typeof walkMethods &
   typeof timedGateMethods &
+  typeof climbMethods &
   typeof cutsceneMethods &
   typeof transportMethods &
   typeof loopMethods &
@@ -569,4 +571,4 @@ type Methods = typeof connectionMethods &
   typeof collectMethods &
   typeof settleMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);
