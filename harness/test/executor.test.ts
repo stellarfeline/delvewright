@@ -851,7 +851,7 @@ test("a reach the landing completes consumes its leg, so the walks after the car
   // reach completes unwalked, then the cabin tiller's stand leg.
   executor.useWaypoints(
     parseWaypoints({
-      version: "0.37.0",
+      version: "0.4.0",
       campaign_id: "gallery",
       legs: [
         { from: [2, 67, 27], to: [2, 67, 28], waypoints: [[2, 67, 27], [2, 67, 28]] },

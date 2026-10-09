@@ -471,7 +471,7 @@ test("nearestIndex finds where along a leg a crossing lies, ties to the earlier 
 // spec-0099: the gallery's cabin-ladder legs, as the compiler exports them — up
 // the ladder onto the roof, and back down.
 const CLIMBING = {
-  version: "0.37.0",
+  version: "0.4.0",
   campaign_id: "gallery",
   legs: [
     {
