@@ -114,12 +114,13 @@ build prints the leave-proof binding line either way; the counts are in
 campaign's geometry is derived from the plan and the metrics table by this
 command, which then runs the battery over the bytes it laid: every seam built
 where it was allocated (`DW0836`), every place reached from the entry
-(`DW0837`), and no crossing between places anywhere a seam was not allocated
-(`DW0838`).
+(`DW0837`), no crossing between places anywhere a seam was not allocated
+(`DW0838`), and every doorway leading a body through once its bar is open
+(`DW0986`).
 
 **`--perturb <knob>` asks the derivation for a named defect and shows you the
 observer catching it** — `slide-openings`, `sink`, `short-walls`, `brick-up`,
-`low-ceiling`, `wall-contacts`, `open-stairwells`, one per run, each printing which code it expects
+`low-ceiling`, `wall-contacts`, `open-stairwells`, `bury-barred`, one per run, each printing which code it expects
 (`sink`, `brick-up` and `low-ceiling` also take `--perturb-place`, and it is
 refused for the others). It writes nothing — `--out` is refused beside it and the
 exit is always non-zero — so a perturbed tree does not exist to be shipped,

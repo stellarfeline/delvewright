@@ -367,6 +367,26 @@ moment anybody plays it. Build every flight from **stair blocks**:
 at build time, naming every cell. It cannot see the other half of this rule: a
 flight of whole blocks faces nothing, so nothing refuses it. That one is yours.
 
+**A climb is a ladder that hangs.** Where a way up is a ladder or a vine — a
+rope ladder between platforms, a ladder out of a well, a vine down a cliff — the
+engine proves it is climbed, and the bot climbs it: every block of
+`#minecraft:climbable` but scaffolding is a place a body holds, up, down, off
+the side and over the top. It is a climb only while the game would keep it:
+
+- a `ladder[facing=<away from the wall>]` needs the block behind it to show it a
+  **sturdy** face — stone, planks, a log; not leaves, not glass panes, not the
+  open side of a stair;
+- a `vine` needs a full face beside it on a face it sets (leaves will do), or the
+  vine above it carrying the same face;
+- weeping and cave vines hang from the block above, twisting vines grow from the
+  block below — the same plant or a sturdy face.
+
+Leave the top rung beside the floor the body steps onto, with two cells of air
+over the rung's column, so the body clears it. The bot climbs ladders and vines;
+it cannot climb weeping, twisting or cave vines (its physics does not know them),
+so a route that needs one of those is proven and still the owner's hour.
+Scaffolding is not climbed: it is solid to the engine.
+
 **A table is declared, not left to the walker.** A slab on a fence is floor to
 the walk model — a bench beside it is a half-block step and the top one jump
 more — so a guide routed across a hall climbs the dining table and down the
