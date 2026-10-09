@@ -183,6 +183,28 @@ fn a_mannequin_hides_the_layers_its_skin_names() {
     assert!(!s.contains("hidden_layers"), "{s}");
 }
 
+/// spec-0096 × spec-0097: a skinned actor's styled name rides its mannequin
+/// `description` as a styled SNBT component — never as raw brackets — beside the
+/// layers its skin hides.
+#[test]
+fn a_skinned_actor_wears_a_styled_name_and_its_hidden_layers() {
+    use delvewright_dsl::SkinLayer;
+    let mut a = mk_actor("actor/keeper", "minecraft:warden", false);
+    a.name = Some("The [[bold|Keeper]]".to_string());
+    a.skin = Some(delvewright_dsl::NpcSkin {
+        texture_id: "giant-idle".to_string(),
+        model: delvewright_dsl::SkinModel::Wide,
+        hidden_layers: vec![SkinLayer::Hat],
+    });
+    let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
+    assert!(s.contains("hidden_layers:[\"hat\"]"), "{s}");
+    assert!(
+        s.contains("description:{extra:[{text:\"The \"},{bold:true,text:\"Keeper\"}],text:\"\"}"),
+        "{s}"
+    );
+    assert!(!s.contains("[["), "no markup reaches the summon: {s}");
+}
+
 /// A `skin` is a costume, not a lobotomy: a skinned actor is the same body
 /// with a different dress, so everything the author declared about the body
 /// rides it. Before this, the mannequin branch carried none of `vulnerable`,

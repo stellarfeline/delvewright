@@ -58,7 +58,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_dsl::l10n::{L10nDoc, TextKind, effect_string_sites, inventory, key_kind, local_id};
+use delvewright_dsl::l10n::{
+    L10nDoc, TextKind, effect_string_sites, inventory, key_kind, local_id,
+};
 use delvewright_dsl::{Campaign, Diagnostic};
 
 use crate::compiler::flow::Flow;
@@ -133,12 +135,15 @@ pub fn check_name_tags(c: &Campaign) -> (Vec<Diagnostic>, CrowdBinding) {
         waves: q.waves.len(),
         ..CrowdBinding::default()
     };
-    let mut group: BTreeMap<&str, String> = BTreeMap::new();
+    // A name is compared as it is drawn: a styled span (spec-0096) is its own
+    // text, so `[[bold|Footman]]` and `Footman` are one name over two bodies.
+    let shown = |n: &str| delvewright_dsl::textstyle::visible(n).into_owned();
+    let mut group: BTreeMap<String, String> = BTreeMap::new();
     for w in &q.waves {
-        let mut bodies: BTreeMap<&str, (u32, usize)> = BTreeMap::new();
+        let mut bodies: BTreeMap<String, (u32, usize)> = BTreeMap::new();
         for m in &w.mobs {
             if let Some(n) = m.name.as_deref() {
-                let e = bodies.entry(n).or_default();
+                let e = bodies.entry(shown(n)).or_default();
                 e.0 += m.count;
                 e.1 += 1;
             }
@@ -169,7 +174,9 @@ pub fn check_name_tags(c: &Campaign) -> (Vec<Diagnostic>, CrowdBinding) {
         let mut hit = false;
         for (mi, m) in w.mobs.iter().enumerate() {
             let Some(n) = m.name.as_deref() else { continue };
-            let Some(why) = group.get(n) else { continue };
+            let Some(why) = group.get(&shown(n)) else {
+                continue;
+            };
             hit = true;
             d.push(Diagnostic::error(
                 DW_NAME_ON_A_CROWD,
@@ -193,7 +200,9 @@ pub fn check_name_tags(c: &Campaign) -> (Vec<Diagnostic>, CrowdBinding) {
     }
     for (ai, a) in q.actors.iter().enumerate() {
         let Some(n) = a.name.as_deref() else { continue };
-        let Some(why) = group.get(n) else { continue };
+        let Some(why) = group.get(&shown(n)) else {
+            continue;
+        };
         bind.refused_actors += 1;
         d.push(Diagnostic::error(
             DW_NAME_ON_A_CROWD,
@@ -216,8 +225,11 @@ pub fn check_name_tags(c: &Campaign) -> (Vec<Diagnostic>, CrowdBinding) {
 // ---------------------------------------------------------------------------
 
 /// Whether `text` is a question: its last visible character is `?` or `？`.
+/// A styled span (spec-0096) is read as the text it draws, so a question
+/// wrapped in markup still ends in its own question mark.
 pub fn is_question(text: &str) -> bool {
-    let t = text.trim_end_matches(|c: char| {
+    let shown = delvewright_dsl::textstyle::visible(text);
+    let t = shown.trim_end_matches(|c: char| {
         c.is_whitespace() || matches!(c, '"' | '\'' | '”' | '’' | '」' | '』')
     });
     t.ends_with('?') || t.ends_with('？')
@@ -623,7 +635,16 @@ pub fn check_names_told(c: &Campaign) -> Vec<Diagnostic> {
 /// what it examined.
 pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     let mut bind = NameBinding::default();
-    let inv = inventory(c);
+    // Every string as the player reads it: a styled span (spec-0096) is its own
+    // text, so a name in markup, and a line that uses or glosses one in markup,
+    // are matched by the words that are drawn.
+    let inv: BTreeMap<String, String> = inventory(c)
+        .into_iter()
+        .map(|(k, v)| {
+            let shown = delvewright_dsl::textstyle::visible(&v).into_owned();
+            (k, shown)
+        })
+        .collect();
     let mut names: Vec<Name> = inv
         .iter()
         .filter(|(k, _)| matches!(key_kind(k), Some(TextKind::Name | TextKind::ItemName)))

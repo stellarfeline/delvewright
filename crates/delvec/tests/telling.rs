@@ -279,3 +279,196 @@ fn an_actor_wearing_a_crowds_name_is_dw0983() {
     );
     assert_eq!(bind.refused_actors, 1);
 }
+
+// ---------------------------------------------------------------------------
+// Cross-feature pairs: these checks read text a creator may style
+// (spec-0096), and skins two bodies may now share (spec-0097).
+// ---------------------------------------------------------------------------
+
+/// A question wrapped in a styled span still ends in its own question mark: the
+/// player reads `Will you open the door?`, not the markup around it.
+#[test]
+fn a_styled_question_that_closes_the_dialog_is_dw0981() {
+    let c = with_dialogue(|d| {
+        option(d, 0, 1)["label"] = "[[italic|Will you open the door?]]".into();
+    });
+    let d = telling::check_questions(&c, &BTreeMap::new());
+    assert_eq!(d.len(), 1, "{d:#?}");
+    assert_eq!(d[0].code, "DW0981");
+    assert_eq!(d[0].path, "/content/dialogues/0/nodes/0/options/1");
+}
+
+/// The same for a sidecar rendition whose question sits inside a span.
+#[test]
+fn a_styled_question_asked_only_in_chinese_is_dw0981() {
+    let mut world = hw("world.json");
+    world["content"]["languages"] = serde_json::json!(["zh-cn"]);
+    let c = parse(&world, &hw("quests.json"), &hw("dialogue.json"));
+    let doc: L10nDoc = serde_json::from_value(serde_json::json!({
+        "dsl_version": DSL_VERSION,
+        "campaign_id": "hello-world",
+        "kind": "l10n",
+        "lang": "zh-cn",
+        "content": { "dlg.keeper.greeting.opt.1.label": "[[italic|能开门吗？]]" }
+    }))
+    .unwrap();
+    let sidecars = BTreeMap::from([("zh-cn".to_string(), doc)]);
+    let d = telling::check_questions(&c, &sidecars);
+    assert_eq!(d.len(), 1, "{d:#?}");
+    assert!(d[0].message.contains("zh-cn label"), "{}", d[0].message);
+}
+
+/// A name used inside a styled span is a use of that name: `Open the
+/// [[bold|keep]]` draws `Open the keep`.
+#[test]
+fn a_styled_use_of_an_untold_name_is_dw0982() {
+    let c = with_dialogue(|d| {
+        option(d, 0, 1)["label"] = "Open the [[bold|keep]], please.".into();
+    });
+    let (d, bind) = telling::check_names_told_bound(&c);
+    assert_eq!(d.len(), 1, "{d:#?}");
+    assert_eq!(d[0].code, "DW0982");
+    assert_eq!(d[0].path, "/content/dialogues/0/nodes/0/options/1/label");
+    assert_eq!(bind.untold, 1);
+}
+
+/// A gloss the speaker says through a styled span tells the name as well as a
+/// plain one does.
+#[test]
+fn a_styled_gloss_tells_the_name() {
+    let c = with_dialogue(|d| {
+        d["content"]["dialogues"][0]["nodes"][0]["text"] =
+            "Halt. This is the [[color=gold|Keep]], the last hold on the moor, and the door stays shut."
+                .into();
+        option(d, 0, 1)["label"] = "Open the keep, please.".into();
+    });
+    let (d, bind) = telling::check_names_told_bound(&c);
+    assert!(d.is_empty(), "{d:#?}");
+    assert_eq!(bind.untold, 0);
+}
+
+/// N1's refinement read through styled text: an area's name drawn in a span is
+/// still only a nameplate, which introduces nothing — the use is refused, and
+/// the name is matched by the words it draws, not its markup.
+#[test]
+fn a_styled_area_name_is_still_only_a_label() {
+    let mut world = hw("world.json");
+    let areas = world["content"]["areas"].as_array_mut().unwrap();
+    let keep = areas
+        .iter_mut()
+        .find(|a| a["name"] == "The Keep")
+        .expect("hello-world names its area `The Keep`");
+    keep["name"] = "[[bold|The Keep]]".into();
+    let mut d = hw("dialogue.json");
+    option(&mut d, 0, 1)["label"] = "Open the keep, please.".into();
+    let c = parse(&world, &hw("quests.json"), &d);
+    let (diags, _) = telling::check_names_told_bound(&c);
+    assert!(
+        diags
+            .iter()
+            .any(|x| x.code == "DW0982" && x.message.contains("area.keep.name")),
+        "{diags:#?}"
+    );
+}
+
+/// One name styled two ways is one name: two entries of a wave wearing
+/// `Footman` and `[[bold|Footman]]` are a crowd under one tag.
+#[test]
+fn a_crowds_name_styled_differently_is_still_dw0983() {
+    let c = with_wave(
+        &[
+            ("minecraft:zombie", 1, Some("Footman")),
+            ("minecraft:husk", 1, Some("[[bold|Footman]]")),
+        ],
+        Some("[[color=red|Footman]]"),
+    );
+    let (d, bind) = telling::check_name_tags(&c);
+    assert_eq!(d.iter().filter(|x| x.code == "DW0983").count(), 3, "{d:#?}");
+    assert_eq!((bind.group_names, bind.refused_actors), (1, 1));
+}
+
+/// Two actors may now wear one skin file (spec-0097's loosening of `DW0190`),
+/// and that does not change who a name tag says is a person: two skinned
+/// actors with names of their own stand, and a skinned actor wearing a crowd's
+/// name is refused as any actor is.
+#[test]
+fn a_shared_skin_does_not_change_whose_name_tag_stands() {
+    let mut quests = hw("quests.json");
+    quests["content"]["waves"] = serde_json::json!([{
+        "id": "wave/crowd", "anchor": "anchor/exit",
+        "mobs": [{ "entity": "minecraft:zombie", "count": 2, "name": "Footman" }]
+    }]);
+    let skin = serde_json::json!({ "texture_id": "keeper", "model": "wide" });
+    quests["content"]["actors"] = serde_json::json!([
+        { "id": "actor/one", "entity": "minecraft:zombie", "anchor": "anchor/exit",
+          "name": "The Porter", "skin": skin },
+        { "id": "actor/two", "entity": "minecraft:zombie", "anchor": "anchor/exit",
+          "name": "The Warden", "skin": skin },
+        { "id": "actor/three", "entity": "minecraft:zombie", "anchor": "anchor/exit",
+          "name": "Footman", "skin": skin }
+    ]);
+    let c = parse(&hw("world.json"), &quests, &hw("dialogue.json"));
+    let v = delvewright_dsl::validate_campaign(&c);
+    assert!(
+        !v.iter().any(|x| x.code == "DW0190"),
+        "three actors wearing one skin file is legal: {v:#?}"
+    );
+    let (d, bind) = telling::check_name_tags(&c);
+    let actor_paths: Vec<&str> = d
+        .iter()
+        .filter(|x| x.code == "DW0983" && x.path.starts_with("/content/actors/"))
+        .map(|x| x.path.as_str())
+        .collect();
+    assert_eq!(actor_paths, ["/content/actors/2/name"], "{d:#?}");
+    assert_eq!((bind.named_actors, bind.refused_actors), (3, 1));
+}
+
+/// The walk draws a dialogue button under the completed objective's whole
+/// pending guard (spec-0093 §6.3), the rule the datapack draws it by: a button
+/// completing an objective whose `after` is not yet done is not on screen, and
+/// is once it is.
+#[test]
+fn a_button_is_on_screen_only_once_its_objective_is_pending() {
+    let mut quests = hw("quests.json");
+    quests["content"]["quests"][0]["objectives"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "id": "obj/report", "type": "talk-to", "npc": "npc/keeper",
+            "after": ["obj/exit"],
+            "happening": { "text": "the party completes obj/report", "verb": "learns" }
+        }));
+    let mut d = hw("dialogue.json");
+    d["content"]["dialogues"][0]["nodes"][0]["options"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "label": "The road is clear.",
+            "effects": [{ "type": "complete-objective", "objective": "obj/report" }]
+        }));
+    let c = parse(&hw("world.json"), &quests, &d);
+    let flow = delvec::compiler::flow::Flow::new(&c);
+    let casts = delvec::compiler::cast::npc_casts(&c);
+    let report = ("npc/keeper".to_string(), "dlg/greeting".to_string(), 2usize);
+    let mut w = flow.walk();
+    assert!(
+        !w.dialogue_on_screen(&casts).options.contains(&report),
+        "obj/report waits on obj/exit, so its button is not drawn at the start"
+    );
+    let pt = flow.playthrough();
+    let mut seen_after_exit = false;
+    for step in &pt.steps {
+        w.take(step);
+        let on = w.dialogue_on_screen(&casts).options.contains(&report);
+        if step.objective == "obj/exit" {
+            assert!(on, "obj/exit is done, so obj/report's button is drawn");
+            seen_after_exit = true;
+        } else if !seen_after_exit {
+            assert!(!on, "before obj/exit, after `{}`", step.objective);
+        }
+    }
+    assert!(
+        seen_after_exit,
+        "the critical path reaches obj/exit: {pt:?}"
+    );
+}
