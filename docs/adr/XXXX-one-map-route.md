@@ -79,6 +79,11 @@ of it.
   follow-on (spec-0098 §10).
 - A site-plan build ships only fully detailed: the staging gate refuses a box
   the derivation still masses.
+- What undeclared space becomes is a declared mechanism, not the engine's
+  choice: a site states `fill` — `solid` (the enclosed site: a dungeon, a cave)
+  or `open` (a town: ground at a datum under sky) — required with no default,
+  overridden per region by the plan's volumes. The engine fills only what was
+  declared.
 - Research into single-building craft is bounded: route A has demonstrated the
   building; the open craft questions are composition — how scenes meet, how a
   town's ground reads — and are researched when a campaign reaches them.

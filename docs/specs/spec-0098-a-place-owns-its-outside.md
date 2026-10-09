@@ -15,7 +15,9 @@
 - **Refines**: spec-0050 §3 (the frame), §4 (the handing), §7.6 (`DW0821`'s
   pair). Nothing here revisits spec-0049's stage 5: the blockout stays derived
   and authored by no one.
-- **DSL**: `dsl_version` **0.38.0**. The site plan's `boxes[]` gain `roof`.
+- **DSL**: `dsl_version` **0.38.0**. The site plan's `boxes[]` gain `roof`, and
+  the plan gains a required `fill` — what every cell no place claims becomes
+  (§2b).
 - **Diagnostics**: **DW0987**, **DW0988** and **DW0989**, all used below;
   `DW0827`'s quantifier widens from play spaces to claims (§2 rule 3d).
 - **Research**: rooflines and facades at Minecraft scale are researched, not
@@ -95,10 +97,11 @@ below calls it:
       the same wall. The remedy is the plan's — give them a connection (whose
       `a` draws the wall), stand them two or more cells apart (each then owns
       its own ring and the gap between is ground), or make them one place.
-4. A cell no claim covers is **nobody's**: it holds whatever the plan's
-   `volumes[]` declare there — a `ground` or `massif` fill, a `clearance` kept
-   empty — and otherwise air. The gap between two houses is ground and sky,
-   never a wall and never massing.
+4. A cell no claim covers is **nobody's**: it holds what a `volumes[]` entry
+   declares there if one covers it, and otherwise what the site's `fill`
+   declares undeclared space to be (§2b) — rock in an enclosed site, ground and
+   sky in an open one. The gap between two houses in a town is ground and sky,
+   never a wall and never massing nobody declared.
 
 **The frame** of a place is the bounding box of the cells it owns. Its piece is
 exactly that size (`DW0843`, unchanged). Cells inside the frame the place does
@@ -139,7 +142,43 @@ each reachable inside an authored document, which is what makes it a pair and
 not a dead end: the place on either side **draws its edge** on the ring it owns
 (a wall, a hedge, a kerb a body cannot step over); the gap **becomes a place**
 — an alley with its own seams — or part of one; or a declared `volume` fills
-it. The refusal names all three.
+it. The refusal names all three. **Reachable ground is a place.** In a bounded
+map every cell a body can reach is inside some place — that is what a layout
+node is — so ground a body can walk between two places is either a place of its
+own (an alley, a square) or kept off by the edges of the places beside it; the
+proof does not change for an open site, it only has more to say.
+
+## 2b. What undeclared space becomes is declared, not picked by the engine
+
+Route B was first built for a site a player is always inside — a dungeon, a
+cave — where only the interior matters and everything undeclared is rock. A town
+is the other kind: most of it is air, and space no design declares is open
+ground under sky. Both are legitimate, and which one a site is cannot be the
+engine's guess (the general-engine rule). So the site plan **declares** it, in
+one required field with no default:
+
+| `fill` | What every cell no place claims and no volume covers holds |
+|---|---|
+| `{"kind": "solid", "block": <state>}` | the declared block — the enclosed-site case, which a region-wide `massif` gives today |
+| `{"kind": "open", "datum": <datum id>, "surface": <state>, "below": <state>}` | at the datum's plane the `surface` block, under it `below`, above it air — a natural ground surface under sky |
+
+**Required, no default — because either default is a per-case judgement the
+engine would be making.** A cave defaulted to open ground stands its rooms in
+daylight with air between them; a town defaulted to solid buries its streets in
+rock. Neither is the "safe" path: each is wrong for half the sites, and the
+author knows which half this is. A plan without `fill` does not parse
+(`DW0100`), which is the refusal where entered; a plan with it has said, once,
+what kind of site it is. `fill` is **per site**; **per region** it is overridden
+by `volumes[]` exactly as today — a `massif` on an open site is the solid hill
+under the streets, a `clearance` in a solid site is a sky well, a `ground`
+volume is a ground plane at another datum. A town by the sea is `open` at the
+sea's datum with a `massif` under its terraces. Every block is declared: a
+volume takes the block of its kind from `fill` (`massif` → `solid.block`,
+`ground` → `surface`/`below`) unless it names its own.
+
+The derivation's `MASSIF` and `GROUND` palette constants stop being written
+into the world; what remains of the blockout palette is the stand-in shell
+(§8), which never ships.
 
 ## 3. The roof is declared by the whole and drawn by the piece
 
@@ -267,14 +306,15 @@ is the size of that scene, and the whole is the plan. In this spec's terms:
   the graph declares that the pieces do not honour is refused. What the engine
   does mechanically is only the arithmetic — the corner of a box one cell
   beyond the face it hangs off, the sill, the rise.
-- **Between the scenes** stands only what the plan declares: the ground
-  surface a `ground` volume puts at its datum and the air above it, the rock of
-  a `massif`, the sky a `clearance` keeps empty — never a wall and never an
-  invented fill. A gap between two houses too narrow for a road is ground and
-  sky; if a body can walk it from one place into another the graph does not
-  join, that is `DW0838`, and a design closes it (§2). A declared volume is
-  filled in the plan's one palette block until stage 7 dresses it, and §10
-  names a dressed volume as the first falsifier this spec expects to meet.
+- **Between the scenes** stands only what the plan declares: on an `open`
+  site the ground surface at the declared datum and the air above it, shaped
+  where `volumes[]` say — the hill under the terraces, the sky kept empty; on
+  a `solid` site, rock. Never a wall and never a fill nothing declared. A gap
+  between two houses too narrow for a road is ground and sky; if a body can
+  walk it from one place into another the graph does not join, that is
+  `DW0838`, and a design closes it or makes it a place (§2). The declared
+  ground is one surface until stage 7 dresses it, and §10 names a dressed
+  volume as the follow-on.
 
 ## 6. The checks answer while the creator draws
 
@@ -367,8 +407,12 @@ A bound place's claim is written by its piece and by nothing else.
   neighbour's cells and nothing in a gap.
 - **a roof**: for an unbound box declaring `roof`, the roof zone massed solid
   in the roof palette block, so the skyline is walked before it is drawn.
-- **the gaps**: untouched — a declared volume's fill where the plan declares
-  one, air everywhere else, at stage 5 exactly as in the shipped world.
+- **the gaps**: what `fill` and `volumes[]` declare, at stage 5 exactly as in
+  the shipped world — a `solid` site is rock with its places carved out of it,
+  which is how a cave reads today; an `open` site is a ground plane at its
+  datum with the stand-in shells standing on it under sky, the roof massing
+  showing the skyline. Both are walkable and both read as the kind of site they
+  are before any piece exists.
 
 **A stand-in never ships.** The derivation already counts them —
 `blockout binding: … N box(es) (D detailed, U massed by the derivation)` —
@@ -408,9 +452,10 @@ has three clauses and no table of kinds.
 Falsifiers, each a brief this spec cannot state without a workaround and each
 the trigger for a first-class surface rather than a hack:
 
-- **The whole's own ground wants dressing.** Between the places a declared
-  volume is filled in the plan's one palette block, and the only surface that
-  dresses it is stage 7's edit script. The first campaign whose hillside or
+- **The declared ground wants more than one surface.** An `open` site's
+  ground is one declared surface at one datum, shaped only by `volumes[]`, and
+  the only pass that dresses it is stage 7's edit script. The brief this cannot
+  state is rolling terrain or a dressed hillside between the scenes; The first campaign whose hillside or
   sea floor cannot be dressed that way is the brief for *a volume is detailed
   like a place* — the same `details[]` row naming a `volume`.
 - **A roof that must run over two places.** The first brief that cannot make
@@ -518,7 +563,7 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     test asserts the claims' intersection is non-empty. Instrument: `crates/dsl`
     site-plan tests.
 17. **A walkable gap is refused and the named remedies are reachable.** On a
-    fixture of two places two cells apart on a `ground` volume with no seam
+    fixture of two places two cells apart on an `open` site with no seam
     between them, `DW0838` names the pair and a cell in the gap; binding one
     place to a piece that draws a wall on its ring clears it, and so does adding
     the gap as a third place with two seams. Vacuous if the gap is not
@@ -530,6 +575,18 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     fully bound, passes. Vacuous if the gate reads a flag rather than the
     binding line: the test perturbs the line's count. Instrument:
     `tools/creator/staging-gate.py` tests.
+
+19. **`fill` is required, and both kinds build and bind.** A site plan without
+    `fill` is `DW0100` naming the field; the blockout fixture builds under
+    `solid` and under `open` with every proof green, and the two derivations
+    differ exactly in the unclaimed cells — the test asserts that no claimed
+    cell differs and that some unclaimed cell does. The gallery binds both
+    kinds: its site-plan overlay declares `open` (a ground plane under the
+    halls' free sides) and a second overlay point declares `solid` (the same
+    places carved in rock), and perturbing either moves an emitted byte
+    (`tools/ci/check-gallery-coverage.py` binds `Fill::solid`, `Fill::open`
+    and each kind's fields). Vacuous if the two points share a fill: the gate's
+    index names the kind each binds.
 
 ## 12. Proof renders
 
@@ -546,4 +603,5 @@ and the free wall the program drew). Paths in the implementation report.
    the model's `structure_void`.
 3. `delvec detail`: the handed roof values; voiding after expansion.
 4. Tests, then the gallery (annex program, yard piece, probes, overlay binds),
-   then docs, the baseline, the version.
+   then docs, the baseline, the version. `fill` lands in step 1 (schema,
+   `DW0100`) and step 2 (the derivation writes it in place of `MASSIF`/`GROUND`).
