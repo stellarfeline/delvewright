@@ -248,7 +248,7 @@ inputs = [
   { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
   { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery's piece and skins" },
   { glob = "gallery/**", why = "the gallery campaign the bot walks, and the baseline `gallery-build.py` compares the build to" },
-  { glob = "tools/**", why = "`gallery-prefabs.py`, `gallery-build.py`, `gallery_domain.py`, `tools/lib/*` (`delvec_bin.py`, `server-heap.sh`)" },
+  { glob = "tools/**", why = "`gallery-prefabs.py`, `gallery-build.py`, `gallery_domain.py`, `tools/lib/*` (`delvec_bin.py`, `server-heap.sh`), and `check-written-world.py` with `tools/lib/anvil.py` for the site-plan point's written-world cross-check (`DW0955`)" },
   { glob = "harness/**", why = "`validation/compose.yaml` builds its bot service from `../harness`" },
-  { glob = "validation/**", why = "`bot-run.sh`, `compose.yaml`, `Dockerfile.delve`, `fresh-volumes.sh`, `lib/delve-image.sh`, the world-settings entrypoint" },
+  { glob = "validation/**", why = "`bot-run.sh`, `world-save.sh`, `compose.yaml`, `Dockerfile.delve`, `fresh-volumes.sh`, `lib/delve-image.sh`, the world-settings entrypoint" },
 ]

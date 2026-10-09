@@ -19,6 +19,12 @@ count, printed with its cells, never an allowlist of cells — or it reds as
 - **gravity** — a gravity block (sand, gravel, concrete powder, an anvil, a
   dragon egg) on either side: the server settled it.
 - **fluid** — a water or lava cell on either side: the server flowed it.
+- **random-tick** — turf on one side and dirt on the other (grass block or
+  mycelium against dirt): the server's random tick turned it. Vanilla's
+  `SpreadingSnowyDirtBlock.randomTick` (the class of both) sets a block it
+  cannot keep — under a cover light does not pass — to dirt, and spreads onto
+  lit dirt beside it; which cells have turned by the instant of the save is
+  the tick's draw (1.21.11 server, Mojang mappings).
 - **re-derived** — the same block on both sides, differing only in a property
   the server re-derives on a block update (a fence, wall, bar or pane's
   `north`/`south`/`east`/`west`/`up`, a stair's `shape`, leaves' `distance`).
@@ -51,6 +57,10 @@ import anvil  # noqa: E402
 CODE = "DW0955"
 
 GRAVITY = {"sand", "red_sand", "gravel", "anvil", "chipped_anvil", "damaged_anvil", "dragon_egg"}
+# The blocks `SpreadingSnowyDirtBlock.randomTick` turns into dirt, or spreads
+# onto dirt as (grass block and mycelium are its two subclasses).
+TURF = {"grass_block", "mycelium"}
+CLASSES = ("gravity", "fluid", "random-tick", "re-derived", "clock", "model")
 REDERIVED_KEYS = {"north", "south", "east", "west", "up", "shape", "distance"}
 SHOWN = 12
 
@@ -86,6 +96,8 @@ def classify(a: str | None, b: str | None, cell, clocked) -> str:
         return "gravity"
     if is_fluid(na) or is_fluid(nb):
         return "fluid"
+    if {base(na), base(nb)} in ({"dirt", t} for t in TURF):
+        return "random-tick"
     if na == nb:
         differ = {k for k in set(pa) | set(pb) if pa.get(k) != pb.get(k)}
         if differ and differ <= REDERIVED_KEYS:
@@ -140,7 +152,7 @@ def compare(build: Path, written: Path, server: Path) -> tuple[int, list[str], d
         f"written-world binding: box {box[0]}..{box[1]} ({volume} cell(s)); {len(a)} non-air cell(s) "
         f"written, {len(b)} in the server save, {len(union)} compared; {len(clocked)} clocked gate region(s)"
     )
-    for k in ("gravity", "fluid", "re-derived", "clock", "model"):
+    for k in CLASSES:
         n = sum(classes[k].values())
         lines.append(f"  {k}: {n} differing cell(s) of {len(union)}")
         for (x, y), cnt in classes[k].most_common():
@@ -151,7 +163,7 @@ def compare(build: Path, written: Path, server: Path) -> tuple[int, list[str], d
     summary = {
         "box": [list(box[0]), list(box[1])],
         "compared": len(union),
-        "classes": {k: sum(classes[k].values()) for k in ("gravity", "fluid", "re-derived", "clock", "model")},
+        "classes": {k: sum(classes[k].values()) for k in CLASSES},
         "model_sample": [
             {"cell": list(c), "written": x or "minecraft:air", "server": y or "minecraft:air"}
             for (k, x, y), cells in sorted(where.items(), key=lambda kv: (kv[0][0], str(kv[0][1]), str(kv[0][2])))
