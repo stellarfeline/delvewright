@@ -397,7 +397,11 @@ fn the_gallery_reaches_every_weather_and_every_class() {
         let resolved = camera::resolve_sky(c, &rows).unwrap();
         // Read off the scene: the look-table cell names its weather by its
         // values — a clear night carries the night cell (spec-0079, departure 1).
-        let night = scene::overcast_cell(resolved.class, WorldWeather::Clear);
+        let night = scene::look_cell(
+            resolved.class,
+            WorldWeather::Clear,
+            resolved.sky.time.daytime_ticks(),
+        );
         let weather = match v["sky"]["skyLight"].as_f64() {
             None => "clear",
             Some(light) if night.is_some_and(|n| n.sky_light == light) => "clear",

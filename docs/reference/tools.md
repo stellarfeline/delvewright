@@ -1562,7 +1562,7 @@ At the camera's exposure 1.0 the two `below` frames are near-black — a night
 under cloud — and the `high` and `low` frames read as a grey overcast with no
 sun disc and no hard shadow, `thunder` darker than `rain` in each class.
 
-**The night cell** (`below` × `clear`, spec-0079 departure 1), recorded on the
+**The night cell** (a clear scene under a dark sky, spec-0079 departure 1), recorded on the
 camera that found it: the Treehouse Camp's `lantern-night` (content
 `f6000d06`, its build at that revision, the camera's own pose and exposure 4.0),
 answering a row drawn under `{"moon": "high"}` + `clear`, emitted by `delvec

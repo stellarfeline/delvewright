@@ -501,8 +501,8 @@ pub(crate) fn round6(v: f64) -> f64 {
 /// negative altitude. The pinned core's simulated sky does NOT render that as
 /// night: `PreethamSky.updateSun` clamps the altitude to `[0, π]` before it
 /// shades the sky, so a clear scene under a sun below the horizon would draw a
-/// sunset. A clear scene of the `below` class therefore carries the night cell
-/// of the look table ([`BELOW_CLEAR`], [`sky_of`]). The azimuth is exactly east or exactly west; at noon and midnight the sun
+/// sunset. A clear scene whose tick lies on the timeline's dark-sky plateau
+/// therefore carries the night cell ([`BELOW_CLEAR`], [`look_cell`]). The azimuth is exactly east or exactly west; at noon and midnight the sun
 /// is at the zenith or the nadir and the azimuth means nothing, so east is
 /// emitted and the bytes are still a function of the hour alone.
 pub fn sun_at(daytime_ticks: i64) -> ChunkySun {
@@ -757,23 +757,24 @@ pub const BELOW_THUNDER: OvercastCell = OvercastCell {
     ..BELOW_RAIN
 };
 
-/// `below` × `clear`: **the night sky**, the pinned game's own night plateau
+/// **The clear night sky**, the pinned game's own night plateau
 /// (spec-0079, departure 1). Chunky's simulated sky clamps a sun under the
 /// horizon to the horizon (`PreethamSky.updateSun` at the pinned core), so a
 /// clear night left to it renders as a sunset; this cell is written instead.
 ///
 /// Cited, from the vendored day timeline (`crates/dsl/data/
 /// timeline-day-1.21.11.json`) on its night plateau (ticks 13140..22860):
-/// `visual/sky_color` multiplies the visible sky by `#000000`, so the lens sees
+/// `visual/sky_color` multiplies the visible sky by black, `rgb(0, 0, 0)`, so the lens sees
 /// no sky (`apparentSkyLight` 0); `visual/sky_light_factor` is 0.24 and
 /// `visual/sky_light_color` `#7a7aff`, so the light the sky casts is that
 /// colour at that factor (`color`, `skyLight`); `visual/fog_color` is
 /// `#0f0f16`. Authored: the mapping of those factors onto Chunky's keys
 /// (vanilla's day sky is Chunky's simulated sky at `skyLight` 1, so the night
-/// factor scales that), the plateau taken for the whole `below` class — a
-/// twilight under the horizon is drawn as night, the conservative direction
-/// the sky-light model judges it in — no sun (it is under the horizon), and no
-/// fog density (a clear night has no haze). Pinned against the timeline by
+/// factor scales that), no sun (it is under the horizon), and no fog density
+/// (a clear night has no haze). It is written exactly where the timeline's
+/// visible sky is dark ([`look_cell`]); in the dusk and dawn ramps between,
+/// the sun stands on or just under the horizon and the renderer's clamped
+/// sunset is the nearer picture. Pinned against the timeline by
 /// `the_clear_night_cell_is_the_timelines_night_plateau`.
 pub const BELOW_CLEAR: OvercastCell = OvercastCell {
     sky_color: rgb(122.0 / 255.0, 122.0 / 255.0, 1.0),
@@ -785,11 +786,9 @@ pub const BELOW_CLEAR: OvercastCell = OvercastCell {
     fog_color: rgb(15.0 / 255.0, 15.0 / 255.0, 22.0 / 255.0),
 };
 
-/// The look-table cell of a class and a weather; `None` for a clear sky with
-/// the sun at or above the horizon, whose sky is the renderer's own.
+/// The overcast cell of a class and a weather; `None` for `clear`.
 pub fn overcast_cell(class: DaylightClass, weather: WorldWeather) -> Option<&'static OvercastCell> {
     match (weather, class) {
-        (WorldWeather::Clear, DaylightClass::Below) => Some(&BELOW_CLEAR),
         (WorldWeather::Clear, _) => None,
         (WorldWeather::Rain, DaylightClass::High) => Some(&HIGH_RAIN),
         (WorldWeather::Rain, DaylightClass::Low) => Some(&LOW_RAIN),
@@ -797,6 +796,25 @@ pub fn overcast_cell(class: DaylightClass, weather: WorldWeather) -> Option<&'st
         (WorldWeather::Thunder, DaylightClass::High) => Some(&HIGH_THUNDER),
         (WorldWeather::Thunder, DaylightClass::Low) => Some(&LOW_THUNDER),
         (WorldWeather::Thunder, DaylightClass::Below) => Some(&BELOW_THUNDER),
+    }
+}
+
+/// **The cell a scene's sky reads**: the overcast cell of a rain or thunder
+/// scene; on a clear one, the night cell ([`BELOW_CLEAR`]) where the pinned
+/// timeline's visible sky is dark at the scene's tick
+/// ([`delvewright_dsl::celestial::sky_is_dark`], its `visual/sky_color` night
+/// plateau), else `None` — the renderer's own sky, whose clamp draws a sun on
+/// or just under the horizon as the sunset it nearly is.
+pub fn look_cell(
+    class: DaylightClass,
+    weather: WorldWeather,
+    daytime_ticks: i64,
+) -> Option<&'static OvercastCell> {
+    match weather {
+        WorldWeather::Clear => {
+            delvewright_dsl::celestial::sky_is_dark(daytime_ticks).then_some(&BELOW_CLEAR)
+        }
+        _ => overcast_cell(class, weather),
     }
 }
 
@@ -817,8 +835,9 @@ pub struct SkyBlock {
 /// - `clear` with the sun at or above the horizon is the hour's sun direction
 ///   and nothing more — Chunky's simulated sky with its default sun *is* a
 ///   clear sky, so such a scene's bytes are the ones the engine wrote before the
-///   weather reached a scene. A clear night is the [`BELOW_CLEAR`] block, since
-///   the simulated sky clamps a sun under the horizon to a sunset.
+///   weather reached a scene. A clear night — the timeline's sky dark at the
+///   tick — is the [`BELOW_CLEAR`] block, since the simulated sky clamps a sun
+///   under the horizon to a sunset.
 /// - `rain` and `thunder` are an overcast block written in full: the sun where
 ///   the hour puts it but dimmed and without its disc, a solid grey sky, uniform
 ///   fog that never paints the sky — the cell of [`overcast_cell`] for the
@@ -829,7 +848,7 @@ pub struct SkyBlock {
 pub fn sky_of(sky: SceneSky) -> SkyBlock {
     let mut sun = sun_at(sky.daytime_ticks);
     let class = daylight_class(&sun);
-    let Some(cell) = overcast_cell(class, sky.weather) else {
+    let Some(cell) = look_cell(class, sky.weather, sky.daytime_ticks) else {
         return SkyBlock {
             sun,
             sky: None,
@@ -861,8 +880,8 @@ pub fn sky_of(sky: SceneSky) -> SkyBlock {
 
 /// The look-table cell a scene sky reads, as one phrase for a binding line:
 /// `the renderer's own clear sky`, or the cell's name and its four judged numbers.
-pub fn sky_phrase(class: DaylightClass, weather: WorldWeather) -> String {
-    match overcast_cell(class, weather) {
+pub fn sky_phrase(class: DaylightClass, weather: WorldWeather, daytime_ticks: i64) -> String {
+    match look_cell(class, weather, daytime_ticks) {
         None => "the renderer's own clear sky".to_string(),
         Some(c) => format!(
             "{} cell {}×{}: skyLight {}, apparentSkyLight {}, sun {}, fog {}",
@@ -1630,7 +1649,7 @@ mod tests {
             let c = |i: usize| f64::from(u8::from_str_radix(&s[i..i + 2], 16).unwrap()) / 255.0;
             rgb(c(0), c(2), c(4))
         };
-        assert_eq!(at("sky_color", 13670), serde_json::json!("#000000"));
+        assert_eq!(hex(at("sky_color", 13670)), rgb(0.0, 0.0, 0.0));
         assert_eq!(BELOW_CLEAR.apparent_sky_light, 0.0);
         assert_eq!(
             at("sky_light_factor", 13140).as_f64(),
@@ -1639,9 +1658,33 @@ mod tests {
         assert_eq!(hex(at("sky_light_color", 13140)), BELOW_CLEAR.sky_color);
         assert_eq!(hex(at("fog_color", 13670)), BELOW_CLEAR.fog_color);
         assert_eq!(BELOW_CLEAR.sun_intensity, 0.0);
-        for class in DaylightClass::ALL {
-            let cell = overcast_cell(class, WorldWeather::Clear);
-            assert_eq!(cell.is_some(), class == DaylightClass::Below, "{class:?}");
+        // Where the night cell is written: the dark-sky plateau, and nowhere
+        // a clear sky is lit or ramping — a sun setting or rising stands on the
+        // horizon and keeps the renderer's own sky.
+        use delvewright_dsl::WorldTime as T;
+        for (time, night) in [
+            (T::Noon, false),
+            (T::Dusk, false),
+            (T::Night, false),
+            (T::Midnight, true),
+            (T::Dawn, false),
+        ] {
+            let t = time.daytime_ticks();
+            let class = daylight_class(&sun_at(t));
+            let cell = look_cell(class, WorldWeather::Clear, t);
+            assert_eq!(cell.is_some(), night, "{}", time.keyword());
+        }
+        for t in [13669, 22331] {
+            assert!(
+                look_cell(DaylightClass::Below, WorldWeather::Clear, t).is_none(),
+                "{t}"
+            );
+        }
+        for t in [13670, 18000, 22330] {
+            assert!(
+                look_cell(DaylightClass::Below, WorldWeather::Clear, t).is_some(),
+                "{t}"
+            );
         }
     }
 
@@ -1758,7 +1801,7 @@ mod tests {
                 ] {
                     let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
                     let at = format!("{kind} {}+{}", time.keyword(), weather.keyword());
-                    match overcast_cell(class, weather) {
+                    match look_cell(class, weather, time.daytime_ticks()) {
                         None => {
                             for k in BLOCK_KEYS {
                                 assert!(v.pointer(k).is_none(), "{at}: a clear scene wrote {k}");

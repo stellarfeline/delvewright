@@ -71,9 +71,21 @@ And for `delvec cameras`, on every point whose campaign carries a
 - **every camera is under its picture's sky** (spec-0079): the camera's own
   `sky`, else the `time` and `weather` of the `design.json` row it answers —
   read here from the two documents, sharing nothing with the engine's
-  resolution. A `clear` camera's scene carries no `sky` and no `fog` key; a
-  `rain` or `thunder` one carries `sky.mode SOLID_COLOR` and `fog.mode
-  UNIFORM`. Over the domain the weathers emitted are `{clear, rain, thunder}`
+  resolution. A `clear` camera's scene whose sky is lit or in its dusk or dawn
+  ramp carries no `sky` and no `fog` key; a `clear` one whose sky is dark — the
+  vendored day timeline's `visual/sky_color` night plateau, its two edge ticks
+  read off the file and turned into a sun altitude by minecraft.wiki's
+  closed-form sky angle, a method the engine's emission (the vendored track)
+  does not share — carries exactly the night cell (spec-0079, departure 1: the
+  pinned core's simulated sky clamps a sun under the horizon to a sunset). A
+  scene within `EDGE_DEG` of the plateau's edge may be either. The night cell's
+  values are derived here from the timeline's night plateau (`NIGHT_TIMELINE`)
+  and never from the engine's constant — `sky.mode SOLID_COLOR`, `sky.color` the
+  `visual/sky_light_color` plateau, `sky.skyLight` the `visual/sky_light_factor`
+  plateau, `sky.apparentSkyLight` 0 because `visual/sky_color` is black there,
+  `sun.intensity` 0, `fog.mode UNIFORM` at density 0 in the `visual/fog_color`
+  plateau; a `rain` or `thunder` one carries `sky.mode SOLID_COLOR` and
+  `fog.mode UNIFORM`. Over the domain the weathers emitted are `{clear, rain, thunder}`
   and the daylight classes — read off each scene's sun altitude, at or above
   20° `high`, from 0° `low`, under 0° `below` — are `{high, low, below}`; a
   domain reaching fewer is a red, because the gallery owes every cell a frame.
@@ -226,8 +238,101 @@ def camera_matches(doc: dict, cam: dict) -> list[str]:
 # The share of the frame a panorama's subject must cover. A third is what the
 # island's accepted release art measures: its built place's bounding rectangle
 # over its frame.
+# The pinned game's day timeline, vendored for the engine; the night cell a
+# clear scene under the horizon carries is read off its night plateau here.
+NIGHT_TIMELINE = REPO / "crates/dsl/data/timeline-day-1.21.11.json"
+
+
+def night_plateau(timeline: Path = NIGHT_TIMELINE) -> dict:
+    """The night-plateau value of the four visual tracks the night cell reads.
+
+    Each of these tracks rises from a day plateau to a night plateau and back:
+    the night value is the one its keyframes hold for the longest stretch that
+    is not the day value (`#ffffff` / 1.0) — read off the file, never typed.
+    """
+    tracks = json.loads(timeline.read_text())["tracks"]
+    out = {}
+    for name in ("sky_color", "sky_light_color", "sky_light_factor", "fog_color"):
+        kf = tracks[f"minecraft:visual/{name}"]["keyframes"]
+        day = kf[0]["value"]
+        night = [k["value"] for k in kf if k["value"] != day]
+        if not night or any(v != night[0] for v in night):
+            die(f"{timeline}: `visual/{name}` has no single night plateau: {kf}")
+        out[name] = night[0]
+    return out
+
+
+# How close to the dark plateau's edge altitude a scene may stand and be
+# judged either way: the closed form and the pinned track agree to 0.056°.
+EDGE_DEG = 0.1
+
+
+def closed_form_altitude(tick: float) -> float:
+    """The sun's altitude in degrees at a `daytime` tick, by minecraft.wiki's
+    closed-form sky angle (*Daylight cycle*, §Sky angle) — not the vendored
+    track the engine reads."""
+    t = tick - 6000.0
+    turn = (t / 24000.0) % 1.0
+    quarters = (t / 6000.0) % 4.0
+    angle = ((1.0 - math.cos(math.pi * turn) + quarters) * 60.0) % 360.0
+    return 90.0 - angle if angle <= 180.0 else angle - 270.0
+
+
+def dark_edge_altitude(timeline: Path = NIGHT_TIMELINE) -> float:
+    """The highest sun altitude on the timeline's dark-sky plateau: the
+    `visual/sky_color` keyframes that both carry the night value bound it."""
+    kf = json.loads(timeline.read_text())["tracks"]["minecraft:visual/sky_color"]["keyframes"]
+    day = kf[0]["value"]
+    edges = [
+        t
+        for a, b in zip(kf, kf[1:])
+        if a["value"] != day and b["value"] != day
+        for t in (a["ticks"], b["ticks"])
+    ]
+    if not edges:
+        die(f"{timeline}: `visual/sky_color` has no night plateau: {kf}")
+    return max(closed_form_altitude(t) for t in edges)
+
+
+def _rgb(hex_colour: str) -> list[float]:
+    h = hex_colour.lstrip("#")
+    return [round(int(h[i : i + 2], 16) / 255.0, 6) for i in (0, 2, 4)]
+
+
+def night_cell_findings(doc: dict, plateau: dict) -> list[str]:
+    """How a below-horizon clear scene departs from the night cell, if it does."""
+    want = {
+        ("sky", "mode"): "SOLID_COLOR",
+        ("sky", "skyLight"): float(plateau["sky_light_factor"]),
+        ("sky", "apparentSkyLight"): 0.0 if _rgb(plateau["sky_color"]) == [0.0, 0.0, 0.0] else None,
+        ("sun", "intensity"): 0.0,
+        ("fog", "mode"): "UNIFORM",
+        ("fog", "uniformDensity"): 0.0,
+    }
+    colours = {
+        ("sky", "color"): _rgb(plateau["sky_light_color"]),
+        ("fog", "color"): _rgb(plateau["fog_color"]),
+    }
+    bad = []
+    for (obj, key), value in want.items():
+        got = (doc.get(obj) or {}).get(key)
+        if value is None or got != value:
+            bad.append(f"`{obj}.{key}` is {got!r}, the night cell's is {value!r}")
+    for (obj, key), value in colours.items():
+        c = (doc.get(obj) or {}).get(key) or {}
+        got = [c.get("red"), c.get("green"), c.get("blue")]
+        if got != value:
+            bad.append(f"`{obj}.{key}` is {got}, the night cell's is {value}")
+    return bad
+
+
 def sky_matches(
-    doc: dict, cam: dict, design: dict, weathers: dict[str, int], classes: dict[str, int]
+    doc: dict,
+    cam: dict,
+    design: dict,
+    weathers: dict[str, int],
+    classes: dict[str, int],
+    night_cells: dict[str, int] | None = None,
 ) -> list[str]:
     """Whether a camera's scene is under its picture's sky; tallies what it saw."""
     rows = {r["name"]: r for r in design.get("content", {}).get("references", [])}
@@ -238,16 +343,31 @@ def sky_matches(
     bad = []
     overcast = sky["weather"] != "clear"
     has = doc.get("sky") is not None or doc.get("fog") is not None
+    alt = math.degrees(doc["sun"]["altitude"])
+    cls = "high" if alt >= 20.0 else "low" if alt >= 0.0 else "below"
     if overcast and not (
         (doc.get("sky") or {}).get("mode") == "SOLID_COLOR"
         and (doc.get("fog") or {}).get("mode") == "UNIFORM"
     ):
         bad.append(f"is under {sky['weather']} and its scene carries no overcast sky and fog")
-    if not overcast and has:
-        bad.append("is under a clear sky and its scene carries a `sky` or `fog` key")
+    if not overcast:
+        edge = dark_edge_altitude()
+        night = night_cell_findings(doc, night_plateau())
+        if alt > edge + EDGE_DEG and has:
+            bad.append(
+                "is under a clear sky that is lit or ramping and its scene carries a `sky` "
+                "or `fog` key"
+            )
+        elif alt < edge - EDGE_DEG:
+            bad.extend(f"is under a clear dark sky and {why}" for why in night)
+            if night_cells is not None:
+                night_cells["night cell"] = night_cells.get("night cell", 0) + 1
+        elif has and night:
+            bad.append(
+                "stands at the dark sky's edge and carries a sky block that is not the "
+                "night cell: " + "; ".join(night)
+            )
     weathers[sky["weather"]] = weathers.get(sky["weather"], 0) + 1
-    alt = math.degrees(doc["sun"]["altitude"])
-    cls = "high" if alt >= 20.0 else "low" if alt >= 0.0 else "below"
     classes[cls] = classes.get(cls, 0) + 1
     return bad
 
@@ -331,6 +451,7 @@ def main() -> int:
     records = 0
     weathers_seen: dict[str, int] = {}
     classes_seen: dict[str, int] = {}
+    night_seen: dict[str, int] = {}
 
     def engine_runs(base: str) -> dict:
         """Every engine run one base needs, in directories named for its point.
@@ -412,7 +533,9 @@ def main() -> int:
                         for why in camera_matches(doc, cam):
                             findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
                         design = json.loads((src / "design.json").read_text())
-                        for why in sky_matches(doc, cam, design, weathers_seen, classes_seen):
+                        for why in sky_matches(
+                            doc, cam, design, weathers_seen, classes_seen, night_seen
+                        ):
                             findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
 
             for arm in ("scene", "panorama"):
@@ -464,7 +587,9 @@ def main() -> int:
 
     print(
         f"camera skies: weathers {dict(sorted(weathers_seen.items()))}, daylight classes "
-        f"{dict(sorted(classes_seen.items()))}, over {cameras_judged} camera scene(s)."
+        f"{dict(sorted(classes_seen.items()))}, over {cameras_judged} camera scene(s); "
+        f"{night_seen.get('night cell', 0)} clear scene(s) under a dark sky judged against the "
+        f"night cell (dark-sky edge at {dark_edge_altitude():.2f}° by the closed form)."
     )
     if cameras_judged and (
         set(weathers_seen) != {"clear", "rain", "thunder"}
