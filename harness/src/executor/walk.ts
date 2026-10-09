@@ -393,6 +393,16 @@ export const methods = {
       // this volume, so the objective completed on that landing. Nothing is
       // walked; the marker is asserted, and its absence is the compiler's claim
       // failing, never a reason to go looking for the volume.
+      //
+      // The compiler still exported this position's leg (from the landing to the
+      // anchor), so the lockstep cursor consumes it unwalked. Left in place, the
+      // next walk's leg sits one behind: on the gallery the cabin tiller's stand
+      // walk took this leg, its own was never consumed, and both walks after the
+      // carry — up the cabin ladder and on to the exit — ran with no proven leg.
+      if (this.waypoints) {
+        const landed = nextLegWaypoints(this.waypoints.legs, this.legCursor, reachGoal(step.completion).pos);
+        this.legCursor = landed.cursor;
+      }
       const done = this.completedObjectives.get(step.objective);
       if (done !== undefined) {
         process.stderr.write(
