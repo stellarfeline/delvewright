@@ -141,7 +141,7 @@
                 "label": "Skip the label."
               }
             ],
-            "text": "The catalogue is open at the first page. \"You are early,\" she says. \"Nothing here is finished, which is the point of it.\""
+            "text": "The catalogue is open at the first page. \"You are early,\" she says. \"Nothing here is finished, which is the point of it. The Long Hall is the corridor past the arch, where the far views are kept.\""
           },
           {
             "id": "dlg/curator-what",
@@ -236,7 +236,7 @@
                 "tooltip": "Repeat the label, word for word, to a Marshal who did not read it."
               }
             ],
-            "text": "\"You stopped at the lectern. Say what it said, and say it in front of the muster.\""
+            "text": "\"You stopped at the lectern. Say what it said, and say it in front of the muster, before you take the Long Hall.\""
           },
           {
             "id": "dlg/marshal-skipped",
