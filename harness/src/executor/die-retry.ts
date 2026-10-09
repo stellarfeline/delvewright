@@ -444,9 +444,33 @@ export const methods = {
    * would change what the next trial proves, so it stays — the one place a body
    * may still land hits on the bot outside a scripted death, and the log says so
    * every time.
+   *
+   * A re-seating wave's LAST standing body is held too (`standing`, the census's
+   * count at the moment of the hit; unread counts as last). Removing it would
+   * CLEAR the encounter, and a clear is the delve's event, not the harness's: it
+   * completes the objective and fires its completion, and that completion can act
+   * on the anchor while the re-seat lands. On the gallery the last Muster Hand
+   * struck the bot as the scripted death landed and was staged away after the bot
+   * was already dead; the clear fired `obj/clear-the-muster`'s completion, whose
+   * volley shoots from the muster anchor for two seconds, and the re-seat reading
+   * found the re-seated Muster Stray five points down — red only on the runs where
+   * the bot happened to have staged the rest of the cohort first. Held, the next
+   * re-seat removes the body as it removes every other.
    */
-  dieRetryHolds(this: MineflayerExecutor, enc: Encounter): string | undefined {
-    if (enc.respawnsOnRest) return undefined;
+  dieRetryHolds(
+    this: MineflayerExecutor,
+    enc: Encounter,
+    standing: number | undefined,
+  ): string | undefined {
+    if (enc.respawnsOnRest) {
+      if (standing !== undefined && standing > 1) return undefined;
+      return (
+        `the die-retry stage is proving it live and this is the last body of it standing ` +
+        `(${standing ?? "an unread count"}); removing it would clear the encounter and fire ` +
+        `its completion between the death and the re-seat reading — left standing, for the ` +
+        `next re-seat to remove`
+      );
+    }
     return (
       `the die-retry stage is proving it live and it does not re-seat, so its bodies ` +
       `persist across both lives and are the fight the next life must find — left standing`

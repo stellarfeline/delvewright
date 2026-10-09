@@ -2039,6 +2039,20 @@ class CombatFakeBot extends InteractFakeBot {
    * inside it is refused with the server's own words and does nothing. 0 = off. */
   respawnProtectionMs = 0;
   private lastSpawnAt = 0;
+  /** As the scripted death lands, the first standing body of the wave is named
+   * as having hit the bot — the gallery's last Muster Hand, struck in the same
+   * tick as the `/damage` and credited with the kill. */
+  hitAtDeath = false;
+  /** Wall-clock ms between a scripted death and its respawn (and re-seat). */
+  respawnDelayMs = 10;
+  /**
+   * The encounter's completion acts on its anchor: when a staged blow leaves
+   * nothing of the wave standing, the objective is complete and its completion
+   * fires, and the next seating lands into it, this many points down — the
+   * gallery's `obj/clear-the-muster` volley, shot from the muster anchor.
+   */
+  volleyOnClear: number | undefined;
+  private volleyLive = false;
   /** A walk arrives: `goto` puts the bot at its goal. Off by default, because the
    * older tests were written against a bot that never moves. */
   moveOnGoto = false;
@@ -2130,8 +2144,14 @@ class CombatFakeBot extends InteractFakeBot {
     for (const id of opts.keepIds ?? []) this.entities[id] = this.makeMob(id, opts);
     const fresh = count - (opts.keepIds?.length ?? 0);
     const seated: number[] = [];
+    // A completion still firing at the anchor wounds the cohort it lands on.
+    const landed =
+      this.volleyLive && this.volleyOnClear !== undefined
+        ? { ...opts, health: (opts.health ?? FULL_HEALTH) - this.volleyOnClear }
+        : opts;
+    this.volleyLive = false;
     for (let i = 0; i < fresh; i++) {
-      this.entities[this.nextId] = this.makeMob(this.nextId, opts);
+      this.entities[this.nextId] = this.makeMob(this.nextId, landed);
       seated.push(this.nextId);
       this.nextId += 1;
     }
@@ -2299,6 +2319,7 @@ class CombatFakeBot extends InteractFakeBot {
         delete this.entities[id];
         this.emit("entityGone", ent);
         if (ent.waveTagged) this.credited += 1;
+        if (ent.waveTagged && this.waveMobs().length === 0) this.volleyLive = true;
       }
       return;
     }
@@ -2319,6 +2340,10 @@ class CombatFakeBot extends InteractFakeBot {
       this.died = true;
       this.emit("messagestr", "delve-bot was slain by Vindicator");
       this.emit("death");
+      if (this.hitAtDeath) {
+        const [body] = this.waveMobs();
+        if (body) this.emit("entityHurt", this.entity, body);
+      }
       // The respawn lands FAST, as a real server's does — faster than the harness
       // can poll the death latch and arm a wait, which is the race the spawn
       // counter exists for.
@@ -2339,7 +2364,7 @@ class CombatFakeBot extends InteractFakeBot {
         }
         this.lastSpawnAt = Date.now();
         this.emit("spawn");
-      }, 10);
+      }, this.respawnDelayMs);
     }, 5);
   }
 
@@ -3208,16 +3233,17 @@ test("a re-seated body that meets the bot on the way back is removed, and is the
   // then reported the route back as unwalkable. A wave that re-seats is brought
   // back whole by the next death and read at that landing, so removing what hits
   // the bot costs the stage nothing — and a body the party fells after the landing
-  // is a body of this seating that met the party.
+  // is a body of this seating that met the party. Two bodies, so the striker is
+  // not the last one standing (that one is held: see the clear-volley tests).
   const bot = new CombatFakeBot();
-  bot.seat(1);
-  bot.reSeat = { count: 1 };
+  bot.seat(2);
+  bot.reSeat = { count: 2 };
   bot.respawnAt = [10, 64, 0];
   bot.moveOnGoto = true;
   bot.hitOnReturn = true;
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
-  const plan = combatPlan(1, true);
+  const plan = combatPlan(2, true);
   const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
   executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
   await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
@@ -3226,11 +3252,104 @@ test("a re-seated body that meets the bot on the way back is removed, and is the
   assert.ok(bot.stagedBlows.length >= 2, `each return's attacker was removed: ${bot.stagedBlows}`);
   assert.deepEqual(trials.map((t) => t.outcome), ["re-engaged", "re-engaged"]);
   for (const t of trials) {
-    assert.equal(t.reseat!.present, 1, "the re-seat was read whole at the landing");
-    assert.equal(t.reengage!.present, 0, "the only body had been felled on the way back");
+    assert.equal(t.reseat!.present, 2, "the re-seat was read whole at the landing");
+    assert.equal(t.reengage!.present, 1, "one of the two had been felled on the way back");
     assert.equal(t.reengage!.credited, 1, "…by the party, which the census credits");
   }
   assert.deepEqual(dieRetryFindings(trials), []);
+});
+
+test("the last body of a re-seated wave that meets the bot on the way back is held, not cleared", async () => {
+  // Clearing it on the return leg fires the encounter's completion too, and the
+  // next trial's re-seat lands into whatever that completion does at the anchor.
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  bot.reSeat = { count: 1 };
+  bot.respawnAt = [10, 64, 0];
+  bot.moveOnGoto = true;
+  bot.hitOnReturn = true;
+  bot.volleyOnClear = 5;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(1, true);
+  const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(trials.map((t) => t.outcome), ["re-engaged", "re-engaged"]);
+  for (const t of trials) assert.equal(t.reengage!.present, 1, "the striker still stood");
+  assert.deepEqual(dieRetryFindings(trials), []);
+});
+
+/** The gallery's die-retry red, as a fake: the last standing body of a
+ * re-seating wave strikes the bot as the scripted death lands, and the
+ * encounter's completion shoots from the anchor once nothing of the wave stands. */
+function clearVolleyBot(count: number, reseatHealth?: number): CombatFakeBot {
+  const bot = new CombatFakeBot();
+  bot.seat(count);
+  bot.reSeat = { count, ...(reseatHealth !== undefined ? { health: reseatHealth } : {}) };
+  bot.respawnAt = [10, 64, 0];
+  bot.moveOnGoto = true;
+  bot.hitAtDeath = true;
+  bot.respawnDelayMs = 300;
+  bot.volleyOnClear = 5;
+  return bot;
+}
+
+test("the last body of a re-seating wave is not staged away, so the harness never clears the fight it is dying to", async () => {
+  // Gallery, `wave/muster` death 1: the bot had staged two of three bodies on
+  // the approach; the third struck it as the scripted death landed and was
+  // staged away with the bot already dead. That cleared the wave, the
+  // completion's volley fired from the anchor, and the re-seat reading found the
+  // re-seated spider five points down: "came back BELOW full", on a re-seat that
+  // summoned whole. Whether it reds turned on how many bodies the bot happened
+  // to meet first.
+  const bot = clearVolleyBot(1);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(1, true);
+  const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2);
+  for (const t of trials) {
+    assert.equal(t.reseat!.present, 1, "the re-seat was read");
+    assert.equal(t.reseat!.damaged, 0, `the re-seat landed whole: ${JSON.stringify(t.reseat)}`);
+  }
+  assert.deepEqual(dieRetryFindings(trials), []);
+});
+
+test("a body that is not the last of a re-seating wave is still staged away", async () => {
+  // The hold is the clear, not the wave: with a second body standing, the one
+  // that struck the bot is removed as before.
+  const bot = clearVolleyBot(2);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(2, true);
+  const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+
+  assert.ok(bot.stagedBlows.length >= 1, `the striker was removed: ${bot.stagedBlows}`);
+  assert.deepEqual(dieRetryFindings(executor.deathTrials()), []);
+});
+
+test("a re-seat that genuinely lands wounded still reds, with the last body held", async () => {
+  const bot = clearVolleyBot(1, FULL_HEALTH - 5);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan(1, true);
+  const encounter = { ...plan.encounters[0]!, checkpoint: [10, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  await within("executor.kill(KILL_STEP)", executor.kill(KILL_STEP));
+
+  assert.deepEqual(bot.stagedBlows, [], "the last body was held, so nothing cleared the wave");
+  const findings = dieRetryFindings(executor.deathTrials());
+  assert.ok(findings.length >= 1, "a wounded re-seat is red");
+  for (const f of findings) assert.match(f, /came back BELOW full/);
 });
 
 test("a wave that does not re-seat keeps its bodies through the die-retry stage", async () => {
