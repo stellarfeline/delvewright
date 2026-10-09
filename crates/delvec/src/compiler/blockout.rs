@@ -1683,9 +1683,18 @@ pub struct BatteryBinding {
     pub boundary_columns: usize,
     /// Of those, cracks.
     pub cracks: usize,
-    /// Standable cells inside the region and outside every claim — `DW0838`'s
-    /// second shape examined whether any place reaches one.
+    /// Standable cells inside the region and outside every claim. On an
+    /// `open` site they are the **commons** (spec-0098 §14, an owner ruling):
+    /// ordinary walkable ground every place may open onto. On a `solid` site
+    /// there is no commons, and `DW0838`'s second shape refuses a place that
+    /// reaches one.
     pub unclaimed_standable: usize,
+    /// Whether the site's fill is `open`, so that ground is the commons.
+    pub commons: bool,
+    /// Unordered place pairs walk-joined through the commons, with no
+    /// allocated opening and no direct crossing between them — legal, and
+    /// counted, so a reader sees which places the commons joins.
+    pub commons_pairs: usize,
 }
 
 impl BatteryBinding {
@@ -1701,7 +1710,14 @@ impl BatteryBinding {
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
              {l} critical-path leg(s) measured; {fx} fixed ring ground cell(s) handed, {bc} \
              plot-edge column(s) examined, {ck} crack(s) (DW0990); {uc} standable cell(s) \
-             outside every claim examined (DW0838).",
+             outside every claim ({kind}), {cp} place pair(s) joined through the commons \
+             (DW0838).",
+            kind = if self.commons {
+                "the commons: the site is open"
+            } else {
+                "no commons: the site is solid, so a place reaching one is refused"
+            },
+            cp = self.commons_pairs,
             fx = self.fixed_cells,
             bc = self.boundary_columns,
             ck = self.cracks,
@@ -2874,70 +2890,90 @@ fn crossings(
         .copied()
         .collect();
     binding.unclaimed_standable = unclaimed.len();
+    binding.commons = b.ground.is_open();
+    let commons: &BTreeSet<[i32; 3]> = &unclaimed;
+    let massed: BTreeSet<&str> = b.massed.iter().map(String::as_str).collect();
     let mut outside_reported = false;
-
-    // Flood each place's own cells and see who else is in the component.
-    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
-    for x in &b.boxes {
-        let (lo, hi) = x.space();
-        let starts: Vec<[i32; 3]> = cells_of(lo, hi)
-            .map(narrow)
-            .filter(|c| open.contains(c) && !seen.contains(c))
-            .collect();
-        if starts.is_empty() {
-            continue;
-        }
+    let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
         let mut queue: std::collections::VecDeque<[i32; 3]> = starts.iter().copied().collect();
         let mut component: BTreeSet<[i32; 3]> = starts.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
             for next in world.neighbors(cur) {
-                if open.contains(&next) && component.insert(next) {
+                if open.contains(&next)
+                    && (through_commons || !commons.contains(&next))
+                    && component.insert(next)
+                {
                     queue.push_back(next);
                 }
             }
         }
-        seen.extend(component.iter().copied());
-        if !outside_reported
-            && let Some(witness) = component.iter().find(|c| unclaimed.contains(*c))
+        component
+    };
+    let inside = |c: &[i32; 3], y: &PlacedBox| {
+        let (ylo, yhi) = y.space();
+        (0..3).all(|i| i64::from(c[i]) >= ylo[i] && i64::from(c[i]) <= yhi[i])
+    };
+    let mut direct: BTreeSet<(usize, usize)> = BTreeSet::new();
+    let mut via_commons: BTreeSet<(usize, usize)> = BTreeSet::new();
+
+    for (xi, x) in b.boxes.iter().enumerate() {
+        let (lo, hi) = x.space();
+        let starts: Vec<[i32; 3]> = cells_of(lo, hi)
+            .map(narrow)
+            .filter(|c| open.contains(c) && !commons.contains(c))
+            .collect();
+        if starts.is_empty() {
+            continue;
+        }
+        // **The leak**: what a body reaches from this place without the
+        // allocated openings and without the commons — another place's
+        // space is a crossing nothing allocated.
+        let own = flood(&starts, false);
+        // What it reaches when the commons is walkable ground too.
+        let wide = if binding.commons {
+            flood(&starts, true)
+        } else {
+            own.clone()
+        };
+        // The second shape. On a solid site there is no commons, so ground
+        // outside every claim is a way out of the designed places, whoever
+        // reaches it. On an open site the commons is ordinary ground a piece
+        // opens onto through its own openings — but a stand-in is the
+        // engine's closed shell, with no opening but the seams, so a stand-in
+        // reaching the commons is the derivation's own leak.
+        let leak_out = !binding.commons || massed.contains(x.node.0.as_str());
+        if leak_out
+            && !outside_reported
+            && let Some(witness) = wide.iter().find(|c| commons.contains(*c))
         {
             outside_reported = true;
-            raise(
-                d,
-                DW_CROSSING_UNALLOCATED,
-                Diagnostic::error(
-                    DW_CROSSING_UNALLOCATED,
-                    "site-plan",
-                    "/content/boxes",
-                    format!(
-                        "a body standing in `{a}` can walk to {w:?}, which is ground outside \
-                         every place's claim. With every allocated opening removed from the \
-                         world, the walk still leaves the designed places: reachable ground is a \
-                         place, so ground a body can walk onto is either a place of its own or \
-                         kept off by the edges of the places beside it. Close the edge — the \
-                         place draws a wall, a hedge or a kerb on the ring it owns; make the \
-                         ground a place, with seams to the places it joins; or declare a volume \
-                         over it. {u} standable cell(s) outside every claim were examined.",
-                        a = x.node,
-                        w = witness,
-                        u = unclaimed.len(),
-                    ),
-                ),
-            );
-        }
-        if n < 2 {
-            continue; // one place cannot be joined to another; the pair count says so.
-        }
-        // Who else lives in this component?
-        for y in &b.boxes {
-            if y.node == x.node {
-                continue;
-            }
-            let (ylo, yhi) = y.space();
-            let Some(witness) = component
-                .iter()
-                .find(|c| (0..3).all(|i| i64::from(c[i]) >= ylo[i] && i64::from(c[i]) <= yhi[i]))
-            else {
-                continue;
+            let message = if binding.commons {
+                format!(
+                    "`{a}` is a stand-in — the engine's closed shell, whose only openings are \
+                     the seams the plan allocated — and a body standing in it can walk to \
+                     {w:?}, ground outside every place's claim, with every allocated opening \
+                     removed from the world. The stand-in leaks: its shell did not close. Detail \
+                     the place (its own piece opens onto the commons where it means to), or \
+                     find what broke the shell. {u} standable cell(s) of the commons were \
+                     examined.",
+                    a = x.node,
+                    w = witness,
+                    u = unclaimed.len(),
+                )
+            } else {
+                format!(
+                    "a body standing in `{a}` can walk to {w:?}, which is ground outside every \
+                     place's claim, on a site whose fill is `solid`. A solid site has no \
+                     commons: with every allocated opening removed from the world, the walk \
+                     still leaves the designed places. Close the edge — the place draws a wall \
+                     on the ring it owns; make the ground a place, with seams to the places it \
+                     joins; or declare the site's fill `open`, where ground outside every claim \
+                     is the commons every place may open onto. {u} standable cell(s) outside \
+                     every claim were examined.",
+                    a = x.node,
+                    w = witness,
+                    u = unclaimed.len(),
+                )
             };
             raise(
                 d,
@@ -2945,27 +2981,56 @@ fn crossings(
                 Diagnostic::error(
                     DW_CROSSING_UNALLOCATED,
                     "site-plan",
-                    "/content/seams",
-                    format!(
-                        "`{a}` and `{b}` are joined by geometry the plan allocated no seam for. With \
-                     every one of the {s} allocated opening(s) removed from the world, a body \
-                     standing in `{a}` can still walk to {w:?}, which is inside `{b}`. **Seams \
-                     are allocated, not discovered**: a way that exists because a wall came out \
-                     low, a corner did not close or a roof turned out to be standable is a \
-                     connection nothing in the design agreed to and nothing downstream can name — \
-                     not the graph, not the pacing projection, not the bot. {n} standable cell(s) \
-                     were classified over {p} place pair(s) to find this.",
-                        a = x.node,
-                        b = y.node,
-                        s = b.seams.len(),
-                        w = witness,
-                        n = open.len(),
-                        p = binding.pairs,
-                    ),
+                    "/content/boxes",
+                    message,
                 ),
             );
         }
+        if n < 2 {
+            continue; // one place cannot be joined to another; the pair count says so.
+        }
+        for (yi, y) in b.boxes.iter().enumerate() {
+            if y.node == x.node {
+                continue;
+            }
+            let key = (xi.min(yi), xi.max(yi));
+            if let Some(witness) = own.iter().find(|c| inside(c, y)) {
+                if !direct.insert(key) {
+                    continue;
+                }
+                raise(
+                    d,
+                    DW_CROSSING_UNALLOCATED,
+                    Diagnostic::error(
+                        DW_CROSSING_UNALLOCATED,
+                        "site-plan",
+                        "/content/seams",
+                        format!(
+                            "`{a}` and `{b}` are joined by geometry the plan allocated no seam \
+                             for. With every one of the {s} allocated opening(s) removed from \
+                             the world, and without crossing the commons, a body standing in \
+                             `{a}` can still walk to {w:?}, which is inside `{b}`. **Seams are \
+                             allocated, not discovered**: a way that exists because a wall came \
+                             out low, a corner did not close or a roof turned out to be \
+                             standable is a connection nothing in the design agreed to and \
+                             nothing downstream can name. Close the wall, or allocate a seam \
+                             between them. {n} standable cell(s) were classified over {p} place \
+                             pair(s) to find this.",
+                            a = x.node,
+                            b = y.node,
+                            s = b.seams.len(),
+                            w = witness,
+                            n = open.len(),
+                            p = binding.pairs,
+                        ),
+                    ),
+                );
+            } else if binding.commons && wide.iter().any(|c| inside(c, y)) {
+                via_commons.insert(key);
+            }
+        }
     }
+    binding.commons_pairs = via_commons.difference(&direct).count();
 }
 
 /// `DW0990`'s second shape: **a crack along a claim boundary**, read off the

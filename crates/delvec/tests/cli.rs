@@ -3199,6 +3199,13 @@ fn perturb_short_walls_reddens_dw0838_beside_dw0836() {
         err.contains("joined by geometry the plan allocated no seam for"),
         "`DW0838` must name the crossing it found: {err}"
     );
+    // On the gym's open site, a stand-in whose shell came out short lets a
+    // body onto the commons: a stand-in has no opening but its seams, so that
+    // is the derivation's own leak (spec-0098 §14).
+    assert!(
+        err.contains("is a stand-in") && err.contains("ground outside every place's claim"),
+        "`DW0838` must name a stand-in leaking onto the commons: {err}"
+    );
     assert!(
         err.contains("blockout battery:") && err.contains("refusal(s)"),
         "the battery must state its whole refusal set: {err}"

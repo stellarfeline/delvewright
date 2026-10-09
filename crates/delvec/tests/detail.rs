@@ -2069,15 +2069,17 @@ fn dw0821_clears_when_the_places_own_walls_are_carved() {
     );
 }
 
-/// **Criteria 17 and 22: a walkable way out is refused, and closing it
-/// passes.** The landing's piece leaves the ring on its west side open above
-/// the terrain, which stands at the floor course: a body walks out onto ground
-/// no place claims (`DW0838`'s second shape), and once the exit opens its ring
-/// toward the landing across the gap, the two are walk-connected with no seam
-/// (`DW0838`'s first shape). The landing walling its ring again clears both.
-/// On a `solid` site the second shape examines zero cells.
+/// **Criterion 17: on an open site, ground no place claims is the commons**
+/// (spec-0098 §14, an owner ruling). The landing's piece opens its west ring
+/// onto the open ground beside it: green, the ground is the commons and the
+/// landing's own opening is its own. The landing and the exit open toward
+/// each other across the narrow gap between them: green again, and the pair
+/// is counted as joined through the commons. The perturbation: the exit
+/// closes its side and the count of commons-joined pairs falls by exactly that
+/// pair; and over a `solid` fill the binding states there is no commons and
+/// joins no pair.
 #[test]
-fn dw0838_refuses_ground_outside_every_claim_and_a_gap_nothing_allocated() {
+fn the_commons_is_walkable_ground_and_a_solid_site_has_none() {
     let c = campaign_at(&blockout_dir());
     let ring = |place: &str, side: &str| -> Vec<[i64; 3]> {
         let a = detail::allocation(&c, &NodeId(place.into())).unwrap();
@@ -2101,27 +2103,29 @@ fn dw0838_refuses_ground_outside_every_claim_and_a_gap_nothing_allocated() {
         }
         out
     };
+    let dw0838 = |b: &blockout::Battery| errors_of(b).iter().any(|c| c == "DW0838");
+
+    // The landing opens onto the commons through its own opening.
     let open_west = ring("node/landing", "west");
-    let tmp = tempdir("dw0838-out");
+    let tmp = tempdir("commons-west");
     let d = detailed_from(&blockout_dir(), &tmp, &["node/landing"], &|n, p| {
         (n == "node/landing" && open_west.contains(&p)).then(|| "minecraft:air".to_string())
     });
     let (b, _) = battery_at(&d);
-    let out = b
-        .findings
-        .iter()
-        .find(|(_, x)| x.code == "DW0838" && x.message.contains("outside every place's claim"))
-        .unwrap_or_else(|| panic!("no second-shape DW0838: {:?}", errors_of(&b)));
-    assert!(
-        out.1.message.contains("`node/landing`"),
-        "{}",
-        out.1.message
-    );
-    assert!(b.binding.unclaimed_standable > 0);
+    assert!(!dw0838(&b), "{:?}", errors_of(&b));
+    assert!(b.binding.commons, "{}", b.binding.line());
+    assert!(b.binding.unclaimed_standable > 0, "{}", b.binding.line());
+
+    // Both sides closed: the baseline count of commons-joined pairs.
+    let tmp = tempdir("commons-closed");
+    let d = detailed(&tmp, &["node/landing", "node/exit"]);
+    let (b, _) = battery_at(&d);
+    assert!(!dw0838(&b), "{:?}", errors_of(&b));
+    let closed = b.binding.commons_pairs;
 
     // The landing and the exit open toward each other across the gap.
     let (south, north) = (ring("node/landing", "south"), ring("node/exit", "north"));
-    let tmp = tempdir("dw0838-gap");
+    let tmp = tempdir("commons-gap");
     let d = detailed_from(
         &blockout_dir(),
         &tmp,
@@ -2133,56 +2137,86 @@ fn dw0838_refuses_ground_outside_every_claim_and_a_gap_nothing_allocated() {
         },
     );
     let (b, _) = battery_at(&d);
-    assert!(
-        b.findings.iter().any(|(_, x)| x.code == "DW0838"
-            && x.message.contains("allocated no seam for")
-            && x.message.contains("node/landing")
-            && x.message.contains("node/exit")),
-        "{:?}",
-        errors_of(&b)
-    );
-    // Closing the landing's edge: the exit's open ring still lets a body out
-    // onto the gap, but the two places are no longer joined.
-    let tmp = tempdir("dw0838-closed");
+    assert!(!dw0838(&b), "a narrow gap is ground: {:?}", errors_of(&b));
+    assert_eq!(b.binding.commons_pairs, closed + 1, "{}", b.binding.line());
+
+    // Perturbation: the exit keeps its side closed — the pair is not joined.
+    let tmp = tempdir("commons-gap-one-side");
     let d = detailed_from(
         &blockout_dir(),
         &tmp,
         &["node/landing", "node/exit"],
-        &|n, p| (n == "node/exit" && north.contains(&p)).then(|| "minecraft:air".to_string()),
+        &|n, p| (n == "node/landing" && south.contains(&p)).then(|| "minecraft:air".to_string()),
     );
     let (b, _) = battery_at(&d);
-    assert!(
-        !b.findings
-            .iter()
-            .any(|(_, x)| x.code == "DW0838" && x.message.contains("allocated no seam for")),
-        "{:?}",
-        errors_of(&b)
-    );
-    let tmp = tempdir("dw0838-all-closed");
-    let d = detailed(&tmp, &["node/landing", "node/exit"]);
-    let (b, _) = battery_at(&d);
-    assert!(
-        !errors_of(&b).contains(&"DW0838".to_string()),
-        "{:?}",
-        errors_of(&b)
-    );
+    assert!(!dw0838(&b), "{:?}", errors_of(&b));
+    assert_eq!(b.binding.commons_pairs, closed, "{}", b.binding.line());
 
-    // A solid site with no sky kept: nothing outside a claim is ground a body
-    // stands on. (The fixture's own `clearance` volume over the whole region
-    // would leave the rock's top a surface, and the shape would examine it.)
-    let solid = tempdir("dw0838-solid").join("src");
+    // A solid site has no commons: the binding says so and joins no pair
+    // through it, over the same gap the open site joined.
+    let solid = tempdir("commons-solid").join("src");
     common::copy_dir_all(&blockout_dir(), &solid);
     common::patch_file(&solid.join("site-plan.json"), |v| {
         v["content"]["fill"] = serde_json::json!({"kind": "solid", "block": "minecraft:deepslate"});
-        v["content"]["volumes"]
-            .as_array_mut()
-            .unwrap()
-            .retain(|vol| vol["role"] != "clearance");
     });
-    let tmp = tempdir("dw0838-solid-built");
-    let d = detailed_from(&solid, &tmp, &[], &|_, _| None);
+    let tmp = tempdir("commons-solid-built");
+    let d = detailed_from(&solid, &tmp, &["node/landing", "node/exit"], &|n, p| {
+        ((n == "node/landing" && south.contains(&p)) || (n == "node/exit" && north.contains(&p)))
+            .then(|| "minecraft:air".to_string())
+    });
     let (b, _) = battery_at(&d);
-    assert_eq!(b.binding.unclaimed_standable, 0, "{}", b.binding.line());
+    assert!(!b.binding.commons, "{}", b.binding.line());
+    assert_eq!(b.binding.commons_pairs, 0, "{}", b.binding.line());
+    assert!(
+        b.binding.line().contains("no commons"),
+        "{}",
+        b.binding.line()
+    );
+}
+
+/// **Criterion 22: a hole in a place's own wall that lets a body into
+/// another place where nothing allocated an opening is refused.** The landing
+/// owns the party plane it shares with the hall (its seam's `a`); its piece
+/// cuts a hole in that wall two cells beside the allocated opening, and a body
+/// walks from the landing into the hall without the opening and without the
+/// commons — `DW0838`, naming both places. The perturbation: the same piece
+/// with the hole filled (and so only the allocated opening in the wall) is
+/// green.
+#[test]
+fn dw0838_refuses_a_hole_between_two_places_nothing_allocated() {
+    let c = campaign_at(&blockout_dir());
+    let a = detail::allocation(&c, &NodeId("node/landing".into())).unwrap();
+    let seam = a
+        .seams
+        .iter()
+        .find(|s| s.other == "node/hall")
+        .expect("the landing's seam to the hall");
+    assert!(seam.owns_plane, "the landing owns the party plane");
+    let plane = seam.cells[0][0];
+    let z = seam.cells[1][2] + 3;
+    assert!(z < a.extent[2] - 1, "the hole stays inside the shared face");
+    let hole = [[plane, a.datum_y, z], [plane, a.datum_y + 1, z]];
+    let tmp = tempdir("dw0838-hole");
+    let d = detailed_from(&blockout_dir(), &tmp, &["node/landing"], &|n, p| {
+        (n == "node/landing" && hole.contains(&p)).then(|| "minecraft:air".to_string())
+    });
+    let (b, _) = battery_at(&d);
+    assert!(
+        b.findings.iter().any(|(_, x)| x.code == "DW0838"
+            && x.message.contains("allocated no seam")
+            && x.message.contains("node/landing")
+            && x.message.contains("node/hall")),
+        "{:?}",
+        errors_of(&b)
+    );
+    let tmp = tempdir("dw0838-no-hole");
+    let d = detailed(&tmp, &["node/landing"]);
+    let (b, _) = battery_at(&d);
+    assert!(
+        !errors_of(&b).iter().any(|c| c == "DW0838"),
+        "{:?}",
+        errors_of(&b)
+    );
 }
 
 fn errors_of(b: &blockout::Battery) -> Vec<String> {
