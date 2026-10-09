@@ -771,7 +771,9 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                         .map(str::to_string)
                         .collect(),
                     owns_plane: frame.owns(s.opening.0),
-                    ground_y: (s.normal_axis != 1).then(|| s.opening.0[1] - 1 - frame.lo[1]),
+                    ground_y: (s.normal_axis != 1).then(|| {
+                        site.ground_height(i, s.opening.0[0], s.opening.0[2]) - frame.lo[1]
+                    }),
                 }
             })
             .collect(),

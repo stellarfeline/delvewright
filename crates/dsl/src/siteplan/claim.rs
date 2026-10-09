@@ -242,13 +242,18 @@ impl<'a> Site<'a> {
     }
 
     /// The ground height `G` of place `i`'s ring column `(x, z)` (spec-0098
-    /// §2 rule 0): where a vertical seam of this place crosses the column, the
-    /// seam's sill minus one, flat across the opening's width; else, on an
-    /// `open` site, the terrain's surface `y`; on a `solid` site the floor
-    /// course.
+    /// §2 rule 0): the terrain's ground — on an `open` site the terrain's
+    /// surface `y`, on a `solid` site the floor course — except where a
+    /// vertical seam of this place crosses the column at grade: a seam whose
+    /// sill a body steps onto from that ground (sill − 1 at most one course
+    /// above it, or below it) levels the column to the sill minus one, flat
+    /// across the opening's width. A seam aloft — a bridge's deck, a door
+    /// high in a wall — fixes no earth under it: the column between the
+    /// terrain and the sill is the owner's (§14, a correction).
     #[must_use]
     pub fn ground_height(&self, i: usize, x: i64, z: i64) -> i64 {
         let b = &self.boxes[i];
+        let terrain = self.terrain_height(i, x, z);
         for s in self.seams {
             if s.normal_axis == 1 || (s.a != b.node && s.b != b.node) {
                 continue;
@@ -256,16 +261,27 @@ impl<'a> Site<'a> {
             let along = if s.normal_axis == 0 { z } else { x };
             let across = if s.normal_axis == 0 { x } else { z };
             let other = if s.normal_axis == 0 { 2 } else { 0 };
-            if across == s.plane && along >= s.opening.0[other] && along <= s.opening.1[other] {
+            if across == s.plane
+                && along >= s.opening.0[other]
+                && along <= s.opening.1[other]
+                && s.opening.0[1] - 1 <= terrain + 1
+            {
                 return s.opening.0[1] - 1;
             }
         }
+        terrain
+    }
+
+    /// The terrain's ground under place `i`'s ring column `(x, z)`: the
+    /// surface `y` on an `open` site, the floor course on a `solid` one.
+    #[must_use]
+    pub fn terrain_height(&self, i: usize, x: i64, z: i64) -> i64 {
         if self.ground.is_open()
             && let Some(t) = self.ground.top(x, z)
         {
             return t;
         }
-        b.floor_course_y()
+        self.boxes[i].floor_course_y()
     }
 
     /// True when `cell` is fixed ground of place `i`: a ring cell of its shell
@@ -717,6 +733,47 @@ mod tests {
             a_box("node/house", [0, 7, 0, 7], 64, 4, false),
             a_box("node/street", [9, 16, 0, 7], 64, 6, true),
         ]
+    }
+
+    /// **An aloft seam fixes no earth under it; a grade seam still levels**
+    /// (spec-0098 §14, a correction). Two treehouses whose floors stand 16
+    /// courses over open ground at y 47, joined across the plane x 8 by a
+    /// bridge seam whose sill is the deck at y 64: the ring column under the
+    /// opening is the terrain's ground (y 47), and the cells between it and
+    /// the deck are the owner's, not the whole's. The same pair on ground at
+    /// y 63 — the sill one step over it — levels the column to the sill minus
+    /// one, as before.
+    #[test]
+    fn an_aloft_seam_fixes_no_earth_under_it_and_a_grade_seam_levels() {
+        let boxes = vec![
+            a_box("node/east-house", [0, 7, 0, 7], 64, 4, false),
+            a_box("node/west-house", [9, 16, 0, 7], 64, 4, false),
+        ];
+        let seams = vec![seam("node/east-house", "node/west-house", 0, 8)];
+        let low = Ground::open_flat(47, "minecraft:grass_block", "minecraft:dirt");
+        let site = Site::new(&boxes, &seams, &low);
+        assert_eq!(site.ground_height(0, 8, 2), 47, "the terrain, not the deck");
+        assert!(
+            !site.is_fixed(0, [8, 55, 2]),
+            "no earth column under the bridge"
+        );
+        assert_eq!(
+            site.owner([8, 55, 2]),
+            Owner::Place(NodeId("node/east-house".into())),
+            "the column between terrain and deck is the seam's a"
+        );
+        assert!(
+            site.is_fixed(0, [8, 47, 2]),
+            "the terrain itself is still fixed"
+        );
+        let grade = Ground::open_flat(62, "minecraft:grass_block", "minecraft:dirt");
+        let site = Site::new(&boxes, &seams, &grade);
+        assert_eq!(
+            site.ground_height(0, 8, 2),
+            63,
+            "one step up: levelled to the sill"
+        );
+        assert!(site.is_fixed(0, [8, 63, 2]));
     }
 
     #[test]

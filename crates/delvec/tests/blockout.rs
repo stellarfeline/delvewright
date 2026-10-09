@@ -1795,24 +1795,34 @@ fn the_ring_is_the_terrain_and_a_door_stands_on_its_sill() {
         }
     }
     assert!(examined > 0);
-    // The landing's door to the hall: its columns' ground is the sill minus one.
+    // The landing's door to the hall: where its sill is a step over the
+    // terrain the ring's ground is levelled to the sill minus one; where it
+    // stands higher (a correction, spec-0098 §14) the ground stays the
+    // terrain's and the sill stands on the place's own wall.
     let door = plan
         .seams
         .iter()
         .find(|s| s.edge.0 == "edge/landing-hall")
         .unwrap();
+    let (mut levelled, mut aloft) = (0usize, 0usize);
     for z in door.opening.0[2]..=door.opening.1[2] {
-        assert_eq!(
-            site.ground_height(landing, door.plane, z),
-            door.opening.0[1] - 1
-        );
-        assert_eq!(
-            map.get(&[door.plane, door.opening.0[1] - 1, z])
-                .map(String::as_str),
-            Some("minecraft:grass_block"),
-            "the sill stands on the ring's ground at z {z}"
-        );
+        let t = plan.ground.top(door.plane, z).unwrap();
+        let sill = door.opening.0[1] - 1;
+        let under = map.get(&[door.plane, sill, z]).map(String::as_str);
+        if sill <= t + 1 {
+            levelled += 1;
+            assert_eq!(site.ground_height(landing, door.plane, z), sill);
+            assert_eq!(under, Some("minecraft:grass_block"), "levelled at z {z}");
+        } else {
+            aloft += 1;
+            assert_eq!(site.ground_height(landing, door.plane, z), t);
+            assert!(
+                under.is_some_and(|b| b != "minecraft:grass_block" && b != "minecraft:dirt"),
+                "an aloft sill stands on the place's wall, not on earth, at z {z}: {under:?}"
+            );
+        }
     }
+    assert!(levelled + aloft > 0);
     // The hall's stair: every tread inside its play space.
     let hall = &plan.boxes[site
         .index_of(&delvewright_dsl::NodeId("node/hall".into()))

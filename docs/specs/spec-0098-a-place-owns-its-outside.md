@@ -92,10 +92,11 @@ below calls it:
    terrain and written by no piece (`DW0990`). The fixed ground is every ring
    column's cells at or below its ground height `G`: on an `open` site the
    terrain's height there; on a `solid` site the floor course, `floor − 1`.
-   Where a seam crosses the ring, `G` at the seam's columns is derived from the
-   seam's two floors instead — the sill minus one, flat across the opening's
-   width (`floor − 1` where the two are equal) — so neither side has to edit
-   the ground a doorway, a stair's landing or a drop's brink stands on (§2c).
+   Where a seam crosses the ring at grade — its sill one course over that
+   ground or less — `G` at the seam's columns is the sill minus one, flat
+   across the opening's width, so neither side has to edit the ground a
+   doorway, a stair's landing or a drop's brink stands on (§2c). A seam aloft
+   fixes no earth under it (§14, correction 1).
 1. A cell inside a place's **play space** is that place's. Nothing else may
    claim it (`DW0988`, `DW0827`).
 2. A cell exactly **one** claim covers is that place's.
@@ -1020,3 +1021,21 @@ Three rulings on this spec, applied as stated.
    declared `open` or `open_top` under the piece's own blocks: without that, a
    pavilion had no kind it could be declared as. Such a space is a covered
    space, taken as declared, with its covered cells stated in the enumeration.
+
+### Corrections
+
+Defects found after the rulings, corrected on the spec where they were made.
+
+1. **An aloft seam stood on a wall of earth.** Rule 0 as first written
+   levelled every seam's ring columns to the sill minus one whatever the
+   terrain beneath, and fixed that ground as the whole's (`DW0990`): a bridge
+   seam sixteen courses over a forest floor got a one-cell earth column from
+   the floor to the deck, as wide as the opening, and no document could remove
+   it. The fixed ground is the terrain's ground. Only a seam at grade — its
+   sill one course over the terrain or less, or below it — levels the ring to
+   its sill; a seam aloft fixes no earth, and the column between the terrain
+   and the sill is the owner's by §2's rules. The handout's `ground_y` under a
+   seam reports that ground. Shown in the `siteplan::claim` unit test
+   `an_aloft_seam_fixes_no_earth_under_it_and_a_grade_seam_levels`, and the
+   blockout test of criterion 23 now checks both cases on its slope.
+
