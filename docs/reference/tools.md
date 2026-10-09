@@ -150,8 +150,11 @@ the terrain along the perimeter with its min and max, every fixed ring cell with
 its block (the piece writes `structure_void` there), and the terrain-shaped
 columns under the plot the piece may reshape; the declared **roof** (courses,
 eaves, the lid and top `y`, every clipped eave); every seam piece-local with its
-declared `form`, the place on its other side, face, cells, class, rise, the
-answering class, whether this place owns the plane, and the ring's ground under
+declared `form`, the place on its other side, face, the opening (`cells`: an
+inclusive box written as its two opposite corner cells, piece-local — every cell
+between them is in the opening and is left open, the same box the program reads
+as `handed/seam/<edge stem>/{x0,…,z1}` and the contract edge's `via` declares),
+class, rise, the answering class, whether this place owns the plane, and the ring's ground under
 it; the owed anchor names; and every **void** of the frame with its owner.
 
 It is derived from the site plan on **every** invocation and is **an input to
@@ -589,9 +592,15 @@ conversion strip uses, so the two cannot drift. The **palette allowlist**
 (`crates/delvec/src/admit/allowlist.rs`: stone, wood, glass and copper families, inert
 flora, furniture and job-site blocks — anvils in every damage stage included —,
 the trap trigger blocks (pressure plates, buttons, the trapped chest), decorative
-minerals and ores, archaeology) that deliberately still flags surprising blocks —
-redstone contraption parts (dispensers, droppers, pistons, observers, repeaters),
-tnt, note blocks — for review, and is overridable with `--allowlist <file>`
+minerals and ores, archaeology, and the inert sculk blocks `sculk` and
+`sculk_vein`) that deliberately still flags surprising blocks — redstone
+contraption parts (dispensers, droppers, pistons, observers, repeaters), tnt,
+note blocks, and the sculk blocks that act at runtime: `sculk_catalyst` (rewrites
+the blocks around it when a living entity dies within 8 blocks),
+`sculk_sensor` and `calibrated_sculk_sensor` (redstone sources fired by any
+vibration within 8 blocks) and `sculk_shrieker` (summons a warden and inflicts
+Darkness when `can_summon` is true, a state a name-level list cannot hold) — for
+review, and is overridable with `--allowlist <file>`
 (`{ "allow": [...], "allow_suffixes": [...] }`). Jigsaw is deliberately NOT
 forbidden here: the conversion strip forbids it on raw community schematics,
 but a library prefab's jigsaw blocks are the sockets the compiler's solver

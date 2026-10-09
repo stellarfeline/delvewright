@@ -1217,6 +1217,23 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     let reach = gate(&causeway, "contract-reachability").expect("reachability is emitted");
     assert_eq!(reach["state"], "pass", "{reach}");
     assert!(reach["bound"].as_u64().unwrap() > 0, "{reach}");
+    // The causeway encloses nothing — every space is `open` — and the verb
+    // passes it with closure's zero stated — the gate withheld and its count
+    // in the enumeration — never refused as vacuous (spec-0098 §6b).
+    assert!(
+        gate(&causeway, "contract-closure").is_none(),
+        "closure over nothing is withheld, not red: {causeway}"
+    );
+    assert!(
+        causeway["enumeration"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .any(|l| l.contains("contract-closure")
+                && l.contains("declare an envelope closure examines; every space is open")),
+        "{causeway}"
+    );
 
     let beacon = report("gallery-beacon");
     assert_eq!(beacon["verdict"], "pass");

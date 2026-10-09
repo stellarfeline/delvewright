@@ -421,3 +421,57 @@ fn an_anvil_and_a_trapped_chest_pass_the_default_allowlist() {
     let (rep, _) = audit("contraption", &c, &Allowlist::default_building());
     assert!(rep.findings.iter().any(|f| f.code == "DW0730"));
 }
+
+/// **The sculk family: the two inert members pass, the four that act do not**
+/// (the allowlist's own criterion — inert building and decoration admitted,
+/// a block with a runtime behaviour shown to a reviewer). `sculk` is a full
+/// block and `sculk_vein` its collision-free decal; `sculk_catalyst` rewrites
+/// the blocks around it when a living entity dies near it, the two sensors are
+/// redstone sources fired by vibrations, and the shrieker summons a warden
+/// when its `can_summon` state is true. Each is placed in its own room so a
+/// refusal names exactly one block; vacuous if a block were not examined: each
+/// admitted id is asserted in the report's palette.
+#[test]
+fn the_inert_sculk_blocks_pass_and_the_acting_ones_are_shown() {
+    use delvec::admit::structure::PaletteEntry;
+    let admitted = ["minecraft:sculk", "minecraft:sculk_vein"];
+    let mut s = fixtures::clean_room();
+    s.set_cell([1, 1, 1], PaletteEntry::simple(admitted[0]), None);
+    // A vein on the floor, its connection state written as the design means.
+    let faces = [
+        ("down", "true"),
+        ("east", "false"),
+        ("north", "false"),
+        ("south", "false"),
+        ("up", "false"),
+        ("waterlogged", "false"),
+        ("west", "false"),
+    ];
+    s.set_cell(
+        [2, 1, 1],
+        PaletteEntry::with_props(admitted[1], &faces),
+        None,
+    );
+    let (rep, _) = audit("sculk", &s, &Allowlist::default_building());
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+    for id in admitted {
+        assert!(rep.palette.iter().any(|b| b == id), "{id} was not examined");
+    }
+    for id in [
+        "minecraft:sculk_catalyst",
+        "minecraft:sculk_sensor",
+        "minecraft:calibrated_sculk_sensor",
+        "minecraft:sculk_shrieker",
+    ] {
+        let mut c = fixtures::clean_room();
+        c.set_cell([1, 1, 1], PaletteEntry::simple(id), None);
+        let (rep, _) = audit("sculk-device", &c, &Allowlist::default_building());
+        assert!(
+            rep.findings
+                .iter()
+                .any(|f| f.code == "DW0730" && f.message.contains(id)),
+            "{id}: {:?}",
+            rep.findings
+        );
+    }
+}

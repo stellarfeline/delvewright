@@ -629,9 +629,17 @@ cells a bound place owns are a hole in what the whole writes, and the whole's
 stand-ins stand only in unbound places' owned cells. A seam whose plane the
 place owns is the piece's to cut, and a `barred` one's shut state the piece's to
 ship, bound to the gate region it owes; a seam a neighbour owns is answered on
-the place's own first layer beside the plane. Which spaces are enclosed is the
-piece's own declaration, and the closure gate confirms exactly those; a roofed
-place whose piece declares none — a pavilion, a covered market — is fine.
+the place's own first layer beside the plane. Two seams answered in the first
+layer meet at the play space's corner column, which then lies in both openings
+— or, with one plane owned, the owned opening's end cell touches the room only
+through the other opening; either way the piece answers both exactly as
+allocated (`DW0844` compares cell for cell) and `contract-well-formed` takes a
+cell beside another of the space's exterior openings as touching the room
+(`compiler::detail` `two_contacts_at_a_corner_answer_whoever_owns_each_plane`).
+Which spaces are enclosed is the piece's own declaration, and the closure gate
+confirms exactly those; a piece declaring none — a street, a pavilion, a
+covered market — passes, its zero stated in the enumeration with the count of
+spaces.
 
 **The fixture pass applies to derived interiors only.** A bound place lights
 itself; its cells leave the relight pass's deficiency set and go to the

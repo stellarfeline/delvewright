@@ -845,19 +845,49 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             // claimed on interior cells cannot supply that.
             let space = if edge.a == EXTERIOR { &edge.b } else { &edge.a };
             let outside = exterior_air(model);
+            let touches_room = |c: &[i32; 3]| {
+                DIRS.iter().any(|d| {
+                    ix.space(space)
+                        .contains(&[c[0] + d[0], c[1] + d[1], c[2] + d[2]])
+                })
+            };
+            // **Two openings of one room meeting at its corner** (spec-0098
+            // §6b): where two seams' answering layers cross the play space's
+            // corner column, a cell of one opening adjoins the room only
+            // through a cell of the other, which does adjoin it. Both openings
+            // are what the plan allocated (`DW0844` compares them cell for
+            // cell), so the corner cell opens onto the room through its
+            // neighbour and is part of a real hole. One hop only, through a
+            // cell of ANOTHER exterior opening of the same space that itself
+            // touches the room: a cell reached only through its own opening's
+            // cells is still detached.
+            let through_other: BTreeSet<[i32; 3]> = contract
+                .edges
+                .iter()
+                .enumerate()
+                .filter(|(j, e)| {
+                    *j != i
+                        && !is_transit(e)
+                        && (e.a == EXTERIOR || e.b == EXTERIOR)
+                        && (e.a == *space || e.b == *space)
+                })
+                .flat_map(|(j, _)| ix.via_cells[j].iter().copied())
+                .filter(|c| !via.contains(c) && touches_room(c))
+                .collect();
             let detached: BTreeSet<[i32; 3]> = via
                 .iter()
                 .filter(|c| {
-                    !DIRS.iter().any(|d| {
-                        ix.space(space)
-                            .contains(&[c[0] + d[0], c[1] + d[1], c[2] + d[2]])
-                    })
+                    !touches_room(c)
+                        && !DIRS.iter().any(|d| {
+                            through_other.contains(&[c[0] + d[0], c[1] + d[1], c[2] + d[2]])
+                        })
                 })
                 .copied()
                 .collect();
             if !detached.is_empty() {
                 bad.push(format!(
-                    "{site}: {} of its opening's cells do not touch {space:?} ({})",
+                    "{site}: {} of its opening's cells touch neither {space:?} nor a cell of \
+                     another of its openings that does ({})",
                     detached.len(),
                     describe_cells(&detached)
                 ));
