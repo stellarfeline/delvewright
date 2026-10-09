@@ -16,8 +16,7 @@
   pair). Nothing here revisits spec-0049's stage 5: the blockout stays derived
   and authored by no one.
 - **DSL**: `dsl_version` **0.38.0**. The site plan's `boxes[]` gain `roof`.
-- **Diagnostics**: **DW0987** and **DW0988**, both used below. DW0989 is not
-  consumed.
+- **Diagnostics**: **DW0987**, **DW0988** and **DW0989**, all used below.
 - **Research**: rooflines and facades at Minecraft scale are researched, not
   invented — `docs/reference/roof-and-facade-craft.md` carries the record with
   every rule marked cited or authored. This spec consumes two of its findings
@@ -259,11 +258,50 @@ campaign's lethal volumes and gates; the exposure ledger (`DW0885`) runs at
 `build`, because burial is a fact about neighbours. Bringing those three to the
 verb is a follow-on, not a condition of this spec.
 
+## 6b. Two defects of the paused campaign round, and what the frame does to them
+
+Both are recorded against the content repository's `campaign/stranding` at
+`6ddb2ca2` (GENERATION.md, round 7, engine findings 2 and 3).
+
+**Two seams sharing a corner cell (#1005) — dissolved by the frame.** The
+Narrows is a strip with a contact along its whole west face and a contact across
+its north end; under spec-0050's frame both answering layers lay *inside* the
+play space (the piece's boundary cells, `x = x0` and `z = z0`), so the two
+openings shared the room's corner cell, `contract-well-formed` refused a cell in
+two openings, and conceding the corner to the room made `DW0844` refuse both
+openings as not the plan's. Under this spec every seam is answered **at its own
+party plane** — the west opening at `x = x0 − 1`, the north at `z = z0 − 1` —
+and two party planes meet only at the ring's corner column, `(x0 − 1, z0 − 1)`,
+which lies in neither seam's shared face (a shared face is the overlap of the two
+play spaces' spans and never reaches a corner). The openings are disjoint by
+construction; nothing is conceded and nothing re-refused. Criterion 14 pins it.
+
+**An all-open piece refused (#1004) — answered, with its hatch closed.** A
+street or a mud field honestly encloses nothing, and `contract-closure` reds a
+zero binding when no space is `enclosed` or `open_top`. Under this spec open
+places are first-class pieces, so the zero must be readable. **Declared as a
+loosening, in these words**: `contract-closure` stops refusing a piece whose
+every space is `open`, and instead states its binding — `0 of N space(s)
+declare an envelope closure examines; every space is open` — at exit 0. What
+secured that refusal was the question "did a room forget to say it is
+enclosed", and that question is answered where the kind is known: **the plan**.
+A roofed box is a place with a lid, so a piece bound to it must carry at least
+one space closure examines; a piece with none is refused at the binding
+(`DW0989`), naming the place's `ceiling` and the piece's envelopes. An open box
+may carry a shelter (an `enclosed` space inside an open place is a hut on a
+flat) or nothing enclosed at all. The kind is the object's — the box's
+`ceiling` — never the piece's own word, so the defect cannot supply the hatch.
+
+**Also recorded there, a doc defect (finding 4)**: the allocation hands a seam
+as its two corner cells, which the skill's detail reference calls "its cells";
+the reference is corrected to the handing's own words with the pin bump.
+
 ## 7. The piece never writes the whole's cell
 
 | Code | Rule |
 |---|---|
 | `DW0987` | **A piece paints a cell it does not own.** A bound piece's template holds a block other than `minecraft:structure_void` at a void cell of its frame — a party wall it was told is the whole's, a neighbour's facade, a clipped eave. Read off the piece's own `.nbt` at validation, where `DW0888` already opens it, and named per cell with the owner the plan awards it to. Air counts as painting: the game places a template's air, so an air cell over the whole's wall would carve it. Validation tier (exit 1). **Binding: bound pieces opened, void cells examined, painted.** |
+| `DW0989` | **A roofed place bound to a piece that encloses nothing.** The place's box has a `clearance` ceiling and the bound piece's spatial contract declares no `enclosed` or `open_top` space, so the closure gate had nothing of it to examine and the room that is the place's reason for a lid is not in the piece. Read from metadata at validation beside `DW0843`. An open box is never this refusal. Validation tier (exit 1). **Binding: roofed places bound, pieces with an enclosing space.** |
 | `DW0988` | **A roof the plan has no room for.** Two shapes of one claim, both read off the plan before any geometry: `roof` on a box whose `ceiling` is `open` — an open place has no lid to put a roof on; and a roof zone's course over the shell footprint lying in another place's play space or floor course — the stacked case, named with both places and the colliding courses. Eaves are not this refusal: they stop at a neighbour (§3). Validation tier (exit 1). **Binding: roofs declared, courses examined against places.** |
 
 **The model reads `structure_void` as the game does.** `assembled::placed_blocks`
@@ -402,6 +440,17 @@ Machine-checkable. Each names its instrument and **what would make it vacuous**.
     `siteplan.md` and `tools.md` carry the rows and the handing; the skill's
     step-9 text for the pin bump is in the scratch file the implementation names;
     `docs/demo-levels.md` carries the demo row.
+14. **Two seams at a corner bind.** A fixture place with a contact along one
+    face and a contact across the adjacent face, meeting at the place's corner
+    (the Narrows' shape), is bound to a piece answering both at their planes:
+    `contract-well-formed` and `DW0844` both green, the two declared openings
+    disjoint. Vacuous if the openings do not meet at a corner: the test asserts
+    the two shared faces' in-plane spans both reach the place's corner cell.
+15. **An all-open piece binds to an open place and not to a roofed one.** A
+    piece whose every space is `open` passes `contract-closure` with the stated
+    zero and binds green to an open box; the same piece bound to a box with a
+    `clearance` ceiling is refused `DW0989`. Vacuous if the piece has an
+    enclosing space: the test asserts the contract's envelope set is `{open}`.
 
 ## 12. Proof renders
 
