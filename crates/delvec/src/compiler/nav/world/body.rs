@@ -665,7 +665,38 @@ impl World {
     /// Vertical candidates stay `{0, -1, +1}` cells. A `+2`-cell move can be
     /// physically legal between two very thin floors, but leaving it out only ever
     /// *refuses* a route, never proves one — the safe direction.
+    ///
+    /// **And the climb** (spec-0099): the moves a body on a climbable makes on
+    /// cue — up, down, off the side, over the top, in from beside
+    /// ([`World::climb_moves_fp`]). A body holding on a climb in mid-air walks
+    /// nowhere: from a climb cell that is not standable only the climb's own
+    /// moves are taken. A world with no climbable answers exactly the walk.
     pub(in crate::compiler::nav) fn neighbors_fp(
+        &self,
+        c: [i32; 3],
+        fp: &Footprint,
+    ) -> Vec<[i32; 3]> {
+        if !self.has_climbs() {
+            return self.neighbors_walk_fp(c, fp);
+        }
+        let hanging = self.climb_cell_fp(c, fp) && !self.standable_fp(c, fp);
+        let mut out = if hanging {
+            Vec::new()
+        } else {
+            self.neighbors_walk_fp(c, fp)
+        };
+        for n in self.climb_moves_fp(c, fp) {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+        out
+    }
+
+    /// The **walk** half of [`World::neighbors_fp`]: standable cardinal
+    /// neighbours under the step rule, in the fixed order. What a body standing
+    /// on a floor does with its feet, and nothing a climb adds.
+    pub(in crate::compiler::nav) fn neighbors_walk_fp(
         &self,
         c: [i32; 3],
         fp: &Footprint,
@@ -735,9 +766,16 @@ impl World {
     /// it cannot see the places a player jumps, falls or wades into — which is
     /// what [`DW_BODY_CANNOT_LEAVE`] asks, in both directions of the same relation.
     ///
-    /// Diagonal jumps and climbing (ladders, vines) are not moves here: a place a
-    /// body reaches only by one of them is not seen, and a place it leaves only by
-    /// one is seen as unleavable.
+    /// **Holding** on a climb is the fourth state (spec-0099): a body in a climb
+    /// cell ([`World::climb_cell_fp`]) takes the climb's moves
+    /// ([`World::climb_moves_fp`]), steps off sideways into a fall, and lets go
+    /// at the bottom of a run that stands on nothing; and a body falling down a
+    /// column is caught by the first climb cell it reaches within
+    /// [`delvewright_dsl::metrics::climb_catch_fall_blocks`] — it holds there,
+    /// because a player who sneaks holds still.
+    ///
+    /// Diagonal jumps are not moves here: a place a body reaches only by one is
+    /// not seen, and a place it leaves only by one is seen as unleavable.
     pub fn body_moves(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
         self.moves_of(c, &Footprint::player(), true)
     }
@@ -785,17 +823,48 @@ impl World {
             if arrests(c[1] - 1) {
                 continue; // level ground beside: a walk, not a drop
             }
-            // The body's feet are at `c[1]`; a landing at cell y puts them at y + 1.
-            let landing = ((c[1] - 1 - deepest)..=(c[1] - 2))
-                .rev()
-                .find(|&y| arrests(y));
-            match landing {
-                Some(y) if self.lava.contains(&[side[0], y, side[2]]) => return Some((side, true)),
-                Some(_) => continue,
-                None => return Some((side, false)),
+            match self.fall_from(side[0], side[2], c[1], deepest) {
+                Some(lava) => return Some((side, lava)),
+                None => continue,
             }
         }
         None
+    }
+
+    /// Whether a body that steps into column `(x, z)` with its feet at `feet`
+    /// dies of it: `Some(true)` for lava, `Some(false)` for a fall no floor
+    /// arrests within `deepest`, `None` when it lives.
+    ///
+    /// A climbable on the way down catches the body ([`World::catch_fp`]) — the
+    /// game forgets the fall above it — and a body that does not hold on slides
+    /// to the bottom of the run and falls on from there with a fresh count
+    /// (spec-0099 §3.5). The blinded body this answers for does not sneak.
+    fn fall_from(&self, x: i32, z: i32, feet: i32, deepest: i32) -> Option<bool> {
+        let fp = Footprint::player();
+        let arrests = |y: i32| {
+            let cell = [x, y, z];
+            self.is_occupied(cell) || self.use_gates.contains(&cell)
+        };
+        let mut feet = feet;
+        loop {
+            // The body's feet are at `feet`; a landing at cell y puts them at y + 1.
+            let landing = ((feet - 1 - deepest)..=(feet - 1))
+                .rev()
+                .find(|&y| arrests(y));
+            let caught = self.catch_fp(x, z, feet - 1, i64::from(feet) * FULL_16, &fp);
+            match (landing, caught) {
+                (_, Some(hold)) if landing.is_none_or(|y| y < hold[1]) => {
+                    let bottom = self.climb_bottom(hold);
+                    if arrests(bottom[1] - 1) {
+                        return None; // the run stands on a floor
+                    }
+                    feet = bottom[1];
+                }
+                (Some(y), _) if self.lava.contains(&[x, y, z]) => return Some(true),
+                (Some(_), _) => return None,
+                (None, _) => return Some(false),
+            }
+        }
     }
 
     /// **Everywhere a mob in `c` can put itself in one movement** — the
@@ -872,8 +941,12 @@ impl World {
         let deepest = unarmoured_survivable_fall_blocks() as i32;
         let bottom = from.div_euclid(FULL_16) as i32 - deepest - 1;
         let mut y = top;
+        let catch = self.catch_fp(x, z, top, from, fp);
         while y >= bottom {
             let cell = [x, y, z];
+            if catch == Some(cell) {
+                return catch;
+            }
             if self.is_occupied(cell) {
                 if self.is_water_surface(cell) {
                     return Some(cell);
@@ -945,6 +1018,14 @@ impl World {
         }
         out.extend(self.neighbors_fp(c, fp));
         let here = self.feet_16_fp(c, fp);
+        let hanging = self.has_climbs() && self.climb_cell_fp(c, fp) && !self.standable_fp(c, fp);
+        // Let go at the bottom of a run that stands on nothing, and drop.
+        if hanging
+            && !self.climb_cell_fp([c[0], c[1] - 1, c[2]], fp)
+            && let Some(n) = settle(c[0], c[2], c[1] - 1, here)
+        {
+            out.push(n);
+        }
         for (dx, dz) in HORIZ {
             let (x1, z1) = (c[0] + dx, c[2] + dz);
             // Wade in: water at the body's feet in the next column, rising to
@@ -961,8 +1042,9 @@ impl World {
             {
                 out.push(n);
             }
-            // Jump: launch headroom, then gaps of 1.. columns. A mob makes none.
-            if !gap_jumps || !clear(c[0], c[1], c[1] + 2, c[2]) {
+            // Jump: launch headroom, then gaps of 1.. columns. A mob makes none,
+            // and nor does a body holding on a climb — jump held there climbs.
+            if !gap_jumps || hanging || !clear(c[0], c[1], c[1] + 2, c[2]) {
                 continue;
             }
             let widest = JUMP_REACH.iter().map(|(_, g)| *g).max().unwrap_or(0) as i32;

@@ -10,7 +10,7 @@ use crate::compiler::nav::route::{LegRoute, VisitedPos};
 use crate::compiler::nav::world::World;
 use crate::compiler::nav::world::body::SNAP_RADIUS;
 use crate::compiler::nav::{
-    DW_CRITICAL_UNROUTABLE, DW_FLUID_FILL_ON_CRITICAL_PATH, DW_GATE_NEVER_OPENED,
+    DW_CLIMB_UNHELD, DW_CRITICAL_UNROUTABLE, DW_FLUID_FILL_ON_CRITICAL_PATH, DW_GATE_NEVER_OPENED,
     DW_LETHAL_ON_CRITICAL_PATH, DW_UNFORCED_FOOTING,
 };
 use crate::compiler::plan::{Plan, RegionEvents, Step};
@@ -58,6 +58,7 @@ pub(in crate::compiler::nav) fn route_walked_legs(
                 .copied()
                 .filter(|&c| leg_world.is_use_gate(c))
                 .collect();
+            let climbs = leg_world.climb_runs(&cells);
             out.push((
                 LegRoute {
                     from: pair[0].pos,
@@ -65,6 +66,7 @@ pub(in crate::compiler::nav) fn route_walked_legs(
                     to_step: pair[1].src_step,
                     cells,
                     use_gates,
+                    climbs,
                     // The leg carries the world it was PROVEN over, not just the
                     // route. Anything that re-judges these cells has to ask this
                     // value for the world to judge them in — see
@@ -1216,6 +1218,34 @@ fn judge_leg(
                          silence the proof."
                     ),
                 });
+            }
+            // Then the climb counterfactual (spec-0099): the same leg with every
+            // climbable the world does NOT keep credited as if it hung there. A leg
+            // that routes there and nowhere else is closed by a ladder or a vine
+            // with nothing to hang on — the author can see it in the piece, and
+            // the game removes it at the first shape update. The repair is its
+            // hold, never the route.
+            if leg_world.has_unheld_climbs() {
+                let credited = leg_world.with_unheld_climbs();
+                if let (Some(s2), Some(g2)) = (
+                    credited.snap_endpoint(from, false),
+                    credited.snap_endpoint(to, pair[1].talk_to),
+                ) && let Some(cells) = credited.find_path(s2, g2)
+                {
+                    let named = leg_world.unheld_climbs_words(&cells);
+                    return Err(Failure {
+                        code: DW_CLIMB_UNHELD,
+                        message: format!(
+                            "critical path: the only route from {from:?} (floor {start:?}) to \
+                             {to:?} (floor {goal:?}) climbs a climbable the world does not keep \
+                             — {named}. The game removes a ladder or a vine whose hold fails at \
+                             the first shape update that reaches it, so the climb the piece shows \
+                             is not there to take. Give it its hold — a full face on the block \
+                             it hangs on — or route the forced path another way; do NOT move the \
+                             objective to dodge the climb."
+                        ),
+                    });
+                }
             }
             // A leg the fluid did not *uniquely* close is still a leg a fluid may
             // have walled: `DW0544` fires only when the box supplied FOOTING, and a

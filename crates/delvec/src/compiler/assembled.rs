@@ -1102,6 +1102,190 @@ pub struct Occupancy {
     /// why every other reader takes `flooded` whole; the one that asks where a
     /// body can FLOAT has to tell them apart.
     pub lava: BTreeSet<[i32; 3]>,
+    /// Every climbable the world **keeps** (spec-0099), with what keeps it — a
+    /// ladder, a vine, a weeping, twisting or cave vine whose `canSurvive` rule
+    /// holds over this block map, transitively ([`climb_holds`]). Not a
+    /// collision class and disjoint from all of them: the cell is empty to a
+    /// body, and what this adds is that a body in it climbs.
+    pub climb: BTreeMap<[i32; 3], ClimbHold>,
+    /// Every climbable the block map holds and the world does **not** keep: the
+    /// game removes it at the first shape update it receives, so the model reads
+    /// its cell as air. Carried, with the block, so a route that needed it can
+    /// name it (`DW0991`) rather than report an unroutable leg over a ladder the
+    /// author can see in the piece.
+    pub unheld_climb: BTreeMap<[i32; 3], String>,
+}
+
+/// **What keeps one climbable where it is** (spec-0099 §3.2), as the cells its
+/// `canSurvive` rule reads. Any one alternative holding is enough.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClimbHold {
+    /// The block state, as the map holds it.
+    pub block: String,
+    /// What kind of climbable it is ([`delvewright_dsl::blockshape::climbable`]).
+    pub kind: delvewright_dsl::blockshape::Climbable,
+    /// The alternatives, any one of which keeps it: `(face, hold)`, the face
+    /// being the vine face the hold serves (`None` for every other kind).
+    pub holds: Vec<(Option<delvewright_dsl::blockshape::Face>, Hold)>,
+}
+
+/// One thing a climbable hangs on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hold {
+    /// A block whose face toward the climbable is full: it holds as long as the
+    /// block is there.
+    Block([i32; 3]),
+    /// Another climbable of the same plant (or, for a vine face, the vine above
+    /// carrying the same face): it holds as long as that one is kept.
+    Climb([i32; 3]),
+}
+
+impl ClimbHold {
+    /// The way the climbable faces, for a ladder — what a body climbing it
+    /// pushes against is the block behind it, on the opposite side.
+    pub fn ladder_facing(&self) -> Option<delvewright_dsl::blockshape::Face> {
+        match self.kind {
+            delvewright_dsl::blockshape::Climbable::Ladder { facing } => Some(facing),
+            _ => None,
+        }
+    }
+}
+
+/// **Which climbables a block map keeps** (spec-0099 §3.2): every cell whose
+/// block is [`Collision::Climbable`], split into those whose pinned
+/// `canSurvive` rule holds — read transitively, to the fixed point the game's
+/// own shape updates cascade to — and those whose rule does not.
+///
+/// The rules, each **cited** from the pinned jar (`docs/specs/spec-0099`):
+///
+/// * `ladder[facing=F]` — the block behind it answers `isFaceSturdy(F)`
+///   ([`delvewright_dsl::blockshape::face_is_sturdy`]);
+/// * `vine` — each face it sets is held by a neighbour whose facing face is full
+///   to `MultifaceBlock.canAttachTo` (sturdy, or a full collision face), or by
+///   the vine above carrying the same face; it is kept while any face is held.
+///   The `up` face is **not** counted, which can only drop a vine the game keeps;
+/// * a weeping, twisting or cave vine — the cell it grows from is the same
+///   plant, or answers `isFaceSturdy(growth)`.
+///
+/// The chains are read to their fixed point rather than one step: the game's
+/// own check reads only the neighbour, and a chain whose top has nothing to hang
+/// on survives until a shape update reaches it and then falls a block at a time.
+/// A model that credited it would credit a climb the first update removes.
+pub fn climb_holds(
+    blocks: &BlockMap,
+) -> (BTreeMap<[i32; 3], ClimbHold>, BTreeMap<[i32; 3], String>) {
+    use delvewright_dsl::blockshape::{Climbable, Face, climbable, face_is_full, face_is_sturdy};
+    let add = |c: [i32; 3], d: [i32; 3]| [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
+    let name_at = |c: [i32; 3]| blocks.get(&c).map(|b| &**b).unwrap_or("minecraft:air");
+    let mut cand: BTreeMap<[i32; 3], ClimbHold> = BTreeMap::new();
+    for (cell, name) in blocks {
+        if collision_class(name) != Collision::Climbable {
+            continue;
+        }
+        let Some(kind) = climbable(name) else {
+            continue;
+        };
+        let mut holds = Vec::new();
+        match kind {
+            Climbable::Ladder { facing } => {
+                let behind = add(*cell, facing.opposite().offset());
+                if face_is_sturdy(name_at(behind), facing) {
+                    holds.push((None, Hold::Block(behind)));
+                }
+            }
+            Climbable::Vine { faces } => {
+                for (f, set) in Face::HORIZONTAL.into_iter().zip(faces) {
+                    if !set {
+                        continue;
+                    }
+                    let n = add(*cell, f.offset());
+                    let nb = name_at(n);
+                    if face_is_sturdy(nb, f.opposite()) || face_is_full(nb, f.opposite()) {
+                        holds.push((Some(f), Hold::Block(n)));
+                    }
+                    let above = add(*cell, Face::Up.offset());
+                    if matches!(
+                        climbable(name_at(above)),
+                        Some(Climbable::Vine { faces: up }) if up[Face::HORIZONTAL.iter().position(|h| *h == f).expect("horizontal")]
+                    ) {
+                        holds.push((Some(f), Hold::Climb(above)));
+                    }
+                }
+            }
+            Climbable::Growing(plant) => {
+                let from = add(*cell, plant.growth().opposite().offset());
+                let fb = name_at(from);
+                if plant
+                    .members()
+                    .contains(&delvewright_dsl::blockshape::base_id(fb))
+                {
+                    holds.push((None, Hold::Climb(from)));
+                } else if face_is_sturdy(fb, plant.growth()) {
+                    holds.push((None, Hold::Block(from)));
+                }
+            }
+            Climbable::Scaffolding => continue,
+        }
+        cand.insert(
+            *cell,
+            ClimbHold {
+                block: name.to_string(),
+                kind,
+                holds,
+            },
+        );
+    }
+    let kept = keep_climbs(cand.keys().copied().collect(), &cand, &BTreeSet::new());
+    let mut held = BTreeMap::new();
+    let mut unheld = BTreeMap::new();
+    for (c, h) in cand {
+        if kept.contains(&c) {
+            held.insert(c, h);
+        } else {
+            unheld.insert(c, h.block);
+        }
+    }
+    (held, unheld)
+}
+
+/// The climbables of `alive` that stay kept, to the fixed point, when the
+/// blocks in `gone` are removed. A climbable is kept while one of its holds is
+/// alive: a `Block` hold while its cell is not in `gone`, a `Climb` hold while
+/// the climbable it names is kept — and, for a vine, kept ON THE SAME FACE, which
+/// is why the fixed point runs over `(cell, face)` pairs rather than cells. The
+/// one fixed point both the assembled world ([`climb_holds`]) and a runtime clear
+/// (`nav::World::with_cleared`) take.
+pub fn keep_climbs(
+    alive: BTreeSet<[i32; 3]>,
+    holds: &BTreeMap<[i32; 3], ClimbHold>,
+    gone: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    type Key = ([i32; 3], Option<delvewright_dsl::blockshape::Face>);
+    let mut live: BTreeSet<Key> = alive
+        .iter()
+        .filter(|c| !gone.contains(*c))
+        .filter_map(|c| holds.get(c).map(|h| (c, h)))
+        .flat_map(|(c, h)| h.holds.iter().map(move |(f, _)| (*c, *f)))
+        .collect();
+    loop {
+        let next: BTreeSet<Key> = live
+            .iter()
+            .copied()
+            .filter(|(c, f)| {
+                holds[c].holds.iter().any(|(hf, hold)| {
+                    hf == f
+                        && match hold {
+                            Hold::Block(b) => !gone.contains(b),
+                            Hold::Climb(u) => live.contains(&(*u, *f)),
+                        }
+                })
+            })
+            .collect();
+        if next == live {
+            return live.into_iter().map(|(c, _)| c).collect();
+        }
+        live = next;
+    }
 }
 
 /// The nav occupancy of the settled assembled world — see
@@ -1210,6 +1394,19 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
                     lava_sources.insert(*cell);
                 }
             }
+            // A climbable's cell is empty to a body (spec-0099); whether a body in
+            // it climbs is `climb_holds`'s to say, below. A ladder dams water —
+            // the pinned `FlowingFluid.canHoldAnyFluid` lists `LADDER` among the
+            // blocks no fluid enters — and a vine does not: water flows into its
+            // cell, and the flooded cell is then no climb.
+            Collision::Climbable => {
+                if matches!(
+                    delvewright_dsl::blockshape::climbable(name),
+                    Some(delvewright_dsl::blockshape::Climbable::Ladder { .. })
+                ) {
+                    barriers.insert(*cell);
+                }
+            }
             // A pressure plate / tripwire / carpet / candle / torch / thin snow
             // drift is walkable floor decoration, not an obstacle — leave its
             // cell passable so the trap-trigger cell stays on the walkable path
@@ -1248,6 +1445,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
             .filter(|c| flooded.contains(c))
             .collect()
     };
+    let (climb, unheld_climb) = climb_holds(blocks);
     Occupancy {
         solid,
         tall,
@@ -1256,6 +1454,8 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         partial,
         waterloggable,
         lava,
+        climb,
+        unheld_climb,
     }
 }
 
@@ -2576,15 +2776,17 @@ mod tests {
             "only the floor under them is solid"
         );
 
-        // The other direction, and it is what keeps this honest: vanilla gives a
-        // lantern and a ladder collision boxes this table has NOT read out of the
-        // pin, so they stay full cubes. Over-blocking is the direction this
-        // module's errors are allowed to run.
+        // The other direction, and it is what keeps this honest: a lantern is a
+        // floor at its measured top, never a passage. A ladder is a passage and
+        // never a floor (spec-0099) — and this one, facing north with nothing
+        // south of it to hang on, is not even a climb: the world does not keep it.
         let mut b = floor(63, 0, 1, 0, 0);
         b.insert([0, 64, 0], "minecraft:lantern[hanging=false]".to_string());
         b.insert([1, 64, 0], "minecraft:ladder[facing=north]".to_string());
         let occ = occupancy_of(b, &BTreeSet::new());
-        assert!(occ.solid.contains(&[0, 64, 0]) && occ.solid.contains(&[1, 64, 0]));
+        assert!(occ.solid.contains(&[0, 64, 0]));
+        assert!(!occ.solid.contains(&[1, 64, 0]) && !occ.climb.contains_key(&[1, 64, 0]));
+        assert!(occ.unheld_climb.contains_key(&[1, 64, 0]));
     }
 
     #[test]

@@ -6,6 +6,8 @@
 
 pub(in crate::compiler::nav) mod body;
 pub use body::*;
+pub(in crate::compiler::nav) mod climb;
+pub use climb::*;
 
 use crate::compiler::cellset::{CellMap, CellSet};
 use crate::compiler::nav::route::region::RegionState;
@@ -310,6 +312,18 @@ pub struct World {
     /// question, [`World::body_moves`]: a body that enters water floats at its
     /// surface, and one that enters lava does not come out of it at all.
     lava: CellSet,
+    /// The climbables the assembled world **keeps**, with what keeps each
+    /// (spec-0099, [`crate::compiler::assembled::climb_holds`]). Shared, never
+    /// narrowed: a derived world narrows `climb`, not this.
+    pub(in crate::compiler::nav) climb_holds: ClimbHolds,
+    /// The subset of `climb_holds` this view still keeps: a runtime write that
+    /// takes away what a climbable hangs on takes the climbable with it
+    /// ([`World::drop_unheld_climbs`]). A body whose feet are in one of these
+    /// cells climbs ([`World::climb_cell_fp`]).
+    pub(in crate::compiler::nav) climb: CellSet,
+    /// The climbables the block map holds and the world does not keep — read as
+    /// air. Carried only so a route that needed one can name it (`DW0991`).
+    pub(in crate::compiler::nav) unheld_climb: UnheldClimbs,
     /// Cells inside a declared **lethal volume** (DSL v0.10, spec-0031).
     ///
     /// A volume that kills whatever enters it is, for a route, a volume no route
@@ -437,6 +451,8 @@ struct Cells {
     partial: CellMap<u8>,
     waterloggable: CellSet,
     lava: CellSet,
+    climb_holds: ClimbHolds,
+    unheld_climb: UnheldClimbs,
 }
 
 /// **Everything a [`World`] carries that is not a block** — the premises the
@@ -720,6 +736,9 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            climb_holds: self.climb_holds.clone(),
+            climb: self.climb.clone(),
+            unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -919,6 +938,8 @@ impl World {
                 partial: occ.partial.into(),
                 waterloggable: occ.waterloggable.into(),
                 lava: occ.lava.into(),
+                climb_holds: std::sync::Arc::new(occ.climb),
+                unheld_climb: std::sync::Arc::new(occ.unheld_climb),
             },
             premises,
         )
@@ -938,6 +959,8 @@ impl World {
                 partial: self.partial.clone(),
                 waterloggable: self.waterloggable.clone(),
                 lava: self.lava.clone(),
+                climb_holds: self.climb_holds.clone(),
+                unheld_climb: self.unheld_climb.clone(),
             },
             premises,
         )
@@ -960,6 +983,9 @@ impl World {
             partial: cells.partial,
             waterloggable: cells.waterloggable,
             lava: cells.lava,
+            climb: cells.climb_holds.keys().copied().collect(),
+            climb_holds: cells.climb_holds,
+            unheld_climb: cells.unheld_climb,
             lethal: premises
                 .lethal_regions
                 .iter()
@@ -1081,7 +1107,7 @@ impl World {
         // may not undo them (see `World::pinned`).
         let mut pinned = self.pinned.clone();
         pinned.extend(extra.iter().copied());
-        World {
+        let mut w = World {
             solid,
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
@@ -1089,6 +1115,9 @@ impl World {
             partial,
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            climb_holds: self.climb_holds.clone(),
+            climb: self.climb.clone(),
+            unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1104,7 +1133,9 @@ impl World {
             ambient: self.ambient.clone(),
             base: self.base,
             built: self.built.clone(),
-        }
+        };
+        w.drop_unheld_climbs(extra);
+        w
     }
 
     /// A copy of this world with `extra` cells **emptied of blocks** — the dual of
@@ -1133,6 +1164,9 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            climb_holds: self.climb_holds.clone(),
+            climb: self.climb.clone(),
+            unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1158,6 +1192,12 @@ impl World {
             w.use_gates.remove(c);
             w.partial.remove(c);
         }
+        let owned: BTreeSet<[i32; 3]> = extra
+            .iter()
+            .filter(|c| !self.pinned.contains(c))
+            .copied()
+            .collect();
+        w.drop_unheld_climbs(&owned);
         w
     }
 
@@ -1185,6 +1225,9 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            climb_holds: self.climb_holds.clone(),
+            climb: self.climb.clone(),
+            unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1211,6 +1254,7 @@ impl World {
             w.flood_written.insert(*c);
         }
         w.flood_regions.extend_from_slice(regions);
+        w.drop_unheld_climbs(extra);
         w
     }
 
@@ -1240,6 +1284,9 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            climb_holds: self.climb_holds.clone(),
+            climb: self.climb.clone(),
+            unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1266,6 +1313,7 @@ impl World {
             // This proof's premise from here on, exactly as a seal or a flood is.
             w.pinned.insert(*c);
         }
+        w.drop_unheld_climbs(extra);
         w
     }
 
@@ -1342,6 +1390,9 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            climb_holds: self.climb_holds.clone(),
+            climb: self.climb.clone(),
+            unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1418,6 +1469,9 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            climb_holds: self.climb_holds.clone(),
+            climb: self.climb.clone(),
+            unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
@@ -1470,6 +1524,8 @@ impl World {
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
                 lava: BTreeSet::new(),
+                climb: BTreeMap::new(),
+                unheld_climb: BTreeMap::new(),
             },
             Premises::geometry_only(),
         )

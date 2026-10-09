@@ -40,7 +40,14 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
             // Force-keep the gate mouth cells alongside the use-gate cells, so the
             // hop that actually crosses a clocked span is SHORT (see
             // [`gate_mouth_cells`]).
-            let wps: Vec<Value> = leg_waypoints(&leg.cells, &leg.use_gates, &gates)
+            // A climb's two ends are interaction points like a use-gate: the
+            // harness takes hold at `from` and lets go at `to` (spec-0099).
+            let mut keep = leg.use_gates.clone();
+            for run in &leg.climbs {
+                keep.push(run.from);
+                keep.push(run.to);
+            }
+            let wps: Vec<Value> = leg_waypoints(&leg.cells, &keep, &gates)
                 .into_iter()
                 .map(|c| json!(c))
                 .collect();
@@ -56,6 +63,16 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
             // cells first-class instead of leaving them workaround folklore.
             if !leg.use_gates.is_empty() {
                 leg_json["use_gates"] = json!(leg.use_gates);
+            }
+            // spec-0099: the climbs the proven route takes, in route order. Each
+            // names where the body takes hold (`from`) and lets go (`to`) — both
+            // kept waypoints — the lowest and highest cell it holds in, the block,
+            // and a ladder's facing (a body climbing it faces the other way).
+            // Emitted only when present, so a campaign with no climb stays
+            // byte-identical.
+            if !leg.climbs.is_empty() {
+                leg_json["climbs"] =
+                    json!(leg.climbs.iter().map(climb_json).collect::<Vec<Value>>());
             }
             // spec-0016 §4 timed gates: the gates whose clock can
             // physically interrupt THIS leg, in declared order. See
@@ -94,6 +111,34 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
         );
     }
     root
+}
+
+/// One exported climb (spec-0099): where the body takes hold and lets go, the
+/// column it holds in, the block, and a ladder's facing.
+fn climb_json(run: &crate::compiler::nav::ClimbRun) -> Value {
+    let bottom = run
+        .cells
+        .iter()
+        .min_by_key(|c| c[1])
+        .copied()
+        .unwrap_or(run.from);
+    let top = run
+        .cells
+        .iter()
+        .max_by_key(|c| c[1])
+        .copied()
+        .unwrap_or(run.to);
+    let mut v = json!({
+        "from": run.from,
+        "to": run.to,
+        "bottom": bottom,
+        "top": top,
+        "block": run.block,
+    });
+    if let Some(f) = run.facing {
+        v["facing"] = json!(f.name());
+    }
+    v
 }
 
 /// One exported `timed-gate` (spec-0016 §4): the region its clock fills/clears in

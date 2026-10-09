@@ -2549,6 +2549,8 @@ mod tests {
                 partial: BTreeMap::new(),
                 waterloggable: BTreeSet::new(),
                 lava: BTreeSet::new(),
+                climb: Default::default(),
+                unheld_climb: Default::default(),
             },
             Premises::geometry_only(),
         )

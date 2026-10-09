@@ -44,6 +44,7 @@
 //! | [`Collision::TallBarrier`] (fence, wall) | no | **no** | — |
 //! | [`Collision::FenceGate`] | **yes** | no | — |
 //! | [`Collision::Fluid`] | no | no | — |
+//! | [`Collision::Climbable`] (ladder, vines) | yes | no | — (what holds the body is the climb) |
 //!
 //! Two rows are not the naive complement of each other, and that is the whole
 //! reason there are two columns. A **fluid** cell is a cell whose water or lava
@@ -572,44 +573,72 @@ pub struct MeasuredExtent {
     pub span: Option<(Sixteenths, Sixteenths)>,
 }
 
-/// The measured table, keyed by namespaced block id: each row's distinguishing
-/// properties and the extent they select.
-type MeasuredRows =
-    std::collections::BTreeMap<String, Vec<(Vec<(String, String)>, MeasuredExtent)>>;
+/// A per-blockstate table measured from the pinned jar, keyed by namespaced
+/// block id: each row's distinguishing properties and the value they select.
+/// Both measured tables in this module are this shape, written by the one
+/// collapse in `tools/maintenance/dump-collision-tops.py`, and read by the one
+/// lookup [`pinned_row`].
+type PinnedRows<T> = std::collections::BTreeMap<String, Vec<(Vec<(String, String)>, T)>>;
 
-fn measured_rows() -> &'static MeasuredRows {
-    static ROWS: std::sync::OnceLock<MeasuredRows> = std::sync::OnceLock::new();
+/// Parse a measured table: `#` lines skipped, every other line
+/// `block[props]<TAB>a<TAB>b<TAB>count`, the two value columns handed to `value`.
+fn pinned_rows<T>(tsv: &str, what: &str, value: impl Fn(&str, &str) -> T) -> PinnedRows<T> {
+    let mut out = PinnedRows::new();
+    for line in tsv.lines().filter(|l| !l.starts_with('#')) {
+        let cols: Vec<&str> = line.split('\t').collect();
+        let [state, a, b, _count] = cols[..] else {
+            panic!("{what} table row is not four columns: {line:?}");
+        };
+        let id = base_id(state).to_string();
+        let props: Vec<(String, String)> = state
+            .find('[')
+            .map(|open| {
+                state[open + 1..state.len() - 1]
+                    .split(',')
+                    .filter_map(|kv| kv.split_once('='))
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.entry(id).or_default().push((props, value(a, b)));
+    }
+    out
+}
+
+/// The row of a measured table this block state selects, or `None` when the
+/// table does not hold the block. A property the name leaves out is read at the
+/// block's pinned default ([`crate::blocks::BlockRegistry::default_state`]) —
+/// what the game resolves it to.
+fn pinned_row<'r, T>(rows: &'r PinnedRows<T>, name: &str) -> Option<&'r T> {
+    let id = base_id(name);
+    let id = if id.contains(':') {
+        std::borrow::Cow::Borrowed(id)
+    } else {
+        std::borrow::Cow::Owned(format!("minecraft:{id}"))
+    };
+    let rows = rows.get(id.as_ref())?;
+    let defaults = crate::blocks::BlockRegistry::v1_21_11().default_state(&id);
+    rows.iter()
+        .find(|(props, _)| {
+            props.iter().all(|(k, v)| {
+                state_value(name, k).or_else(|| defaults.and_then(|d| d.get(k)).map(String::as_str))
+                    == Some(v.as_str())
+            })
+        })
+        .map(|(_, e)| e)
+}
+
+fn measured_rows() -> &'static PinnedRows<MeasuredExtent> {
+    static ROWS: std::sync::OnceLock<PinnedRows<MeasuredExtent>> = std::sync::OnceLock::new();
     ROWS.get_or_init(|| {
-        let mut out = MeasuredRows::new();
-        for line in COLLISION_TSV.lines().filter(|l| !l.starts_with('#')) {
-            let cols: Vec<&str> = line.split('\t').collect();
-            let [state, lo, hi, _count] = cols[..] else {
-                panic!("collision table row is not four columns: {line:?}");
-            };
-            let id = base_id(state).to_string();
-            let props: Vec<(String, String)> = state
-                .find('[')
-                .map(|open| {
-                    state[open + 1..state.len() - 1]
-                        .split(',')
-                        .filter_map(|kv| kv.split_once('='))
-                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let span = if lo == "-" {
-                None
-            } else {
-                Some((
+        pinned_rows(COLLISION_TSV, "collision", |lo, hi| MeasuredExtent {
+            span: (lo != "-").then(|| {
+                (
                     Sixteenths::parse(lo).expect("collision table bottom parses"),
                     Sixteenths::parse(hi).expect("collision table top parses"),
-                ))
-            };
-            out.entry(id)
-                .or_default()
-                .push((props, MeasuredExtent { span }));
-        }
-        out
+                )
+            }),
+        })
     })
 }
 
@@ -620,22 +649,7 @@ fn measured_rows() -> &'static MeasuredRows {
 /// ([`crate::blocks::BlockRegistry::default_state`]) — what the game resolves it
 /// to — so a bare `minecraft:pointed_dripstone` is the upward tip it places.
 pub fn measured_collision(name: &str) -> Option<MeasuredExtent> {
-    let id = base_id(name);
-    let id = if id.contains(':') {
-        std::borrow::Cow::Borrowed(id)
-    } else {
-        std::borrow::Cow::Owned(format!("minecraft:{id}"))
-    };
-    let rows = measured_rows().get(id.as_ref())?;
-    let defaults = crate::blocks::BlockRegistry::v1_21_11().default_state(&id);
-    rows.iter()
-        .find(|(props, _)| {
-            props.iter().all(|(k, v)| {
-                state_value(name, k).or_else(|| defaults.and_then(|d| d.get(k)).map(String::as_str))
-                    == Some(v.as_str())
-            })
-        })
-        .map(|(_, e)| *e)
+    pinned_row(measured_rows(), name).copied()
 }
 
 /// The measured floor height of a block whose collision box rests on its cell
@@ -651,6 +665,270 @@ fn measured_partial_floor_16(name: &str) -> Option<u8> {
         return None;
     }
     u8::try_from(top).ok()
+}
+
+// ---------------------------------------------------------------------------
+// What a body climbs, and what holds it there (spec-0099)
+// ---------------------------------------------------------------------------
+
+/// **The blocks a body climbs**, in pinned Minecraft Java 1.21.11: the members
+/// of the block tag `#minecraft:climbable`, namespaced, in the tag's own order.
+///
+/// **Cited**: `data/minecraft/tags/block/climbable.json` inside the pinned server
+/// jar (`versions.toml` `server_jar_sha256` `f83b8e09…1726`). Being in this tag
+/// is the whole of what makes a body climb: `LivingEntity.onClimbable()` answers
+/// true when the block in the body's FEET cell (`getInBlockState()` at
+/// `blockPosition()`) is in it, and the one other case — an open trapdoor over a
+/// ladder of the same facing (`trapdoorUsableAsLadder`) — is not modelled
+/// (spec-0099 §3.4).
+pub const CLIMBABLE_1_21_11: &[&str] = &[
+    "minecraft:ladder",
+    "minecraft:vine",
+    "minecraft:scaffolding",
+    "minecraft:weeping_vines",
+    "minecraft:weeping_vines_plant",
+    "minecraft:twisting_vines",
+    "minecraft:twisting_vines_plant",
+    "minecraft:cave_vines",
+    "minecraft:cave_vines_plant",
+];
+
+/// One of a block's six faces, in the order the face table spells them
+/// (`d u n s w e`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Face {
+    /// `-y`.
+    Down,
+    /// `+y`.
+    Up,
+    /// `-z`.
+    North,
+    /// `+z`.
+    South,
+    /// `-x`.
+    West,
+    /// `+x`.
+    East,
+}
+
+impl Face {
+    /// The four horizontal faces, in the table's order.
+    pub const HORIZONTAL: [Face; 4] = [Face::North, Face::South, Face::West, Face::East];
+
+    /// The unit step from a cell to the neighbour across this face.
+    pub fn offset(self) -> [i32; 3] {
+        match self {
+            Face::Down => [0, -1, 0],
+            Face::Up => [0, 1, 0],
+            Face::North => [0, 0, -1],
+            Face::South => [0, 0, 1],
+            Face::West => [-1, 0, 0],
+            Face::East => [1, 0, 0],
+        }
+    }
+
+    /// The face on the other side.
+    pub fn opposite(self) -> Face {
+        match self {
+            Face::Down => Face::Up,
+            Face::Up => Face::Down,
+            Face::North => Face::South,
+            Face::South => Face::North,
+            Face::West => Face::East,
+            Face::East => Face::West,
+        }
+    }
+
+    /// The face's name as a blockstate property spells it (`north`, …).
+    pub fn name(self) -> &'static str {
+        match self {
+            Face::Down => "down",
+            Face::Up => "up",
+            Face::North => "north",
+            Face::South => "south",
+            Face::West => "west",
+            Face::East => "east",
+        }
+    }
+
+    /// The face a blockstate value names, or `None`.
+    pub fn from_name(name: &str) -> Option<Face> {
+        [
+            Face::Down,
+            Face::Up,
+            Face::North,
+            Face::South,
+            Face::West,
+            Face::East,
+        ]
+        .into_iter()
+        .find(|f| f.name() == name)
+    }
+
+    fn letter(self) -> char {
+        self.name().chars().next().expect("a face has a name")
+    }
+}
+
+/// The three plants that grow a column of themselves, a head and a body block
+/// each (`GrowingPlantHeadBlock` / `GrowingPlantBodyBlock`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GrowingVine {
+    /// `weeping_vines` / `weeping_vines_plant` — grows down.
+    Weeping,
+    /// `twisting_vines` / `twisting_vines_plant` — grows up.
+    Twisting,
+    /// `cave_vines` / `cave_vines_plant` — grows down.
+    Cave,
+}
+
+impl GrowingVine {
+    /// The plant's two block ids, head first.
+    pub fn members(self) -> [&'static str; 2] {
+        match self {
+            GrowingVine::Weeping => ["minecraft:weeping_vines", "minecraft:weeping_vines_plant"],
+            GrowingVine::Twisting => ["minecraft:twisting_vines", "minecraft:twisting_vines_plant"],
+            GrowingVine::Cave => ["minecraft:cave_vines", "minecraft:cave_vines_plant"],
+        }
+    }
+
+    /// The direction the plant grows. **Cited**: the `growthDirection` each
+    /// head and body block hands `GrowingPlantBlock`'s constructor in the pinned
+    /// jar — `Direction.DOWN` for weeping and cave vines, `UP` for twisting.
+    pub fn growth(self) -> Face {
+        match self {
+            GrowingVine::Twisting => Face::Up,
+            GrowingVine::Weeping | GrowingVine::Cave => Face::Down,
+        }
+    }
+}
+
+/// **What holds a climbable where it is** — the rule each kind's
+/// `canSurvive` states in the pinned jar. A climbable whose rule fails is
+/// removed by the game at the next shape update it receives, so a model that
+/// credits it credits a climb that is not there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Climbable {
+    /// `ladder[facing=F]`. **Cited**, `LadderBlock.canSurvive`: the block at
+    /// `pos.relative(F.getOpposite())` answers `isFaceSturdy(…, F)` — the ladder
+    /// hangs on the face of the block behind it. Its collision box is a
+    /// 3/16-thick panel against that face (`Block.boxZ(16, 13, 16)` rotated to
+    /// the facing), so a body centred in the cell is clear of it.
+    Ladder {
+        /// The way the ladder faces: away from the block that holds it.
+        facing: Face,
+    },
+    /// `vine`, with the horizontal faces its state sets. **Cited**,
+    /// `VineBlock.canSupportAtFace`: a face is held when the neighbour across
+    /// it is a full face to `MultifaceBlock.canAttachTo` (its support shape's
+    /// face, or its collision shape's), or when the vine above carries the same
+    /// face. The `up` face is not counted as a hold here (spec-0099 §3.2).
+    Vine {
+        /// The horizontal faces the state sets, in [`Face::HORIZONTAL`] order.
+        faces: [bool; 4],
+    },
+    /// A growing plant's head or body. **Cited**, `GrowingPlantBlock.canSurvive`:
+    /// the block it grows from — `pos.relative(growth.getOpposite())` — is the
+    /// same plant, or answers `isFaceSturdy(…, growth)`.
+    Growing(GrowingVine),
+    /// `scaffolding`: in the tag, and **not** modelled as a climb (spec-0099
+    /// §3.3) — the nav model reads it as the full cube its stable shape is.
+    Scaffolding,
+}
+
+/// The [`Climbable`] a block state is, or `None` when it is not in
+/// [`CLIMBABLE_1_21_11`].
+pub fn climbable(name: &str) -> Option<Climbable> {
+    let id = base_id(name);
+    let ns = if id.contains(':') {
+        std::borrow::Cow::Borrowed(id)
+    } else {
+        std::borrow::Cow::Owned(format!("minecraft:{id}"))
+    };
+    if !CLIMBABLE_1_21_11.contains(&ns.as_ref()) {
+        return None;
+    }
+    Some(match ns.as_ref() {
+        "minecraft:ladder" => Climbable::Ladder {
+            // `facing` defaults to north (the pinned default state).
+            facing: state_value(name, "facing")
+                .and_then(Face::from_name)
+                .unwrap_or(Face::North),
+        },
+        "minecraft:vine" => Climbable::Vine {
+            faces: Face::HORIZONTAL.map(|f| state_value(name, f.name()) == Some("true")),
+        },
+        "minecraft:scaffolding" => Climbable::Scaffolding,
+        other => Climbable::Growing(
+            [
+                GrowingVine::Weeping,
+                GrowingVine::Twisting,
+                GrowingVine::Cave,
+            ]
+            .into_iter()
+            .find(|g| g.members().contains(&other))
+            .expect("every other member of the tag is a growing vine"),
+        ),
+    })
+}
+
+/// The pinned jar's full-face table: `crates/dsl/data/faces-1.21.11.tsv`,
+/// written by `tools/maintenance/dump-faces.py` (provenance in
+/// `crates/delvec/data/PROVENANCE.md`).
+const FACES_TSV: &str = include_str!("../data/faces-1.21.11.tsv");
+
+/// One state's two face answers, as six-bit masks over [`Face`] order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FullFaces {
+    sturdy: u8,
+    full: u8,
+}
+
+fn face_mask(letters: &str) -> u8 {
+    if letters == "-" {
+        return 0;
+    }
+    [
+        Face::Down,
+        Face::Up,
+        Face::North,
+        Face::South,
+        Face::West,
+        Face::East,
+    ]
+    .iter()
+    .enumerate()
+    .filter(|(_, f)| letters.contains(f.letter()))
+    .fold(0, |m, (i, _)| m | (1 << i))
+}
+
+fn face_rows() -> &'static PinnedRows<FullFaces> {
+    static ROWS: std::sync::OnceLock<PinnedRows<FullFaces>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        pinned_rows(FACES_TSV, "faces", |s, f| FullFaces {
+            sturdy: face_mask(s),
+            full: face_mask(f),
+        })
+    })
+}
+
+fn face_bit(face: Face) -> u8 {
+    1 << (face as u8)
+}
+
+/// **Is this face of this block state sturdy?** — the pinned jar's
+/// `BlockState.isFaceSturdy(level, pos, face)` (`SupportType.FULL`), read from
+/// the measured table. `false` for a block the table does not hold, which is
+/// the refusing answer for every rule that asks it: nothing hangs there.
+pub fn face_is_sturdy(name: &str, face: Face) -> bool {
+    pinned_row(face_rows(), name).is_some_and(|r| r.sturdy & face_bit(face) != 0)
+}
+
+/// **Is this face of this block state's collision shape the whole square?** —
+/// the pinned jar's `Block.isFaceFull(getCollisionShape(…), face)`, read from the
+/// measured table. `false` for a block the table does not hold.
+pub fn face_is_full(name: &str, face: Face) -> bool {
+    pinned_row(face_rows(), name).is_some_and(|r| r.full & face_bit(face) != 0)
 }
 
 /// Whether a block is thin enough to be **walked over rather than onto**
@@ -698,6 +976,13 @@ pub enum Collision {
     FenceGate,
     /// Water or lava filling the cell: a body swims, and stands on nothing.
     Fluid,
+    /// A block a body **climbs** ([`climbable`], every member of
+    /// `#minecraft:climbable` but scaffolding): a ladder's 3/16 panel against its
+    /// support, or a vine's empty box. A body centred in the cell is clear of
+    /// it, and stands on nothing there — what holds a body in this cell is the
+    /// climb, and the climb is the nav model's to judge, with the hold its
+    /// support gives it (spec-0099).
+    Climbable,
 }
 
 impl Collision {
@@ -705,7 +990,7 @@ impl Collision {
     pub fn passes_body(self) -> bool {
         matches!(
             self,
-            Collision::Air | Collision::Thin(_) | Collision::FenceGate
+            Collision::Air | Collision::Thin(_) | Collision::FenceGate | Collision::Climbable
         )
     }
 
@@ -747,6 +1032,9 @@ pub fn collision_class(name: &str) -> Collision {
     }
     if is_fluid(name) || is_submerged_by_nature(name) {
         return Collision::Fluid;
+    }
+    if climbable(name).is_some_and(|c| c != Climbable::Scaffolding) {
+        return Collision::Climbable;
     }
     let top = collision_top_16(name);
     if top < THIN_HEIGHT_16 {
@@ -862,8 +1150,9 @@ mod tests {
             (Collision::TallBarrier, false, false, None),
             (Collision::FenceGate, true, false, None),
             (Collision::Fluid, false, false, None),
+            (Collision::Climbable, true, false, None),
         ];
-        assert_eq!(rows.len(), 9, "the table lost a row");
+        assert_eq!(rows.len(), 10, "the table lost a row");
         for &(class, passes, supports, top) in rows {
             assert_eq!(class.passes_body(), passes, "{class:?}: passes_body");
             assert_eq!(class.supports_body(), supports, "{class:?}: supports_body");
@@ -962,7 +1251,6 @@ mod tests {
             "minecraft:stone",
             "minecraft:oak_stairs[facing=north]",
             "minecraft:oak_door[half=lower]",
-            "minecraft:ladder",
             "minecraft:chain",
             "minecraft:end_rod",
             "minecraft:iron_bars",
@@ -975,6 +1263,99 @@ mod tests {
             assert!(!passes_body(id), "{id} must still stop a body");
             assert_eq!(collision_class(id), Collision::FullCube, "{id}");
         }
+    }
+
+    /// **The climbable class is the tag, and the tag is the jar's.** Every
+    /// member answers a [`Climbable`]; every member but scaffolding is a cell a
+    /// body passes and does not stand on; scaffolding stays the full cube its
+    /// stable shape is; and a block that merely looks like a climb — glow lichen
+    /// on a wall, a chain, a hanging root — is not one.
+    #[test]
+    fn the_climbable_class_is_the_pinned_tag() {
+        assert_eq!(CLIMBABLE_1_21_11.len(), 9, "the tag lost a member");
+        for id in CLIMBABLE_1_21_11 {
+            let c = climbable(id).unwrap_or_else(|| panic!("{id} is in the tag"));
+            if c == Climbable::Scaffolding {
+                assert_eq!(collision_class(id), Collision::FullCube, "{id}");
+            } else {
+                assert_eq!(collision_class(id), Collision::Climbable, "{id}");
+                assert!(passes_body(id) && !supports_body(id), "{id}");
+            }
+        }
+        for id in [
+            "minecraft:glow_lichen",
+            "minecraft:chain",
+            "minecraft:hanging_roots",
+            "minecraft:stone",
+        ] {
+            assert_eq!(climbable(id), None, "{id} is not climbed");
+        }
+        // The state is read: a ladder's facing, a vine's faces, and the default.
+        assert_eq!(
+            climbable("minecraft:ladder[facing=east,waterlogged=false]"),
+            Some(Climbable::Ladder { facing: Face::East })
+        );
+        assert_eq!(
+            climbable("ladder"),
+            Some(Climbable::Ladder {
+                facing: Face::North
+            })
+        );
+        assert_eq!(
+            climbable("minecraft:vine[north=true,west=true]"),
+            Some(Climbable::Vine {
+                faces: [true, false, true, false]
+            })
+        );
+        assert_eq!(
+            climbable("minecraft:cave_vines_plant[berries=true]"),
+            Some(Climbable::Growing(GrowingVine::Cave))
+        );
+        assert_eq!(GrowingVine::Twisting.growth(), Face::Up);
+        assert_eq!(GrowingVine::Weeping.growth(), Face::Down);
+    }
+
+    /// **The face table answers the two questions apart.** A full block is
+    /// sturdy and full on every face; a bottom slab only underneath; leaves have
+    /// an EMPTY support shape and a full collision box — which is the whole
+    /// reason a vine hangs on leaves and a ladder does not; a ladder's own panel
+    /// is full on the face it shows the wall.
+    #[test]
+    fn the_face_table_reads_the_jar() {
+        let all = [
+            Face::Down,
+            Face::Up,
+            Face::North,
+            Face::South,
+            Face::West,
+            Face::East,
+        ];
+        for f in all {
+            assert!(face_is_sturdy("minecraft:stone", f), "stone {f:?}");
+            assert!(face_is_full("minecraft:oak_planks", f), "planks {f:?}");
+            assert!(
+                !face_is_sturdy("minecraft:oak_leaves", f),
+                "leaves {f:?} hold no ladder"
+            );
+            assert!(
+                face_is_full("minecraft:oak_leaves", f),
+                "leaves {f:?} hold a vine"
+            );
+            assert!(!face_is_sturdy("minecraft:air", f), "air {f:?}");
+        }
+        assert!(face_is_sturdy("minecraft:oak_slab", Face::Down));
+        assert!(!face_is_sturdy("minecraft:oak_slab", Face::Up));
+        assert!(face_is_sturdy("minecraft:oak_slab[type=top]", Face::Up));
+        assert!(face_is_sturdy(
+            "minecraft:ladder[facing=north]",
+            Face::South
+        ));
+        assert!(!face_is_sturdy(
+            "minecraft:ladder[facing=north]",
+            Face::North
+        ));
+        // An id the pin does not hold holds nothing.
+        assert!(!face_is_sturdy("minecraft:not_a_block", Face::Up));
     }
 
     /// Two classes that are neither passable nor floor, and one that is passable

@@ -84,6 +84,21 @@ use delvewright_dsl::Diagnostic;
 use delvewright_dsl::{DwCode, ExitTier};
 
 delvewright_dsl::dw_code! {
+    /// `DW0991`: a forced critical-path leg climbs a **climbable the world does
+    /// not keep** (spec-0099) — a ladder whose back is not a sturdy face, a vine
+    /// with no face held, a weeping, twisting or cave vine grown from nothing.
+    ///
+    /// The model reads such a block as air, because the game removes it at the
+    /// first shape update it receives. Derived by counterfactual, exactly like
+    /// [`DW_LETHAL_ON_CRITICAL_PATH`] and its family: the leg is re-routed with
+    /// every unheld climbable credited as if it hung, and if THAT world routes,
+    /// the missing hold closed the leg and the blocks are named with the hold
+    /// each lacks. A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`]
+    /// variant because the author is looking at a ladder in the piece and must be
+    /// told why it is not there — not sent to hunt a wedged doorway.
+    pub const DW_CLIMB_UNHELD: DwCode = DwCode::new("DW0991", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
     /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
     /// NPC's position over the assembled geometry.
     pub const DW_MOVE_UNROUTABLE: DwCode = DwCode::new("DW0307", ExitTier::Build);
