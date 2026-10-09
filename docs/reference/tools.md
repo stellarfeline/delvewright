@@ -1562,6 +1562,20 @@ At the camera's exposure 1.0 the two `below` frames are near-black — a night
 under cloud — and the `high` and `low` frames read as a grey overcast with no
 sun disc and no hard shadow, `thunder` darker than `rain` in each class.
 
+**The night cell** (`below` × `clear`, spec-0079 departure 1), recorded on the
+camera that found it: the Treehouse Camp's `lantern-night` (content
+`f6000d06`, its build at that revision, the camera's own pose and exposure 4.0),
+answering a row drawn under `{"moon": "high"}` + `clear`, emitted by `delvec
+cameras --draft --only lantern-night` (400×225, 128 samples) and rendered by
+`validation/chunky.sh --pack <its resourcepack.zip> -render … -threads 8` on the
+pinned core. Chunky's re-save carries `SOLID_COLOR`, `skyLight` 0.24,
+`apparentSkyLight` 0 and sun intensity 0 back. Scene
+`2f0c68d46c3803c76534938df04bf3bf437635fccc5eacd8a77d8c8d640c086f`, frame
+`4aadc195080ac8615ffacde9be3c223b13ffaef5545aa8eb61d7b579bb75809c`: a black sky,
+the valley and the trees dim and blue, the lantern lines lit. The same camera's
+frame under the renderer's own sky (sun at −90°, no block) drew a pale
+late-afternoon sky over a sunlit camp.
+
 Finding a camera, cheapest first ([`showcase-shots.md`](showcase-shots.md) is the craft
 it applies):
 
