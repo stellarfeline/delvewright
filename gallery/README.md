@@ -102,6 +102,16 @@ Turn the rungs to face into the wall, with the open hall behind them, and the
 world no longer keeps them: the build is refused `DW0991`, naming each rung and
 the sturdy face it lacks (`probes/a-ladder-with-nothing-behind-it`).
 
+Every block the build writes is one the server keeps (`DW1002`): the build judges
+each block whose pinned `canSurvive` rule asks a neighbour for something — the
+hall's hanging lanterns, the torches and lanterns the relight pass sites, the
+cabin ladder, the floor levers the triggers set, the stamped shards' standing lanterns — against
+the neighbours the world gives it, and prints the count on the `attached
+blocks` line. The lidded pit carries a shroomlight in its south wall, because a
+lantern hung from the lid would fall with the lid. Hang a lever on a glass
+pane's side and the build is refused, naming the lever, its cell and the full
+face the pane does not give (`probes/a-lever-hung-on-a-pane`).
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor
@@ -190,7 +200,7 @@ holding them at once.
 | `a-second-purse-on-the-one-sidebar` | `DW0919` | `validate` | asking the relics to stand on the sidebar beside the tokens, when the slot holds one objective |
 | `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
 | `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
-| `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
+| `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well, with a shroomlight in the well's wall because the shut hatch keeps the hall's light out: a player can open it and leave it open, and the muster then falls in |
 | `a-sky-the-sun-does-not-obey` | `DW0928` | `validate` | holding the hall's sun in place: the overworld's day timeline overrides `visual/sun_angle` every tick, so the line would ship and do nothing |
 | `an-attribute-the-game-never-heard-of` | `DW0928` | `validate` | spelling `visual/sky_colour`, which the pinned game does not register — the refusal names `visual/sky_color` |
 | `a-colour-that-is-a-number` | `DW0928` | `validate` | writing the hall's sky colour as an integer where vanilla's data writes `#rrggbb` |
@@ -212,6 +222,7 @@ holding them at once.
 | `a-stage-one-player-holds` | `DW0953` | `validate` | staging the lidded pit on the tokens, a datum each player holds for themselves |
 | `a-wait-longer-than-two-minutes` | `DW0925` | `validate` | making a fallen player wait 121 seconds before rejoining, one past the two minutes a wait may last |
 | `a-ladder-with-nothing-behind-it` | `DW0991` | `build` | turning the cabin ladder's four rungs to face into the cabin's wall, so each hangs on the open hall behind it |
+| `a-lever-hung-on-a-pane` | `DW1002` | `build` | hanging a lever on the north side of a glass pane under the near hall's roof: a pane's side is not the full face a wall-hung block asks for, so the server drops the lever |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
