@@ -878,8 +878,10 @@ pub fn build_with_warnings(
             rings: &wave_rings,
         },
         &payload_plans,
-        &asm_locks,
-        &watch_binding,
+        &packtest::Proved {
+            asm_locks: &asm_locks,
+            watch_binding: &watch_binding,
+        },
     );
 
     // ---- creator overlay (playtest-only; spec-0006) ----
