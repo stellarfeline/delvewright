@@ -38,9 +38,17 @@ The High Bridge seen from the Loom House end: its plank steps climb to the Watch
 
 The Watch House: the platform round the Watch Tree's trunk, the sentry hut, lanterns hanging under the leaves, and the rope ladder going up the bark into the crown; the Loom House is in the distance on the left.
 
+![The climb](10-the-climb.jpg)
+
+The climb: on the Watch House deck, the rope ladder runs up the Watch Tree's bark through the roof and into the leaves, toward the top of the tree.
+
 ![The Crown Lookout](11-crown-lookout.jpg)
 
 The Crown Lookout: the ring of planks round the top of the Watch Tree, above every other crown in the camp, with the sun going down behind the forest.
+
+![Lantern Night](12-lantern-night.jpg)
+
+Lantern Night, after the party hangs the new lantern at the top of the Watch Tree: seen from above the lookout, every rail and bridge in the camp is outlined in lanterns in the dark. The Hearth House is in the middle, the Long Bridge runs to the Loom House on the right, and the Low Bridge runs down on the left.
 
 ---
 
