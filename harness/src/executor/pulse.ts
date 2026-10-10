@@ -33,8 +33,21 @@ export const methods = {
    * its leg meets (spec-0016 §1), then the pulse stations on it (spec-0102).
    */
   async beforeStep(this: MineflayerExecutor, step: Step): Promise<void> {
+    this.legHearingFrom = undefined;
     await this.runBacksBefore(step);
     await this.listenAtPulseStations(step);
+  },
+
+  /**
+   * Open the sculk listening window of the leg at the cursor, once: a walk
+   * along part of that leg before the step's own walk (a run-back approach, a
+   * pulse station walk) is the leg being walked, and a sensor it sets off is
+   * the leg's vibration (spec-0100 §4.7).
+   */
+  openLegHearing(this: MineflayerExecutor): void {
+    if (this.legHearingFrom?.leg !== this.legCursor) {
+      this.legHearingFrom = { leg: this.legCursor, at: Date.now() };
+    }
   },
 
   /**
@@ -67,6 +80,7 @@ export const methods = {
     let walked = this.legResume?.leg === this.legCursor ? this.legResume.from : 0;
     for (const d of [...due].sort((a, b) => along(a.station.cell) - along(b.station.cell))) {
       const k = along(d.station.cell);
+      if (cells) this.openLegHearing();
       await this.walkTo(
         d.station.cell,
         0,

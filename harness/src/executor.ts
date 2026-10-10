@@ -516,6 +516,14 @@ export class MineflayerExecutor implements StepExecutor {
    * that leg resumes there instead of walking back to the leg's start.
    */
   legResume: { leg: number; from: number } | undefined;
+  /**
+   * When the harness first walked part of the leg at `leg` before the step's
+   * own walk of it — a run-back approach or a pulse station walk along its
+   * proven cells. The leg's sculk listening window opens here, so a sensor the
+   * partial walk sets off answers for the leg (spec-0100 §4.7). Reset by every
+   * `beforeStep`; consumed by the walk that matches the leg.
+   */
+  legHearingFrom: { leg: number; at: number } | undefined;
   /** Timestamp (ms) of the last damage attributed from a packet-named source. */
   lastAttributionAt = 0;
   /** The body the server last named as hitting the bot, and when — the health drop

@@ -5619,3 +5619,96 @@ test("a darkness effect on the bot, or a warden, fails the run; others do not", 
   spawned.emit("entitySpawn", { id: 51, name: "warden" });
   assert.match(other.sculkRunVerdict() ?? "", /darkness 0, warden 1/);
 });
+
+// --- the sculk window opens with the first walk along the leg (spec-0100 §4.7) ---
+
+import { parsePulsePlan } from "../src/pulse.ts";
+
+/**
+ * A pathfinder that walks to any goal, a sensor that clicks the first time the
+ * body reaches a goal past it, and a stand that takes real time — longer than
+ * a sensor's busy span, as a pulse station's `2 · every + 10` ticks do.
+ */
+class SensorWalkBot extends HeldRadiusBot {
+  clickAtX = Infinity;
+  clickCell: [number, number, number] = [0, 0, 0];
+  clicked = false;
+  standMs = 0;
+  constructor() {
+    super();
+    const goto = this.pathfinder.goto;
+    this.pathfinder.goto = async (goal?: { x: number; y: number; z: number }): Promise<void> => {
+      await goto(goal);
+      if (!this.clicked && goal && goal.x >= this.clickAtX) {
+        this.clicked = true;
+        this.emit("blockUpdate", null, sensorUpdate(this.clickCell, "active"));
+      }
+    };
+  }
+  async waitForTicks(): Promise<void> {
+    await delay(this.standMs);
+  }
+}
+
+test("a sensor the pulse station walk sets off answers for the leg the station is on", async () => {
+  // A sensor between the leg's start and a pulse station on the leg clicks on
+  // the station walk, which runs in beforeStep, before the step's own walk.
+  // The station stand outlasts the sensor's busy span, so a window opened at
+  // the step's walk would fail the leg for a click its own route made.
+  const bot = new SensorWalkBot();
+  (bot as unknown as { _client: EventEmitter })._client = new EventEmitter();
+  bot.entity.position = new FakeVec3(0.5, 64, 0.5);
+  bot.clickAtX = 5;
+  bot.clickCell = [5, 63, 3];
+  bot.standMs = 2_500; // > SENSOR_BUSY_MS
+  const executor = attach(bot);
+  executor.useCampaign("sensor-walk");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.0.0-fixture",
+      campaign_id: "sensor-walk",
+      legs: [
+        {
+          from: [0, 64, 0],
+          to: [30, 64, 0],
+          waypoints: [
+            [0, 64, 0],
+            [10, 64, 0],
+            [30, 64, 0],
+          ],
+          vibrations: [{ sensor: [5, 63, 3], shriekers: [] }],
+        },
+      ],
+    }),
+  );
+  executor.usePulsePlan(
+    parsePulsePlan({
+      declared: 1,
+      pulses: [
+        {
+          id: "pulse/the-bell",
+          sound: "minecraft:block.bell.use",
+          source: [10.5, 66.5, 0.5],
+          every: 20,
+          volume: 1.0,
+          pitch: 1.0,
+          stations: { listening: { cell: [10, 64, 0], step: 1, before: "obj/far" }, silent: null },
+        },
+      ],
+    }),
+  );
+  const far: ReachStep = {
+    action: "reach",
+    objective: "obj/far",
+    anchor: "anchor/far",
+    pos: [30, 64, 0],
+    radius: 2,
+    completion: { kind: "cube", lo: [29, 63, -1], hi: [31, 65, 1] },
+  };
+  await within("executor.beforeStep(far)", executor.beforeStep(far));
+  assert.ok(bot.clicked, "the station walk passed the sensor");
+  assert.equal(executor.pulseStations.length, 1, "and stood at the station");
+  await within("executor.walkTo(far)", executor.walkTo([30, 64, 0], 1, "walk to anchor/far"));
+  assert.equal(executor.legCursor, 1, "the step's walk consumed the leg");
+  assert.equal(executor.legHearingFrom, undefined, "and its window");
+});

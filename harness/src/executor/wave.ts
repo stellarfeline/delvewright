@@ -433,6 +433,7 @@ export const methods = {
       if (cells) {
         const k = along(rb);
         if (k >= walked) {
+          this.openLegHearing();
           await this.walkTo(
             cells[k]!,
             1,

@@ -565,9 +565,11 @@ export const methods = {
       let legWaypoints: readonly Vec3Tuple[] | undefined;
       let legClimbs: readonly Climb[] = [];
       // spec-0100 §4.7: the vibrations the proven leg is predicted to make,
-      // heard from the walk's start.
+      // heard from the walk's start — or from the first walk along part of the
+      // leg before it (a run-back approach, a pulse station walk), which is
+      // the same leg being walked.
       let legVibrations: readonly Vibration[] = [];
-      const heardFrom = Date.now();
+      let heardFrom = Date.now();
       // spec-0016 §4: the timed gates that bind THIS walk. A gate is a world fact
       // the compiler exports for the whole campaign; a proven leg's `timed_gates`
       // narrows that table to the subset its route crosses. A walk with no proven
@@ -591,6 +593,10 @@ export const methods = {
         legWaypoints = match.waypoints;
         legClimbs = match.climbs;
         legVibrations = match.vibrations;
+        if (match.matched) {
+          if (this.legHearingFrom?.leg === this.legCursor) heardFrom = this.legHearingFrom.at;
+          this.legHearingFrom = undefined;
+        }
         if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
           legWaypoints = legWaypoints.slice(this.legResume.from);
           this.legResume = undefined;

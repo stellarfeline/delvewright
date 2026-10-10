@@ -220,7 +220,11 @@ two waypoints is measured along its length — and a shrieker more than 8 from i
 sensor (`harness/src/waypoints.ts`). For each predicted sensor it waits for a
 `blockUpdate` at the sensor's cell whose new state has `sculk_sensor_phase=active`;
 for each predicted shrieker a `world_event` packet with id 3007 at its cell —
-from the leg's start to three seconds after its end (`harness/src/sculk.ts`). A
+from the leg's start to three seconds after its end (`harness/src/sculk.ts`). The
+leg starts when the harness first walks any part of it: a run-back approach or a
+pulse station walk along the leg's proven cells, run before the step's own walk,
+opens the window, so a sensor between the leg's start and a station clicks
+inside it. A
 device the previous leg set off is deaf for its busy span — a sensor's active
 and cooldown ticks (2 s), a shrieker's `shrieking` (4.5 s) — so an event within
 that span before the leg's start answers for it. A predicted event not heard
