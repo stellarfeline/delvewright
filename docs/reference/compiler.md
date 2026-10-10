@@ -618,6 +618,15 @@ uncompilable. The escalation path a part that wants different *space* takes is
 a **site-plan revision**; a part that wants different *traversal* revises the
 **layout graph**, and either revision costs a re-detail (`delvec detail --all`).
 
+**Freshness**: `detail::check` judges a row against the piece its registry
+holds. Validation hands it the library on disk; `delvec detail` hands it the
+library as the run would leave it — every piece the run re-details in place of
+its copy on disk, every row the run writes in the plan — and judges once, after
+every target is prepared and before any is written. A frame change answered by
+one `delvec detail --all` therefore passes whatever the order of the places it
+moved, and a row whose place the run does not re-detail is still refused
+(`DW0843`) when its piece no longer fits.
+
 **The frame** a piece must exactly fill is its place's claim (spec-0098 §2): the
 bounding box of the cells the place owns — the ground under its plot, its floor
 course, its play space, its ring above the fixed ground and, roofed, its lid and

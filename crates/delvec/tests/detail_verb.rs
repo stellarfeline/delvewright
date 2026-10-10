@@ -1577,3 +1577,74 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     });
     refused_strictly(&piece, "a piece no campaign places is judged strictly");
 }
+
+/// **A frame change is answered by ONE `detail --all`, whatever the order of
+/// the places it moved** (issue: the first run after a frame change refused
+/// `DW0843` on a sibling). The exit is detailed after the landing in plan
+/// order; its box shrinks. Judged place by place against the library as it
+/// stood before the run, the landing's bindings check met the exit's old piece
+/// and refused it, and nothing was written — so every re-run refused the same
+/// way. The run judges the whole it would leave: every piece it re-details
+/// stands in place of the library's copy. A sibling it does NOT re-detail is
+/// still judged by the piece on disk, and a stale one is still refused.
+#[test]
+fn after_a_frame_change_one_detail_all_passes_and_a_stale_sibling_it_leaves_is_refused() {
+    let tmp = tempdir("stale-sibling");
+    let places = ["node/landing", "node/exit", "node/tunnel"];
+    let (campaign, prefabs) = fixture(&tmp, &places);
+    let cs = campaign.to_str().unwrap();
+    let ps = prefabs.to_str().unwrap();
+    let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
+    assert_eq!(code(&out), 0, "{}", text(&out));
+    let shrink = |depth: i64| {
+        common::patch_file(&campaign.join("site-plan.json"), |v| {
+            let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+            let b = boxes.iter_mut().find(|b| b["node"] == "node/exit").unwrap();
+            b["extent"] = json!([8, depth]);
+        });
+    };
+    let size = || -> Value {
+        serde_json::from_str::<Value>(
+            &std::fs::read_to_string(prefabs.join("blockout-exit.json")).unwrap(),
+        )
+        .unwrap()["structure"]["size"]
+            .clone()
+    };
+
+    // The frame moves under a place detailed after another.
+    shrink(4);
+    let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
+    assert_eq!(
+        code(&out),
+        0,
+        "the FIRST run after the frame change: {}",
+        text(&out)
+    );
+    let t = text(&out);
+    assert!(!t.contains("DW0843"), "{t}");
+    assert!(t.contains("detail: 3 place(s) detailed of 3 named"), "{t}");
+    assert_eq!(size(), json!([9, 6, 6]));
+    // And the verdict is a function of the inputs: the identical command
+    // again passes and moves no byte.
+    let before = (snapshot(&prefabs), snapshot(&campaign));
+    let again = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
+    assert_eq!(code(&again), 0, "{}", text(&again));
+    assert_eq!(before, (snapshot(&prefabs), snapshot(&campaign)));
+
+    // Perturbation: the exit's program is withdrawn, so this run does not
+    // re-detail it, and its frame moves again. Its piece on disk is now stale
+    // AFTER the run, and the run refuses it by name, writing nothing.
+    std::fs::remove_file(campaign.join("programs/exit.json")).unwrap();
+    shrink(8);
+    let t = refused(
+        &campaign,
+        &prefabs,
+        &["--prefabs", ps, "detail", cs, "--all"],
+    );
+    assert!(t.contains("DW0843"), "{t}");
+    assert!(
+        t.contains("`prefab/blockout-exit` is not the shape of the box `node/exit` gives it"),
+        "{t}"
+    );
+    assert!(t.contains("The piece is 9x6x6; the frame is 9x6x10"), "{t}");
+}
