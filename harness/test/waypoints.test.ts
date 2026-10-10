@@ -554,3 +554,62 @@ test("the climb executor refuses what the bot's physics cannot climb (spec-0099)
   const c = parseWaypoints(CLIMBING).legs[0]!.climbs[0]!;
   assert.ok(climbBudgetMs(c) >= 6_000 + 4 * 1_000);
 });
+
+// The gallery's listening floor (spec-0100 §6), as the compiler exports it: the
+// leg off the loft stair to the ferry deck carries the plain sensor set into
+// the floor and the shrieker that answers it — and no other leg of the
+// critical path carries a shrieker, so the counts below are the gallery's.
+const LISTENING = {
+  version: "0.0.0-fixture",
+  campaign_id: "gallery",
+  legs: [
+    {
+      from: [19, 70, 18],
+      to: [9, 67, 21],
+      waypoints: [
+        [19, 70, 18],
+        [19, 70, 20],
+        [19, 69, 21],
+        [19, 68, 22],
+        [18, 67, 22],
+        [17, 67, 22],
+        [9, 67, 22],
+        [9, 67, 21],
+      ],
+      vibrations: [{ sensor: [8, 66, 23], shriekers: [[8, 67, 27]] }],
+    },
+    { from: [9, 67, 21], to: [10, 67, 21], waypoints: [[9, 67, 21], [10, 67, 21]] },
+  ],
+};
+
+test("a leg's vibrations parse, and the match hands them over (spec-0100 §4.6)", () => {
+  const wp = parseWaypoints(LISTENING);
+  assert.equal(wp.legs[0]!.vibrations.length, 1, "exactly the gallery's one predicted sensor");
+  assert.deepEqual(wp.legs[0]!.vibrations[0]!.sensor, [8, 66, 23]);
+  assert.equal(wp.legs[0]!.vibrations[0]!.shriekers.length, 1, "and its one shrieker");
+  assert.deepEqual(wp.legs[0]!.vibrations[0]!.shriekers[0], [8, 67, 27]);
+  assert.equal(wp.legs[1]!.vibrations.length, 0, "absent parses to none");
+  const m = nextLegWaypoints(wp.legs, 0, [9, 67, 21]);
+  assert.equal(m.vibrations.length, 1);
+  assert.equal(nextLegWaypoints(wp.legs, 1, [0, 0, 0]).vibrations.length, 0, "no match, none");
+  assert.equal(parseWaypoints(VALID).legs[0]!.vibrations.length, 0);
+});
+
+test("a sensor out of earshot of its leg, or a shrieker out of its sensor's, is refused", () => {
+  // A sensor more than 8 blocks from every waypoint of its leg.
+  const far = structuredClone(LISTENING);
+  far.legs[0]!.vibrations![0]!.sensor = [8, 66, 40];
+  assert.throws(() => parseWaypoints(far), (e: unknown) =>
+    e instanceof WaypointsParseError && /within 8 blocks of any waypoint/.test(e.message),
+  );
+  // A shrieker more than 8 blocks from its sensor.
+  const deaf = structuredClone(LISTENING);
+  deaf.legs[0]!.vibrations![0]!.shriekers = [[8, 67, 32]];
+  assert.throws(() => parseWaypoints(deaf), (e: unknown) =>
+    e instanceof WaypointsParseError && /within 8 blocks of its sensor/.test(e.message),
+  );
+  // A malformed list is a pointer, not a silent skip.
+  const bad = structuredClone(LISTENING) as unknown as { legs: { vibrations: unknown }[] };
+  bad.legs[0]!.vibrations = { sensor: [8, 66, 23] };
+  assert.throws(() => parseWaypoints(bad), WaypointsParseError);
+});

@@ -223,6 +223,33 @@ not third-party reconstructions.
   `tools/maintenance/collision/FaceDump.java` names no obfuscated member; the
   dumper's state count must equal the rows' coverage.
 
+- **`redstone-1.21.11.tsv`** (in `crates/dsl/data/`) — three redstone facts of
+  every 1.21.11 block, one row per block id (1,166 rows over 29,671 states; same
+  jar sha256 and mappings sha1 as the collision table, both recorded in the
+  file's header): `conductor` (`shape` / `always` / `never`), the game's own
+  `BlockState.isRedstoneConductor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)` set
+  against its default `isCollisionShapeFullBlock` over every state — which the
+  dumper asserts equals "all six collision faces full" on every state, so `shape`
+  is read from the face table; `signal_source`, `BlockState.isSignalSource()` on
+  any state; and `reads_signal`, whether the block's classes (below
+  `BlockBehaviour`), its block entity's (below `BlockEntity`) or any class nested
+  in them invoke one of `SignalGetter`'s seven methods on a receiver assignable to
+  `SignalGetter`, read from `javap -c -p` with names and descriptors resolved from
+  the mappings. 55 sources, 114 readers, 2 `always` (mud, soul sand), 56 `never`.
+  **Why it exists**: a sculk sensor is a signal source; what its power can reach
+  is a fact about its neighbours' block classes (spec-0100 §4.2). Consumed by
+  `delvewright_dsl::blockshape::redstone_conductor` / `redstone_source` /
+  `redstone_reader`, which `compiler::sculk` reads. **Cross-checked** against the
+  Minecraft Wiki's *Conductivity* and *Mechanism* pages by
+  `blockshape::tests::the_redstone_table_agrees_with_the_wiki` (the rows compared
+  and the page wording are in the test).
+  **Reproduce it**: `python3 tools/maintenance/dump-redstone.py [--check] [--work
+  DIR]` (JDK ≥ 21 with `javap` on `PATH`, network for the mappings). Its pin,
+  fetch and mapping steps are `dump-collision-tops.py`'s own, imported;
+  `tools/maintenance/collision/RedstoneDump.java` names no obfuscated member; the
+  dumper's state count must equal the rows' coverage; two runs give the same
+  bytes.
+
 - **`block-renames-1.21.11.json`** (in `crates/dsl/data/`) — the block-id
   **renames** the pinned game's DataFixerUpper applies on load: an id 1.21.11
   does not have → the id it becomes, with the greatest `DataVersion` at which
@@ -566,6 +593,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
 | `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
 | `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
+| `redstone-1.21.11.tsv` | `8a2ca8673d01d420125e1bb0b288533d72d5847d0f69a7f51286593f6bc6d496` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
 
 ## Not committed

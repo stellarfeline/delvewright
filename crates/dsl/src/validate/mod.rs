@@ -636,6 +636,23 @@ pub(crate) fn split_blockstate(block: &str) -> Result<&str, String> {
     Ok(&block[..open])
 }
 
+/// **The one rest rule at the entry points** (spec-0100 §4.1): a block state an
+/// author places — a `set-block`/`fill-region` block, an `interact`/trigger
+/// prop, a world-edit recipe or scatter item — is judged by
+/// [`crate::blocks::sculk_rest`] where it is typed, so the refusal names the
+/// document path (`DW0998`, `DW0999`). The build judges the assembled world
+/// again with the same function, for the pieces no document typed.
+pub(crate) fn check_sculk_rest(block: &str, stage: &str, path: String, d: &mut Vec<Diagnostic>) {
+    if let Err(fault) = crate::blocks::sculk_rest(block, None) {
+        d.push(Diagnostic::error(
+            fault.code(),
+            stage,
+            path.clone(),
+            format!("{fault} (entered at `{path}`)"),
+        ));
+    }
+}
+
 /// Validate a block field (interact prop / set-block) allowing an optional
 /// verbatim blockstate suffix (DSL v0.6). The base id must be in the block
 /// registry (`DW0193`); a malformed `[...]` suffix reuses `DW0193` with a clear
@@ -654,13 +671,14 @@ pub(crate) fn check_block_field(
                 d.push(Diagnostic::error(
                     codes::BLOCK_UNKNOWN,
                     "quests",
-                    path,
+                    path.clone(),
                     format!(
                         "`{kind}` block `{block}` is not a known 1.21.11 block id — use a valid \
                          namespaced block id (e.g. `{example}`)"
                     ),
                 ));
             }
+            check_sculk_rest(block, "quests", path, d);
         }
         Err(reason) => {
             d.push(Diagnostic::error(

@@ -16,6 +16,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Vec3Tuple } from "./critical-path.ts";
+import { LISTENER_RADIUS_SQ, distSq, type Vibration } from "./sculk.ts";
 
 /** The sub-path of the waypoints artifact relative to `critical-path.json`'s dir. */
 const WAYPOINTS_SUBPATH = ["validation", "critical-path-waypoints.json"] as const;
@@ -85,6 +86,9 @@ export interface WaypointLeg {
   /** The climbs the leg's route takes, in route order — empty for a leg that
    * climbs nothing, and for every artifact that predates spec-0099. */
   readonly climbs: readonly Climb[];
+  /** The sculk sensors the leg's proven route sets off and the shriekers that
+   * answer each (spec-0100 §4.6) — empty for a leg that sets none off. */
+  readonly vibrations: readonly Vibration[];
 }
 
 /** The parsed waypoints artifact. Legs are in critical-path order — the compiler
@@ -257,6 +261,45 @@ function parseClimbs(entry: Record<string, unknown>, pointer: string): Climb[] {
   });
 }
 
+/**
+ * Parse a leg's optional `vibrations` (spec-0100 §4.6). Absent → `[]`. A sensor
+ * not within 8 blocks (`distSqr ≤ 64`) of any waypoint of its leg, or a shrieker
+ * not within 8 of its sensor, is a prediction the game cannot make, refused.
+ */
+function parseVibrations(
+  entry: Record<string, unknown>,
+  pointer: string,
+  waypoints: readonly Vec3Tuple[],
+): Vibration[] {
+  const value = entry["vibrations"];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(`${pointer}/vibrations`, `must be an array, got ${describe(value)}`);
+  }
+  return value.map((v, j) => {
+    const at = `${pointer}/vibrations/${j}`;
+    if (!isRecord(v)) {
+      fail(at, `must be an object, got ${describe(v)}`);
+    }
+    const sensor = requireVec3(v["sensor"], `${at}/sensor`);
+    if (!waypoints.some((w) => distSq(w, sensor) <= LISTENER_RADIUS_SQ)) {
+      fail(`${at}/sensor`, "is not within 8 blocks of any waypoint of its leg");
+    }
+    const list = v["shriekers"];
+    if (!Array.isArray(list)) {
+      fail(`${at}/shriekers`, `must be an array, got ${describe(list)}`);
+    }
+    const shriekers = list.map((k, i) => {
+      const cell = requireVec3(k, `${at}/shriekers/${i}`);
+      if (distSq(cell, sensor) > LISTENER_RADIUS_SQ) {
+        fail(`${at}/shriekers/${i}`, "is not within 8 blocks of its sensor");
+      }
+      return cell;
+    });
+    return { sensor, shriekers };
+  });
+}
+
 /** Validate and normalize a parsed JSON value into a {@link Waypoints}. */
 export function parseWaypoints(raw: unknown): Waypoints {
   if (!isRecord(raw)) {
@@ -320,7 +363,8 @@ export function parseWaypoints(raw: unknown): Waypoints {
         }
       }
     }
-    return { from, to, waypoints, timedGates: legGates, climbs };
+    const vibrations = parseVibrations(entry, pointer, waypoints);
+    return { from, to, waypoints, timedGates: legGates, climbs, vibrations };
   });
 
   return { version, campaignId, timedGates, legs };
@@ -425,6 +469,9 @@ export interface LegMatch {
   readonly timedGates: readonly TimedGate[];
   /** The climbs the matched leg's route takes (empty when none, or no match). */
   readonly climbs: readonly Climb[];
+  /** The vibrations the matched leg is predicted to make (empty when none, or
+   * no match). */
+  readonly vibrations: readonly Vibration[];
   readonly cursor: number;
   /**
    * Whether the walk starts where the matched leg was proven from: within
@@ -477,6 +524,7 @@ export function nextLegWaypoints(
       waypoints: leg.waypoints,
       timedGates: leg.timedGates,
       climbs: leg.climbs,
+      vibrations: leg.vibrations,
       cursor: cursor + 1,
       startsOnLeg: startOffset === undefined || startOffset <= LEG_START_REACH,
       startOffset,
@@ -487,6 +535,7 @@ export function nextLegWaypoints(
     waypoints: undefined,
     timedGates: [],
     climbs: [],
+    vibrations: [],
     cursor,
     startsOnLeg: true,
     startOffset: undefined,

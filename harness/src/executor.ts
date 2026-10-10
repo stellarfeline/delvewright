@@ -33,6 +33,7 @@ import type { ResourcePackState } from "./resource-pack.ts";
 import { type LoadWindowTracer } from "./load-window.ts";
 import { type CensusMob, type CensusSummary } from "./markers.ts";
 import { RepaintWatch } from "./repaint.ts";
+import { SculkEar } from "./sculk.ts";
 import { type Waypoints } from "./waypoints.ts";
 import type { BotConfig } from "./executor/connection.ts";
 import { LOOP_CROSS_TIMEOUT_MS } from "./executor/loop.ts";
@@ -109,6 +110,9 @@ export class MineflayerExecutor implements StepExecutor {
   readonly completedObjectives = new Map<string, number>();
   /** The repaint ledger (spec-0080 §5.2), when the build repaints anything. */
   repaintWatch: RepaintWatch | undefined;
+  /** The sculk family's ear (spec-0100 §4.7): sensor clicks, shrieks, darkness
+   * on the bot and warden spawns, from connect. */
+  readonly sculk = new SculkEar();
   /**
    * How many times each marker token has been broadcast this run. A repeatable
    * trigger broadcasts its marker every time it fires, and a hit count on the

@@ -5552,3 +5552,70 @@ test("the death-loop trial of a staged volume whose gate reads shut records not_
   assert.equal(binding.stagedLiveAtTrial, 0);
   assert.equal(binding.volumesEntered, 0);
 });
+
+// --- the sculk family's runtime assertions (spec-0100 §4.7) -------------------
+
+/** A block update as mineflayer emits it: the new block's position and state. */
+function sensorUpdate(pos: [number, number, number], phase: string): unknown {
+  return {
+    position: new FakeVec3(pos[0], pos[1], pos[2]),
+    getProperties: () => ({ sculk_sensor_phase: phase, power: 0, waterlogged: false }),
+  };
+}
+
+test("a predicted shrieker whose 3007 is never heard fails the step; heard, it passes", async () => {
+  const bot = new FakeBot();
+  const client = new EventEmitter();
+  (bot as unknown as { _client: EventEmitter })._client = client;
+  const executor = attach(bot);
+  const vibrations = [{ sensor: [8, 66, 23] as [number, number, number], shriekers: [[8, 67, 27] as [number, number, number]] }];
+  const from = Date.now();
+  // The sensor clicks; the shrieker never shrieks.
+  bot.emit("blockUpdate", null, sensorUpdate([8, 66, 23], "active"));
+  await within(
+    "hearVibrations(unheard shrieker)",
+    assert.rejects(
+      () => executor.hearVibrations("walk to [9, 67, 21]", vibrations, from),
+      (err: unknown) => err instanceof Error && /shrieker at \[8, 67, 27\] never shrieked/.test(err.message),
+    ),
+  );
+  // The shriek arrives: the same leg passes, and a block update of another
+  // phase or another cell is not a click.
+  bot.emit("blockUpdate", null, sensorUpdate([8, 66, 24], "active"));
+  client.emit("world_event", { effectId: 2001, location: { x: 8, y: 67, z: 27 }, data: 0, global: false });
+  client.emit("world_event", { effectId: 3007, location: { x: 8, y: 67, z: 27 }, data: 0, global: false });
+  await within("hearVibrations(heard)", executor.hearVibrations("walk to [9, 67, 21]", vibrations, from));
+  // A leg that started after the click and the shriek, beyond their busy
+  // spans, cannot borrow them.
+  const ear = executor.sculk;
+  const later = ear.hear(vibrations, Date.now() + 10_000, Date.now() + 11_000);
+  assert.equal(later.sensorsHeard, 0);
+  assert.equal(later.shriekersHeard, 0);
+  const now = ear.hear(vibrations, from, Date.now());
+  assert.deepEqual(
+    [now.sensorsPredicted, now.sensorsHeard, now.shriekersPredicted, now.shriekersHeard],
+    [1, 1, 1, 1],
+  );
+});
+
+test("a darkness effect on the bot, or a warden, fails the run; others do not", () => {
+  const bot = new FakeBot();
+  (bot.entity as unknown as { id: number }).id = 7;
+  (bot as unknown as { registry: unknown }).registry = {
+    effects: { 32: { name: "Darkness" }, 16: { name: "NightVision" } },
+  };
+  const executor = attach(bot);
+  assert.equal(executor.sculkRunVerdict(), undefined, "a run with neither passes");
+  // An effect on another entity, or another effect on the bot, is not darkness.
+  bot.emit("entityEffect", { id: 99 }, { id: 32 });
+  bot.emit("entityEffect", bot.entity, { id: 16 });
+  bot.emit("entitySpawn", { id: 50, name: "zombie" });
+  assert.equal(executor.sculkRunVerdict(), undefined);
+  bot.emit("entityEffect", bot.entity, { id: 32 });
+  const verdict = executor.sculkRunVerdict();
+  assert.ok(verdict !== undefined && /darkness 1, warden 0/.test(verdict), verdict);
+  const spawned = new FakeBot();
+  const other = attach(spawned);
+  spawned.emit("entitySpawn", { id: 51, name: "warden" });
+  assert.match(other.sculkRunVerdict() ?? "", /darkness 0, warden 1/);
+});
