@@ -181,8 +181,15 @@ walked it with no proven leg at all, and the line's absence is the finding.
 
 **A body that watches** (spec-0101 §5.4). The critical path carries
 `watchers[]`: each watching body's selector, where it can stand (its summon point
-and every walk's end), whom it watches and how far it sees. At every waypoint of
-the proven path where some stand is within reach, the bot stops, lets the game run
+and every walk's end), whom it watches and how far it sees. The compiler draws a
+watcher from the dense route cells, and the exported leg keeps only their corners,
+so before a proven leg is walked the bot adds a stop at the route's nearest proven
+cell to every stand no corner is within reach of, when that cell is
+(`watchStops`, over the shared route rule `harness/src/route.ts`; a climb hop and a
+hop through a timed gate are never split), and prints
+`[watch] <walk>: N stop(s) inserted on the proven route; it passes within reach of
+<ids>`. At every waypoint and stop of the proven path where some stand is within
+reach, the bot stops, lets the game run
 its watch line, and reads in one bracketed turn its own position and each body's
 live position as the server holds them (a body walking, removed or not yet
 summoned reads empty and is not judged) and whether it wears the class a class
@@ -216,8 +223,9 @@ that answer it, predicted by the compiler (four route cells within `distSqr ≤
 sensor). The harness predicts nothing: the parse refuses a sensor more than 8
 blocks from its leg's route — the polyline through the leg's waypoints, on which
 every route cell the compiler predicted from lies, so a straight leg exported as
-two waypoints is measured along its length — and a shrieker more than 8 from its
-sensor (`harness/src/waypoints.ts`). For each predicted sensor it waits for a
+two waypoints is measured along its length (`harness/src/route.ts`, the one route
+rule the watch stops and the pulse stations also read) — and a shrieker more than
+8 from its sensor (`harness/src/waypoints.ts`). For each predicted sensor it waits for a
 `blockUpdate` at the sensor's cell whose new state has `sculk_sensor_phase=active`;
 for each predicted shrieker a `world_event` packet with id 3007 at its cell —
 from the leg's start to three seconds after its end (`harness/src/sculk.ts`). The

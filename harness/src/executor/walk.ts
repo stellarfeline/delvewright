@@ -29,6 +29,7 @@ import {
 } from "../timed-gate.ts";
 import { delay, withTimeout, fmt } from "./connection.ts";
 import { VIBRATION_TAIL_MS, legLine, type Vibration } from "../sculk.ts";
+import { watchStops } from "../watch.ts";
 import { ControlTakenError } from "./cutscene.ts";
 import { type GateAssist, crossTimedGate } from "./timed-gate.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -644,6 +645,29 @@ export const methods = {
                 : "") +
               `\n`,
           );
+        }
+      }
+      // spec-0101 §5.4: the bot judges a watcher where it stops, and the
+      // exported route keeps only its corners; the compiler drew the watcher
+      // from the dense cells. Stop at the route's nearest proven cell to every
+      // watcher no corner stands in reach of — never splitting a climb the
+      // executor drives as one hop, or a hop through a timed gate.
+      if (legWaypoints && this.watch?.armed && this.watch.watchers.length > 0) {
+        const climbs = legClimbs;
+        const same = (p: Vec3Tuple, q: Vec3Tuple): boolean => p[0] === q[0] && p[1] === q[1] && p[2] === q[2];
+        const stops = watchStops(
+          legWaypoints,
+          this.watch.watchers,
+          (a, b) =>
+            climbs.some((c) => same(c.from, a) && same(c.to, b)) ||
+            gatesCrossedByHop(a, b, declaredGates).length > 0,
+        );
+        if (stops.inserted > 0) {
+          process.stderr.write(
+            `[watch] ${label}: ${stops.inserted} stop(s) inserted on the proven route; it passes ` +
+              `within reach of ${stops.reachable.join(", ")}\n`,
+          );
+          legWaypoints = stops.cells;
         }
       }
       // A straight run thins to one hop however long it is, and the pathfinder

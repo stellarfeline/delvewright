@@ -13,6 +13,7 @@
 // the server.
 
 import type { Vec3Tuple } from "./critical-path.ts";
+import { distSq, nearestInnerCell } from "./route.ts";
 
 /** The tolerance, in degrees, the bot reads a body's yaw within. */
 export const WATCH_YAW_TOLERANCE = 2;
@@ -96,6 +97,68 @@ export function horizontalDistance(a: Vec3Tuple, b: Vec3Tuple): number {
  */
 export function mayReach(w: Watcher, pos: Vec3Tuple): boolean {
   return w.stands.some((s) => feetDistance(s, pos) <= w.within);
+}
+
+/** What {@link watchStops} did: the route with its stops, and the binding. */
+export interface WatchStops {
+  readonly cells: readonly Vec3Tuple[];
+  /** Proven cells inserted as stops, each the route's nearest to a watcher's stand. */
+  readonly inserted: number;
+  /** The watchers the route passes within reach of, at a vertex or a stop. */
+  readonly reachable: readonly string[];
+}
+
+/**
+ * **Stop where the route passes a watcher, not only at its corners.** The
+ * compiler draws a watcher from the dense cells it proved the walk over; the
+ * exported route keeps only their corners, and the bot judges where it stops.
+ * For every stand of every watcher, the route's nearest proven cell
+ * ({@link nearestInnerCell}, the shared route rule) is inserted as a stop when
+ * no vertex stands in reach of it and that cell does — so a body beside the
+ * middle of a straight leg is judged from the middle. `keepWhole(a, b)` names
+ * hops a stop must not split (a climb the executor drives as one hop, a hop
+ * through a timed gate staged at its mouth). Pure.
+ */
+export function watchStops(
+  route: readonly Vec3Tuple[],
+  watchers: readonly Watcher[],
+  keepWhole: (a: Vec3Tuple, b: Vec3Tuple) => boolean = () => false,
+): WatchStops {
+  const reach = (w: Watcher): number => (w.within - WATCH_REACH_MARGIN) ** 2;
+  const add = new Map<number, Vec3Tuple[]>();
+  const reachable = new Set<string>();
+  for (const w of watchers) {
+    for (const feet of w.stands) {
+      // A route cell is a block; the body stands at its centre.
+      const s: Vec3Tuple = [feet[0] - 0.5, feet[1], feet[2] - 0.5];
+      if (route.some((v) => distSq(v, s) <= reach(w))) {
+        reachable.add(w.id); // a corner already stands in reach: judged there
+        continue;
+      }
+      const inner = nearestInnerCell(s, route, keepWhole);
+      if (!inner || inner.distSq > reach(w)) continue;
+      reachable.add(w.id);
+      const at = add.get(inner.index) ?? [];
+      if (!at.some((c) => c[0] === inner.cell[0] && c[1] === inner.cell[1] && c[2] === inner.cell[2])) {
+        at.push(inner.cell);
+      }
+      add.set(inner.index, at);
+    }
+  }
+  const cells: Vec3Tuple[] = [];
+  let inserted = 0;
+  route.forEach((v, i) => {
+    const stops = add.get(i);
+    if (stops) {
+      // In walking order: along the segment from its start vertex.
+      const a = route[i - 1]!;
+      stops.sort((p, q) => distSq(p, a) - distSq(q, a));
+      cells.push(...stops);
+      inserted += stops.length;
+    }
+    cells.push(v);
+  });
+  return { cells, inserted, reachable: watchers.filter((w) => reachable.has(w.id)).map((w) => w.id) };
 }
 
 /**

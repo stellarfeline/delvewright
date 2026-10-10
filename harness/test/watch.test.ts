@@ -7,11 +7,14 @@ import { CriticalPathParseError, parseCriticalPath } from "../src/critical-path.
 import {
   WatchLedger,
   bearing,
+  WATCH_REACH_MARGIN,
+  feetDistance,
   mayReach,
   parsePosReply,
   parseYawReply,
   wrapDegrees,
   yRotationRange,
+  watchStops,
   type Watcher,
 } from "../src/watch.ts";
 
@@ -136,4 +139,42 @@ test("the record's watchers are parsed whole, and a malformed row is refused by 
   refuses([row({ extra: 1 })], "/watchers/0/extra");
   refuses([row({ class_tag: "dw_class_warder" })], "/watchers/0");
   refuses([row({ who: "class/warder" })], "/watchers/0");
+});
+
+test("a watcher beside the middle of a straight two-waypoint leg is judged from the middle", () => {
+  // The compiler draws the body from the dense route cells; the export keeps a
+  // straight leg's two ends. The body stands 4 blocks off the leg's middle,
+  // reach 7, and more than 10 from either end.
+  const [w] = parseCriticalPath(
+    pathWith([row({ id: "actor/the-tailor", feet: [10.5, 64, 4.5], stands: [[10.5, 64, 4.5]], within: 7 })]),
+  ).watchers as [Watcher];
+  const leg: [number, number, number][] = [
+    [0, 64, 0],
+    [20, 64, 0],
+  ];
+  const centre = (c: readonly number[]): [number, number, number] => [c[0]! + 0.5, c[1]!, c[2]! + 0.5];
+  assert.ok(!leg.some((v) => mayReach(w, centre(v))), "neither end is within reach");
+  const stops = watchStops(leg, [w]);
+  assert.deepEqual(stops.cells, [
+    [0, 64, 0],
+    [10, 64, 0],
+    [20, 64, 0],
+  ]);
+  assert.equal(stops.inserted, 1);
+  assert.deepEqual(stops.reachable, ["actor/the-tailor"]);
+  assert.ok(feetDistance(w.feet, centre([10, 64, 0])) <= w.within - WATCH_REACH_MARGIN);
+  // A hop that must stay whole (a climb, a gate crossing) is never split.
+  assert.equal(watchStops(leg, [w], () => true).inserted, 0);
+  // A body already in reach of a corner adds no stop.
+  const [near] = parseCriticalPath(
+    pathWith([row({ id: "npc/near", feet: [1.5, 64, 2.5], stands: [[1.5, 64, 2.5]], within: 7 })]),
+  ).watchers as [Watcher];
+  const corner = watchStops(leg, [near]);
+  assert.equal(corner.inserted, 0);
+  assert.deepEqual(corner.reachable, ["npc/near"]);
+  // A body out of reach of the whole route stays unreached.
+  const [far] = parseCriticalPath(
+    pathWith([row({ id: "npc/far", feet: [10.5, 64, 12.5], stands: [[10.5, 64, 12.5]], within: 7 })]),
+  ).watchers as [Watcher];
+  assert.deepEqual(watchStops(leg, [far]), { cells: leg, inserted: 0, reachable: [] });
 });

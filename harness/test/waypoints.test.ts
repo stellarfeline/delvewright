@@ -18,7 +18,7 @@ import {
   nearestIndex,
 } from "../src/waypoints.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
-import { distSqToRoute } from "../src/sculk.ts";
+import { distSqToRoute } from "../src/route.ts";
 
 // A cave that VISITS [197, 69, -20] twice and RETURNS to the entry [262, 66, 1] —
 // exactly the nobodys-cave shape whose duplicate destinations broke a by-coordinate

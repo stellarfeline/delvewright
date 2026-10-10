@@ -16,7 +16,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Vec3Tuple } from "./critical-path.ts";
-import { LISTENER_RADIUS_SQ, distSq, distSqToRoute, type Vibration } from "./sculk.ts";
+import { LISTENER_RADIUS_SQ, type Vibration } from "./sculk.ts";
+import { distSq, distSqToRoute, straightRunStep } from "./route.ts";
 
 /** The sub-path of the waypoints artifact relative to `critical-path.json`'s dir. */
 const WAYPOINTS_SUBPATH = ["validation", "critical-path-waypoints.json"] as const;
@@ -620,11 +621,10 @@ export function subdivideStraightRuns(
   cells.forEach((b, i) => {
     const a = i > 0 ? cells[i - 1] : undefined;
     if (a !== undefined) {
-      const d: Vec3Tuple = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      const n = Math.max(Math.abs(d[0]), Math.abs(d[1]), Math.abs(d[2]));
+      const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]));
       if (n > maxHop) {
-        if (d.every((c) => c === 0 || Math.abs(c) === n)) {
-          const step: Vec3Tuple = [d[0] / n, d[1] / n, d[2] / n];
+        const step = straightRunStep(a, b);
+        if (step) {
           for (let k = maxHop; k < n; k += maxHop) {
             out.push([a[0] + step[0] * k, a[1] + step[1] * k, a[2] + step[2] * k]);
             inserted += 1;

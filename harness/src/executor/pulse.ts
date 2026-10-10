@@ -13,7 +13,8 @@ import {
   type PulsePlan,
   type PulseVerdict,
 } from "../pulse.ts";
-import { nearestIndex, nextLegWaypoints } from "../waypoints.ts";
+import { nextLegWaypoints } from "../waypoints.ts";
+import { nearestOnRoute, routeIndexAfter } from "../route.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
@@ -75,11 +76,17 @@ export const methods = {
         ? nextLegWaypoints(this.waypoints.legs, this.legCursor, [pos[0], pos[1], pos[2]])
         : undefined;
     const cells = leg?.matched ? leg.waypoints : undefined;
-    const along = (c: readonly [number, number, number]): number =>
-      cells ? nearestIndex(cells, c) : 0;
+    // Where along the leg a station lies, read on the route the compiler
+    // proved (the shared route rule), never by its nearest corner: a station
+    // beside the middle of a straight run lies between its two ends, and the
+    // walk resumes from the end after it rather than walking back.
+    const along = (c: readonly [number, number, number]): number => {
+      const at = cells ? nearestOnRoute([c[0], c[1], c[2]], cells) : undefined;
+      return at ? at.segment + at.t : 0;
+    };
     let walked = this.legResume?.leg === this.legCursor ? this.legResume.from : 0;
     for (const d of [...due].sort((a, b) => along(a.station.cell) - along(b.station.cell))) {
-      const k = along(d.station.cell);
+      const k = cells ? routeIndexAfter(d.station.cell, cells) : 0;
       if (cells) this.openLegHearing();
       await this.walkTo(
         d.station.cell,
