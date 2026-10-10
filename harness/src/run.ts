@@ -698,7 +698,11 @@ async function main(): Promise<number> {
       process.stderr.write(`[finding] ${finding}\n`);
     }
 
+    // spec-0100 §4.7: the run's closing `[sculk]` line, printed whether or not
+    // the path passed; a darkness effect on the bot or a warden fails the run.
+    const sculkFailure = executor.sculkRunVerdict();
     if (failure !== undefined) throw failure;
+    if (sculkFailure !== undefined) throw new Error(`sculk: ${sculkFailure}`);
     // EVERY red stage ends the run red — the critical path's muster, a die-retry
     // loop, the death loop, a branch — from the one place the rows are judged
     // (`RunReport.redStages`). A delve can be completable and still ship a wave

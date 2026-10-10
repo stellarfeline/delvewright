@@ -28,6 +28,7 @@ import {
   unstagedCrushBoxes,
 } from "../timed-gate.ts";
 import { delay, withTimeout, fmt } from "./connection.ts";
+import { VIBRATION_TAIL_MS, legLine, type Vibration } from "../sculk.ts";
 import { ControlTakenError } from "./cutscene.ts";
 import { type GateAssist, crossTimedGate } from "./timed-gate.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -563,6 +564,10 @@ export const methods = {
       // not consume and falls back to the single destination goal.
       let legWaypoints: readonly Vec3Tuple[] | undefined;
       let legClimbs: readonly Climb[] = [];
+      // spec-0100 §4.7: the vibrations the proven leg is predicted to make,
+      // heard from the walk's start.
+      let legVibrations: readonly Vibration[] = [];
+      const heardFrom = Date.now();
       // spec-0016 §4: the timed gates that bind THIS walk. A gate is a world fact
       // the compiler exports for the whole campaign; a proven leg's `timed_gates`
       // narrows that table to the subset its route crosses. A walk with no proven
@@ -585,6 +590,7 @@ export const methods = {
         );
         legWaypoints = match.waypoints;
         legClimbs = match.climbs;
+        legVibrations = match.vibrations;
         if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
           legWaypoints = legWaypoints.slice(this.legResume.from);
           this.legResume = undefined;
@@ -724,9 +730,45 @@ export const methods = {
           : undefined,
         completion ? () => this.stepSettled(completion) : undefined,
       );
+      if (legVibrations.length > 0) {
+        await this.hearVibrations(label, legVibrations, heardFrom);
+      }
     } finally {
       restoreControls();
     }
+  },
+
+  /**
+   * spec-0100 §4.7: wait up to {@link VIBRATION_TAIL_MS} after a leg's end for
+   * every sensor click and shriek the compiler predicted for it, print the leg's
+   * `[sculk]` line, and fail the step on a predicted event not heard.
+   */
+  async hearVibrations(
+    this: MineflayerExecutor,
+    label: string,
+    vibrations: readonly Vibration[],
+    from: number,
+  ): Promise<void> {
+    const until = Date.now() + VIBRATION_TAIL_MS;
+    let heard = this.sculk.hear(vibrations, from, Date.now());
+    while (heard.missing.length > 0 && Date.now() < until) {
+      await delay(100);
+      heard = this.sculk.hear(vibrations, from, Date.now());
+    }
+    process.stderr.write(`${legLine(label, heard)}\n`);
+    if (heard.missing.length > 0) {
+      throw new Error(
+        `${label}: the compiler predicted this leg sets off sculk it did not hear — ` +
+          `${heard.missing.join("; ")} (from the leg's start to ${VIBRATION_TAIL_MS}ms after its end)`,
+      );
+    }
+  },
+
+  /** spec-0100 §4.7: the run's closing `[sculk]` line, and why the run fails
+   * (a darkness effect on the bot, or a warden), if it does. */
+  sculkRunVerdict(this: MineflayerExecutor): string | undefined {
+    process.stderr.write(`${this.sculk.runLine()}\n`);
+    return this.sculk.runFailure();
   },
 
   /**
