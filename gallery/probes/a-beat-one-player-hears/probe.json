@@ -1,0 +1,21 @@
+{
+  "code": "DW0993",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/pulses/0/when",
+      "value": {
+        "requires_state": [
+          {
+            "op": "at-least",
+            "state": "state/tokens",
+            "value": 0
+          }
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the slow heartbeat staged on `state/tokens`, the purse each player holds for themselves. A pulse addresses every player standing in its place, so its gate is a fact about the party: a term one player satisfies and another does not would be a beat one body hears and the one beside it does not. Refused at the document, naming the pulse and the datum, with the remedy — name a flag or a `party` datum, or leave `when` out. It declares no unit."
+}

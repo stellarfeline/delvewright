@@ -384,6 +384,8 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
     let mut unknown_reported = vec![false; s.palette.len()];
     // --- Shape: a palette entry omitting a multipart property. ---
     let mut shape_reported = vec![false; s.palette.len()];
+    // --- Sculk: a palette entry whose state is not at rest. ---
+    let mut sculk_reported = vec![false; s.palette.len()];
 
     for b in &s.blocks {
         let entry = &s.palette[b.state as usize];
@@ -519,6 +521,25 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                     )
                     .at(b.pos),
                 );
+            }
+        }
+
+        // 3c. the sculk family enters at rest (spec-0100 §3.2, §3.3): the one
+        //     rest rule (`delvewright_dsl::blocks::sculk_rest`), judged here over
+        //     the palette state AND this cell's block-entity fields, which vary
+        //     by cell — so a state fault is reported once per palette entry and
+        //     an NBT fault once per cell.
+        if !unknown_reported[b.state as usize] {
+            let state = palette_state_string(entry);
+            let nbt = b.nbt.as_ref().and_then(Nbt::as_compound).map(sculk_nbt);
+            if let Err(fault) = delvewright_dsl::blocks::sculk_rest(&state, nbt.as_ref()) {
+                let by_nbt = delvewright_dsl::blocks::sculk_rest(&state, None).is_ok();
+                if by_nbt || !sculk_reported[b.state as usize] {
+                    if !by_nbt {
+                        sculk_reported[b.state as usize] = true;
+                    }
+                    diags.push(Diagnostic::error(fault.code().id(), fault.to_string()).at(b.pos));
+                }
             }
         }
 
@@ -675,6 +696,45 @@ pub fn audit_tile_set(
         tiles: Some(audits),
     };
     (report, all_diags)
+}
+
+/// A palette entry as the block state string every rule over a state reads:
+/// `name[k=v,…]`, properties in key order.
+fn palette_state_string(entry: &crate::admit::structure::PaletteEntry) -> String {
+    if entry.properties.is_empty() {
+        return entry.name.clone();
+    }
+    let props: Vec<String> = entry
+        .properties
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect();
+    format!("{}[{}]", entry.name, props.join(","))
+}
+
+/// The block-entity fields the sculk rest rule reads (spec-0100 §2.2, §2.4,
+/// §2.5), out of one cell's NBT: a pending `listener.event`,
+/// `last_vibration_frequency`, `warning_level`, and the number of `cursors`.
+/// A field the NBT does not carry is its rest value.
+pub fn sculk_nbt(data: &BTreeMap<String, Nbt>) -> delvewright_dsl::blocks::SculkNbt {
+    delvewright_dsl::blocks::SculkNbt {
+        listener_event: data
+            .get("listener")
+            .and_then(Nbt::as_compound)
+            .is_some_and(|l| l.contains_key("event")),
+        last_vibration_frequency: data
+            .get("last_vibration_frequency")
+            .and_then(Nbt::as_i32)
+            .map_or(0, i64::from),
+        warning_level: data
+            .get("warning_level")
+            .and_then(Nbt::as_i32)
+            .map_or(0, i64::from),
+        cursors: data
+            .get("cursors")
+            .and_then(Nbt::as_list)
+            .map_or(0, <[Nbt]>::len),
+    }
 }
 
 /// A block entity's own forbidden reason: a forbidden `id`, or an embedded

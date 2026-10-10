@@ -3321,3 +3321,26 @@ fn the_unperturbed_gym_builds_and_writes_its_tree() {
         "an ordinary build says nothing about perturbation: {err}"
     );
 }
+
+/// spec-0102 §5.1: every build prints the pulse binding, and a campaign that
+/// declares no pulse prints a measured zero.
+#[test]
+fn a_build_with_no_pulse_prints_a_zero_pulse_binding() {
+    let pf = common::prefabs_dir();
+    let out = tmp("pulse-zero-out");
+    let r = delvec(&[
+        "build",
+        common::keep_trial_dir().to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert_eq!(code(&r), 0, "{stderr}");
+    assert!(
+        stderr.contains("pulse binding: 0 pulse(s), 0 staged;"),
+        "the zero is printed:\n{stderr}"
+    );
+    assert!(!out.join("validation/pulses.json").exists());
+}

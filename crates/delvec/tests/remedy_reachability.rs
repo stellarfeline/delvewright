@@ -3559,3 +3559,108 @@ fn dw0953_naming_a_party_datum_validates() {
     );
     assert_eq!(code, 0, "and validates:\n{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW0993–DW0995 — the moves a pulse's refusals name (spec-0102)
+// ---------------------------------------------------------------------------
+
+/// The lethal-volume fixture with one pulse heard round the Keeper's stand,
+/// and a flag the first beat sets.
+fn pulse_campaign(tag: &str, pulse: serde_json::Value) -> PathBuf {
+    let camp = lethal_campaign(&format!("pulse-{tag}"));
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["pulses"] = serde_json::json!([pulse]);
+        v["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({ "type": "set-flag", "flag": "flag/heard" }));
+    });
+    camp
+}
+
+fn a_pulse() -> serde_json::Value {
+    serde_json::json!({
+        "id": "pulse/the-bar", "sound": "block.bell.use",
+        "at": { "anchor": "anchor/keeper-stand" },
+        "region": { "anchor": "anchor/keeper-stand", "extent": [1, 0, 1] },
+        "every": 30, "floor": 0.4
+    })
+}
+
+/// **THE INTERVAL IN SERVER TICKS, AT LEAST 1.** The move `DW0993`'s
+/// `every: 0` shape names.
+#[test]
+fn dw0993_an_interval_of_at_least_one_tick_validates() {
+    let dir = common::prefabs_dir();
+    let mut p = a_pulse();
+    p["every"] = serde_json::json!(0);
+    let camp = pulse_campaign("every", p);
+    let (code, before) = validate_camp(&camp, &dir);
+    assert_eq!(code, 1, "refused at validation:\n{before}");
+    assert!(
+        before.contains("DW0993") && before.contains("at least 1"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["pulses"][0]["every"] = serde_json::json!(30);
+    });
+    let (code, after) = validate_camp(&camp, &dir);
+    assert!(!after.contains("DW0993"), "{after}");
+    assert_eq!(code, 0, "an interval of 30 validates:\n{after}");
+}
+
+/// **THE BOX.** The move `DW0994` names: a box over the burning floor holds no
+/// cell a body can stand in; drawn over the Keeper's floor, it builds.
+#[test]
+fn dw0994_a_box_drawn_over_floor_builds() {
+    let dir = common::prefabs_dir();
+    let mut p = a_pulse();
+    p["region"] = serde_json::json!({ "anchor": "anchor/exit", "extent": [0, 0, 0] });
+    let camp = pulse_campaign("box", p);
+    let (code, before) = build("dw0994-rock", &camp, &dir);
+    assert_eq!(code, 3, "refused at build:\n{before}");
+    assert!(
+        before.contains("DW0994") && before.contains("Draw the box over floor"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["pulses"][0]["region"] =
+            serde_json::json!({ "anchor": "anchor/keeper-stand", "extent": [1, 0, 1] });
+    });
+    let (code, after) = build("dw0994-floor", &camp, &dir);
+    assert!(!after.contains("DW0994"), "{after}");
+    assert_eq!(code, 0, "the moved box builds:\n{after}");
+}
+
+/// **A GATE THE FORCED ROUTE OPENS.** `DW0995` requires nothing, and names
+/// the term that never held; staging the pulse on a flag the route sets
+/// clears it, and the pulse gains a listening station.
+#[test]
+fn dw0995_a_gate_the_route_opens_is_heard() {
+    let dir = common::prefabs_dir();
+    let mut p = a_pulse();
+    p["when"] = serde_json::json!({ "requires_flags": ["flag/never"] });
+    let camp = pulse_campaign("route", p);
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type": "set-flag", "flag": "flag/never",
+                "when": { "requires_flags": ["flag/never"] }
+            }));
+    });
+    let (code, before) = build("dw0995-never", &camp, &dir);
+    assert_eq!(code, 0, "an advisory builds:\n{before}");
+    assert!(
+        before.contains("DW0995") && before.contains("`flag/never` is required"),
+        "the advisory names the term:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["pulses"][0]["when"] = serde_json::json!({ "requires_flags": ["flag/heard"] });
+    });
+    let (code, after) = build("dw0995-heard", &camp, &dir);
+    assert_eq!(code, 0, "{after}");
+    assert!(!after.contains("DW0995"), "{after}");
+    assert!(after.contains("1 of 1 with a listening station"), "{after}");
+}

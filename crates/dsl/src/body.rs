@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{Actor, AreaId, Mark, Npc, NpcSkin};
+use crate::{Actor, AreaId, ClassId, Mark, Npc, NpcSkin};
 
 #[cfg(doc)]
 use crate::WaveMob;
@@ -86,6 +86,79 @@ impl Locomotion {
 pub struct BodyTraversal {
     /// How this body gets around, overriding what its entity id implies.
     pub locomotion: Locomotion,
+}
+
+/// **A still body that turns to face a player** (spec-0101) — the declaration
+/// both body classes carry, as one type, because facing belongs to the body and
+/// not to the verb that first wanted it turned.
+///
+/// The run-time turn is `rotate <body> facing entity <player> eyes`, re-issued
+/// from the root `tick` by one generated function (`watch_tick`): every tick a
+/// player [`Self::who`] names stands within [`Self::within`] blocks of the
+/// body's feet, the body faces that player's eyes with its own, body and head
+/// together; with nobody in reach it keeps its last facing; while a `move-npc` /
+/// `move-actor` walks it, the walk owns the yaw and the watch resumes on the tick
+/// after the arrival.
+///
+/// Both fields are required: whom the figure watches and how far it sees are the
+/// creator's, so neither has a default.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BodyWatch {
+    /// Whom the body faces: `"nearest"` (the nearest player), or
+    /// `{ "class": "class/<id>" }` (the nearest player wearing that class).
+    pub who: WatchWho,
+    /// How far the body sees, in whole blocks `>= 1`, measured as the game
+    /// measures an entity selector's `distance`: from the body's feet to the
+    /// player's.
+    pub within: std::num::NonZeroU32,
+}
+
+/// Whom a watching body faces ([`BodyWatch::who`]): the bare keyword
+/// `"nearest"`, or a class filter. Untagged, and each variant's payload is its
+/// own type, so a mistyped key fails the schema instead of matching the wrong
+/// arm (see `CameraSubject`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum WatchWho {
+    /// `"nearest"`: the nearest player, whoever they are.
+    Nearest(WatchNearest),
+    /// `{ "class": "class/<id>" }`: the nearest player who took that class.
+    Class(WatchClass),
+}
+
+impl WatchWho {
+    /// The class this watch is filtered to, if any.
+    pub fn class(&self) -> Option<&ClassId> {
+        match self {
+            WatchWho::Nearest(_) => None,
+            WatchWho::Class(c) => Some(&c.class),
+        }
+    }
+
+    /// The stable token a report writes this under: `nearest`, or the class id.
+    pub fn token(&self) -> String {
+        match self {
+            WatchWho::Nearest(_) => "nearest".to_string(),
+            WatchWho::Class(c) => c.class.as_str().to_string(),
+        }
+    }
+}
+
+/// The keyword form of [`WatchWho`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum WatchNearest {
+    /// The nearest player.
+    Nearest,
+}
+
+/// The class-filter form of [`WatchWho`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchClass {
+    /// The class (stage-3 ref) whose players this body watches.
+    pub class: ClassId,
 }
 
 /// One object class that has a **body the compiler stages**: a declared
@@ -246,6 +319,14 @@ impl<'a> BodyRef<'a> {
         }
     }
 
+    /// This body's watch declaration (spec-0101), if it carries one.
+    pub fn watch(self) -> Option<&'a BodyWatch> {
+        match self {
+            BodyRef::Npc(n) => n.watch.as_ref(),
+            BodyRef::Actor(a) => a.watch.as_ref(),
+        }
+    }
+
     /// This class's name in the JSON Schema export (`delvec schema --stage all`).
     ///
     /// The join between the closed Rust set and the schema, which is the only
@@ -363,6 +444,37 @@ pub fn body_skin_sites(c: &crate::envelope::Campaign) -> Vec<BodySkinSite<'_>> {
         .collect()
 }
 
+/// A body that carries a [`BodyWatch`] declaration, with the JSON pointer at it.
+#[derive(Clone, Debug)]
+pub struct BodyWatchSite<'a> {
+    /// Which object class declared it, and the object itself.
+    pub body: BodyRef<'a>,
+    /// JSON pointer at the `watch` field, for a diagnostic path.
+    pub path: String,
+    /// The declaration.
+    pub watch: &'a BodyWatch,
+}
+
+/// Every body in the campaign that DECLARES a watch, in stage order (spec-0101).
+///
+/// The one enumeration of the watchers, shared by the class refusal
+/// (`DW0996`), the drawability proof (`DW0997`), the emitter (`watch_tick`, the
+/// summon tag, the walk-driver yield), the generated PackTests and the bot's
+/// record — a filter over [`body_sites`], so a third body class is a compile
+/// error at every consumer until it says what it does with a watch.
+pub fn body_watch_sites(c: &crate::envelope::Campaign) -> Vec<BodyWatchSite<'_>> {
+    body_sites(c)
+        .into_iter()
+        .filter_map(|s| {
+            s.body.watch().map(|w| BodyWatchSite {
+                body: s.body,
+                path: format!("{}/watch", s.path),
+                watch: w,
+            })
+        })
+        .collect()
+}
+
 /// The **mutable mirror** of [`body_skin_sites`]: every skin declaration in the
 /// campaign, in the identical order, exposed mutably so one pass can rewrite what
 /// every emitter will read ([`crate::l10n::namespace_skin_textures`]).
@@ -457,6 +569,61 @@ pub(crate) fn body_traversal_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                  remove the declaration — a route that crosses water is already governed by the \
                  flooded-cell rules, and a body vanilla itself calls aquatic still reaches the \
                  traversal proof's binding ledger under its derived class."
+            ),
+        ));
+    }
+}
+
+crate::dw_code! {
+    /// (spec-0101) **A watch for a class nobody plays**: a body's
+    /// `watch.who.class` names a class stage 3 does not declare.
+    ///
+    /// The watch line filters its player by the class tag the class apply puts
+    /// on whoever takes it (`dw_class_<c>`). A class stage 3 never declares is a
+    /// class nobody can take, so no player can ever wear its tag and the body
+    /// could never turn. Judged over the whole campaign — a stage-2 body may
+    /// name a class the creator writes at stage 3, exactly as `DW0197` judges a
+    /// stage-2 body against stage 5. Prescription: name a declared class, or
+    /// watch `"nearest"`.
+    pub const WATCH_CLASS_UNDECLARED: DwCode = DwCode::new("DW0996", ExitTier::Build);
+}
+
+/// spec-0101: a watch that names a class stage 3 does not declare is refused
+/// (`DW0996`), naming the body and the class. Empty for a campaign whose bodies
+/// declare no class watch.
+pub(crate) fn body_watch_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let declared: std::collections::BTreeSet<&str> = c
+        .classes
+        .content
+        .classes
+        .iter()
+        .map(|k| k.id.as_str())
+        .collect();
+    for site in body_watch_sites(c) {
+        let Some(class) = site.watch.who.class() else {
+            continue;
+        };
+        if declared.contains(class.as_str()) {
+            continue;
+        }
+        let (stage, path, id) = (site.body.stage(), &site.path, site.body.id());
+        let known = if declared.is_empty() {
+            "none".to_string()
+        } else {
+            format!(
+                "`{}`",
+                declared.iter().copied().collect::<Vec<_>>().join("`, `")
+            )
+        };
+        d.push(Diagnostic::error(
+            WATCH_CLASS_UNDECLARED,
+            stage,
+            format!("{path}/who/class"),
+            format!(
+                "`{id}` watches the nearest player of `{class}`, a class stage 3 does not \
+                 declare — nobody can take it, so no player ever wears its tag and the body \
+                 could never turn. The declared classes: {known}. Name one of them, or \
+                 watch `\"nearest\"`."
             ),
         ));
     }

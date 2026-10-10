@@ -215,6 +215,19 @@ impl crate::LethalVolume {
     }
 }
 
+impl crate::Pulse {
+    /// This pulse's whole gate, as one value (spec-0102) — the [`Guard`] under
+    /// `when`, or the always-open gate when it declares none.
+    ///
+    /// [`Guard`]: crate::Guard
+    pub fn gate(&self) -> Gate<'_> {
+        match &self.when {
+            Some(g) => Gate::of(&g.requires_flags, &g.forbids_flags, &g.requires_state),
+            None => Gate::OPEN,
+        }
+    }
+}
+
 /// The object classes that carry a gate. **A closed set.**
 ///
 /// `ALL` is the enumeration; [`GateConsumer::label`] and every consumer that
@@ -250,12 +263,16 @@ pub enum GateConsumer {
     /// whether the volume kills. A volume's liveness is a fact about the place,
     /// so its gate is a party predicate: the tick reads it on `#party`.
     LethalVolume,
+    /// A stage-5 `pulses[]` entry (spec-0102) — the gate decides whether the
+    /// pulse beats. A pulse addresses every player in its place, so its gate is
+    /// a party predicate read on `#party`.
+    Pulse,
 }
 
 impl GateConsumer {
     /// Every consumer class, in enumeration order (= visit order in
     /// [`for_each_gate`]).
-    pub const ALL: [GateConsumer; 9] = [
+    pub const ALL: [GateConsumer; 10] = [
         GateConsumer::Objective,
         GateConsumer::Effect,
         GateConsumer::Trigger,
@@ -265,6 +282,7 @@ impl GateConsumer {
         GateConsumer::ShopOffer,
         GateConsumer::Loop,
         GateConsumer::LethalVolume,
+        GateConsumer::Pulse,
     ];
 
     /// How many consumer classes there are.
@@ -282,6 +300,7 @@ impl GateConsumer {
             GateConsumer::ShopOffer => "shop offer",
             GateConsumer::Loop => "loop",
             GateConsumer::LethalVolume => "lethal volume",
+            GateConsumer::Pulse => "pulse",
         }
     }
 
@@ -324,7 +343,8 @@ impl GateConsumer {
             | GateConsumer::Trigger
             | GateConsumer::Trap
             | GateConsumer::Loop
-            | GateConsumer::LethalVolume => Some(false),
+            | GateConsumer::LethalVolume
+            | GateConsumer::Pulse => Some(false),
             // Ask the root (and then the seams inside the bundle).
             GateConsumer::Effect => None,
         }
@@ -339,7 +359,8 @@ impl GateConsumer {
             | GateConsumer::CastPlacement
             | GateConsumer::ShopOffer
             | GateConsumer::Loop
-            | GateConsumer::LethalVolume => "quests",
+            | GateConsumer::LethalVolume
+            | GateConsumer::Pulse => "quests",
             // An effect root hangs off the quests stage four times out of five and
             // off dialogue once; the site's own path says which.
             GateConsumer::Effect => "quests",
@@ -404,7 +425,8 @@ impl GateBinding {
 /// Order: every objective (quest order, objective order); every effect (via
 /// [`crate::for_each_campaign_effect`], which inherits the single effect-root
 /// enumeration and descends nesting); every trigger; every trap; every dialogue
-/// option; every cast placement; every shop offer; every lethal volume.
+/// option; every cast placement; every shop offer; every loop; every lethal
+/// volume; every pulse.
 ///
 /// Returns the [`GateBinding`] ledger.
 ///
@@ -426,6 +448,7 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
         (GateConsumer::ShopOffer, 0usize),
         (GateConsumer::Loop, 0usize),
         (GateConsumer::LethalVolume, 0usize),
+        (GateConsumer::Pulse, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -576,6 +599,20 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
             GateConsumer::LethalVolume,
             format!("/content/lethal_volumes/{vi}/when"),
             v.gate(),
+            &mut sites,
+            &mut gated,
+            &mut terms,
+        );
+    }
+
+    // C10 pulses (spec-0102), in declaration order. The pointer names the
+    // `when` object, as a lethal volume's does.
+    enumerated[slot_of(GateConsumer::Pulse)] = true;
+    for (pi, p) in c.quests.content.pulses.iter().enumerate() {
+        visit(
+            GateConsumer::Pulse,
+            format!("/content/pulses/{pi}/when"),
+            p.gate(),
             &mut sites,
             &mut gated,
             &mut terms,

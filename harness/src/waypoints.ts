@@ -16,6 +16,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Vec3Tuple } from "./critical-path.ts";
+import { LISTENER_RADIUS_SQ, type Vibration } from "./sculk.ts";
+import { distSq, distSqToRoute, straightRunStep } from "./route.ts";
 
 /** The sub-path of the waypoints artifact relative to `critical-path.json`'s dir. */
 const WAYPOINTS_SUBPATH = ["validation", "critical-path-waypoints.json"] as const;
@@ -85,6 +87,9 @@ export interface WaypointLeg {
   /** The climbs the leg's route takes, in route order — empty for a leg that
    * climbs nothing, and for every artifact that predates spec-0099. */
   readonly climbs: readonly Climb[];
+  /** The sculk sensors the leg's proven route sets off and the shriekers that
+   * answer each (spec-0100 §4.6) — empty for a leg that sets none off. */
+  readonly vibrations: readonly Vibration[];
 }
 
 /** The parsed waypoints artifact. Legs are in critical-path order — the compiler
@@ -257,6 +262,47 @@ function parseClimbs(entry: Record<string, unknown>, pointer: string): Climb[] {
   });
 }
 
+/**
+ * Parse a leg's optional `vibrations` (spec-0100 §4.6). Absent → `[]`. A sensor
+ * not within 8 blocks (`distSqr ≤ 64`) of its leg's route — the polyline through
+ * its waypoints, on which every route cell the compiler predicted from lies
+ * ({@link distSqToRoute}) — or a shrieker
+ * not within 8 of its sensor, is a prediction the game cannot make, refused.
+ */
+function parseVibrations(
+  entry: Record<string, unknown>,
+  pointer: string,
+  waypoints: readonly Vec3Tuple[],
+): Vibration[] {
+  const value = entry["vibrations"];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(`${pointer}/vibrations`, `must be an array, got ${describe(value)}`);
+  }
+  return value.map((v, j) => {
+    const at = `${pointer}/vibrations/${j}`;
+    if (!isRecord(v)) {
+      fail(at, `must be an object, got ${describe(v)}`);
+    }
+    const sensor = requireVec3(v["sensor"], `${at}/sensor`);
+    if (distSqToRoute(sensor, waypoints) > LISTENER_RADIUS_SQ) {
+      fail(`${at}/sensor`, "is not within 8 blocks of its leg's route");
+    }
+    const list = v["shriekers"];
+    if (!Array.isArray(list)) {
+      fail(`${at}/shriekers`, `must be an array, got ${describe(list)}`);
+    }
+    const shriekers = list.map((k, i) => {
+      const cell = requireVec3(k, `${at}/shriekers/${i}`);
+      if (distSq(cell, sensor) > LISTENER_RADIUS_SQ) {
+        fail(`${at}/shriekers/${i}`, "is not within 8 blocks of its sensor");
+      }
+      return cell;
+    });
+    return { sensor, shriekers };
+  });
+}
+
 /** Validate and normalize a parsed JSON value into a {@link Waypoints}. */
 export function parseWaypoints(raw: unknown): Waypoints {
   if (!isRecord(raw)) {
@@ -320,7 +366,8 @@ export function parseWaypoints(raw: unknown): Waypoints {
         }
       }
     }
-    return { from, to, waypoints, timedGates: legGates, climbs };
+    const vibrations = parseVibrations(entry, pointer, waypoints);
+    return { from, to, waypoints, timedGates: legGates, climbs, vibrations };
   });
 
   return { version, campaignId, timedGates, legs };
@@ -425,6 +472,9 @@ export interface LegMatch {
   readonly timedGates: readonly TimedGate[];
   /** The climbs the matched leg's route takes (empty when none, or no match). */
   readonly climbs: readonly Climb[];
+  /** The vibrations the matched leg is predicted to make (empty when none, or
+   * no match). */
+  readonly vibrations: readonly Vibration[];
   readonly cursor: number;
   /**
    * Whether the walk starts where the matched leg was proven from: within
@@ -477,6 +527,7 @@ export function nextLegWaypoints(
       waypoints: leg.waypoints,
       timedGates: leg.timedGates,
       climbs: leg.climbs,
+      vibrations: leg.vibrations,
       cursor: cursor + 1,
       startsOnLeg: startOffset === undefined || startOffset <= LEG_START_REACH,
       startOffset,
@@ -487,6 +538,7 @@ export function nextLegWaypoints(
     waypoints: undefined,
     timedGates: [],
     climbs: [],
+    vibrations: [],
     cursor,
     startsOnLeg: true,
     startOffset: undefined,
@@ -569,11 +621,10 @@ export function subdivideStraightRuns(
   cells.forEach((b, i) => {
     const a = i > 0 ? cells[i - 1] : undefined;
     if (a !== undefined) {
-      const d: Vec3Tuple = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      const n = Math.max(Math.abs(d[0]), Math.abs(d[1]), Math.abs(d[2]));
+      const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2]));
       if (n > maxHop) {
-        if (d.every((c) => c === 0 || Math.abs(c) === n)) {
-          const step: Vec3Tuple = [d[0] / n, d[1] / n, d[2] / n];
+        const step = straightRunStep(a, b);
+        if (step) {
           for (let k = maxHop; k < n; k += maxHop) {
             out.push([a[0] + step[0] * k, a[1] + step[1] * k, a[2] + step[2] * k]);
             inserted += 1;

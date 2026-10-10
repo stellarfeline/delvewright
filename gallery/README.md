@@ -102,6 +102,24 @@ Turn the rungs to face into the wall, with the open hall behind them, and the
 world no longer keeps them: the build is refused `DW0991`, naming each rung and
 the sturdy face it lacks (`probes/a-ladder-with-nothing-behind-it`).
 
+The far hall has a **listening floor** (spec-0100). A sculk sensor is set into
+the floor course beside the walk off the loft stair to the ferry deck, so every
+footstep on that stretch clicks it; four courses south of it a shrieker stands
+on the floor with summoning off, close enough to hear the click, and answers a
+player's footstep with sound and particles and nothing else. At the foot of the
+long gallery's stair a calibrated sensor faces north with air behind it, so its
+filter stays open and it hears every vibration within sixteen blocks; it is more
+than eight blocks from the shrieker, so only the plain sensor wakes it. Nothing
+in either sensor's reach reads a redstone signal. Over the near hall's roof, in
+the solid stone, a sculk catalyst is sealed where no body can stand within eight
+blocks: the build states the nearest body cell and its distance. The waypoint
+export carries the plain sensor and its shrieker on the legs that walk past them
+and the calibrated sensor on the legs up and down the stair, and the bot asserts
+each click and shriek and closes the run with `[sculk] darkness 0, warden 0`.
+Four probes each refill one cell: the shrieker with summoning on (`DW0998`), the
+sensor caught mid-click (`DW0999`), an iron door in the floor beside the sensor
+(`DW1000`), and a catalyst set into the near hall's floor (`DW1001`).
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor
@@ -212,6 +230,18 @@ holding them at once.
 | `a-stage-one-player-holds` | `DW0953` | `validate` | staging the lidded pit on the tokens, a datum each player holds for themselves |
 | `a-wait-longer-than-two-minutes` | `DW0925` | `validate` | making a fallen player wait 121 seconds before rejoining, one past the two minutes a wait may last |
 | `a-ladder-with-nothing-behind-it` | `DW0991` | `build` | turning the cabin ladder's four rungs to face into the cabin's wall, so each hangs on the open hall behind it |
+| `a-shrieker-that-can-summon` | `DW0998` | `validate` | refilling the listening floor's shrieker with `can_summon=true`, a warden no wave declares |
+| `a-sensor-caught-mid-click` | `DW0999` | `validate` | refilling the listening floor's sensor with `sculk_sensor_phase=active`, a click nobody made |
+| `an-iron-door-beside-a-sensor` | `DW1000` | `build` | setting an iron door into the floor beside the listening floor's sensor, a door every footstep would open |
+| `a-catalyst-over-the-floor` | `DW1001` | `build` | setting a sculk catalyst into the near hall's floor, under a cell the party walks |
+| `a-watcher-for-a-class-nobody-plays` | `DW0996` | `validate` | setting the Warden to watch the nearest `class/pilgrim`, a class stage 3 does not declare |
+| `a-watcher-nobody-can-reach` | `DW0997` | `build` | setting the destrier at the annex threshold to watch within one block, where no cell the party walks to stands |
+| `a-beat-with-no-interval` | `DW0993` | `validate` | setting the slow heartbeat to beat `every: 0` ticks, the same tick again forever |
+| `a-floor-as-loud-as-the-source` | `DW0993` | `validate` | setting the slow heartbeat's `floor` to 1.0, the farthest ear as loud as the source, a reach without end |
+| `a-beat-one-player-hears` | `DW0993` | `validate` | gating the slow heartbeat on the tokens, a datum each player holds for themselves |
+| `a-beat-heard-both-here-and-there` | `DW0929` | `validate` | giving the annex drip, heard in a `region`, a `place` as well |
+| `a-beat-in-solid-rock` | `DW0994` | `build` | moving the annex drip's box into the stone canopy over the hall's east bay, where no body can stand |
+| `a-beat-the-game-never-heard` | `DW0326` | `validate` | misspelling the slow heartbeat's sound `entity.warden.heartbeats`, an id the pinned game does not hold |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
@@ -487,6 +517,75 @@ them by name. Reproduce it in one edit —
 The pocket sits off the critical path on purpose. Blocking geometry on the route
 makes the build's render plan and the one `delvec snapshot` derives disagree —
 see below.
+
+## The still ones
+
+Two bodies watch (spec-0101). `npc/warden`, the gatekeeper standing on
+`anchor/warden`, a plain villager body, turns to face the nearest player within
+eight blocks (`watch: {who: "nearest", within: 8}`); `actor/standard-bearer`, the
+skinned mannequin at `anchor/march`, turns only to a player of the warder's class
+within six (`watch: {who: {class: "class/warder"}, within: 6}`). Between them they
+write both body classes, both forms of `who`, the mob and the mannequin summon,
+and the yield on both walk drivers: the Warden goes over the barrier line to
+`anchor/pocket` and the bearer carries the colours up to `anchor/vantage`, and
+while each walks, the walk owns its facing; on the tick after it arrives the
+watch has it back.
+
+The build says what it proved on its `watch binding:` line — the watchers
+declared, the walked cells they were judged over, how many are drawable,
+refused and unobservable — and writes
+`validation/watchers.json`, the cell each generated PackTest stands its dummy on:
+the walked cell in reach whose bearing differs most from the body's home facing.
+`watch_npc_warden` and `watch_actor_standard_bearer` turn the body by its
+`watch_tick` and see it hold that facing once the dummy is out of reach — the
+bearer's first sees the dummy draw nothing until it wears the class — and then
+lift body and dummy above the build limit to see one real `tick` reach the watch:
+the bearer's own cell is inside `trigger/glimpse-the-marshal`'s approach, whose
+cutscene takes every player out of the watch.
+`watch_yield_*` sees each walk take the watch and give it back. The bot asks the
+server, at every waypoint within reach, whether each body faces it, and prints
+`[watch] …` with what it reached.
+
+The probes are the two ways a watch is refused:
+`probes/a-watcher-for-a-class-nobody-plays` (`DW0996`) and
+`probes/a-watcher-nobody-can-reach` (`DW0997`).
+
+## The heartbeat, and the drip
+
+Three sounds beat over places (spec-0102). Under the hearth, one cell below
+`anchor/hearth`, a warden's heartbeat sounds over the whole near hall
+(`place: area/hall`, `floor: 0.4`). `pulse/the-heart` beats every 30 ticks
+from `obj/hear-the-curator`, which sets `flag/lid-fell`, until
+`obj/board-the-ferry` sets `flag/boarded`; `pulse/the-heart-racing`, the same
+sound from the same cell at `every: 14` and `pitch: 1.2`, beats from that flag
+on — a quickening is a second pulse on one source with a disjoint gate. The
+third, `pulse/the-drip`, is a dripstone drip in the annex's second bay, heard
+in a `region` and ungated, so it beats from world load. Between them they
+write every field: both spellings of where a pulse is heard, a gate and no
+gate, a namespaced sound and a bare one, an offset mark and a plain one.
+
+The build says what it derived on its `pulse binding:` line — the farthest
+standing ear, the range and the volume each `floor` asks for, how many pulses
+are live on the forced route, how many have a listening station — and writes
+`validation/pulses.json`, each pulse's derived numbers and its stations. The
+forced route never walks into the annex's second bay, so the drip has no
+station: the build says so with the `DW0995` advisory, naming the bay's box,
+and the bot reports it `not_heard: no station` — a beat the party need never
+hear is a design, stated, never passed. PackTest drives each heartbeat's gate
+open and sees its chain start (`pulse_the_heart`, `pulse_the_heart_racing`),
+shuts it by one term and sees the chain stop (`…_shut`), and sees world setup
+reach the drip (`pulse_the_drip`). The bot stands `2 · every + 10` ticks at the
+slow heartbeat's listening station in the hall and at its silent station down
+the long hall, and at the racing heartbeat's listening station on the ferry
+deck, and prints `[pulse] …` with the beats it heard and
+`pulse binding: H of N pulse(s) heard at a listening station, S silent at a
+silent station`.
+
+The probes are the ways a pulse is refused: `probes/a-beat-with-no-interval`,
+`probes/a-floor-as-loud-as-the-source` and `probes/a-beat-one-player-hears`
+(`DW0993`), `probes/a-beat-heard-both-here-and-there` (`DW0929`),
+`probes/a-beat-in-solid-rock` (`DW0994`) and
+`probes/a-beat-the-game-never-heard` (`DW0326`).
 
 ## The ferry, and what a link is
 

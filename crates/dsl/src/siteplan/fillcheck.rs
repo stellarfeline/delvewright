@@ -19,6 +19,8 @@ pub(super) fn fill(c: &Campaign, plan: &SitePlanContent, d: &mut Vec<Diagnostic>
                      game has."
                 ),
             ));
+        } else {
+            crate::validate::check_sculk_rest(state, "site-plan", path, d);
         }
     };
     match &plan.fill {

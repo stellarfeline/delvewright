@@ -7,6 +7,7 @@
 // comes from critical-path.json.
 
 import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
+import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -322,6 +323,19 @@ async function main(): Promise<number> {
   } else {
     process.stderr.write(`repaint plan: none in this build (no set-atmosphere)\n`);
   }
+  // spec-0102 §5.3: where each pulse must be heard and where it must not.
+  // Absent → the build declares no pulse, said out loud.
+  const pulsePlan = await loadPulsePlanForCriticalPath(pathArg);
+  if (pulsePlan) {
+    executor.usePulsePlan(pulsePlan);
+    process.stderr.write(
+      `pulse plan: ${pulsePlan.pulses.length} pulse(s), ` +
+        `${pulsePlan.pulses.filter((p) => p.listening).length} with a listening station, ` +
+        `${pulsePlan.pulses.filter((p) => p.silent).length} with a silent station\n`,
+    );
+  } else {
+    process.stderr.write(`pulse plan: none in this build (no pulse)\n`);
+  }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
@@ -339,6 +353,10 @@ async function main(): Promise<number> {
   // anything can fight: the executor refuses to classify a body without it,
   // because the only alternative is a list of entity names in the harness.
   executor.useNonCombatants(criticalPath.nonCombatants.kinds);
+  // spec-0101 §5.4: the watching bodies the walk judges at its waypoints. The
+  // record's count is stated before the run, zero included.
+  executor.useWatchers(criticalPath.watchers);
+  process.stderr.write(`[watch] ${criticalPath.watchers.length} watcher(s) in the record\n`);
   {
     const nc = criticalPath.nonCombatants;
     process.stderr.write(
@@ -417,6 +435,8 @@ async function main(): Promise<number> {
             retryOnDeath: retryOnDeathFromEnv(),
           });
           pathProven = true;
+          // The watch binding counts the proven path's walks only.
+          executor.watchLedger().armed = false;
           // Only after the path is proven. The death loop deliberately
           // kills the player, so running it earlier would leave every later step
           // walking out of a grave — and a delve whose critical path is broken
@@ -541,16 +561,40 @@ async function main(): Promise<number> {
       process.stderr.write(`${repaintBindingLine(repaintPlan, repaintVerdicts)}\n`);
     }
     const repaintFailures = repaintVerdicts.flatMap((v) => (v.failure ? [v.failure] : []));
+    // spec-0101 §5.4: every body that did not face the bot where it should have.
+    const watchLedger = executor.watchLedger();
+    watchLedger.armed = false;
+    const watchFailures = [...watchLedger.failures()];
+    process.stderr.write(`${watchLedger.line()}\n`);
+    for (const f of watchFailures) process.stderr.write(`[watch] FAIL ${f}\n`);
+    report.recordWatch({ ...watchLedger.binding(), line: watchLedger.line() });
+    // spec-0102 §5.3: every pulse was heard at its listening station and not
+    // at its silent one; a pulse with no station is reported, never passed.
+    const pulseVerdicts = executor.pulseVerdicts();
+    report.recordPulseStations(executor.pulseStations);
+    if (pulsePlan) {
+      process.stderr.write(`${pulseBindingLine(pulsePlan, pulseVerdicts)}\n`);
+    }
+    const pulseFailures = pulseVerdicts.flatMap((v) => [
+      ...v.failures,
+      ...(pathFailure === undefined ? v.unreached : []),
+    ]);
     report.stage({
       stage: "critical-path",
       ran: true,
       passed:
-        pathFailure === undefined && musterFailures.length === 0 && repaintFailures.length === 0,
+        pathFailure === undefined &&
+        musterFailures.length === 0 &&
+        repaintFailures.length === 0 &&
+        watchFailures.length === 0 &&
+        pulseFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
         ...musterFailures,
         ...repaintFailures,
+        ...watchFailures,
+        ...pulseFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that
@@ -698,7 +742,11 @@ async function main(): Promise<number> {
       process.stderr.write(`[finding] ${finding}\n`);
     }
 
+    // spec-0100 §4.7: the run's closing `[sculk]` line, printed whether or not
+    // the path passed; a darkness effect on the bot or a warden fails the run.
+    const sculkFailure = executor.sculkRunVerdict();
     if (failure !== undefined) throw failure;
+    if (sculkFailure !== undefined) throw new Error(`sculk: ${sculkFailure}`);
     // EVERY red stage ends the run red — the critical path's muster, a die-retry
     // loop, the death loop, a branch — from the one place the rows are judged
     // (`RunReport.redStages`). A delve can be completable and still ship a wave

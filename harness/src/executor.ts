@@ -33,6 +33,8 @@ import type { ResourcePackState } from "./resource-pack.ts";
 import { type LoadWindowTracer } from "./load-window.ts";
 import { type CensusMob, type CensusSummary } from "./markers.ts";
 import { RepaintWatch } from "./repaint.ts";
+import { SculkEar } from "./sculk.ts";
+import type { PulsePlan } from "./pulse.ts";
 import { type Waypoints } from "./waypoints.ts";
 import type { BotConfig } from "./executor/connection.ts";
 import { LOOP_CROSS_TIMEOUT_MS } from "./executor/loop.ts";
@@ -55,6 +57,7 @@ import { methods as loopMethods } from "./executor/loop.ts";
 import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
 import { methods as repaintMethods } from "./executor/repaint.ts";
+import { methods as pulseMethods } from "./executor/pulse.ts";
 import { methods as scoreMethods } from "./executor/score.ts";
 import { methods as lethalMethods } from "./executor/lethal.ts";
 import { methods as stakeMethods } from "./executor/stake.ts";
@@ -64,6 +67,8 @@ import { methods as stagingMethods } from "./executor/staging.ts";
 import { methods as musterMethods } from "./executor/muster.ts";
 import { methods as restMethods } from "./executor/rest.ts";
 import { methods as witnessMethods } from "./executor/witness.ts";
+import { methods as watchMethods } from "./executor/watch.ts";
+import type { WatchLedger } from "./watch.ts";
 import { methods as crosshairMethods } from "./executor/crosshair.ts";
 import { methods as collectMethods } from "./executor/collect.ts";
 import { methods as settleMethods } from "./executor/settle.ts";
@@ -109,6 +114,15 @@ export class MineflayerExecutor implements StepExecutor {
   readonly completedObjectives = new Map<string, number>();
   /** The repaint ledger (spec-0080 §5.2), when the build repaints anything. */
   repaintWatch: RepaintWatch | undefined;
+  /** The sculk family's ear (spec-0100 §4.7): sensor clicks, shrieks, darkness
+   * on the bot and warden spawns, from connect. */
+  readonly sculk = new SculkEar();
+  /** The pulses and their stations (spec-0102 §5.3), when the build declares any. */
+  pulsePlan: PulsePlan | undefined;
+  /** Station key → `undefined` when the station judged as owed, else the failure. */
+  readonly pulseRecorded = new Map<string, string | undefined>();
+  /** Every station stood at, with what it heard — the run report's `pulse_stations`. */
+  readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
   /**
    * How many times each marker token has been broadcast this run. A repeatable
    * trigger broadcasts its marker every time it fires, and a hit count on the
@@ -192,6 +206,8 @@ export class MineflayerExecutor implements StepExecutor {
   windowsAtDeath = 0;
   /** Which reply belongs to which command. See {@link refusalOf}. */
   readonly brackets = new ReplyBrackets();
+  /** The record's watching bodies and what the walk found about them (spec-0101 §5.4). */
+  watch: WatchLedger | undefined;
   /**
    * Every entity the server has announced dead (the entity-event death status),
    * by id. A body in its death throes is still in the client's entity table, and a
@@ -500,6 +516,14 @@ export class MineflayerExecutor implements StepExecutor {
    * that leg resumes there instead of walking back to the leg's start.
    */
   legResume: { leg: number; from: number } | undefined;
+  /**
+   * When the harness first walked part of the leg at `leg` before the step's
+   * own walk of it — a run-back approach or a pulse station walk along its
+   * proven cells. The leg's sculk listening window opens here, so a sensor the
+   * partial walk sets off answers for the leg (spec-0100 §4.7). Reset by every
+   * `beforeStep`; consumed by the walk that matches the leg.
+   */
+  legHearingFrom: { leg: number; at: number } | undefined;
   /** Timestamp (ms) of the last damage attributed from a packet-named source. */
   lastAttributionAt = 0;
   /** The body the server last named as hitting the bot, and when — the health drop
@@ -558,6 +582,7 @@ type Methods = typeof connectionMethods &
   typeof sustainMethods &
   typeof deathMethods &
   typeof repaintMethods &
+  typeof pulseMethods &
   typeof scoreMethods &
   typeof lethalMethods &
   typeof stakeMethods &
@@ -567,8 +592,9 @@ type Methods = typeof connectionMethods &
   typeof musterMethods &
   typeof restMethods &
   typeof witnessMethods &
+  typeof watchMethods &
   typeof crosshairMethods &
   typeof collectMethods &
   typeof settleMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);
