@@ -81,8 +81,7 @@
         "cover": "minecraft:andesite_stairs",
         "mode": "recessed",
         "on": [
-          "wall",
-          "vault"
+          "wall"
         ],
         "spacing": 4.0,
         "within": {
@@ -108,6 +107,29 @@
           "wall"
         ],
         "spacing": 3.5,
+        "within": {
+          "from": [
+            9,
+            5,
+            14
+          ],
+          "to": [
+            21,
+            13,
+            30
+          ]
+        }
+      }
+    },
+    {
+      "block": "minecraft:soul_lantern[hanging=true,waterlogged=false]",
+      "hull": {
+        "cover": "minecraft:andesite_stairs",
+        "mode": "recessed",
+        "on": [
+          "vault"
+        ],
+        "spacing": 4.0,
         "within": {
           "from": [
             9,
