@@ -10,6 +10,7 @@ import { traceLoadWindows, type LoadWindowRecord, type TracedBot } from "../load
 import { serverAge } from "./death.ts";
 import { answersTrigger } from "./trigger.ts";
 import { pathfinder } from "./walk.ts";
+import { holdWalkedClimbableNodes, type ClimbHoldBot } from "../movement.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /** Connection + identity for the bot. Sourced from the environment (see below). */
@@ -157,6 +158,9 @@ export const methods = {
       lethal: () => this.lethalBoxes,
     });
     bot.loadPlugin(pathfinder);
+    // The pathfinder aims a ladder cell a block above the feet; a body walking
+    // along the panel's face never rises to it (spec-0099). See the rule.
+    holdWalkedClimbableNodes(bot as unknown as ClimbHoldBot, (line) => process.stderr.write(line));
     this.installHandlers(bot);
 
     await new Promise<void>((resolve, reject) => {

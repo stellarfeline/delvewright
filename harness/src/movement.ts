@@ -201,3 +201,103 @@ export function configureLeg(
   bot.setControlState("sneak", true);
   return () => bot.setControlState("sneak", false);
 }
+
+/**
+ * One node of a mineflayer-pathfinder path after the library's
+ * `postProcessPath`: `x`/`y`/`z` are where its steering aims (no longer the
+ * cell), `hash` is still the cell, `"x,y,z"`.
+ */
+export interface PathNode {
+  x: number;
+  y: number;
+  z: number;
+  readonly hash: string;
+  readonly toBreak: readonly unknown[];
+  readonly toPlace: readonly unknown[];
+}
+
+/**
+ * Re-aim every ladder node of `path` that the body walks through on its floor at
+ * the body's feet, and return the cells re-aimed.
+ *
+ * mineflayer-pathfinder 2.4.5's `postProcessPath` aims each node at the top of
+ * the collision shape in its cell, and a ladder's shape is a full-height panel, so
+ * a node in a ladder cell is aimed a block above the feet — unless the next node
+ * descends, where the library aims at the feet itself. Its steering takes a node
+ * as reached only within `|dy| < 1`. A body entering the cell head-on pushes into
+ * the panel and is lifted to that height; a body walking along the panel's face
+ * pushes into nothing, so the steering holds still at the cell's edge and the
+ * walk never arrives. In vanilla a ladder cell is open to a body standing on the
+ * floor beneath it, and the compiler's route model walks through it so.
+ *
+ * The library's own descent rule, widened by one case: a node is aimed at the
+ * feet when the body enters it level (`prevY`, the cell before it, at the same
+ * height) and the next node does not rise. A node the body climbs into, or climbs
+ * on from, keeps the library's aim. `climbable` is asked of the node's CELL, so
+ * only what the library raised is ever moved; the walk stops at the first node
+ * that breaks or places, as the library's own processing does.
+ */
+export function holdClimbableNodesAtFeet(
+  path: PathNode[],
+  startY: number,
+  climbable: (x: number, y: number, z: number) => boolean,
+): string[] {
+  const cell = (n: PathNode): [number, number, number] => {
+    const [x, y, z] = n.hash.split(",").map(Number) as [number, number, number];
+    return [x, y, z];
+  };
+  const held: string[] = [];
+  let prevY = startY;
+  for (let i = 0; i < path.length; i++) {
+    const node = path[i]!;
+    if (node.toBreak.length > 0 || node.toPlace.length > 0) break;
+    const [x, y, z] = cell(node);
+    const next = path[i + 1];
+    const level = prevY === y && (next === undefined || cell(next)[1] <= y);
+    if (level && node.y > y && climbable(x, y, z)) {
+      node.x = x + 0.5;
+      node.y = y;
+      node.z = z + 0.5;
+      held.push(node.hash);
+    }
+    prevY = y;
+  }
+  return held;
+}
+
+/** The subset of a mineflayer bot {@link holdWalkedClimbableNodes} reads. */
+export interface ClimbHoldBot {
+  on(event: "path_update", listener: (results: { path: PathNode[] }) => void): unknown;
+  readonly entity: {
+    readonly position: {
+      readonly x: number;
+      readonly y: number;
+      readonly z: number;
+      offset(dx: number, dy: number, dz: number): unknown;
+    };
+  };
+  blockAt(pos: unknown): { readonly type: number } | null;
+  readonly pathfinder: { readonly movements?: { readonly climbables?: Set<number> } };
+}
+
+/**
+ * Install {@link holdClimbableNodesAtFeet} on every path the pathfinder adopts.
+ * `path_update` hands the listener the very path the library's steering is about
+ * to follow, after its own post-processing, so the re-aim is what the steering
+ * reads. What counts as climbable is the library's own set
+ * (`Movements.climbables`). Once per bot, after the plugin is loaded.
+ */
+export function holdWalkedClimbableNodes(bot: ClimbHoldBot, log: (line: string) => void = () => {}): void {
+  bot.on("path_update", (results) => {
+    const climbables = bot.pathfinder.movements?.climbables;
+    if (!climbables || climbables.size === 0) return;
+    const p = bot.entity.position;
+    const held = holdClimbableNodesAtFeet(results.path, Math.floor(p.y), (x, y, z) => {
+      const block = bot.blockAt(p.offset(x + 0.5 - p.x, y + 0.5 - p.y, z + 0.5 - p.z));
+      return block !== null && climbables.has(block.type);
+    });
+    if (held.length > 0) {
+      log(`[ladder] ${held.length} ladder node(s) walked through on the floor, aimed at the feet: ${held.join(" ")}\n`);
+    }
+  });
+}
