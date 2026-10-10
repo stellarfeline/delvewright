@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::{is_false, is_zero3};
 use crate::{
-    ActorId, AnchorId, BodyTraversal, EncounterTier, MobAttributes, MobDrop, MobEquipment, NpcSkin,
-    OnKill, QuestEffect,
+    ActorId, AnchorId, BodyTraversal, BodyWatch, EncounterTier, MobAttributes, MobDrop,
+    MobEquipment, NpcSkin, OnKill, QuestEffect,
 };
 
 #[cfg(doc)]
@@ -103,6 +103,11 @@ pub struct Actor {
     /// is set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traversal: Option<BodyTraversal>,
+    /// Turn to face a player in reach (spec-0101) — the same [`BodyWatch`] a
+    /// stage-2 [`Npc`] carries. Watches the puppet only: an unleashed twin's
+    /// facing is its own AI's. Absent = byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch: Option<BodyWatch>,
     /// What happens each time a player is credited with killing this actor's
     /// body (spec-0074) — effect root R9, the same [`OnKill`] a
     /// wave declares. Absent = no bundle, and the actor's emission is

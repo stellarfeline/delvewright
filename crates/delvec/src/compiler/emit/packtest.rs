@@ -34,8 +34,20 @@ mod teleport;
 mod timed_gate;
 mod trap;
 mod trigger;
+mod watching;
 mod wave;
 mod world;
+
+/// What the build's proofs established that the suite stands its templates on:
+/// each locked strike's plan (spec-0094) and each watcher's drawable cell
+/// (spec-0101). They travel from the proof to the template, never re-derived.
+#[derive(Clone, Copy)]
+pub(super) struct Proved<'a> {
+    /// The locked strikes' plans, as `assembly::check` proved them.
+    pub(super) asm_locks: &'a crate::compiler::assembly::Locks,
+    /// The watchers, as `watching::prove` judged them.
+    pub(super) watch_binding: &'a crate::compiler::watching::WatchBinding,
+}
 
 /// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
 /// 2.4.0 for MC 1.21.11) auto-discovers `*.mcfunction` files under
@@ -51,8 +63,12 @@ pub(super) fn emit_packtest(
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
     waves: &WaveGeometry<'_>,
     payloads: &PayloadPlans,
-    asm_locks: &crate::compiler::assembly::Locks,
+    proved: &Proved<'_>,
 ) {
+    let Proved {
+        asm_locks,
+        watch_binding,
+    } = *proved;
     let ns = &plan.namespace;
     put_json(
         out,
@@ -133,6 +149,10 @@ pub(super) fn emit_packtest(
     // v0.6 (spec-0014): actor spawn/despawn (kill vs vanish), move-actor arrival,
     // unleash swap. Emits nothing for a campaign with no actors.
     actor::emit_v06_actor_packtests(plan, out, actor_moves);
+    // spec-0101 §5.3: per watching body, the turn, the hold and (for a class
+    // watch) the filter; per watching body with a walk, the yield. Emits nothing
+    // for a campaign that declares no watcher.
+    watching::emit_watch_packtests(plan, out, moves, actor_moves, watch_binding);
     // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
     // Emits nothing when the campaign declares no traps.
     trap::emit_trap_packtests(plan, out);

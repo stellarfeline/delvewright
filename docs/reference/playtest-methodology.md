@@ -179,6 +179,28 @@ driven hop prints where it let go. `N > M` says a climb was walked by the
 pathfinder, unproven; a run on a campaign with a climb that prints no such line
 walked it with no proven leg at all, and the line's absence is the finding.
 
+**A body that watches** (spec-0101 §5.4). The critical path carries
+`watchers[]`: each watching body's selector, where it can stand (its summon point
+and every walk's end), whom it watches and how far it sees. At every waypoint of
+the proven path where some stand is within reach, the bot stops, lets the game run
+its watch line, and reads in one bracketed turn its own position and each body's
+live position as the server holds them (a body walking, removed or not yet
+summoned reads empty and is not judged) and whether it wears the class a class
+watch names. For each body it can draw that stands within `within − 0.25` of it
+and at least one block away horizontally, it asks the server whether
+`@e[<body>,tag=dw_watch,y_rotation=<yaw±2>]` matches, `yaw` the game's own bearing
+from the body's feet to the bot's (`judgeWatchers`, `harness/src/executor/watch.ts`;
+the arithmetic in `harness/src/watch.ts`). A denial fails the critical-path stage
+with the body's yaw read beside the bearing; it is recorded, never thrown into the
+walk, so the walk's recovery never reads it as a stalled hop. Only the critical
+path's walks judge — the death loop's walks are not the proven path. The binding
+line is printed at load and after the path:
+`[watch] W watcher(s) in the record, K within reach on the proven path, K asserted
+(J judgement(s)); never within reach: <ids>`, and the run report carries it as
+`watch_binding` when the record holds a watcher. A watcher the path never comes
+within reach of is reported, never failed; on the gallery the `gallery bot` job
+requires `K ≥ 1`.
+
 **What it cannot climb.** The bot's client physics (prismarine-physics) climbs
 `ladder` and `vine` and nothing else. A proven climb on a weeping, twisting or
 cave vine is refused by name at the hop — a harness gap, not a route defect — and

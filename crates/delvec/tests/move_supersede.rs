@@ -138,9 +138,13 @@ fn quests_two_legs() -> String {
 }
 
 fn build_with(quests: String) -> BuildOutput {
+    build_with_npcs(read_hw("npcs.json"), quests)
+}
+
+fn build_with_npcs(npcs: String, quests: String) -> BuildOutput {
     let raw = RawCampaign {
         world: read_hw("world.json"),
-        npcs: read_hw("npcs.json"),
+        npcs,
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
         quests,
@@ -221,6 +225,12 @@ struct Tp {
 struct Sim {
     fns: BTreeMap<String, Vec<String>>,
     scores: BTreeMap<(String, String), i64>,
+    /// The tags the one walked body carries (`tag @e[…] add|remove <t>`), from
+    /// what its summon gave it.
+    tags: std::collections::BTreeSet<String>,
+    /// Per tick, whether the body carried `dw_watch` when that tick's root
+    /// `tick` — and so its watch line — ran: before any scheduled function.
+    watch_at_tick: Vec<(u32, bool)>,
     /// Functions due on the NEXT tick (scheduled `1t`), in schedule order.
     /// `schedule function` defaults to `replace`, so a name appears at most once.
     pending: Vec<String>,
@@ -233,6 +243,8 @@ impl Sim {
         Self {
             fns,
             scores: BTreeMap::new(),
+            tags: std::collections::BTreeSet::new(),
+            watch_at_tick: Vec::new(),
             pending: Vec::new(),
             tick: 0,
             tps: Vec::new(),
@@ -345,6 +357,12 @@ impl Sim {
                         self.call(&bare);
                     }
                 }
+                ["tag", _sel, "add", t] => {
+                    self.tags.insert(t.to_string());
+                }
+                ["tag", _sel, "remove", t] => {
+                    self.tags.remove(*t);
+                }
                 ["tp", _sel, x, y, z, ..] => self.tps.push(Tp {
                     tick: self.tick,
                     func: name.to_string(),
@@ -358,6 +376,10 @@ impl Sim {
     /// Advance one server tick: run everything scheduled for it, in schedule order.
     fn step(&mut self) {
         self.tick += 1;
+        // The game runs the `#minecraft:tick` functions before the tick's
+        // scheduled ones, so the watch line reads the tag as it stands here.
+        self.watch_at_tick
+            .push((self.tick, self.tags.contains("dw_watch")));
         for f in std::mem::take(&mut self.pending) {
             self.call(&f);
         }
@@ -754,5 +776,81 @@ fn the_move_actor_template_claims_the_driver_it_invokes() {
         Some(endpoint(&fns, &driver)),
         "`v06_move_actor` invoked `{driver}` after a sibling fired both legs, and the \
          driver teleported nothing: its stamp is behind the puppet's leg generation"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0101: a watching body yields its yaw to the walk that owns it.
+// ---------------------------------------------------------------------------
+
+/// A watching keeper walked twice, the second walk superseding the first: the
+/// live-watch tag is gone from the first start through the second walk's
+/// arrival tick, and back on the tick after — the superseded driver dies without
+/// arriving, so it never hands the yaw back early (spec-0101 §4.2, §4.4).
+#[test]
+fn a_watching_body_yields_to_the_walk_that_supersedes_and_resumes_on_its_arrival() {
+    let npcs = common::patch_doc(&read_hw("npcs.json"), |d| {
+        d["content"]["npcs"][0]["watch"] = serde_json::json!({ "who": "nearest", "within": 8 });
+    });
+    let out = build_with_npcs(npcs, quests_two_walks());
+    let fns = driver_fns(&out, "mv_");
+    let (long_start, long_tick) = ("mv_keeper_exit", "mv_tick_keeper_exit");
+    let (short_start, short_tick) = ("mv_keeper_door", "mv_tick_keeper_door");
+    let long_len = fns[long_tick]
+        .iter()
+        .filter(|l| l.contains(" run tp "))
+        .count();
+    let short_len = fns[short_tick]
+        .iter()
+        .filter(|l| l.contains(" run tp "))
+        .count();
+    assert!(
+        long_len > short_len + 5,
+        "fixture premise: the first walk must outlast the second ({long_len} vs {short_len})"
+    );
+
+    let mut sim = Sim::new(fns.clone());
+    // As summoned: a watching body carries the tag from world init.
+    sim.tags.insert("dw_watch".to_string());
+    let first_start = sim.tick;
+    sim.call(long_start);
+    sim.run(6);
+    sim.call(short_start);
+    sim.run(long_len as u32 + short_len as u32 + 10);
+
+    let arrival = sim
+        .tps
+        .iter()
+        .rfind(|t| t.func == short_tick)
+        .map(|t| t.tick)
+        .expect("the second walk arrives");
+    // Vacuity: the superseded walk must die without arriving, or its own arrival
+    // would be what restored the tag.
+    let first_arrival = endpoint(&fns, long_tick);
+    assert!(
+        !sim.tps
+            .iter()
+            .any(|t| t.func == long_tick && t.pos == first_arrival),
+        "fixture premise: the superseded walk never reaches its own endpoint"
+    );
+    for &(tick, watching) in &sim.watch_at_tick {
+        if tick > first_start && tick <= arrival {
+            assert!(
+                !watching,
+                "tick {tick}: the watch line saw `dw_watch` while a walk owned the body \
+                 (first start at tick {first_start}, second arrival at tick {arrival})"
+            );
+        }
+        if tick > arrival {
+            assert!(
+                watching,
+                "tick {tick}: the watch did not resume after the second walk arrived at tick \
+                 {arrival}"
+            );
+        }
+    }
+    assert!(
+        sim.watch_at_tick.iter().any(|&(t, _)| t > arrival),
+        "the simulation ran past the arrival, so the resume was observed"
     );
 }

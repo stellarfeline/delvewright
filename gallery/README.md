@@ -234,6 +234,8 @@ holding them at once.
 | `a-sensor-caught-mid-click` | `DW0999` | `validate` | refilling the listening floor's sensor with `sculk_sensor_phase=active`, a click nobody made |
 | `an-iron-door-beside-a-sensor` | `DW1000` | `build` | setting an iron door into the floor beside the listening floor's sensor, a door every footstep would open |
 | `a-catalyst-over-the-floor` | `DW1001` | `build` | setting a sculk catalyst into the near hall's floor, under a cell the party walks |
+| `a-watcher-for-a-class-nobody-plays` | `DW0996` | `validate` | setting the Warden to watch the nearest `class/pilgrim`, a class stage 3 does not declare |
+| `a-watcher-nobody-can-reach` | `DW0997` | `build` | setting the destrier at the annex threshold to watch within one block, where no cell the party walks to stands |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own
@@ -509,6 +511,38 @@ them by name. Reproduce it in one edit —
 The pocket sits off the critical path on purpose. Blocking geometry on the route
 makes the build's render plan and the one `delvec snapshot` derives disagree —
 see below.
+
+## The still ones
+
+Two bodies watch (spec-0101). `npc/warden`, the gatekeeper standing on
+`anchor/warden`, a plain villager body, turns to face the nearest player within
+eight blocks (`watch: {who: "nearest", within: 8}`); `actor/standard-bearer`, the
+skinned mannequin at `anchor/march`, turns only to a player of the warder's class
+within six (`watch: {who: {class: "class/warder"}, within: 6}`). Between them they
+write both body classes, both forms of `who`, the mob and the mannequin summon,
+and the yield on both walk drivers: the Warden goes over the barrier line to
+`anchor/pocket` and the bearer carries the colours up to `anchor/vantage`, and
+while each walks, the walk owns its facing; on the tick after it arrives the
+watch has it back.
+
+The build says what it proved on its `watch binding:` line — the watchers
+declared, the walked cells they were judged over, how many are drawable,
+refused and unobservable — and writes
+`validation/watchers.json`, the cell each generated PackTest stands its dummy on:
+the walked cell in reach whose bearing differs most from the body's home facing.
+`watch_npc_warden` and `watch_actor_standard_bearer` turn the body by its
+`watch_tick` and see it hold that facing once the dummy is out of reach — the
+bearer's first sees the dummy draw nothing until it wears the class — and then
+lift body and dummy above the build limit to see one real `tick` reach the watch:
+the bearer's own cell is inside `trigger/glimpse-the-marshal`'s approach, whose
+cutscene takes every player out of the watch.
+`watch_yield_*` sees each walk take the watch and give it back. The bot asks the
+server, at every waypoint within reach, whether each body faces it, and prints
+`[watch] …` with what it reached.
+
+The probes are the two ways a watch is refused:
+`probes/a-watcher-for-a-class-nobody-plays` (`DW0996`) and
+`probes/a-watcher-nobody-can-reach` (`DW0997`).
 
 ## The ferry, and what a link is
 

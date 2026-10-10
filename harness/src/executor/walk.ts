@@ -708,10 +708,15 @@ export const methods = {
         // reports on is the route rather than on whatever was standing in it.
         // A climb hop is driven by the climb (spec-0099), raced against death like
         // every other raw phase; every other hop is staged (see gotoStaged).
-        (spec, glabel) =>
-          spec.climb
+        // spec-0101 §5.4: each hop reached is a waypoint at which every
+        // watching body in reach must face the bot. The judgement records,
+        // never throws, so the walk's recovery never reads it as a stall.
+        async (spec, glabel) => {
+          await (spec.climb
             ? this.raceDeath(() => this.climbHop(spec, glabel))
-            : this.gotoStaged(spec, glabel, sneak),
+            : this.gotoStaged(spec, glabel, sneak));
+          await this.judgeWatchers(glabel);
+        },
         (target) => this.unstickToward(target),
         walkGates.length > 0
           ? {

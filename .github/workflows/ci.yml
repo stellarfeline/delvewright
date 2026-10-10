@@ -1647,6 +1647,26 @@ jobs:
           bash validation/bot-run.sh --project dw-ci-gallery-bot \
             --output ./delve-output-gallery-primary \
             --run-out ./run-out/dw-ci-gallery-bot
+      # spec-0101 §5.4: the gallery owes a watcher the proven path comes within
+      # reach of, and every watcher reached is asserted. The record's count is
+      # the build's own, never written here.
+      - name: the gallery's watchers are judged on the proven path
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+          sys.stdout.reconfigure(newline="\n")
+          built = json.load(open("validation/delve-output-gallery-primary/validation/watchers.json"))
+          r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
+          b = r.get("watch_binding")
+          print(f"watchers declared by the build: {built['binding']['declared']}; bot: {json.dumps(b)}")
+          if b is None or b["in_record"] != built["binding"]["declared"]:
+              sys.exit("the bot's record does not carry the build's watchers")
+          if b["within_reach"] < 1:
+              sys.exit("the proven path came within reach of no watcher: the gallery's watch binds nothing at run time")
+          if b["asserted"] != b["within_reach"]:
+              sys.exit("a watcher the path reached was not asserted")
+          PY
       # spec-0089 §5.4 (`DW0955`) over the site-plan point: the point whose
       # pieces carry `structure_void` at every cell their place does not own
       # (spec-0098 §2). Tier 2 compares the primary, which places none, so a

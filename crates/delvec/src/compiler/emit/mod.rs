@@ -573,14 +573,22 @@ pub fn build_with_warnings(
     //
     // The binding is kept: the critical path carries the bot's witness of each
     // blow, and the staging record states which were witnessed.
+    let population = walked_population(plan, &world);
     let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding> =
-        Some(prove_assemblies(plan, &world)?);
+        Some(prove_assemblies(plan, &world, &population)?);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     prove_blockout(plan, assembled, &mut warnings)?;
 
     // ---- the declaration proofs: no occupancy model, `DW0360` first ----
     let teleport_gate = prove_declarations(plan, &mut warnings)?;
+
+    // ---- spec-0101: the watchers (`DW0997`), over the assemblies' population ----
+    //
+    // After the declaration proofs, so a body whose mark leaves its piece
+    // (`DW0897`) is sent to that line rather than told nobody can reach it.
+    let mut watch_binding = prove_watchers(plan, &population)?;
+    drop(population);
 
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
@@ -870,7 +878,10 @@ pub fn build_with_warnings(
             rings: &wave_rings,
         },
         &payload_plans,
-        &asm_locks,
+        &packtest::Proved {
+            asm_locks: &asm_locks,
+            watch_binding: &watch_binding,
+        },
     );
 
     // ---- creator overlay (playtest-only; spec-0006) ----
@@ -901,6 +912,23 @@ pub fn build_with_warnings(
         if b.declared > 0 {
             put_json(&mut out, "validation/assembly.json", &b.to_json());
         }
+    }
+    watch_binding.attach_walks(&moves, &actor_moves);
+    // spec-0101 §5.4: the bot's watchers ride the record it already reads, and
+    // the per-watcher record the PackTests stand on is stated beside it. Both
+    // absent for a campaign that declares no watcher → byte-identical.
+    if watch_binding.declared() > 0 {
+        if let Some(obj) = cp.as_object_mut() {
+            obj.insert(
+                "watchers".to_string(),
+                Value::Array(watch_binding.watcher_rows()),
+            );
+        }
+        put_json(
+            &mut out,
+            "validation/watchers.json",
+            &watch_binding.to_json(),
+        );
     }
     put_json(&mut out, "critical-path.json", &cp);
 

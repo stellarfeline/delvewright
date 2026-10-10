@@ -146,7 +146,13 @@
           "texture_id": "bearer"
         },
         "tier": "ordinary",
-        "vulnerable": true
+        "vulnerable": true,
+        "watch": {
+          "who": {
+            "class": "class/warder"
+          },
+          "within": 6
+        }
       },
       {
         "anchor": "anchor/usher",
@@ -4306,6 +4312,6 @@
       }
     ]
   },
-  "dsl_version": "0.38.0",
+  "dsl_version": "0.39.0",
   "stage": "quests"
 }
