@@ -33,10 +33,26 @@ pub enum RegionWrite {
     /// `fill-region` (the author's block), a `shortcut`'s world-load seal.
     ///
     /// "Solid" is a claim about the **block**, not about the write. Only a write
-    /// whose block is a full collision cube leaves floor behind, so the block is
-    /// classified once, by [`RegionWrite::of_block`], and a fluid lands in
-    /// [`RegionWrite::Flood`] instead.
+    /// whose block collides leaves a wall or a floor behind, so the block is
+    /// classified once, by [`RegionWrite::of_block`]: a fluid lands in
+    /// [`RegionWrite::Flood`], a block a body passes through in
+    /// [`RegionWrite::Pass`]. A partial floor (a bottom slab) is modelled as a
+    /// full cube here — the region model carries no partial heights — which can
+    /// only refuse a step vanilla admits.
     Fill,
+    /// Every cell becomes a block **a body passes through**: a `fill-region` /
+    /// `close-gate` / `open-way` whose block has no collision a walk reads — a
+    /// sculk vein, glow lichen, a flower, a torch (no box), a carpet (a box under
+    /// the auto-step), a vine or a ladder (a climb, not a wall)
+    /// ([`delvewright_dsl::blockshape::Collision::Thin`],
+    /// [`delvewright_dsl::blockshape::Collision::Climbable`]).
+    ///
+    /// To the walk it is a [`RegionWrite::Clear`] — the fill destroys whatever
+    /// the box held and leaves cells a body occupies — credited only when the
+    /// party is forced to cause it, and dated by its step even under a trigger,
+    /// because it can only open a region. To the bytes it is a fill: it lays its
+    /// block, so the configuration's block map shows the vein, not air.
+    Pass,
     /// Every cell becomes **free fluid**: a `fill-region` / `close-gate` /
     /// `shortcut` seal whose block is water or lava
     /// ([`crate::compiler::assembled::is_fluid`]).
@@ -82,25 +98,54 @@ impl RegionWrite {
     /// update goes through here, so no two of them can disagree about what a
     /// fluid leaves behind.
     ///
-    /// It reads [`crate::compiler::assembled::is_fluid`] — the same predicate the static
-    /// occupancy model uses — because the question "what does this block do to a
-    /// walker" belongs to the block, not to the verb that wrote it. A waterlogged
-    /// block is deliberately a [`RegionWrite::Fill`]: its cell is occupied by the
-    /// host block and is genuine floor (see `is_fluid`'s note).
+    /// It reads [`delvewright_dsl::blockshape::collision_class`] — the collision
+    /// table measured from the pinned jar, the one the static occupancy model
+    /// classifies every assembled cell by — because the question "what does this
+    /// block do to a walker" belongs to the block, not to the verb that wrote it.
+    /// A waterlogged block a body would collide with is deliberately a
+    /// [`RegionWrite::Fill`]: its cell is occupied by the host block and is
+    /// genuine floor (see `is_fluid`'s note). A waterlogged block a body passes
+    /// through leaves the cell's water free, and is a [`RegionWrite::Flood`].
+    /// An air block is a [`RegionWrite::Clear`]: `fill … minecraft:air` is what a
+    /// `clear-region` emits.
     pub fn of_block(block: &str) -> RegionWrite {
-        if crate::compiler::assembled::is_fluid(block) {
-            RegionWrite::Flood
-        } else {
-            RegionWrite::Fill
+        use delvewright_dsl::blockshape::{Collision, collision_class};
+        match collision_class(block) {
+            Collision::Air => RegionWrite::Clear,
+            Collision::Fluid => RegionWrite::Flood,
+            Collision::Thin(_) | Collision::Climbable => {
+                if crate::compiler::assembled::is_waterlogged(block) {
+                    RegionWrite::Flood
+                } else {
+                    RegionWrite::Pass
+                }
+            }
+            Collision::PartialFloor(_)
+            | Collision::FullCube
+            | Collision::TallBarrier
+            | Collision::FenceGate => RegionWrite::Fill,
         }
     }
 
     /// Whether this write **overwrites** the region with a block, rather than
-    /// emptying it — true for both [`RegionWrite::Fill`] and
-    /// [`RegionWrite::Flood`], because a `fill … minecraft:water` destroys
-    /// whatever was in the box exactly as a `fill … minecraft:stone` does. It says
-    /// nothing about whether the result is standable; that is the variant's job.
+    /// emptying it — true for [`RegionWrite::Fill`], [`RegionWrite::Flood`] and
+    /// [`RegionWrite::Pass`], because a `fill … minecraft:water` or a
+    /// `fill … minecraft:sculk_vein` destroys whatever was in the box exactly as
+    /// a `fill … minecraft:stone` does. It says nothing about whether the result
+    /// is standable or passable; that is [`RegionWrite::closes`]'s.
     pub fn fills(&self) -> bool {
+        matches!(
+            self,
+            RegionWrite::Fill | RegionWrite::Flood | RegionWrite::Pass
+        )
+    }
+
+    /// Whether this write **can make the region impassable** —
+    /// [`RegionWrite::Fill`] and [`RegionWrite::Flood`]. A write that closes is
+    /// credited even when nobody has to cause it, and a trigger's is assumed
+    /// from the start; a write that only opens (a clear, an unseal, a pass) is
+    /// credited only when forced, at its own step.
+    pub fn closes(&self) -> bool {
         matches!(self, RegionWrite::Fill | RegionWrite::Flood)
     }
 }
@@ -503,12 +548,12 @@ pub(in crate::compiler::plan) fn collect_region_events(
             // openings are dated by the step that performs it: a wall is assumed
             // up from the start, never assumed down before somebody strikes it.
             let (fire_step, forced) =
-                if write.fills() && matches!(site.root, EffectRoot::Trigger(_)) {
+                if write.closes() && matches!(site.root, EffectRoot::Trigger(_)) {
                     (0, true)
                 } else {
                     (fire_step, forced)
                 };
-            if !write.fills() && !forced {
+            if !write.closes() && !forced {
                 // An optional firing may make a region impassable, never passable — a
                 // flood is credited for the same reason a fill is: the proof must
                 // survive it.

@@ -4515,7 +4515,19 @@ direction off a placed piece's exported contract, spec-0042), plus a
 leaves behind is read off the command it emits (`plan::RegionWrite`), which is why
 an `open-gate` is a third case and not a synonym for a clear: it is
 `replace`-filtered to the gate's own block, so it removes nothing the model believed
-was there, while an unfiltered `clear-region` does. Collapsing the two says an
+was there, while an unfiltered `clear-region` does. A fill's conclusion is read off
+its **block** through the collision table measured from the pinned jar
+(`RegionWrite::of_block` over `blockshape::collision_class`, the classifier every
+assembled cell goes through; a link's own root writes are classified by the same
+call): a block a body collides with (a full cube, a partial floor, a fence, wall
+or fence gate) is a `Fill` — solid and floor, a partial floor modelled as a full
+cube, which can only refuse; water, lava, a block that brings its own water
+(seagrass, kelp) or a waterlogged block a body passes through is a `Flood` —
+impassable and never floor; a block with no collision box or one under the
+auto-step, or a climb (a sculk vein, glow lichen, a flower, a torch, a carpet, a
+vine, a ladder) is a `Pass` — to the walk a clear, credited only when forced and
+dated by its own step even under a trigger, while the configuration's bytes lay
+its block; `fill … minecraft:air` is a `Clear`. Collapsing the two says an
 `open-gate` deletes a `collapse`'s debris resting in the doorway — measured: the
 `DW0445` burial test goes green, i.e. stops proving anything, the moment they are
 collapsed. Where a fill and a clear overlap, the fill wins: a proof that survives the
