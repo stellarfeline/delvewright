@@ -184,15 +184,18 @@ from the place id, writes `minecraft:structure_void` at every void of the frame
 after the expansion (a derivation, never typed: the cells a neighbour, the
 ring's fixed ground or nobody owns), runs the grammar's contract gates — a voided
 cell is not floor the contract owes and a voided boundary cell is the whole's to
-judge — then judges the piece it
-would write and the row it would write with the same `detail::check` validation
-runs — `DW0843`, `DW0844` naming the seam and the face, `DW0845` — then
-the admission audit and the light probe (taken with the piece standing on its
+judge — then the admission audit and the light probe (taken with the piece standing on its
 handed fixed ground, and walked in through the place's seams as well as its
 ground-level sides — a cellar entered only from above is probed from its
 hole; a scenery place, `reached: false`, is lit for nobody: the probe is not
 run over it and states the standable cells it excludes with their count, and
-the piece is judged sealed), **all before any file is written**.
+the piece is judged sealed); then, once every place the run names has been
+prepared that far, it judges the whole the run would leave with the same
+`detail::check` validation runs — `DW0843`, `DW0844` naming the seam and the
+face, `DW0845` — every row it writes in the detail plan and every piece it
+writes in place of the library's copy, every other row against the piece on
+disk, so the order of the places decides nothing; **all before any file is
+written**.
 Then it freezes the piece into `--prefabs` (`<campaign id>-<place stem>`, with
 the lighting profile measured), writes `<id>.report.json` beside it, writes the `details[]` row
 canonical (every owed name bound to the piece anchor of the same stem — a
@@ -200,7 +203,8 @@ program answers `anchor/node-annex` by marking `node-annex`), and ends by
 validating and building the whole in memory through the observers `build` runs.
 A program declaring a `handed/…` name the allocation does not hand is `DW0882`,
 naming every name it is handed. `--all` details every place with a program in
-site-plan order and stops at the first refusal with the place named; over no
+site-plan order, refuses at the first place that fails its own gates with the
+place named, and writes nothing unless every place and the whole pass; over no
 program it is a zero binding, refused. A second run over an unchanged program
 moves no byte. A program that wants a standalone render loop expands under
 `delvec grammar expand --file … --region <the frame>` at its own defaults.
