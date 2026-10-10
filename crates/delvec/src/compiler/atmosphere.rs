@@ -619,13 +619,11 @@ pub fn set_atmospheres(c: &Campaign) -> Vec<(String, String, &QuestEffect)> {
 
 fn paint_exclusivity(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (stage, path, e) in set_atmospheres(c) {
-        let Verb::SetAtmosphere { region, place, .. } = &e.verb else {
+        let Verb::SetAtmosphere { at, .. } = &e.verb else {
             continue;
         };
-        let msg = match (region, place) {
-            (Some(_), Some(_)) => "names both a `region` and a `place`",
-            (None, None) => "names neither a `region` nor a `place`",
-            _ => continue,
+        let Some(msg) = at.ambiguity() else {
+            continue;
         };
         d.push(Diagnostic::error(
             DW_ATMOSPHERE_PAINT,
