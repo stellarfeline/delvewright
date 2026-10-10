@@ -1460,3 +1460,120 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
         "the piece is the unlit leafy room: {names:?}"
     );
 }
+
+/// **The audit judges a scenery piece exactly as its writer did** (spec-0098
+/// §14, departures 36–37). `delvec detail` writes the gallery's leafy scenery
+/// crown into `<root>/prefabs/` with the campaign at `<root>/campaigns/`, and
+/// `delvec prefab audit` over the written piece passes, deriving the kind from
+/// the campaign's layout graph through the rule the writer sealed on. The same
+/// bytes are refused with `DW0782` once the evidence moves: the node made
+/// reached, or the detail-plan row placing the piece removed. And a piece's
+/// own word buys nothing: a copy under its own id carrying a hand-written
+/// `scenery: true` / `reached: false`, and a copy claiming the scenery piece's
+/// id under another file name, are both judged strictly and refused.
+#[test]
+fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_itself() {
+    let tmp = tempdir("audit-scenery");
+    let campaigns = tmp.join("campaigns");
+    std::fs::create_dir_all(&campaigns).unwrap();
+    let dir = gallery_site_plan(&campaigns);
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"] = json!([]);
+    });
+    let programs = dir.join("programs");
+    std::fs::remove_dir_all(&programs).unwrap();
+    std::fs::create_dir_all(&programs).unwrap();
+    std::fs::write(
+        programs.join("beacon.json"),
+        serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
+    )
+    .unwrap();
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let out = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        dir.to_str().unwrap(),
+        "--all",
+    ]);
+    assert_eq!(code(&out), 0, "the writer passes the crown: {}", text(&out));
+    let piece = prefabs.join("gallery-beacon.nbt");
+    let audit = |nbt: &Path| delvec(&["prefab", "audit", nbt.to_str().unwrap()]);
+
+    // (a) The writer passed it; the audit passes it, saying why.
+    let out = audit(&piece);
+    let t = text(&out);
+    assert_eq!(code(&out), 0, "the audit agrees with the writer: {t}");
+    assert!(
+        t.contains("place kind: scenery") && t.contains("`site-plan` at `node/beacon`"),
+        "the kind is stated with the row it came from: {t}"
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).expect("the report is JSON");
+    assert_eq!(report["contract"]["sealed"], true, "{}", report["contract"]);
+    assert_eq!(report["contract"]["owners"], 1, "{}", report["contract"]);
+
+    let refused_strictly = |nbt: &Path, why: &str| {
+        let out = audit(nbt);
+        let t = text(&out);
+        assert_eq!(code(&out), 1, "{why}: {t}");
+        assert!(
+            t.contains("DW0782")
+                && t.contains("contract-coverage FAILED")
+                && t.contains("place kind: reached (strict)"),
+            "{why}: the strict judgement refuses the leaf tops: {t}"
+        );
+    };
+
+    // (c) A piece vouching for itself. Under its own id, with hand-written
+    // scenery keys: no campaign places it, so it is judged strictly.
+    let meta: Value = serde_json::from_str(
+        &std::fs::read_to_string(prefabs.join("gallery-beacon.json")).unwrap(),
+    )
+    .unwrap();
+    let mut forged = meta.clone();
+    forged["prefab_id"] = json!("prefab/forged-crown");
+    forged["scenery"] = json!(true);
+    forged["reached"] = json!(false);
+    std::fs::copy(&piece, prefabs.join("forged-crown.nbt")).unwrap();
+    std::fs::write(
+        prefabs.join("forged-crown.json"),
+        serde_json::to_string_pretty(&forged).unwrap(),
+    )
+    .unwrap();
+    refused_strictly(
+        &prefabs.join("forged-crown.nbt"),
+        "a piece's own scenery claim is not evidence",
+    );
+    // ...and claiming the scenery piece's id under another file name: it is
+    // not the piece the campaign resolves for that id.
+    std::fs::copy(&piece, prefabs.join("impostor.nbt")).unwrap();
+    std::fs::write(
+        prefabs.join("impostor.json"),
+        serde_json::to_string_pretty(&meta).unwrap(),
+    )
+    .unwrap();
+    refused_strictly(
+        &prefabs.join("impostor.nbt"),
+        "another piece's id is not this piece's evidence",
+    );
+
+    // (b) The perturbations, on the very bytes that passed: the node reached...
+    let graph = dir.join("layout-graph.json");
+    let graph_bytes = std::fs::read(&graph).unwrap();
+    common::patch_file(&graph, |v| {
+        for n in v["content"]["nodes"].as_array_mut().unwrap() {
+            if n["id"] == "node/beacon" {
+                n.as_object_mut().unwrap().remove("reached");
+            }
+        }
+    });
+    refused_strictly(&piece, "a reached node's piece owes its floor");
+    std::fs::write(&graph, graph_bytes).unwrap();
+    assert_eq!(code(&audit(&piece)), 0, "restored, it passes again");
+    // ...and the row placing the piece removed: no campaign places it.
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"] = json!([]);
+    });
+    refused_strictly(&piece, "a piece no campaign places is judged strictly");
+}

@@ -723,6 +723,13 @@ under-specified shape alike — but a *hand-built* or ingested piece does not, s
 `audit` also opens the spatial contract's **second door**, and says what it did
 with it. A piece whose document declares a contract is judged against its own
 bytes by the checker `delvec grammar expand` runs, and a disagreement is `DW0782`.
+The door judges the piece sealed exactly when its writer did: the place kind is
+derived from the layout graph of every campaign under the library's sibling
+`campaigns/` whose `detail-plan` places the piece (by `prefab_id`, the document's
+file name corroborating it), sealed only when at least one does and every one
+places it at a `reached: false` node. The piece's own document is never asked;
+the first contract enumeration line states the kind and the rows it came from,
+and the report's `contract.owners` / `contract.sealed` carry its binding.
 A door that did not open is `DW0783` and never a silence: it names what it
 therefore did not examine, and it refuses (exit 1) rather than reporting a pass
 when the document does not parse, or when the document declares no contract while

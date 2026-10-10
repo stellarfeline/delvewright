@@ -238,6 +238,21 @@ fn reached_default() -> bool {
     true
 }
 
+impl LayoutGraphContent {
+    /// **Whether `node` is scenery** (spec-0098 §14): a place this graph names
+    /// with `reached: false`, built to be seen and never entered. A node the
+    /// graph does not name is not scenery — absent means reached.
+    ///
+    /// The one rule every judge of a piece reads the place's kind through:
+    /// `delvec detail` seals the piece's contract on it before writing, and
+    /// `delvec prefab audit` derives the same kind from the same graph, so the
+    /// writer and the audit cannot judge one piece two ways.
+    #[must_use]
+    pub fn is_scenery(&self, node: &NodeId) -> bool {
+        self.nodes.iter().any(|n| &n.id == node && !n.reached)
+    }
+}
+
 fn is_true(b: &bool) -> bool {
     *b
 }
