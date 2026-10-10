@@ -458,18 +458,38 @@ fn the_packtests_stand_on_the_recorded_cell_and_yield_on_every_walk() {
                 .any(|l| l.starts_with(&format!("tp @s {x:?} ")) && l.ends_with(&format!(" {z:?}"))),
             "{turn} stands its dummy on the recorded cell:\n{t}"
         );
-        // The turn is taken by the real root tick, not by calling the watch
-        // directly — dropping the tick line reds the turn.
-        let turn_at = t
-            .lines()
+        // The turn at the recorded cell is the watch's own; the wiring is read
+        // by one real root tick with the body and dummy lifted out of the
+        // content — dropping the tick line reds `#wr_`.
+        let lines: Vec<&str> = t.lines().collect();
+        let turn_at = lines
+            .iter()
             .position(|l| l.contains("#wt_"))
             .expect("the turn is read");
-        let tick_at = t
-            .lines()
-            .position(|l| l == "function hello-world:tick")
+        assert!(
+            lines[..turn_at]
+                .iter()
+                .rev()
+                .find(|l| l.starts_with("function "))
+                .is_some_and(|l| l.ends_with(":watch_tick")),
+            "{turn} turns the body by `watch_tick`:\n{t}"
+        );
+        let wired_at = lines
+            .iter()
+            .position(|l| l.contains("#wr_"))
+            .expect("the wiring is read");
+        let tick_at = lines
+            .iter()
+            .position(|l| *l == "function hello-world:tick")
             .expect("the real tick runs");
-        assert!(tick_at < turn_at);
-        for assert_ in ["#wh_", "#wt_", "#wk_"] {
+        assert!(tick_at < wired_at && turn_at < tick_at, "{turn}:\n{t}");
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("tp @e[") && l.contains(" 400.0 ")),
+            "{turn} lifts the body above the build limit for the wiring check:\n{t}"
+        );
+        for assert_ in ["#wh_", "#wt_", "#wk_", "#wr_"] {
             assert!(
                 t.lines()
                     .any(|l| l.starts_with("assert score") && l.contains(assert_)),

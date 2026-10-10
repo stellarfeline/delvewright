@@ -1,19 +1,37 @@
 use super::*;
 
+use crate::compiler::creator::FREE_TAG;
 use crate::compiler::watching::{WATCH_FN, WATCH_TAG, WatchBinding, Watcher, y_rotation_range};
 
 /// The tolerance, in degrees, a generated PackTest reads a body's yaw within.
 const YAW_TOLERANCE: f64 = 1.0;
 
+/// The height the wiring check lifts the body's feet to, up its own column:
+/// above the overworld's build limit (320), where no campaign's content stands.
+const WIRING_Y: i32 = 400;
+
 /// spec-0101 §5.3: per watching body, `watch_<class>_<id>` — the body is
 /// summoned through its own entrance, the template's dummy stands on the
-/// drawable cell whose bearing differs most from the body's home facing, one
-/// real `tick` turns the body to face it (`y_rotation` within ±1° of the game's
-/// bearing), and with the dummy moved beyond `within` a second `watch_tick`
-/// leaves the yaw where it was. A class watch first shows the dummy drawing
-/// nothing until it wears the class. Per watching body with a walk,
-/// `watch_yield_<class>_<id>`: each walk's start removes the live-watch tag
-/// and its arrival tick restores it.
+/// drawable cell whose bearing differs most from the body's home facing, and
+/// `watch_tick` turns the body to face it (`y_rotation` within ±1° of the game's
+/// bearing); with the dummy moved beyond `within`, a second `watch_tick` leaves
+/// the yaw where it was. A class watch first shows the dummy drawing nothing
+/// until it wears the class. Per watching body with a walk,
+/// `watch_yield_<class>_<id>`: each walk's start removes the live-watch tag and
+/// its arrival tick restores it.
+///
+/// **The root `tick` reaches the watch.** The turn at the recorded cell is taken
+/// by `watch_tick` itself, because one real `tick` with a player standing on a
+/// content cell runs the content: on the gallery the bearer's cell is inside
+/// `trigger/glimpse-the-marshal`'s approach, which starts a cutscene — every
+/// player `dw_cutscene`, so the watch rightly draws nobody, and a one-shot
+/// trigger and a cutscene fired into the shared batch. So the wiring is read
+/// apart from the content: the body, put back at its home facing, and the
+/// dummy are moved up their own columns until the body stands at y =
+/// [`WIRING_Y`], above the build limit where no campaign's content stands,
+/// keeping the recorded geometry, and one real `tick` must turn the body to the
+/// same bearing. Dropping the `tick` line that
+/// calls `watch_tick` reds that assertion and nothing else.
 ///
 /// **Every other player is out of the watch for the template's length.** `@p`
 /// is the nearest player, and the suite runs as one batch: a sibling's dummy
@@ -21,8 +39,11 @@ const YAW_TOLERANCE: f64 = 1.0;
 /// tags every other player `dw_cutscene` — the exclusion the watch line carries —
 /// and clears exactly the tags it added before its assertions. `#cs_live` is
 /// held at 1 across the same lines, so the real `tick` does not repair the
-/// players it hid as stranded cutscene viewers, and is put back after. Each
-/// template is one atomic function, so no sibling observes either.
+/// players it hid as stranded cutscene viewers, and is put back after; the dummy
+/// wears `dw_joined` (the real tick does not first-join it) and, for the real
+/// tick only, the free camera's `dw_free` (the boundary does not return it from
+/// above the map). Each template is one atomic function, so no sibling observes
+/// any of it.
 ///
 /// A watcher the drawability proof found no observable cell for (`unobservable`
 /// in the binding line) gets no turn template: a turn smaller than the
@@ -107,6 +128,26 @@ fn restore_body(plan: &Plan, w: &Watcher) -> Vec<String> {
     }
 }
 
+/// The lines that stand the body fresh at its home facing again, without
+/// re-running `setup`: [`restore_body`], then the entrance a deferred NPC or a
+/// puppet owes.
+fn resummon_body(plan: &Plan, w: &Watcher) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut b = restore_body(plan, w);
+    match w.class {
+        "npc" => {
+            if npc_is_deferred(plan.campaign, &w.id) {
+                b.push(format!("function {ns}:{}", spawn_npc_fn(&w.id)));
+            }
+        }
+        _ => b.push(format!(
+            "function {ns}:spawn_actor_{}",
+            plan::safe_local(&w.id)
+        )),
+    }
+    b
+}
+
 /// Count the bodies the watcher's selector matches facing `yaw` ± the
 /// template tolerance into `holder`.
 fn facing_count(w: &Watcher, yaw: f64, holder: &str) -> String {
@@ -129,7 +170,8 @@ fn turn_template(plan: &Plan, w: &Watcher, k: usize, cell: [i32; 3], yaw: f64) -
         .unwrap_or_default();
     let mut b = packtest_header(&format!(
         "{}: `{}` watches — it turns to face a player{classed} within {} block(s) at [{}, {}, {}] \
-         (yaw {:.2}, home {:.2}) and holds that facing once the player is out of reach",
+         (yaw {:.2}, home {:.2}), holds that facing once the player is out of reach, and the \
+         root tick reaches the watch",
         artifact_title(plan.campaign),
         w.id,
         w.within,
@@ -145,10 +187,6 @@ fn turn_template(plan: &Plan, w: &Watcher, k: usize, cell: [i32; 3], yaw: f64) -
     b.push(format!("tag @a[tag=!{me},tag=!dw_cutscene] add {hid}"));
     b.push(format!("tag @a[tag={hid}] add dw_cutscene"));
     b.push("tag @s remove dw_cutscene".to_string());
-    b.push(format!(
-        "execute store result score #wcl_{k} dw.sys run scoreboard players get #cs_live dw.sys"
-    ));
-    b.push("scoreboard players set #cs_live dw.sys 1".to_string());
     // The dummy is placed, never first-joined: the real tick must not move it.
     b.push("tag @s add dw_joined".to_string());
     if let Some(t) = &w.class_tag {
@@ -168,8 +206,8 @@ fn turn_template(plan: &Plan, w: &Watcher, k: usize, cell: [i32; 3], yaw: f64) -
         b.push(facing_count(w, w.home_yaw, &format!("#wc_{k}")));
         b.push(format!("tag @s add {t}"));
     }
-    // 3. one real tick turns the body to face the dummy
-    b.extend(shielded_tick(ns));
+    // 3. the watch turns the body to face the dummy on the recorded cell
+    b.push(format!("function {ns}:{WATCH_FN}"));
     b.push(facing_count(w, yaw, &format!("#wt_{k}")));
     // 4. out of reach, the body keeps its last facing
     b.push(format!(
@@ -180,10 +218,35 @@ fn turn_template(plan: &Plan, w: &Watcher, k: usize, cell: [i32; 3], yaw: f64) -
     ));
     b.push(format!("function {ns}:{WATCH_FN}"));
     b.push(facing_count(w, yaw, &format!("#wk_{k}")));
-    // Put back everything this template changed before anything is asserted.
+    // 5. the root `tick` reaches the watch: the body put back home and lifted
+    //    with the dummy to WIRING_Y in the same geometry, one real tick
+    b.extend(resummon_body(plan, w));
+    let lift = f64::from(WIRING_Y - w.cell[1]);
+    b.push(format!(
+        "tp @e[{}] {} {} {}",
+        w.selector,
+        fmt_f64(w.feet[0]),
+        fmt_f64(w.feet[1] + lift),
+        fmt_f64(w.feet[2])
+    ));
+    b.push(format!(
+        "tp @s {} {} {}",
+        fmt_f64(stand[0]),
+        fmt_f64(stand[1] + lift),
+        fmt_f64(stand[2])
+    ));
+    b.push(format!(
+        "execute store result score #wcl_{k} dw.sys run scoreboard players get #cs_live dw.sys"
+    ));
+    b.push("scoreboard players set #cs_live dw.sys 1".to_string());
+    b.push(format!("tag @s add {FREE_TAG}"));
+    b.extend(shielded_tick(ns));
+    b.push(format!("tag @s remove {FREE_TAG}"));
     b.push(format!(
         "scoreboard players operation #cs_live dw.sys = #wcl_{k} dw.sys"
     ));
+    b.push(facing_count(w, yaw, &format!("#wr_{k}")));
+    // Put back everything this template changed before anything is asserted.
     b.push(format!("tag @a[tag={hid}] remove dw_cutscene"));
     b.push(format!("tag @a[tag={hid}] remove {hid}"));
     if let Some(t) = &w.class_tag {
@@ -196,6 +259,7 @@ fn turn_template(plan: &Plan, w: &Watcher, k: usize, cell: [i32; 3], yaw: f64) -
     }
     b.push(format!("assert score #wt_{k} dw.sys matches 1"));
     b.push(format!("assert score #wk_{k} dw.sys matches 1"));
+    b.push(format!("assert score #wr_{k} dw.sys matches 1"));
     b
 }
 

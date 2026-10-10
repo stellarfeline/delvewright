@@ -508,9 +508,12 @@ declared, the walked cells they were judged over, how many are drawable,
 refused and unobservable — and writes
 `validation/watchers.json`, the cell each generated PackTest stands its dummy on:
 the walked cell in reach whose bearing differs most from the body's home facing.
-`watch_npc_warden` and `watch_actor_standard_bearer` turn the body through one
-real `tick` and see it hold that facing once the dummy is out of reach; the
-bearer's first sees the dummy draw nothing until it wears the class.
+`watch_npc_warden` and `watch_actor_standard_bearer` turn the body by its
+`watch_tick` and see it hold that facing once the dummy is out of reach — the
+bearer's first sees the dummy draw nothing until it wears the class — and then
+lift body and dummy above the build limit to see one real `tick` reach the watch:
+the bearer's own cell is inside `trigger/glimpse-the-marshal`'s approach, whose
+cutscene takes every player out of the watch.
 `watch_yield_*` sees each walk take the watch and give it back. The bot asks the
 server, at every waypoint within reach, whether each body faces it, and prints
 `[watch] …` with what it reached.
