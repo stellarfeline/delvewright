@@ -91,7 +91,7 @@
     "void-horizon.en:validation/pulses.json",
     "void-horizon.en:validation/watchers.json"
   ],
-  "base_commit": "3fd5371f076a503acf30f5e8afeb2dd016b684a2",
+  "base_commit": "8cc35a016073b0194adf48eac359d43fc5fa8b40",
   "changed": [
     "carcass.en:creator-datapack/layout.json",
     "carcass.en:critical-path.json",
