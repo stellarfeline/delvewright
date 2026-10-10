@@ -525,7 +525,10 @@ pub fn build_with_warnings(
     // seals, the clocked gate regions and the teleport sources — travel as one
     // value, [`crate::compiler::nav::Premises`], so an edited world and a
     // pristine one carry the identical set.
-    let world = crate::compiler::light::lit_world(assembled, &relight, geometry).with_premises(
+    let world = crate::compiler::light::lit_world(
+        assembled,
+        &relight,
+        geometry,
         crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
     );
 

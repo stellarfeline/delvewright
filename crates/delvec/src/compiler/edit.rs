@@ -685,8 +685,7 @@ fn check_batch_invariants(
     // declared lethal volumes are another, and were missing here exactly as they
     // were missing from `emit::build`'s edit arm.
     let premises = crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone());
-    let with_fixtures =
-        crate::compiler::light::lit_world(assembled, &relight, geometry).with_premises(premises);
+    let with_fixtures = crate::compiler::light::lit_world(assembled, &relight, geometry, premises);
     let ctx = |e: Failure| Failure {
         code: e.code,
         message: format!("after world-edits batch `{bid}`: {}", e.message),
@@ -1931,8 +1930,7 @@ fn relight_region(
         assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         crate::compiler::nav::Premises::geometry_only(),
     );
-    let moves = crate::compiler::nav::plan_moves(plan, &nav).unwrap_or_default();
-    let required = nav.required_path_cells(plan, &moves);
+    let required = crate::compiler::light::fixture_keep_out(plan, &nav);
     let (amin, amax) = match bounds_of(cells.iter()) {
         Some(b) => b,
         None => return Ok(()), // unreachable: used_region rejects empty regions

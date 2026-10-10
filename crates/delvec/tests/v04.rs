@@ -609,7 +609,10 @@ fn wave_mobs_land_on_distinct_standable_in_room_cells() {
     let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
     let geometry = delvec::compiler::light::geometry_world(&assembled);
     let relight = delvec::compiler::light::relight_with(&plan, &assembled, &geometry);
-    let world = delvec::compiler::light::lit_world(&assembled, &relight, geometry).with_premises(
+    let world = delvec::compiler::light::lit_world(
+        &assembled,
+        &relight,
+        geometry,
         delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
     );
 

@@ -1131,6 +1131,15 @@ fn block_at(
     if y == cy && (cx0..=cx1).contains(&x) && (cz0..=cz1).contains(&z) {
         return ("minecraft:stone", None);
     }
+    // The east bay carries its own light on the hall's east wall: the canopy
+    // over it shades it from the ceiling grid, and a lantern hung from the
+    // canopy falls with it when the collapse brings it down — light the bay
+    // would lose in the beat the debris lands. Torches on the wall stay. None
+    // at the bay's south end, where the oak the lane's batch plants in the east
+    // corner spreads its leaves.
+    if x == cx1 && y == cy - 2 && [cz0, (cz0 + cz1) / 2].contains(&z) {
+        return ("minecraft:wall_torch", Some(&[("facing", "west")]));
+    }
     // The mezzanine: solid to its top course, and nothing carves a way into it.
     // The flight that climbs it is outside this footprint entirely, which is
     // what makes the break a break — remove the treads and the dais's south
