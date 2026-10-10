@@ -181,3 +181,12 @@ Each criterion is checked against the tree at `507a5e0e2`; none is satisfied the
 8. **The bot.** `harness/` reads `validation/pulses.json`, listens at every listening station and silent station, asserts the counts, positions, volume and pitch of §5.3, and reports `not_heard: no station` per pulse without one; the gallery's slow pulse has a listening station and is heard on the gallery's run.
 9. **Gallery** (spec-0039). §7.1's three pulses are bound and §7.2's six probes refused with the codes named, with the coverage gate's counts on its own line; `gallery/baseline/` is regenerated after the merge commit exists with every moved row attributed.
 10. **Docs and skill, same change.** `compiler.md`: the stage-5 row for `pulses[]`, the emission row beside `loops[]`, the three codes in the diagnostics catalog, the binding line and the ledger under *World / build output*; the `/new-delve` skill's `references/quest-capabilities.md` says a beat that repeats is a pulse — declared once, heard in a place, loudest at its mark, switched by its gate, quickened by a second declaration — under *Things that change the world*; `docs/demo-levels.md` gains §7.4's row; `docs/specs/README.md` carries this spec's row.
+
+### Recorded debts
+
+Checked against the implementing tree; each is a debt, never a pass.
+
+- **Criterion 1, third clause.** No test holds `compiler.md`'s stage field lists to the structs in either direction at this revision: the "existing field-list tests" do not exist. The `pulses[]` row is written by hand to match `Pulse`, and `crates/delvec/tests/pulse.rs` holds the exported schema to exactly the nine fields; nothing binds the doc row.
+- **Criterion 10, the skill.** `tools/ci/check-skill-page.py` refuses a page naming `DW0993`–`DW0995` while the page pins an engine release that lacks them. The `references/quest-capabilities.md` text is held back until the release that carries this surface is pinned.
+- **Criterion 9, the baseline.** Regenerated on the feature branch against its merge base; the regeneration after the merge commit belongs to the integration that lands it.
+- **§4.1, an event with its own `attenuation_distance`.** The vendored sound registry carries ids only, so the 44 events whose `sounds.json` row sets `attenuation_distance` are derived as if it were 16; for them `floor` is not what the far ear hears. Recorded in `compiler.md`'s `pulses[]` row.
