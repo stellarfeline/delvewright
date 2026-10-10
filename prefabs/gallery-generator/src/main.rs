@@ -1100,12 +1100,13 @@ fn block_at(
     {
         return ("minecraft:stone", None);
     }
-    // The lidded pit carries its own light, on its west wall at head height: it
-    // is sealed until its beat, so nothing the hall's grid hangs reaches it,
-    // and the only cell a hung lantern could take is the head cell of the body
-    // that falls in — where a lantern is a floor that body lands on. A wall
-    // torch is a light a falling body passes through.
-    if (x, z) == LID_PIT && y == TERRACE_TOP_Y - 1 {
+    // The lidded pit and the west well carry their own light, each on its west
+    // wall at the head height of a body on its bottom. A pit a lid or a hatch
+    // seals is out of reach of everything the hall's grid hangs, and the only
+    // cell a hung lantern could take there is the head cell of the body that
+    // falls in — where a lantern is a floor that body lands on. A wall torch is
+    // a light a falling body passes through.
+    if ((x, z) == LID_PIT || (x, z) == WELL) && y == 2 {
         return ("minecraft:wall_torch", Some(&[("facing", "east")]));
     }
     if z == WELL.1
