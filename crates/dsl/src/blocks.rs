@@ -42,6 +42,8 @@
 //! the gates over the expanded model; this is spelling.
 
 use std::collections::BTreeMap;
+
+use crate::diagnostic::{DwCode, ExitTier};
 use std::fmt;
 use std::sync::OnceLock;
 
@@ -1065,6 +1067,194 @@ pub(crate) fn parse_state(state: &str) -> (&str, BTreeMap<String, String>) {
         }
     }
     (name, properties)
+}
+
+// ---------------------------------------------------------------------------
+// The sculk family at rest (spec-0100 §3.2, §3.3, §4.1)
+// ---------------------------------------------------------------------------
+
+crate::dw_code! {
+    /// `DW0998`: a sculk shrieker is declared with `can_summon=true` (spec-0100
+    /// §3.2) — it would summon a warden no wave declares and apply Darkness.
+    pub const DW_SHRIEKER_CAN_SUMMON: DwCode = DwCode::new("DW0998", ExitTier::Build);
+}
+crate::dw_code! {
+    /// `DW0999`: a sculk block is not at rest (spec-0100 §3.3) — a property or a
+    /// block-entity field holds a value the game would act on at load.
+    pub const DW_SCULK_NOT_AT_REST: DwCode = DwCode::new("DW0999", ExitTier::Build);
+}
+
+/// The four sculk blocks that act at runtime, namespaced. `sculk` and
+/// `sculk_vein` are inert and never judged.
+pub const ACTING_SCULK_1_21_11: [&str; 4] = [
+    "minecraft:sculk_sensor",
+    "minecraft:calibrated_sculk_sensor",
+    "minecraft:sculk_shrieker",
+    "minecraft:sculk_catalyst",
+];
+
+/// The block-entity fields of a sculk block the rest rule reads (spec-0100
+/// §2.2, §2.4, §2.5), extracted by whoever holds the NBT. A field the NBT does
+/// not carry is its rest value.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SculkNbt {
+    /// Whether `listener` carries a pending vibration (`event`).
+    pub listener_event: bool,
+    /// A sensor's `last_vibration_frequency`.
+    pub last_vibration_frequency: i64,
+    /// A shrieker's `warning_level`.
+    pub warning_level: i64,
+    /// The number of a catalyst's `cursors`.
+    pub cursors: usize,
+}
+
+/// Why a sculk block state is refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SculkFault {
+    /// `sculk_shrieker[can_summon=true]` (`DW0998`).
+    CanSummon {
+        /// The block state as written.
+        state: String,
+    },
+    /// A consequential property or block-entity field is not its rest value
+    /// (`DW0999`).
+    NotAtRest {
+        /// The block state as written.
+        state: String,
+        /// The property or NBT field (`nbt.listener.event` for the NBT).
+        field: String,
+        /// The value it holds (`<unknown>` when neither written nor defaulted).
+        value: String,
+        /// Its rest value.
+        rest: String,
+    },
+}
+
+impl SculkFault {
+    /// The code this fault is raised under.
+    pub fn code(&self) -> DwCode {
+        match self {
+            SculkFault::CanSummon { .. } => DW_SHRIEKER_CAN_SUMMON,
+            SculkFault::NotAtRest { .. } => DW_SCULK_NOT_AT_REST,
+        }
+    }
+}
+
+impl fmt::Display for SculkFault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SculkFault::CanSummon { state } => write!(
+                f,
+                "`{state}` can summon: a shrieker with `can_summon=true` answers a player's \
+                 vibration by summoning a warden no wave declares, placed by the game's random up \
+                 to 6 cells away, with a warning level the game keeps per player across sessions, \
+                 and applies Darkness to every player nearby — nothing a proof can seat, count or \
+                 make deterministic. Write `can_summon=false` (or the bare id, whose default is \
+                 false): the shrieker still shrieks, with sound and particles and nothing else"
+            ),
+            SculkFault::NotAtRest {
+                state,
+                field,
+                value,
+                rest,
+            } => write!(
+                f,
+                "`{state}` is not at rest: `{field}` is `{value}`, and a sculk block enters the \
+                 world at rest (`{field}` = `{rest}`) — a block saved mid-click replays the click on \
+                 load, and a painted `bloom`/`shrieking`/`active` state is one the game never \
+                 schedules back. Write the rest value, or the bare id, whose defaults are the rest \
+                 state"
+            ),
+        }
+    }
+}
+
+/// **The one rest rule** (spec-0100 §4.1): judge a full sculk block state —
+/// every property the state omits is read at the block's pinned default
+/// ([`BlockRegistry::default_state`]) — and, given one, its block-entity NBT.
+///
+/// `Ok` for every block that is not one of [`ACTING_SCULK_1_21_11`] (`sculk`
+/// and `sculk_vein` included). A consequential property neither written nor
+/// defaulted is refused as `<unknown>`: the rule never assumes rest.
+pub fn sculk_rest(state: &str, nbt: Option<&SculkNbt>) -> Result<(), SculkFault> {
+    let (name, written) = parse_state(state);
+    let id = namespace(name);
+    let Some(kind) = ACTING_SCULK_1_21_11.iter().position(|a| *a == id.as_ref()) else {
+        return Ok(());
+    };
+    let defaults = BlockRegistry::v1_21_11().default_state(&id);
+    let value = |k: &str| -> Option<String> {
+        written
+            .get(k)
+            .cloned()
+            .or_else(|| defaults.and_then(|d| d.get(k)).cloned())
+    };
+    let not_at_rest = |field: &str, value: Option<String>, rest: &str| SculkFault::NotAtRest {
+        state: state.to_string(),
+        field: field.to_string(),
+        value: value.unwrap_or_else(|| "<unknown>".to_string()),
+        rest: rest.to_string(),
+    };
+    // (property, rest value) per block, in the order the message names them.
+    let props: &[(&str, &str)] = match kind {
+        0 | 1 => &[("sculk_sensor_phase", "inactive"), ("power", "0")],
+        2 => &[("shrieking", "false")],
+        _ => &[("bloom", "false")],
+    };
+    if kind == 2 {
+        match value("can_summon").as_deref() {
+            Some("false") => {}
+            Some("true") => {
+                return Err(SculkFault::CanSummon {
+                    state: state.to_string(),
+                });
+            }
+            other => {
+                return Err(not_at_rest(
+                    "can_summon",
+                    other.map(str::to_string),
+                    "false",
+                ));
+            }
+        }
+    }
+    for (k, rest) in props {
+        let v = value(k);
+        if v.as_deref() != Some(*rest) {
+            return Err(not_at_rest(k, v, rest));
+        }
+    }
+    if let Some(n) = nbt {
+        if n.listener_event {
+            return Err(not_at_rest(
+                "nbt.listener.event",
+                Some("a pending vibration".to_string()),
+                "none",
+            ));
+        }
+        if n.last_vibration_frequency != 0 {
+            return Err(not_at_rest(
+                "nbt.last_vibration_frequency",
+                Some(n.last_vibration_frequency.to_string()),
+                "0",
+            ));
+        }
+        if n.warning_level != 0 {
+            return Err(not_at_rest(
+                "nbt.warning_level",
+                Some(n.warning_level.to_string()),
+                "0",
+            ));
+        }
+        if n.cursors != 0 {
+            return Err(not_at_rest(
+                "nbt.cursors",
+                Some(format!("{} cursor(s)", n.cursors)),
+                "[]",
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2203,6 +2393,83 @@ mod tests {
             resolved > 0 && resolved < checked,
             "binding count {resolved} of {checked}: the sweep must contain both \
              resolutions and refusals, or it discriminates nothing"
+        );
+    }
+
+    /// **A sculk block is judged by its state** (spec-0100 §4.1): `can_summon`
+    /// is `DW0998`; every other consequential property and NBT field off its
+    /// rest value is `DW0999` naming the field; the bare ids pass on their
+    /// defaults; the inert two are not judged.
+    #[test]
+    fn a_sculk_block_is_judged_by_its_state() {
+        let fault = |s: &str, n: Option<&SculkNbt>| sculk_rest(s, n).expect_err(s);
+        let f = fault("minecraft:sculk_shrieker[can_summon=true]", None);
+        assert_eq!(f.code(), DW_SHRIEKER_CAN_SUMMON);
+        assert_eq!(f.code().id(), "DW0998");
+        for (state, field) in [
+            (
+                "minecraft:sculk_sensor[sculk_sensor_phase=active]",
+                "sculk_sensor_phase",
+            ),
+            ("minecraft:sculk_sensor[power=3]", "power"),
+            ("minecraft:sculk_shrieker[shrieking=true]", "shrieking"),
+            ("minecraft:sculk_catalyst[bloom=true]", "bloom"),
+            (
+                "minecraft:calibrated_sculk_sensor[sculk_sensor_phase=cooldown]",
+                "sculk_sensor_phase",
+            ),
+        ] {
+            let f = fault(state, None);
+            assert_eq!(f.code(), DW_SCULK_NOT_AT_REST, "{state}");
+            assert_eq!(f.code().id(), "DW0999");
+            assert!(f.to_string().contains(&format!("`{field}`")), "{f}");
+        }
+        let listening = SculkNbt {
+            listener_event: true,
+            ..SculkNbt::default()
+        };
+        let f = fault("minecraft:sculk_sensor", Some(&listening));
+        assert_eq!(f.code(), DW_SCULK_NOT_AT_REST);
+        assert!(f.to_string().contains("nbt.listener.event"), "{f}");
+        let warned = SculkNbt {
+            warning_level: 2,
+            ..SculkNbt::default()
+        };
+        assert!(
+            fault("minecraft:sculk_shrieker", Some(&warned))
+                .to_string()
+                .contains("nbt.warning_level")
+        );
+        for state in [
+            "minecraft:sculk_sensor",
+            "minecraft:calibrated_sculk_sensor",
+            "minecraft:calibrated_sculk_sensor[facing=east]",
+            "minecraft:sculk_shrieker",
+            "minecraft:sculk_catalyst",
+            "minecraft:sculk_shrieker[can_summon=false]",
+            "sculk_shrieker[can_summon=false,shrieking=false,waterlogged=false]",
+        ] {
+            assert_eq!(sculk_rest(state, None), Ok(()), "{state}");
+            assert_eq!(
+                sculk_rest(state, Some(&SculkNbt::default())),
+                Ok(()),
+                "{state}"
+            );
+        }
+        // The inert two are never judged, whatever they carry.
+        assert_eq!(sculk_rest("minecraft:sculk", Some(&listening)), Ok(()));
+        assert_eq!(
+            sculk_rest("minecraft:sculk_vein[down=true]", Some(&listening)),
+            Ok(())
+        );
+        // The bare shrieker passes BECAUSE its default is read: the rule never
+        // assumes rest for a value it cannot find.
+        assert_eq!(
+            BlockRegistry::v1_21_11()
+                .default_state("minecraft:sculk_shrieker")
+                .and_then(|d| d.get("can_summon"))
+                .map(String::as_str),
+            Some("false")
         );
     }
 }
