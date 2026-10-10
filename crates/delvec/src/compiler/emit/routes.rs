@@ -30,6 +30,7 @@ pub(super) struct WorldProofs {
     pub(super) lightning_gate: Option<crate::compiler::lightning::LightningGate>,
     pub(super) stake_table: Option<crate::compiler::stake::StakeTable>,
     pub(super) death_plan: Option<Value>,
+    pub(super) pulse_gate: Option<crate::compiler::pulse::PulseGate>,
 }
 
 /// The proofs over the assembled world — walk, waves, lanes, branches,
@@ -134,6 +135,10 @@ pub(super) fn prove_world(
     // declares none of the three, and for one that assembles no world — a
     // contract nobody can walk is not the same fact as an empty one.
     let mut death_plan: Option<Value> = None;
+    // The pulse proofs' binding (`compiler::pulse`, spec-0102 §5.1), measured
+    // over the forced route's legs below. `None` for a campaign that assembles
+    // no world; the caller prints the line either way.
+    let mut pulse_gate: Option<crate::compiler::pulse::PulseGate> = None;
 
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::compiler::nav::MovePlan>,
@@ -833,6 +838,20 @@ pub(super) fn prove_world(
                     &assembled.blocks,
                     &crate::compiler::sculk::runtime_writes(plan),
                 );
+                // spec-0102: every pulse's derived range over the standable
+                // cells of its place, and its listening stations on these
+                // legs. The binding is printed before the verdict, a refusal
+                // included, and on every build that walks, zeroes included.
+                {
+                    let (gate, verdict) = crate::compiler::pulse::measure(plan, world, &routes);
+                    eprintln!("{}", gate.line());
+                    verdict.map_err(|f| BuildFailure::Diagnostic {
+                        code: f.code,
+                        message: f.message,
+                    })?;
+                    warnings.extend(gate.findings());
+                    pulse_gate = Some(gate);
+                }
                 if !routes.is_empty() {
                     let doc = crate::compiler::waypoints::waypoints_json(
                         plan,
@@ -1124,6 +1143,7 @@ pub(super) fn prove_world(
         )
     };
     Ok(WorldProofs {
+        pulse_gate,
         moves,
         actor_moves,
         wave_placements,

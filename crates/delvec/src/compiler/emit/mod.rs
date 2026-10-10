@@ -67,6 +67,7 @@ mod onkill;
 mod packtest;
 mod piece;
 mod proofs;
+mod pulse;
 mod quest;
 mod removal;
 mod respawn;
@@ -116,6 +117,7 @@ use objective::*;
 use onkill::*;
 pub use piece::*;
 use proofs::*;
+use pulse::*;
 use quest::*;
 use removal::*;
 use respawn::*;
@@ -615,6 +617,7 @@ pub fn build_with_warnings(
         lightning_gate,
         stake_table,
         death_plan,
+        pulse_gate,
     } = prove_world(
         plan,
         &world,
@@ -749,6 +752,32 @@ pub fn build_with_warnings(
         .as_ref()
         .map(|b| b.plans.clone())
         .unwrap_or_default();
+    // spec-0102: a pulse is measured over the assembled world; a campaign that
+    // assembles none has no cell to stand in hearing of a beat. The binding
+    // line is printed here for it, `0 pulse(s)` included.
+    let pulse_gate = match pulse_gate {
+        Some(g) => g,
+        None => {
+            let g = crate::compiler::pulse::PulseGate {
+                declared: plan.campaign.quests.content.pulses.len(),
+                rows: Vec::new(),
+            };
+            eprintln!("{}", g.line());
+            if let Some(p) = plan.campaign.quests.content.pulses.first() {
+                return Err(BuildFailure::Diagnostic {
+                    code: crate::compiler::pulse::DW_PULSE_UNHEARD,
+                    message: format!(
+                        "pulse `{}` is declared in a campaign that assembles no world, so no \
+                         cell of its box holds footing a body can stand in and its reach \
+                         cannot be derived. Place the pieces its box covers, or delete the \
+                         pulse.",
+                        p.id
+                    ),
+                });
+            }
+            g
+        }
+    };
     let functions = emit_functions(
         plan,
         &chrome,
@@ -767,6 +796,7 @@ pub fn build_with_warnings(
         &branch_transport,
         stake_table.as_ref(),
         &asm_locks,
+        &pulse_gate.rows,
     );
     // `DW0852` over the FINAL function list — after every emitter has had its say,
     // so a later pass that rewrote a judge cannot slip past a check that ran
@@ -1188,6 +1218,11 @@ pub fn build_with_warnings(
     }
     if let Some(gate) = &loop_gate {
         put_json(&mut out, "validation/loop-gate.json", &gate.to_json());
+    }
+    // spec-0102 §5.1: one row per declared pulse, the stations the bot listens
+    // at included. A campaign that declares none emits no file.
+    if pulse_gate.declared > 0 {
+        put_json(&mut out, "validation/pulses.json", &pulse_gate.to_json());
     }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());

@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::serde_fields::is_zero3;
 use crate::{
     ActorId, AnchorId, AssemblyId, AtmosphereId, CameraShot, Carrier, CutsceneParty, DamageKind,
-    DespawnStyle, EndingId, FireworkExplosion, FlagId, Mark, NpcId, PrefabId, QuestEffect,
-    SequenceStep, StakeId, StateId, StealthZone, WaveId, WorldTime, WorldWeather,
+    DespawnStyle, EndingId, FireworkExplosion, FlagId, Mark, NpcId, PlaceRef, PrefabId,
+    QuestEffect, SequenceStep, StakeId, StateId, StealthZone, WaveId, WorldTime, WorldWeather,
 };
 
 #[cfg(doc)]
@@ -224,16 +224,13 @@ pub enum Verb {
         /// One of `world.atmospheres[]`, or `null` for the horizon's biome.
         #[serde(default)]
         atmosphere: Option<AtmosphereId>,
-        /// The volume, as an anchor-centred box (`anchor ± extent`) — the same
-        /// object class [`Verb::FillRegion`] fills, resolved through the same
-        /// `Plan::zone_box`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        region: Option<StealthZone>,
-        /// A whole place: an `area/…` id, or a site-plan box's `node/…`. Its
-        /// volume is the cells the place's own `atmosphere` paints at setup:
-        /// its bounds, grown as far as the client's biome blend reads.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        place: Option<String>,
+        /// The volume: exactly one of `region` (an anchor-centred box, the
+        /// same object class [`Verb::FillRegion`] fills) or `place` (an
+        /// `area/…` or a site-plan box's `node/…`, whose volume is the cells
+        /// the place's own `atmosphere` paints at setup: its bounds, grown as
+        /// far as the client's biome blend reads).
+        #[serde(flatten)]
+        at: PlaceRef,
     },
     /// **Opens a placed piece's contingent way** (DSL v0.12, spec-0042 §2.4): the
     /// broken flight a beat repairs, the bridge a beat lowers, the rubble a beat

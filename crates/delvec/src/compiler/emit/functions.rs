@@ -19,6 +19,7 @@ pub(super) fn emit_functions(
     branch_transport: &BranchTransportOverlay,
     stake_table: Option<&crate::compiler::stake::StakeTable>,
     asm_locks: &crate::compiler::assembly::Locks,
+    pulses: &[crate::compiler::pulse::PulseRow],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -697,6 +698,9 @@ pub(super) fn emit_functions(
     // spec-0032: arm each shop's interaction point and its visible marker. A shop
     // is furniture, so it is armed at world init exactly as a shortcut's lever is.
     setup.extend(shop_setup(plan));
+    // spec-0102: seed each gated pulse's latch, start each ungated pulse's
+    // chain. Empty for a campaign that declares none → byte-identical.
+    setup.extend(pulse_setup(plan, pulses));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // edit writes land — and `place_verify` above has now proven every
@@ -1125,6 +1129,9 @@ pub(super) fn emit_functions(
     // spec-0086: loops. One poll line per declared loop; empty for a campaign
     // that declares none → byte-identical.
     tick.extend(loop_tick(plan));
+    // spec-0102: pulses. One open-edge line per gated pulse; empty for a
+    // campaign that declares none → byte-identical.
+    tick.extend(pulse_tick(plan, pulses));
     // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
     for beat in &plan.stealth_beats {
         tick.push(format!(
@@ -1188,6 +1195,8 @@ pub(super) fn emit_functions(
     fns.extend(emit_lethal_functions(plan));
     // --- spec-0086 loop functions ---
     fns.extend(emit_loop_functions(plan));
+    // --- spec-0102 pulse functions ---
+    fns.extend(emit_pulse_functions(plan, pulses));
     // --- spec-0032 trade and recovery-stake functions ---
     fns.extend(emit_shop_functions(plan));
     fns.extend(emit_stake_functions(plan, stake_table));

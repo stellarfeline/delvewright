@@ -227,6 +227,7 @@ pub fn validate_campaign_with(
     // is compiler-tier, because it needs the solved layout.
     crate::lethal::lethal_volume_checks(c, anchors, &mut d);
     crate::r#loop::loop_checks(c, anchors, &mut d);
+    crate::pulse::pulse_checks(c, anchors, &mut d);
     // spec-0032: a shop stands on a prefab anchor, and an anchor
     // no bound prefab provides is the same defect a lethal volume's is.
     crate::economy::shop_anchor_checks(c, anchors, &mut d);
