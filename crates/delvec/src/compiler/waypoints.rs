@@ -169,8 +169,12 @@ pub fn vibration_line(doc: &Value, listening: &crate::compiler::sculk::Listening
         listening.shriekers(),
         listening.sensors() - sensors.len().min(listening.sensors()),
         listening.shriekers() - shriekers.len().min(listening.shriekers()),
-        listening.rewritten(),
-    )
+        listening.rewritten().len(),
+    ) + &listening
+        .rewritten()
+        .iter()
+        .map(|(c, w)| format!(" — {c:?} by {w}"))
+        .collect::<String>()
 }
 
 /// Whether `c` is a cell a climb on `leg` holds in strictly between where the

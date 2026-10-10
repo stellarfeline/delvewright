@@ -31,6 +31,18 @@ export const SHRIEK_LEVEL_EVENT = 3007;
  * clicks on the last footsteps of the leg. */
 export const VIBRATION_TAIL_MS = 3_000;
 
+/**
+ * How long before a leg's start a device's event still answers for the leg.
+ * A sensor that clicked is deaf for its active and cooldown ticks
+ * (`SculkSensorBlock.getActiveTicks()` 30, then 10 of cooldown: 2 s), and a
+ * shrieker that shrieked shrieks again only after its 90-tick `shrieking`
+ * (4.5 s) — so a click or a shriek the previous leg set off within that span
+ * is the one this leg would have made, and no later one can come. Authored
+ * over spec-0100 §2.2 and §2.4.
+ */
+export const SENSOR_BUSY_MS = 2_000;
+export const SHRIEKER_BUSY_MS = 4_500;
+
 /** A sensor's listener radius squared: the parse refuses a prediction the
  * game could not make (spec-0100 §2.6). */
 export const LISTENER_RADIUS_SQ = 64;
@@ -101,23 +113,25 @@ export class SculkEar {
     if (name === "warden") this.wardens += 1;
   }
 
-  /** Whether every predicted event has been heard in `[from, to]`. */
+  /** Whether every predicted event has been heard between the leg's start
+   * (less the device's busy span, {@link SENSOR_BUSY_MS} /
+   * {@link SHRIEKER_BUSY_MS}) and `to`. */
   hear(vibrations: readonly Vibration[], from: number, to: number): LegHearing {
-    const inWindow = (list: readonly Heard[], pos: Vec3Tuple): boolean =>
-      list.some((h) => same(h.pos, pos) && h.at >= from && h.at <= to);
+    const inWindow = (list: readonly Heard[], pos: Vec3Tuple, busy: number): boolean =>
+      list.some((h) => same(h.pos, pos) && h.at >= from - busy && h.at <= to);
     const missing: string[] = [];
     let sensorsHeard = 0;
     let shriekersPredicted = 0;
     let shriekersHeard = 0;
     for (const v of vibrations) {
-      if (inWindow(this.clicks, v.sensor)) {
+      if (inWindow(this.clicks, v.sensor, SENSOR_BUSY_MS)) {
         sensorsHeard += 1;
       } else {
         missing.push(`the sensor at [${v.sensor.join(", ")}] never turned active`);
       }
       for (const s of v.shriekers) {
         shriekersPredicted += 1;
-        if (inWindow(this.shrieks, s)) {
+        if (inWindow(this.shrieks, s, SHRIEKER_BUSY_MS)) {
           shriekersHeard += 1;
         } else {
           missing.push(

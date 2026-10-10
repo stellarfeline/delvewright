@@ -76,6 +76,14 @@ pub const LISTENER_RADIUS_SQ: i64 = 64;
 /// falsify the prediction (spec-0100 §4.6).
 pub const PREDICTED_RADIUS_SQ: i64 = 49;
 
+/// How many consecutive route cells must lie inside [`PREDICTED_RADIUS_SQ`]
+/// for a sensor to be predicted: four, so the body walks three blocks inside
+/// the radius before it leaves. A footstep is a game event the server posts as
+/// the body covers ground, never as it stands, so a leg that only brushes the
+/// radius — or a one-cell leg the body does not walk at all — sets off nothing
+/// a bot can be held to. **Authored** margin over spec-0100 §4.6.
+pub const PREDICTED_RUN: usize = 4;
+
 /// `#minecraft:occludes_vibration_signals` in the pinned jar
 /// (`data/minecraft/tags/block/occludes_vibration_signals.json` = `#wool`),
 /// expanded through `wool.json`. **Cited.**
@@ -623,8 +631,9 @@ pub struct Listening {
     sensors: Vec<([i32; 3], i64)>,
     /// Shriekers no runtime write touches.
     shriekers: Vec<[i32; 3]>,
-    /// Sensors or shriekers a runtime write touches: never predicted.
-    rewritten: usize,
+    /// Sensors or shriekers a runtime write touches, with the write: never
+    /// predicted.
+    rewritten: Vec<([i32; 3], String)>,
     /// Cells holding a block in `#occludes_vibration_signals`.
     occluders: BTreeSet<[i32; 3]>,
     /// Cells holding a block in `#dampens_vibrations`.
@@ -649,8 +658,8 @@ impl Listening {
             if matches!(kind, Sculk::Catalyst) {
                 continue;
             }
-            if writes.iter().any(|w| w.contains(*c)) {
-                l.rewritten += 1;
+            if let Some(w) = writes.iter().find(|w| w.contains(*c)) {
+                l.rewritten.push((*c, w.label.clone()));
                 continue;
             }
             match kind {
@@ -674,9 +683,9 @@ impl Listening {
         self.shriekers.len()
     }
 
-    /// Devices a runtime write touches, never predicted.
-    pub fn rewritten(&self) -> usize {
-        self.rewritten
+    /// Devices a runtime write touches, never predicted, each with the write.
+    pub fn rewritten(&self) -> &[([i32; 3], String)] {
+        &self.rewritten
     }
 
     /// Whether an occluding block lies in the box the two cells span — a
@@ -690,26 +699,27 @@ impl Listening {
     }
 
     /// **The vibrations a leg makes** (spec-0100 §4.6): none on a `sneak` leg;
-    /// otherwise every sensor within `distSqr ≤ 49` of a route cell whose step
-    /// is not dampened (`#dampens_vibrations` in the feet cell or the cell under
-    /// it) and with no occluder in the box the two cells span, and for each the
-    /// shriekers within `distSqr ≤ 64` of it with no occluder between.
+    /// otherwise every sensor for which [`PREDICTED_RUN`] consecutive route
+    /// cells lie within `distSqr ≤ 49` of it, each step undampened
+    /// (`#dampens_vibrations` in the feet cell or the cell under it) and with no
+    /// occluder in the box the cell and the sensor span; and for each such
+    /// sensor the shriekers within `distSqr ≤ 64` of it with no occluder
+    /// between.
     pub fn leg_vibrations(&self, cells: &[[i32; 3]], sneak: bool) -> Vec<Vibration> {
         if sneak || self.sensors.is_empty() {
             return Vec::new();
         }
-        let steps: Vec<[i32; 3]> = cells
-            .iter()
-            .copied()
-            .filter(|c| {
-                !self.dampeners.contains(c) && !self.dampeners.contains(&[c[0], c[1] - 1, c[2]])
-            })
-            .collect();
         let mut out = Vec::new();
         for &(s, r2) in &self.sensors {
-            let heard = steps
-                .iter()
-                .any(|c| dist_sq(*c, s) <= r2 && !self.occluded(*c, s));
+            let mut run = 0usize;
+            let heard = cells.iter().any(|c| {
+                let counts = dist_sq(*c, s) <= r2
+                    && !self.dampeners.contains(c)
+                    && !self.dampeners.contains(&[c[0], c[1] - 1, c[2]])
+                    && !self.occluded(*c, s);
+                run = if counts { run + 1 } else { 0 };
+                run >= PREDICTED_RUN
+            });
             if !heard {
                 continue;
             }
@@ -1025,6 +1035,10 @@ mod tests {
             }]
         );
         assert!(l.leg_vibrations(&route, true).is_empty(), "a sneak leg");
+        // A leg that walks fewer than four cells inside the radius sets off
+        // nothing a bot can be held to.
+        assert!(l.leg_vibrations(&route[..3], false).is_empty(), "three cells");
+        assert_eq!(l.leg_vibrations(&route[..4], false).len(), 1, "four cells");
         // Wool between the shrieker and the sensor occludes.
         let walled = map(&[
             ([5, 0, 3], "minecraft:sculk_sensor"),
@@ -1048,6 +1062,6 @@ mod tests {
             label: "x".into(),
         };
         let l = Listening::of(&blocks, &[w]);
-        assert_eq!(l.rewritten(), 1);
+        assert_eq!(l.rewritten().len(), 1);
     }
 }
