@@ -3549,8 +3549,12 @@ which edits it in place, and every pass after reads the edited copy. The map is
 it whole — the light model — shares it instead of copying it; the replay is its
 only writer. The geometry is classified once too: `light::geometry_world` is
 the premise-free nav world relight surveys, and the campaign's own world is that
-world's cells under `nav::Premises::of_plan` (`World::with_premises`) plus
-relight's colliding fixtures. The nav `World`'s cell sets are copy-on-write
+world's cells under `nav::Premises::of_plan` (`World::with_premises`) with
+relight's fixtures standing in it (`light::lit_world`): the map with the
+placements written in goes through `assembled::occupancy_over`, so a fixture is
+classified by the one collision table like every block — a torch adds nothing,
+a lantern (hanging or standing) is a floor at its measured height in its cell,
+and no fixture carries a flag of its own saying whether it collides. The nav `World`'s cell sets are copy-on-write
 (`cellset::CellSet`/`CellMap`): a derived view — a quest configuration, a sealed
 gate, a counterfactual — shares the bulk and stores only its own edits, and a
 set that fills its bounding box is held as a bitset. Iteration over either is in

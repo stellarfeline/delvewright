@@ -605,12 +605,12 @@ fn wave_mobs_land_on_distinct_standable_in_room_cells() {
         }
     }
     // The exact occupancy world the emitter seated mobs over: assembled geometry
-    // plus any colliding relight fixtures (spec-0010), matching emit::build.
-    let relight = delvec::compiler::light::relight(&plan, &structures);
-    let world = delvec::compiler::nav::World::from_plan_with_extra(
-        &plan,
-        &structures,
-        &relight.extra_solid,
+    // with the relight fixtures standing in it (spec-0010), matching emit::build.
+    let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
+    let geometry = delvec::compiler::light::geometry_world(&assembled);
+    let relight = delvec::compiler::light::relight_with(&plan, &assembled, &geometry);
+    let world = delvec::compiler::light::lit_world(&assembled, &relight, geometry).with_premises(
+        delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
     );
 
     let out = build_showcase();

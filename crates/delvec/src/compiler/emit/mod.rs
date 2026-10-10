@@ -491,8 +491,8 @@ pub fn build_with_warnings(
     // runtime critical-path bot).
     // Assembled-world lighting + deterministic relight pass (spec-0010): measure
     // real light over the assembled world, place declared fixtures, and gate on
-    // measured darkness. Runs before nav verification so the colliding fixtures it
-    // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
+    // measured darkness. Runs before nav verification so the fixtures it adds are
+    // re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
     // The geometry is classified once: relight surveys it as it stands, and the
@@ -508,9 +508,10 @@ pub fn build_with_warnings(
 
     // The voxel occupancy model backs both nav verification (move-npc / cutscene /
     // critical path) and spawn-wave mob placement, so build it once when
-    // either needs it. Includes any colliding relight fixtures (campfire / floor
-    // lantern) so a fixture can never wedge a required path shut *nor* be stood on
-    // by a spawned mob (spec-0010: verification re-runs after placement).
+    // either needs it. The relight fixtures stand in it, each classified by the
+    // one collision table ([`crate::compiler::light::lit_world`]), so a fixture
+    // can never wedge a required path shut unseen (spec-0010: verification
+    // re-runs after placement).
     //
     // It is built for EVERY campaign, not only the ones `assembles_world` says
     // need nav: the visual tier's clear-eye proof (`DW0724`) is owed by every
@@ -524,12 +525,9 @@ pub fn build_with_warnings(
     // seals, the clocked gate regions and the teleport sources — travel as one
     // value, [`crate::compiler::nav::Premises`], so an edited world and a
     // pristine one carry the identical set.
-    let world = geometry
-        .with_premises(crate::compiler::nav::Premises::of_plan(
-            plan,
-            assembled.gate_seals.clone(),
-        ))
-        .with_extra_solid(&relight.extra_solid);
+    let world = crate::compiler::light::lit_world(assembled, &relight, geometry).with_premises(
+        crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
+    );
 
     // What the camera reads in each carried place (spec-0080 §2.2): its fog
     // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so
