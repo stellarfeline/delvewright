@@ -2180,8 +2180,8 @@ mod tests {
 
     /// The general form, bound to the layer that decides what an author may write.
     ///
-    /// `TECHNICAL_BLOCK_IDS` is the DSL's list of blocks that are not items — the
-    /// blocks a `fill`/`set-block` may name that no item registry can vouch for.
+    /// The DSL's block registry accepts every block, item form or not; these are
+    /// the air and fluid ids a `fill`/`set-block` may name.
     /// Every one of them must reach a class `occupancy_of` handles **on purpose**:
     /// an air variant (no cell) or a fluid (flooded). An id that is neither falls
     /// through to the final `else` and becomes floor, which is precisely how
@@ -2193,9 +2193,20 @@ mod tests {
     /// that costs is a separate question from this one.
     #[test]
     fn every_technical_block_the_dsl_accepts_is_air_or_fluid_to_this_model() {
-        use delvewright_dsl::registry::TECHNICAL_BLOCK_IDS;
+        use delvewright_dsl::registry::{BlockRegistry, VendoredBlockRegistry};
+        const TECHNICAL_BLOCK_IDS: &[&str] = &[
+            "minecraft:air",
+            "minecraft:cave_air",
+            "minecraft:void_air",
+            "minecraft:water",
+            "minecraft:lava",
+        ];
         let mut fluids = 0usize;
         for id in TECHNICAL_BLOCK_IDS {
+            assert!(
+                VendoredBlockRegistry.contains(id),
+                "`{id}` is not in the DSL's block registry"
+            );
             assert!(
                 is_air(id) || is_fluid(id),
                 "`{id}` is a block the DSL accepts but this model classifies by its \
