@@ -354,8 +354,9 @@ hand, in the running game, is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`
 
 ## 9. Detail — site-plan campaigns only
 
-Required on a site-plan campaign: the staging gate at step 13 refuses a build
-with no detail plan. **Needs**:
+Required on a site-plan campaign, for every place: the staging gate at step 13
+refuses a build with no detail plan, or with any place still standing in its
+stand-in. **Needs**:
 step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`.

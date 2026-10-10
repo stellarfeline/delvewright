@@ -193,35 +193,38 @@ form and the commands are in *Reference: drawing the map's reference*.
    authority: an identity binds to a number, never to a picture.
 
 2. **`layout-graph.json`** — the space as a graph, **before any coordinate
-   exists**. `nodes[]` are places (`{id, intent, size_class | way_class, stations?, note?}`);
-   `edges[]` are connections (`walk | stair | drop | barred | vision`, with
-   `gating`, `one_way`, `shortcut`, `opens_from`). Plus `entry`, `goal`, an
-   authored `critical_path[]`, and `beats[]` binding every place-bound quest beat
-   to the node it happens in.
-   - **A place is classified exactly once, and there are two vocabularies.**
-     `size_class` is a rung of the size ladder and bounds the footprint on BOTH
-     horizontal axes — that is what a room, a hall or an arena is. `way_class` is
-     for a place bounded in one axis and free in the other: a road, a causeway, a
-     corridor, a duct. Write a way when the shape is a ROUTE — a cut ledge one
-     body wide climbing a whole cliff face is 4 by 90, and no rung admits that,
-     because a class spanning 4..90 on an axis has stopped classifying. Declaring
-     both, or neither, is `DW0875`.
-     - A way class bounds the **cross-section** only. There is no length
-       standard and there never will be one: the run is your plan's business, and
-       all the engine asks is that the box's longer extent EXCEED the class's
-       widest cross-section (`DW0832`). A square box can never be a way, which is
-       the point — it is a room.
-   - `size_class`, `way_class` and every seam `opening` name an entry in the
-     **metrics table**. `delvec metrics` prints it — 341 lines of JSON on stdout,
-     and a summary plus its binding counts on stderr, so read them separately:
-     `delvec metrics > table.json`. **Write the BARE name** — `"size_class":
-     "hall"`, `"way_class": "road"`, `"opening": "arch"` — and a name the table
-     does not define is `DW0812`, which lists the defined set for that kind.
-     The table's own JSON keys carry a namespace the document never writes:
-     the entry is at `building["size-class.hall"]`, and the compiler puts the
-     `size-class.` / `way-class.` / `opening.` in front of what you wrote to
-     look it up, so `"size_class": "size-class.hall"` is `DW0812` and not a
-     synonym. Strip the prefix when you read a key out of `table.json`.
+   exists**. `nodes[]` are places (`{id, intent, stations?, note?, reached?}`);
+   `edges[]` are connections (`walk | stair | climb | drop | barred | carry |
+   vision`, with `gating`, `one_way`, `shortcut`, `opens_from`). Plus `entry`,
+   `goal`, an authored `critical_path[]`, and `beats[]` binding every
+   place-bound quest beat to the node it happens in.
+   - **A place carries no size class.** Its size is its box's `extent` in the
+     site plan — your declaration — and nothing in the graph classifies it or
+     refuses it. A road, a ledge one body wide climbing a whole cliff face and a
+     hall are all just places with the boxes you draw for them.
+   - **A `climb` is a way up a ladder or a vine the lower place hangs**: a hole
+     through a floor, or a door high in a wall, with no treads and no sill. Its
+     rise is the two floors' difference; a climb between two places on one
+     plane is `DW0992` — a doorway called a climb. A climb **inside one place**
+     is not a graph edge: it is the piece's own, two spaces and a `climb`
+     contract edge between them (step 9).
+   - **`"reached": false` declares scenery** — a place built to be seen and
+     never entered, a tree's crown over a treehouse. The checks confirm it both
+     ways: the closure must not reach it (`DW0816`) and no body may get into it
+     in the built world (`DW0837`); a `vision` edge is how a place is seen.
+     Scenery still owns its outside and stitches to the ground, owes no node
+     anchor and no play light, and its piece is judged sealed. Absent means
+     reached.
+   - Every seam `opening` that names a standard names an entry in the **metrics
+     table**. `delvec metrics` prints it — 223 lines of JSON on stdout, and a
+     summary plus its binding counts on stderr, so read them separately:
+     `delvec metrics > table.json`. **Write the BARE name** — `"opening":
+     "arch"` — and a name the table does not define is `DW0812`, which lists
+     the defined set. The table's own JSON keys carry a namespace the document
+     never writes: the entry is at `building["opening.arch"]`, and the compiler
+     puts the `opening.` in front of what you wrote to look it up, so
+     `"opening": "opening.arch"` is `DW0812` and not a synonym. Strip the
+     prefix when you read a key out of `table.json`.
    - The graph is checked as a graph, cheaply, before geometry exists to make
      it expensive: every place reachable under gating (`DW0816`), the authored
      critical path actually a quest-legal path (`DW0817`), no one-way edge that
@@ -230,68 +233,117 @@ form and the commands are in *Reference: drawing the map's reference*.
 
 3. **`site-plan.json`** — the geometric embedding of that graph. `region` (the
    whole map's one box, in world coordinates), `datums` (named ground planes),
-   **one `boxes[]` entry per node**, **one `seams[]` entry per traversal edge**,
-   `volumes[]` for mass the whole owns (the mountain a cave is inside), a
-   `sightlines[]` entry per `vision` edge, optional `views[]` to judge the
-   silhouette from, and `identities[]` binding the plan back to the
-   brief's facts.
+   **`fill`** (what the land is), **one `boxes[]` entry per node**, **one
+   `seams[]` entry per traversal edge**, `volumes[]` for mass the whole owns
+   (the mountain a cave is inside), a `sightlines[]` entry per `vision` edge,
+   optional `views[]` to judge the silhouette from, `identities[]` binding the
+   plan back to the brief's facts, and an optional `max_drop`.
    - **Extent flows down.** The region comes from the brief and the boxes
      partition it. A box is never grounds to grow the region (`DW0826`): shrink
      or move the box, or change the brief's fact and re-derive, visibly.
+   - **`fill` is required, with no default**: what every cell no place claims
+     and no volume covers becomes. `{"kind": "solid", "block": …}` is an
+     enclosed site whose places are carved out of rock; `{"kind": "open",
+     "terrain": …, "surface": …, "below": …}` is ground under sky — the
+     `surface` block at the terrain's height, `below` under it, air above.
+     `terrain` is `{"kind": "flat", "datum": …}` (the datum is the terrain's
+     walk plane) or `{"kind": "heightmap", "heightmap": …, "base_y": …,
+     "range": …}` — a greyscale PNG in the campaign, exactly the region's
+     `x × z` pixels, each pixel the surface `y` `base_y + value × range / 255`.
+     A plan without `fill` does not parse (`DW0100`); a heightmap of the wrong
+     size or outside the region is `DW0826`. On an `open` site, ground no
+     place claims is walkable commons.
    - **A box says what it is; a seam says where two boxes meet; the engine
-     derives the grid.** A box is `{node, extent, floor, ceiling}` — `extent`
-     is the interior a body stands in, on the kit grid. Write `min` on **one**
-     box (the entry) to say where the whole stands in the region; write it on
-     no other box unless you mean to assert its corner, because a pin that
+     derives where it stands.** A box is a cuboid,
+     `{node, extent: [dx, dz], floor, ceiling, base?, roof?, min?}`. `extent`
+     is the play space a body stands in, any whole number of blocks; `floor`
+     is `{"datum": …}` or `{"y": …}`; `ceiling` is `{"clearance": n}` (a lid
+     `n` over the floor) or `{"open": n}` (sky-open: exactly `n` courses of air
+     over the walk plane and nothing above them). Write `min` on **one** box
+     (the entry) to say where the whole stands in the region; write it on no
+     other box unless you mean to assert its corner, because a pin that
      disagrees with the seams is `DW0883`.
-   - **A seam is `{edge, face, opening | contact, at?, meets?, stair_in?}`.**
-     `face` is the side of the edge's `a` box the crossing is on. The engine
-     puts `b` one cell beyond that face — the wall — and the crossing in the
-     **middle** of both faces. When the door is not in the middle, say where:
-     `at` is cells from `a`'s low corner along the face, `meets` cells from
-     `b`'s (an integer on a wall face; `[dx, dz]` through a floor or ceiling).
-     A seam that closes a loop places nothing: both boxes already stand, and
-     the engine checks that its cells are the same seen from either side
-     (`DW0828`).
+   - **A place owns its outside.** Its claim is its footprint grown by a
+     one-cell ring — where its walls stand — from its bottom up to its open
+     top, its lid or its roof zone; two places conflict only where their claims
+     overlap (`DW0827`). `base` says where the bottom is. `"ground"` (the
+     default) reaches down to the terrain, and the whole hands the place that
+     ground and continues the terrain to the plot's edge. `{"aloft": n}` hangs
+     the place — a gantry, a treehouse platform, a bridge's deck — its claim
+     stopping `n` courses under its floor course, handed no ground; terrain
+     reaching into that claim is `DW0990`, and the remedy is `"ground"`, a
+     higher floor, or lower terrain. A place hung over an `open` place stands
+     in its sky: a climb up into it is a hole through its floor course, which
+     the lower place's headroom reaches when its top is one course under it
+     (one short is `DW0828`, naming the gap).
+   - **`roof: {courses, eaves}`** on a roofed box reserves the roof zone the
+     place's piece draws: the shell footprint grown by `eaves`, from the
+     ceiling course up `courses` courses. A roof on an `open` box, or one
+     rising into another place's play space or floor course, is `DW0988`.
+     Choose both numbers against
+     `$DELVEWRIGHT_ENGINE/docs/reference/roof-and-facade-craft.md`.
+   - **A seam is `{edge, face, form, opening | contact, at?, meets?,
+     stair_in?}`.** `face` is the side of the edge's `a` box the crossing is
+     on. The engine puts `b` one cell beyond that face — the wall — and the
+     crossing in the **middle** of both faces. When the door is not in the
+     middle, say where: `at` is cells from `a`'s low corner along the face,
+     `meets` cells from `b`'s (an integer on a wall face; `[dx, dz]` through a
+     floor or ceiling). A seam that closes a loop places nothing: both boxes
+     already stand, and the engine checks that its cells are the same seen
+     from either side (`DW0828`).
+   - **`form` is required**: what the crossing is, in a few words — "a wooden
+     arch bridge, 3 wide", "a ladder up through the hall's floor". Both places
+     the seam joins are handed it, so each designs its side knowing what meets
+     it. A connector that is itself a structure — a bridge, a long stair over a
+     gap — is a place of its own with its own box and piece, and its
+     neighbours give it a landing or an opening at each seam.
    - **Nothing about a sill, a rise or a wall thickness is written anywhere.**
      The sill is the higher of the two floors; the rise is their difference;
      the wall is the one cell the packing leaves between neighbours.
    - **A seam is one of two kinds, and both or neither is `DW0876`.** Write
-     `opening` for a PORTAL — a doorway at a standard the table names, whose
-     every cell the built world must have open (`DW0829`, `DW0836`). Write
-     `contact` for a FRONT — two places that simply meet, along a span of the
-     face they share:
-     `{"edge": …, "face": …, "at": <cells>, "contact": {"extent": [u, v]}}` —
-     `at` is the seam offset above (one integer on a wall face, `[dx, dz]`
-     through a floor or ceiling) and `extent` is the span `[u, v]` on the
-     face's own two in-plane axes, anchored there. Omit `extent` to run the
-     span from `at` to the far edge of the face on both axes.
+     `opening` for a PORTAL — a doorway whose every cell the built world must
+     have open (`DW0829`, `DW0836`), and that must lead a body through once its
+     bar is open (`DW0986`). The opening is a standard the table names
+     (`"opening": "arch"`) or a size the seam declares itself, `{"width": w,
+     "height": h}` on the face's two in-plane axes — a one-cell rope-bridge end
+     is as legal as a gateway. `DW0829` refuses either when it does not fit
+     the shared face or its sill cannot be reached. Write `contact` for a
+     FRONT — two places that simply meet, along a span of the face they share:
+     `{"edge": …, "face": …, "form": …, "at": <cells>, "contact": {"extent":
+     [u, v]}}` — `at` is the seam offset above (one integer on a wall face,
+     `[dx, dz]` through a floor or ceiling) and `extent` is the span `[u, v]`
+     on the face's own two in-plane axes, anchored there. Omit `extent` to run
+     the span from `at` to the far edge of the face on both axes.
      - A contact means **continuous ground**: no wall along the span, no frame,
        no sill, and crossing legitimate anywhere along it the step rule admits.
-       Do not reach for a wide `opening` to spell a front — there is no standard
-       the width of your courtyard and there is not going to be one, because a
-       front's width is a fact of your two boxes and a table that enumerated it
-       would gain an entry per campaign.
-     - A contact must be **wider than the broadest standard opening**. Anything
-       narrower could have been a portal, and is refused as one (`DW0876`).
+       Its width is yours: a front one cell wide is as legal as one fifty-five
+       wide.
      - A contact carries `walk` or `drop` only. A rim falling to a lower court is
        a real broad hand-off; a stair, a barred door and a sightline are not
-       things a front can be.
+       things a front can be (`DW0876`).
      - The engine MEASURES which columns of the span a body crosses, over the
        built bytes, and refuses a front nothing can cross (`DW0877`). Saying the
        face is fine is not a declaration it accepts.
    - A stair's rise is not authored — it is the difference between the two
      floors the plan already chose — and its `stair_in` names which box pays for
-     the run (`DW0830`). Treads rise off a walk plane, so `stair_in` is always
-     the LOWER place.
-     - **The run is spent on ONE axis, and the seam's face picks which.** For
-       a seam on a wall face the host affords its extent along that face's
-       normal — an east or west face spends x, a north or south face spends z
-       — so a 4 × 40 host with the stair on its east face affords **4**, and
-       `DW0830` says so in those words ("affords 4 on x"). Only a seam
-       through a floor or ceiling gets the host's longer horizontal axis.
-       Give the host its length on the axis the face points along, or host
-       the stair in the other place.
+     the run. `DW0830` refuses a stair seam with no `stair_in`, one between two
+     floors on one plane, and one hosted in the HIGHER place: treads rise off a
+     walk plane, so `stair_in` is always the LOWER place.
+     - **A run no standard pitch fits is a warning, never a refusal**: the
+       stand-in the derivation masses an undetailed host with cannot lay its
+       treads, so until the host is detailed the place above is unreached
+       (`DW0837`). The piece you detail into the host at step 9 carries its own
+       stair, judged over its bytes. For a standard stand-in stair, mind that
+       the run is spent on ONE axis and the seam's face picks which: on a wall
+       face the host affords its extent along that face's normal — an east or
+       west face spends x, a north or south face spends z — so a 4 × 40 host
+       with the stair on its east face affords **4**, and `DW0830` says so in
+       those words ("affords 4 on x"). Only a seam through a floor or ceiling
+       gets the host's longer horizontal axis.
+   - **A drop's depth is yours, under two caps.** It may never be deeper than a
+     body survives unarmoured, and when the plan declares `max_drop` — your own
+     policy, in blocks — no drop seam may be deeper than that (`DW0831`
+     refuses both). Absent `max_drop`, only the survivable fall applies.
    - `delvec validate` prints every box's derived corner and which seam placed
      it. Read your `volumes[]`, `sightlines[]` and `views[]` against that
      output — they are still world coordinates.
@@ -312,7 +364,7 @@ there are no prefabs to read anchor names out of:
 | Anchor | Where |
 | --- | --- |
 | `spawn` | the entry node |
-| `anchor/node-<place>` | the floor centre of each place — where NPCs, waves and `reach-anchor` objectives go |
+| `anchor/node-<place>` | the floor centre of each reached place — where NPCs, waves and `reach-anchor` objectives go |
 | `anchor/seam-<edge>` | the gate region over a `barred` seam: what `open-gate` or a `shortcut` names |
 | `anchor/unlock-<edge>` | the far-side affordance of a one-sided `barred` seam, where a `shortcut`'s `unlock` stands. Present only when `opens_from` is `a` or `b` |
 | a `stations[]` entry's `anchor` | a station a layout-graph node declares; it may not take a derived name |
@@ -327,11 +379,11 @@ anchored on the gate.
 **The numbers the whole thing is built to are provisional** until the metrics
 gym has been walked, and every build says so (`DW0813`). That is the gym's
 second job: `delvec metrics --gym <dir>` builds a site-plan campaign out of the
-table itself — one place per rung of the size-class ladder at each of its
-bounds, one way per class at each width the kit grid lets a plan draw it at,
-every standard opening, both stair pitches, a designed fall at the drop policy's
-cap. It reports what the table defines that it could not instantiate
-(`DW0840`) — read that line, not just the green.
+table itself — a spine of bays chained by one seam per standard opening, two
+climbs to one rise whose hosts differ only in the run they afford (so one takes
+the gentlest standard pitch and the other the steepest), and a designed fall
+with a stair back out of it. It reports what the table defines that it could
+not instantiate (`DW0840`) — read that line, not just the green.
 
 **A place's own sky** (spec-0080). A campaign declares its skies once, in
 `world.atmospheres[]`; a place carries one from the first tick
