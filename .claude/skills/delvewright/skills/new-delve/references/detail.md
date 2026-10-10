@@ -1,13 +1,14 @@
 # Step 9 — detail
 
 
-Required before hand-over: the staging gate refuses a site-plan build with no
-detail plan, since a campaign is staged only once detailed. Places are detailed
-one at a time, and not every place has to be. A blockout is walkable and legible
-and made of concrete; detailing
-replaces one place's massing with a real building, one place at a time — every
-unbound box is still massed, so the map builds, walks and renders at every point
-between none detailed and all of them.
+Required before hand-over, for **every** place: the staging gate refuses a
+site-plan build with no detail plan, and one whose derivation still stands a
+stand-in in any place — a stand-in never ships. Places are detailed one at a
+time. Until a place is detailed the derivation masses it with a stand-in —
+walkable, legible, made of concrete; detailing replaces that place's stand-in
+with a real building — so the map builds, walks and renders at every point
+between none detailed and all of them, and the build records every place still
+massed in `validation/blockout.json`.
 
 `detail-plan.json` has two fields and **there is no coordinate in it and no way
 to write one** — no region, no extent, no datum, no seam, no offset. A `place`
@@ -25,23 +26,43 @@ and a `piece` is all a row can say:
 ```
 
 **You do not write that row**: one verb writes it, from the program you wrote.
-Where the piece goes is computed from the site plan's own box: the play space
-plus the one floor course under it. The piece must be **exactly** that shape —
-undersize is refused the same way oversize is (`DW0843`), because the box is the
-footprint and a smaller building means a smaller box, which is a site-plan edit.
+Where the piece goes is computed from the site plan: the **frame** is the
+place's claim — the ground under its plot, its floor course, its play space,
+its one-cell ring and, roofed, its lid and roof zone — as a bounding box. The
+piece must be **exactly** that shape — undersize is refused the same way
+oversize is (`DW0843`), because a smaller building means a smaller box, which is
+a site-plan edit. Every cell of the frame the place does not own — a
+neighbour's wall, the ring's fixed ground, nobody's — is a **void**: the verb
+writes `minecraft:structure_void` there, and a piece that paints a void (air
+included) is `DW0987`, one that writes the ring's fixed ground `DW0990`.
 
 1. **Read the allocation**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" allocation
    <campaign-dir> <place>`. It is what the whole hands the place — the frame's
-   extents, the datum, every seam with its cells and the face class that answers
-   it, the owed anchor names, the palette. **Read it; type nothing from it
+   extents, the datum, the ground it stands on (or none, aloft), the roof zone,
+   its neighbours, every seam with its opening — `cells` is an inclusive box
+   written as its two opposite corner cells, and every cell between them is in
+   the opening and must be left open — and its `form` and the face class that
+   answers it, the owed anchor names, every void with its owner, the palette. **Read it; type nothing from it
    anywhere.** It is an input to nothing; ask again whenever you want it.
 2. **Write the program** at `programs/<place stem>.json` inside the campaign.
    Declare the handed values you use as parameters under the `handed/` prefix,
    with the allocation's values as their defaults (`handed/datum-y`;
-   `handed/seam/<edge stem>/x0` … `rise`); answer each seam with an opening at
-   the handed cells and a contract edge to `exterior` whose `via` is that
-   opening; answer each owed name with a `mark` of that stem
-   (`anchor/node-annex` → `node-annex`); declare a spatial contract (`DW0843`).
+   `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof;
+   `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); answer each seam with
+   an opening at the handed cells and a contract edge to `exterior` whose `via`
+   is that opening; answer each owed name with a `mark` of that stem
+   (`anchor/node-annex` → `node-annex`) — and a `barred` seam whose plane this
+   place owns with the contract edge's own `bar` over exactly the seam's
+   cells, its region named by the same stem (`anchor/seam-west-door` →
+   `"region": "seam-west-door"`), which exports as the gate anchor that name
+   binds to (`DW0845`); declare a spatial contract (`DW0843`). **The enclosed spaces are
+   yours to declare**, and the closure gate confirms exactly those: a street, a
+   pavilion or a covered market declares none and passes. A two-level interior
+   is two spaces (a space is one floor) and a `climb` contract edge between
+   them, at program version `1.10.0`, proved over the body's climb moves
+   (`$DELVEWRIGHT_ENGINE/docs/reference/grammar.md`, the contract's edge
+   classes). A scenery place (`"reached": false`) is judged sealed: no way in,
+   no floor or light owed.
    Iterate with `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar expand --file …
    --region <the frame>` and a render until it reads as the place. A piece the
    library already has, or one admitted through `delvec prefab` instead of

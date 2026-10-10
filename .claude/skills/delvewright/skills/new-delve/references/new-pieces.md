@@ -335,8 +335,8 @@ this needs are subcommands of the one binary Init I3 installed.
    a deck reads as pitch black. A piece whose contract declares **every** space
    `enclosed` claims no floor of its own stands under the sky, so it is measured
    with no sky at all and its figure is its own block light. That is the honest
-   measurement for a piece a `detail-plan` row binds — its frame is the play
-   space plus one floor course and the roof over it belongs to the whole — and it
+   measurement for a piece a `detail-plan` row binds — its frame is its place's
+   claim, and what lies past it is the whole's or a neighbour's — and it
    is why a `lit` verdict borrowed from open sky is worth nothing there: the same
    emitterless piece reds `DW0210` at the first build. The report says which sky
    was applied and why, in `assumed_sky.admits_sky` and `assumed_sky.why`, and the
@@ -386,6 +386,13 @@ over the rung's column, so the body clears it. The bot climbs ladders and vines;
 it cannot climb weeping, twisting or cave vines (its physics does not know them),
 so a route that needs one of those is proven and still the owner's hour.
 Scaffolding is not climbed: it is solid to the engine.
+
+**A climb is one column.** A body changes column only by letting go onto a
+standable cell, so a ladder that tops out beside the foot of the next is two
+climbs with that cell between them — give it a cell to stand on. Inside one
+piece, a climb between two floors is declared in the spatial contract as two
+spaces (a space is one floor) and a `climb` edge between them (program version
+`1.10.0`), whose required `via` holds the ladder and the hole it rises through.
 
 **A table is declared, not left to the walker.** A slab on a fence is floor to
 the walk model — a bench beside it is a half-block step and the top one jump

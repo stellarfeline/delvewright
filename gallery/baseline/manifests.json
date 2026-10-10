@@ -1,7 +1,7 @@
 {
   "carcass.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "c0cbe9c4d41b096403cc66b85b2236d092d9dafe6aef9f1d8f4d7d1bad36939a",
@@ -158,7 +158,7 @@
   },
   "easy.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "9c7c8e0a62f829a2d213ee1cac03b3dd2580757f287a2158f0f45d2627b9c393",
@@ -1262,7 +1262,7 @@
   },
   "hard.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "9c7c8e0a62f829a2d213ee1cac03b3dd2580757f287a2158f0f45d2627b9c393",
@@ -2366,7 +2366,7 @@
   },
   "ocean-horizon.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "9c7c8e0a62f829a2d213ee1cac03b3dd2580757f287a2158f0f45d2627b9c393",
@@ -3470,7 +3470,7 @@
   },
   "primary.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "9c7c8e0a62f829a2d213ee1cac03b3dd2580757f287a2158f0f45d2627b9c393",
@@ -4580,7 +4580,7 @@
   },
   "primary.zh-cn": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "9c7c8e0a62f829a2d213ee1cac03b3dd2580757f287a2158f0f45d2627b9c393",
@@ -5691,7 +5691,7 @@
   },
   "site-plan-solid.en": {
     "campaign_id": "gallery-rock",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "89e6bc779baa643cd39d92909a51cec33a10e8c4d749a7fd2ea4e698c9b2f691",
@@ -5948,7 +5948,7 @@
   },
   "site-plan.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "9c7c8e0a62f829a2d213ee1cac03b3dd2580757f287a2158f0f45d2627b9c393",
@@ -6213,7 +6213,7 @@
   },
   "valley-site.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "c0cbe9c4d41b096403cc66b85b2236d092d9dafe6aef9f1d8f4d7d1bad36939a",
@@ -6378,7 +6378,7 @@
   },
   "void-horizon.en": {
     "campaign_id": "gallery",
-    "delvec_version": "1.11.0",
+    "delvec_version": "1.12.0",
     "dsl_version": "0.38.0",
     "inputs": {
       "classes.json": "9c7c8e0a62f829a2d213ee1cac03b3dd2580757f287a2158f0f45d2627b9c393",
