@@ -1331,6 +1331,15 @@ names to its md5 — and runs the core's own `Main-Class` on that classpath with
 A home that does not hold the pin is refused, exit 2, naming the pin, the home,
 any other core there, and the installer; nothing is rendered.
 
+**A render reaches the scene's declared budget.** Chunky saves the `-target` it
+was run with into the scene, so a draft (`-target 64`) would leave 64 in the file
+and a later pass without `-target` would find its goal met and render nothing
+more. `chunky.sh` records the budget `delvec scene` wrote (`sppTarget`) in
+`<scene>.budget` (`tools/lib/chunky_budget.py`) the first time it renders the
+scene, and hands it as `-target` to any `-render` that names none; a `-target` the
+caller names is honoured. Emission deletes `<scene>.budget` with the other
+per-scene caches, so a re-emitted scene is judged by its new budget.
+
 **Textures come from the creator's own client jar** and are never redistributed:
 Chunky reads `~/.chunky/resources/minecraft.jar` (or `--textures <jar>`), the
 same EULA-gated jar `delvec render` resolves.
