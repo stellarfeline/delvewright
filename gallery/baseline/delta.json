@@ -3,9 +3,6 @@
   "base_commit": "a3e7a4d8983bce26eef3d1f393bafe5945b4654f",
   "changed": [
     "carcass.en:datapack/data/gallery/structure/gallery-carcass.nbt",
-    "carcass.en:validation/leave-proof.json",
-    "carcass.en:validation/piece-exposure.json",
-    "carcass.en:validation/sea-seepage.json",
     "easy.en:datapack/data/gallery/function/setup_finish.mcfunction",
     "easy.en:datapack/data/gallery/function/world_build.mcfunction",
     "easy.en:datapack/data/gallery/structure/gallery-hall.nbt",
@@ -32,7 +29,7 @@
   ],
   "classes": {
     "datapack function": 19,
-    "validation ledger": 8
+    "validation ledger": 5
   },
   "removed": []
 }
