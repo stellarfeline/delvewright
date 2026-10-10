@@ -430,6 +430,74 @@ fn a_marked_program_exports_the_anchors_it_declared() {
     );
 }
 
+/// **A bar is a gate the piece ships, and is exported as one** (spec-0098):
+/// a `barred` edge's bar region becomes the gate anchor `anchor/<region>`,
+/// its cells and its block, even when the program claims it in several
+/// scopes. A bar whose claims do not fill one box is not a gate region and is
+/// not exported (the perturbation).
+#[test]
+fn a_bar_is_exported_as_the_gate_anchor_of_its_region() {
+    let program = |second_cell_at: i64| -> Program {
+        let json = serde_json::json!({
+            "version": "1.9.0", "name": "barred-cell", "start": "cell",
+            "params": {},
+            "palette": {"wall": "minecraft:stone_bricks",
+                        "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]"},
+            "rules": {"cell": [{"weight": 1, "body": {
+                "op": "split", "axis": "y",
+                "sizes": [{"size": "absolute", "blocks": {"expr": "int", "value": 1}},
+                          {"size": "relative", "weight": {"expr": "int", "value": 1}}],
+                "children": [{"op": "fill", "material": {"role": "wall"}}, {"op": "call", "symbol": "storey"}]}}],
+              "storey": [{"weight": 1, "body": {
+                "op": "split", "axis": "z",
+                "sizes": [{"size": "absolute", "blocks": {"expr": "int", "value": 1}},
+                          {"size": "relative", "weight": {"expr": "int", "value": 1}}],
+                "children": [
+                    {"op": "split", "axis": "x",
+                     "sizes": [{"size": "absolute", "blocks": {"expr": "int", "value": 1}},
+                               {"size": "absolute", "blocks": {"expr": "int", "value": 1}},
+                               {"size": "absolute", "blocks": {"expr": "int", "value": second_cell_at}},
+                               {"size": "absolute", "blocks": {"expr": "int", "value": 1}},
+                               {"size": "relative", "weight": {"expr": "int", "value": 1}}],
+                     "children": [
+                        {"op": "fill", "material": {"role": "wall"}},
+                        {"op": "claim", "region": "gate", "body": {"op": "fill", "material": {"role": "bar"}}},
+                        {"op": "fill", "material": {"role": "wall"}},
+                        {"op": "claim", "region": "gate", "body": {"op": "fill", "material": {"role": "bar"}}},
+                        {"op": "fill", "material": {"role": "wall"}}]},
+                    {"op": "claim", "region": "cell", "body": {"op": "void"}}]}}]},
+            "contract": {"entry": "cell", "spaces": {"cell": {"envelope": "open"}},
+                         "edges": [{"a": "cell", "b": "exterior", "class": "barred",
+                                    "bar": {"region": "gate", "block": "bar"}}]}
+        });
+        serde_json::from_value(json).expect("the program parses")
+    };
+    let region = Box3::at_origin([6, 3, 3]);
+    let meta = |p: &Program| -> serde_json::Value {
+        let export = export_prefab(p, region, &ExpandOptions::seeded(1), "barred-cell").unwrap();
+        serde_json::from_str(&export.metadata_json).unwrap()
+    };
+    // The two claims stand side by side: one gate, x 1..2.
+    let json = meta(&program(0));
+    let gate = &json["anchors"]["anchor/gate"];
+    assert_eq!(
+        gate["region"],
+        serde_json::json!({"from": [1, 1, 0], "to": [2, 2, 0]}),
+        "{json}"
+    );
+    assert!(
+        gate["block"]
+            .as_str()
+            .unwrap()
+            .starts_with("minecraft:iron_bars"),
+        "{gate}"
+    );
+    assert_eq!(gate["resolves_to"], "bar:gate");
+    // A cell of wall between them: no one box, no gate.
+    let json = meta(&program(1));
+    assert!(json["anchors"].get("anchor/gate").is_none(), "{json}");
+}
+
 /// The metadata a grammar prefab exports is exactly the hand-built shape minus
 /// what expansion cannot know. The omissions are load-bearing, so they are
 /// asserted rather than left to review — and the empty `anchors` of the temple,

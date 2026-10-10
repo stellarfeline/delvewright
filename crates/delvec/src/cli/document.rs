@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use delvewright_dsl::{Diagnostic, Stage, parse_campaign, stage_schema};
+use delvewright_dsl::{Diagnostic, Stage, stage_schema};
 
 use crate::EXIT_INTERNAL;
 use crate::cli::campaign::load_or_refuse;
@@ -173,7 +173,7 @@ pub(crate) fn run_allocation(
     // NOTHING, so a stale or wrong one has no vector into the build; the frame
     // is recomputed and re-judged by `DW0843` at every validation. `delvec
     // validate` is the verb that says what a campaign's state is.
-    let campaign = match parse_campaign(&loaded.raw) {
+    let campaign = match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(c) => c,
         Err(diags) => {
             print_diags(&diags, json);

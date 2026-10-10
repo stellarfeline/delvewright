@@ -27,9 +27,6 @@ pub(super) enum NotShared {
     /// They are neighbours, but the face they would share is empty because their
     /// spans miss each other on one of the two in-plane axes.
     NoCommonArea { axis: &'static str },
-    /// One of them is sky-open with no stated headroom, so it has no ceiling or
-    /// floor plane for a horizontal seam to sit in.
-    NoPlane { which: &'static str },
 }
 
 /// Do these two boxes share `face` **of `a`**, and where?
@@ -38,7 +35,7 @@ pub(super) enum NotShared {
 /// which the derivation writes once. See [`Placed`] for why the box is the play
 /// space rather than the play space plus its shell.
 /// The geometry a shared-face question needs of one box: its footprint and its
-/// vertical span, when it has one.
+/// vertical span.
 ///
 /// A tiny value rather than `&Placed` so that the **one** implementation of "do
 /// these two boxes share this face" serves both readers of the resolved plan:
@@ -49,7 +46,7 @@ pub(super) enum NotShared {
 #[derive(Clone, Copy)]
 struct FaceSide {
     foot: [i64; 4],
-    y: Option<(i64, i64)>,
+    y: (i64, i64),
 }
 
 impl Placed<'_> {
@@ -66,7 +63,7 @@ impl PlacedBox {
         let (lo, hi) = self.space();
         FaceSide {
             foot: self.foot,
-            y: Some((lo[1], hi[1])),
+            y: (lo[1], hi[1]),
         }
     }
 }
@@ -114,12 +111,7 @@ fn shared_face(a: FaceSide, b: FaceSide, face: Face) -> Result<SharedFace, NotSh
             let u = overlap(a_along, b_along).ok_or(NotShared::NoCommonArea {
                 axis: if along == 0 { "x" } else { "z" },
             })?;
-            let (ya, yb) = match (a.y, b.y) {
-                (Some(ya), Some(yb)) => (ya, yb),
-                (None, _) => return Err(NotShared::NoPlane { which: "a" }),
-                (_, None) => return Err(NotShared::NoPlane { which: "b" }),
-            };
-            let v = overlap(ya, yb).ok_or(NotShared::NoCommonArea { axis: "y" })?;
+            let v = overlap(a.y, b.y).ok_or(NotShared::NoCommonArea { axis: "y" })?;
             Ok(SharedFace {
                 plane,
                 u,
@@ -129,11 +121,7 @@ fn shared_face(a: FaceSide, b: FaceSide, face: Face) -> Result<SharedFace, NotSh
             })
         }
         Face::Up | Face::Down => {
-            let (Some(ya), Some(yb)) = (a.y, b.y) else {
-                return Err(NotShared::NoPlane {
-                    which: if a.y.is_none() { "a" } else { "b" },
-                });
-            };
+            let (ya, yb) = (a.y, b.y);
             let (plane, gap) = if face == Face::Up {
                 (ya.1 + 1, yb.0 - ya.1 - 1)
             } else {
@@ -226,7 +214,7 @@ pub(super) fn seams(
         // connection has no crossing for any rule below to judge, and telling
         // an author both that and what the crossing they did not state would
         // have meant prescribes two repairs for one mistake.
-        if !contact_declaration(&ctx, table, reads, d) {
+        if !contact_declaration(&ctx, table, d) {
             continue;
         }
 
@@ -237,14 +225,11 @@ pub(super) fn seams(
             // downstream door check wrong (spec-0053 §4).
             None
         } else {
-            match table.resolve(
-                MetricKind::Opening,
-                s.opening.as_deref().unwrap_or_default(),
-            ) {
-                Ok(e) => match e.value(reads) {
-                    MetricValue::Opening(o) => Some(*o),
-                    _ => continue,
-                },
+            let Some(spec) = s.opening.as_ref() else {
+                continue; // `DW0876` refused a seam with neither kind.
+            };
+            match spec.resolve(table, reads) {
+                Ok(o) => Some(o),
                 Err(unknown) => {
                     d.push(unknown.diagnostic("site-plan", &format!("/content/seams/{i}/opening")));
                     continue;
@@ -257,7 +242,8 @@ pub(super) fn seams(
         }
         match edge {
             Edge::Stair { .. } => stair(&ctx, table, reads, d),
-            Edge::Drop { falls, .. } => drop_seam(&ctx, *falls, table, reads, d),
+            Edge::Climb { .. } => climb(&ctx, d),
+            Edge::Drop { falls, .. } => drop_seam(&ctx, *falls, plan.max_drop, d),
             Edge::Walk { .. } | Edge::Barred { .. } => {
                 if let Some(opening) = opening {
                     sill(&ctx, opening, d);
@@ -298,6 +284,25 @@ fn not_shared(
             "they overlap by {} cell(s) across it rather than standing one apart",
             -gap
         ),
+        NotShared::NotAdjacent { gap } if matches!(s.face, Face::Up | Face::Down) => {
+            let (low, high) = if s.face == Face::Up { (a, b) } else { (b, a) };
+            let (_, top) = low.y_span();
+            let open = matches!(low.plan.ceiling, Ceiling::Open(_));
+            let want = i64::from(low.clearance) + gap - SHARED_FACE_GAP_CELLS;
+            format!(
+                "there are {gap} cells between them across that face where a shared wall is \
+                 exactly {SHARED_FACE_GAP_CELLS}: `{ln}`'s headroom tops out at y {top} and \
+                 `{hn}`'s floor course is y {fc}, so the one course between them is the upper's \
+                 floor only when the lower's top is y {want_top}. A climb or a hole through a \
+                 floor needs the lower place's headroom to reach one course under the upper's \
+                 floor course — give `{ln}` `{kind}: {want}`, or move `{hn}`'s floor",
+                ln = low.plan.node,
+                hn = high.plan.node,
+                fc = high.floor - 1,
+                want_top = high.floor - 2,
+                kind = if open { "open" } else { "clearance" },
+            )
+        }
         NotShared::NotAdjacent { gap } => format!(
             "there are {gap} cells between them across that face where a shared wall is exactly \
              {SHARED_FACE_GAP_CELLS}"
@@ -305,10 +310,6 @@ fn not_shared(
         NotShared::NoCommonArea { axis } => format!(
             "they are neighbours across it, but their spans on {axis} miss each other entirely, \
              so the face they share has no area to cut an opening in"
-        ),
-        NotShared::NoPlane { which } => format!(
-            "the `{which}` end is sky-open with no stated headroom, so it has no ceiling or floor \
-             plane for a horizontal seam to sit in"
         ),
     };
     Diagnostic::error(
@@ -346,12 +347,7 @@ fn not_shared(
 ///
 /// Returns `false` when the seam has no usable crossing, in which case the
 /// caller stops: everything below reads the crossing rectangle.
-fn contact_declaration(
-    ctx: &SeamCtx<'_>,
-    table: &Metrics,
-    reads: &mut Reads,
-    d: &mut Vec<Diagnostic>,
-) -> bool {
+fn contact_declaration(ctx: &SeamCtx<'_>, table: &Metrics, d: &mut Vec<Diagnostic>) -> bool {
     let (i, s) = (ctx.index, ctx.seam);
     let mut refuse = |what: String, remedy: String| {
         d.push(Diagnostic::error(
@@ -370,8 +366,9 @@ fn contact_declaration(
         (Some(o), Some(_)) => {
             refuse(
                 format!(
-                    "declares BOTH an `opening` (`{o}`) and a `contact` — a hand-off is one \
-                     kind or the other"
+                    "declares BOTH an `opening` ({o}) and a `contact` — a hand-off is one \
+                     kind or the other",
+                    o = o.describe(),
                 ),
                 "delete whichever this is not. A portal allocates the cells a body crosses \
                  at and every one of them must be passable; a contact is a front along which \
@@ -388,7 +385,8 @@ fn contact_declaration(
                     .to_string(),
                 format!(
                     "give it one. A doorway is `\"opening\": \"<name>\"` — defined \
-                     standards: {names}. A front where the two places simply meet is \
+                     standards: {names} — or a size the seam declares, \
+                     `\"opening\": {{\"width\": w, \"height\": h}}`. A front where the two places simply meet is \
                      `\"contact\": {{}}`, which spans from `at` to the far edge of the \
                      shared face",
                     names = table.names_of(MetricKind::Opening).join(", "),
@@ -400,7 +398,7 @@ fn contact_declaration(
         (None, Some(_)) => {}
     }
 
-    // ---- Shape 4: the classes a contact may carry.
+    // ---- Shape 3: the classes a contact may carry.
     //
     // `walk` and `drop` only. A rim falling to a lower court is a genuine broad
     // hand-off, so `drop` is in; `stair`, `barred` and `vision` are excluded
@@ -422,33 +420,8 @@ fn contact_declaration(
         return false;
     }
 
-    // ---- Shape 3: wider than the broadest standard opening.
-    //
-    // The floor is derived from the standard set, so anything at or under it
-    // could have been a portal. That is what makes it a demand the defect
-    // cannot supply: a door declared a contact is refused by its own width.
-    let Some(floor) = table.broadest_opening_width(reads) else {
-        return false; // `Metrics::self_check` reports a table with no openings.
-    };
     let (u_span, v_span) = (ctx.face.u, ctx.face.v);
     let (u_hi, v_hi) = crossing_hi(ctx);
-    let width = u_hi - ctx.at[0] + 1;
-    if width <= i64::from(floor) {
-        refuse(
-            format!(
-                "is a contact {width} cell(s) wide, which is not wider than the broadest \
-                 standard opening ({floor} cells)"
-            ),
-            format!(
-                "widen the span, or declare it a portal — anything this narrow could have \
-                 been one, and a doorway called a contact would dodge the standard set \
-                 while every downstream door check went on being wrong about it. Defined \
-                 openings: {names}",
-                names = table.names_of(MetricKind::Opening).join(", "),
-            ),
-        );
-        return false;
-    }
 
     // ---- Shape 2: the span lies on the shared face.
     let mut off: Vec<String> = Vec::new();
@@ -531,12 +504,16 @@ fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec
         "site-plan",
         format!("/content/seams/{i}/opening"),
         format!(
-            "the `{name}` opening ({w}x{h}) does not fit on the face `{an}` and `{bn}` share. \
+            "the {name} opening ({w}x{h}) does not fit on the face `{an}` and `{bn}` share. \
              Anchored at {ua} {u}, {va} {v} it would run to {ua} {u_hi}, {va} {v_hi}, and the \
-             shared face ends at {ua} {u1}, {va} {v1}. Move the anchor, choose a narrower \
-             standard opening, or grow the overlap between the two boxes — the standard set is \
-             the vocabulary, so the opening is never quietly cropped to fit.",
-            name = s.opening.as_deref().unwrap_or_default(),
+             shared face ends at {ua} {u1}, {va} {v1}. Move the anchor, choose or declare a \
+             smaller opening, or grow the overlap between the two boxes — the opening is the \
+             author's declaration, so it is never quietly cropped to fit.",
+            name = s
+                .opening
+                .as_ref()
+                .map(OpeningSpec::describe)
+                .unwrap_or_default(),
             w = opening.width,
             h = opening.height,
             an = edge.a(),
@@ -556,7 +533,33 @@ fn opening_fits(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec
 fn sill(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnostic>) {
     let (i, s, edge, a, b, face) = (ctx.index, ctx.seam, ctx.edge, ctx.a, ctx.b, &ctx.face);
     if face.v_axis != "y" {
-        return; // a horizontal seam has no sill; the fall or the treads own it.
+        // A seam in a floor has no sill, but a body walking it still has to
+        // get from one floor to the other: a walk through a floor between two
+        // planes further apart than a jump is a connection nobody can take.
+        let rise = (b.floor - a.floor).abs();
+        let max_rise = MAX_JUMP_RISE_16 / crate::metrics::FULL_16;
+        if rise > max_rise {
+            d.push(Diagnostic::error(
+                DW_SEAM_OPENING,
+                "site-plan",
+                format!("/content/seams/{i}"),
+                format!(
+                    "the seam for `{id}` is a hole in a floor between `{an}` (floor {af}) and \
+                     `{bn}` (floor {bf}), {rise} blocks apart, and it is a `{class}`: a body \
+                     reaches at most {max_rise} block(s) by jumping, so nothing carries it \
+                     between the two. Declare the connection a `climb` (a ladder or a vine \
+                     the lower place hangs), a `stair` (treads the plan allocates), or a \
+                     `drop`.",
+                    id = s.edge,
+                    an = edge.a(),
+                    bn = edge.b(),
+                    af = a.floor,
+                    bf = b.floor,
+                    class = edge.class(),
+                ),
+            ));
+        }
+        return;
     }
     let sources: Vec<(&NodeId, &Placed<'_>)> = match edge.direction() {
         Some(crate::layout::Direction::AToB) => vec![(edge.a(), a)],
@@ -592,8 +595,36 @@ fn sill(ctx: &SeamCtx<'_>, opening: crate::metrics::Opening, d: &mut Vec<Diagnos
     }
 }
 
-/// `DW0830`: the stair the plan allocated can be built at a standard pitch,
-/// inside the box the plan said hosts it.
+/// `DW0992`: a climb rises: the two floors the plan put its ends on differ.
+/// A climb has no treads and no sill — the ladder or vine the lower place
+/// hangs carries the whole rise, and the proofs that move a body count the
+/// climb (spec-0099) — so the one thing the plan can get wrong is a climb
+/// between two places at one level.
+fn climb(ctx: &SeamCtx<'_>, d: &mut Vec<Diagnostic>) {
+    let (i, s, edge, a, b) = (ctx.index, ctx.seam, ctx.edge, ctx.a, ctx.b);
+    if b.floor != a.floor {
+        return;
+    }
+    d.push(Diagnostic::error(
+        DW_CLIMB_RISES_NOTHING,
+        "site-plan",
+        format!("/content/seams/{i}"),
+        format!(
+            "`{id}` is a climb, and `{an}` and `{bn}` are both on plane y {f} — so it climbs \
+             nothing. A climb's rise is the difference between the two floors the plan has \
+             already chosen, and a ladder between two places at one level is a doorway that \
+             has been called a climb. Move one floor, or declare the connection a `walk`.",
+            id = s.edge,
+            an = edge.a(),
+            bn = edge.b(),
+            f = a.floor,
+        ),
+    ));
+}
+
+/// `DW0830`: the stair the plan allocated has a host, climbs something and rises
+/// off the lower floor; and, as a stand-in finding, whether the stand-in can lay
+/// it at a standard pitch inside the box the plan said hosts it.
 fn stair(ctx: &SeamCtx<'_>, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     let (i, s, edge, a, b, face) = (ctx.index, ctx.seam, ctx.edge, ctx.a, ctx.b, &ctx.face);
     let rise = b.floor - a.floor;
@@ -698,18 +729,25 @@ fn stair(ctx: &SeamCtx<'_>, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diag
             target = host.floor + run.climb,
         )
     };
-    d.push(Diagnostic::error(
+    // A finding about the STAND-IN, never a refusal of the plan: the stand-in's
+    // treads are laid at a standard pitch and the stand-in never ships. A piece
+    // bound to the host carries its own stair, which the byte observers judge
+    // (`DW0836`, `DW0837`); an unbound host whose stand-in cannot lay a standard
+    // run lays none, and the place it leads to is unreached (`DW0837`).
+    d.push(Diagnostic::warning(
         DW_STAIR_PITCH,
         "site-plan",
         format!("/content/seams/{i}"),
         format!(
             "the stair for `{id}` climbs {rise} block(s) between `{an}` (floor {af}) and `{bn}` \
-             (floor {bf}), and no standard pitch fits inside `{host_id}`. The tightest standard \
-             is `{name}`, which needs {needed} block(s) of run for a climb of {climb}, and \
-             `{host_id}` affords {available} of run on {run_axis}.{carries} Give the host a \
-             longer footprint on that axis, move the opening so the run has more room beside it, \
-             host the stair in the other place, or bring the two floors closer together — the \
-             pitches are standards, so a steeper one is not on offer.",
+             (floor {bf}), and no standard pitch fits inside `{host_id}`, so the stand-in cannot \
+             lay its treads. The tightest standard is `{name}`, which needs {needed} block(s) of \
+             run for a climb of {climb}, and `{host_id}` affords {available} of run on \
+             {run_axis}.{carries} A piece detailed into `{host_id}` carries its own stair, judged \
+             over its bytes (`DW0836`, `DW0837`); left to the stand-in, the climb is unbuilt and \
+             the place above it is unreached (`DW0837`). For a standard stand-in stair, give the \
+             host a longer footprint on that axis, move the opening so the run has more room \
+             beside it, host the stair in the other place, or bring the two floors closer.",
             id = s.edge,
             an = edge.a(),
             bn = edge.b(),
@@ -722,13 +760,12 @@ fn stair(ctx: &SeamCtx<'_>, table: &Metrics, reads: &mut Reads, d: &mut Vec<Diag
     ));
 }
 
-/// `DW0831`: a designed drop falls the way it says it falls, and no further than
-/// the policy allows.
+/// `DW0831`: a designed drop falls the way it says it falls, no further than an
+/// unarmoured body survives, and no further than the plan's declared `max_drop`.
 fn drop_seam(
     ctx: &SeamCtx<'_>,
     falls: crate::layout::Direction,
-    table: &Metrics,
-    reads: &mut Reads,
+    max_drop: Option<NonZeroU32>,
     d: &mut Vec<Diagnostic>,
 ) {
     let (i, s, edge, a, b) = (ctx.index, ctx.seam, ctx.edge, ctx.a, ctx.b);
@@ -759,9 +796,29 @@ fn drop_seam(
         ));
         return;
     }
-    let Some(cap) = table.max_designed_drop_blocks(reads) else {
+    // The physical ceiling holds every drop, declared policy or not: a fall
+    // deeper than an unarmoured body survives lands a body nowhere.
+    let physical = crate::metrics::unarmoured_survivable_fall_blocks() as i64;
+    if depth > physical {
+        d.push(Diagnostic::error(
+            DW_DROP_POLICY,
+            "site-plan",
+            format!("/content/seams/{i}"),
+            format!(
+                "`{id}` drops {depth} blocks from `{from}` into `{to}`, and an unarmoured body \
+                 at full health survives a fall of {physical} at most — a drop deeper than \
+                 that is a death, not a connection. Bring the two floors closer, or break the \
+                 fall with a place between them.",
+                id = s.edge,
+            ),
+        ));
+        return;
+    }
+    // The author's own policy, when the plan declares one.
+    let Some(cap) = max_drop else {
         return;
     };
+    let cap = cap.get();
     if depth <= i64::from(cap) {
         return;
     }
@@ -770,11 +827,10 @@ fn drop_seam(
         "site-plan",
         format!("/content/seams/{i}"),
         format!(
-            "`{id}` drops {depth} blocks from `{from}` into `{to}`, and the designed-drop policy \
-             caps a declared fall at {cap}. This is a **policy** cap and it is deliberately far \
-             tighter than what a body survives: a drop is a decision about the shape of the map, \
-             and it should not also be a decision about the party's health. Bring the two floors \
-             closer, or break the fall with a place between them.",
+            "`{id}` drops {depth} blocks from `{from}` into `{to}`, and this plan's `max_drop` \
+             caps a designed fall at {cap}. Bring the two floors closer, break the fall with a \
+             place between them, or raise the plan's `max_drop` if the deeper fall is the \
+             design.",
             id = s.edge,
         ),
     ));

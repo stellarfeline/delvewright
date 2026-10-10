@@ -3066,50 +3066,108 @@ fn write_shard(out: &Path) {
 const YARD_ID: &str = "gallery-yard";
 
 /// **The frame the whole gives `node/exit`**, and every number here is a
-/// consequence of it rather than a choice.
+/// consequence of it rather than a choice (spec-0098 §4).
 ///
-/// The site-plan overlay gives that place an 8×8 footprint at the `alcove` rung
-/// with no ceiling, so its play space is 8×3×8 and its FRAME — the play space
-/// plus the one floor course a piece owns — is 8×4×8. A detail piece must be
-/// exactly the shape of its allocation, and `DW0843` refuses a cell either way,
-/// so this constant is not a size the generator picked: it is what
-/// `delvec allocation node/exit` hands out, and the campaign document that binds
-/// this piece is what makes the two answerable to each other.
-const YARD_SIZE: [i32; 3] = [8, 4, 8];
+/// The site-plan overlay gives that place an 8×8 footprint with four courses
+/// of sky (`ceiling: {"open": 4}`, so its top course is one under the gantry's
+/// floor course), on an `open` site whose terrain stands one to four courses
+/// under its floor. A place owns its outside, so its frame is its claim: the
+/// ring its edge may stand in on the three sides it does not share, and the
+/// ground under its plot, column by column, down to the terrain. The far hall
+/// owns the party plane on the north (the arch's connection names it first,
+/// and it is roofed where the yard is open), so the frame stops at the play
+/// space there. `delvec allocation node/exit` hands exactly 10×9×9 with the
+/// walk plane at local y=5, and `DW0843` refuses a cell either way.
+const YARD_SIZE: [i32; 3] = [10, 9, 9];
 
-/// The way in, in piece-local cells: the seam the plan cut on the exit's north
-/// face, as `delvec allocation` states it. The piece must leave exactly these
-/// cells passable and must not open a second way out — the first is `DW0844`
-/// from one direction and the second is `DW0844` from the other.
-const YARD_WAY: ([i32; 3], [i32; 3]) = ([2, 1, 0], [3, 3, 0]);
+/// The walk plane's local `y` — `datum_y` in the handout.
+const YARD_FLOOR: i32 = 5;
+
+/// **The cells of the frame the yard does not own** — the handout's voids:
+/// the ring's fixed ground, owned by the whole (the terrain continued to the
+/// plot's edge, `DW0990`), and the earth under the north row, whose terrain
+/// stands higher than the frame's lowest course, so the yard's claim in those
+/// columns starts at the terrain and the cells below are the site's fill. The
+/// piece holds `structure_void` there and writes no block (`DW0987`).
+const YARD_VOIDS: [([i32; 3], [i32; 3]); 6] = [
+    ([0, 0, 0], [0, 1, 8]),
+    ([0, 2, 0], [0, 2, 0]),
+    ([1, 0, 8], [8, 0, 8]),
+    ([9, 0, 0], [9, 1, 8]),
+    ([9, 2, 0], [9, 2, 0]),
+    ([1, 0, 0], [8, 1, 0]),
+];
+
+/// The way in, in piece-local cells: the seam the plan cut in the far hall's
+/// south wall, answered on the yard's own first row beside it, as
+/// `delvec allocation` states it. The piece must leave exactly these cells
+/// passable and must not open a second way out — the first is `DW0844` from one
+/// direction and the second is `DW0844` from the other.
+const YARD_WAY: ([i32; 3], [i32; 3]) = ([3, 5, 0], [4, 7, 0]);
 
 /// Where a body stands when a quest seats it here — `anchor/node-exit` after the
 /// re-binding. Open paving, clear of the plinth.
-const YARD_SEAT: [i32; 3] = [1, 1, 4];
+const YARD_SEAT: [i32; 3] = [2, 5, 4];
 
-/// A courtyard: paving, a low plinth to walk around, and four corner posts.
-///
-/// It is a **building** rather than the box's massing repeated, and that is the
-/// whole demonstration: the interior standable set and the route through a place
-/// are deliberately free to change under detail (spec-0050 §7), while the seam,
-/// its cells and its rise are not. What a reader should be able to see here is
-/// that the plan's one way in is still exactly where the plan cut it, and that
-/// everything else is the piece's own.
+/// **The climb up to the gantry** (spec-0099): the seam the plan cut through
+/// the gantry's deck, answered on the yard's top course under it, as
+/// `delvec allocation` states it. The lower place hangs the climbable in its
+/// own claim, so the yard raises a stone post and hangs a ladder on its south
+/// face from the paving up to the hole.
+const YARD_CLIMB: ([i32; 3], [i32; 3]) = ([4, 8, 5], [4, 8, 6]);
+
+/// The post the ladder hangs on, and the ladder's column beside it.
+const YARD_POST: [i32; 2] = [4, 4];
+const YARD_LADDER: [i32; 2] = [4, 5];
+
+fn yard_void(p: [i32; 3]) -> bool {
+    YARD_VOIDS
+        .iter()
+        .any(|(lo, hi)| (0..3).all(|i| p[i] >= lo[i] && p[i] <= hi[i]))
+}
+
+/// A courtyard on a plinth: paving, a low stone to walk around, four corner
+/// posts — and its own outside. The plinth is faced in stone down to the
+/// terrain on the three sides it does not share, the ring above the ground is
+/// left open so a body on the yard sees sky and the far hall's wall, and the
+/// ring's ground is the whole's.
 fn build_yard() -> Structure {
     let mut palette = Palette::new();
     let mut blocks = Vec::new();
     let [sx, sy, sz] = YARD_SIZE;
+    let foot = |x: i32, z: i32| (1..=sx - 2).contains(&x) && (0..=sz - 2).contains(&z);
     for x in 0..sx {
         for y in 0..sy {
             for z in 0..sz {
-                let plinth = y == 1 && (3..=4).contains(&x) && (3..=4).contains(&z);
-                let post =
-                    (1..=2).contains(&y) && (x == 0 || x == sx - 1) && (z == 0 || z == sz - 1);
-                let name = if y == 0 {
+                let name = if yard_void([x, y, z]) {
+                    "minecraft:structure_void"
+                } else if !foot(x, z) {
+                    // The ring above the ground, on the yard's free sides: open.
+                    "minecraft:air"
+                } else if y < YARD_FLOOR - 1 {
+                    // The plinth, faced down to the terrain.
+                    "minecraft:stone_bricks"
+                } else if y == YARD_FLOOR - 1 {
                     "minecraft:polished_andesite"
-                } else if plinth {
+                } else if y >= YARD_FLOOR && [x, z] == YARD_POST {
+                    // The post the ladder hangs on, from the paving to the
+                    // course under the hole.
                     "minecraft:chiseled_stone_bricks"
-                } else if post {
+                } else if y >= YARD_FLOOR && [x, z] == YARD_LADDER {
+                    blocks.push(BlockEntry {
+                        pos: [x, y, z],
+                        state: palette.idx("minecraft:ladder", Some(&[("facing", "south")])),
+                    });
+                    continue;
+                } else if y == YARD_FLOOR && (4..=5).contains(&x) && (3..=4).contains(&z) {
+                    "minecraft:chiseled_stone_bricks"
+                } else if y == YARD_FLOOR + 1 && (x == 1 || x == sx - 2) && (z == 0 || z == sz - 2)
+                {
+                    // Each corner post carries a lantern: the gantry hung
+                    // over the yard shades the paving under it, so the sky
+                    // alone no longer lights the whole floor at night.
+                    "minecraft:sea_lantern"
+                } else if y == YARD_FLOOR && (x == 1 || x == sx - 2) && (z == 0 || z == sz - 2) {
                     "minecraft:polished_blackstone_bricks"
                 } else {
                     // Air is AUTHORED rather than omitted: a detail piece
@@ -3140,6 +3198,7 @@ fn build_yard() -> Structure {
 /// and reds on the second.
 fn yard_metadata() -> serde_json::Value {
     let (wl, wh) = YARD_WAY;
+    let (cl, ch) = YARD_CLIMB;
     serde_json::json!({
         "prefab_id": format!("prefab/{YARD_ID}"),
         "structure": {
@@ -3162,21 +3221,12 @@ fn yard_metadata() -> serde_json::Value {
                 "note": "where a body stands when the campaign seats it in this place"
             }
         },
-        // The claim about what SIZE of box this piece is for, judged against its
-        // own bytes at admission and again wherever a detail plan consumes it
-        // (`DW0848`). 8×8 on the kit grid, three of clearance: an `alcove`.
-        "footprint_class": "alcove",
         // **The sides of this piece the player is meant to see** (`DW0885`).
-        // The yard is the one piece in this gallery whose outside the party's
-        // own air reaches: it is an `open_top` court, so the air a body stands
-        // in leaves through the sky, runs around the outside of the box and
-        // comes back under it. Its four walls and its top are inside the site
-        // plan's own volumes and buried by them; its FLOOR is the one face with
-        // nothing in front of it, hanging over a `void` world's nothing.
-        //
-        // So `down` is the whole list, and it is the piece saying that its
-        // underside is a deliberate finished face of a free-standing court
-        // rather than the cut edge of something that expected ground there.
+        // The yard owns its outside (spec-0098): it stands as a plinth over
+        // terrain that falls away to the east, south and west, and the faces
+        // of that plinth are what a body on the ground around it looks at. The
+        // north side is the far hall's wall, and the underside sits on the
+        // ground.
         //
         // The list is exact, never a blanket: a side declared here that the
         // world has in fact buried is refused by the same code, so padding it
@@ -3184,13 +3234,13 @@ fn yard_metadata() -> serde_json::Value {
         // declaration and not a hatch — perturb it either way and the gallery
         // goes red, which is what `gallery/probes/a-face-nothing-stands-in-front-of`
         // pins.
-        "shown_faces": ["down"],
+        "shown_faces": ["east", "south", "west"],
         "spatial_contract": {
             "entry": "yard",
             "spaces": {
                 "yard": {
                     "envelope": "open_top",
-                    "boxes": [region([0, 1, 0], [YARD_SIZE[0] - 1, YARD_SIZE[1] - 1, YARD_SIZE[2] - 1])]
+                    "boxes": [region([1, YARD_FLOOR, 0], [YARD_SIZE[0] - 2, YARD_SIZE[1] - 1, YARD_SIZE[2] - 2])]
                 }
             },
             "no_body": {},
@@ -3200,10 +3250,17 @@ fn yard_metadata() -> serde_json::Value {
                     "b": "exterior",
                     "class": "walk",
                     "via": { "region": "yard-arch", "boxes": [region(wl, wh)] }
+                },
+                {
+                    "a": "yard",
+                    "b": "exterior",
+                    "class": "walk",
+                    "via": { "region": "yard-climb", "boxes": [region(cl, ch)] }
                 }
             ],
             "faces": [
-                { "space": "yard", "class": "walk", "dir": "north", "opening": region(wl, wh) }
+                { "space": "yard", "class": "walk", "dir": "north", "opening": region(wl, wh) },
+                { "space": "yard", "class": "walk", "dir": "up", "opening": region(cl, ch) }
             ]
         },
         "lighting": {
@@ -3211,7 +3268,7 @@ fn yard_metadata() -> serde_json::Value {
             "measured_min_light": 15,
             "measured": "2026-08-21",
             "method": "derived: an open-top courtyard under the site plan's own sky volume, \
-                       so its floor takes full daylight and needs no fixture"
+                       its floor under the gantry lit by a lantern on each corner post"
         },
         "license": {
             "source": "original",
@@ -3235,7 +3292,9 @@ fn write_yard(out: &Path) {
     // at all.
     let solid: std::collections::BTreeSet<[i32; 3]> = cells
         .iter()
-        .filter(|(_, (name, _))| name.as_str() != "minecraft:air")
+        .filter(|(_, (name, _))| {
+            name.as_str() != "minecraft:air" && name.as_str() != "minecraft:structure_void"
+        })
         .map(|(p, _)| *p)
         .collect();
     let [ax, ay, az] = YARD_SEAT;
@@ -3273,6 +3332,111 @@ fn write_yard(out: &Path) {
     println!(
         "{YARD_ID}: detail piece written — {}x{}x{} to fill the exit box's frame exactly",
         YARD_SIZE[0], YARD_SIZE[1], YARD_SIZE[2]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Two pieces that exist to be REFUSED (spec-0098 §11): each is bound only by a
+// gallery probe, and each is the precise shape of one defect
+// ---------------------------------------------------------------------------
+
+/// Write one probe piece: its bytes from `cell`, its document a minimal, valid
+/// detail-piece document with one open space over the whole box.
+fn write_probe_piece(
+    out: &Path,
+    id: &str,
+    size: [i32; 3],
+    cell: &dyn Fn([i32; 3]) -> &'static str,
+    why: &str,
+) {
+    let mut palette = Palette::new();
+    let mut blocks = Vec::new();
+    for x in 0..size[0] {
+        for y in 0..size[1] {
+            for z in 0..size[2] {
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(cell([x, y, z]), None),
+                });
+            }
+        }
+    }
+    let s = Structure {
+        data_version: DATA_VERSION,
+        size,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    };
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(id, &cells);
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{id}.nbt")), &framed).expect("write probe nbt");
+    let meta = serde_json::json!({
+        "prefab_id": format!("prefab/{id}"),
+        "structure": {
+            "file": format!("{id}.nbt"),
+            "id": id,
+            "size": size,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        "anchors": {},
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per \
+                     prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+        }
+    });
+    document::write_preserving(&out.join(format!("{id}.json")), &meta);
+    println!(
+        "{id}: probe piece written — {}x{}x{} ({why})",
+        size[0], size[1], size[2]
+    );
+}
+
+fn write_refused_pieces(out: &Path) {
+    // The yard as it stood when a frame was the play space and one floor
+    // course: 8x4x8, paving under three courses of air. Bound to the exit's
+    // frame — which now holds the ring and the ground under the plinth — it is
+    // `DW0843`'s refusal (`gallery/probes/a-yard-the-size-of-its-floor`).
+    write_probe_piece(
+        out,
+        "gallery-yard-floor",
+        [8, 4, 8],
+        &|p| {
+            if p[1] == 0 {
+                "minecraft:polished_andesite"
+            } else {
+                "minecraft:air"
+            }
+        },
+        "the exit's yard as it stood before a place owned its outside; refused by DW0843",
+    );
+    // A piece the annex's exact frame, voiding every cell except one: the
+    // near hall's party wall, at piece-local [18, 2, 3] — a cell the near hall
+    // owns, because the arch's connection names it first. A piece writing a
+    // neighbour's wall is `DW0987`'s refusal
+    // (`gallery/probes/a-wall-the-whole-already-owns`).
+    write_probe_piece(
+        out,
+        "gallery-annex-overreach",
+        [20, 15, 20],
+        &|p| {
+            if p == [18, 2, 3] {
+                "minecraft:stone_bricks"
+            } else {
+                "minecraft:structure_void"
+            }
+        },
+        "one stone in the near hall's party wall and nothing else; refused by DW0987",
     );
 }
 
@@ -4109,7 +4273,8 @@ fn main() {
     let Some(out) = args.next() else {
         eprintln!(
             "usage: gallery-prefab-gen <out_dir> [--skins <skins_dir>] \
-              [--design <design_dir>] [--textures <textures_dir>]   \
+              [--design <design_dir>] [--textures <textures_dir>] \
+              [--terrain <terrain_dir>]   \
              (a BUILD directory — spec-0039 §6 commits no generated bytes)"
         );
         std::process::exit(2);
@@ -4117,11 +4282,13 @@ fn main() {
     let mut skins: Option<String> = None;
     let mut design: Option<String> = None;
     let mut textures: Option<String> = None;
+    let mut terrain: Option<String> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--skins" => skins = args.next(),
             "--design" => design = args.next(),
             "--textures" => textures = args.next(),
+            "--terrain" => terrain = args.next(),
             other => {
                 eprintln!("gallery-prefab-gen: unknown argument `{other}`");
                 std::process::exit(2);
@@ -4144,6 +4311,7 @@ fn main() {
     write_annex(out);
     write_shard(out);
     write_yard(out);
+    write_refused_pieces(out);
     write_quay(out);
     write_bank(out);
     write_rig(out);
@@ -4165,6 +4333,62 @@ fn main() {
     if let Some(t) = textures {
         write_textures(Path::new(&t));
     }
+    // The site-plan overlay's heightmap (spec-0098 §2c), for the same reason.
+    if let Some(t) = terrain {
+        write_terrain(Path::new(&t));
+    }
+}
+
+/// The site-plan overlay's terrain: `terrain/site.png`, the 64 × 64 greyscale
+/// heightmap its `fill` names, one pixel per region column, read as
+/// `base_y + value × range / 255` with `base_y` 54 and `range` 15 — so a
+/// surface `y` of `h` is the value `(h − 54) × 17`.
+///
+/// The ground stands at 63 (the grade's walk plane at 64) across the halls'
+/// side of the site, steps down two courses at z 37–38 to the exit's yard at
+/// 60, and falls away southward one course every three rows past z 50; past
+/// z 38 every other eight-column band sits one course lower, so the ground the
+/// yard's plinth and the causeway stand on is not flat. A generated byte is a
+/// byte nothing can let drift (spec-0039 §6).
+fn write_terrain(out: &Path) {
+    const SIDE: u32 = 64;
+    const BASE_Y: i32 = 54;
+    let height = |x: u32, z: u32| -> i32 {
+        let mut h = match z {
+            0..=36 => 63,
+            37 => 62,
+            38 => 61,
+            39..=50 => 60,
+            _ => 60 - (z as i32 - 50 + 2) / 3,
+        };
+        if z > 38 && (x / 8) % 2 == 1 {
+            h -= 1;
+        }
+        h
+    };
+    let mut raw = Vec::with_capacity(((SIDE + 1) * SIDE) as usize);
+    for z in 0..SIDE {
+        raw.push(0); // filter: none
+        for x in 0..SIDE {
+            let v = (height(x, z) - BASE_Y) * 17;
+            raw.push(u8::try_from(v).expect("the terrain's grey fits a byte"));
+        }
+    }
+    let mut zl = flate2::write::ZlibEncoder::new(Vec::new(), Compression::new(9));
+    zl.write_all(&raw).expect("zlib write");
+    let idat = zl.finish().expect("zlib finish");
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&SIDE.to_be_bytes());
+    ihdr.extend_from_slice(&SIDE.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 0, 0, 0, 0]); // 8-bit, greyscale, deflate, no filter, no interlace
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"IDAT", &idat));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+    std::fs::create_dir_all(out).unwrap_or_else(|e| panic!("mkdir {}: {e}", out.display()));
+    let path = out.join("site.png");
+    std::fs::write(&path, png).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    println!("wrote {}", path.display());
 }
 
 // ---------------------------------------------------------------------------

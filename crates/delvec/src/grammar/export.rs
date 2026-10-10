@@ -580,12 +580,6 @@ pub fn export_prefab(
         // exports the bytes and the metadata it exported before.
         shown_faces: program.shown_faces.clone(),
         spatial_contract: contract_metadata(&expansion),
-        // The export makes no `footprint_class` claim (spec-0050 §5). A program
-        // states a building; which size class of site-plan box that building is
-        // FOR is a fact about the map it is being written into, and the export
-        // has no map. Absent is the honest answer, and `DW0848` binds only where
-        // the claim is made — so this costs no grammar-ledger movement.
-        footprint_class: None,
         extra: BTreeMap::new(),
     };
     let metadata_json = metadata.to_json();
@@ -709,12 +703,6 @@ pub fn export_zone(
         // exports the bytes and the metadata it exported before.
         shown_faces: program.shown_faces.clone(),
         spatial_contract: contract_metadata(&expansion),
-        // The export makes no `footprint_class` claim (spec-0050 §5). A program
-        // states a building; which size class of site-plan box that building is
-        // FOR is a fact about the map it is being written into, and the export
-        // has no map. Absent is the honest answer, and `DW0848` binds only where
-        // the claim is made — so this costs no grammar-ledger movement.
-        footprint_class: None,
         // A freshly exported manifest models every key it writes; the map is
         // what a LATER engine's key survives in on the way back out.
         extra: BTreeMap::new(),
@@ -914,7 +902,7 @@ fn measured_walk_y(expansion: &Expansion) -> Option<i32> {
 /// same string.
 fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
     let contract = contract_metadata(expansion);
-    expansion
+    let mut out: BTreeMap<String, AnchorMetadata> = expansion
         .anchors
         .iter()
         .map(|(name, anchor)| {
@@ -929,7 +917,40 @@ fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
                 .and_then(|c| crate::grammar::contract::resolves_to(c, anchor.pos));
             (name.clone(), meta)
         })
-        .collect()
+        .collect();
+    // **A bar is a gate the piece ships** (spec-0098 §2): every `barred`
+    // edge's bar, drawn as one box, is exported as a gate anchor named by its
+    // region — `anchor/<region>`, its cells and its block — so a campaign can
+    // name it (a gate station, or the gate over a barred seam whose plane the
+    // place owns) and the compiler seats and seals it like any gate anchor. A
+    // bar whose boxes do not fill one box is no one gate region and is not
+    // exported; a mark of the same name keeps its name.
+    if let Some(contract) = expansion.contract.as_ref() {
+        for edge in &contract.edges {
+            let Some(bar) = edge.bar.as_ref() else {
+                continue;
+            };
+            // The bar's boxes as one region: claimed in several scopes, they
+            // still make one gate when together they fill their bounding box.
+            let Some(region) = one_region(&bar.boxes) else {
+                continue;
+            };
+            let key = format!("anchor/{}", bar.region);
+            if out.contains_key(&key) {
+                continue;
+            }
+            out.insert(
+                key,
+                AnchorMetadata {
+                    region: Some(region),
+                    block: Some(bar.block.to_string()),
+                    resolves_to: Some(format!("bar:{}", bar.region)),
+                    ..AnchorMetadata::default()
+                },
+            );
+        }
+    }
+    out
 }
 
 /// The spatial contract an expansion resolved, in the metadata shape.
@@ -1044,6 +1065,25 @@ fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
 /// The document has exactly one way to name a range of cells — the one a gate
 /// anchor already uses — so a contract box is that same type rather than a
 /// second spelling of it.
+/// The one box `boxes` exactly fill, if they fill one: their bounding box,
+/// when every cell of it is in some box and no cell is claimed twice.
+fn one_region(boxes: &[Box3]) -> Option<RegionMetadata> {
+    let first = boxes.first()?;
+    let mut lo = first.origin;
+    let mut hi = range(first).to;
+    let mut cells = 0i64;
+    for b in boxes {
+        let r = range(b);
+        for a in 0..3 {
+            lo[a] = lo[a].min(r.from[a]);
+            hi[a] = hi[a].max(r.to[a]);
+        }
+        cells += b.size.iter().map(|&n| n as i64).product::<i64>();
+    }
+    let whole: i64 = (0..3).map(|a| i64::from(hi[a] - lo[a] + 1)).product();
+    (whole == cells).then_some(RegionMetadata { from: lo, to: hi })
+}
+
 fn range(b: &Box3) -> RegionMetadata {
     RegionMetadata {
         from: b.origin,
@@ -1086,6 +1126,12 @@ fn license_metadata(
         }
         for (role, block) in &overrides.roles {
             said.push(format!("{role}={block}"));
+        }
+        if !overrides.voids.is_empty() {
+            said.push(format!(
+                "{} run(s) of cells the place does not own voided",
+                overrides.voids.len()
+            ));
         }
         format!(" with {}", said.join(", "))
     };
@@ -1172,7 +1218,12 @@ fn refuse_broken_contract(expansion: &Expansion) -> Result<(), ExportError> {
         .iter()
         .map(|(name, a)| (name.clone(), a.pos))
         .collect();
-    let verdict = crate::grammar::contract::check(&expansion.model, &contract, &anchors);
+    let verdict = crate::grammar::contract::check_sealed(
+        &expansion.model,
+        &contract,
+        &anchors,
+        expansion.sealed,
+    );
     let failed: Vec<String> = verdict
         .gates
         .iter()

@@ -16,7 +16,7 @@ use super::*;
 /// about how many places there are.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct PlanBinding {
-    /// Places embedded — what `DW0825`, `DW0826` and `DW0832` examine.
+    /// Places embedded — what `DW0826` examines.
     pub boxes: usize,
     /// Unordered box pairs — what `DW0827` examines. Zero at one box, which is
     /// the honest count and not a pass.
@@ -43,6 +43,13 @@ pub struct PlanBinding {
     pub derived: usize,
     /// Connected components of the seam graph.
     pub components: usize,
+    /// Boxes declaring a `roof` — what `DW0988` examines (spec-0098).
+    pub roofs: usize,
+    /// Cells two claims share that a rule awarded — what `DW0827`'s widened
+    /// quantifier examined and found owned (spec-0098 §2).
+    pub contested_awarded: usize,
+    /// The fill's kind, `solid` or `open` (spec-0098 §2b).
+    pub fill: &'static str,
 }
 
 impl PlanBinding {
@@ -96,6 +103,12 @@ impl PlanBinding {
             identities: plan.identities.len(),
             sightlines: plan.sightlines.len(),
             views: plan.views.len(),
+            roofs: plan.boxes.iter().filter(|b| b.roof.is_some()).count(),
+            contested_awarded: SitePlan::of(c).site().contests().1,
+            fill: match plan.fill {
+                Fill::Solid { .. } => "solid",
+                Fill::Open { .. } => "open",
+            },
         }
     }
 
@@ -104,8 +117,16 @@ impl PlanBinding {
     pub fn line(&self) -> String {
         format!(
             "site-plan binding: {b} box(es) ({p} pair(s) compared; {pn} pinned, {dv} derived, \
-             in {cc} component(s)), {s} seam(s) ({st} stair, {sd} drop), {d} datum(s), {v} \
-             whole-owned volume(s), {i} identity(ies), {sl} sightline(s), {w} view(s).",
+             in {cc} component(s); {r} roofed; {ca} shared claim cell(s) awarded), {s} seam(s) \
+             ({st} stair, {sd} drop), {d} datum(s), {v} whole-owned volume(s), {i} \
+             identity(ies), {sl} sightline(s), {w} view(s); fill `{fill}`.",
+            r = self.roofs,
+            ca = self.contested_awarded,
+            fill = if self.fill.is_empty() {
+                "none"
+            } else {
+                self.fill
+            },
             pn = self.pinned,
             dv = self.derived,
             cc = self.components,
@@ -215,11 +236,12 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     openers(c, graph, d);
     let (placed, packed) = resolve(plan, graph, &table, reads, d);
     agreement(plan, graph, &placed, d);
-    grid(&placed, &table, reads, d);
     region(plan, &placed, d);
     disjoint(&placed, d);
+    roofs(&placed, d);
+    fillcheck::fill(c, plan, d);
+    fillcheck::claims(c, plan, d);
     seams(plan, graph, &placed, &packed, &table, reads, d);
-    size_classes(&placed, d);
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
     lighting(plan, d);
@@ -623,13 +645,8 @@ fn contains_point(p: &Placed<'_>, at: [i64; 3]) -> bool {
     if at[0] < p.x0() || at[0] > p.x1() || at[2] < p.z0() || at[2] > p.z1() {
         return false;
     }
-    match p.y_span() {
-        Some((lo, hi)) => at[1] >= lo && at[1] <= hi,
-        // A sky-open place whose class did not resolve has no stated headroom;
-        // `DW0812` already refused the name, and inventing a bound here would be
-        // a second refusal for one defect.
-        None => at[1] >= p.floor,
-    }
+    let (lo, hi) = p.y_span();
+    at[1] >= lo && at[1] <= hi
 }
 
 /// **The clause a stage-6 verdict owes when the allocation it measured against
@@ -640,53 +657,24 @@ fn contains_point(p: &Placed<'_>, at: [i64; 3]) -> bool {
 /// computed from the site plan. When the plan's own refusals have already
 /// touched them, the stage-6 line is a true, separate finding measured against a
 /// number the map does not really have — and, worse, the primary is in another
-/// document, so the reader has no way to see the relation. Measured: widening
-/// one box by one block printed `DW0825` and `DW0828` in the site plan and then
-/// `DW0843` and `DW0844` in the detail plan, five codes over three documents,
-/// with nothing saying which was the edit.
+/// document, so the reader has no way to see the relation.
 ///
 /// So the stage-6 verdicts keep their own lines — each still names a real
 /// mismatch, and suppressing them is how fixing one thing produces a fresh crop
 /// of refusals nobody was shown — and gain a clause saying what they are
-/// downstream of. Two things can be already-refused:
+/// downstream of. What can be already-refused is a seam the plan DECLARES on
+/// this place and did not resolve — a face the two boxes do not share
+/// (`DW0828`) or a loop the packing could not close (`DW0883`) — so the allocated
+/// seam set this place answers is short of what the author wrote.
 ///
-/// 1. the place's own box is off the kit grid (`DW0825`), so its frame is not a
-///    frame this map will keep;
-/// 2. the plan DECLARES a seam on this place that it did not resolve — a face
-///    the two boxes do not share (`DW0828`) or an opening that does not fit
-///    (`DW0829`) — so the allocated seam set this place answers is short of what
-///    the author wrote.
-///
-/// Empty when the plan settled both, which is the ordinary case and costs one
+/// Empty when the plan settled every seam, which is the ordinary case and costs one
 /// pass over the plan's seams.
 #[must_use]
-pub fn refused_upstream(
-    c: &Campaign,
-    node: &NodeId,
-    resolved: &[PlacedSeam],
-    reads: &mut Reads,
-) -> String {
+pub fn refused_upstream(c: &Campaign, node: &NodeId, resolved: &[PlacedSeam]) -> String {
     let Some(plan) = c.site_plan.as_ref().map(|p| &p.content) else {
         return String::new();
     };
     let mut parts: Vec<String> = Vec::new();
-
-    if let Some(q) = Metrics::table().grid(reads).map(|g| g.quantum)
-        && let Some(b) = plan.boxes.iter().find(|b| &b.node == node)
-    {
-        let axes: Vec<&str> = [(0usize, "x"), (1usize, "z")]
-            .into_iter()
-            .filter(|(a, _)| off_grid(b.extent[*a].get(), q))
-            .map(|(_, name)| name)
-            .collect();
-        if !axes.is_empty() {
-            parts.push(format!(
-                "this place's box is off the kit grid on {axes} and `DW0825` has already refused \
-                 it, so the frame above is not one this map keeps",
-                axes = axes.join(" and "),
-            ));
-        }
-    }
 
     // A seam the plan wrote and did not resolve: the graph edge names this
     // place, the plan has a seam row for it, and nothing came out the other end.
@@ -715,7 +703,7 @@ pub fn refused_upstream(
     if !unresolved.is_empty() {
         parts.push(format!(
             "the plan writes {n} seam(s) on this place that it does not resolve ({list}), which \
-             `DW0828` or `DW0829` has already refused, so the allocation this piece is answering \
+             `DW0828` or `DW0883` has already refused, so the allocation this piece is answering \
              is short of what the plan says",
             n = unresolved.len(),
             list = unresolved.join(", "),

@@ -40,20 +40,20 @@ static GRAPH: LazyLock<String> = LazyLock::new(|| {
   "stage": "layout-graph",
   "content": {
     "nodes": [
-      { "id": "node/porch", "intent": "threshold", "size_class": "alcove",
+      { "id": "node/porch", "intent": "threshold",
         "stations": [
           { "anchor": "anchor/fire-pit", "kind": "point",
             "note": "The camp's fire, which the story names and the box centre is not." },
           { "anchor": "anchor/kit-shelf", "kind": "point" }
         ] },
-      { "id": "node/hall", "intent": "hub", "size_class": "room",
+      { "id": "node/hall", "intent": "hub",
         "stations": [
           { "anchor": "anchor/vestry-door", "kind": "gate" }
         ] },
-      { "id": "node/vault", "intent": "goal-chamber", "size_class": "alcove" },
-      { "id": "node/cellar", "intent": "cache", "size_class": "room" },
-      { "id": "node/yard", "intent": "vista", "size_class": "hall" },
-      { "id": "node/pit", "intent": "sump", "size_class": "alcove" }
+      { "id": "node/vault", "intent": "goal-chamber" },
+      { "id": "node/cellar", "intent": "cache" },
+      { "id": "node/yard", "intent": "vista" },
+      { "id": "node/pit", "intent": "sump" }
     ],
     "edges": [
       { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },
@@ -109,6 +109,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
   "content": {
     "region": { "min": [0, 60, 0], "extent": [64, 24, 64] },
     "datums": [ { "id": "datum/grade", "y": 64 } ],
+    "fill": { "kind": "solid", "block": "minecraft:stone" },
     "boxes": [
       { "node": "node/porch",  "min": [0, 0],  "extent": [8, 8],
         "floor": { "datum": "datum/grade" }, "ceiling": { "clearance": 4 } },
@@ -119,7 +120,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       { "node": "node/cellar", "min": [12, 20], "extent": [8, 8],
         "floor": { "y": 56 }, "ceiling": { "clearance": 4 } },
       { "node": "node/yard",   "min": [44, 0], "extent": [16, 16],
-        "floor": { "datum": "datum/grade" }, "ceiling": "open" },
+        "floor": { "datum": "datum/grade" }, "ceiling": { "open": 8 } },
       { "node": "node/pit",    "min": [44, 20], "extent": [8, 8],
         "floor": { "y": 56 }, "ceiling": { "clearance": 4 } }
     ],

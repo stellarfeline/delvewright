@@ -3,7 +3,9 @@
   "content": {
     "boxes": [
       {
-        "ceiling": "open",
+        "ceiling": {
+          "open": 8
+        },
         "extent": [
           16,
           20
@@ -19,7 +21,9 @@
       },
       {
         "atmosphere": "atmosphere/wrong-place",
-        "ceiling": "open",
+        "ceiling": {
+          "open": 8
+        },
         "extent": [
           16,
           20
@@ -37,6 +41,15 @@
         "y": 64
       }
     ],
+    "fill": {
+      "below": "minecraft:dirt",
+      "kind": "open",
+      "surface": "minecraft:grass_block",
+      "terrain": {
+        "datum": "datum/grade",
+        "kind": "flat"
+      }
+    },
     "identities": [
       {
         "cmp": "eq",
@@ -80,10 +93,11 @@
       {
         "edge": "edge/the-door",
         "face": "south",
+        "form": "a stone arch",
         "opening": "arch"
       }
     ]
   },
-  "dsl_version": "0.37.0",
+  "dsl_version": "0.38.0",
   "stage": "site-plan"
 }

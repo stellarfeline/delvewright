@@ -1,0 +1,22 @@
+{
+  "code": "DW0987",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "replace",
+      "path": "/content/fill/terrain",
+      "value": {
+        "datum": "datum/grade",
+        "kind": "flat"
+      }
+    },
+    {
+      "doc": "overlays/site-plan/detail-plan.json",
+      "op": "replace",
+      "path": "/content/details/1/piece",
+      "value": "prefab/gallery-annex-overreach"
+    }
+  ],
+  "units": [],
+  "why": "A piece exactly the annex's frame that writes one block in it: a stone at piece-local [18, 2, 3], in the party plane between the annex and the near hall. That plane is the near hall's — the arch between the two names the near hall first, and the one who comes first on a designed connection draws the line where two places meet (spec-0098 §2 rule 3c) — so the cell is a void of the annex's frame, and a piece holds `structure_void` there. `DW0987` reads the piece's own `.nbt` at validation and names the cell and its owner. It declares no unit: the void set is computed from the plan, and what must not compile is a piece painting a neighbour's wall."
+}

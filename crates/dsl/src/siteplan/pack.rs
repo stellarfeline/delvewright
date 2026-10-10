@@ -99,14 +99,11 @@ fn centring_width(s: &Seam, table: &Metrics, reads: &mut Reads) -> Result<Option
             .extent
             .map(|e| [i64::from(e[0].get()), i64::from(e[1].get())]));
     }
-    let Some(name) = s.opening.as_deref() else {
+    let Some(spec) = s.opening.as_ref() else {
         return Err(());
     };
-    let entry = table.resolve(MetricKind::Opening, name).map_err(|_| ())?;
-    match entry.value(reads) {
-        MetricValue::Opening(o) => Ok(Some([i64::from(o.width), i64::from(o.height)])),
-        _ => Err(()),
-    }
+    let o = spec.resolve(table, reads).map_err(|_| ())?;
+    Ok(Some([i64::from(o.width), i64::from(o.height)]))
 }
 
 /// Why an offset is not a position on its face.
@@ -575,8 +572,8 @@ pub fn placements(c: &Campaign) -> Vec<String> {
         .collect()
 }
 
-/// Resolve every box once: its footprint, its walk plane, its headroom and its
-/// size class. A floor naming a datum the plan does not declare is the ordinary
+/// Resolve every box once: its footprint, its walk plane and its headroom. A
+/// floor naming a datum the plan does not declare is the ordinary
 /// dangling reference (`DW0112`) and the box is dropped, because a place with no
 /// plane has no geometry for any rule below to judge.
 /// The corners come from the packing (spec-0059 §3), which runs here so that
@@ -590,24 +587,6 @@ pub(super) fn resolve<'a>(
     d: &mut Vec<Diagnostic>,
 ) -> (Vec<Placed<'a>>, Packed) {
     let datums: BTreeMap<&str, i64> = plan.datums.iter().map(|x| (x.id.0.as_str(), x.y)).collect();
-    // Whichever of the two classifications the node declared. `DW0875` is what
-    // refuses a node that declared both or neither; this map takes the size
-    // class first so that a node which slipped past with both is judged against
-    // one of the two rather than against neither — a refused campaign builds
-    // nothing either way, and a check that quietly examines zero boxes is the
-    // shape worth avoiding.
-    let classes: BTreeMap<&str, (MetricKind, &str)> = graph
-        .nodes
-        .iter()
-        .filter_map(|n| {
-            let named = n
-                .size_class
-                .as_deref()
-                .map(|x| (MetricKind::SizeClass, x))
-                .or_else(|| n.way_class.as_deref().map(|x| (MetricKind::WayClass, x)))?;
-            Some((n.id.0.as_str(), named))
-        })
-        .collect();
     // Floors first: the packing needs them for every sill, and a box with no
     // plane has no cells for any reader to work in.
     let mut floors: Vec<Option<i64>> = Vec::with_capacity(plan.boxes.len());
@@ -640,22 +619,11 @@ pub(super) fn resolve<'a>(
         let (Some(floor), Some(pb)) = (floors[i], &packed.boxes[i]) else {
             continue; // `DW0112` or `DW0883` said why this box has no cells.
         };
-        let class = classes
-            .get(b.node.0.as_str())
-            .and_then(|(kind, name)| table.resolve(*kind, name).ok())
-            .and_then(|entry| match entry.value(reads) {
-                MetricValue::SizeClass(sc) => Some(PlaceClass::Size(*sc)),
-                MetricValue::WayClass(w) => Some(PlaceClass::Way(*w)),
-                _ => None,
-            });
         let clearance = match b.ceiling {
-            Ceiling::Clearance(c) => Some(c.get()),
-            // A sky-open place claims its class's own minimum headroom and
-            // nothing above it: an open place is precisely one that makes no
-            // claim on the air over it. True of both kinds of class, which is
-            // why the question is asked of the classification rather than of
-            // one of its variants.
-            Ceiling::Open => class.map(PlaceClass::min_clearance),
+            Ceiling::Clearance(c) => c.get(),
+            // A sky-open place claims exactly the courses of air it declares
+            // and nothing above them.
+            Ceiling::Open(n) => n.get(),
         };
         out.push(Placed {
             index: i,
@@ -668,7 +636,6 @@ pub(super) fn resolve<'a>(
             ],
             floor,
             clearance,
-            class,
             by: pb.by.clone(),
         });
     }

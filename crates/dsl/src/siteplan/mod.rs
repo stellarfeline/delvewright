@@ -70,11 +70,14 @@ use crate::envelope::Campaign;
 use crate::ids::{DatumId, EdgeId, FactId, NodeId, ViewId, VolumeId};
 use crate::layout::{Edge, LayoutGraphContent, StationKind};
 use crate::metrics::{
-    MAX_JUMP_RISE_16, MetricKind, MetricValue, Metrics, Pitch, Reads, SizeClass, WayClass,
-    passable_clearance_cells, passable_width_cells,
+    MAX_JUMP_RISE_16, MetricKind, MetricValue, Metrics, Pitch, Reads, passable_clearance_cells,
+    passable_width_cells,
 };
 
 mod check;
+mod claim;
+mod fillcheck;
+mod ground;
 mod measure;
 mod pack;
 mod place;
@@ -82,6 +85,8 @@ mod region;
 mod seam;
 
 pub use check::*;
+pub use claim::*;
+pub use ground::*;
 use measure::*;
 pub use pack::*;
 pub use place::*;
@@ -91,11 +96,6 @@ pub use seam::*;
 crate::dw_code! {
     /// `DW0824`: the graph and the plan do not agree exactly.
     pub const DW_PLAN_AGREEMENT: DwCode = DwCode::new("DW0824", ExitTier::Build);
-}
-
-crate::dw_code! {
-    /// `DW0825`: a box leaves the kit grid.
-    pub const DW_BOX_OFF_GRID: DwCode = DwCode::new("DW0825", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -135,12 +135,18 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// `DW0992`: a climb that climbs nothing (spec-0098 §2c).
+    pub const DW_CLIMB_RISES_NOTHING: DwCode = DwCode::new("DW0992", ExitTier::Build);
+}
+
+crate::dw_code! {
     /// `DW0830`: a stair seam cannot be built at standard pitch.
     pub const DW_STAIR_PITCH: DwCode = DwCode::new("DW0830", ExitTier::Build);
 }
 
 crate::dw_code! {
-    /// `DW0831`: a drop seam falls outside the drop policy.
+    /// `DW0831`: a drop seam falls the wrong way, past the survivable fall, or
+    /// past the plan's declared `max_drop`.
     pub const DW_DROP_POLICY: DwCode = DwCode::new("DW0831", ExitTier::Build);
 }
 
@@ -148,33 +154,19 @@ crate::dw_code! {
     /// `DW0876`: a seam does not declare a connection this engine builds
     /// (spec-0053 §6).
     ///
-    /// **One code, four shapes of one claim** — the claim being that this seam
+    /// **One code, three shapes of one claim** — the claim being that this seam
     /// states a crossing the derivation can build and the observer can measure:
     ///
     /// 1. it declares neither an `opening` nor a `contact`, or both;
     /// 2. its contact's span leaves the shared face `DW0828` established;
-    /// 3. its contact's span is not **wider than the broadest standard opening**;
-    /// 4. it is a contact on a `stair`, `barred` or `vision` connection.
+    /// 3. it is a contact on a `stair`, `barred` or `vision` connection.
     ///
-    /// They are one code rather than four because the author's next action is the
-    /// same in every case — say which kind of hand-off this is and give it a shape
-    /// the engine has — and because a seam exhibiting one of them has no crossing
-    /// for any rule below to judge. It is the shape `DW0830` already carries for a
-    /// stair ("three shapes of one claim") and `DW0829` for an opening ("two halves
-    /// of one claim that the opening is usable").
-    ///
-    /// Shape 3 is the floor that keeps the whole surface honest, and it is
-    /// **structural rather than seeded**: it is derived from the standard opening
-    /// set, so anything at or under it COULD have been a portal, and a doorway
-    /// declared a contact to dodge the standard set is refused by its own width.
-    /// That is the property `CLAUDE.md` demands of an escape hatch — the defect this
-    /// exists to catch is incapable of supplying the hatch's proof obligation.
+    /// They are one code rather than three because the author's next action is
+    /// the same in every case — say which kind of hand-off this is and give it a
+    /// shape the engine has — and because a seam exhibiting one of them has no
+    /// crossing for any rule below to judge. A contact's width is the author's:
+    /// a front one cell wide is as legal as one fifty-five wide.
     pub const DW_CONTACT: DwCode = DwCode::new("DW0876", ExitTier::Build);
-}
-
-crate::dw_code! {
-    /// `DW0832`: a box violates its node's size class.
-    pub const DW_SIZE_CLASS: DwCode = DwCode::new("DW0832", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -196,6 +188,12 @@ crate::dw_code! {
     /// `DW0839`: two placement authorities in one campaign — a `site-plan.json` and
     /// a non-empty `areas[]` both present.
     pub const DW_TWO_AUTHORITIES: DwCode = DwCode::new("DW0839", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `DW0988`: a roof the plan has no room for (spec-0098 §7) — declared on
+    /// a sky-open box, or rising into another place.
+    pub const DW_ROOF_NO_ROOM: DwCode = DwCode::new("DW0988", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -315,8 +313,9 @@ pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str
 ///
 /// The mapping, and it is total:
 ///
-/// * [`ENTRY_ANCHOR`] and every `anchor/node-…` — [`StationKind::Point`], the
-///   floor centre a body stands on.
+/// * [`ENTRY_ANCHOR`] and every reached place's `anchor/node-…` —
+///   [`StationKind::Point`], the floor centre a body stands on. Scenery
+///   (`reached: false`) has none.
 /// * every `anchor/unlock-…` — [`StationKind::Point`], where the shortcut's
 ///   far-side affordance stands.
 /// * every `anchor/seam-…` — [`StationKind::Gate`], the region the derivation
@@ -336,7 +335,13 @@ pub fn synthesized_anchor_kinds(c: &Campaign) -> BTreeMap<String, StationKind> {
     };
     out.insert(ENTRY_ANCHOR.to_string(), StationKind::Point);
     for n in &graph.nodes {
-        out.insert(node_anchor(&n.id), StationKind::Point);
+        // Scenery (`reached: false`, spec-0098 §14) has no floor a body stands
+        // on, so it has no place anchor: a proof that floods from anchors
+        // would otherwise flood from inside a place nothing enters, and a
+        // document naming one is refused where it is written.
+        if n.reached {
+            out.insert(node_anchor(&n.id), StationKind::Point);
+        }
         // A station whose name collides with a synthesized one is `DW0869`, and
         // one that collides with another station is `DW0870`; both are errors,
         // so this insert never silently reinterprets a name a campaign builds
@@ -384,8 +389,9 @@ pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
 ///
 /// Its own `anchor/node-…`; [`ENTRY_ANCHOR`] when it is the entry node; each
 /// `anchor/unlock-…` whose `opens_from` side it is — the side the derivation
-/// stands that affordance in. A gate region (`anchor/seam-…`) is **never** owed:
-/// it is whole fabric, standing in a party plane the piece does not own.
+/// stands that affordance in; and each `barred` seam's gate region
+/// (`anchor/seam-…`) whose plane this place owns (spec-0098 §2), because the
+/// piece that owns a plane ships the gate standing in it.
 ///
 /// Here rather than in `crate::detailplan` because the answer is a fact about
 /// the graph, and [`synthesized_anchors`] is the one authority for what a
@@ -414,7 +420,11 @@ pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
     let Some(n) = graph.nodes.iter().find(|n| &n.id == node) else {
         return out; // `DW0842` names a row whose place the graph does not have.
     };
-    out.insert(node_anchor(node));
+    // Scenery (`reached: false`) owes no place to stand: nothing visits it
+    // (spec-0098 §14).
+    if n.reached {
+        out.insert(node_anchor(node));
+    }
     if &graph.entry == node {
         out.insert(ENTRY_ANCHOR.to_string());
     }
@@ -425,6 +435,19 @@ pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
     // and a typo cannot pass as intent.
     for s in &n.stations {
         out.insert(s.anchor.as_str().to_string());
+    }
+    // The gate region over a `barred` seam is owed by the place that owns the
+    // plane it stands in (spec-0098 §2): every seam lies in a plane some place
+    // owns, so its shut state is that piece's to ship.
+    let resolved = SitePlan::of(c);
+    let site = resolved.site();
+    for s in &resolved.seams {
+        if s.class != "barred" || (&s.a != node && &s.b != node) {
+            continue;
+        }
+        if site.owner(s.opening.0) == Owner::Place(node.clone()) {
+            out.insert(seam_anchor(&s.edge));
+        }
     }
     for e in &graph.edges {
         let Edge::Barred { id, opens_from, .. } = e else {
@@ -494,6 +517,71 @@ pub struct SitePlanContent {
     /// range check the moment one of them grew a third field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lighting: Option<AreaLighting>,
+    /// **What every cell no place claims and no volume covers becomes**
+    /// (spec-0098 §2b): `solid` rock for an enclosed site (a dungeon, a cave),
+    /// `open` ground under sky over a declared terrain for an open one (a town).
+    ///
+    /// Required, with no default: either default would be a judgement about
+    /// what kind of site this is, and that judgement is the author's. Per
+    /// region it is overridden by `volumes[]`, exactly as before.
+    pub fill: Fill,
+    /// **The deepest fall a designed drop in this plan may take**, in blocks —
+    /// the author's own policy, when they have one (`DW0831` confirms every
+    /// drop seam falls no further). Absent, no policy cap applies; the
+    /// survivable fall of an unarmoured body holds every drop either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_drop: Option<NonZeroU32>,
+}
+
+/// What undeclared space becomes (spec-0098 §2b).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Fill {
+    /// Every unclaimed cell holds `block` — the enclosed site, whose places are
+    /// carved out of rock.
+    Solid {
+        /// The block state the rock is.
+        block: String,
+    },
+    /// A natural ground surface under sky: at the terrain's height the
+    /// `surface` block, under it `below`, above it air.
+    Open {
+        /// The ground's shape: one flat height, or a heightmap.
+        terrain: Terrain,
+        /// The block state of the top course.
+        surface: String,
+        /// The block state under the top course.
+        below: String,
+    },
+}
+
+/// **The site's terrain: a declared heightfield** (spec-0098 §2c).
+///
+/// Every height here is the `y` of the **surface block** — the ground's top
+/// cell — so a body walks one above it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Terrain {
+    /// One height everywhere: the named datum is the terrain's walk plane, so
+    /// the surface block stands at the datum's `y − 1` — exactly where a box
+    /// standing on that datum has its floor course.
+    Flat {
+        /// The plane (`DW0112` if the plan declares no such datum).
+        datum: DatumId,
+    },
+    /// A greyscale image exactly the region's `x × z` pixels, in the campaign:
+    /// pixel `(px, pz)` is column `(region.min.x + px, region.min.z + pz)`,
+    /// and its surface block stands at `base_y + value × range / 255` (integer
+    /// division). The creator's own artifact — drawn, or generated by a tool
+    /// whose seed is written down.
+    Heightmap {
+        /// The image's campaign-relative path.
+        heightmap: String,
+        /// The surface `y` a black pixel stands for.
+        base_y: i64,
+        /// How many blocks a white pixel stands above `base_y`.
+        range: u32,
+    },
 }
 
 /// A box of world cells: its low corner and its extent, in blocks.
@@ -559,21 +647,61 @@ pub enum Ceiling {
     /// Cells of headroom over the walk plane. A body's feet are at the floor and
     /// the ceiling course sits at `floor + clearance`.
     Clearance(NonZeroU32),
-    /// A sky-open place — a courtyard, a shore, a summit.
-    ///
-    /// The plan claims the ground and its size class's own minimum clearance,
-    /// and **nothing above that**: an open place is precisely one that makes no
-    /// claim on the air over it, so a `clearance` volume above a courtyard is
-    /// the whole reserving sky rather than two authorities over one cell.
-    Open,
+    /// A sky-open place — a courtyard, a shore, a summit, a bridge's deck:
+    /// exactly this many courses of air over the walk plane are claimed, and
+    /// **nothing above them**. An open place is precisely one that makes no
+    /// claim on the air over its headroom, so a `clearance` volume above a
+    /// courtyard is the whole reserving sky rather than two authorities over
+    /// one cell, and a place hung over the yard stands in the yard's sky.
+    Open(NonZeroU32),
 }
 
-/// One place, embedded: a footprint standing on a plane.
+/// What a place stands on (spec-0098 §2).
 ///
-/// **A box is a plan, not a prism.** Its `min`/`extent` are the two horizontal
-/// axes and its vertical position is [`PlanBox::floor`] — one authority for the
-/// plane, where a `y` inside `min` beside a declared floor would have been two
-/// numbers with no rule about which the derivation believes.
+/// The third declared plane of a box's cuboid, beside [`PlanBox::floor`] (the
+/// walk plane) and [`PlanBox::ceiling`] (the headroom).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum Base {
+    /// The place stands on the site's ground: its claim reaches down, column
+    /// by column, to the terrain under its plot or its floor course, whichever
+    /// is lower, and the whole hands it that ground and fixes its ring.
+    #[default]
+    Ground,
+    /// The place hangs — a bridge, a gantry, a treehouse: its claim stops this
+    /// many courses under its floor course (`0` is the floor course alone). It
+    /// is handed no ground and no fixed ring, and the space under it is
+    /// whoever claims it, else the site's fill. Terrain reaching into the claim
+    /// is refused (`DW0990`).
+    Aloft(u32),
+}
+
+impl Base {
+    /// The underside courses under the floor course, on an aloft place.
+    #[must_use]
+    pub fn aloft(self) -> Option<u32> {
+        match self {
+            Base::Ground => None,
+            Base::Aloft(n) => Some(n),
+        }
+    }
+
+    /// True on the default, so a plan that does not state it does not print it.
+    #[must_use]
+    pub fn is_ground(&self) -> bool {
+        matches!(self, Base::Ground)
+    }
+}
+
+/// One place, embedded: a cuboid of the world.
+///
+/// **A box is a 3D region.** Its `min`/`extent` are the two horizontal axes;
+/// its vertical extent is three declared planes — [`PlanBox::floor`], the one
+/// authority for the walk plane; [`PlanBox::ceiling`], the headroom over it
+/// (a lid, or exactly `n` courses of sky); and [`PlanBox::base`], what it
+/// stands on (the site's ground, or `n` underside courses hung in the air).
+/// Two places conflict only where their cuboids overlap (`DW0827`); a cell no
+/// place claims is the whole's — on an `open` site, walkable ground and sky.
 ///
 /// **A box is the PLAY SPACE, and connected boxes are separated by exactly one
 /// cell.** `extent` is the interior a body can stand in; the shell the blockout
@@ -585,10 +713,9 @@ pub enum Ceiling {
 /// `DW0828` refuses. Worked: a box at `min: [4, 4]` with `extent: [4, 4]`
 /// occupies x 4..7, so its eastern neighbour's `min` x is 9, never 8.
 ///
-/// Two consequences follow, and they are what make the checks say what they look
-/// like they say: the size-class ladder judges `extent` directly (`DW0832`),
-/// its smallest rung `4 × 4` being exactly one kit quantum; and a plan never
-/// states a wall's thickness anywhere, because the gap is where the wall is.
+/// The consequence is what makes the checks say what they look like they say:
+/// `extent` is the play space the author declared, and a plan never states a
+/// wall's thickness anywhere, because the gap is where the wall is.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlanBox {
@@ -608,7 +735,7 @@ pub struct PlanBox {
     /// numbers, never three — the vertical position is `floor`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min: Option<[i64; 2]>,
-    /// Interior footprint `[dx, dz]`, in blocks, on the kit grid (`DW0825`).
+    /// Interior footprint `[dx, dz]`, in blocks — any whole number on either axis.
     /// Two horizontal numbers, never three — the vertical size is `ceiling`.
     ///
     /// **This is play space, not the building.** The box covers `min` to
@@ -619,6 +746,9 @@ pub struct PlanBox {
     pub floor: Floor,
     /// What closes it overhead.
     pub ceiling: Ceiling,
+    /// What it stands on: `"ground"` (the default) or `{"aloft": n}`.
+    #[serde(default, skip_serializing_if = "Base::is_ground")]
+    pub base: Base,
     /// **The sky this place stands under from the first tick** (spec-0080
     /// §3.2): one of `world.atmospheres[]`, painted at world setup over the
     /// box's play space grown as far as the client's biome blend reads — the
@@ -626,6 +756,32 @@ pub struct PlanBox {
     /// other class of place with a world box. Absent: the horizon's biome.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atmosphere: Option<crate::ids::AtmosphereId>,
+    /// **The roof the whole reserves over this place** (spec-0098 §3): how
+    /// many courses it rises above the ceiling course and how far it overhangs
+    /// the shell on each horizontal side. Massed solid at stage 5 so a walker
+    /// sees the volume the building will take; drawn by the place's own piece
+    /// once detailed. Absent: a flat lid one course thick, which the piece owns
+    /// too. Refused on a sky-open box, and where its courses rise into another
+    /// place (`DW0988`); its eaves stop at a neighbour's wall.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roof: Option<Roof>,
+}
+
+/// The roof a roofed place carries above its lid (spec-0098 §3).
+///
+/// Both numbers are judgements the plan states against the research record
+/// (`docs/reference/roof-and-facade-craft.md`): a 45° gable over a roof span of
+/// `W` cells rises `⌈(W − 1) / 2⌉` courses, and an eave of one cell is the
+/// idiom. Neither is inferred by the engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Roof {
+    /// Courses the roof rises above the ceiling course. `0` is a flat roof whose
+    /// only course is the lid.
+    pub courses: u32,
+    /// Cells the roof zone overhangs the shell footprint on every horizontal
+    /// side, from the ceiling course up. `0` is a roof flush with the walls.
+    pub eaves: u32,
 }
 
 /// Which side of a box a seam sits on.
@@ -740,13 +896,15 @@ pub struct Seam {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meets: Option<Offset>,
     /// **A PORTAL**: a named opening from the metrics table's standard set
-    /// (`DW0812` on a name the table does not define, `DW0829` on one that does
-    /// not fit). A body crosses at exactly the cells `at` and this standard
+    /// (`DW0812` on a name the table does not define), or a size the seam
+    /// declares itself, `{"width": w, "height": h}` — the author's own opening,
+    /// a rope bridge's end one cell wide included. `DW0829` confirms either fits
+    /// the shared face. A body crosses at exactly the cells `at` and the opening
     /// allocate.
     ///
     /// **Exactly one of this and [`Seam::contact`]** (`DW0876`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opening: Option<String>,
+    pub opening: Option<OpeningSpec>,
     /// **A CONTACT**: the two places simply meet along a front, rather than
     /// through a doorway (spec-0053 §4).
     ///
@@ -755,8 +913,7 @@ pub struct Seam {
     /// The width of a front where two places meet is a fact of those two boxes'
     /// shared face — per-campaign geometry, continuous — so it is never a named
     /// standard. A table that enumerated it would gain a new entry per campaign,
-    /// which is the size ladder's own failure mode reproduced in the opening
-    /// set: an `opening.gate-front` of 21×4 is content wearing a standard's
+    /// which is content reproduced in the opening set as a standard: an `opening.gate-front` of 21×4 is content wearing a standard's
     /// clothes (spec-0053 §7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact: Option<Contact>,
@@ -764,6 +921,72 @@ pub struct Seam {
     /// `stair` edge and refused on any other (`DW0830`, `DW0824`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stair_in: Option<NodeId>,
+    /// **What the crossing is, in a few words** (spec-0098 §2c) — "a wooden
+    /// arch bridge, 3 wide", "a stone stair, down 4". A creative judgement the
+    /// plan states once and `delvec allocation` hands to BOTH places the seam
+    /// joins, so each designs its side of the interface knowing what meets it.
+    /// Never player-facing, so never translated.
+    pub form: String,
+}
+
+/// **A portal's opening**: a named standard, or a size the seam declares.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum OpeningSpec {
+    /// A named standard from the metrics table's opening set.
+    Named(String),
+    /// A size the seam declares itself.
+    Declared(DeclaredOpening),
+}
+
+/// An opening the seam sizes itself: cells on the face's own two in-plane
+/// axes — along the wall and up it on a vertical face, `x` and `z` through a
+/// floor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeclaredOpening {
+    /// Clear width, in cells.
+    pub width: NonZeroU32,
+    /// Clear height, in cells.
+    pub height: NonZeroU32,
+}
+
+impl OpeningSpec {
+    /// The opening's size: the named standard's, through [`Metrics::resolve`]
+    /// (the one path from a name to an entry), or the declared one.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::metrics::UnknownMetric`] for a name the table does not define,
+    /// which the caller turns into `DW0812`.
+    pub fn resolve(
+        &self,
+        table: &Metrics,
+        reads: &mut Reads,
+    ) -> Result<crate::metrics::Opening, crate::metrics::UnknownMetric> {
+        match self {
+            OpeningSpec::Named(name) => {
+                let entry = table.resolve(MetricKind::Opening, name)?;
+                match entry.value(reads) {
+                    MetricValue::Opening(o) => Ok(*o),
+                    _ => unreachable!("an opening entry carries an opening"),
+                }
+            }
+            OpeningSpec::Declared(o) => Ok(crate::metrics::Opening {
+                width: o.width.get(),
+                height: o.height.get(),
+            }),
+        }
+    }
+
+    /// How the opening reads in a message: the standard's name, or `WxH`.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self {
+            OpeningSpec::Named(name) => format!("`{name}`"),
+            OpeningSpec::Declared(o) => format!("declared {}x{}", o.width, o.height),
+        }
+    }
 }
 
 /// A mass the whole itself owns.
@@ -779,6 +1002,13 @@ pub struct Volume {
     /// What this mass is, for a reader of the plan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The block state this volume is made of. Absent, the block of its kind
+    /// comes from the plan's `fill` (spec-0098 §2b): a `massif` is the
+    /// `solid` fill's block, or the `open` fill's `below`; a `ground` is the
+    /// `open` fill's `surface` over `below`, or the `solid` fill's block. A
+    /// `clearance` is air and names no block (`DW0193` if it does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<String>,
 }
 
 /// What a whole-owned volume is for.
@@ -832,8 +1062,7 @@ pub enum Measure {
         axis: PlanAxis,
     },
     /// One place's headroom over its walk plane, in blocks. A sky-open place
-    /// measures its size class's own minimum clearance — the least air the
-    /// ladder says such a place has.
+    /// measures the courses of air its ceiling declares.
     BoxHeight {
         /// The place.
         node: NodeId,

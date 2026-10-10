@@ -194,7 +194,7 @@ fn describe_cells(cells: &BTreeSet<[i32; 3]>) -> String {
 /// A traversal class: something a body crosses. `vision` is the one class that
 /// is not one.
 fn is_traversal(class: &str) -> bool {
-    matches!(class, "walk" | "stair" | "drop" | "barred")
+    matches!(class, "walk" | "stair" | "climb" | "drop" | "barred")
 }
 
 /// An edge whose `via` is a **transit volume** (its own cells, disjoint from
@@ -206,7 +206,57 @@ fn is_traversal(class: &str) -> bool {
 /// treads are, and letting it declare an opening on a shared boundary instead
 /// would put the laid cells inside a room.
 fn is_transit(edge: &crate::schem::prefab::ContractEdge) -> bool {
-    matches!(edge.class.as_str(), "stair" | "drop") || edge.way.is_some()
+    matches!(edge.class.as_str(), "stair" | "climb" | "drop") || edge.way.is_some()
+}
+
+/// **The body that climbs, over this piece's own blocks** — the compiler's nav
+/// model (spec-0099) built from the model, so a `climb` edge is proved by the
+/// same moves every route proof takes: a climbable is a cell a body holds in
+/// only while its `canSurvive` rule holds over these blocks
+/// ([`crate::compiler::assembled::climb_holds`]), and from it a body moves only
+/// by the climb's own moves ([`crate::compiler::nav::World::neighbors`]). A
+/// private climb rule here would be a second opinion two proofs could disagree
+/// about. Outside the model is air to this world, as it is to an assembled one.
+fn body_world(model: &VoxelModel) -> crate::compiler::nav::World {
+    let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+    for pos in model.region().positions() {
+        if let Some(b) = model.get(pos)
+            && !b.is_air()
+        {
+            blocks.insert(pos, b.to_string());
+        }
+    }
+    crate::compiler::nav::World::from_occupancy(
+        crate::compiler::assembled::occupancy_of(blocks, &BTreeSet::new()),
+        // Declined by design: a contract judges one piece before any
+        // campaign places it, so there is no horizon, volume or gate to
+        // state — the piece's own blocks are the whole question.
+        crate::compiler::nav::Premises::geometry_only(),
+    )
+}
+
+/// Can a body get from any cell of `from` to any cell of `to`, moving only
+/// through `cells` and only by the body's own moves — the walk and the climb
+/// ([`body_world`])?
+fn body_connected(
+    world: &crate::compiler::nav::World,
+    cells: &BTreeSet<[i32; 3]>,
+    from: &BTreeSet<[i32; 3]>,
+    to: &BTreeSet<[i32; 3]>,
+) -> bool {
+    let mut seen: BTreeSet<[i32; 3]> = from.intersection(cells).copied().collect();
+    let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
+    while let Some(cur) = queue.pop_front() {
+        if to.contains(&cur) {
+            return true;
+        }
+        for next in world.neighbors(cur) {
+            if cells.contains(&next) && seen.insert(next) {
+                queue.push_back(next);
+            }
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -330,6 +380,8 @@ struct Element {
 /// ones.
 struct Index<'a> {
     contract: &'a SpatialContract,
+    /// The piece's place is scenery: it claims no way in (see [`check_sealed`]).
+    sealed: bool,
     /// Space name → cells.
     space_cells: BTreeMap<&'a str, BTreeSet<[i32; 3]>>,
     /// Out-of-walk region name → cells.
@@ -370,13 +422,24 @@ impl<'a> Index<'a> {
         let all_no_body_cells = no_body_cells.values().flatten().copied().collect();
         Index {
             contract,
+            sealed: false,
             space_cells,
             no_body_cells,
             via_cells,
             contingency,
             all_space_cells,
             all_no_body_cells,
-            standable: nav::standable_cells(model),
+            // A `structure_void` cell is not the piece's (spec-0098 §2): no
+            // body stands in it on this piece's account, whatever the whole
+            // writes there, so it is not floor the contract owes an answer for.
+            standable: nav::standable_cells(model)
+                .into_iter()
+                .filter(|c| {
+                    !model
+                        .get(*c)
+                        .is_some_and(|b| b.name == "minecraft:structure_void")
+                })
+                .collect(),
         }
     }
 
@@ -444,6 +507,27 @@ fn shell(set: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
     out
 }
 
+/// **Why scenery owes no floor**, or `None`: the piece's place is scenery
+/// (`reached: false`, spec-0098 §14). A body never enters scenery — the build
+/// proves it both ways, `DW0816` over the graph and `DW0837` over the built
+/// world — so none of the piece's standable cells is stood in, however many a
+/// crown's leaf tops make: the gates whose population is standable floor
+/// state the cells they excuse, with the count, and judge nothing (departure
+/// 36; with no standable cell at all, departure 32). The kind is the place's,
+/// handed by `delvec detail` from the layout graph, never the piece's own word,
+/// so the defect cannot reach this: a reached place's floor is still owed a
+/// declaration, and a reached place with nowhere to stand is still refused.
+fn scenery_zero(ix: &Index) -> Option<String> {
+    ix.sealed.then(|| {
+        format!(
+            "the place is scenery (`reached: false`), built to be seen and never entered, and \
+             none of the piece's {} standable cell(s) is stood in: there is no floor for this \
+             gate to judge, and none is owed",
+            ix.standable.len()
+        )
+    })
+}
+
 /// Every passable cell the air outside the piece reaches.
 ///
 /// The positive fact `facade` demands (spec-0036 §2.6). The model's region *is*
@@ -487,7 +571,24 @@ pub fn check(
     contract: &SpatialContract,
     anchors: &BTreeMap<String, [i32; 3]>,
 ) -> ContractReport {
-    let ix = Index::new(model, contract);
+    check_sealed(model, contract, anchors, false)
+}
+
+/// [`check`] for a piece whose place is **scenery** (`reached: false`,
+/// spec-0098 §14) when `sealed`: the place is built to be seen and never
+/// entered, so the piece claims no way in — its entry carries no `exterior`
+/// edge of a traversal class, and declaring one is the contradiction this
+/// refuses — and its zero exterior faces are stated, not refused. The kind is
+/// the place's (the layout graph's `reached`), handed by `delvec detail`,
+/// never the piece's own word.
+pub fn check_sealed(
+    model: &VoxelModel,
+    contract: &SpatialContract,
+    anchors: &BTreeMap<String, [i32; 3]>,
+    sealed: bool,
+) -> ContractReport {
+    let mut ix = Index::new(model, contract);
+    ix.sealed = sealed;
     let mut gates = Vec::new();
     let mut findings = Vec::new();
     let mut enumeration = Vec::new();
@@ -539,6 +640,18 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             "`entry` names {:?}, which is not a declared space",
             contract.entry
         ));
+    } else if ix.sealed {
+        if let Some(e) = contract
+            .edges
+            .iter()
+            .find(|e| is_traversal(&e.class) && (e.a == EXTERIOR || e.b == EXTERIOR))
+        {
+            bad.push(format!(
+                "the piece's place is scenery — built to be seen and never entered — and edge \
+                 {}--{}--{} claims a way in from outside",
+                e.a, e.class, e.b
+            ));
+        }
     } else if !contract.edges.iter().any(|e| {
         is_traversal(&e.class)
             && ((e.a == contract.entry && e.b == EXTERIOR)
@@ -638,7 +751,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
         }
         if !matches!(
             edge.class.as_str(),
-            "walk" | "stair" | "drop" | "barred" | "vision"
+            "walk" | "stair" | "climb" | "drop" | "barred" | "vision"
         ) {
             bad.push(format!("{site}: {:?} is not an edge class", edge.class));
             continue;
@@ -665,7 +778,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             ("drop", Some(r), false) if r > -1 => {
                 bad.push(format!("{site}: a drop falls, so `rise` is <= -1, not {r}"))
             }
-            ("stair" | "drop", None, false) => {
+            ("stair" | "climb" | "drop", None, false) => {
                 bad.push(format!("{site}: this class requires a declared `rise`"))
             }
             _ => {}
@@ -677,10 +790,10 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
         if edge.class != "barred" && edge.bar.is_some() {
             bad.push(format!("{site}: only a barred edge carries a bar"));
         }
-        if matches!(edge.class.as_str(), "stair" | "vision") && edge.via.is_none() {
+        if matches!(edge.class.as_str(), "stair" | "climb" | "vision") && edge.via.is_none() {
             bad.push(format!(
-                "{site}: this class requires a `via` — a stair's treads belong to the edge, and a \
-                 sightline IS its opening"
+                "{site}: this class requires a `via` — a stair's treads and a climb's ladder belong \
+                 to the edge, and a sightline IS its opening"
             ));
         }
         way_well_formed(ix, model, i, edge, &site, exterior, &mut bad);
@@ -697,8 +810,8 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                 if !overlap.is_empty() {
                     bad.push(format!(
                         "{site}: its transit volume overlaps space {name:?} on {} cell(s) ({}). A \
-                         stair's treads, a drop's column and a way's laid cells belong to the \
-                         edge, not to either end",
+                         stair's treads, a climb's ladder, a drop's column and a way's laid cells \
+                         belong to the edge, not to either end",
                         overlap.len(),
                         describe_cells(&overlap)
                     ));
@@ -735,19 +848,49 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             // claimed on interior cells cannot supply that.
             let space = if edge.a == EXTERIOR { &edge.b } else { &edge.a };
             let outside = exterior_air(model);
+            let touches_room = |c: &[i32; 3]| {
+                DIRS.iter().any(|d| {
+                    ix.space(space)
+                        .contains(&[c[0] + d[0], c[1] + d[1], c[2] + d[2]])
+                })
+            };
+            // **Two openings of one room meeting at its corner** (spec-0098
+            // §6b): where two seams' answering layers cross the play space's
+            // corner column, a cell of one opening adjoins the room only
+            // through a cell of the other, which does adjoin it. Both openings
+            // are what the plan allocated (`DW0844` compares them cell for
+            // cell), so the corner cell opens onto the room through its
+            // neighbour and is part of a real hole. One hop only, through a
+            // cell of ANOTHER exterior opening of the same space that itself
+            // touches the room: a cell reached only through its own opening's
+            // cells is still detached.
+            let through_other: BTreeSet<[i32; 3]> = contract
+                .edges
+                .iter()
+                .enumerate()
+                .filter(|(j, e)| {
+                    *j != i
+                        && !is_transit(e)
+                        && (e.a == EXTERIOR || e.b == EXTERIOR)
+                        && (e.a == *space || e.b == *space)
+                })
+                .flat_map(|(j, _)| ix.via_cells[j].iter().copied())
+                .filter(|c| !via.contains(c) && touches_room(c))
+                .collect();
             let detached: BTreeSet<[i32; 3]> = via
                 .iter()
                 .filter(|c| {
-                    !DIRS.iter().any(|d| {
-                        ix.space(space)
-                            .contains(&[c[0] + d[0], c[1] + d[1], c[2] + d[2]])
-                    })
+                    !touches_room(c)
+                        && !DIRS.iter().any(|d| {
+                            through_other.contains(&[c[0] + d[0], c[1] + d[1], c[2] + d[2]])
+                        })
                 })
                 .copied()
                 .collect();
             if !detached.is_empty() {
                 bad.push(format!(
-                    "{site}: {} of its opening's cells do not touch {space:?} ({})",
+                    "{site}: {} of its opening's cells touch neither {space:?} nor a cell of \
+                     another of its openings that does ({})",
                     detached.len(),
                     describe_cells(&detached)
                 ));
@@ -985,13 +1128,17 @@ fn uncovered_standable(ix: &Index) -> BTreeSet<[i32; 3]> {
 
 fn coverage(ix: &Index) -> Gate {
     let uncovered = uncovered_standable(ix);
+    let scenery = scenery_zero(ix);
     Gate {
         id: "contract-coverage",
-        state: verdict(uncovered.is_empty()),
+        state: verdict(uncovered.is_empty() || scenery.is_some()),
         undecided: 0,
-        empty_ok: None,
-        bound: ix.standable.len(),
-        detail: if uncovered.is_empty() {
+        detail: if let Some(why) = scenery.as_ref().filter(|_| !uncovered.is_empty()) {
+            format!(
+                "{why} — {} of them in nothing the contract declares",
+                uncovered.len()
+            )
+        } else if uncovered.is_empty() {
             format!(
                 "every one of {} standable cell(s) lies in a declared space, an out-of-walk region \
                  or a traversal edge's transit volume",
@@ -1006,6 +1153,8 @@ fn coverage(ix: &Index) -> Gate {
                 describe_cells(&uncovered)
             )
         },
+        empty_ok: scenery,
+        bound: ix.standable.len(),
     }
 }
 
@@ -1013,6 +1162,7 @@ fn coverage(ix: &Index) -> Gate {
 
 fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
     let mut examined = 0usize;
+    let mut voided = 0usize;
     let mut breaches: Vec<String> = Vec::new();
 
     for (name, decl) in &ix.contract.spaces {
@@ -1031,27 +1181,32 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
             }
         }
 
-        // An envelope that claims openness demands sky (spec-0036 §0/§2.3): a
-        // roofed room cannot be downgraded out of closure.
+        // A space the author declares `open` or `open_top` under the piece's
+        // own blocks is a covered space — a pavilion, a covered market, a
+        // covered bridge — and is taken as declared (spec-0098 §14, an owner
+        // ruling: a check confirms the author's intent and never limits it).
+        // The covered cells are stated, so a reviewer sees the roof the
+        // declaration leaves out of closure.
         if decl.envelope != "enclosed" {
             if decl.envelope == "open_top" {
                 enumeration.push(format!(
                     "envelope: space {name:?} is declared `open_top` — side faces still closed"
                 ));
             }
-            let roofed: BTreeSet<[i32; 3]> = space
+            let covered: BTreeSet<[i32; 3]> = space
                 .iter()
                 .filter(|c| ix.standable.contains(*c) && nav::sheltered(model, **c))
                 .copied()
                 .collect();
-            if !roofed.is_empty() {
-                breaches.push(format!(
-                    "space {name:?} is declared `{}` but {} of its standable cell(s) have this \
-                     piece's own blocks overhead ({}) — a roofed room cannot be downgraded out of \
-                     closure",
+            if !covered.is_empty() {
+                enumeration.push(format!(
+                    "envelope: space {name:?} is declared `{}` and {} of its standable cell(s) \
+                     have this piece's own blocks overhead ({}) — a covered space, taken as \
+                     declared; closure examines only the spaces declared `enclosed` or \
+                     `open_top`",
                     decl.envelope,
-                    roofed.len(),
-                    describe_cells(&roofed)
+                    covered.len(),
+                    describe_cells(&covered)
                 ));
             }
         }
@@ -1089,6 +1244,19 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
                 }
                 examined += 1;
                 if nav::passable(model, n) && !excused.contains(&n) {
+                    // A `structure_void` is a cell the piece does not own
+                    // (spec-0098 §2): a neighbour's wall, the ring's fixed
+                    // ground, the site's fill. What stands there is the
+                    // whole's to say, and the whole's proofs over the
+                    // assembled bytes judge it (`DW0836`, `DW0838`); the piece
+                    // alone cannot, so it is counted, not refused.
+                    if model
+                        .get(n)
+                        .is_some_and(|b| b.name == "minecraft:structure_void")
+                    {
+                        voided += 1;
+                        continue;
+                    }
                     open.insert(n);
                 }
             }
@@ -1104,11 +1272,28 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
         }
     }
 
+    if voided > 0 {
+        enumeration.push(format!(
+            "closure: {voided} boundary cell(s) are `structure_void` — cells the piece does not \
+             own, judged by the whole's proofs over the assembled world"
+        ));
+    }
+    // **The enclosed spaces are the author's declaration, and this gate
+    // confirms them** (spec-0098 §14, a ruling): a piece declares zero
+    // or more box-shaped `enclosed`/`open_top` spaces, and closure verifies
+    // exactly those. Zero declared — a street, a pavilion, a covered market —
+    // is legitimate and passes with its count stated; nothing infers an
+    // enclosure the author did not declare.
+    let spaces = ix.contract.spaces.len();
+    let all_open = spaces > 0 && ix.contract.spaces.values().all(|d| d.envelope == "open");
+    let empty_ok = all_open.then(|| {
+        format!("0 of {spaces} space(s) declare an envelope closure examines; every space is open")
+    });
     Gate {
         id: "contract-closure",
-        state: verdict(breaches.is_empty() && examined > 0),
+        state: verdict(breaches.is_empty() && (examined > 0 || all_open)),
         undecided: 0,
-        empty_ok: None,
+        empty_ok,
         bound: examined,
         detail: if !breaches.is_empty() {
             breaches.join(" · ")
@@ -1131,16 +1316,46 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
 /// cumulatively — so a cleared way and a laid way and a bar are all decided by
 /// the same code. `Ok(())` means the class holds; `Err` carries the class's own
 /// red, in its own words.
+#[allow(clippy::too_many_arguments)]
 fn prove_class(
     class: &str,
     model: &VoxelModel,
     graph: &BTreeSet<[i32; 3]>,
     via: &BTreeSet<[i32; 3]>,
+    span: &BTreeSet<[i32; 3]>,
     a: &BTreeSet<[i32; 3]>,
     b: &BTreeSet<[i32; 3]>,
     ends: (&str, &str),
 ) -> Result<(), String> {
     match class {
+        "climb" => {
+            // The cells a body HOLDS in are not standable, so the graph a walk
+            // is proved over never holds them: the climb adds every cell of
+            // its own volume a body can hold on in, and the body's own moves
+            // decide the rest.
+            let world = body_world(model);
+            let held: BTreeSet<[i32; 3]> = span
+                .iter()
+                .filter(|c| world.is_climb_cell(**c))
+                .copied()
+                .collect();
+            let cells: BTreeSet<[i32; 3]> = graph.union(&held).copied().collect();
+            if held.is_empty() {
+                Err(
+                    "its transit volume holds no climbable a body can hold on in — a ladder or a \
+                     vine whose hold these blocks keep (spec-0099) is what a body climbs"
+                        .to_string(),
+                )
+            } else if body_connected(&world, &cells, a, b) && body_connected(&world, &cells, b, a) {
+                Ok(())
+            } else {
+                Err(
+                    "the climb does not connect its two ends both ways through its own climbable \
+                     cells"
+                        .to_string(),
+                )
+            }
+        }
         "walk" => {
             if nav::connected(model, graph, a, b) && nav::connected(model, graph, b, a) {
                 Ok(())
@@ -1246,7 +1461,7 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
 
         let class = proving_class(&edge.class);
         let ends = (edge.a.as_str(), edge.b.as_str());
-        let held = prove_class(class, model, &graph, &via, &a, &b, ends);
+        let held = prove_class(class, model, &graph, &via, &span, &a, &b, ends);
 
         let Some(cont) = cont else {
             // No contingency: the edge is what it claims to be as shipped, and
@@ -1307,7 +1522,16 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
             ));
         }
 
-        if let Err(red) = prove_class(class, &opened, &open_graph, &open_via, &oa, &ob, ends) {
+        if let Err(red) = prove_class(
+            class,
+            &opened,
+            &open_graph,
+            &open_via,
+            &span,
+            &oa,
+            &ob,
+            ends,
+        ) {
             bad.push(if cont.sugar {
                 format!(
                     "{site}: with the bar region voided the two ends still do not connect through \
@@ -1693,7 +1917,7 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
     // any `no_body` kind asks for, which is the test — an escape hatch that
     // costs more than the thing it escapes is not an escape hatch.
     let unaccounted = uncovered_standable(ix);
-    let empty_ok = (kinds.by_region.is_empty()
+    let all_play_space = (kinds.by_region.is_empty()
         && !ix.standable.is_empty()
         && unaccounted.is_empty())
     .then(|| {
@@ -1704,6 +1928,8 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
             ix.standable.len()
         )
     });
+    let empty_ok =
+        all_play_space.or_else(|| scenery_zero(ix).filter(|_| kinds.by_region.is_empty()));
     Gate {
         id: "contract-no-body",
         state: verdict(bad.is_empty()),
@@ -1753,6 +1979,9 @@ struct Confined {
     ways: BTreeMap<String, WayGate>,
     /// Cells no walk ever counts: the out-of-walk regions.
     excluded: BTreeSet<[i32; 3]>,
+    /// The volume elements of every `climb` edge: the cells a body may HOLD
+    /// in, on the climb's own moves, besides standing ([`body_world`]).
+    climbs: Vec<usize>,
 }
 
 /// One contingent region, as the reachability walk sees it.
@@ -1787,6 +2016,7 @@ fn build_confined(ix: &Index) -> Confined {
     let mut walk: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut fall: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut ways: BTreeMap<String, WayGate> = BTreeMap::new();
+    let mut climbs: Vec<usize> = Vec::new();
 
     for (i, edge) in ix.contract.edges.iter().enumerate() {
         if !is_traversal(&edge.class) {
@@ -1806,6 +2036,9 @@ fn build_confined(ix: &Index) -> Confined {
             });
             id
         });
+        if edge.class == "climb" {
+            climbs.extend(via);
+        }
         // A bar's own cells are a place too, once the bar is gone: a body walks
         // *through* the gateway, and a graph that hops the two rooms without it
         // would call a room reachable that no route enters. A declared way
@@ -1888,6 +2121,7 @@ fn build_confined(ix: &Index) -> Confined {
         fall,
         ways,
         excluded: ix.all_no_body_cells.clone(),
+        climbs,
     }
 }
 
@@ -1963,6 +2197,20 @@ impl Confined {
         }
         let targets = &targets;
         let open_bars = open;
+        // **The climb**: where the contract declares one, the body's own
+        // moves over this state's blocks, and the cells of a climb volume a
+        // body holds in. Those are passed through, never owed: a target is a
+        // cell a body stands in.
+        let climb = (!self.climbs.is_empty()).then(|| {
+            let world = body_world(model);
+            let held: BTreeSet<[i32; 3]> = self
+                .climbs
+                .iter()
+                .flat_map(|&e| self.elements[e].cells.iter().copied())
+                .filter(|c| world.is_climb_cell(*c))
+                .collect();
+            (world, held)
+        });
         let mut seen: BTreeSet<[i32; 3]> = start
             .iter()
             .filter(|c| targets.contains(*c))
@@ -1970,6 +2218,22 @@ impl Confined {
             .collect();
         let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
         while let Some([x, y, z]) = queue.pop_front() {
+            if let Some((world, held)) = &climb {
+                for next in world.neighbors([x, y, z]) {
+                    if (targets.contains(&next) || held.contains(&next))
+                        && !seen.contains(&next)
+                        && self.hop(open_bars, [x, y, z], next, false)
+                    {
+                        seen.insert(next);
+                        queue.push_back(next);
+                    }
+                }
+                // A body holding on in mid-air walks nowhere and falls only
+                // by letting go, which the climb's moves already say.
+                if held.contains(&[x, y, z]) && !free.contains(&[x, y, z]) {
+                    continue;
+                }
+            }
             for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                 for dy in [0, 1, -1] {
                     let next = [x + dx, y + dy, z + dz];
@@ -2094,9 +2358,9 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
 
     Gate {
         id: "contract-reachability",
-        state: verdict(unreached.is_empty() && !targets.is_empty()),
+        state: verdict(unreached.is_empty() && (!targets.is_empty() || ix.sealed)),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: targets.is_empty().then(|| scenery_zero(ix)).flatten(),
         bound: targets.len(),
         detail: if !unreached.is_empty() {
             format!(
@@ -2337,9 +2601,12 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
         // The opening's cells: the declared via when there is one, otherwise the
         // space's own cells that sit on the region's outer layer — the piece
         // stops there, and what it leaves open is its face.
-        let opening = match &edge.via {
-            Some(via) => cells(&via.boxes),
-            None => cells(&space.boxes),
+        // A barred edge with no via opens through its bar: the gate is the
+        // opening (spec-0098).
+        let opening = match (&edge.via, &edge.bar) {
+            (Some(via), _) => cells(&via.boxes),
+            (None, Some(bar)) => cells(&bar.boxes),
+            (None, None) => cells(&space.boxes),
         };
         // **A declared via is a face on the plane it LIES IN.** A way cut at
         // the corner of a piece — a four-wide passage whose cells run from
@@ -2351,7 +2618,16 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
         // says so. A via that is one column at a corner lies in two planes and
         // exports both, as before. The space-derived opening keeps the older
         // reading, because a space spans the box and lies in no plane.
-        let whole_via = edge.via.is_some();
+        let whole_via = edge.via.is_some() || edge.bar.is_some();
+        // **A transit or barred edge's face is its via's footprint on the
+        // plane, treads and bars included** (spec-0098): a stair's treads
+        // belong to the edge, and where a stair rises through a hole the
+        // neighbour cuts, its top step stands in the answering layer under
+        // that hole; a barred edge's face is the gate it ships, shut. The face
+        // is the crossing the neighbour meets, so it is every via cell on the
+        // plane, not only the passable ones.
+        let transit = is_transit(edge) || edge.class == "barred";
+        let before = out.len();
         for (axis, dir) in [
             (0, [1, 0, 0]),
             (0, [-1, 0, 0]),
@@ -2370,7 +2646,7 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
             }
             let on_face: BTreeSet<[i32; 3]> = opening
                 .iter()
-                .filter(|c| c[axis] == plane && nav::passable(model, **c))
+                .filter(|c| c[axis] == plane && (transit || nav::passable(model, **c)))
                 .copied()
                 .collect();
             if on_face.is_empty() {
@@ -2382,6 +2658,54 @@ pub fn exterior_faces(model: &VoxelModel, contract: &SpatialContract) -> Vec<Ext
                 dir: FaceDir(dir),
                 cells: on_face,
             });
+        }
+        // **A via inside the piece, on a plane the piece's place does not
+        // own** (spec-0098 §2): a place whose frame reaches past a party plane
+        // — its ring, its eaves — answers a seam it does not own at its own
+        // first layer beside the plane, which is no longer the frame's outer
+        // layer. Such a via still lies in one plane, and its face points away
+        // from the space it opens: the side of the plane the space's own cells
+        // are not on. Read only when the via is on no outer layer, so a piece
+        // that was answered on its boundary exports exactly what it did.
+        if whole_via && out.len() == before {
+            let space_cells = cells(&space.boxes);
+            for axis in 0..3usize {
+                let Some(first) = opening.iter().next() else {
+                    break;
+                };
+                let p = first[axis];
+                if p == min[axis] || p == max[axis] - 1 || !opening.iter().all(|c| c[axis] == p) {
+                    continue;
+                }
+                let beside = |off: i32| {
+                    opening.iter().any(|c| {
+                        let mut n = *c;
+                        n[axis] += off;
+                        space_cells.contains(&n)
+                    })
+                };
+                let dir_sign = match (beside(-1), beside(1)) {
+                    (true, false) => 1,
+                    (false, true) => -1,
+                    _ => continue,
+                };
+                let on_face: BTreeSet<[i32; 3]> = opening
+                    .iter()
+                    .filter(|c| transit || nav::passable(model, **c))
+                    .copied()
+                    .collect();
+                if on_face.is_empty() {
+                    continue;
+                }
+                let mut dir = [0, 0, 0];
+                dir[axis] = dir_sign;
+                out.push(ExteriorFace {
+                    space: space_name.clone(),
+                    class: edge.class.clone(),
+                    dir: FaceDir(dir),
+                    cells: on_face,
+                });
+            }
         }
     }
     out.sort_by(|a, b| {
@@ -2439,7 +2763,11 @@ fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<Str
         id: "contract-exterior-faces",
         state: verdict(silent.is_empty()),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: (ix.sealed && declared == 0).then(|| {
+            "0 exterior edge(s): the place is scenery, built to be seen and never entered, so \
+             the piece claims no way in"
+                .to_string()
+        }),
         bound: declared,
         detail: if !silent.is_empty() {
             silent.join(" · ")
@@ -2493,7 +2821,7 @@ fn no_body_majority(ix: &Index, kinds: &CellKinds) -> Gate {
         id: "contract-no-body-majority",
         state: verdict(!majority || excused),
         undecided: 0,
-        empty_ok: None,
+        empty_ok: scenery_zero(ix),
         bound: total,
         detail: if !majority {
             format!(

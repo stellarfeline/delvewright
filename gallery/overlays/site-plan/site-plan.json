@@ -43,7 +43,11 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/annex"
+        "node": "node/annex",
+        "roof": {
+          "courses": 9,
+          "eaves": 1
+        }
       },
       {
         "ceiling": {
@@ -73,7 +77,10 @@
       },
       {
         "atmosphere": "atmosphere/wet-court",
-        "ceiling": "open",
+        "base": "ground",
+        "ceiling": {
+          "open": 4
+        },
         "extent": [
           8,
           8
@@ -95,6 +102,55 @@
           "datum": "datum/grade"
         },
         "node": "node/causeway"
+      },
+      {
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          8,
+          44
+        ],
+        "node": "node/beacon"
+      },
+      {
+        "base": {
+          "aloft": 0
+        },
+        "ceiling": {
+          "open": 3
+        },
+        "extent": [
+          4,
+          12
+        ],
+        "floor": {
+          "datum": "datum/loft"
+        },
+        "node": "node/gantry"
+      },
+      {
+        "base": {
+          "aloft": 0
+        },
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/loft"
+        },
+        "node": "node/perch"
       }
     ],
     "datums": [
@@ -108,6 +164,17 @@
         "y": 69
       }
     ],
+    "fill": {
+      "below": "minecraft:dirt",
+      "kind": "open",
+      "surface": "minecraft:grass_block",
+      "terrain": {
+        "base_y": 54,
+        "heightmap": "terrain/site.png",
+        "kind": "heightmap",
+        "range": 15
+      }
+    },
     "identities": [
       {
         "cmp": "eq",
@@ -181,6 +248,7 @@
       "fixture": "torch",
       "min_light": 7
     },
+    "max_drop": 5,
     "region": {
       "extent": [
         64,
@@ -198,6 +266,7 @@
         "at": 10,
         "edge": "edge/annex-arch",
         "face": "west",
+        "form": "a round stone arch, two wide, from the hall into the annex",
         "meets": 1,
         "opening": "arch"
       },
@@ -205,6 +274,7 @@
         "at": 9,
         "edge": "edge/annex-chute",
         "face": "east",
+        "form": "a stone arch, two wide: the annex's back way into the far hall",
         "meets": 1,
         "opening": "arch"
       },
@@ -212,6 +282,7 @@
         "at": 2,
         "edge": "edge/west-door",
         "face": "south",
+        "form": "a doorway shut by iron bars, opened from the near hall",
         "meets": 2,
         "opening": "door"
       },
@@ -219,6 +290,7 @@
         "at": 9,
         "edge": "edge/centre-door",
         "face": "south",
+        "form": "a doorway shut by iron bars, opened from either side",
         "meets": 9,
         "opening": "door"
       },
@@ -226,6 +298,7 @@
         "at": 12,
         "edge": "edge/east-door",
         "face": "south",
+        "form": "an arch shut by iron bars, drawn from the far hall's side",
         "meets": 12,
         "opening": "arch"
       },
@@ -233,6 +306,7 @@
         "at": 20,
         "edge": "edge/loft-stair",
         "face": "north",
+        "form": "a passage at the head of a stone stair, up 5 from the far hall",
         "meets": 1,
         "opening": "passage",
         "stair_in": "node/far-hall"
@@ -241,6 +315,7 @@
         "at": 24,
         "edge": "edge/loft-drop",
         "face": "north",
+        "form": "an arch where the loft's floor ends: a drop of 5 into the far hall",
         "meets": 5,
         "opening": "arch"
       },
@@ -251,6 +326,7 @@
         ],
         "edge": "edge/undercroft-stair",
         "face": "down",
+        "form": "a hole in the far hall's floor over a stone stair, down 4",
         "meets": [
           1,
           5
@@ -265,12 +341,12 @@
         ],
         "edge": "edge/undercroft-crawl",
         "face": "up",
+        "form": "a ladder up through the near hall's floor",
         "meets": [
           7,
           12
         ],
-        "opening": "passage",
-        "stair_in": "node/undercroft"
+        "opening": "passage"
       },
       {
         "at": [
@@ -279,6 +355,7 @@
         ],
         "edge": "edge/undercroft-shaft",
         "face": "down",
+        "form": "a shaft down through the near hall's floor: a drop of 4",
         "meets": [
           1,
           0
@@ -289,8 +366,12 @@
         "at": 5,
         "edge": "edge/exit-arch",
         "face": "south",
+        "form": "a stone arch out of the far hall onto the open yard, sized by the plan itself: two wide, three high",
         "meets": 2,
-        "opening": "arch"
+        "opening": {
+          "height": 3,
+          "width": 2
+        }
       },
       {
         "at": 15,
@@ -302,7 +383,30 @@
         },
         "edge": "edge/causeway-front",
         "face": "south",
+        "form": "an open front, six wide, where the road leaves the far hall",
         "meets": 0
+      },
+      {
+        "at": [
+          3,
+          5
+        ],
+        "edge": "edge/gantry-ladder",
+        "face": "up",
+        "form": "rope ladder up to the gantry, 4",
+        "meets": [
+          1,
+          1
+        ],
+        "opening": "door"
+      },
+      {
+        "at": 1,
+        "edge": "edge/perch-walk",
+        "face": "south",
+        "form": "an arch off the gantry's far end into the perch",
+        "meets": 3,
+        "opening": "arch"
       }
     ],
     "sightlines": [
@@ -310,12 +414,12 @@
         "edge": "edge/loft-sightline",
         "from": [
           28,
-          66,
+          70,
           10
         ],
         "to": [
           43,
-          70,
+          71,
           16
         ]
       }
@@ -356,7 +460,7 @@
         "region": {
           "extent": [
             52,
-            10,
+            8,
             48
           ],
           "min": [
@@ -368,6 +472,7 @@
         "role": "massif"
       },
       {
+        "block": "minecraft:packed_mud",
         "id": "volume/hall-ground",
         "region": {
           "extent": [
@@ -377,7 +482,7 @@
           ],
           "min": [
             4,
-            58,
+            56,
             4
           ]
         },
@@ -388,12 +493,12 @@
         "region": {
           "extent": [
             8,
-            20,
+            16,
             8
           ],
           "min": [
             24,
-            68,
+            72,
             38
           ]
         },
@@ -401,6 +506,6 @@
       }
     ]
   },
-  "dsl_version": "0.37.0",
+  "dsl_version": "0.38.0",
   "stage": "site-plan"
 }

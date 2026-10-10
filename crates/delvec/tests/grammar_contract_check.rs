@@ -425,19 +425,38 @@ fn merging_a_stairs_two_ends_into_one_space_is_refused() {
     assert!(g.detail.contains("is ONE floor"), "{}", g.detail);
 }
 
-/// **A roofed room cannot be downgraded out of closure** (spec-0036 §2.3) — the
-/// adversary's second move, and the one an envelope keyword alone would buy.
+/// **A covered space declared `open` is taken as declared** (spec-0098 §14,
+/// a ruling: enclosed spaces are the author's declaration, and the
+/// check confirms intent rather than restricting it). The hall under its roof,
+/// declared `open`, is a covered space — a pavilion — and closure examines
+/// nothing of it; the covered cells are stated in the enumeration. The same
+/// hall declared `enclosed` is examined (the perturbation: the declaration is
+/// what binds the gate).
 #[test]
-fn a_roofed_space_declared_open_is_refused_and_a_sky_open_one_is_not() {
+fn a_covered_space_declared_open_is_taken_as_declared() {
     let (b, mut c) = hall();
+    let enclosed = check(&b.model, &c, &no_anchors());
+    assert!(
+        gate(&enclosed, "contract-closure").bound > 0,
+        "declared enclosed, the hall is examined"
+    );
     c.spaces.get_mut("hall").unwrap().envelope = "open".to_string();
     let report = check(&b.model, &c, &no_anchors());
-    let g = gate(&report, "contract-closure");
-    assert!(!g.passed(), "{}", g.detail);
     assert!(
-        g.detail.contains("blocks overhead"),
-        "the roof is what refuses it: {}",
-        g.detail
+        !report
+            .gates
+            .iter()
+            .any(|g| g.id == "contract-closure" && !g.passed()),
+        "{:#?}",
+        report.gates
+    );
+    assert!(
+        report
+            .enumeration
+            .iter()
+            .any(|e| e.contains("blocks overhead") && e.contains("a covered space")),
+        "the covered cells are stated: {:?}",
+        report.enumeration
     );
 
     // The same claim over a yard with sky above it is fine.
@@ -1138,6 +1157,148 @@ fn a_via_at_a_corner_is_one_face_on_the_plane_it_lies_in() {
     assert_eq!(dirs, ["west", "north"], "{faces:?}");
 }
 
+/// **Two openings meeting at the room's corner are both openings** (spec-0098
+/// §6b). A street with a way along its whole west side and another across its
+/// north end, each answered in the piece's first layer as a place that owns
+/// neither plane answers it: the two openings share the corner column, whose
+/// cells touch the street only through a cell of the other opening.
+/// `contract-well-formed` passes and each way exports exactly its declared
+/// cells. The perturbations: drop the north way, and the west way's corner
+/// column touches nothing and reds; thicken the west way outward by a course,
+/// and its outer course — reached only through its own cells — reds. Vacuous
+/// if the corner cells touched the street: asserted they do not.
+#[test]
+fn two_openings_at_a_corner_open_through_each_other() {
+    let mut b = Build::new([10, 5, 10]);
+    b.stone([0, 0, 0], [9, 0, 9]);
+    let street = |west: i32| {
+        let mut c = contract("street");
+        c.spaces.insert(
+            "street".to_string(),
+            space("open", vec![region([west, 1, 1], [9, 3, 9])]),
+        );
+        c
+    };
+    let west_way = |c: &mut SpatialContract, x: [i32; 2]| {
+        c.edges.push(with_via(
+            edge("street", "exterior", "walk"),
+            "west-way",
+            vec![region([x[0], 1, 0], [x[1], 3, 9])],
+        ));
+    };
+    let north_way = |c: &mut SpatialContract| {
+        c.edges.push(with_via(
+            edge("street", "exterior", "walk"),
+            "north-way",
+            vec![region([0, 1, 0], [9, 3, 0])],
+        ));
+    };
+    let mut c = street(1);
+    west_way(&mut c, [0, 0]);
+    north_way(&mut c);
+    // The corner column is in both ways and beside no cell of the street.
+    let corner = [0, 1, 0];
+    let room: BTreeSet<[i32; 3]> = (1..=9)
+        .flat_map(|x| (1..=3).flat_map(move |y| (1..=9).map(move |z| [x, y, z])))
+        .collect();
+    assert!(
+        [[1, 0, 0], [0, 0, 1], [0, 1, 0]]
+            .iter()
+            .all(|d| !room.contains(&[corner[0] + d[0], corner[1] + d[1], corner[2] + d[2]]))
+    );
+    let report = check(&b.model, &c, &no_anchors());
+    let wf = gate(&report, "contract-well-formed");
+    assert!(wf.passed(), "{}", wf.detail);
+    let faces = exterior_faces(&b.model, &c);
+    let dirs: Vec<&str> = faces.iter().map(|f| f.dir.as_str()).collect();
+    assert_eq!(dirs, ["west", "north"], "{faces:?}");
+    assert!(faces.iter().all(|f| f.cells.len() == 30), "{faces:?}");
+
+    // Without the north way, the corner column touches nothing.
+    let mut alone = street(1);
+    west_way(&mut alone, [0, 0]);
+    let report = check(&b.model, &alone, &no_anchors());
+    let wf = gate(&report, "contract-well-formed");
+    assert!(!wf.passed(), "{}", wf.detail);
+    assert!(
+        wf.detail.contains("3 of its opening's cells touch neither"),
+        "{}",
+        wf.detail
+    );
+
+    // A west way two courses thick: its outer course reaches the street only
+    // through its own cells.
+    let mut thick = street(2);
+    west_way(&mut thick, [0, 1]);
+    north_way(&mut thick);
+    let report = check(&b.model, &thick, &no_anchors());
+    let wf = gate(&report, "contract-well-formed");
+    assert!(!wf.passed(), "{}", wf.detail);
+    assert!(wf.detail.contains("touch neither"), "{}", wf.detail);
+}
+
+/// **A stair's face is its via's footprint on the plane, treads included;
+/// a barred edge's face is its bar** (spec-0098). A cellar entered through a
+/// hole the floor above cuts: the stair's top step stands in the answering
+/// layer under the hole, and the face it exports covers the whole hole, step
+/// and all — the crossing the neighbour meets. A `walk` edge over the same
+/// cells exports only the passable ones (the perturbation: the class is what
+/// admits the tread). A barred edge with no via faces out through its bar.
+#[test]
+fn a_stair_faces_out_with_its_treads_and_a_bar_through_its_gate() {
+    // 5x4x3: floor, a room, the top layer y 3 is the answering layer, with the
+    // stair's top step at x 3 under the hole x 1..3.
+    let mut b = Build::new([5, 4, 3]);
+    b.stone([0, 0, 0], [4, 0, 2]).stone([0, 3, 0], [4, 3, 2]);
+    b.air([1, 3, 0], [2, 3, 2]);
+    b.stone([3, 1, 0], [3, 2, 2]);
+    let mut c = contract("cellar");
+    c.spaces.insert(
+        "cellar".to_string(),
+        space("open", vec![region([0, 1, 0], [4, 2, 2])]),
+    );
+    c.edges.push(with_via(
+        edge("cellar", "exterior", "stair"),
+        "hole",
+        vec![region([1, 3, 0], [3, 3, 2])],
+    ));
+    let faces = exterior_faces(&b.model, &c);
+    assert_eq!(faces.len(), 1, "{faces:?}");
+    assert_eq!(faces[0].dir.as_str(), "up");
+    assert_eq!(
+        faces[0].cells.len(),
+        9,
+        "the whole hole, step included: {faces:?}"
+    );
+    c.edges[0].class = "walk".to_string();
+    let faces = exterior_faces(&b.model, &c);
+    assert_eq!(
+        faces[0].cells.len(),
+        6,
+        "a walk faces out through air only: {faces:?}"
+    );
+
+    // A gate in a wall: the bar is the face.
+    let mut g = Build::new([3, 3, 3]);
+    g.stone([0, 0, 0], [2, 2, 2]).air([1, 1, 1], [1, 1, 1]);
+    g.stone([1, 1, 0], [1, 1, 0]);
+    let mut c = contract("cell");
+    c.spaces.insert(
+        "cell".to_string(),
+        space("open", vec![region([1, 1, 1], [1, 1, 1])]),
+    );
+    c.edges.push(with_bar(
+        edge("cell", "exterior", "barred"),
+        "gate",
+        vec![region([1, 1, 0], [1, 1, 0])],
+        "minecraft:iron_bars",
+    ));
+    let faces = exterior_faces(&g.model, &c);
+    assert_eq!(faces.len(), 1, "{faces:?}");
+    assert_eq!(faces[0].dir.as_str(), "north");
+    assert_eq!(faces[0].class, "barred");
+}
+
 /// **A zero binding is red on the three obligations that carry the weight**
 /// (spec-0036 §2.9).
 #[test]
@@ -1155,11 +1316,15 @@ fn a_contract_with_nothing_to_examine_reds_rather_than_passing_quietly() {
     );
     c.edges.push(edge("nowhere", "exterior", "walk"));
     let report = check(&b.model, &c, &no_anchors());
-    for id in [
-        "contract-closure",
-        "contract-edge-proof",
-        "contract-reachability",
-    ] {
+    // Both spaces are `open`: the author declared no enclosed space, so
+    // closure has nothing to confirm and is withheld with that zero stated
+    // (spec-0098 §14: enclosed spaces are the author's declaration).
+    assert!(
+        !report.gates.iter().any(|g| g.id == "contract-closure"),
+        "closure printed a verdict over an all-open contract: {:?}",
+        report.gates
+    );
+    for id in ["contract-edge-proof", "contract-reachability"] {
         let g = gate(&report, id);
         assert_eq!(g.bound, 0, "{id}");
         assert!(
@@ -1173,7 +1338,7 @@ fn a_contract_with_nothing_to_examine_reds_rather_than_passing_quietly() {
             .iter()
             .filter(|f| f.contains("ZERO objects"))
             .count()
-            >= 3,
+            >= 2,
         "{:?}",
         report.findings
     );
@@ -1780,4 +1945,342 @@ fn an_anchor_in_a_way_region_resolves_to_the_way() {
     let g = gate(&report, "contract-anchors");
     assert!(g.passed(), "{}", g.detail);
     assert!(g.detail.contains("1 in a way"), "{}", g.detail);
+}
+
+/// **An all-open piece states its zero instead of being refused** (spec-0098
+/// §6b, criterion 15). A street: a floor and nothing around it, one `open`
+/// space. `contract-closure` examines nothing — there is no envelope to close —
+/// and says so in the enumeration at a passing verdict; one `enclosed` space in
+/// the same contract, unclosed, still reds. Vacuous if the piece had an
+/// enclosing space: the contract's envelope set is asserted to be `{open}`.
+#[test]
+fn an_all_open_piece_states_its_zero_and_passes() {
+    let mut street = Build::new([14, 5, 8]);
+    street.stone([0, 0, 0], [13, 0, 7]);
+    let mut c = contract("street");
+    c.spaces.insert(
+        "street".to_string(),
+        space("open", vec![region([1, 1, 1], [12, 3, 6])]),
+    );
+    let envelopes: BTreeSet<&str> = c.spaces.values().map(|s| s.envelope.as_str()).collect();
+    assert_eq!(envelopes, ["open"].into_iter().collect());
+    let report = check(&street.model, &c, &no_anchors());
+    assert!(
+        !report
+            .gates
+            .iter()
+            .any(|g| g.id == "contract-closure" && !g.passed()),
+        "{:#?}",
+        report.gates
+    );
+    assert!(
+        report
+            .enumeration
+            .iter()
+            .any(|e| e.contains("contract-closure")
+                && e.contains(
+                    "0 of 1 space(s) declare an envelope closure examines; every space is open"
+                )),
+        "the zero is stated: {:?}",
+        report.enumeration
+    );
+    // The same street with its space declared `enclosed`: nothing closes it,
+    // and closure refuses.
+    c.spaces.get_mut("street").unwrap().envelope = "enclosed".to_string();
+    let report = check(&street.model, &c, &no_anchors());
+    assert!(!gate(&report, "contract-closure").passed());
+}
+
+/// **A sealed scenery piece owes nothing a body would** (spec-0098 §14). A
+/// beacon built to be seen and never entered: a stone block around a hollow one
+/// course tall, so no cell of it is stood in. Judged as scenery
+/// (`check_sealed`), the zero standable cells are stated with their count and
+/// pass; the very same piece judged as a place a body reaches still reds on
+/// the zero — a reached place with nowhere to stand is the defect the
+/// reachability gate exists for.
+#[test]
+fn a_sealed_scenery_piece_states_its_zero_standable_cells() {
+    let mut b = Build::new([5, 5, 5]);
+    b.stone([0, 0, 0], [4, 4, 4]);
+    b.air([1, 2, 1], [3, 2, 3]);
+    let mut c = contract("room");
+    c.spaces.insert(
+        "room".to_string(),
+        space("enclosed", vec![region([1, 2, 1], [3, 2, 3])]),
+    );
+    assert!(
+        delvec::grammar::nav::standable_cells(&b.model).is_empty(),
+        "the beacon holds no cell a body stands in — without that this proves nothing"
+    );
+
+    let sealed = delvec::grammar::contract::check_sealed(&b.model, &c, &no_anchors(), true);
+    let red: Vec<String> = sealed
+        .gates
+        .iter()
+        .filter(|g| g.failed())
+        .map(|g| format!("{}: {}", g.id, g.detail))
+        .collect();
+    assert!(red.is_empty(), "scenery owes no standable cell: {red:?}");
+    assert!(
+        sealed
+            .enumeration
+            .iter()
+            .any(|l| l.contains("contract-reachability") && l.contains("0 standable cell(s)")),
+        "the zero is stated with its count: {:?}",
+        sealed.enumeration
+    );
+
+    let reached = check(&b.model, &c, &no_anchors());
+    assert!(
+        gate(&reached, "contract-reachability").failed(),
+        "a place a body reaches, with nowhere to stand, is refused"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A climb inside one piece: two spaces and the ladder between them
+// ---------------------------------------------------------------------------
+
+/// A two-level room 7x9x5: a lower floor at y 1, a mezzanine floor course at
+/// y 4 whose stood-on cells are at y 5, a door in the east wall at the lower
+/// level, and — when `ladder` names a facing — a ladder against the west wall
+/// from the lower floor up through a one-cell hole in the mezzanine, at x 1,
+/// z 2, y 1..=4. With no ladder the hole is still cut.
+fn two_level(ladder: Option<&str>) -> Build {
+    let mut b = Build::new([7, 9, 5]);
+    b.room([0, 0, 0], [6, 8, 4]);
+    b.stone([1, 4, 1], [5, 4, 3]);
+    b.air([1, 4, 2], [1, 4, 2]);
+    b.air([6, 1, 2], [6, 2, 2]);
+    if let Some(facing) = ladder {
+        let block: BlockState = format!("minecraft:ladder[facing={facing}]")
+            .parse()
+            .expect("a ladder state");
+        for y in 1..=4 {
+            b.model.set([1, y, 2], &block).unwrap();
+        }
+    }
+    b
+}
+
+/// The honest contract of [`two_level`]: the two floors are two spaces (a
+/// space is one floor), the ladder column is the climb's own volume, and the
+/// way between them is a `climb` rising 4.
+fn two_level_contract() -> SpatialContract {
+    let mut c = contract("lower");
+    c.spaces.insert(
+        "lower".to_string(),
+        space(
+            "enclosed",
+            vec![
+                region([1, 1, 1], [5, 3, 1]),
+                region([1, 1, 3], [5, 3, 3]),
+                region([2, 1, 2], [5, 3, 2]),
+            ],
+        ),
+    );
+    c.spaces.insert(
+        "upper".to_string(),
+        space("enclosed", vec![region([1, 5, 1], [5, 7, 3])]),
+    );
+    c.edges.push(with_via(
+        edge("lower", "exterior", "walk"),
+        "door",
+        vec![region([6, 1, 2], [6, 2, 2])],
+    ));
+    c.edges.push(with_rise(
+        with_via(
+            edge("lower", "upper", "climb"),
+            "ladder",
+            vec![region([1, 1, 2], [1, 4, 2])],
+        ),
+        4,
+    ));
+    c
+}
+
+/// **A two-level interior is two spaces and a declared climb** (spec-0099,
+/// spec-0098 §14). The ladder hangs on the west wall: every gate holds — the
+/// climb is proved both ways over the body's own climb moves, and the upper
+/// floor is reached from the entry through it.
+///
+/// Each perturbation is one the climb proof alone could catch: the same room
+/// with no ladder (the hole is still cut) and with the ladder turned to face
+/// the wall it should hang on — kept only where the mezzanine's floor course
+/// stands behind its top rung — both red the edge proof and leave the upper
+/// floor unreached; deleting the climb edge
+/// with the ladder hanging reds reachability, so the edge is a checked claim
+/// and not decoration; and folding the two floors into one space is refused
+/// as more than one floor.
+#[test]
+fn a_ladder_between_two_floors_is_a_climb_edge_proved_both_ways() {
+    let c = two_level_contract();
+    let report = check(&two_level(Some("east")).model, &c, &no_anchors());
+    let red: Vec<String> = report
+        .gates
+        .iter()
+        .filter(|g| g.failed())
+        .map(|g| format!("{}: {}", g.id, g.detail))
+        .collect();
+    assert!(red.is_empty(), "the laddered room holds: {red:?}");
+    let proof = gate(&report, "contract-edge-proof");
+    assert_eq!(
+        proof.bound, 1,
+        "the one interior edge is the climb: {}",
+        proof.detail
+    );
+    let reach = gate(&report, "contract-reachability");
+    assert!(reach.passed(), "{}", reach.detail);
+
+    for (what, b) in [
+        ("no ladder", two_level(None)),
+        ("a ladder with nothing behind it", two_level(Some("west"))),
+    ] {
+        let report = check(&b.model, &c, &no_anchors());
+        let proof = gate(&report, "contract-edge-proof");
+        assert!(proof.failed(), "{what}: {}", proof.detail);
+        let reach = gate(&report, "contract-reachability");
+        assert!(
+            reach.failed() && reach.detail.contains("space upper"),
+            "{what}: the upper floor is unreached: {}",
+            reach.detail
+        );
+    }
+
+    let bare = check(&two_level(None).model, &c, &no_anchors());
+    let proof = gate(&bare, "contract-edge-proof");
+    assert!(
+        proof.detail.contains("no climbable a body can hold on in"),
+        "with no ladder the red says what a climb is: {}",
+        proof.detail
+    );
+
+    let mut severed = c.clone();
+    severed.edges.retain(|e| e.class != "climb");
+    let report = check(&two_level(Some("east")).model, &severed, &no_anchors());
+    let reach = gate(&report, "contract-reachability");
+    assert!(
+        reach.failed() && reach.detail.contains("space upper"),
+        "the ladder still hangs, and without the declared edge the upper floor is not reached: {}",
+        reach.detail
+    );
+
+    let mut merged = contract("room");
+    merged.spaces.insert(
+        "room".to_string(),
+        space(
+            "enclosed",
+            vec![
+                region([1, 1, 1], [5, 3, 1]),
+                region([1, 1, 3], [5, 3, 3]),
+                region([2, 1, 2], [5, 3, 2]),
+                region([1, 5, 1], [5, 7, 3]),
+            ],
+        ),
+    );
+    merged.edges.push(c.edges[0].clone());
+    merged.edges[0].a = "room".to_string();
+    let report = check(&two_level(Some("east")).model, &merged, &no_anchors());
+    let wf = gate(&report, "contract-well-formed");
+    assert!(
+        wf.failed() && wf.detail.contains("ONE floor"),
+        "two floors folded into one space are refused: {}",
+        wf.detail
+    );
+}
+
+/// **A climb declares its volume and its rise**, as a stair does: the ladder
+/// belongs to the edge, and the level relation is measured.
+#[test]
+fn a_climb_without_its_volume_or_its_rise_is_refused() {
+    let b = two_level(Some("east"));
+    let mut no_via = two_level_contract();
+    no_via.edges[1].via = None;
+    let wf = gate(
+        &check(&b.model, &no_via, &no_anchors()),
+        "contract-well-formed",
+    )
+    .clone();
+    assert!(
+        wf.failed() && wf.detail.contains("requires a `via`"),
+        "{}",
+        wf.detail
+    );
+    let mut no_rise = two_level_contract();
+    no_rise.edges[1].rise = None;
+    let wf = gate(
+        &check(&b.model, &no_rise, &no_anchors()),
+        "contract-well-formed",
+    )
+    .clone();
+    assert!(
+        wf.failed() && wf.detail.contains("requires a declared `rise`"),
+        "{}",
+        wf.detail
+    );
+    let mut off_by_one = two_level_contract();
+    off_by_one.edges[1].rise = Some(3);
+    let report = check(&b.model, &off_by_one, &no_anchors());
+    let proof = gate(&report, "contract-edge-proof");
+    assert!(
+        proof.failed()
+            && proof
+                .detail
+                .contains("declares rise 3 but the resolved boxes measure 4"),
+        "{}",
+        proof.detail
+    );
+}
+
+/// **Scenery owes no floor, even where its leaves can be stood on**
+/// (spec-0098 §14, departure 36). A crown built to be seen and never
+/// entered: a mass of leaves three courses deep with open air over it, so its
+/// 25 leaf tops are standable cells. The place is scenery, proven unreached
+/// both ways by the build (`DW0816`, `DW0837`), so no cell of it is stood in
+/// and the contract owes it neither a space nor an out-of-walk region: judged
+/// as scenery (`check_sealed`), every floor gate passes and states the count
+/// it excuses, with the entry space declared over air and holding no
+/// standable cell. The very same piece judged as a place a body reaches reds
+/// on the leaf tops no declaration accounts for.
+#[test]
+fn a_leafy_scenery_crown_owes_no_floor_and_a_reached_one_does() {
+    let mut b = Build::new([5, 5, 5]);
+    b.paint(
+        [0, 0, 0],
+        [4, 2, 4],
+        "minecraft:oak_leaves[distance=1,persistent=true,waterlogged=false]",
+    );
+    let tops = delvec::grammar::nav::standable_cells(&b.model);
+    assert_eq!(tops.len(), 25, "every leaf top is standable: {tops:?}");
+    let mut c = contract("crown");
+    c.spaces.insert(
+        "crown".to_string(),
+        space("open", vec![region([0, 4, 0], [4, 4, 4])]),
+    );
+
+    let sealed = delvec::grammar::contract::check_sealed(&b.model, &c, &no_anchors(), true);
+    let red: Vec<String> = sealed
+        .gates
+        .iter()
+        .filter(|g| g.failed())
+        .map(|g| format!("{}: {}", g.id, g.detail))
+        .collect();
+    assert!(red.is_empty(), "scenery owes no floor: {red:?}");
+    let excused: BTreeSet<&str> = sealed
+        .gates
+        .iter()
+        .filter(|g| g.detail.contains("scenery") && g.detail.contains("25 standable cell(s)"))
+        .map(|g| g.id)
+        .collect();
+    assert!(
+        excused.contains("contract-coverage"),
+        "coverage states the 25 leaf tops it excuses: {:#?}",
+        sealed.gates
+    );
+
+    let reached = check(&b.model, &c, &no_anchors());
+    assert!(
+        gate(&reached, "contract-coverage").failed(),
+        "a reached place's standable leaf tops are owed a declaration"
+    );
 }

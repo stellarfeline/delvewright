@@ -1,4 +1,4 @@
-//! The plan resolved once — every box's footprint, plane, headroom and class —
+//! The plan resolved once — every box's footprint, plane and headroom —
 //! and the resolved plan in world cells that the checks, the derivation and the
 //! battery all read: placed boxes, placed seams, and the stair run.
 
@@ -14,8 +14,8 @@ use super::*;
 /// reads it — on [`PlanBox`], whose schema description carries it — and the
 /// number itself is [`SHARED_FACE_GAP_CELLS`]. In short: a box is the **play
 /// space** of a place, the shell stands in the one-cell gap between two
-/// neighbours, `extent` is therefore the interior footprint the size-class
-/// ladder judges directly (`DW0832`), and two connected places sit exactly
+/// neighbours, `extent` is therefore the interior footprint the author
+/// declared, and two connected places sit exactly
 /// [`SHARED_FACE_GAP_CELLS`] apart on the face they share (`DW0828`).
 #[derive(Debug, Clone)]
 pub(super) struct Placed<'a> {
@@ -25,44 +25,11 @@ pub(super) struct Placed<'a> {
     pub(super) foot: [i64; 4],
     /// The walk plane.
     pub(super) floor: i64,
-    /// Cells of headroom over the walk plane, or `None` when the place is
-    /// sky-open and its classification did not resolve.
-    pub(super) clearance: Option<u32>,
-    /// How the place is classified, when the name resolved.
-    pub(super) class: Option<PlaceClass>,
+    /// Cells of headroom over the walk plane — the lid's clearance, or the
+    /// sky-open place's declared courses of air.
+    pub(super) clearance: u32,
     /// How its corner was obtained (spec-0059 §3).
     pub(super) by: Provenance,
-}
-
-/// **How a place is classified** — the two kinds of standard a box is judged
-/// against (spec-0053 §3).
-///
-/// The classification belongs to the PLACE, so it is one field of two kinds
-/// rather than two fields. Written as a second `Option<WayClass>` beside the
-/// first, every consumer would have had to remember to look at both, and the
-/// one that forgot would silently judge a road against nothing — which is the
-/// state this whole surface exists to end, reintroduced one layer down.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PlaceClass {
-    /// A rung of the size ladder: both horizontal extents bounded.
-    Size(SizeClass),
-    /// A way: the cross-section bounded, the run free.
-    Way(WayClass),
-}
-
-impl PlaceClass {
-    /// The least interior clearance the class demands.
-    ///
-    /// The one question both kinds answer identically, which is why a sky-open
-    /// box needs no arm: an open place claims exactly its class's minimum
-    /// headroom and nothing above it, and that sentence is true of a road as it
-    /// is of a hall.
-    pub(super) fn min_clearance(self) -> u32 {
-        match self {
-            PlaceClass::Size(c) => c.min_clearance,
-            PlaceClass::Way(w) => w.min_clearance,
-        }
-    }
 }
 
 impl Placed<'_> {
@@ -79,10 +46,9 @@ impl Placed<'_> {
         self.foot[3]
     }
 
-    /// The inclusive vertical span of the play space, when it is bounded.
-    pub(super) fn y_span(&self) -> Option<(i64, i64)> {
-        let c = i64::from(self.clearance?);
-        Some((self.floor, self.floor + c - 1))
+    /// The inclusive vertical span of the play space.
+    pub(super) fn y_span(&self) -> (i64, i64) {
+        (self.floor, self.floor + i64::from(self.clearance) - 1)
     }
 
     /// The centre of the footprint, in blocks.
@@ -116,11 +82,17 @@ pub struct PlacedBox {
     pub floor: i64,
     /// Cells of headroom over the walk plane.
     pub clearance: u32,
-    /// True when the plan declared no ceiling — a courtyard, a shore, a summit.
-    /// The place still claims its size class's own minimum headroom (which is
-    /// what [`PlacedBox::clearance`] holds); what it makes no claim on is the
-    /// air above that.
+    /// True when the plan declared the place sky-open — a courtyard, a shore,
+    /// a summit. It claims exactly its declared courses of air (which is what
+    /// [`PlacedBox::clearance`] holds); what it makes no claim on is the air
+    /// above them.
     pub open: bool,
+    /// What it stands on: the site's ground, or hung `n` courses under its
+    /// floor course (spec-0098 §2).
+    pub base: super::Base,
+    /// The roof the plan reserves over this place (spec-0098 §3), when it
+    /// declares one. Never present on an open box (`DW0988`).
+    pub roof: Option<super::Roof>,
 }
 
 impl PlacedBox {
@@ -177,14 +149,14 @@ pub struct PlacedSeam {
     pub rise: i64,
     /// Which place hosts the stair massing, on a `stair`.
     pub stair_in: Option<NodeId>,
+    /// The crossing's declared form ([`Seam::form`]), handed to both places.
+    pub form: String,
 }
 
 /// The plan's boxes, resolved by the code the stage-4 checks judge with.
 ///
 /// A box whose floor names an undeclared datum is **absent** — `DW0112` has
 /// refused it, and a place with no plane has no cells for any reader to work in.
-/// A sky-open box whose size class did not resolve is absent for the same reason
-/// (`DW0812` refused the class, so the plan states no headroom for it at all).
 #[must_use]
 pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
     let (Some(plan), Some(graph)) = (
@@ -198,14 +170,14 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
     resolve(plan, graph, &table, reads, &mut sink)
         .0
         .into_iter()
-        .filter_map(|p| {
-            Some(PlacedBox {
-                node: p.plan.node.clone(),
-                foot: p.foot,
-                floor: p.floor,
-                clearance: p.clearance?,
-                open: matches!(p.plan.ceiling, Ceiling::Open),
-            })
+        .map(|p| PlacedBox {
+            node: p.plan.node.clone(),
+            foot: p.foot,
+            floor: p.floor,
+            clearance: p.clearance,
+            open: matches!(p.plan.ceiling, Ceiling::Open(_)),
+            base: p.plan.base,
+            roof: p.plan.roof,
         })
         .collect()
 }
@@ -213,8 +185,8 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
 /// **The one place a seam's crossing rectangle is computed**, for either kind
 /// of connection (spec-0053 §4).
 ///
-/// A portal's rectangle is the named standard's `width × height` anchored at
-/// `at`. A contact's is its span: `at` plus the declared `extent`, or `at` to
+/// A portal's rectangle is its opening's `width × height` — the named
+/// standard's or the declared one — anchored at `at`. A contact's is its span: `at` plus the declared `extent`, or `at` to
 /// the far edge of the shared face when no extent is declared.
 ///
 /// One function rather than one per kind, and one call rather than a copy in
@@ -236,14 +208,8 @@ pub(super) fn crossing_rect(
     if s.contact.is_some() {
         return Some((Crossing::Contact, contact_extent(s, at, face)));
     }
-    let named = s.opening.as_ref()?;
-    let entry = table.resolve(MetricKind::Opening, named).ok()?;
-    match entry.value(reads) {
-        MetricValue::Opening(o) => {
-            Some((Crossing::Portal, [i64::from(o.width), i64::from(o.height)]))
-        }
-        _ => None,
-    }
+    let o = s.opening.as_ref()?.resolve(table, reads).ok()?;
+    Some((Crossing::Portal, [i64::from(o.width), i64::from(o.height)]))
 }
 
 /// **How big a contact's span is** — the one authority, read by
@@ -548,6 +514,7 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
             crossing,
             rise: b.floor - a.floor,
             stair_in: s.stair_in.clone(),
+            form: s.form.clone(),
         });
     }
     out

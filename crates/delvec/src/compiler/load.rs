@@ -115,6 +115,82 @@ pub struct LoadedCampaign {
     /// other in both directions — a check that could see only the record would
     /// be blind to exactly half of what it is for.
     pub design_files: crate::compiler::design::DesignFiles,
+    /// The site plan's terrain heightmap, read and decoded (spec-0098 §2c), or
+    /// `None` when the plan's terrain is not a heightmap. Its bytes are a
+    /// manifest input. Attached to the parsed campaign by [`parse_loaded`].
+    pub heightmap: Option<delvewright_dsl::siteplan::HeightmapRead>,
+}
+
+/// **Parse a loaded campaign directory**, with the images the documents name
+/// attached — the one door from a [`LoadedCampaign`] to a `Campaign`.
+///
+/// # Errors
+///
+/// The parse's own refusals.
+pub fn parse_loaded(
+    loaded: &LoadedCampaign,
+) -> Result<delvewright_dsl::Campaign, Vec<delvewright_dsl::Diagnostic>> {
+    let mut c = delvewright_dsl::parse_campaign(&loaded.raw)?;
+    c.heightmap = loaded.heightmap.clone();
+    Ok(c)
+}
+
+/// The heightmap path a raw site plan names, if its terrain is a heightmap.
+fn heightmap_path(site_plan: Option<&str>) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(site_plan?).ok()?;
+    let t = v.get("content")?.get("fill")?.get("terrain")?;
+    if t.get("kind")?.as_str()? != "heightmap" {
+        return None;
+    }
+    Some(t.get("heightmap")?.as_str()?.to_string())
+}
+
+/// Read and decode the heightmap at campaign-relative `rel` (spec-0098 §2c):
+/// its grey values, one per column. Anything that cannot be read is carried as
+/// [`delvewright_dsl::siteplan::HeightmapRead::Unreadable`] for validation to
+/// refuse by name, never as a load failure — an unreadable terrain is an
+/// authoring state, not a crash.
+fn read_heightmap(
+    dir: &Path,
+    rel: &str,
+    inputs: &mut BTreeMap<String, Vec<u8>>,
+) -> delvewright_dsl::siteplan::HeightmapRead {
+    use delvewright_dsl::siteplan::HeightmapRead;
+    let p = Path::new(rel);
+    if p.is_absolute()
+        || p.components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return HeightmapRead::Unreadable {
+            path: rel.to_string(),
+            why: "the path must be campaign-relative, with no `..`".to_string(),
+        };
+    }
+    let bytes = match std::fs::read(dir.join(p)) {
+        Ok(b) => b,
+        Err(e) => {
+            return HeightmapRead::Unreadable {
+                path: rel.to_string(),
+                why: e.to_string(),
+            };
+        }
+    };
+    inputs.insert(rel.to_string(), bytes.clone());
+    match image::load_from_memory_with_format(&bytes, image::ImageFormat::Png) {
+        Ok(img) => {
+            let grey = img.to_luma8();
+            HeightmapRead::Read {
+                path: rel.to_string(),
+                width: grey.width(),
+                depth: grey.height(),
+                grey: grey.into_raw(),
+            }
+        }
+        Err(e) => HeightmapRead::Unreadable {
+            path: rel.to_string(),
+            why: format!("not a PNG this engine can decode: {e}"),
+        },
+    }
 }
 
 /// Attach the campaign-relative name of the document being read to a filesystem
@@ -335,6 +411,8 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     for (path, bytes) in &textures {
         inputs.insert(path.clone(), bytes.clone());
     }
+    let heightmap =
+        heightmap_path(site_plan.as_deref()).map(|rel| read_heightmap(dir, &rel, &mut inputs));
     Ok(LoadedCampaign {
         raw: RawCampaign {
             world,
@@ -355,6 +433,7 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
         l10n,
         textures,
         skins: load_skins_dir(dir)?,
+        heightmap,
     })
 }
 

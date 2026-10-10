@@ -176,6 +176,7 @@ source is `crates/delvec/src/grammar/version.rs` (`SUPPORTED_PROGRAM_VERSIONS`,
 | `1.7.0` | the contingent edge — `way` on a `walk`, `stair` or `drop`: the traversal is severed as built, and content opens it | yes |
 | `1.8.0` | what a mark is FOR — `role` on a `mark`, written through to the exported anchor's metadata | yes |
 | `1.9.0` | which of the building's own sides are finished exterior surface — the program-level `shown_faces`, written through to the exported prefab's `shown_faces` (`DW0885`) | yes |
+| `1.10.0` | a climb inside one piece — the `climb` class of a contract edge, a way a body climbs on a ladder or a vine between two spaces | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -491,6 +492,14 @@ a mark aimed outside its own scope, an underivable facing, and two marks
 producing the same name are expansion errors — the collision names both rules.
 Two marks on the same **cell** under different names are legal, as in the
 hand-built prefabs.
+
+**A gate is a bar, not a mark** (spec-0098). A `mark` names one cell; a gate
+names a region and the block that fills it shut. Every `barred` edge's bar is
+exported as the gate anchor `anchor/<bar region>` — its cells, its block and
+`resolves_to: bar:<region>` — when the boxes the program claims for it fill one
+box together, so a campaign can name the gate a piece ships (a gate station, or
+the gate over a barred seam whose plane the place owns) exactly as it names a
+mark. A mark of the same name keeps the name.
 
 ## 2c. The idiom index — how the constructs make shapes
 
@@ -936,6 +945,7 @@ on a sightline is not writable in the first place:
 |---|---|
 | `walk` | `rise` (default 0), optional `via`, optional `way` |
 | `stair` | `rise`, **required** `via` — the treads belong to the edge, not to either end — optional `way` |
+| `climb` (`1.10.0`) | `rise`, **required** `via` — the ladder or vine and the hole it rises through belong to the edge — optional `way`; both ways. A two-level interior is two spaces (a space is one floor) and a `climb` between them |
 | `drop` | `rise`, optional `via`, optional `way`; directed `a` → `b` |
 | `barred` | `rise` (default 0), **required** `bar` (`{region, block}`), optional `via` |
 | `vision` | **required** `via`; no traversal claim, so no rise |
@@ -1034,13 +1044,13 @@ contract; there is no flag.
 | gate | what it proves | what it binds to |
 | --- | --- | --- |
 | `contract-well-formed` | entry carries an exterior traversal edge; no two spaces overlap; each space is one floor (standable span ≤ 2 levels, out-of-walk cells excluded); each out-of-walk region nests wholly in one space or none; each opening lies on the boundary its endpoints share; each transit volume is disjoint from every space and touches both ends; `rise` present, absent and signed per class | spaces + regions + edges |
-| `contract-coverage` | every standable cell lies in a declared space, an out-of-walk region, or a traversal edge's transit volume | standable cells |
-| `contract-closure` | every boundary cell of an `enclosed` space (and the side faces of `open_top`) is non-passable, except a declared opening, an abutting space, or an abutting out-of-walk region; and an `open`/`open_top` claim is refused over a cell with this piece's own blocks overhead | boundary cells examined |
-| `contract-edge-proof` | per class: `walk` connects both ways; `stair` connects through its own treads; `drop` falls forward and does not walk back. On a contingent edge — a declared `way`, or a `barred` edge normalised into one — the class's proof must **fail on the bytes as shipped** (a way that opens nothing is a beat that is not real) and **hold on a copy with its single delta applied** (laid: the region filled with its block; cleared: the region voided). In every class the declared `rise` equals `min_y(b) − min_y(a)` over the resolved boxes | interior edges |
+| `contract-coverage` | every standable cell lies in a declared space, an out-of-walk region, or a traversal edge's transit volume. A `structure_void` cell is not the piece's (spec-0098 §2 — a neighbour's, the ring's fixed ground, nobody's) and is not floor the contract owes | standable cells |
+| `contract-closure` | **the author declares the enclosed spaces, and this gate confirms exactly those** (spec-0098 §14): every boundary cell of a space declared `enclosed` (and the side faces of one declared `open_top`) is non-passable, except a declared opening, an abutting space, or an abutting out-of-walk region. A space declared `open` under the piece's own blocks is a covered space — a pavilion, a covered market — taken as declared, its covered cells stated in the enumeration. A passable boundary cell that is a `structure_void` is the whole's to judge over the assembled world (`DW0836`, `DW0838`) and is counted in the enumeration rather than refused | boundary cells examined |
+| `contract-edge-proof` | per class: `walk` connects both ways; `stair` connects through its own treads; `climb` connects both ways through the cells of its own volume a body holds on in, over the body's own walk and climb moves — the compiler's nav model built from the piece's blocks (spec-0099), so a climbable counts only where its hold is kept; `drop` falls forward and does not walk back. On a contingent edge — a declared `way`, or a `barred` edge normalised into one — the class's proof must **fail on the bytes as shipped** (a way that opens nothing is a beat that is not real) and **hold on a copy with its single delta applied** (laid: the region filled with its block; cleared: the region voided). In every class the declared `rise` equals `min_y(b) − min_y(a)` over the resolved boxes | interior edges |
 | `contract-no-body` | every standable cell of every out-of-walk region earns a **computed** kind, strongest first — `sealed` (the cell's whole passable component lies inside the declared out-of-walk cells and touches no cell of the model's outer layer, so what closes it is this piece's blocks and never the edge of the world), `posted` (within Chebyshev 2 of an anchor declared inside the cell's own region), `facade` (the air outside the piece reaches the cell, and the cell lies inside no declared space). A cell earning none reds its region, naming the cells and the clause each demand refused them with; a region holding no standable cell is red too. The enumeration reports the per-region breakdown by cell count | regions |
-| `contract-reachability` | every standable cell of every space, minus nested out-of-walk cells, plus every standable cell of a transit volume, is reached from the entry space by a walk **confined to declared spaces and crossing only through declared edges** — ways shut, drops forward only. The walk then re-runs with the ways opened **cumulatively by name**, and what is proved is the **union** over those states: a cell is red only when no opening state reaches it. Each state's target set is recomputed over its own blocks, because a laid way's whole point is that the cells a body stands on did not exist before it was laid. Every space reached only under an opening is named with what opens it — *reached only once `<way>` is laid* | target cells |
+| `contract-reachability` | every standable cell of every space, minus nested out-of-walk cells, plus every standable cell of a transit volume, is reached from the entry space by a walk **confined to declared spaces and crossing only through declared edges** — ways shut, drops forward only, and through a `climb` volume by the body's own climb moves, holding in its climbable cells without owing them. The walk then re-runs with the ways opened **cumulatively by name**, and what is proved is the **union** over those states: a cell is red only when no opening state reaches it. Each state's target set is recomputed over its own blocks, because a laid way's whole point is that the cells a body stands on did not exist before it was laid. Every space reached only under an opening is named with what opens it — *reached only once `<way>` is laid* | target cells |
 | `contract-anchors` | every declared anchor lands in a contract element, and the element is written into the metadata as the anchor's `resolves_to` | anchors |
-| `contract-exterior-faces` | every `exterior` edge exports a face with cells on it — a claim nothing can mate with is not a face | exterior edges |
+| `contract-exterior-faces` | (A piece whose place is **scenery** — `reached: false` in the layout graph, handed by `delvec detail`, spec-0098 §14 — is judged sealed: its entry carries no exterior traversal edge, declaring one is refused by `contract-well-formed`, and its zero faces are stated here; no cell of scenery is stood in — the build proves it both ways (`DW0816`, `DW0837`) — so `contract-coverage` passes stating the standable cells it excuses with their count, however many a crown's leaf tops make, and `contract-reachability`, `contract-no-body` and `contract-no-body-majority` state their zero with that count where they examine nothing — scenery owes no floor.) every `exterior` edge exports a face with cells on it — a claim nothing can mate with is not a face. A face is the via's cells on the plane that are passable; a `stair`, `drop` or `barred` edge's face is every via cell on the plane, treads and bars included (spec-0098: where a stair rises through a hole a neighbour cuts, its top step stands under that hole), and a `barred` edge with no via faces out through its bar. A face lies on the region's outer layer, or — for a declared via lying wholly in one plane inside the region, on no outer layer (a place whose frame reaches past a party plane it does not own, spec-0098) — on that plane, pointing away from the side its space's cells are on | exterior edges |
 | `contract-no-body-majority` | a piece mostly out of walk says so | standable cells |
 
 **A binding of zero is red, unless the gate can compute why the emptiness is
@@ -1048,13 +1058,14 @@ honest — in which case the gate is not emitted at all.** One rule, one place
 (`gates::seal_zero_bindings`), read by every door, so `expand`, the corpus audit
 and `delvec prefab` give the same verdict on the same piece.
 
-Three gates can reach an honest zero, and each says what discharges it:
+Four gates can reach an honest zero, and each says what discharges it:
 
 | gate | zero is honest when | what stops it being an escape |
 | --- | --- | --- |
 | `contract-no-body` | nothing is out of walk, and every standable cell lies in a declared space or a transit volume | deleting a region does not delete its cells; they land in a space, where reachability must walk a body to each and closure must seal around them — strictly more proof |
 | `contract-edge-proof` | the contract declares one space, so no interior edge could have been proved | two spaces with nothing between them is a graph that is decoration, and reds |
 | `contract-anchors` | the piece names no place inside itself | a piece holding a misplaced anchor still binds non-zero and still reds; reaching zero means deleting every anchor, which deletes the only way a campaign can name a location in the piece |
+| `contract-closure` | the author declared no enclosed space — a street, a pavilion, a covered market — so the enumeration states `0 of N space(s) declare an envelope closure examines; every space is open` (spec-0098 §14, a ruling) | the enclosed spaces are the author's declaration; nothing infers one the author did not declare, and a gate that confirms intent has nothing to confirm when none is declared |
 
 Everywhere else a zero binding refuses. A withheld gate is named in the
 enumeration with its justification, so nothing is lost by not printing it — and
@@ -1082,7 +1093,13 @@ and crossing into one without an edge still fails the confined walk. Toward
 and a wall that is simply missing declares one as easily as a door does. So an
 opening to the outside is named, its cells are claimed, and the checker then
 requires them to touch the space and to be reached by the air outside the piece —
-which a wall claimed as a door in the middle of a room cannot supply.
+which a wall claimed as a door in the middle of a room cannot supply. Where two
+openings of one space meet at its corner column — two seams answered in the
+piece's first layer, so the column lies in both — a cell may instead touch a
+cell of **another** of the space's exterior openings that itself touches the
+space: one hop, never through its own opening's cells, so a door two courses
+thick is still refused (`grammar_contract_check.rs`
+`two_openings_at_a_corner_open_through_each_other`).
 
 What a piece leaves open at its own outer face is not a closure question at all.
 That is the **face contract**, and assembly consumes it (§6).

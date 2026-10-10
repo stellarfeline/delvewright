@@ -84,6 +84,11 @@ pub struct Overrides {
     /// Palette roles rebound on the way in, by name, each the block state as
     /// the caller wrote it.
     pub roles: BTreeMap<String, String>,
+    /// **Cells the piece does not own**, inclusive local boxes, written
+    /// `minecraft:structure_void` after the expansion (spec-0098 §4): the frame
+    /// a place is handed is a box, and the cells of it a neighbour, the ring's
+    /// fixed ground or nobody owns are cells the game does not place.
+    pub voids: Vec<([i32; 3], [i32; 3])>,
 }
 
 impl Overrides {
@@ -94,7 +99,7 @@ impl Overrides {
 
     /// True when the program was expanded exactly as its document reads.
     pub fn is_empty(&self) -> bool {
-        self.params.is_empty() && self.roles.is_empty()
+        self.params.is_empty() && self.roles.is_empty() && self.voids.is_empty()
     }
 }
 
@@ -111,6 +116,11 @@ pub struct ExpandOptions {
     /// changes nothing about the expansion — the program already carries the
     /// values — and everything about what the export can honestly record.
     pub overrides: Overrides,
+    /// The place this expansion fills is **scenery** (`reached: false`,
+    /// spec-0098 §14): built to be seen and never entered, so its contract is
+    /// judged sealed — no way in is claimed. Set by `delvec detail` from the
+    /// layout graph, the place's kind, never the piece's own word.
+    pub sealed: bool,
 }
 
 impl ExpandOptions {
@@ -122,6 +132,7 @@ impl ExpandOptions {
             limits: Limits::default(),
             orientation: Orientation::IDENTITY,
             overrides: Overrides::none(),
+            sealed: false,
         }
     }
 
@@ -420,6 +431,8 @@ pub struct Expansion {
     pub stats: Stats,
     /// The orientation-sensitive fills seen, and which were unguarded.
     pub oriented: OrientedFillAudit,
+    /// Carried from [`ExpandOptions::sealed`]: the contract is judged sealed.
+    pub sealed: bool,
 }
 
 /// The scope at a refusal site, in the terms guards read it.
@@ -892,6 +905,28 @@ pub fn expand(
         },
         0,
     )?;
+    // The cells the piece does not own, voided last so no rule can paint one.
+    if !options.overrides.voids.is_empty() {
+        let void = BlockState::simple("minecraft:structure_void");
+        let o = region.origin;
+        for (lo, hi) in &options.overrides.voids {
+            for x in lo[0]..=hi[0] {
+                for y in lo[1]..=hi[1] {
+                    for z in lo[2]..=hi[2] {
+                        let at = [o[0] + x, o[1] + y, o[2] + z];
+                        if expander.model.get(at).is_some() {
+                            expander.model.set(at, &void).map_err(|error| {
+                                ExpandError::PaletteFull {
+                                    symbol: program.start.clone(),
+                                    error,
+                                }
+                            })?;
+                        }
+                    }
+                }
+            }
+        }
+    }
     expander.canonicalise_regions();
     let contract = resolve_contract(program, &mut expander.regions);
     Ok(Expansion {
@@ -906,6 +941,7 @@ pub fn expand(
             unguarded: expander.oriented_unguarded.into_iter().collect(),
             undecided: expander.oriented_undecided.into_iter().collect(),
         },
+        sealed: options.sealed,
     })
 }
 

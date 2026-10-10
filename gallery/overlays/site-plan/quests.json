@@ -164,6 +164,21 @@
             "after": [
               "obj/climb-the-loft"
             ],
+            "anchor": "anchor/causeway-crow",
+            "happening": {
+              "text": "From the crow's nest over the causeway the party sees the road run out to the yard.",
+              "verb": "learns"
+            },
+            "hint": "Two ladders climb the stand at the causeway's side.",
+            "id": "obj/climb-the-crow",
+            "radius": 1,
+            "title": "Climb to the crow's nest",
+            "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/climb-the-crow"
+            ],
             "anchor": "anchor/node-exit",
             "happening": {
               "text": "The party walks out the far side and the hall is behind them.",
@@ -286,6 +301,6 @@
       }
     ]
   },
-  "dsl_version": "0.37.0",
+  "dsl_version": "0.38.0",
   "stage": "quests"
 }

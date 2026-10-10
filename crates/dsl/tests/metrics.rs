@@ -20,7 +20,7 @@ use delvewright_dsl::metrics::{
 /// string, both in the commit that moved the table. Nothing else in the tree
 /// refuses either edit — in particular the emission baseline never sees this,
 /// because no build reads the building half at this version.
-const CANONICAL_DIGEST: &str = "d02f611615c0fdb6564f85e1dee72f8362618457116438d5c13bdac92e21fe06";
+const CANONICAL_DIGEST: &str = "a4220df9873e8ea18152b96270496c923c4abd6ce91dbb2def84e5df964a7d7d";
 
 /// A tiny SHA-256, so the digest above needs no dependency this crate does not
 /// already have. `delvewright-dsl` ships serde and nothing else, and adding a
@@ -134,8 +134,6 @@ fn dw0812_refuses_a_name_the_table_does_not_define() {
     // left out of this list would be a vocabulary `DW0812` was never asserted
     // over, and the omission looks exactly like a shorter table.
     for (kind, bad) in [
-        (MetricKind::SizeClass, "cathedral"),
-        (MetricKind::WayClass, "highway"),
         (MetricKind::Opening, "portcullis"),
         (MetricKind::Pitch, "ladder"),
         (MetricKind::Storey, "mezzanine"),
@@ -273,8 +271,8 @@ fn the_standard_passage_is_the_socket_convention_the_library_already_uses() {
 /// **A kind's plural is a real plural**, over every kind the table has.
 ///
 /// `DW0812` names the whole defined set of a kind, introduced by that kind's
-/// name in the plural. Built as `{noun}s` it read `size classs`, `stair pitchs`
-/// and `way classs` — three of the six — so the plural is a fact about the kind
+/// name in the plural. Built as `{noun}s` it read `stair pitchs`, so the
+/// plural is a fact about the kind
 /// and is written out per variant. This asserts it from OUTSIDE the enum: a
 /// plural that is the singular plus a letter it should not have taken is caught
 /// here rather than in a message somebody happens to read.
@@ -285,8 +283,6 @@ fn the_standard_passage_is_the_socket_convention_the_library_already_uses() {
 #[test]
 fn every_kinds_plural_is_a_plural_and_not_the_noun_plus_an_s() {
     let kinds = [
-        MetricKind::SizeClass,
-        MetricKind::WayClass,
         MetricKind::Opening,
         MetricKind::Pitch,
         MetricKind::Storey,
@@ -298,8 +294,7 @@ fn every_kinds_plural_is_a_plural_and_not_the_noun_plus_an_s() {
         let (n, p) = (kind.noun(), kind.plural());
         assert_ne!(n, p, "`{n}` and its plural are the same word");
         // The exact defect this exists for: a noun ending in a sibilant, given a
-        // bare `s`. `size class` -> `size classs`, `stair pitch` -> `stair
-        // pitchs`. Nothing else about English is asserted here, deliberately —
+        // bare `s`: `stair pitch` -> `stair pitchs`. Nothing else about English is asserted here, deliberately —
         // what is being caught is one mechanical mistake, not spelling.
         assert_eq!(
             p,
@@ -321,7 +316,7 @@ fn every_kinds_plural_is_a_plural_and_not_the_noun_plus_an_s() {
         kinds.len(),
         "every kind the table has was examined"
     );
-    assert!(checked >= 6, "and the list is not empty: {checked} kind(s)");
+    assert!(checked >= 4, "and the list is not empty: {checked} kind(s)");
 }
 
 /// **The selector rule, against the vanilla test written out by hand.**

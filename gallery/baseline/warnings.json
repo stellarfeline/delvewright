@@ -7,7 +7,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "2 of the 2 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
     },
     {
@@ -174,7 +174,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
     },
     {
@@ -356,7 +356,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
     },
     {
@@ -538,7 +538,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
     },
     {
@@ -720,7 +720,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
     },
     {
@@ -902,7 +902,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
     },
     {
@@ -919,6 +919,53 @@
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
+    },
+    {
+      "code": "DW0475",
+      "pointer": "/content/waves",
+      "stage": "quests"
+    }
+  ],
+  "site-plan-solid.en": [
+    {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/curator",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/factor",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/marshal",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/warden",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "5 of the 5 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "site-plan:"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0822",
+      "pointer": "/content/boxes",
+      "stage": "site-plan"
     },
     {
       "code": "DW0475",
@@ -954,18 +1001,13 @@
     },
     {
       "code": "DW0813",
-      "pointer": "12 of the 12 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "5 of the 5 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "site-plan:"
     },
     {
       "code": "DW0781",
       "pointer": "/areas",
       "stage": "world"
-    },
-    {
-      "code": "DW0821",
-      "pointer": "/content/sightlines[edge/loft-sightline]",
-      "stage": "site-plan"
     },
     {
       "code": "DW0822",
@@ -986,7 +1028,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "3 of the 3 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
     },
     {
@@ -1153,7 +1195,7 @@
     },
     {
       "code": "DW0813",
-      "pointer": "4 of the 4 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "layout-graph:"
     },
     {

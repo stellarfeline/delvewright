@@ -158,9 +158,20 @@ never handed to the pathfinder: into the column's centre; then, going up, push
 toward the block the ladder hangs on holding jump until the feet clear the let-go
 floor, or, going down, hold nothing and slide; then step onto the let-go cell,
 inside a budget of six seconds plus one a block of height. mineflayer-pathfinder
-2.4.5 walks every other hop unchanged. It can plan a ladder itself, and on a walk
+2.4.5 walks every other hop. It can plan a ladder itself, and on a walk
 that matches no proven leg it does — which is why a climb the bot finished is not
 evidence that the climb was driven.
+
+**A walk along a ladder's face.** The route model walks through a ladder cell on
+the floor beneath it, as vanilla lets a body do. The pathfinder aims a node in a
+ladder cell at the top of the panel, a block above the feet, and a body that does
+not push into the panel never rises to it, so a walk along the face to a climb's
+foot stops at the cell's edge. The harness re-aims every such node at the feet on
+each `path_update` — a node entered level and left level or lower; one the body
+climbs into or on from keeps the library's aim — and prints
+`[ladder] N ladder node(s) walked through on the floor, aimed at the feet: <cells>`
+(`holdWalkedClimbableNodes`, `harness/src/movement.ts`; proven on the real
+pathfinder over the client physics in `harness/test/ladder-approach.test.ts`).
 
 **The binding count.** Every walk whose leg carries a climb prints
 `[climb] <walk>: N climb(s) on the proven leg, M driven as a climb hop`, and each

@@ -279,10 +279,19 @@ fn a_low_wall_reddens_dw0838() {
         "a wall a body can climb is a seam that was discovered: {:?}",
         errors(&b)
     );
-    let m = message_for(&b, "DW0838");
+    // On an `open` site a wall a body can climb also lets it out onto the
+    // terrain, so both shapes of the claim fire; the pair shape is the one this
+    // test is about.
+    let pair = b
+        .findings
+        .iter()
+        .filter(|(_, d)| d.code == "DW0838")
+        .map(|(_, d)| d.message.clone())
+        .find(|m| m.contains("allocated no seam for"))
+        .unwrap_or_else(|| panic!("no pair-shaped DW0838 among {:?}", errors(&b)));
     assert!(
-        m.contains("allocated no seam for") && m.contains("can still walk to"),
-        "the refusal names both places and a witness cell: {m}"
+        pair.contains("can still walk to"),
+        "the refusal names both places and a witness cell: {pair}"
     );
     assert_eq!(b.binding.pairs, 21);
 }
@@ -347,6 +356,59 @@ fn the_headroom_measure_reads_the_place_and_not_its_centre_column() {
     assert_eq!(
         b.binding.identities, 6,
         "and the height identities were examined rather than skipped"
+    );
+}
+
+/// **`DW0833`'s `distance-xz` reads a place's floor, not one column of it.**
+///
+/// Every place of the fixture — and of its climb variant, whose undercroft
+/// carries a stand-in's ladder and the pillar it hangs on — measures exactly
+/// the centre the plan gives its footprint. The instrument this replaced read
+/// one probe through the box's centre at its top course, and answered the
+/// box's INTEGER centre wherever that cell held a block, or a midpoint moved by
+/// whatever stood in the probe's run. The perturbation: one edge course of the
+/// hall's floor walled up — a room built a block narrower — moves the measured
+/// centre half a block, so the identity can still red a real spacing defect.
+#[test]
+fn the_centre_measure_reads_the_floor_and_not_one_column() {
+    let exact = |b: &PlacedBox| {
+        (
+            (b.foot[0] + b.foot[1]) as f64 / 2.0,
+            (b.foot[2] + b.foot[3]) as f64 / 2.0,
+        )
+    };
+    let mut measured = 0usize;
+    for c in [campaign(), cell_undercroft_as("climb", "centre")] {
+        let reg = prefabs();
+        let plan = Plan::build(&c, &reg).expect("the fixture plans");
+        let world = delvec::compiler::nav::World::from_plan(&plan, &BTreeMap::new());
+        let boxes = &plan.blockout.as_ref().expect("a blockout").boxes;
+        for b in boxes {
+            assert_eq!(
+                blockout::built_centre(b, boxes, &world),
+                Some(exact(b)),
+                "`{}` measures the centre of its footprint",
+                b.node
+            );
+            measured += 1;
+        }
+    }
+    assert_eq!(measured, 14, "seven places, twice");
+
+    let (boxes, world) = derived_world();
+    let hall = box_of(&boxes, "node/hall");
+    let mut edge = std::collections::BTreeSet::new();
+    for z in hall.foot[2]..=hall.foot[3] {
+        for dy in 0..2 {
+            edge.insert(cell([hall.foot[0], hall.floor + dy, z]));
+        }
+    }
+    let narrowed = world.with_extra_solid(&edge);
+    let (x, z) = exact(hall);
+    assert_eq!(
+        blockout::built_centre(hall, &boxes, &narrowed),
+        Some((x + 0.5, z)),
+        "a hall built a course narrower on its west side is measured half a block east"
     );
 }
 
@@ -853,7 +915,7 @@ fn every_perturb_field_has_a_knob() {
     let mut seen = 0;
     let (mut slid, mut sunk, mut short, mut bricked, mut low, mut walled, mut wells) =
         (false, false, false, false, false, false, false);
-    let mut buried = false;
+    let (mut buried, mut hollow) = (false, false);
     for knob in Knob::ALL {
         let p = knob
             .perturb(knob.takes_place().then_some(place))
@@ -873,6 +935,7 @@ fn every_perturb_field_has_a_knob() {
             wall_contacts,
             open_stairwells,
             bury_barred,
+            hollow_edge,
         } = p;
         slid |= slide_openings != 0;
         sunk |= sink.is_some();
@@ -882,6 +945,7 @@ fn every_perturb_field_has_a_knob() {
         walled |= wall_contacts;
         wells |= open_stairwells;
         buried |= bury_barred;
+        hollow |= hollow_edge;
         seen += 1;
         assert!(
             knob.perturb(knob.takes_place().then_some("")).is_some(),
@@ -897,10 +961,10 @@ fn every_perturb_field_has_a_knob() {
     }
     assert_eq!(seen, Knob::ALL.len());
     assert!(
-        slid && sunk && short && bricked && low && walled && wells && buried,
-        "one of the eight fields is never set by any knob: slid={slid} sunk={sunk} \
+        slid && sunk && short && bricked && low && walled && wells && buried && hollow,
+        "one of the nine fields is never set by any knob: slid={slid} sunk={sunk} \
          short={short} bricked={bricked} low={low} walled={walled} wells={wells} \
-         buried={buried}"
+         buried={buried} hollow={hollow}"
     );
     // The spellings a creator types are unique and kebab-case, since the value
     // set is resolved by name.
@@ -1015,8 +1079,8 @@ fn the_synthesized_vocabulary_carries_the_unchanged_quest_layer() {
     );
 }
 
-/// **What every place owes, plus the gate regions no place owes, is exactly the
-/// synthesized set** (spec-0050 §6).
+/// **What every place owes is exactly the synthesized set** (spec-0050 §6;
+/// spec-0098 §2 — a seam's gate region is owed by the place owning its plane).
 ///
 /// `dsl::siteplan::synthesized_anchors` is the one authority for which names a
 /// site-plan campaign provides, and `owed_anchors` says which of them a given
@@ -1050,8 +1114,8 @@ fn the_owed_anchors_partition_the_synthesized_set() {
         );
     }
 
-    // The gate regions are the one family no place owes: they stand in a party
-    // plane the whole owns, not inside any piece.
+    // Every seam lies in a plane some place owns (spec-0098 §2), so the gate
+    // region over a barred way is owed too — by the place that owns its plane.
     let gates: std::collections::BTreeSet<String> = all
         .iter()
         .filter(|n| n.starts_with("anchor/seam-"))
@@ -1063,15 +1127,14 @@ fn the_owed_anchors_partition_the_synthesized_set() {
     );
     let owed: std::collections::BTreeSet<String> = owed_by.keys().cloned().collect();
     assert!(
-        owed.is_disjoint(&gates),
-        "a gate region is never owed by a place"
+        gates.is_subset(&owed),
+        "every gate region is owed by the place that owns its plane: {:?}",
+        gates.difference(&owed).collect::<Vec<_>>()
     );
-    let union: std::collections::BTreeSet<String> = owed.union(&gates).cloned().collect();
     assert_eq!(
-        union, all,
-        "every synthesized name is either owed by exactly one place or a gate \
-         region the whole keeps — there is no third kind, and a name in neither \
-         is one no piece is ever asked for"
+        owed, all,
+        "every synthesized name is owed by exactly one place — there is no second \
+         kind, and a name owed by nobody is one no piece is ever asked for"
     );
 }
 
@@ -1079,13 +1142,11 @@ fn the_owed_anchors_partition_the_synthesized_set() {
 // A place that is a route, and a hand-off that is not a door (spec-0053)
 // ---------------------------------------------------------------------------
 
-/// **The way builds.** `node/tunnel` is a `corridor`: four cells across and
-/// eight long, which no rung of the size ladder admits. It derives, assembles
-/// and passes the whole battery beside the size-classed places, through the
-/// SAME derivation and the same observer — no branch was added for it below the
-/// classification itself.
+/// **A long, narrow box builds.** `node/tunnel` is four cells across and eight
+/// long. It derives, assembles and passes the whole battery beside the other
+/// places, through the SAME derivation and the same observer.
 #[test]
-fn a_way_classed_box_builds_and_walks_like_any_other_place() {
+fn a_long_narrow_box_builds_and_walks_like_any_other_place() {
     let (b, _) = battery_under(Perturb::none());
     assert!(
         errors(&b).is_empty(),
@@ -1095,24 +1156,6 @@ fn a_way_classed_box_builds_and_walks_like_any_other_place() {
     assert_eq!(
         b.binding.nodes, 7,
         "every place is proven reached, the way among them"
-    );
-
-    // The way is read off the graph rather than asserted: if the fixture stopped
-    // declaring one, this says so instead of passing over a campaign that no
-    // longer exercises the surface.
-    let c = campaign();
-    let graph = c.layout_graph.as_ref().expect("the fixture has a graph");
-    let ways: Vec<&str> = graph
-        .content
-        .nodes
-        .iter()
-        .filter(|n| n.way_class.is_some())
-        .map(|n| n.id.0.as_str())
-        .collect();
-    assert_eq!(
-        ways,
-        vec!["node/tunnel"],
-        "the fixture declares exactly one way, and the battery above proved it"
     );
 }
 
@@ -1404,5 +1447,1129 @@ fn moving_a_door_off_the_treads_is_the_remedy_dw0986_names() {
     assert_eq!(
         green.binding.portals, 6,
         "six portals measured, the door among them"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0098: a place owns its outside — the claim, the fill, the terrain
+// ---------------------------------------------------------------------------
+
+use delvewright_dsl::Diagnostic;
+use delvewright_dsl::siteplan::{Owner, SitePlan};
+
+/// A scratch copy of the blockout fixture, its site plan edited by `edit`, and
+/// with a heightmap image written beside it when `heightmap` is given.
+fn variant(
+    tag: &str,
+    edit: impl FnOnce(&mut serde_json::Value),
+    heightmap: Option<&dyn Fn(i64, i64) -> i64>,
+) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("dw-place-shell-{tag}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&fixture_dir(), &dir);
+    if let Some(h) = heightmap {
+        let img = image::GrayImage::from_fn(64, 64, |x, z| {
+            image::Luma([((h(i64::from(x), i64::from(z)) - 56) * 17) as u8])
+        });
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+        std::fs::write(dir.join("terrain.png"), bytes.into_inner()).unwrap();
+        common::patch_file(&dir.join("site-plan.json"), |v| {
+            v["content"]["fill"]["terrain"] = serde_json::json!({
+                "kind": "heightmap", "heightmap": "terrain.png", "base_y": 56, "range": 15
+            });
+        });
+    }
+    common::patch_file(&dir.join("site-plan.json"), edit);
+    dir
+}
+
+/// The sloped terrain the stitch tests stand on: the landing's side of the map
+/// falls to between three and five courses under the floor course, in steps
+/// along z, and the rest stands at the floor course.
+fn slope(x: i64, z: i64) -> i64 {
+    if x <= 12 { 59 + (z / 4) % 3 } else { 63 }
+}
+
+/// The final block map a derivation writes, replayed in order.
+fn mass_map(c: &Campaign) -> BTreeMap<[i64; 3], String> {
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let (placement, _) = blockout::derive(c, &mut reads).expect("a site-plan campaign derives");
+    let mut out = BTreeMap::new();
+    for f in &placement.mass {
+        let lo = [
+            i64::from(f.from[0]),
+            i64::from(f.from[1]),
+            i64::from(f.from[2]),
+        ];
+        let hi = [i64::from(f.to[0]), i64::from(f.to[1]), i64::from(f.to[2])];
+        for cell in blockout::cells_of(lo, hi) {
+            if f.block == "minecraft:air" {
+                out.remove(&cell);
+            } else {
+                out.insert(cell, f.block.clone());
+            }
+        }
+    }
+    out
+}
+
+fn with_bound(c: &Campaign, nodes: &[&str]) -> Campaign {
+    let mut c = c.clone();
+    let rows: Vec<serde_json::Value> = nodes
+        .iter()
+        .map(|n| serde_json::json!({"place": n, "piece": "prefab/anything"}))
+        .collect();
+    let doc = serde_json::json!({
+        "campaign_id": "blockout",
+        "content": {"details": rows},
+        "dsl_version": delvewright_dsl::DSL_VERSION,
+        "stage": "detail-plan",
+    });
+    c.detail_plan = Some(serde_json::from_value(doc).expect("a detail plan parses"));
+    c
+}
+
+/// What the whole holds at a cell no place claims: the last volume over it,
+/// else the fill.
+fn whole_block(
+    c: &Campaign,
+    ground: &delvewright_dsl::siteplan::Ground,
+    cell: [i64; 3],
+) -> Option<String> {
+    let plan = &c.site_plan.as_ref().unwrap().content;
+    let mut out = ground.fill_block(cell).map(str::to_string);
+    for v in &plan.volumes {
+        let (lo, hi) = (v.region.min, v.region.max());
+        if (0..3).all(|i| cell[i] >= lo[i] && cell[i] <= hi[i]) {
+            out = match (&v.block, v.role) {
+                (_, delvewright_dsl::siteplan::VolumeRole::Clearance) => None,
+                (Some(b), _) => Some(b.clone()),
+                (None, role) => ground.volume_block(role, cell, hi[1]).map(str::to_string),
+            };
+        }
+    }
+    out
+}
+
+/// **Criterion 3: the derivation writes only stand-ins, only in unbound
+/// claims.** With one place bound, no cell that place owns is written at all,
+/// every cell no place claims holds exactly what the fill and the volumes
+/// declare, and the ring's fixed ground holds the terrain's block; with
+/// nothing bound, the same holds of every unclaimed and fixed cell. Vacuous if
+/// the bound place owns nothing or the fixture has no gap — both counted.
+#[test]
+fn the_derivation_writes_only_stand_ins_and_only_in_unbound_claims() {
+    let c = campaign();
+    let plan = SitePlan::of(&c);
+    let site = plan.site();
+    let region = c.site_plan.as_ref().unwrap().content.region;
+    let (rlo, rhi) = (region.min, region.max());
+    for bound in [&["node/hall"][..], &[][..]] {
+        let map = mass_map(&with_bound(&c, bound));
+        let (mut bound_cells, mut gaps, mut fixed) = (0usize, 0usize, 0usize);
+        for cell in blockout::cells_of(rlo, rhi) {
+            match site.owner(cell) {
+                Owner::Place(n) if bound.contains(&n.0.as_str()) => {
+                    bound_cells += 1;
+                    assert!(
+                        !map.contains_key(&cell),
+                        "the derivation wrote {:?} at {cell:?}, which the bound `{n}` owns",
+                        map.get(&cell)
+                    );
+                }
+                Owner::Nobody => {
+                    gaps += 1;
+                    assert_eq!(
+                        map.get(&cell),
+                        whole_block(&c, &plan.ground, cell).as_ref(),
+                        "a cell no place claims holds what the plan declares, at {cell:?}"
+                    );
+                }
+                Owner::Ground => {
+                    fixed += 1;
+                    let i = (0..plan.boxes.len())
+                        .find(|&i| site.is_fixed(i, cell))
+                        .unwrap();
+                    let g = site.ground_height(i, cell[0], cell[2]);
+                    assert_eq!(
+                        map.get(&cell).map(String::as_str),
+                        Some(plan.ground.ground_block(cell, g)),
+                        "the ring's fixed ground is the terrain, at {cell:?}"
+                    );
+                }
+                Owner::Contested(ns) => panic!("the fixture contests {cell:?} between {ns:?}"),
+                Owner::Place(_) => {}
+            }
+        }
+        assert!(
+            gaps > 0 && fixed > 0,
+            "the fixture has gaps ({gaps}) and fixed ground ({fixed})"
+        );
+        if !bound.is_empty() {
+            assert!(
+                bound_cells > 0,
+                "the bound place owns {bound_cells} cell(s)"
+            );
+        }
+    }
+}
+
+/// **Criterion 19: `fill` is required, and both kinds derive.** The fixture
+/// derives under `solid` and under `open` with the battery green, and the two
+/// derivations agree at every cell a place owns under both and disagree at
+/// some cell no place owns.
+#[test]
+fn both_fills_derive_and_differ_only_where_no_place_owns() {
+    let open = campaign();
+    let solid_dir = variant(
+        "solid",
+        |v| {
+            v["content"]["fill"] =
+                serde_json::json!({"kind": "solid", "block": "minecraft:deepslate"});
+        },
+        None,
+    );
+    let solid = common::campaign_at(&solid_dir);
+    for c in [&open, &solid] {
+        let b = battery_of(c);
+        assert!(errors(&b).is_empty(), "{:?}", errors(&b));
+    }
+    let (po, ps) = (SitePlan::of(&open), SitePlan::of(&solid));
+    let (so, ss) = (po.site(), ps.site());
+    let (mo, ms) = (mass_map(&open), mass_map(&solid));
+    let region = open.site_plan.as_ref().unwrap().content.region;
+    let (mut same, mut differ) = (0usize, 0usize);
+    for cell in blockout::cells_of(region.min, region.max()) {
+        let (a, b) = (so.owner(cell), ss.owner(cell));
+        match (&a, &b) {
+            (Owner::Place(x), Owner::Place(y)) if x == y => {
+                same += 1;
+                assert_eq!(
+                    mo.get(&cell),
+                    ms.get(&cell),
+                    "a cell `{x}` owns under both, {cell:?}"
+                );
+            }
+            (Owner::Nobody, Owner::Nobody) if mo.get(&cell) != ms.get(&cell) => {
+                differ += 1;
+            }
+            _ => {}
+        }
+    }
+    assert!(same > 0, "the comparison saw no owned cell");
+    assert!(
+        differ > 0,
+        "the two fills disagree nowhere a place does not own"
+    );
+}
+
+/// **Criterion 20: the terrain is declared and placed.** A heightmap the
+/// wrong size is refused naming both sizes, one standing over the region's
+/// top is `DW0826`, and the sloped one derives a surface whose top at every
+/// unclaimed column is the image's value — moving exactly that column when one
+/// pixel changes.
+#[test]
+fn the_terrain_is_the_heightmap_column_for_column() {
+    let refusals = |c: &Campaign| -> Vec<Diagnostic> {
+        let mut reads = delvewright_dsl::metrics::Reads::new();
+        let mut d = Vec::new();
+        delvewright_dsl::siteplan::check(c, &mut reads, &mut d);
+        d
+    };
+    // The wrong size.
+    let dir = variant("hm-size", |_| {}, Some(&slope));
+    let img = image::GrayImage::from_pixel(32, 64, image::Luma([100]));
+    img.save(dir.join("terrain.png")).unwrap();
+    let d = refusals(&common::campaign_at(&dir));
+    let m = d.iter().find(|x| x.code == "DW0826").unwrap_or_else(|| {
+        panic!(
+            "no DW0826: {:?}",
+            d.iter().map(|x| &x.code).collect::<Vec<_>>()
+        )
+    });
+    assert!(
+        m.message.contains("32 × 64") && m.message.contains("64 × 64"),
+        "{}",
+        m.message
+    );
+    // Over the region's top (y 87): base 90, range 15.
+    let dir = variant(
+        "hm-high",
+        |v| v["content"]["fill"]["terrain"]["base_y"] = serde_json::json!(90),
+        Some(&slope),
+    );
+    let d = refusals(&common::campaign_at(&dir));
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0826" && x.message.contains("terrain leaves the region")),
+        "{:?}",
+        d.iter().map(|x| &x.message).collect::<Vec<_>>()
+    );
+    // Column for column.
+    let dir = variant("hm-slope", |_| {}, Some(&slope));
+    let c = common::campaign_at(&dir);
+    let plan = SitePlan::of(&c);
+    let site = plan.site();
+    let map = mass_map(&c);
+    let surface_top = |map: &BTreeMap<[i64; 3], String>, x: i64, z: i64| {
+        (56..=87)
+            .rev()
+            .find(|y| map.get(&[x, *y, z]).map(String::as_str) == Some("minecraft:grass_block"))
+    };
+    let mut columns = 0usize;
+    for x in 0..64 {
+        for z in 0..64 {
+            let free = (56..=87).all(|y| site.owner([x, y, z]) == Owner::Nobody);
+            if !free {
+                continue;
+            }
+            columns += 1;
+            assert_eq!(
+                surface_top(&map, x, z),
+                Some(slope(x, z)),
+                "column [{x}, {z}]"
+            );
+        }
+    }
+    assert!(columns > 1000, "{columns} unclaimed column(s) compared");
+    // One pixel moved: exactly that column moves.
+    let moved = |x: i64, z: i64| {
+        if (x, z) == (60, 60) {
+            slope(x, z) + 2
+        } else {
+            slope(x, z)
+        }
+    };
+    let dir2 = variant("hm-pixel", |_| {}, Some(&moved));
+    let map2 = mass_map(&common::campaign_at(&dir2));
+    let changed: std::collections::BTreeSet<[i64; 2]> = map
+        .keys()
+        .chain(map2.keys())
+        .filter(|k| map.get(*k) != map2.get(*k))
+        .map(|k| [k[0], k[2]])
+        .collect();
+    assert_eq!(
+        changed.into_iter().collect::<Vec<_>>(),
+        vec![[60, 60]],
+        "one pixel moves exactly its own column"
+    );
+}
+
+/// **Criterion 21's perturbation: `Perturb::hollow_edge` reds `DW0990` alone.**
+/// On the slope it opens air under the landing's edge, and `DW0990` — and
+/// nothing else — refuses; the same variant derived without it is green.
+#[test]
+fn a_hollow_edge_reddens_dw0990_alone() {
+    let hollow = Perturb {
+        hollow_edge: true,
+        ..Perturb::none()
+    };
+    let dir = variant("hollow", |_| {}, Some(&slope));
+    let c = common::campaign_at(&dir);
+    let clean = battery_of_with(&c, Perturb::none());
+    assert!(errors(&clean).is_empty(), "{:?}", errors(&clean));
+    assert!(clean.binding.boundary_columns > 0 && clean.binding.cracks == 0);
+    let b = battery_of_with(&c, hollow);
+    assert_eq!(
+        errors(&b)
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        ["DW0990".to_string()].into_iter().collect(),
+        "the hollow edge is a crack and nothing else"
+    );
+    let m = message_for(&b, "DW0990");
+    assert!(
+        m.contains("node/landing") && m.contains("stands at y"),
+        "{m}"
+    );
+    assert!(b.binding.cracks > 0);
+}
+
+fn battery_of_with(c: &Campaign, perturb: Perturb) -> blockout::Battery {
+    let reg = prefabs();
+    let plan = Plan::build_with(c, &reg, perturb).expect("the variant plans");
+    let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &BTreeMap::new());
+    blockout::check(&plan, &blocks).expect("a site-plan campaign has a blockout")
+}
+
+/// **Criterion 23, the derivation's half: the ring is fixed.** Over the slope,
+/// every fixed ring cell holds the terrain's block with nothing bound; at the
+/// landing's door the ring's ground is the sill's course, flat across the
+/// opening; and the hall's stair treads lie inside its play space. Vacuous if
+/// the terrain were flat at the floor: the plot's terrain range is asserted.
+#[test]
+fn the_ring_is_the_terrain_and_a_door_stands_on_its_sill() {
+    let dir = variant("ring", |_| {}, Some(&slope));
+    let c = common::campaign_at(&dir);
+    let plan = SitePlan::of(&c);
+    let site = plan.site();
+    let map = mass_map(&c);
+    let landing = site
+        .index_of(&delvewright_dsl::NodeId("node/landing".into()))
+        .unwrap();
+    let b = &plan.boxes[landing];
+    let tops: Vec<i64> = (b.foot[0] - 1..=b.foot[1] + 1)
+        .flat_map(|x| (b.foot[2] - 1..=b.foot[3] + 1).map(move |z| (x, z)))
+        .filter(|(x, z)| b.is_ring_column(*x, *z))
+        .map(|(x, z)| plan.ground.top(x, z).unwrap())
+        .collect();
+    let (lo, hi) = (tops.iter().min().unwrap(), tops.iter().max().unwrap());
+    assert!(hi - lo > 1, "the plot's terrain spans {lo}..{hi}");
+    let mut examined = 0usize;
+    for i in 0..plan.boxes.len() {
+        for (cell, g) in site.fixed_cells(i) {
+            examined += 1;
+            assert_eq!(
+                map.get(&cell).map(String::as_str),
+                Some(plan.ground.ground_block(cell, g)),
+                "fixed cell {cell:?}"
+            );
+        }
+    }
+    assert!(examined > 0);
+    // The landing's door to the hall: where its sill is a step over the
+    // terrain the ring's ground is levelled to the sill minus one; where it
+    // stands higher (a correction, spec-0098 §14) the ground stays the
+    // terrain's and the sill stands on the place's own wall.
+    let door = plan
+        .seams
+        .iter()
+        .find(|s| s.edge.0 == "edge/landing-hall")
+        .unwrap();
+    let (mut levelled, mut aloft) = (0usize, 0usize);
+    for z in door.opening.0[2]..=door.opening.1[2] {
+        let t = plan.ground.top(door.plane, z).unwrap();
+        let sill = door.opening.0[1] - 1;
+        let under = map.get(&[door.plane, sill, z]).map(String::as_str);
+        if sill <= t + 1 {
+            levelled += 1;
+            assert_eq!(site.ground_height(landing, door.plane, z), sill);
+            assert_eq!(under, Some("minecraft:grass_block"), "levelled at z {z}");
+        } else {
+            aloft += 1;
+            assert_eq!(site.ground_height(landing, door.plane, z), t);
+            assert!(
+                under.is_some_and(|b| b != "minecraft:grass_block" && b != "minecraft:dirt"),
+                "an aloft sill stands on the place's wall, not on earth, at z {z}: {under:?}"
+            );
+        }
+    }
+    assert!(levelled + aloft > 0);
+    // The hall's stair: every tread inside its play space.
+    let hall = &plan.boxes[site
+        .index_of(&delvewright_dsl::NodeId("node/hall".into()))
+        .unwrap()];
+    let (slo, shi) = hall.space();
+    let treads: Vec<&[i64; 3]> = map
+        .iter()
+        .filter(|(_, b)| b.starts_with("minecraft:polished_diorite"))
+        .map(|(c, _)| c)
+        .collect();
+    assert!(!treads.is_empty());
+    for t in treads
+        .iter()
+        .filter(|t| (0..3).all(|i| t[i] >= slo[i] - 1 && t[i] <= shi[i] + 1))
+    {
+        assert!(
+            (0..3).all(|i| t[i] >= slo[i] && t[i] <= shi[i]),
+            "a tread at {t:?} stands outside the hall's play space"
+        );
+    }
+}
+
+/// The gallery's site-plan overlay point, materialised the way
+/// `tools/ci/gallery_domain.py` does: the primary minus its non-campaign
+/// directories, the overlay's files laid over it. Each caller names its own
+/// `tag`: the materialisation deletes and regenerates its directory, so two
+/// tests sharing one would delete each other's generator output mid-write.
+fn gallery_site_plan(tag: &str) -> Campaign {
+    let dir = std::env::temp_dir().join(format!("dw-place-shell-gallery-site-plan-{tag}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::gallery_site_plan_at(&dir);
+    common::campaign_at(&dir)
+}
+
+/// **Criterion 1: the ownership rule is exhaustive and one-owner.** Over the
+/// blockout fixture, the gallery's site-plan overlay and a hand-built stacked
+/// pair, the owned-cell sets of distinct places are disjoint and every claimed
+/// cell is owned by exactly one of them, by the ring's fixed ground, or is
+/// contested (none is, on a plan that validates); the enumerated count equals
+/// the union of the claims. Each of rules 3a–3c is reached by a named cell on
+/// these plans, and 3d by the hand-built pair.
+#[test]
+fn the_ownership_rule_is_exhaustive_and_one_owner() {
+    let check = |label: &str, plan: &SitePlan| -> usize {
+        let site = plan.site();
+        let mut union: std::collections::BTreeSet<[i64; 3]> = std::collections::BTreeSet::new();
+        for i in 0..plan.boxes.len() {
+            union.extend(site.claim_cells(i));
+        }
+        let mut owned: BTreeMap<[i64; 3], String> = BTreeMap::new();
+        let mut counted = 0usize;
+        for i in 0..plan.boxes.len() {
+            let o = site.ownership(i);
+            for (lo, hi) in &o.owned {
+                for c in blockout::cells_of(*lo, *hi) {
+                    counted += 1;
+                    let prev = owned.insert(c, plan.boxes[i].node.0.clone());
+                    assert!(
+                        prev.is_none(),
+                        "{label}: {c:?} owned by {prev:?} and {}",
+                        plan.boxes[i].node
+                    );
+                }
+            }
+        }
+        let mut enumerated = 0usize;
+        for c in &union {
+            enumerated += 1;
+            match site.owner(*c) {
+                Owner::Place(n) => assert_eq!(owned.get(c), Some(&n.0), "{label}: {c:?}"),
+                Owner::Ground => assert!(!owned.contains_key(c)),
+                other => panic!("{label}: {c:?} is {other:?}"),
+            }
+        }
+        assert_eq!(enumerated, union.len(), "{label}");
+        assert_eq!(counted, owned.len(), "{label}");
+        assert!(
+            counted > 0 && counted <= union.len(),
+            "{label}: {counted} of {}",
+            union.len()
+        );
+        union.len()
+    };
+    let bo = SitePlan::of(&campaign());
+    assert!(check("blockout", &bo) > 1000);
+    let gallery = gallery_site_plan("ownership");
+    let gp = SitePlan::of(&gallery);
+    assert!(check("gallery", &gp) > 1000);
+
+    // 3a — a stacked floor: the cell over the undercroft is the cell's floor
+    // course, which is also the undercroft's lid.
+    let site = bo.site();
+    let by = |n: &str| &bo.boxes[site.index_of(&delvewright_dsl::NodeId(n.into())).unwrap()];
+    let cell = by("node/cell");
+    let under = by("node/undercroft");
+    let plane = [under.foot[0] + 1, cell.floor - 1, under.foot[2] + 1];
+    assert_eq!(
+        under.top() + 1,
+        plane[1],
+        "the undercroft's lid is that plane"
+    );
+    assert_eq!(site.owner(plane), Owner::Place(cell.node.clone()), "3a");
+    // 3b — a facade onto an open place: the hall's wall beside the open loft,
+    // off every seam, above the loft's floor course.
+    let (hall, loft) = (by("node/hall"), by("node/loft"));
+    let facade = [hall.foot[1] + 1, loft.floor + 2, loft.foot[3]];
+    assert!(site.claims(site.index_of(&loft.node).unwrap(), facade));
+    assert_eq!(site.owner(facade), Owner::Place(hall.node.clone()), "3b");
+    // 3c — between two roofed places a seam joins: the landing (its `a`) draws
+    // the party wall with the hall.
+    let landing = by("node/landing");
+    let party = [landing.foot[1] + 1, landing.floor + 3, landing.foot[2]];
+    assert!(site.claims(site.index_of(&hall.node).unwrap(), party));
+    assert_eq!(site.owner(party), Owner::Place(landing.node.clone()), "3c");
+    // 3d — two roofed places one apart with nothing joining them.
+    let g = delvewright_dsl::siteplan::Ground::solid("minecraft:stone");
+    let pair = vec![
+        delvewright_dsl::siteplan::PlacedBox {
+            node: delvewright_dsl::NodeId("node/a".into()),
+            foot: [0, 7, 0, 7],
+            floor: 64,
+            clearance: 4,
+            open: false,
+            base: delvewright_dsl::siteplan::Base::Ground,
+            roof: None,
+        },
+        delvewright_dsl::siteplan::PlacedBox {
+            node: delvewright_dsl::NodeId("node/b".into()),
+            foot: [9, 16, 0, 7],
+            floor: 64,
+            clearance: 4,
+            open: false,
+            base: delvewright_dsl::siteplan::Base::Ground,
+            roof: None,
+        },
+    ];
+    let site = delvewright_dsl::siteplan::Site::new(&pair, &[], &g);
+    assert!(matches!(site.owner([8, 65, 3]), Owner::Contested(_)), "3d");
+}
+
+/// **Criterion 16, at the campaign: `DW0827` refuses two places one cell
+/// apart with no connection.** Hanging the exit four cells further north off
+/// the cell's west face stands it one cell from the landing, which nothing
+/// joins it to; the refusal names both. The fixture as written — the same two
+/// places three cells apart — is green (the remedies at the rule are proven in
+/// `crates/dsl`'s claim tests).
+#[test]
+fn dw0827_refuses_two_places_one_cell_apart_with_nothing_joining_them() {
+    let dir = variant(
+        "one-apart",
+        |v| {
+            for s in v["content"]["seams"].as_array_mut().unwrap() {
+                if s["edge"] == "edge/cell-exit" {
+                    s["meets"] = serde_json::json!(6);
+                }
+            }
+        },
+        None,
+    );
+    let c = common::campaign_at(&dir);
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let e = d
+        .iter()
+        .find(|x| {
+            x.code == "DW0827"
+                && x.message.contains("node/landing")
+                && x.message.contains("node/exit")
+        })
+        .unwrap_or_else(|| panic!("{:?}", d.iter().map(|x| &x.message).collect::<Vec<_>>()));
+    assert!(e.message.contains("no rule awards them"), "{}", e.message);
+
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&campaign(), &mut reads, &mut d);
+    assert!(
+        !d.iter().any(|x| x.code == "DW0827"),
+        "the fixture as written"
+    );
+}
+
+/// The fixture with its link down from the cell to the undercroft declared
+/// `class` — the stair the fixture hosts there taken out. `tag` names the
+/// scratch copy, so tests running at once never share one.
+fn cell_undercroft_as(class: &str, tag: &str) -> Campaign {
+    let dir = variant(
+        &format!("climb-{class}-{tag}"),
+        |v| {
+            for s in v["content"]["seams"].as_array_mut().unwrap() {
+                if s["edge"] == "edge/cell-undercroft" {
+                    s.as_object_mut().unwrap().remove("stair_in");
+                }
+            }
+        },
+        None,
+    );
+    common::patch_file(&dir.join("layout-graph.json"), |v| {
+        for e in v["content"]["edges"].as_array_mut().unwrap() {
+            if e["id"] == "edge/cell-undercroft" {
+                e["class"] = serde_json::json!(class);
+            }
+        }
+    });
+    common::campaign_at(&dir)
+}
+
+/// **A climb's stand-in is a ladder, and the climb is proven on it**
+/// (spec-0098 §2c, spec-0099). The fixture's link down from the cell to the
+/// undercroft declared a `climb`: the derivation hangs a ladder from the
+/// undercroft's floor up into the hole, on a pillar it raises beside it, and
+/// the battery proves the undercroft reached and the opening crossed on the
+/// climb moves — no `DW0837`, no `DW0986`. The perturbation: the same link a
+/// `walk` through a floor five blocks deep is refused at the plan (`DW0829`),
+/// because nothing carries a body between the two.
+#[test]
+fn a_climb_is_laddered_at_stage_five_and_a_deep_walk_is_refused() {
+    let c = cell_undercroft_as("climb", "laddered");
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    assert!(
+        !d.iter()
+            .any(|x| x.severity == delvewright_dsl::Severity::Error),
+        "{:?}",
+        d.iter().map(|x| x.code.clone()).collect::<Vec<_>>()
+    );
+    let ladders = mass_map(&c)
+        .values()
+        .filter(|b| b.starts_with("minecraft:ladder"))
+        .count();
+    assert!(
+        ladders >= 5,
+        "a ladder from the undercroft's floor into the hole: {ladders}"
+    );
+    let b = battery_of(&c);
+    let errs: Vec<String> = b
+        .findings
+        .iter()
+        .filter(|(_, x)| x.severity == delvewright_dsl::Severity::Error)
+        .map(|(_, x)| x.code.clone())
+        .collect();
+    assert!(errs.is_empty(), "{errs:?}");
+
+    let c = cell_undercroft_as("walk", "laddered");
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let deep = d
+        .iter()
+        .find(|x| x.code == "DW0829" && x.message.contains("hole in a floor"))
+        .unwrap_or_else(|| panic!("{:?}", d.iter().map(|x| x.code.clone()).collect::<Vec<_>>()));
+    assert!(deep.message.contains("`climb`"), "{}", deep.message);
+}
+
+/// **The rung in a floor's hole is the hole owner's, whatever the lower
+/// place's binding** (spec-0098 §2c). The climb above hangs its ladder from the
+/// undercroft's floor up into the hole in the cell's floor, whose top rung
+/// stands IN the hole. With the undercroft bound, the piece there hangs its
+/// ladder up to its own ceiling and no further — so the stand-in that cut the
+/// hole still owes the rung in it, and writes exactly that one cell. The
+/// perturbation the other way: with the cell bound, the hole is the piece's,
+/// and the stand-in below writes its run and never the rung.
+#[test]
+fn the_rung_in_the_hole_is_the_hole_owners_whatever_the_lower_binding() {
+    let c = cell_undercroft_as("climb", "rung");
+    let ladders = |c: &Campaign| -> Vec<[i64; 3]> {
+        mass_map(c)
+            .into_iter()
+            .filter(|(_, b)| b.starts_with("minecraft:ladder"))
+            .map(|(cell, _)| cell)
+            .collect()
+    };
+    let all = ladders(&c);
+    let rung = *all
+        .iter()
+        .max_by_key(|cell| cell[1])
+        .expect("the unbound climb hangs a ladder");
+    assert!(all.len() >= 2, "a run and a rung: {all:?}");
+
+    let lower_bound = ladders(&with_bound(&c, &["node/undercroft"]));
+    assert_eq!(
+        lower_bound,
+        vec![rung],
+        "the bound undercroft hangs its own run; the cell's stand-in, which cut \
+         the hole, hangs the rung in it"
+    );
+
+    let upper_bound = ladders(&with_bound(&c, &["node/cell"]));
+    assert!(
+        !upper_bound.contains(&rung) && upper_bound.len() == all.len() - 1,
+        "the bound cell owns its hole and its rung; the undercroft's stand-in \
+         writes the run under it: {upper_bound:?} against {all:?}"
+    );
+}
+
+/// **Scenery is confirmed not reached** (spec-0098 §14, a ruling). A place
+/// declared `reached: false` — a crown built to be seen and never entered,
+/// with no connection to anything — stands in the fixture as a closed
+/// stand-in: the plan validates, and the battery proves it NOT reached, with
+/// the scenery counted in its binding. The perturbation: the loft, which the
+/// fixture's stair and drop both lead into, declared scenery — the battery
+/// refuses (`DW0837`), because a body getting into scenery is the design
+/// failing.
+#[test]
+fn scenery_is_proven_not_reached_and_reachable_scenery_is_refused() {
+    let with_crown = |loft_scenery: bool| {
+        let dir = variant(
+            &format!("scenery-{loft_scenery}"),
+            |v| {
+                v["content"]["boxes"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "node": "node/crown", "min": [48, 48], "extent": [8, 8],
+                        "floor": {"datum": "datum/grade"}, "ceiling": {"clearance": 3}
+                    }));
+            },
+            None,
+        );
+        common::patch_file(&dir.join("layout-graph.json"), |v| {
+            let nodes = v["content"]["nodes"].as_array_mut().unwrap();
+            nodes.push(serde_json::json!({
+                "id": "node/crown", "intent": "scenery",
+                "reached": false
+            }));
+            if loft_scenery {
+                for n in nodes.iter_mut() {
+                    if n["id"] == "node/loft" {
+                        n["reached"] = serde_json::json!(false);
+                    }
+                }
+            }
+        });
+        common::campaign_at(&dir)
+    };
+    let c = with_crown(false);
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let errs: Vec<String> = d
+        .iter()
+        .filter(|x| x.severity == delvewright_dsl::Severity::Error)
+        .map(|x| x.code.clone())
+        .collect();
+    assert!(errs.is_empty(), "{errs:?}");
+    let b = battery_of(&c);
+    assert!(
+        !b.findings.iter().any(|(_, x)| x.code == "DW0837"),
+        "{:?}",
+        b.findings
+            .iter()
+            .map(|(_, x)| x.code.clone())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(b.binding.scenery, 1, "{}", b.binding.line());
+
+    let b = battery_of(&with_crown(true));
+    assert!(
+        b.findings.iter().any(|(_, x)| x.code == "DW0837"
+            && x.message.contains("`node/loft`")
+            && x.message.contains("reached: false")),
+        "{:?}",
+        b.findings
+            .iter()
+            .map(|(_, x)| x.code.clone())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(b.binding.scenery, 2, "{}", b.binding.line());
+}
+
+/// **An aloft place owns no ground, and the battery says so** (spec-0098 §14,
+/// correction 3). The fixture's loft hung from its floor course (`base:
+/// {"aloft": 0}`): its claim stops at y 68, so the crack shape counts it and
+/// does not judge it, it hands no fixed ring, and the ground under it joins
+/// the commons — more standable cells outside every claim than on the plan
+/// where the loft stands on the ground.
+#[test]
+fn an_aloft_place_is_counted_not_stitched_and_its_ground_is_the_commons() {
+    let grounded = common::campaign_at(&variant("loft-grounded", |_| {}, None));
+    let ground = battery_of_with(&grounded, Perturb::none());
+    assert_eq!(ground.binding.aloft, 0);
+    let dir = variant(
+        "loft-aloft",
+        |v| v["content"]["boxes"][2]["base"] = serde_json::json!({"aloft": 0}),
+        None,
+    );
+    let hung = common::campaign_at(&dir);
+    let b = battery_of_with(&hung, Perturb::none());
+    assert!(
+        !errors(&b).contains(&"DW0990".to_string()),
+        "{:?}",
+        errors(&b)
+    );
+    assert_eq!(b.binding.aloft, 1, "the loft is counted aloft");
+    assert!(
+        b.binding.fixed_cells < ground.binding.fixed_cells,
+        "the loft hands no fixed ring: {} vs {}",
+        b.binding.fixed_cells,
+        ground.binding.fixed_cells
+    );
+    assert!(
+        b.binding.unclaimed_standable > ground.binding.unclaimed_standable,
+        "the ground under the loft is the commons: {} vs {}",
+        b.binding.unclaimed_standable,
+        ground.binding.unclaimed_standable
+    );
+    assert!(
+        b.binding
+            .line()
+            .contains("1 aloft place(s) with no ground to stitch")
+    );
+}
+
+/// **`DW0990`'s third shape: an aloft place standing in the earth.** The loft
+/// hung six courses under its floor course reaches y 62, under the flat
+/// terrain's surface at 63: refused at validation, naming the place and its
+/// bottom. Hung from its floor course it is clear, and the binding states
+/// one aloft place and its columns.
+#[test]
+fn an_aloft_place_whose_underside_reaches_the_terrain_is_dw0990() {
+    let deep = common::campaign_at(&variant(
+        "loft-in-earth",
+        |v| v["content"]["boxes"][2]["base"] = serde_json::json!({"aloft": 6}),
+        None,
+    ));
+    let (d, bind) = delvec::compiler::detail::check_aloft(&deep);
+    let m = d
+        .iter()
+        .find(|x| x.code == "DW0990")
+        .unwrap_or_else(|| panic!("no DW0990: {d:?}"));
+    assert!(
+        m.message.contains("node/loft")
+            && m.message.contains("stands in the earth")
+            && m.message.contains("y 62"),
+        "{}",
+        m.message
+    );
+    assert_eq!((bind.aloft, bind.columns), (1, 100));
+    assert_eq!(bind.in_earth, 100, "every column under footprint and ring");
+    let clear = common::campaign_at(&variant(
+        "loft-clear",
+        |v| v["content"]["boxes"][2]["base"] = serde_json::json!({"aloft": 0}),
+        None,
+    ));
+    let (d, bind) = delvec::compiler::detail::check_aloft(&clear);
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!((bind.aloft, bind.in_earth), (1, 0));
+    assert!(bind.line().contains("1 aloft place(s)"));
+}
+
+// ---------------------------------------------------------------------------
+// Cross-feature pairs of the assembled map route (spec-0098): a cuboid box
+// meeting the relaxed checks and the instruments that read a place.
+// ---------------------------------------------------------------------------
+
+/// The fixture with its loft hung from its floor course and the hall→loft
+/// seam's opening declared by the plan itself, `width` cells wide.
+fn hung_loft_with_declared_opening(tag: &str, width: u32) -> Campaign {
+    common::campaign_at(&variant(
+        &format!("hung-loft-opening-{tag}"),
+        |v| {
+            let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+            let loft = boxes.iter_mut().find(|b| b["node"] == "node/loft").unwrap();
+            loft["base"] = serde_json::json!({"aloft": 0});
+            for s in v["content"]["seams"].as_array_mut().unwrap() {
+                if s["edge"] == "edge/hall-loft" {
+                    s["opening"] = serde_json::json!({"width": width, "height": 3});
+                }
+            }
+        },
+        None,
+    ))
+}
+
+/// **A declared `{width, height}` opening on a seam between a hung place and
+/// a ground place is built to the size the plan wrote.** The hall stands on
+/// the ground; the loft hangs (`base: {"aloft": 0}`). The seam between them
+/// declares a 4×3 opening where the standard arch is 2×3: the plan validates,
+/// the allocated opening spans 4 cells along the wall and 3 courses up from
+/// the loft's floor, and the battery — which compares the built world to that
+/// allocation (`DW0836`) and walks the stair through it (`DW0837`) — is green
+/// with the loft counted aloft. Perturbation: the same opening declared 9 wide
+/// runs off the 8-cell face the two share and is refused by `DW0829`.
+#[test]
+fn a_declared_opening_between_a_hung_place_and_a_ground_place_is_built_to_its_size() {
+    let c = hung_loft_with_declared_opening("fits", 4);
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let errs: Vec<&Diagnostic> = d
+        .iter()
+        .filter(|x| x.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    assert!(errs.is_empty(), "{errs:#?}");
+
+    let plan = SitePlan::of(&c);
+    let seam = plan
+        .seams
+        .iter()
+        .find(|s| s.edge.0 == "edge/hall-loft")
+        .expect("the seam is placed");
+    let (lo, hi) = seam.opening;
+    assert_eq!(seam.normal_axis, 0, "the seam is in the hall's east wall");
+    assert_eq!(hi[2] - lo[2] + 1, 4, "4 wide along the wall, as declared");
+    assert_eq!(hi[1] - lo[1] + 1, 3, "3 high, as declared");
+    let site = plan.site();
+    let loft = &plan.boxes[site
+        .index_of(&delvewright_dsl::NodeId("node/loft".into()))
+        .unwrap()];
+    assert!(loft.aloft().is_some(), "the loft hangs");
+    assert_eq!(
+        lo[1], loft.floor,
+        "the sill is the higher floor, the loft's"
+    );
+
+    let b = battery_of(&c);
+    assert!(errors(&b).is_empty(), "{:?}", errors(&b));
+    assert_eq!(b.binding.aloft, 1, "{}", b.binding.line());
+    assert!(b.binding.portals > 0, "{}", b.binding.line());
+
+    let wide = hung_loft_with_declared_opening("too-wide", 9);
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&wide, &mut reads, &mut d);
+    let refusal = d
+        .iter()
+        .find(|x| x.code == "DW0829")
+        .unwrap_or_else(|| panic!("a 9-wide opening on an 8-cell face is refused: {d:#?}"));
+    assert!(
+        refusal.message.contains("9x3")
+            && refusal.message.contains("`node/hall`")
+            && refusal.message.contains("`node/loft`"),
+        "{}",
+        refusal.message
+    );
+}
+
+/// The campaign with its detail plan narrowed to the rows binding `keep`;
+/// every other place is left to a stand-in.
+fn bound_only(c: &Campaign, keep: &[&str]) -> Campaign {
+    let mut c = c.clone();
+    let mut doc = serde_json::to_value(c.detail_plan.as_ref().expect("a detail plan")).unwrap();
+    doc["content"]["details"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|r| keep.iter().any(|k| r["place"] == *k));
+    assert_eq!(
+        doc["content"]["details"].as_array().unwrap().len(),
+        keep.len(),
+        "every kept place had a row"
+    );
+    c.detail_plan = Some(serde_json::from_value(doc).expect("a detail plan parses"));
+    c
+}
+
+/// **The rung in a hung place's floor hole is the hung place's.** The
+/// gallery's yard (a ground place, open headroom) climbs into the gantry hung
+/// over it (`base: {"aloft": 0}`) through a hole in the gantry's deck. With the
+/// yard bound and the gantry left to a stand-in, the stand-in that cut the
+/// hole hangs exactly the rung in it, in the gantry's floor course. With the
+/// gantry bound, its piece owns the hole and the rung: the yard's stand-in
+/// writes its run and never the rung. Unbound both ways, the run and the rung
+/// are both there — the union of the two halves.
+#[test]
+fn the_rung_in_a_hung_places_floor_hole_is_the_hung_places() {
+    let c = gallery_site_plan("hung-rung");
+    let plan = SitePlan::of(&c);
+    let site = plan.site();
+    let gantry = &plan.boxes[site
+        .index_of(&delvewright_dsl::NodeId("node/gantry".into()))
+        .unwrap()];
+    assert!(gantry.aloft().is_some(), "the gantry hangs");
+    let ladders = |c: &Campaign| -> Vec<[i64; 3]> {
+        mass_map(c)
+            .into_iter()
+            .filter(|(_, b)| b.starts_with("minecraft:ladder"))
+            .map(|(cell, _)| cell)
+            .collect()
+    };
+    let in_footprint = |p: &[i64; 3]| {
+        p[0] >= gantry.foot[0]
+            && p[0] <= gantry.foot[1]
+            && p[2] >= gantry.foot[2]
+            && p[2] <= gantry.foot[3]
+    };
+
+    let under_gantry = |cells: Vec<[i64; 3]>| -> Vec<[i64; 3]> {
+        cells.into_iter().filter(|p| in_footprint(p)).collect()
+    };
+    let yard_bound = under_gantry(ladders(&bound_only(&c, &["node/exit"])));
+    assert_eq!(
+        yard_bound.len(),
+        1,
+        "the gantry's stand-in hangs exactly the rung in its hole: {yard_bound:?}"
+    );
+    let rung = yard_bound[0];
+    assert_eq!(
+        rung[1],
+        gantry.floor - 1,
+        "the rung is in the gantry's floor course"
+    );
+    assert!(in_footprint(&rung), "{rung:?} lies under the gantry");
+
+    let gantry_bound = under_gantry(ladders(&bound_only(&c, &["node/gantry"])));
+    assert!(
+        !gantry_bound.is_empty() && !gantry_bound.contains(&rung),
+        "the yard's stand-in writes its run and never the bound gantry's rung: {gantry_bound:?}"
+    );
+
+    let neither = under_gantry(ladders(&bound_only(&c, &[])));
+    let mut union = gantry_bound.clone();
+    union.push(rung);
+    union.sort_unstable();
+    let mut got = neither.clone();
+    got.sort_unstable();
+    assert_eq!(got, union, "unbound, the run and the rung");
+}
+
+/// The fixture without the sky its loft's silhouette keeps clear — so an
+/// overview eye is not lifted over that volume — and, when `canopy` is given,
+/// with a hung scenery canopy over its column, its floor course at `floor - 1`.
+fn canopy_over(tag: &str, canopy: Option<([i64; 2], i64)>) -> Campaign {
+    let dir = variant(
+        &format!("canopy-{tag}"),
+        |v| {
+            v["content"]["volumes"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|x| x["id"] != "volume/sky");
+            let Some((column, floor)) = canopy else {
+                return;
+            };
+            v["content"]["boxes"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "node": "node/canopy",
+                    "min": column,
+                    "extent": [1, 1],
+                    "floor": {"y": floor},
+                    "ceiling": {"clearance": 2},
+                    "base": {"aloft": 0}
+                }));
+        },
+        None,
+    );
+    if canopy.is_some() {
+        common::patch_file(&dir.join("layout-graph.json"), |v| {
+            v["content"]["nodes"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "id": "node/canopy", "intent": "scenery", "reached": false
+                }));
+        });
+    }
+    common::campaign_at(&dir)
+}
+
+/// The interior overview the render plan gives a place's piece.
+fn overview_of(c: &Campaign, prefab: &str) -> serde_json::Value {
+    let reg = prefabs();
+    let plan = Plan::build(c, &reg).expect("the variant plans");
+    let world = delvec::compiler::nav::World::from_plan(&plan, &BTreeMap::new());
+    let (rp, _) = delvec::compiler::render_plan::render_plan(&plan, &reg, &[], &world, None)
+        .expect("every camera's eye is proven clear");
+    rp["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "interior" && s["prefab"] == prefab)
+        .unwrap_or_else(|| panic!("no interior shot of `{prefab}`"))["camera"]
+        .clone()
+}
+
+/// **An interior overview stands over a hung place stacked over its eye.**
+/// The exit's overview eye, on the fixture without its sky volume, stands at
+/// some column and height. A scenery canopy hung (`base: {"aloft": 0}`) over exactly that
+/// column, its claim spanning the eye's height, is a place stacked over the
+/// eye: the overview rises over the canopy's lid rather than being pulled in
+/// through it, and still stands where it asked to (no `requested_pos`). Vacuous
+/// unless the canopy really covers the eye: the eye's first height is asserted
+/// inside the canopy's claim.
+#[test]
+fn an_interior_overview_stands_over_a_hung_place_over_its_eye() {
+    let bare = overview_of(&canopy_over("bare", None), "blockout/node/exit");
+    let pos = |cam: &serde_json::Value, i: usize| cam["pos"][i].as_f64().unwrap();
+    let column = [pos(&bare, 0).floor() as i64, pos(&bare, 2).floor() as i64];
+    let eye_y = pos(&bare, 1).floor() as i64;
+    let floor = eye_y; // floor course eye_y - 1, lid eye_y + 2
+    let c = canopy_over("eye", Some((column, floor)));
+    let mut reads = delvewright_dsl::metrics::Reads::new();
+    let mut d = Vec::new();
+    delvewright_dsl::siteplan::check(&c, &mut reads, &mut d);
+    let errs: Vec<&Diagnostic> = d
+        .iter()
+        .filter(|x| x.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    assert!(errs.is_empty(), "{errs:#?}");
+    let (ad, ab) = delvec::compiler::detail::check_aloft(&c);
+    assert!(ad.is_empty(), "{ad:?}");
+    assert_eq!(ab.aloft, 1);
+    let lid = floor + 2;
+    assert!(
+        (floor - 1..=lid).contains(&eye_y),
+        "the canopy's claim ({}..={lid}) spans the bare eye at y {eye_y}",
+        floor - 1
+    );
+
+    let cam = overview_of(&c, "blockout/node/exit");
+    assert!(
+        cam["requested_pos"].is_null(),
+        "the overview stands where it asked to, over the stack: {cam}"
+    );
+    assert!(
+        pos(&cam, 1) > lid as f64,
+        "the eye is over the hung canopy's lid (y {lid}): {cam}"
     );
 }

@@ -94,7 +94,7 @@
 //! expansion, and the seventh private copy of them was here.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::light::{LightModel, effective_sky};
 use crate::schem::nav::{self, Voxels};
@@ -113,8 +113,8 @@ pub const DEFAULT_DARK_THRESHOLD: i32 = 3;
 ///
 /// The open-air assumption above is what makes a colonnade measurable, and it is
 /// *false for a whole class of piece*. A `detail-plan` piece is placed inside the
-/// box a site plan gave it: its frame is the play space plus the one floor course
-/// under it (spec-0050 §3), everything above is the whole's, and it is walked
+/// box a site plan gave it: its frame is its place's claim (spec-0098 §2), what lies
+/// past it is the whole's or a neighbour's, and it is walked
 /// under the whole's roof. Probed as if it stood in open air, an emitterless
 /// detail piece measures the night sky floor at every cell and is written `lit` —
 /// a profile true of no world it will ever be placed in, which is the vacuity
@@ -282,6 +282,21 @@ impl<'a> Zone<'a> {
             }
         }
         Zone { size, names }
+    }
+
+    /// The zone standing on the ground it is handed (spec-0098 §2): each
+    /// listed cell holds the block the whole writes there — the ring's fixed
+    /// ground a piece voids — so a doorway over its sill is probed standing on
+    /// the ground it will stand on in the world, not over the void the piece
+    /// leaves for the whole to fill.
+    pub fn on_ground(mut self, ground: &'a [([i32; 3], &'a str)]) -> Zone<'a> {
+        let [_, sy, sz] = self.size;
+        for (p, block) in ground {
+            if (0..3).all(|a| p[a] >= 0 && p[a] < self.size[a]) {
+                self.names[((p[0] * sy + p[1]) * sz + p[2]) as usize] = block;
+            }
+        }
+        self
     }
 
     /// The zone's extent.
@@ -476,13 +491,27 @@ impl LightProbe {
 /// it is a caller measuring a piece under a sky nobody asked about, which is the
 /// defect this argument exists to end.
 pub fn probe<V: BlockCells + ?Sized>(zone: &V, dark_threshold: i32, sky: SkyClaim) -> LightProbe {
+    probe_entered(zone, dark_threshold, sky, &BTreeSet::new())
+}
+
+/// [`probe`], walked in from `doors` as well as from the ground-level
+/// entrance: a detail piece is entered where the whole hands it its seams
+/// (spec-0098 §4) — a cellar entered only through a hole in the floor above
+/// has no door at grade, and its seam is still the way in.
+pub fn probe_entered<V: BlockCells + ?Sized>(
+    zone: &V,
+    dark_threshold: i32,
+    sky: SkyClaim,
+    doors: &BTreeSet<[i32; 3]>,
+) -> LightProbe {
     let model = light_model(zone);
     let (sky_light, daylight) = (sky.night_sky(), sky.daylight_sky());
     let night_field = model.flood(sky_light as u8);
     let day_field = model.flood(daylight as u8);
 
     let standable = nav::standable_cells(zone);
-    let entry = nav::ground_entry(zone);
+    let mut entry = nav::ground_entry(zone);
+    entry.extend(doors.iter().filter(|c| standable.contains(*c)).copied());
     let measured = nav::reachable_from(zone, &standable, &entry);
 
     let at = |f: &BTreeMap<[i32; 3], u8>, c: [i32; 3]| f.get(&c).copied().unwrap_or(0) as i32;

@@ -95,11 +95,9 @@ fn version_line() {
     // camp. No committed document carries `stations[]`, so every campaign that
     // compiled before compiles byte-identically.
     // 0.19.0 (spec-0053) is a place that is a ROUTE and a hand-off that is not a
-    // DOOR: a layout-graph node declares `way_class` in place of `size_class`,
-    // and a site-plan seam declares a `contact` span in place of a standard
+    // DOOR: a site-plan seam declares a `contact` span in place of a standard
     // `opening`. One number for both halves because they are the same claim seen
-    // from each side of a boundary — a route is a place the size ladder cannot
-    // classify and a front is a meeting the standard opening set cannot name —
+    // from each side of a boundary — a route is a place and a front is a meeting the standard opening set cannot name —
     // and a campaign that could state the first and not the second would have a
     // cliff road it could only join to the world through a doorway, which is the
     // workaround the version exists to remove. No committed document carries
@@ -3134,7 +3132,7 @@ fn a_defect_this_campaign_has_nothing_for_is_still_refused() {
         ("bury-barred", None, "the gym declares no barred way"),
         (
             "low-ceiling",
-            Some("node/hall-most"),
+            Some("node/bay-3"),
             "the gym declares no box-height identity",
         ),
     ] {
@@ -3160,7 +3158,7 @@ fn perturb_slide_openings_reddens_dw0836() {
 /// `DW0836`: one place's mass laid at a height the plan did not choose.
 #[test]
 fn perturb_sink_reddens_dw0836_on_the_realized_rise() {
-    let err = perturbed("sink", Some("node/hall-most"));
+    let err = perturbed("sink", Some("node/bay-3"));
     assert!(err.contains("DW0836"), "{err}");
     assert!(
         err.contains("spans a climb of"),
@@ -3171,10 +3169,10 @@ fn perturb_sink_reddens_dw0836_on_the_realized_rise() {
 /// `DW0837`: one place left solid.
 #[test]
 fn perturb_brick_up_reddens_dw0837() {
-    let err = perturbed("brick-up", Some("node/hall-most"));
+    let err = perturbed("brick-up", Some("node/bay-3"));
     assert!(err.contains("DW0837"), "{err}");
     assert!(
-        err.contains("no body can reach `node/hall-most`"),
+        err.contains("no body can reach `node/bay-3`"),
         "the refusal must name the place: {err}"
     );
 }
@@ -3198,6 +3196,13 @@ fn perturb_short_walls_reddens_dw0838_beside_dw0836() {
     assert!(
         err.contains("joined by geometry the plan allocated no seam for"),
         "`DW0838` must name the crossing it found: {err}"
+    );
+    // On the gym's open site, a stand-in whose shell came out short lets a
+    // body onto the commons: a stand-in has no opening but its seams, so that
+    // is the derivation's own leak (spec-0098 §14).
+    assert!(
+        err.contains("is a stand-in") && err.contains("ground outside every place's claim"),
+        "`DW0838` must name a stand-in leaking onto the commons: {err}"
     );
     assert!(
         err.contains("blockout battery:") && err.contains("refusal(s)"),
@@ -3256,7 +3261,7 @@ fn the_perturbation_flag_refuses_what_it_cannot_attribute() {
     let err = String::from_utf8_lossy(&r.stderr);
     assert!(err.contains("declares no such place"), "{err}");
     assert!(
-        err.contains("node/hall-most"),
+        err.contains("node/bay-3"),
         "the refusal must list what the plan does declare: {err}"
     );
 

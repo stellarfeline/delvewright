@@ -41,6 +41,7 @@ const MOON_TIMELINE: &str = include_str!("../data/timeline-moon-1.21.11.json");
 
 const SUN_ANGLE_TRACK: &str = "minecraft:visual/sun_angle";
 const SKY_LIGHT_TRACK: &str = "minecraft:gameplay/sky_light_level";
+const SKY_COLOR_TRACK: &str = "minecraft:visual/sky_color";
 const MONSTERS_BURN_TRACK: &str = "minecraft:gameplay/monsters_burn";
 const MOON_PHASE_TRACK: &str = "minecraft:visual/moon_phase";
 
@@ -228,6 +229,20 @@ pub fn sun_is_west(daytime: f64) -> bool {
 /// ramps between.
 pub fn sky_light_factor(daytime: i64) -> f64 {
     sample(day_timeline(), SKY_LIGHT_TRACK, daytime as f64)
+}
+
+/// Whether the pinned day timeline's visible sky is **dark** at a `daytime`
+/// tick: the tick lies on the night plateau of `visual/sky_color` — between two
+/// consecutive keyframes that both carry a value other than the day's first
+/// (ticks 13670..=22330 at the pin, where the sky is multiplied by black).
+/// Outside it the sky is lit or in its dusk or dawn ramp. Read off the
+/// vendored file, never typed.
+pub fn sky_is_dark(daytime: i64) -> bool {
+    let kf = &track(day_timeline(), SKY_COLOR_TRACK).keyframes;
+    let at = daytime.rem_euclid(day_timeline().period_ticks);
+    let day = &kf[0].value;
+    kf.windows(2)
+        .any(|w| w[0].value != *day && w[1].value != *day && w[0].ticks <= at && at <= w[1].ticks)
 }
 
 /// Whether the `gameplay/monsters_burn` track of the pinned day timeline is on

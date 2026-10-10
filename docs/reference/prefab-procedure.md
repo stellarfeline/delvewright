@@ -86,8 +86,9 @@ measurement of what was built.
 
 **One exception: a piece that details a site-plan place (stage 6, spec-0050)
 has its region HANDED, not chosen.** `delvec allocation <campaign-dir>
-<place>` prints the frame's extents, the datum, every seam with the face
-class it must be answered with, the owed anchor names and the whole's
+<place>` prints the frame's extents, the datum, every seam with its opening
+(an inclusive box, as its two opposite corner cells: every cell between them is
+in the opening) and the face class it must be answered with, the owed anchor names and the whole's
 palette; the piece is authored against that and nothing else, and must be
 exactly the handed extent — `DW0843` refuses undersize exactly as oversize.
 The output is derived from the site plan on every invocation and is an input
@@ -863,7 +864,6 @@ use.
 | `waterline_y` | no | Local y of the piece's top authored water block. `DW0887` asks whether the bytes bear it out; `DW0344` asks whether the placement honours it in a `horizon: ocean` world. Absent for a piece that authors no sea. |
 | `shown_faces` | no (`[]`) | The sides the player is meant to see, as local side names (`east` `west` `up` `down` `south` `north`) that turn with the placement. Absent means no side is shown — the strict answer for a piece authored to be buried; `DW0885` reads it. |
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
-| `footprint_class` | no | The metrics-table size class this piece claims to serve (`size-class.*`). Judged against the piece's own structure size at `delvec prefab audit` and again wherever a `detail-plan` row consumes the piece (`DW0848`; an unknown name is `DW0812`). Absent means the claim is not made — a piece bound by a `details[]` row is held to exact frame equality (`DW0843`) either way. |
 
 An **anchor** is `{pos?, facing?, role?, region?, block?, resolves_to?,
 dispenser?, trigger_block?, note?}` — one object class covering a point, a gate

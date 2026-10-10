@@ -330,6 +330,19 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:melon",
     "minecraft:vine",
     "minecraft:glow_lichen",
+    // The sculk family's two inert members: a full block and its multiface
+    // decal (no collision, no light, no block entity). The other four are
+    // left OUT, each for a runtime behaviour no proof models (Minecraft Wiki,
+    // Java Edition pages for each block): `sculk_catalyst` rewrites the blocks
+    // around it into sculk, veins, sensors and shriekers whenever a living
+    // entity dies within 8 blocks, so the world the proofs judged changes in
+    // every fight; `sculk_sensor` and `calibrated_sculk_sensor` are redstone
+    // signal sources fired by any vibration within 8 blocks, powering what
+    // they touch — a mechanism nothing declared; `sculk_shrieker` summons a
+    // warden and inflicts Darkness when its `can_summon` state is true, a
+    // state this name-level list cannot hold false.
+    "minecraft:sculk",
+    "minecraft:sculk_vein",
     "minecraft:moss_block",
     "minecraft:moss_carpet",
     "minecraft:pale_moss_block",

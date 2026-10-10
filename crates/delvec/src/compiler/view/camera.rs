@@ -642,7 +642,7 @@ impl ResolvedSky {
                 SkyOrigin::Stated => "stated".to_string(),
             },
             self.class.name(),
-            scene::sky_phrase(self.class, self.sky.weather),
+            scene::sky_phrase(self.class, self.sky.weather, self.sky.time.daytime_ticks()),
             // spec-0081 §5.4: the pinned renderer draws no moon, so a frame of a
             // sky whose moon is up carries no phase — said where it is read.
             if delvewright_dsl::celestial::moon_up(self.sky.time.daytime_ticks()) {

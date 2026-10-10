@@ -364,7 +364,9 @@ step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
 
 **Needs**: step 9 done, or not a site-plan campaign. **Produces**: PackTest and bot runs at exit
 0, plus a branch run per branch whenever the build emitted
-`validation/branch-plan.json` — on the build that ships. **Read**:
+`validation/branch-plan.json`, and the written-world record (the server's world
+against the engine's model, at exit 0) — on the build that ships. The bot's run
+report and that record are what the staging gate in step 13 admits on. **Read**:
 `references/ladder.md`; on a red, `references/when-red.md`.
 
 ## 11. The branch chronicle — only when the plan declares `branch_points`

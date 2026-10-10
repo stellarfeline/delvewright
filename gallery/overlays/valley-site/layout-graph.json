@@ -43,23 +43,20 @@
       {
         "id": "node/arrival",
         "intent": "threshold",
-        "note": "the cell inside the way through the parapet, where the party arrives",
-        "size_class": "room"
+        "note": "the cell inside the way through the parapet, where the party arrives"
       },
       {
         "id": "node/court",
         "intent": "hub",
-        "note": "the middle of the walled ground, where the warden stands",
-        "size_class": "hall"
+        "note": "the middle of the walled ground, where the warden stands"
       },
       {
         "id": "node/far-corner",
         "intent": "side-gallery",
-        "note": "the far corner of the bank, where the wall turns",
-        "size_class": "room"
+        "note": "the far corner of the bank, where the wall turns"
       }
     ]
   },
-  "dsl_version": "0.37.0",
+  "dsl_version": "0.38.0",
   "stage": "layout-graph"
 }

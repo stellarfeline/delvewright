@@ -2750,9 +2750,9 @@ fn ferry_graph(camp: &Path, edges: serde_json::Value) {
         "campaign_id": "ferry", "dsl_version": DSL_VERSION, "stage": "layout-graph",
         "content": {
             "nodes": [
-                {"id": "node/west-shore", "intent": "jetty", "size_class": "room",
+                {"id": "node/west-shore", "intent": "jetty",
                  "stations": [{"anchor": "anchor/boat", "kind": "point"}]},
-                {"id": "node/east-shore", "intent": "landing", "size_class": "room",
+                {"id": "node/east-shore", "intent": "landing",
                  "stations": [{"anchor": "anchor/far-landing", "kind": "point"}]}
             ],
             "edges": edges,

@@ -414,7 +414,6 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
         waterline_y: None,
         shown_faces: readings.shown_faces.clone(),
         spatial_contract: None,
-        footprint_class: None,
         extra: BTreeMap::new(),
     };
     // Written in the repository's canonical form (`delvec fmt`), so the file a

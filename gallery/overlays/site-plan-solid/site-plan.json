@@ -1,0 +1,442 @@
+{
+  "campaign_id": "gallery-rock",
+  "content": {
+    "boxes": [
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          21,
+          4
+        ],
+        "node": "node/near-hall"
+      },
+      {
+        "ceiling": {
+          "clearance": 8
+        },
+        "extent": [
+          32,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/far-hall"
+      },
+      {
+        "ceiling": {
+          "clearance": 4
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/annex"
+      },
+      {
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/loft"
+        },
+        "node": "node/loft"
+      },
+      {
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "y": 60
+        },
+        "node": "node/undercroft"
+      },
+      {
+        "atmosphere": "atmosphere/wet-court",
+        "ceiling": {
+          "open": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/exit"
+      },
+      {
+        "ceiling": {
+          "clearance": 6
+        },
+        "extent": [
+          8,
+          24
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "node": "node/causeway"
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/grade",
+        "note": "The plane the delve opens on, and the one every place but the loft and the undercroft stands at.",
+        "y": 64
+      },
+      {
+        "id": "datum/loft",
+        "y": 69
+      }
+    ],
+    "fill": {
+      "block": "minecraft:deepslate",
+      "kind": "solid"
+    },
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/site-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-height",
+        "measure": {
+          "axis": "y",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-depth",
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "le",
+        "fact": "fact/far-hall-span",
+        "measure": {
+          "axis": "x",
+          "node": "node/far-hall",
+          "of": "box-extent"
+        }
+      },
+      {
+        "cmp": "ge",
+        "fact": "fact/far-hall-depth",
+        "measure": {
+          "axis": "z",
+          "node": "node/far-hall",
+          "of": "box-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-headroom",
+        "measure": {
+          "node": "node/near-hall",
+          "of": "box-height"
+        }
+      },
+      {
+        "cmp": "lt",
+        "fact": "fact/annex-standoff",
+        "measure": {
+          "from": "node/near-hall",
+          "of": "distance-xz",
+          "to": "node/annex"
+        }
+      },
+      {
+        "cmp": "gt",
+        "fact": "fact/loft-datum",
+        "measure": {
+          "datum": "datum/loft",
+          "of": "datum-y"
+        }
+      }
+    ],
+    "lighting": {
+      "fixture": "torch",
+      "min_light": 7
+    },
+    "region": {
+      "extent": [
+        64,
+        48,
+        64
+      ],
+      "min": [
+        0,
+        48,
+        0
+      ]
+    },
+    "seams": [
+      {
+        "at": 10,
+        "edge": "edge/annex-arch",
+        "face": "west",
+        "form": "a round stone arch, two wide, from the hall into the annex",
+        "meets": 1,
+        "opening": "arch"
+      },
+      {
+        "at": 9,
+        "edge": "edge/annex-chute",
+        "face": "east",
+        "form": "a stone arch, two wide: the annex's back way into the far hall",
+        "meets": 1,
+        "opening": "arch"
+      },
+      {
+        "at": 2,
+        "edge": "edge/west-door",
+        "face": "south",
+        "form": "a doorway shut by iron bars, opened from the near hall",
+        "meets": 2,
+        "opening": "door"
+      },
+      {
+        "at": 9,
+        "edge": "edge/centre-door",
+        "face": "south",
+        "form": "a doorway shut by iron bars, opened from either side",
+        "meets": 9,
+        "opening": "door"
+      },
+      {
+        "at": 12,
+        "edge": "edge/east-door",
+        "face": "south",
+        "form": "an arch shut by iron bars, drawn from the far hall's side",
+        "meets": 12,
+        "opening": "arch"
+      },
+      {
+        "at": 20,
+        "edge": "edge/loft-stair",
+        "face": "north",
+        "form": "a passage at the head of a stone stair, up 5 from the far hall",
+        "meets": 1,
+        "opening": "passage",
+        "stair_in": "node/far-hall"
+      },
+      {
+        "at": 24,
+        "edge": "edge/loft-drop",
+        "face": "north",
+        "form": "an arch where the loft's floor ends: a drop of 5 into the far hall",
+        "meets": 5,
+        "opening": "arch"
+      },
+      {
+        "at": [
+          4,
+          0
+        ],
+        "edge": "edge/undercroft-stair",
+        "face": "down",
+        "form": "a hole in the far hall's floor over a stone stair, down 4",
+        "meets": [
+          1,
+          5
+        ],
+        "opening": "passage",
+        "stair_in": "node/undercroft"
+      },
+      {
+        "at": [
+          4,
+          0
+        ],
+        "edge": "edge/undercroft-crawl",
+        "face": "up",
+        "form": "a ladder up through the near hall's floor",
+        "meets": [
+          7,
+          12
+        ],
+        "opening": "passage"
+      },
+      {
+        "at": [
+          4,
+          12
+        ],
+        "edge": "edge/undercroft-shaft",
+        "face": "down",
+        "form": "a shaft down through the near hall's floor: a drop of 4",
+        "meets": [
+          1,
+          0
+        ],
+        "opening": "door"
+      },
+      {
+        "at": 5,
+        "edge": "edge/exit-arch",
+        "face": "south",
+        "form": "a stone arch out of the far hall onto the open yard",
+        "meets": 2,
+        "opening": "arch"
+      },
+      {
+        "at": 15,
+        "contact": {
+          "extent": [
+            6,
+            6
+          ]
+        },
+        "edge": "edge/causeway-front",
+        "face": "south",
+        "form": "an open front, six wide, where the road leaves the far hall",
+        "meets": 0
+      }
+    ],
+    "sightlines": [
+      {
+        "edge": "edge/loft-sightline",
+        "from": [
+          28,
+          70,
+          10
+        ],
+        "to": [
+          43,
+          71,
+          16
+        ]
+      }
+    ],
+    "views": [
+      {
+        "eye": [
+          32,
+          88,
+          60
+        ],
+        "id": "view/the-approach",
+        "look_at": [
+          32,
+          68,
+          20
+        ],
+        "note": "The silhouette as a body walking in from the south first meets it."
+      },
+      {
+        "eye": [
+          4,
+          80,
+          4
+        ],
+        "id": "view/over-the-annex",
+        "look_at": [
+          28,
+          66,
+          20
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "id": "volume/bedrock",
+        "note": "The rock the undercroft is cut into.",
+        "region": {
+          "extent": [
+            52,
+            8,
+            48
+          ],
+          "min": [
+            4,
+            48,
+            4
+          ]
+        },
+        "role": "massif"
+      },
+      {
+        "block": "minecraft:packed_mud",
+        "id": "volume/hall-ground",
+        "region": {
+          "extent": [
+            52,
+            2,
+            48
+          ],
+          "min": [
+            4,
+            56,
+            4
+          ]
+        },
+        "role": "ground"
+      },
+      {
+        "id": "volume/sky-over-the-exit",
+        "note": "The sky the exit is open to, kept clear down to the top of its headroom: in rock, a sky well.",
+        "region": {
+          "extent": [
+            8,
+            21,
+            8
+          ],
+          "min": [
+            24,
+            67,
+            38
+          ]
+        },
+        "role": "clearance"
+      },
+      {
+        "id": "volume/the-vista-through-the-rock",
+        "note": "The air the near hall's window keeps open through the rock between it and the loft, so the vista reads.",
+        "region": {
+          "extent": [
+            1,
+            1,
+            3
+          ],
+          "min": [
+            38,
+            70,
+            13
+          ]
+        },
+        "role": "clearance"
+      }
+    ]
+  },
+  "dsl_version": "0.38.0",
+  "stage": "site-plan"
+}

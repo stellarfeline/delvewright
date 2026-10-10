@@ -110,13 +110,6 @@ NOT_CONNECTION_EMITTERS = {
         "crate could not call it in any case: the derivation lives in `prefab-invariants`, in "
         "the `prefabs/` workspace, and `delvec` does not depend on it."
     ),
-    "crates/delvec/tests/prefab_footprint_class.rs": (
-        "test fixture for the footprint-class admission door (spec-0050 §5). Its palette is two "
-        "states named in one `STATES` constant the file also judges against the pinned registry "
-        "- stone bricks and air - neither of which is a fence, wall, pane or multiface block, "
-        "and the shell it frames is written into a temp directory and never admitted into the "
-        "library."
-    ),
     "crates/delvec/tests/staged_lethal.rs": (
         "test fixture for spec-0088's staged lethal volume: the lid room. Its palette is four "
         "plain ids — stone, magma block, glowstone and the room's air — judged against the "

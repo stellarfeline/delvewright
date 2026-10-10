@@ -41,9 +41,7 @@ use delvec::grammar::{
 use delvewright_dsl::detailplan::{Detail, DetailPlanContent};
 use delvewright_dsl::prefab::PrefabMeta;
 use delvewright_dsl::split::TilePart;
-use delvewright_dsl::{
-    Campaign, Diagnostic, DwCode, Envelope, ExitTier, NodeId, PrefabId, Stage, parse_campaign,
-};
+use delvewright_dsl::{Campaign, Diagnostic, DwCode, Envelope, ExitTier, NodeId, PrefabId, Stage};
 use sha2::{Digest, Sha256};
 
 use crate::EXIT_INTERNAL;
@@ -100,7 +98,7 @@ fn run(
     // Parsed rather than fully validated, on `allocation`'s precedent: the
     // campaign is validated in full at the end of the run, over the pieces this
     // run wrote, which is the verdict that matters.
-    let campaign = match parse_campaign(&loaded.raw) {
+    let campaign = match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(c) => c,
         Err(diags) => {
             print_diags(&diags, json);
@@ -267,6 +265,17 @@ fn seed_of(node: &NodeId) -> u64 {
 fn handed(a: &Allocation) -> BTreeMap<String, i64> {
     let mut out = BTreeMap::new();
     out.insert(format!("{HANDED_PREFIX}datum-y"), a.datum_y);
+    // The ground the whole hands the place (spec-0098 §4), piece-local.
+    out.insert(format!("{HANDED_PREFIX}ground/min-y"), a.ground.min_y);
+    out.insert(format!("{HANDED_PREFIX}ground/max-y"), a.ground.max_y);
+    out.insert(format!("{HANDED_PREFIX}ground/bottom-y"), a.ground.bottom_y);
+    // The roof the plan reserves over it, when it declares one.
+    if let Some(r) = &a.roof {
+        out.insert(format!("{HANDED_PREFIX}roof/courses"), i64::from(r.courses));
+        out.insert(format!("{HANDED_PREFIX}roof/eaves"), i64::from(r.eaves));
+        out.insert(format!("{HANDED_PREFIX}roof/lid-y"), r.lid_y);
+        out.insert(format!("{HANDED_PREFIX}roof/top-y"), r.top_y);
+    }
     for s in &a.seams {
         let edge = s.edge.strip_prefix("edge/").unwrap_or(&s.edge);
         let key = |k: &str| format!("{HANDED_PREFIX}seam/{edge}/{k}");
@@ -398,9 +407,35 @@ fn detail_one(
         }
     }
 
+    // ---- the cells the place does not own, voided after expansion ----
+    //
+    // A derivation, never typed (spec-0098 §4): the handout's voids — a
+    // neighbour's cells, the ring's fixed ground, nobody's — become
+    // `structure_void`, so the piece places nothing there and whatever the
+    // owner writes shows through.
+    overrides.voids = a
+        .voids
+        .iter()
+        .map(|v| {
+            let [lo, hi] = v.cells;
+            (
+                [lo[0] as i32, lo[1] as i32, lo[2] as i32],
+                [hi[0] as i32, hi[1] as i32, hi[2] as i32],
+            )
+        })
+        .collect();
+
     // ---- 3. the expansion, at the frame ----
     let seed = seed_of(node);
-    let opts = ExpandOptions::seeded(seed).with_overrides(overrides);
+    // Scenery (`reached: false`, spec-0098 §14): the place is built to be
+    // seen and never entered, so its piece's contract is judged sealed.
+    let scenery = campaign
+        .layout_graph
+        .as_ref()
+        .and_then(|g| g.content.nodes.iter().find(|n| &n.id == node))
+        .is_some_and(|n| !n.reached);
+    let mut opts = ExpandOptions::seeded(seed).with_overrides(overrides);
+    opts.sealed = scenery;
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];
     let region = Box3::at_origin(size);
     let expansion = match expand(&program, region, &opts) {
@@ -440,7 +475,7 @@ fn detail_one(
     };
     // Re-read through the one reader that defines the document, whichever
     // packaging the frame needed, then fill what the export could not know: the
-    // size class the box is for, and the light the piece was measured to have.
+    // light the piece was measured to have.
     let mut meta = match PrefabMeta::from_json(exported.metadata_json()) {
         Ok(m) => m,
         Err(e) => {
@@ -448,11 +483,6 @@ fn detail_one(
             return Err(EXIT_INTERNAL);
         }
     };
-    meta.footprint_class = campaign
-        .layout_graph
-        .as_ref()
-        .and_then(|g| g.content.nodes.iter().find(|n| &n.id == node))
-        .and_then(|n| n.size_class.clone());
     let tiles: Vec<(TilePart, Structure)> = match structures_of(&exported, &meta) {
         Ok(t) => t,
         Err(e) => {
@@ -461,9 +491,51 @@ fn detail_one(
         }
     };
     let sky = light::SkyClaim::of(meta.spatial_contract.as_ref());
-    let zone = Zone::from_tiles(meta.size(), &tiles);
-    let probe = light::probe(&zone, DEFAULT_DARK_THRESHOLD, sky);
-    if probe.is_unbound() {
+    let ground: Vec<([i32; 3], &str)> = a
+        .ground
+        .fixed
+        .iter()
+        .map(|f| {
+            (
+                [f.cell[0] as i32, f.cell[1] as i32, f.cell[2] as i32],
+                f.block.as_str(),
+            )
+        })
+        .collect();
+    let zone = Zone::from_tiles(meta.size(), &tiles).on_ground(&ground);
+    // The piece is entered through its seams: every cell of each seam's
+    // answering cells and the layer either side of it.
+    let doors: std::collections::BTreeSet<[i32; 3]> = a
+        .seams
+        .iter()
+        .flat_map(|s| {
+            let (lo, hi) = (s.cells[0], s.cells[1]);
+            let mut out = Vec::new();
+            for x in lo[0] - 1..=hi[0] + 1 {
+                for y in lo[1] - 1..=hi[1] + 1 {
+                    for z in lo[2] - 1..=hi[2] + 1 {
+                        out.push([x as i32, y as i32, z as i32]);
+                    }
+                }
+            }
+            out
+        })
+        .collect();
+    // Scenery is lit for nobody: a body never stands in it — the build proves
+    // that both ways (`DW0816`, `DW0837`) — so there is no play light to
+    // measure, whatever a crown's leaf tops offer to stand on. The probe is not
+    // run over it, and the cells it would have graded are stated, with their
+    // count (spec-0098 §14, departure 36).
+    if scenery {
+        eprintln!(
+            "{place}: scenery (`reached: false`) — the light probe excludes the piece's {} \
+             standable cell(s): none is stood in, and none is owed light.",
+            delvec::grammar::nav::standable_cells(&expansion.model).len()
+        );
+    }
+    let probe =
+        (!scenery).then(|| light::probe_entered(&zone, DEFAULT_DARK_THRESHOLD, sky, &doors));
+    if let Some(probe) = probe.as_ref().filter(|p| p.is_unbound()) {
         eprintln!(
             "{} [error] {place}: the light probe bound to ZERO cells, so nothing was measured: \
              {}. Nothing was written.",
@@ -472,7 +544,9 @@ fn detail_one(
         );
         return Err(1);
     }
-    admit_meta::set_lighting_from_probe(&mut meta, &probe);
+    if let Some(probe) = &probe {
+        admit_meta::set_lighting_from_probe(&mut meta, probe);
+    }
 
     // ---- 6. the bindings check, on the row this run would write ----
     let row = row_for(campaign, node, &id, &meta);
@@ -544,6 +618,18 @@ fn detail_one(
 
     // ---- what was done, with every count beside its denominator ----
     let faces = meta.spatial_contract.as_ref().map_or(0, |c| c.faces.len());
+    let (profile, measured, dark) = match &probe {
+        Some(p) => (
+            p.profile,
+            p.measured_cells,
+            if p.is_dark() {
+                format!(" (dark: {})", p.dark_distribution())
+            } else {
+                String::new()
+            },
+        ),
+        None => ("scenery", 0, String::new()),
+    };
     eprintln!(
         "{place}: `{}` written from `{}` — frame {}x{}x{}, seed {seed}; {} of {} handed name(s) \
          bound; {} declared face(s) answering {} allocated seam(s); {} of {} owed name(s) bound; \
@@ -562,13 +648,9 @@ fn detail_one(
         a.seams.len(),
         row.anchors.len(),
         a.owed_anchors.len(),
-        probe.profile,
-        probe.measured_cells,
-        if probe.is_dark() {
-            format!(" (dark: {})", probe.dark_distribution())
-        } else {
-            String::new()
-        },
+        profile,
+        measured,
+        dark,
         files.join(", ")
     );
     if json {
@@ -583,7 +665,7 @@ fn detail_one(
                 "handed": { "bound": declared.len(), "offered": handed.len() },
                 "seams": { "faces": faces, "allocated": a.seams.len() },
                 "owed": { "bound": row.anchors.len(), "owed": a.owed_anchors.len() },
-                "lighting": { "profile": probe.profile, "measured_cells": probe.measured_cells },
+                "lighting": { "profile": profile, "measured_cells": measured },
                 "files": files,
             })
         );

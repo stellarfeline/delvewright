@@ -907,6 +907,110 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     let (code, said) = check(&settled);
     assert_eq!(code, 0, "{said}");
     assert!(said.contains("gravity: 1 differing cell(s)"), "{said}");
+
+    // Turf the server's random tick turned — a grass block written where the
+    // server holds dirt (decay under a cover), dirt written where it holds
+    // grass (spread) — lands in the random-tick class, counted, not red.
+    let turf = [3, 65, 3];
+    let mut grassed = blocks.clone();
+    grassed.insert(
+        floor,
+        delvec::compiler::blockstate::BlockState::new("minecraft:grass_block[snowy=false]"),
+    );
+    grassed.insert(
+        turf,
+        delvec::compiler::blockstate::BlockState::new("minecraft:dirt"),
+    );
+    let mut ticked = blocks.clone();
+    ticked.insert(
+        floor,
+        delvec::compiler::blockstate::BlockState::new("minecraft:dirt"),
+    );
+    ticked.insert(
+        turf,
+        delvec::compiler::blockstate::BlockState::new("minecraft:grass_block[snowy=false]"),
+    );
+    let (wa, wb) = (tmp("dw0955-turf-written"), tmp("dw0955-turf-server"));
+    world::write(&grassed, &|_| "minecraft:plains".into(), [5, 65, 2], &wa).unwrap();
+    world::write(&ticked, &|_| "minecraft:plains".into(), [5, 65, 2], &wb).unwrap();
+    let o = Command::new("python3")
+        .arg(&gate)
+        .arg(&out)
+        .arg(&wa)
+        .arg(&wb)
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&o.stdout).to_string();
+    assert_eq!(o.status.code(), Some(0), "{said}");
+    assert!(said.contains("random-tick: 2 differing cell(s)"), "{said}");
+    // The same pair on a block that is not turf is the model's, and reds.
+    ticked.insert(
+        turf,
+        delvec::compiler::blockstate::BlockState::new("minecraft:stone"),
+    );
+    world::write(&ticked, &|_| "minecraft:plains".into(), [5, 65, 2], &wb).unwrap();
+    let o = Command::new("python3")
+        .arg(&gate)
+        .arg(&out)
+        .arg(&wa)
+        .arg(&wb)
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&o.stdout).to_string();
+    assert_eq!(o.status.code(), Some(1), "{said}");
+    assert!(said.contains("model: 1 differing cell(s)"), "{said}");
+
+    // A `structure_void` the server holds where the model has air — what a
+    // template shipped with its voids writes into the world — is a model cell,
+    // red; and `--record` writes the verdict named by the build's manifest.
+    blocks.remove(&[3, 65, 3]);
+    let over = [3, 65, 3];
+    blocks.insert(
+        over,
+        delvec::compiler::blockstate::BlockState::new("minecraft:structure_void"),
+    );
+    let voided = tmp("dw0955-voided");
+    world::write(&blocks, &|_| "minecraft:plains".into(), [5, 65, 2], &voided).unwrap();
+    let record = tmp("dw0955-record").join("written-world.json");
+    let o = Command::new("python3")
+        .arg(&gate)
+        .arg(&out)
+        .arg(&written)
+        .arg(&voided)
+        .arg("--record")
+        .arg(&record)
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&o.stdout).to_string();
+    assert_eq!(o.status.code(), Some(1), "{said}");
+    assert!(said.contains("model: 1 differing cell(s)"), "{said}");
+    assert!(said.contains("server minecraft:structure_void"), "{said}");
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&record).unwrap()).unwrap();
+    assert_eq!(doc["verdict"], "fail", "{doc}");
+    assert_eq!(doc["classes"]["model"], 1, "{doc}");
+    assert_eq!(doc["model_sample"][0]["server"], "minecraft:structure_void");
+    let manifest = std::fs::read(out.join("manifest.json")).unwrap();
+    let sha = {
+        use sha2::Digest;
+        format!("{:x}", sha2::Sha256::digest(&manifest))
+    };
+    assert_eq!(doc["manifest_sha256"], sha.as_str(), "{doc}");
+    // The same record on a green.
+    let o = Command::new("python3")
+        .arg(&gate)
+        .arg(&out)
+        .arg(&written)
+        .arg(&written)
+        .arg("--record")
+        .arg(&record)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0));
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&record).unwrap()).unwrap();
+    assert_eq!(doc["verdict"], "pass", "{doc}");
+    assert_eq!(doc["classes"]["model"], 0, "{doc}");
 }
 
 /// spec-0089 meets spec-0092 and spec-0080's repaints on one beat: a camera

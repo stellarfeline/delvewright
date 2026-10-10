@@ -49,12 +49,12 @@ static GRAPH: LazyLock<String> = LazyLock::new(|| {
   "stage": "layout-graph",
   "content": {
     "nodes": [
-      { "id": "node/porch", "intent": "threshold", "size_class": "alcove" },
-      { "id": "node/hall", "intent": "hub", "size_class": "room" },
-      { "id": "node/vault", "intent": "goal-chamber", "size_class": "alcove" },
-      { "id": "node/cellar", "intent": "cache", "size_class": "room" },
-      { "id": "node/yard", "intent": "vista", "size_class": "hall" },
-      { "id": "node/pit", "intent": "sump", "size_class": "alcove" }
+      { "id": "node/porch", "intent": "threshold" },
+      { "id": "node/hall", "intent": "hub" },
+      { "id": "node/vault", "intent": "goal-chamber" },
+      { "id": "node/cellar", "intent": "cache" },
+      { "id": "node/yard", "intent": "vista" },
+      { "id": "node/pit", "intent": "sump" }
     ],
     "edges": [
       { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },
@@ -207,7 +207,9 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "node": "node/cellar"
       },
       {
-        "ceiling": "open",
+        "ceiling": {
+          "open": 8
+        },
         "extent": [
           16,
           16
@@ -242,6 +244,10 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
         "y": 59
       }
     ],
+    "fill": {
+      "block": "minecraft:deepslate",
+      "kind": "solid"
+    },
     "identities": [
       {
         "cmp": "eq",
@@ -306,6 +312,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       {
         "at": 2,
         "edge": "edge/porch-hall",
+        "form": "a doorway",
         "face": "east",
         "meets": 2,
         "opening": "arch"
@@ -313,6 +320,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       {
         "at": 2,
         "edge": "edge/hall-vault",
+        "form": "a doorway",
         "face": "east",
         "meets": 2,
         "opening": "door"
@@ -320,6 +328,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       {
         "at": 10,
         "edge": "edge/hall-cellar",
+        "form": "a doorway",
         "face": "west",
         "meets": 1,
         "opening": "passage",
@@ -327,12 +336,14 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
       },
       {
         "edge": "edge/porch-cellar",
+        "form": "a doorway",
         "face": "south",
         "opening": "passage"
       },
       {
         "at": 2,
         "edge": "edge/vault-yard",
+        "form": "a doorway",
         "face": "south",
         "meets": 2,
         "opening": "arch"
@@ -343,6 +354,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
           3
         ],
         "edge": "edge/yard-pit",
+        "form": "a doorway",
         "face": "down",
         "meets": [
           0,
@@ -356,6 +368,7 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
           0
         ],
         "edge": "edge/pit-yard",
+        "form": "a doorway",
         "face": "up",
         "meets": [
           2,
@@ -644,7 +657,9 @@ fn the_binding_ledger_counts_what_the_plan_holds() {
     );
     let line = b.plan.line();
     assert!(
-        line.contains("6 box(es) (15 pair(s) compared; 1 pinned, 5 derived, in 1 component(s))"),
+        line.contains(
+            "6 box(es) (15 pair(s) compared; 1 pinned, 5 derived, in 1 component(s); 0 roofed;"
+        ),
         "{line}"
     );
     assert!(line.contains("7 seam(s) (2 stair, 2 drop)"), "{line}");
@@ -834,21 +849,18 @@ fn stair_massing_in_a_third_place_is_refused() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0825 / DW0826 / DW0827 — the boxes and the region
+// DW0826 / DW0827 — the boxes and the region
 // ---------------------------------------------------------------------------
 
-/// The quantum is 4, so a 6-block footprint is off the grid. The refusal carries
-/// the two multiples an author would move to.
+/// A box's footprint is any whole number of blocks: a 6-block extent is
+/// written as the author wrote it, and nothing refuses it for its size.
 #[test]
-fn a_box_off_the_kit_grid_is_refused_with_both_numbers() {
+fn a_box_at_any_footprint_is_not_refused_for_its_size() {
     let d = plan_diags(|v| boxes(v)[box_of("node/porch")]["extent"] = json!([6, 8]));
-    let msg = d
-        .iter()
-        .find(|x| x.code == "DW0825")
-        .map(|x| x.message.clone())
-        .unwrap_or_default();
-    assert!(!msg.is_empty(), "{d:?}");
-    assert!(msg.contains('4') && msg.contains('8'), "{msg}");
+    assert!(
+        !d.iter().any(|x| x.message.contains("quantum")),
+        "no rule holds a footprint to a quantum: {d:?}"
+    );
 }
 
 /// The region is the brief's number flowing down, and a box is never grounds to
@@ -1076,19 +1088,27 @@ fn a_sill_a_body_cannot_reach_is_refused() {
 ///
 /// The green plan's `hall|cellar` stair climbs 5. Sink the cellar four more —
 /// one field — and the courses have to carry 9, which no standard pitch fits in
-/// the eight blocks of run the cellar affords. The refusal names the rise, the
-/// run needed and the run available, which are the numbers a plan edit needs.
+/// the eight blocks of run the cellar affords. The stand-in cannot lay that
+/// stair, which is a finding about the stand-in and never a refusal of the plan:
+/// a piece detailed into the cellar carries its own stair, judged over its bytes.
+/// The finding names the rise, the run needed and the run available.
 /// The sill is derived (the higher floor), so the climb the treads carry is the
 /// rise the floors state: one arithmetic, and this check reads it.
 #[test]
-fn a_stair_that_no_standard_pitch_fits_is_refused_with_its_numbers() {
+fn a_stair_no_standard_pitch_fits_is_a_stand_in_finding_with_its_numbers() {
     let d = plan_diags(|v| boxes(v)[box_of("node/cellar")]["floor"] = json!({ "y": 55 }));
+    assert!(
+        !d.iter()
+            .any(|x| x.code == "DW0830" && x.severity == delvewright_dsl::Severity::Error),
+        "the plan is not refused for its stand-in's pitch: {d:?}"
+    );
     let msg = d
         .iter()
-        .find(|x| x.code == "DW0830")
+        .find(|x| x.code == "DW0830" && x.severity == delvewright_dsl::Severity::Warning)
         .map(|x| x.message.clone())
         .unwrap_or_default();
     assert!(!msg.is_empty(), "{d:?}");
+    assert!(msg.contains("stand-in cannot"), "{msg}");
     assert!(msg.contains("climbs 9 block(s)"), "{msg}");
     assert!(msg.contains("for a climb of 9"), "{msg}");
     assert!(msg.contains("affords 8"), "{msg}");
@@ -1147,16 +1167,25 @@ fn a_stair_with_no_host_is_refused() {
     assert!(has(&got, "DW0830"), "{got:?}");
 }
 
-/// The designed-drop cap is a **policy** cap, deliberately far tighter than what
-/// a body survives. The green plan's two drops sit exactly on it; one deeper is
-/// refused.
+/// **A drop cap is the author's declaration.** The green plan declares none,
+/// so a drop one block deeper than its two is accepted; with `max_drop: 5`
+/// declared, the same drop is refused naming the declared cap.
 #[test]
-fn a_drop_past_the_designed_cap_is_refused_as_policy() {
-    let d = plan_diags(|v| {
+fn a_drop_past_the_plans_declared_max_drop_is_refused() {
+    let sink = |v: &mut Value| {
         // Sink the pit one block. Its ceiling course still meets the yard's
         // floor course, so the face stays shared and only the fall grows.
         boxes(v)[box_of("node/pit")]["floor"] = json!({ "y": 58 });
         boxes(v)[box_of("node/pit")]["ceiling"] = json!({ "clearance": 5 });
+    };
+    let d = plan_diags(sink);
+    assert!(
+        !d.iter().any(|x| x.code == "DW0831"),
+        "no cap declared: {d:?}"
+    );
+    let d = plan_diags(|v| {
+        sink(v);
+        v["content"]["max_drop"] = json!(5);
     });
     let msg = d
         .iter()
@@ -1165,7 +1194,30 @@ fn a_drop_past_the_designed_cap_is_refused_as_policy() {
         .unwrap_or_default();
     assert!(!msg.is_empty(), "{d:?}");
     assert!(msg.contains("drops 6 blocks"), "{msg}");
-    assert!(msg.contains("policy"), "{msg}");
+    assert!(
+        msg.contains("`max_drop` caps a designed fall at 5"),
+        "{msg}"
+    );
+}
+
+/// **The survivable fall holds every drop**, declared cap or not: a drop deeper
+/// than an unarmoured body survives at full health is refused.
+#[test]
+fn a_drop_deeper_than_a_body_survives_is_refused_without_a_declared_cap() {
+    let d = plan_diags(|v| {
+        boxes(v)[box_of("node/pit")]["floor"] = json!({ "y": 41 });
+        boxes(v)[box_of("node/pit")]["ceiling"] = json!({ "clearance": 22 });
+    });
+    let msg = d
+        .iter()
+        .find(|x| x.code == "DW0831")
+        .map(|x| x.message.clone())
+        .unwrap_or_default();
+    assert!(!msg.is_empty(), "{d:?}");
+    assert!(
+        msg.contains("drops 23 blocks") && msg.contains("survives a fall of 22"),
+        "{msg}"
+    );
 }
 
 /// A drop that rises is a mislabelled stair.
@@ -1180,32 +1232,26 @@ fn a_drop_that_rises_is_refused() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0832 — the size-class ladder becomes geometry
+// DW0822 — the pacing projection reads the boxes
 // ---------------------------------------------------------------------------
 
-/// The hall is a `room`, whose footprint runs 8..16; a 32-block hall is not one.
+/// Hand-computed: the critical path `porch → hall → vault` crosses boxes whose
+/// long extents are 8, 16 and 8, so 32 blocks; widening the hall to 24 makes
+/// it 40. The figure moves when the map moves.
 #[test]
-fn a_box_outside_its_size_class_is_refused() {
-    let d = plan_diags(|v| boxes(v)[box_of("node/hall")]["extent"] = json!([32, 16]));
-    let msg = d
-        .iter()
-        .find(|x| x.code == "DW0832")
-        .map(|x| x.message.clone())
-        .unwrap_or_default();
-    assert!(!msg.is_empty(), "{d:?}");
-    assert!(msg.contains("outside the class's 8..16"), "{msg}");
-}
-
-/// Headroom answers to the class too.
-///
-/// Shown on the `yard`, whose class (`hall`) asks for eight cells — not on the
-/// hall itself, whose class (`room`) asks for four, so four is legal there. The
-/// first draft of this test asserted the wrong one and went green on an
-/// identity failure instead, which is what a hand-stated fixture is for.
-#[test]
-fn a_box_under_its_class_clearance_is_refused() {
-    let got = plan_with(|v| boxes(v)[box_of("node/yard")]["ceiling"] = json!({ "clearance": 4 }));
-    assert!(has(&got, "DW0832"), "{got:?}");
+fn dw0822_is_the_boxes_long_extents_and_moves_with_them() {
+    let projected = |d: &[delvewright_dsl::Diagnostic]| {
+        d.iter()
+            .find(|x| x.code == "DW0822")
+            .map(|x| x.message.clone())
+            .expect("the projection is printed")
+    };
+    let m = projected(&plan_diags(|_| {}));
+    assert!(m.contains("3 place(s)") && m.contains("32 blocks"), "{m}");
+    let m = projected(&plan_diags(|v| {
+        boxes(v)[box_of("node/hall")]["extent"] = json!([24, 16]);
+    }));
+    assert!(m.contains("40 blocks"), "{m}");
 }
 
 // ---------------------------------------------------------------------------
@@ -2092,4 +2138,121 @@ fn one_extent_edit_raises_findings_about_that_box_alone() {
             .any(|l| l.contains("`node/vault` stands at [34, 4]")),
         "{lines:#?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0098: what undeclared space becomes, the seam's form, and the roof
+// ---------------------------------------------------------------------------
+
+/// **Criterion 19's first half: `fill` is required.** A plan with no `fill`
+/// does not parse, and the refusal names the field.
+#[test]
+fn a_plan_without_a_fill_is_refused_naming_the_field() {
+    let d = plan_diags(|v| {
+        v["content"].as_object_mut().unwrap().remove("fill");
+    });
+    let e = d.iter().find(|x| x.code == "DW0100").expect("a DW0100");
+    assert!(e.message.contains("missing field `fill`"), "{}", e.message);
+}
+
+/// A seam's form is a creative judgement the plan states once, never a
+/// default: a seam with none does not parse.
+#[test]
+fn a_seam_without_a_form_is_refused_naming_the_field() {
+    let d = plan_diags(|v| {
+        seams(v)[0].as_object_mut().unwrap().remove("form");
+    });
+    let e = d.iter().find(|x| x.code == "DW0100").expect("a DW0100");
+    assert!(e.message.contains("missing field `form`"), "{}", e.message);
+}
+
+/// **Criterion 8: `DW0988` in both shapes, and eaves that stop.** A roof on the
+/// open yard is refused; a roof over the pit, under the yard, is refused naming
+/// both; a roof over the vault passes, its eaves stopping at the neighbours'
+/// shells rather than being refused.
+#[test]
+fn dw0988_refuses_a_roof_over_the_sky_and_under_a_place_and_passes_a_free_one() {
+    let open = plan_diags(|v| {
+        boxes(v)[box_of("node/yard")]["roof"] = json!({"courses": 2, "eaves": 1});
+    });
+    let e = open
+        .iter()
+        .find(|x| x.code == "DW0988")
+        .expect("a DW0988 on the yard");
+    assert!(
+        e.message.contains("`node/yard`") && e.message.contains("`open`"),
+        "{}",
+        e.message
+    );
+
+    let stacked = plan_diags(|v| {
+        boxes(v)[box_of("node/pit")]["roof"] = json!({"courses": 2, "eaves": 0});
+    });
+    let e = stacked
+        .iter()
+        .find(|x| x.code == "DW0988")
+        .expect("a DW0988 under the yard");
+    assert!(
+        e.message.contains("`node/pit`") && e.message.contains("`node/yard`"),
+        "{}",
+        e.message
+    );
+
+    let free = plan_with(|v| {
+        boxes(v)[box_of("node/vault")]["roof"] = json!({"courses": 3, "eaves": 1});
+    });
+    assert!(!has(&free, "DW0988"), "{free:?}");
+    assert!(
+        !has(&free, "DW0827"),
+        "the eaves stop; they are not contested: {free:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The climb (spec-0098 §2c, beside spec-0099)
+// ---------------------------------------------------------------------------
+
+/// The green campaign with one graph edge's class replaced and the plan
+/// patched.
+fn climb_codes(edge: &str, class: &str, patch: impl FnOnce(&mut Value)) -> Vec<String> {
+    let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
+    patch(&mut v);
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("the green graph parses");
+    let mut hit = 0;
+    for e in g["content"]["edges"].as_array_mut().unwrap() {
+        if e["id"] == edge {
+            e["class"] = json!(class);
+            e.as_object_mut().unwrap().remove("shortcut");
+            hit += 1;
+        }
+    }
+    assert_eq!(hit, 1, "the edge {edge} is in the graph");
+    codes_of(&campaign(
+        Some(serde_json::to_string(&v).unwrap()),
+        Some(serde_json::to_string(&g).unwrap()),
+        Some(BRIEF.to_string()),
+    ))
+}
+
+/// **A climb carries a rise with no treads; a climb that rises nothing is
+/// `DW0992`.** The hall's connection down to the cellar, declared a `climb`
+/// with no `stair_in`, raises nothing beyond the green plan's two advisories:
+/// no pitch, no run and no sill is asked of a ladder. The perturbation: the
+/// porch's walk to the hall — two places on one plane — declared a climb is
+/// refused, because a ladder between two places at one level climbs nothing.
+#[test]
+fn a_climb_carries_a_rise_and_a_climb_on_one_level_is_dw0992() {
+    let got = climb_codes("edge/hall-cellar", "climb", |v| {
+        seams(v)[seam_of("edge/hall-cellar")]
+            .as_object_mut()
+            .unwrap()
+            .remove("stair_in");
+    });
+    assert_eq!(
+        got,
+        vec!["DW0822".to_string(), "DW0813".to_string()],
+        "{got:?}"
+    );
+    let got = climb_codes("edge/porch-hall", "climb", |_| {});
+    assert!(has(&got, "DW0992"), "{got:?}");
 }

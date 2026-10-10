@@ -5,6 +5,7 @@
 #   tools/creator/playtest-server.sh up <path> [--lang LANG] [--prefabs DIR]
 #                                [--delvec BIN] [--name NAME] [--out DIR]
 #                                [--memory SIZE]
+#                                [--run-report FILE --written-world FILE]
 #                                [--stage-anyway "REASON" --acknowledge-red N]
 #   tools/creator/playtest-server.sh down [--name NAME]
 #   tools/creator/playtest-server.sh status
@@ -33,9 +34,15 @@
 # and only then starts a container: no build reaches the owner while a past
 # finding's general form is not a live, binding check on it
 # (playtest-methodology.md rule 7). A refusal exits non-zero and prints the red
-# list. `--stage-anyway "<reason>" --acknowledge-red <N>` overrides deliberately
-# — it prints every class being overridden and stamps the reason into the
-# build's admission token.
+# list. The gate admits only with the two machine proofs of that build:
+# `--run-report` (the bot ladder's `run-report.json`, critical path green) and
+# `--written-world` (`tools/ci/check-written-world.py --record`, the server's
+# world equal to the engine's model), each named by the build's manifest, so the
+# build this script makes must be the one the ladder ran on — a deterministic
+# rebuild of the same campaign is. `--stage-anyway "<reason>" --acknowledge-red
+# <N>` overrides the ledger deliberately — it prints every class being
+# overridden and stamps the reason into the build's admission token — and does
+# not reach the proofs.
 #
 # ## What the prefab path does about the staging gate, and why that is honest
 #
@@ -140,6 +147,8 @@ DELVEC=""
 OUT_DIR=""
 STAGE_ANYWAY=""
 ACK_RED=""
+RUN_REPORT=""
+WRITTEN_WORLD=""
 RCON_PW="playtest"
 # Empty = the shared default (`dw_server_heap_env`, versions.toml
 # `[server].heap_max` as the ceiling). `--memory` is the escape hatch for a
@@ -266,6 +275,9 @@ while [ $# -gt 0 ]; do
     # as the ledger does, so it cannot become the way this script is run.
     --stage-anyway)    STAGE_ANYWAY="$2"; shift 2;;
     --acknowledge-red) ACK_RED="$2"; shift 2;;
+    # The two machine proofs the gate admits on, handed straight to it.
+    --run-report)      RUN_REPORT="$2"; shift 2;;
+    --written-world)   WRITTEN_WORLD="$2"; shift 2;;
     *) [ -z "$CAMPAIGN" ] && CAMPAIGN="$1" || die "unexpected arg: $1"; shift;;
   esac
 done
@@ -472,6 +484,7 @@ if [ "$SUBJECT_KIND" = "prefab" ]; then
   [ -z "$PREFABS_ARG" ] || die "--prefabs names the library a CAMPAIGN builds from; $CAMPAIGN is already the prefab to show — pass it as the path"
   [ -z "$STAGE_ANYWAY" ] || die "--stage-anyway overrides the staging gate, which judges a campaign; $CAMPAIGN is a prefab and the gate does not run on it (see this script's header)"
   [ -z "$ACK_RED" ] || die "--acknowledge-red belongs to --stage-anyway, which does not apply to a prefab"
+  [ -z "$RUN_REPORT$WRITTEN_WORLD" ] || die "--run-report and --written-world are the staging gate's proofs of a campaign; $CAMPAIGN is a prefab and the gate does not run on it"
 fi
 echo "subject: $CAMPAIGN  ->  $SUBJECT_KIND"
 # Capture, then test — never `cmd | grep -q`. Under `set -o pipefail` grep exits at
@@ -557,6 +570,8 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
   mkdir -p "$GATE_DIR"
   GATE_REPORT="$GATE_DIR/staging-gate.md"
   GATE_ARGS=(--campaign "$CAMPAIGN" --build "$OUT_DIR" --report "$GATE_REPORT")
+  [ -n "$RUN_REPORT" ]    && GATE_ARGS+=(--run-report "$RUN_REPORT")
+  [ -n "$WRITTEN_WORLD" ] && GATE_ARGS+=(--written-world "$WRITTEN_WORLD")
   if [ -n "$STAGE_ANYWAY" ]; then
     [ -n "$ACK_RED" ] || die "--stage-anyway needs --acknowledge-red <N> (the gate prints N)"
     GATE_ARGS+=(--stage-anyway "$STAGE_ANYWAY" --acknowledge-red "$ACK_RED")

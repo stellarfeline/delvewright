@@ -1272,32 +1272,30 @@ pub fn relight_with(
         // place is dark and which piece stands in it*, because that is the only
         // document the remedy is taken in — see [`DarkOwner`].
         let frames: Vec<BoundFrame> = if area.area_id == delvewright_dsl::SITE_AREA {
-            let mut reads = delvewright_dsl::metrics::Reads::new();
-            delvewright_dsl::placed_boxes(c, &mut reads)
-                .iter()
-                .filter_map(|b| {
+            delvewright_dsl::Frame::all(c)
+                .into_iter()
+                .filter_map(|(f, b)| {
                     let row = c
                         .detail_plan
                         .as_ref()
                         .and_then(|e| e.content.detail_of(&b.node))?;
-                    let f = delvewright_dsl::Frame::of(b);
                     Some(BoundFrame {
                         place: b.node.0.clone(),
                         piece: row.piece.0.clone(),
                         lo: [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
                         hi: [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
+                        owned: f.owned.clone(),
                     })
                 })
                 .collect()
         } else {
             Vec::new()
         };
-        // Per bound place, so the report can name it. A cell lies in at most one
-        // frame — boxes do not overlap (`DW0828`) — so the first match is the
-        // only one, and the union below is exactly the old `detailed` set.
+        // Per bound place, so the report can name it. A cell is owned by at most
+        // one place (spec-0098 §2), so the first owner is the only one.
         let mut detailed_by_place: BTreeMap<&BoundFrame, BTreeSet<[i32; 3]>> = BTreeMap::new();
         for cell in &reachable {
-            if let Some(f) = frames.iter().find(|f| in_bounds(*cell, f.lo, f.hi)) {
+            if let Some(f) = frames.iter().find(|f| f.owns(*cell)) {
                 detailed_by_place.entry(f).or_default().insert(*cell);
             }
         }
@@ -1663,6 +1661,17 @@ struct BoundFrame {
     lo: [i32; 3],
     /// Upper corner of the frame, in world cells.
     hi: [i32; 3],
+    /// The cells the place owns (spec-0098 §2): frames overlap as boxes, so a
+    /// cell is the place's by ownership, never by lying in its frame.
+    owned: Vec<delvewright_dsl::siteplan::Aabb>,
+}
+
+impl BoundFrame {
+    fn owns(&self, c: [i32; 3]) -> bool {
+        self.owned
+            .iter()
+            .any(|(lo, hi)| (0..3).all(|i| i64::from(c[i]) >= lo[i] && i64::from(c[i]) <= hi[i]))
+    }
 }
 
 /// **Whose cells a dark measurement is over** — which is what decides the remedy,

@@ -1,52 +1,7 @@
-//! The boxes against the kit grid, the region and each other: `DW0825`,
-//! `DW0826`, `DW0827`, `DW0835` and the size and way classes (`DW0832`).
+//! The boxes against the region and each other: `DW0826`, `DW0827` and
+//! `DW0835`.
 
 use super::*;
-
-/// `DW0825`: every box's footprint is a multiple of the kit grid's quantum.
-pub(super) fn grid(
-    placed: &[Placed<'_>],
-    table: &Metrics,
-    reads: &mut Reads,
-    d: &mut Vec<Diagnostic>,
-) {
-    let Some(grid) = table.grid(reads) else {
-        return; // `Metrics::self_check` owns a table that defines no grid.
-    };
-    let q = grid.quantum;
-    if q == 0 {
-        return;
-    }
-    for p in placed {
-        for (axis, name) in [(0usize, "x"), (1usize, "z")] {
-            let e = p.plan.extent[axis].get();
-            if !off_grid(e, q) {
-                continue;
-            }
-            d.push(Diagnostic::error(
-                DW_BOX_OFF_GRID,
-                "site-plan",
-                format!("/content/boxes/{}/extent/{axis}", p.index),
-                format!(
-                    "box for `{node}` is {e} blocks on {name}, and the kit grid's quantum is \
-                     {q} — so it is not a multiple of it. Every box's footprint is a whole \
-                     number of quanta on both horizontal axes, which is what lets a kit piece \
-                     land in one without being cut. The nearest multiples are {lo} and {hi}.",
-                    node = p.plan.node,
-                    lo = e - e % q,
-                    hi = e - e % q + q,
-                ),
-            ));
-        }
-    }
-}
-
-/// **`DW0825`'s own test, for one footprint on one axis.** One function so that
-/// a verdict computed from a box can ask the SAME question the refusal asked,
-/// rather than re-deriving the kit-grid rule beside it.
-pub(super) fn off_grid(extent: u32, quantum: u32) -> bool {
-    quantum != 0 && !extent.is_multiple_of(quantum)
-}
 
 /// `DW0826`: nothing the plan places leaves the region.
 ///
@@ -88,9 +43,8 @@ pub(super) fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<
         if !within((p.x0(), p.x1()), spans[0]) {
             bad.push(("x", p.x0(), p.x1()));
         }
-        if let Some(y) = p.y_span()
-            && !within(y, spans[1])
-        {
+        let y = p.y_span();
+        if !within(y, spans[1]) {
             bad.push(("y", y.0, y.1));
         }
         if !within((p.z0(), p.z1()), spans[2]) {
@@ -199,7 +153,7 @@ pub(super) fn region(plan: &SitePlanContent, placed: &[Placed<'_>], d: &mut Vec<
 fn against_region(bad: &[(&'static str, i64, i64)], spans: &[(i64, i64); 3]) -> String {
     bad.iter()
         .map(|(name, lo, hi)| {
-            let axis = match *name {
+            let axis = match name.rsplit(' ').next().unwrap_or(name) {
                 "x" => 0,
                 "y" => 1,
                 _ => 2,
@@ -249,6 +203,85 @@ fn named_overruns(items: &[Overrun<'_>]) -> String {
         .join(", ")
 }
 
+/// `DW0988`: a roof the plan has no room for (spec-0098 §3, §7).
+///
+/// Two shapes of one claim, both read off the plan before any geometry:
+/// `roof` on a box whose ceiling is `open` — an open place has no lid to put a
+/// roof on; and a course of the roof proper (over the shell footprint, above
+/// the lid) lying in another place's play space or floor course — the stacked
+/// case. Eaves are not this refusal: an eave stops at a neighbour's wall.
+pub(super) fn roofs(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
+    for p in placed {
+        let Some(roof) = p.plan.roof else { continue };
+        if matches!(p.plan.ceiling, Ceiling::Open(_)) {
+            d.push(Diagnostic::error(
+                DW_ROOF_NO_ROOM,
+                "site-plan",
+                format!("/content/boxes/{}/roof", p.index),
+                format!(
+                    "the box for `{node}` declares a roof ({c} course(s), eaves {e}) and its \
+                     ceiling is `open`. A sky-open place has no lid to put a roof on: it claims \
+                     its ground and its headroom and nothing above that. Remove the roof, or \
+                     give the place a `clearance` ceiling so the whole can reserve a roof over \
+                     it.",
+                    node = p.plan.node,
+                    c = roof.courses,
+                    e = roof.eaves,
+                ),
+            ));
+            continue;
+        }
+        let (_, top) = p.y_span();
+        if roof.courses == 0 {
+            continue;
+        }
+        // The roof proper: the shell footprint, from one above the lid to the
+        // top course. The lid itself is the shell's and a stacked upper box's
+        // floor course by rule 3a; the courses above it are what need room.
+        let (rlo, rhi) = ((top + 2), (top + 1 + i64::from(roof.courses)));
+        let (sx0, sx1, sz0, sz1) = (p.x0() - 1, p.x1() + 1, p.z0() - 1, p.z1() + 1);
+        for q in placed {
+            if q.index == p.index {
+                continue;
+            }
+            // The neighbour's play space (its footprint, floor to top) and its
+            // floor course (its shell footprint, one course under its floor).
+            let q_top = q.y_span().1;
+            let in_space = overlap((sx0, sx1), (q.x0(), q.x1()))
+                .zip(overlap((sz0, sz1), (q.z0(), q.z1())))
+                .zip(overlap((rlo, rhi), (q.floor, q_top)));
+            let in_floor = overlap((sx0, sx1), (q.x0() - 1, q.x1() + 1))
+                .zip(overlap((sz0, sz1), (q.z0() - 1, q.z1() + 1)))
+                .zip(overlap((rlo, rhi), (q.floor - 1, q.floor - 1)));
+            let Some(((x, z), y)) = in_space.or(in_floor) else {
+                continue;
+            };
+            d.push(Diagnostic::error(
+                DW_ROOF_NO_ROOM,
+                "site-plan",
+                format!("/content/boxes/{}/roof", p.index),
+                format!(
+                    "the roof over `{a}` rises into `{b}`: its courses y {ry0}..{ry1} meet \
+                     `{b}`'s floor and play space at x {x0}..{x1}, y {y0}..{y1}, z {z0}..{z1}. \
+                     A roof is the whole reserving the volume a building will take, and that \
+                     volume cannot be a place somebody stands in. Declare fewer courses, raise \
+                     `{b}`, or make the two one place whose piece carries both.",
+                    a = p.plan.node,
+                    b = q.plan.node,
+                    ry0 = rlo,
+                    ry1 = rhi,
+                    x0 = x.0,
+                    x1 = x.1,
+                    y0 = y.0,
+                    y1 = y.1,
+                    z0 = z.0,
+                    z1 = z.1,
+                ),
+            ));
+        }
+    }
+}
+
 /// `DW0827`: the boxes are disjoint.
 ///
 /// Shared **faces** are the only permitted contact, because a seam needs one —
@@ -264,15 +297,8 @@ pub(super) fn disjoint(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
             ) else {
                 continue;
             };
-            let y = match (a.y_span(), b.y_span()) {
-                (Some(ya), Some(yb)) => match overlap(ya, yb) {
-                    Some(y) => y,
-                    None => continue,
-                },
-                // One of them is sky-open with an unresolved class; `DW0812`
-                // owns that name, and the footprints alone are enough to say
-                // the two places stand in each other.
-                _ => (a.floor.min(b.floor), a.floor.max(b.floor)),
+            let Some(y) = overlap(a.y_span(), b.y_span()) else {
+                continue;
             };
             d.push(Diagnostic::error(
                 DW_BOXES_OVERLAP,
@@ -315,8 +341,7 @@ pub(super) fn volumes_outside_boxes(
             ) else {
                 continue;
             };
-            let Some(py) = p.y_span() else { continue };
-            let Some(y) = overlap((v.region.min[1], vmax[1]), py) else {
+            let Some(y) = overlap((v.region.min[1], vmax[1]), p.y_span()) else {
                 continue;
             };
             d.push(Diagnostic::error(
@@ -342,98 +367,5 @@ pub(super) fn volumes_outside_boxes(
                 ),
             ));
         }
-    }
-}
-
-/// `DW0832`: a box is built to its place's class — **either kind** (spec-0053
-/// §3).
-///
-/// # The way branch, and why its third demand is structural
-///
-/// A size class bounds both horizontal extents and this is the one place that
-/// becomes geometry. A way class bounds only the **cross-section**, which is the
-/// box's *shorter* horizontal extent — the axis a body feels — and then demands
-/// that the **run**, the longer extent, strictly EXCEED the class's
-/// `max_width`.
-///
-/// That third demand is the elongation, and it is deliberately derived from the
-/// class's own widest cross-section rather than seeded as a constant, because it
-/// is exactly what a room cannot supply. A square box can never satisfy it: its
-/// run equals its width, and one number cannot both be `<= max_width` and exceed
-/// it. So "declare a room a way to escape the size ladder" is refused **by the
-/// object's own shape** rather than by a rule the author could satisfy by
-/// choosing differently — the property `CLAUDE.md` demands of an opt-out, since
-/// the defect this branch exists to catch is structurally incapable of
-/// producing its proof.
-///
-/// There is no maximum run and there is not going to be one: a route's length is
-/// per-campaign geometry, never a standard (spec-0053 §7).
-pub(super) fn size_classes(placed: &[Placed<'_>], d: &mut Vec<Diagnostic>) {
-    for p in placed {
-        let Some(class) = p.class else {
-            continue; // `DW0812` refused the name.
-        };
-        let (kind, mut bad) = match class {
-            PlaceClass::Size(sc) => {
-                let mut bad: Vec<String> = Vec::new();
-                for (axis, name) in [(0usize, "x"), (1, "z")] {
-                    let e = p.plan.extent[axis].get();
-                    if e < sc.min_footprint[axis] || e > sc.max_footprint[axis] {
-                        bad.push(format!(
-                            "{e} blocks on {name}, outside the class's {}..{}",
-                            sc.min_footprint[axis], sc.max_footprint[axis]
-                        ));
-                    }
-                }
-                ("size", bad)
-            }
-            PlaceClass::Way(w) => {
-                let mut bad: Vec<String> = Vec::new();
-                let (dx, dz) = (p.plan.extent[0].get(), p.plan.extent[1].get());
-                let (width, run) = (dx.min(dz), dx.max(dz));
-                let axis = if dx <= dz { "x" } else { "z" };
-                if width < w.min_width || width > w.max_width {
-                    bad.push(format!(
-                        "a cross-section of {width} blocks (its shorter extent, on {axis}), \
-                         outside the class's {}..{}",
-                        w.min_width, w.max_width
-                    ));
-                }
-                if run <= w.max_width {
-                    bad.push(format!(
-                        "a run of {run} blocks, which does not exceed the class's widest \
-                         cross-section of {}. A way is a place that is longer than it is wide \
-                         by kind and not by margin, so this box is a room — give it a \
-                         `size_class` instead, or make it longer",
-                        w.max_width
-                    ));
-                }
-                ("way", bad)
-            }
-        };
-        if let Ceiling::Clearance(c) = p.plan.ceiling
-            && c.get() < class.min_clearance()
-        {
-            bad.push(format!(
-                "{c} cells of headroom, under the class's minimum of {}",
-                class.min_clearance()
-            ));
-        }
-        if bad.is_empty() {
-            continue;
-        }
-        d.push(Diagnostic::error(
-            DW_SIZE_CLASS,
-            "site-plan",
-            format!("/content/boxes/{}", p.index),
-            format!(
-                "the box for `{node}` is not built to its declared {kind} class: {bad}. The \
-                 class is the vocabulary the graph chose this place's scale in, and this is the \
-                 one place it becomes geometry — either build the box to it, or declare the \
-                 place a different class in the layout graph and say so there.",
-                node = p.plan.node,
-                bad = bad.join("; "),
-            ),
-        ));
     }
 }

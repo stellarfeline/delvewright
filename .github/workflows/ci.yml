@@ -1647,6 +1647,26 @@ jobs:
           bash validation/bot-run.sh --project dw-ci-gallery-bot \
             --output ./delve-output-gallery-primary \
             --run-out ./run-out/dw-ci-gallery-bot
+      # spec-0089 §5.4 (`DW0955`) over the site-plan point: the point whose
+      # pieces carry `structure_void` at every cell their place does not own
+      # (spec-0098 §2). Tier 2 compares the primary, which places none, so a
+      # template shipped with its voids — written into the world over the
+      # neighbour's floor — went unseen by every proof until a bot fell through
+      # it. This boots the site-plan build once, saves its world, and compares it
+      # cell by cell with the world the engine writes for it.
+      - name: the world the engine writes is the world the server builds (site-plan)
+        if: '!cancelled()'
+        run: |
+          set -euo pipefail
+          python3 tools/ci/gallery-build.py --point site-plan \
+            --delvec target/debug/delvec --prefabs gallery-prefabs
+          bash validation/world-save.sh validation/delve-output-gallery-site-plan \
+            --project dw-ci-gallery-site-world
+          target/debug/delvec --prefabs gallery-prefabs cameras \
+            validation/delve-output-gallery-site-plan \
+            --campaign validation/gallery-src-site-plan -o written-world-site-plan
+          python3 tools/ci/check-written-world.py validation/delve-output-gallery-site-plan \
+            written-world-site-plan/worlds/at-load validation/delve-output-gallery-site-plan/world
       - name: job summary
         if: always()
         run: |

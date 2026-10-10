@@ -1,0 +1,13 @@
+{
+  "code": "DW0816",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/layout-graph.json",
+      "op": "add",
+      "path": "/content/nodes/3/reached",
+      "value": false
+    }
+  ],
+  "units": [],
+  "why": "The loft declared scenery — `reached: false`, a place built to be seen and never entered — while the far hall's stair and its drop both lead a body into it. A check confirms the author's intent both ways: a reached place must be reached, and a place declared not reached must not be, so `DW0816` refuses the declaration the graph contradicts, naming the entry it is reached from. It declares no unit: `reached` is bound on the site-plan overlay's beacon, and what must not compile is scenery a connection walks into."
+}

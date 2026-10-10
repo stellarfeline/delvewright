@@ -15,7 +15,7 @@ use delvec::compiler::load::{
 };
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Diagnostic, DwCode, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Diagnostic, DwCode, validate_campaign_with};
 
 use crate::EXIT_INTERNAL;
 use crate::cli::report::{print_build_error, print_diags, report_binding_notes};
@@ -111,7 +111,7 @@ pub(crate) fn run_textures(
         Ok(l) => l,
         Err(code) => return ExitCode::from(code),
     };
-    let campaign = match parse_campaign(&loaded.raw) {
+    let campaign = match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(c) => c,
         Err(diags) => {
             print_diags(&diags, json);
@@ -221,7 +221,7 @@ pub(super) fn validate_loaded(
     // (157 ids, same misode/mcmeta provenance as the item registry).
     let entities = FullEntityRegistry::v1_21_11();
 
-    match parse_campaign(&loaded.raw) {
+    match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(campaign) => {
             let mut diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
             // **What this run examined, held back until the author's lines are
@@ -474,8 +474,7 @@ pub(super) fn validate_loaded(
             }
             // spec-0050 (DSL v0.15): the detail plan. `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its
-            // openings are the plan's seams, its anchors have standing) and
-            // `DW0848`'s consumer door. Bound HERE because this is the one
+            // openings are the plan's seams, its anchors have standing). Bound HERE because this is the one
             // funnel every subcommand's validation goes through — `build`
             // included — so a defect cannot reach a datapack by skipping
             // `delvec validate`. No-op for a campaign with no `detail-plan`, and
@@ -486,6 +485,23 @@ pub(super) fn validate_loaded(
                     examined.push(dbind.line());
                 }
                 diags.extend(dd);
+                // spec-0098 §7: a bound piece writes no cell it does not own
+                // (`DW0987`) and no fixed ring ground (`DW0990`), read off its
+                // own `.nbt`, where `DW0888` already opens it.
+                let (vd, vbind) =
+                    delvec::compiler::detail::check_voids(&campaign, &prefabs, prefabs_dir);
+                if campaign.detail_plan.is_some() {
+                    examined.push(vbind.line());
+                }
+                diags.extend(vd);
+                // spec-0098 §2: an aloft place claims no ground, so terrain
+                // reaching into its claim is refused (`DW0990`, third shape),
+                // read off the plan and its terrain.
+                if campaign.site_plan.is_some() {
+                    let (ad, abind) = delvec::compiler::detail::check_aloft(&campaign);
+                    examined.push(abind.line());
+                    diags.extend(ad);
+                }
             }
             // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
             // declared branch is enumerated and every static proof re-run under

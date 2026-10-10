@@ -1,0 +1,25 @@
+{
+  "code": "DW0988",
+  "patch": [
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "replace",
+      "path": "/content/fill/terrain",
+      "value": {
+        "datum": "datum/grade",
+        "kind": "flat"
+      }
+    },
+    {
+      "doc": "overlays/site-plan/site-plan.json",
+      "op": "add",
+      "path": "/content/boxes/4/roof",
+      "value": {
+        "courses": 2,
+        "eaves": 0
+      }
+    }
+  ],
+  "units": [],
+  "why": "A roof declared over the undercroft, which stands directly under the near hall: its lid is the near hall's floor course, so the two courses the roof rises above it are the near hall's play space. A roof is the whole reserving the volume a building will take, and that volume cannot be a place somebody stands in — `DW0988` refuses it at validation, naming both places and the courses that collide. It declares no unit: `roof` is bound on the annex, and what must not compile is a roof with no room."
+}

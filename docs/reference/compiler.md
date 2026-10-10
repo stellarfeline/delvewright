@@ -16,7 +16,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   other subcommand `delvec --help` lists — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.11.0`, `dsl 0.37.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.11.0`, `dsl 0.38.0`, `mc 1.21.11`.
   The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
   every stage document, map-pipeline document and l10n sidecar declares it, and
   any other number is refused at the envelope with `DW0102`, which names it. The
@@ -618,18 +618,29 @@ uncompilable. The escalation path a part that wants different *space* takes is
 a **site-plan revision**; a part that wants different *traversal* revises the
 **layout graph**, and either revision costs a re-detail (`delvec detail --all`).
 
-**The frame** a piece must exactly fill is the box's play space grown one course
-downward — the walk plane's own floor. Everything else the derivation writes
-around a box is structure and stays whole-owned: every vertical party plane,
-every wall, every unshared shell face, every seam frame in a vertical plane,
-every derived stair in an unbound host and every bar in a vertical-plane seam.
-Where boxes stack, the horizontal party plane **is** the upper box's floor
-course and belongs to the upper piece — a seam frame lying in that course goes
-with it. In the derivation this is one rule rather than six exemptions: a
-bound frame is a hole in what the whole writes, so the floor accent, the interior
-clear, the ceiling of the box underneath, a hosted stair and a bar in the box's
-own floor course all stop by the same subtraction, and everything outside the
-frame is written exactly as before.
+**The frame** a piece must exactly fill is its place's claim (spec-0098 §2): the
+bounding box of the cells the place owns — the ground under its plot, its floor
+course, its play space, its ring above the fixed ground and, roofed, its lid and
+declared roof zone. Every other cell of the frame is a **void** — a neighbour's
+cell, the ring's fixed ground, nobody's — where the piece holds
+`minecraft:structure_void` and the owner's block shows through, in the game and
+in the model alike (`DW0987`, `DW0990`); the game agrees because the template
+ships with its void cells omitted (*A template places what the game places*). In the derivation this is one rule: the
+cells a bound place owns are a hole in what the whole writes, and the whole's
+stand-ins stand only in unbound places' owned cells. A seam whose plane the
+place owns is the piece's to cut, and a `barred` one's shut state the piece's to
+ship, bound to the gate region it owes; a seam a neighbour owns is answered on
+the place's own first layer beside the plane. Two seams answered in the first
+layer meet at the play space's corner column, which then lies in both openings
+— or, with one plane owned, the owned opening's end cell touches the room only
+through the other opening; either way the piece answers both exactly as
+allocated (`DW0844` compares cell for cell) and `contract-well-formed` takes a
+cell beside another of the space's exterior openings as touching the room
+(`compiler::detail` `two_contacts_at_a_corner_answer_whoever_owns_each_plane`).
+Which spaces are enclosed is the piece's own declaration, and the closure gate
+confirms exactly those; a piece declaring none — a street, a pavilion, a
+covered market — passes, its zero stated in the enumeration with the count of
+spaces.
 
 **The fixture pass applies to derived interiors only.** A bound place lights
 itself; its cells leave the relight pass's deficiency set and go to the
@@ -720,20 +731,18 @@ includes both.
 
 | Element | Behavior |
 |---------|----------|
-| `nodes[]` | `{id: node/<kebab>, intent, size_class? \| way_class?, note?, stations?}`. A **place**: a room, a courtyard, an arena, a stretch of shore, a cavern, a road. `intent` is a free non-empty label no check keys on — recorded judgement for the reviewer and for the later per-place brief, kept free-form because an enum of intents would be one genre wearing a schema's clothes; empty is `DW0814`. A place is classified **exactly once**, by one of the two vocabularies below; both or neither is `DW0875`. A name the metrics table does not define is `DW0812` for either kind, because `Metrics::resolve` is the one path from an authored name to an entry and the question is the same question. |
-| `edges[]` | A connection, internally tagged on `class`: `walk`, `stair`, `drop`, `barred`, `carry`, `vision`. All carry `{id: edge/<kebab>, a, b}`. `walk`/`stair`/`barred` carry `one_way` (`a-to-b` \| `b-to-a`; absent = both ways); a `drop` is one-way by construction and so carries a **required** `falls` instead. `barred` carries `opens_from` (`a` \| `b` \| `either`, default `either`) — the one-side-openable door, spelled as a property of the connection rather than of any campaign's fiction — and a **required** `gating`. `carry` (spec-0083 §7) is a connection a body is **carried** over: `one_way` as `walk` carries it (absent = both ways, each direction then owed a link) and a **required** `gating` (empty is `DW0818`, as for `barred`: a carry live from world load is a hole in the graph's claim); it has no shortcut mark, no seam, no sill and no sightline, and the derivation writes nothing for it. The closure crosses it like any gated edge, and stage 5 matches each link to the `carry` edge joining the node of its `from` station to the node of its `to` mark in its direction, and each `carry` direction to at least one link (`DW0934`). `vision` carries a line of sight and no body, so it has no direction, no gating and no shortcut mark; stage 4 gives it a sightline rather than a seam. Because the class is the serde tag, a field the class does not read (an `opens_from` on a walk, a `drop` with no `falls`) is an ordinary `DW0100` and no rule has to police it. |
+| `nodes[]` | `{id: node/<kebab>, intent, note?, stations?, reached?}`. `reached: false` (spec-0098 §14) declares the place **scenery** — built to be seen and never entered, a tree's crown over a treehouse — and the checks confirm it both ways: the closure must not reach it (`DW0816`) and no body may get into it in the built world (`DW0837`). Scenery still owns its outside and stitches its ground ring; it owes no node anchor and no play light, and its piece is judged sealed (no way in claimed, and its floor gates excuse every standable cell of the piece — a crown's leaf tops included — stating the count, since none is stood in; `delvec detail`'s light probe states the cells it excludes with theirs and grades none). Absent means reached. A **place**: a room, a courtyard, an arena, a stretch of shore, a cavern, a road. `intent` is a free non-empty label no check keys on — recorded judgement for the reviewer and for the later per-place brief, kept free-form because an enum of intents would be one genre wearing a schema's clothes; empty is `DW0814`. A place carries no size class: its size is its box's `extent`, the author's declaration in the site plan, and the piece detailed into it may not exceed it (`DW0843`). |
+| `edges[]` | A connection, internally tagged on `class`: `walk`, `stair`, `climb`, `drop`, `barred`, `carry`, `vision`. All carry `{id: edge/<kebab>, a, b}`. A `climb` (spec-0098 §2c) is a way a body climbs on a ladder or a vine the lower place hangs (spec-0099): a hole through a floor or a door high in a wall, with no treads and no sill; the rise is the two floors' difference, and a climb between two places on one plane is `DW0992`. A climb **inside one place** is the piece's own: its spatial contract declares the two floors as two spaces and a `climb` edge between them, proved over the body's climb moves (`docs/reference/grammar.md`, the contract's edge classes). `walk`/`stair`/`climb`/`barred` carry `one_way` (`a-to-b` \| `b-to-a`; absent = both ways); a `drop` is one-way by construction and so carries a **required** `falls` instead. `barred` carries `opens_from` (`a` \| `b` \| `either`, default `either`) — the one-side-openable door, spelled as a property of the connection rather than of any campaign's fiction — and a **required** `gating`. `carry` (spec-0083 §7) is a connection a body is **carried** over: `one_way` as `walk` carries it (absent = both ways, each direction then owed a link) and a **required** `gating` (empty is `DW0818`, as for `barred`: a carry live from world load is a hole in the graph's claim); it has no shortcut mark, no seam, no sill and no sightline, and the derivation writes nothing for it. The closure crosses it like any gated edge, and stage 5 matches each link to the `carry` edge joining the node of its `from` station to the node of its `to` mark in its direction, and each `carry` direction to at least one link (`DW0934`). `vision` carries a line of sight and no body, so it has no direction, no gating and no shortcut mark; stage 4 gives it a sightline rather than a seam. Because the class is the serde tag, a field the class does not read (an `opens_from` on a walk, a `drop` with no `falls`) is an ordinary `DW0100` and no rule has to police it. |
 | `edges[].gating` | `{flags[]?, quest?}` — what a body must already hold to pass. **Deliberately not the campaign's `Gate`.** A gate is a runtime object emission evaluates against an acting player; a layout-graph edge is evaluated by nothing at run time, so making it a gate consumer would push a never-emitted object into machinery whose whole subject is emission. It is also narrower on purpose: the closure below is monotone, so a negative flag term and a numeric comparison are terms no proof here could honour, and a surface an author may write and nothing honours is worse than one that is absent. What it states is a **projection** of the campaign's runtime gating into topology, and `DW0818` keeps it a projection — every flag it names must be one the campaign really produces, and every quest must exist. |
 | `entry` / `goal` | Node ids. Every proof over the graph starts or ends at one, so a name nothing defines is `DW0814`. |
 | `critical_path[]` | An authored node sequence from `entry` to `goal`. **Authored rather than derived**, so that it is a claim the machine verifies (`DW0817`) rather than an answer with no author to disagree with. |
 | `beats[]` | `{quest, objective, node}` — where each quest beat happens. **Every objective is place-bound**: a body has to be standing somewhere to talk, to reach, to fight or to take, so every objective in the quest documents binds to exactly one node, and one that does not is `DW0818`. |
 | Reachability | Judged under a **monotone closure**: from `entry` holding nothing, mark every edge whose gating the obtained set satisfies, mark every node reachable over those edges respecting one-way direction, add what every beat bound to a reached node grants, iterate to fixpoint. A beat grants the flags the campaign sets when that objective completes and — for a `talk-to` — everything reachable in the spoken-to NPC's dialogue tree, because the conversation happens where the speaker stands; a quest grants itself and its `on_complete` flags once every one of its beats is somewhere a body can stand. The closure is **optimistic in every direction it cannot decide**, which is one property rather than a list of exceptions: it is branch-blind, so a campaign whose branch points set mutually exclusive flags can reach a node no single playthrough reaches. That can only under-report at graph time; the branch-aware battery over the assembled world is what stops it shipping. |
 | `nodes[].stations[]` | `{anchor: anchor/<kebab>, kind, note?}` (spec-0052) — **the named places INSIDE a place**. A station is a name and a shape, never a position: there is no coordinate, offset or hint field, and that absence is the design. Declared names join the campaign's anchor vocabulary at the same authority as every synthesized one, so a quest can name the fire pit in the camp rather than flattening it onto the camp's box centre. `note` is recorded judgement for the reviewer that no check keys on, exactly as `intent` is. Refusals: `DW0869` (a name in the engine's derived namespace), `DW0870` (two claims on one name, scoped to the area), `DW0871` (a reference demanding a shape the station is not). A station no quest references is **legal** — that is the mid-authoring state, and the binding line counts it. |
-| `nodes[].size_class` | A rung of the metrics table's ladder (`alcove`, `room`, `hall`, `arena`, `expanse`). Bounds the footprint on **both** horizontal axes and carries a nominal traverse the pacing projection sums. This is the vocabulary a place that is a BOX is stated in. |
-| `nodes[].way_class` | (spec-0053) A **way**: a place whose footprint is bounded in one axis and free in the other — a road, a causeway, a corridor, a duct. Names an entry of the metrics table's way vocabulary (`corridor`, `road`). It classifies the **cross-section** and nothing else, and there is no length standard here: a route's length is per-campaign geometry, so the site plan states the run by putting the box where it put it, `DW0832` demands only that the run EXCEED the class's widest cross-section, and the pacing measurement reads it. **Why it is a second kind and not another rung**: for a rung to admit a cut ledge one body wide climbing a whole seaward face, that rung would have to span 4..90 on an axis, and a class in which an alcove and an expanse are the same thing has stopped classifying. The failure is by kind, not by margin, so no calibration of the ladder reaches it. Refusals: `DW0875` (classified twice or not at all), `DW0812` (an unknown name), `DW0832`'s way branch. |
 | `stations[].kind` | `point` or `gate`. **The shape, never the purpose**: a bonfire, a camera subject and a shop counter are the same `point` to every check, for the same reason `intent` is free-form. `point` is a cell a body is put at; `gate` is a region that seals and clears, which is what `open-gate`, `close-gate`, a `shortcut` and a `timed-gate` address. spec-0052 §3 describes a third, `region`, and it is deliberately not built: this engine resolves an anchor to a point or a gate and to nothing else, every volume-shaped consumer is an anchor-centred box on a **point** plus an extent, and a bare `region` anchor is read as a gate filled with `minecraft:air`. A third variant would be declarable, bindable and consumable by no reference site. spec-0052 §11's falsifier decides it: the first campaign brief that cannot state its place without one. |
 | A station while its place is **massed** | The derivation realizes every station of every box at a stand-in, from the same authority validation resolved the name against — so a name that validates cannot fail to exist in the built world, massed or detailed. A point lands on its own standable cell (the first not already taken, ordered by Chebyshev distance from the floor centre then lexicographically — the order `footing` searches by); a gate lands on a minimal region of the derivation's own bar, **written into the mass** so the world-load seal measures it shut rather than taking the anchor's word. The author cannot state where a stand-in goes. |
 | A station once its place is **bound** | It joins the node's owed set beside its `anchor/node-…`, its `spawn` when it is the entry, and its `anchor/unlock-…` sides, and the `detail-plan` `anchors` map must bind it to an anchor of the piece. The map's shape and its gate are unchanged — it still refuses every key outside the owed set, so a binding cannot invent vocabulary and a typo cannot pass as intent. The bound anchor's **shape** is checked against the station's `kind` (`DW0842`), so the kind validation read off the graph and the kind the built world has cannot drift. Two owed names bound to one piece anchor is legal: one spot may carry two roles. |
-| Binding | Every run that carries either document prints one line: places, connections (traversal, one-way, shortcut, gated, carry), **stations and how many of them are gates**, beats and **how many of them are on the mandatory quest spine**, critical-path steps, metrics references and brief facts. Three zeroes are called out as findings rather than counted: a graph with no traversal connection (a set of places with no space between them), a graph none of whose beats belongs to a quest the finale depends on (a critical path over an unbound graph), and a brief with no fact. A station count of zero is stated rather than omitted — a campaign naming its places at node granularity is a fact about that campaign, not a silence. |
+| Binding | Every run that carries either document prints one line: places, connections (traversal, one-way, shortcut, gated, carry), **stations and how many of them are gates**, beats and **how many of them are on the mandatory quest spine**, critical-path steps and brief facts. Three zeroes are called out as findings rather than counted: a graph with no traversal connection (a set of places with no space between them), a graph none of whose beats belongs to a quest the finale depends on (a critical path over an unbound graph), and a brief with no fact. A station count of zero is stated rather than omitted — a campaign naming its places at node granularity is a fact about that campaign, not a silence. |
 
 ### The map pipeline — `site-plan` (optional; spec-0049)
 
@@ -758,12 +767,30 @@ so there is no site plan — well formed or otherwise — that describes a space
 without naming the place it is the space of. The inversion does not compile.
 
 **The model, because every rule below rests on it.** A box is the **play space**
-of a place: the cells a body can be in. The shell the blockout builds is not
-inside it — it stands in the one cell between two neighbours, and on the course
-under the floor and over the ceiling. So `extent` is the interior footprint the
-size-class ladder judges directly, and two connected places sit **exactly one
+of a place: the cells a body can be in. So `extent` is the interior footprint the
+author declares, and two connected places sit **exactly one
 cell apart** on the face they share, that cell being the wall they have in
-common.
+common. **A place owns its outside** (spec-0098), and its **claim** is a
+cuboid: the ground under its plot from the claim's bottom, its floor course,
+its play space, the one-cell **ring** its walls may stand in and, roofed, its
+lid and declared roof zone. A ground place's bottom is per column — the lower
+of its floor course and the terrain in that column, stopping one course over a
+place stacked under that column; an aloft place's is its declared underside
+(`base: {"aloft": n}`, `floor − 1 − n`) everywhere. The ring's cells at or
+under the column's ground height are **fixed ground** on a ground place — the
+site's terrain continued to the plot's edge, the whole's (rule 0); an aloft
+place has none. Every other cell several
+claims share goes to the place whose floor course it is (3a), else to the one
+roofed place among them (3b), else to the `a` of the seams across that plane
+(3c — at a corner where connections led by different places meet, the first in
+seam order), else, where exactly one claimant is aloft and every other claims
+the cell only as **sky ring** — an open ground place's ring above its floor
+course, the air its headroom carries — to the aloft place hung in it (spec-0098
+departure 35, `Site::is_sky_ring`; a ground place's ground, floor course and play space never
+yield); a cell no rule awards is `DW0827`. A cell no claim covers holds the
+declared volume or the site's `fill`. `siteplan::Site::owner` is the one
+derivation, and the frame, the stand-ins, the handout and the checks all read
+it.
 
 **Where a box stands is derived** (spec-0059). A box states its extent, its plane and its headroom; a seam states which face of its `a` box it sits on and where along that face the crossing is; the compiler packs the graph onto the grid from the boxes whose corner the author pinned, one cell beyond each named face. The seam carries no rise and no sill: both are the two floors' business.
 
@@ -771,18 +798,23 @@ common.
 |---------|----------|
 | `region` | `{min: [x,y,z], extent: [dx,dy,dz]}` in world coordinates — the whole map's one region, and the number the brief hands down. **Required, with no derived spelling**: there is no "compute this from the boxes", so extent-flows-up is unrepresentable rather than forbidden, and `DW0826` refuses a box that does not fit while naming the box. Extents are `NonZeroU32`, so a zero-volume region is a schema failure (`DW0100`) rather than a rule some check has to remember. The water plane is deliberately absent — `horizon: ocean` in the stage-1 world document already fixes sea level. |
 | `datums[]` | `{id: datum/<kebab>, y, note?}` — named ground planes. Ids are the ordinary `DW0110`/`DW0111`; a `floor` naming an undeclared one is the ordinary `DW0112`. |
-| `boxes[]` | `{node, extent: [dx,dz], floor, ceiling, min?: [x,z]}` — **exactly one per graph node** (`DW0824`). **A box states what it is; where it stands is derived** (spec-0059). A box is a footprint standing on a plane, not a prism: its vertical position is `floor` alone, so the plane has one authority instead of a `y` inside `min` beside a declared floor with no rule about which the derivation believes. `floor` is `{"datum": <id>}` or `{"y": <n>}`; `ceiling` is `{"clearance": <cells>}` or `"open"`. `min` is a **pin**, optional: a creative choice of the corner, verified against the packing (`DW0883` when the two disagree); every connected component of the seam graph pins at least one box, or nothing places it (`DW0883`). Horizontal extents are on the kit grid (`DW0825`); the packed box stands inside the region (`DW0826`, naming how its corner was obtained); boxes are disjoint (`DW0827`) and built to their place's size class (`DW0832`). |
+| `boxes[]` | `{node, extent: [dx,dz], floor, ceiling, base?, min?: [x,z]}` — **exactly one per graph node** (`DW0824`). **A box states what it is; where it stands is derived** (spec-0059). **A box is a cuboid** (spec-0098 §14, correction 3): its footprint is `min`/`extent` and its vertical extent three declared planes. `floor` is the one authority for the walk plane, `{"datum": <id>}` or `{"y": <n>}`. `ceiling` is `{"clearance": <cells>}` (a lid at `floor + cells`) or `{"open": <cells>}` (sky-open: exactly that many courses of air claimed, nothing above). `base` is `"ground"` (the default: the claim reaches down, column by column, to the lower of the terrain and the floor course, stopping one course over any place stacked under that column, and the whole hands that ground and fixes the ring) or `{"aloft": <n>}` (the place hangs: its claim stops `n` underside courses under the floor course everywhere, it is handed no ground and no fixed ring, and terrain reaching the claim is `DW0990`). The claim is the footprint grown by the one-cell ring, from that bottom to the open top, the lid or the roof zone; two places conflict only where their cuboids overlap (`DW0827`), and a cell no claim covers is the site's fill — on an `open` site, the commons under and between aloft places. `min` is a **pin**, optional: a creative choice of the corner, verified against the packing (`DW0883` when the two disagree); every connected component of the seam graph pins at least one box, or nothing places it (`DW0883`). Horizontal extents are any whole number of blocks; the packed box stands inside the region (`DW0826`, naming how its corner was obtained); boxes are disjoint (`DW0827`). A box's extent and headroom are the author's declaration, and no class refuses them. |
 | `boxes[].atmosphere` | (spec-0080) The atmosphere this place stands under from the first tick, painted at world setup over the box's play space (`PlacedBox::space`) grown by the client's blend reach on every face (*The blend*, under *World / build output*) — `areas[].atmosphere`'s capability on a box. Two carried boxes whose own 4-cells meet under different atmospheres are `DW0929`: a box and its neighbour sit one cell apart, so neighbours carrying two skies must be a whole 4-cell apart. |
-| `ceiling: "open"` | A sky-open place — a courtyard, a shore, a summit. It claims the ground and its size class's own minimum headroom and **nothing above that**, which is what makes a `clearance` volume over a courtyard the whole reserving sky rather than two authorities over one cell. |
+| `boxes[].roof` | (spec-0098) `{courses, eaves}`, optional, on a roofed box: the roof zone the whole reserves — the shell footprint grown by `eaves` on every side, from the ceiling course up `courses` courses. Massed solid at stage 5 over a place no piece fills; drawn by the place's own piece once detailed. Refused on a sky-open box and where its courses rise into another place's play space or floor course (`DW0988`); an eave stops where a neighbour's shell begins. Both numbers are judgements the plan states against `docs/reference/roof-and-facade-craft.md`. |
+| `ceiling: {"open": n}` | A sky-open place — a courtyard, a shore, a summit, a bridge's deck. It claims exactly `n` courses of air over its walk plane and **nothing above them**, which is what makes a `clearance` volume over a courtyard the whole reserving sky rather than two authorities over one cell, and lets a place hung over the courtyard stand in its sky: a climb from the courtyard into a place above is a hole through that place's floor course, which the courtyard's headroom reaches when its top is one course under it (one short is `DW0828`, naming the gap). |
+| `base` | (spec-0098 §14, correction 3) `"ground"` (the default, not printed) or `{"aloft": n}`. A ground place stands on the site's ground and is handed it (§2c). An aloft place hangs: its claim's bottom is `floor − 1 − n`, it is handed no ground (`allocation`'s `ground.base` says which; `fixed` and `columns` are empty and no wall seam has a `ground_y`), its ring is never fixed, and the terrain is never consulted except to refuse terrain reaching into the claim (`DW0990`, third shape). The space under it is whoever claims it — a lower place's open headroom, a scenery box — else the site's fill: on `open`, the commons; on `solid`, rock up to its bottom. |
 | `seams[]` | `{edge, face, at?, meets?, opening? \| contact?, stair_in?}` — **exactly one per traversal edge** (`DW0824`). `face` is one of the engine's six face names (`east`/`west`/`up`/`down`/`south`/`north`), **of the edge's `a` box**. `at` is where the crossing sits on `a`'s face and `meets` where it sits on `b`'s, each an **offset from that box's own low corner**, never a world coordinate — one integer along a wall face (cells along `z` for east/west, `x` for north/south), `[dx, dz]` through a floor or ceiling — and each defaults to **centred**, `max(0, (extent − width) div 2)` by the standard's width (a contact's `extent`, or `0` for a contact with none). **The packing** (spec-0059 §3): the pinned boxes seed it; then `seams[]` in document order, repeatedly, a seam with exactly one end standing places the other **one cell beyond the named face** (`x0(b) = x0(a) + dx(a) + 1` across `east`, and so on) with `corner(b) = corner(a) + at − meets` along it, until a pass places nothing. A seam whose two ends both stand places nothing and is **checked**: the cells it names from `a` must be the cells it names from `b` (`DW0828`, the loop that does not close; `DW0883` when `b`'s corner is a pin). An offset off its own face, or of the wrong shape for the face, is `DW0828`. **The sill is not written**: it is `max(floor(a), floor(b))`. `delvec validate` prints every box's corner and the seam that placed it — the derivation handed back, never typed. A seam allocates **one of two kinds** of connection, and both or neither is `DW0876`. `stair_in` names which of the two boxes hosts the treads: required on a `stair` (`DW0830`) and refused on anything else (`DW0824`). |
-| `seams[].opening` | **A PORTAL**: a named standard from the metrics table (`DW0812` on an unknown name, `DW0829` on one that does not fit or whose sill cannot be reached). A body crosses at exactly the cells `at` and the standard allocate, and **every one of them must be passable** over the built bytes (`DW0836`), and the hole must **lead somewhere**: a body standing in it steps onto ground on both sides, with every bar open (`DW0986`; a `drop` owes its high side only). |
-| `seams[].contact` | (spec-0053) **A CONTACT**: the two places simply meet along a front, rather than through a doorway. `{extent?: [u,v]}` — the span in cells on the face's own two in-plane axes, anchored where `at`/`meets` put it; omitted, it runs from that corner to the far edge of the shared face, which is how a front along the whole of a face is written (and both offsets then default to `0`). **What it means**: the boundary is continuous ground — the derivation writes **no wall along the span**, and wall as ever outside it, and no frame ring, because a ring around a fifty-five-cell front is a wall drawn in a second block. **What the proof reads**: the author allocates *where* the places meet and the engine measures the crossing profile from assembled bytes, so *"this face is fine"* is never a declaration this engine accepts. Seams stay allocated, never discovered: the span is the edge's allocation set for `DW0838`, so a crossing outside it is still a refusal. **No door check applies** — a contact has no opening name to resolve and no single sill, and calling a wide front a door would make every downstream door check wrong. A contact carries `walk` or `drop` only; `stair`, `barred` and `vision` are excluded. Its span must be **wider than the broadest standard opening**, derived from the table rather than seeded: anything narrower could have been a portal. Refusals: `DW0876`, `DW0877`. |
+| `seams[].opening` | **A PORTAL**: a named standard from the metrics table (`DW0812` on an unknown name), or a size the seam declares itself, `{"width": w, "height": h}` on the face's two in-plane axes — the author's own opening, a one-cell rope-bridge end included. `DW0829` refuses either when it does not fit the shared face or its sill cannot be reached. A body crosses at exactly the cells `at` and the standard allocate, and **every one of them must be passable** over the built bytes (`DW0836`), and the hole must **lead somewhere**: a body standing in it steps onto ground on both sides, with every bar open (`DW0986`; a `drop` owes its high side only). |
+| `seams[].contact` | (spec-0053) **A CONTACT**: the two places simply meet along a front, rather than through a doorway. `{extent?: [u,v]}` — the span in cells on the face's own two in-plane axes, anchored where `at`/`meets` put it; omitted, it runs from that corner to the far edge of the shared face, which is how a front along the whole of a face is written (and both offsets then default to `0`). **What it means**: the boundary is continuous ground — the derivation writes **no wall along the span**, and wall as ever outside it, and no frame ring, because a ring around a fifty-five-cell front is a wall drawn in a second block. **What the proof reads**: the author allocates *where* the places meet and the engine measures the crossing profile from assembled bytes, so *"this face is fine"* is never a declaration this engine accepts. Seams stay allocated, never discovered: the span is the edge's allocation set for `DW0838`, so a crossing outside it is still a refusal. **No door check applies** — a contact has no opening name to resolve and no single sill, and calling a wide front a door would make every downstream door check wrong. A contact carries `walk` or `drop` only; `stair`, `barred` and `vision` are excluded. Its width is the author's: a front one cell wide is as legal as a wide one. Refusals: `DW0876`, `DW0877`. |
+| `seams[].form` | (spec-0098) **Required**: what the crossing is, in a few words — "a wooden arch bridge, 3 wide", "a stone stair, down 4". A creative judgement the plan states once; the handout gives it to **both** places the seam joins, so each designs its side knowing what meets it. Never player-facing, never inventoried. A connector that is itself a structure — a bridge, a long stair over a gap — is a place of its own with its own piece; its neighbours provide a landing or an opening at each seam. |
 | A seam's **rise** | **Derived, never authored.** It is `floor(b) − floor(a)`, which the plan has already stated by putting the two places where it put them. Authoring it would be authoring arithmetic — unlike `critical_path`, which is authored precisely because it is a *choice* among many — and a second declaration of it could only agree or be a refusal teaching nothing the datums did not already say. `DW0830` and `DW0831` judge the derived number. |
-| `volumes[]` | `{id: volume/<kebab>, region, role, note?}` — the mass the WHOLE owns: `massif` (the mountain a cave system is inside), `ground` (the plane under a village), `clearance` (the sky a silhouette needs kept empty). They stand beside places, under them and over them, never inside one (`DW0835`), and they answer to the region like anything else the plan places (`DW0826`). |
+| `fill` | (spec-0098 §2b) **Required, with no default**: what every cell no place claims and no volume covers becomes. `{"kind": "solid", "block"}` — the enclosed site, whose places are carved out of rock; or `{"kind": "open", "terrain", "surface", "below"}` — a natural ground surface under sky: at the terrain's height the `surface` block, under it `below`, above it air. `terrain` is `{"kind": "flat", "datum"}` (the datum is the terrain's walk plane, so its surface block stands at the datum's `y − 1`) or `{"kind": "heightmap", "heightmap", "base_y", "range"}` — a greyscale PNG in the campaign, exactly the region's `x × z` pixels, each pixel the surface `y` `base_y + value × range / 255` (integer division), read by the loader and attached to the campaign. A plan without `fill` does not parse (`DW0100`); an undeclared datum is `DW0112`; a heightmap unread, unreadable, the wrong size or outside the region's `y` span is `DW0826`; a block that is not a block state is `DW0193`. Per region it is overridden by `volumes[]`. |
+| `volumes[]` | `{id: volume/<kebab>, region, role, note?, block?}` — the mass the WHOLE owns: `massif` (the mountain a cave system is inside), `ground` (the plane under a village), `clearance` (the sky a silhouette needs kept empty). They stand beside places, under them and over them, never inside one (`DW0835`), and they answer to the region like anything else the plan places (`DW0826`). A volume's block is its own `block`, else the fill's block of its kind (spec-0098 §2b): a `massif` is the `solid` fill's block or the `open` fill's `below`; a `ground` is the `open` fill's `surface` over `below`, or the `solid` fill's block; a `clearance` is air and names no block. |
 | `identities[]` | `{fact, measure, cmp}` — guarded comparisons binding the plan to the geometry brief's written numbers. `cmp` is `eq`/`lt`/`le`/`gt`/`ge`. `measure` is a tagged union over a **small fixed vocabulary**, not a parsed string: `{"of":"region-extent","axis":x\|y\|z}`, `{"of":"box-extent","node":…,"axis":x\|z}`, `{"of":"box-height","node":…}`, `{"of":"distance-xz","from":…,"to":…}` (Euclidean between footprint centres), `{"of":"datum-y","datum":…}`. An unknown measure is an ordinary `DW0100` and a node it names is checked like any other reference. **Marked judgement**: the vocabulary will grow, and the falsifier is the first brief fact a campaign cannot bind with it — at which point the missing measure is added as a variant, never worked around by binding a different fact. |
 | `sightlines[]` | `{edge, from, to}` — **one per `vision` edge** (`DW0824`), the segment the stage-5 battery walks. A vision edge carries a sightline rather than a seam because a vista's two ends are routinely not adjacent — a tower seen from a shore shares no face with it — so the seam construct cannot state the one thing it asserts. Each end must lie inside the place its connection names (`DW0824`): the proof walks exactly this segment, so ends elsewhere would prove a different claim, green or red. |
 | `views[]` | `{id: view/<kebab>, eye, look_at, note?}` — the named exterior vantages the silhouette is judged from, rendered beside the stage-2 reference sheet. Optional; a plan with zero views has that zero stated in the binding line. |
 | `lighting` | `{fixture, min_light}` applied to every enclosed box, so a blockout interior is walkable at night without per-box surface. **The engine's existing area-lighting object**, not a twin of it, so it answers the same range rule with the same code (`DW0196`). |
+| `max_drop` | Optional: the deepest fall, in blocks, a designed `drop` in this plan may take — the author's own policy, which `DW0831` confirms every drop seam honours. Absent, no policy cap applies; the unarmoured survivable fall holds every drop either way. |
 | Binding | Every run that carries a plan prints a second line beside the layout-graph one: boxes and **the pairs compared** (with how many are pinned, how many derived, and in how many components), seams (stair, drop), datums, whole-owned volumes, identities, sightlines and views — then one **placing** line per box with its corner and how it was obtained (spec-0059). Two zeroes are called out as findings rather than counted: a plan with no view (the visual review has no declared vantage) and a plan with no whole-owned volume (the rule keeping the whole's mass out of the places examined nothing). A plan with no identity is `DW0834` in its own right. |
 
 ### The horizon's surround (spec-0026)
@@ -929,15 +961,19 @@ about it is what it BUILDS, which is fixed:
 
 | Thing | What the derivation makes of it |
 |---------|---------|
-| a box | A shell one cell thick around the play space — floor course, four walls to the top of the play space, and a ceiling unless the place is sky-open. The floor is the place's own **accent**, cycled deterministically over the plan's boxes, so the colour under a body's feet names the place it is standing in. Two connected places share the wall between them, written once by each and identical either way. |
-| a seam | A frame of contrasting wall around the opening, and the opening itself cut to air — or filled with the bar, on a `barred` way, which the world-load seal model then measures shut exactly as it measures a prefab-authored gate. |
-| a stair | A stepped run inside the box the plan named, at the **gentlest standard pitch the run really has room for** — chosen by `siteplan::gentlest_pitch` over the run `siteplan::stair_run` reports, which are the two calls `DW0830` refuses with, so the plan-time verdict and the built geometry cannot be about different numbers. Across a vertical face the treads start against the wall the seam is in and walk the whole footprint, so the span is the host's extent on that axis. Through a punched **floor or ceiling** it is not: the treads start at the hole and leave along one side of it, so what they have is the room on that side plus the hole's own width, and a pitch chosen against the whole extent is chosen against a run the host does not have. **A run is laid whole or not at all** — the courses that would fall off the far wall are never dropped in silence, because a stair with its bottom missing reads as a stair to every later reader and is not one: the body climbs in from above, stands on the treads, and the place counts as reached while nobody can stand on its floor. A climb no standard pitch fits is left unbuilt, which the observer sees as an unreached place (`DW0837`) — reachable only if `DW0830` let the plan through, which is why both read one function. Realized as whole blocks and bottom slabs rather than as the table's `realization` blocks: the occupancy model treats a stair block as a full cube (deliberately conservative), so treads built from stair blocks would present the navigation model a 16/16 jump per course where the table's own `step_16` says the body takes two 8/16 steps and never leaves the ground. The derivation builds the geometry the table describes out of blocks whose top faces the model measures exactly. The grammar library's `stair_flight` lays stair blocks and is not a second answer to this: its risers are a whole block either way, so the stair block changes what the run looks like and nothing about what the model measures (`grammar.md` §5b). |
-| a stairwell | Over every run through a punched **floor**, the floor cut away wherever a body climbing the run needs it gone (`blockout::stairwell`). The treads leave the hole along one side of it, so their upper courses stand under the floor the hole pierces, and a course close enough to it puts a standing body's head in it: nobody stands there, and the stair is a way down and never a way up — the place under it is one a body falls into and cannot leave (`DW0921`). Stairwell headroom is measured vertically over each tread and the floor opening sized to the run for that reason; that is established practice, not this engine's rule. Which cells go is **measured, not computed**: from the foot of the run to its head, each step onto the next course is asked of `nav::World::body_moves` — the relation `DW0921` floods — over the mass as laid; where it is not a move, the floor over the course being stepped onto is cut, and if it still is not (a jump sweeps the head through the cell over the course it leaves), the floor over that course too. Only the floor course between the host's play space and the hole's plane is cut, over the columns the treads occupy. A step still refused with both cut is left for the observers (`DW0837`, `DW0921`) to name. The count is `blockout binding: … N stairwell cell(s) cut over through-floor runs`, and the battery states how many of those it admitted (`DW0836`). |
-| a volume | Plain mass — `massif` and `ground` in their own blocks, `clearance` kept empty. |
-| the order | Volumes, then every shell, then every interior cleared, then every seam's frame, then every stair, then **the openings**, and the stairwells after them, because a stairwell is measured over the holes it opens off. Two passes are separated on purpose. The interiors: a neighbour's shell may legally stand in the cells over or under a place, and clearing every interior after every shell is what makes *the play space the plan allocated is air* an invariant of the derivation rather than a property of the order two boxes happen to be written in. The openings: a stair arrives AT its seam, so its top course sits directly under or beside the hole, and a course written after the hole was cut fills it back in — cutting last makes *the opening the plan allocated is open* an invariant too, so the massing may do what it likes and the hole is the last word. |
+| the fill | The site's declared `fill`, over the whole region first: a `solid` site's block everywhere, or an `open` site's terrain — the `surface` block at each column's height, `below` under it — merged into rectangles of equal height (spec-0098 §2b). |
+| a box | **A stand-in, never shipped** (spec-0098 §8), and only for a place no piece fills: in the cells that place owns, a ring wall from the claim's bottom to the top of the play space, the floor course in the place's own **accent** (cycled deterministically over the plan's boxes, so the colour under a body's feet names the place), a lid unless sky-open, and a declared roof zone massed solid in the roof block. Nothing is written in the fixed ground, in a neighbour's cells or in a gap; a bound place's owned cells are written by its piece alone. |
+| the ring's ground | For every place, bound or not, its fixed ground cells — the terrain continued to the plot's edge in the fill's `surface`/`below` (or `solid` block); at the columns of a seam at grade (its sill one course over the terrain or less) the ground is the sill minus one, flat across the opening; a seam aloft — a bridge's deck, a door high in a wall — fixes no earth under it, and the column between the terrain and the sill is the owner's. |
+| a seam | Where the place owning the seam's plane is a stand-in: a frame of contrasting wall around the opening, in that place's own cells, and the opening itself cut to air — or filled with the bar, on a `barred` way, which the world-load seal model then measures shut exactly as it measures a prefab-authored gate. Where a piece owns the plane, nothing: the piece cuts its own opening and ships its own bar. |
+| a stair | A stepped run inside the box the plan named, at the **gentlest standard pitch the run really has room for** — chosen by `siteplan::gentlest_pitch` over the run `siteplan::stair_run` reports, which are the two calls `DW0830`'s stand-in finding reads, so the plan-time finding and the built geometry cannot disagree; where no standard fits, the stand-in lays no treads and the place above is unreached (`DW0837`). Laid only in a host no piece fills. |
+| a climb | A ladder in the lower place when it is a stand-in: through a floor, from the lower floor up into the hole's first cell, hung on a pillar the stand-in raises beside it (and, in the hole, on the floor course); up a wall, against the wall under the opening up to the sill's course. Proven by the climb moves of the nav model (spec-0099) — `DW0837` reaches over it and `DW0986` crosses the opening on it. Where the lower place is bound, its piece hangs the ladder up to its own ceiling; the rung in a floor's hole is the hole owner's, so a stand-in that cut the hole hangs it whatever the lower place's binding. |
+| a stairwell | Over every run through a punched **floor**, the floor cut away wherever a body climbing the run needs it gone (`blockout::stairwell`). |
+| a volume | Mass of its own `block`, else of the fill's block of its kind; a `clearance` kept empty. |
+| the order | The fill, the volumes, every stand-in, every stand-in's interior cleared, every place's fixed ground, every seam's frame, every stair, then **the openings**, and the stairwells after them, because a stairwell is measured over the holes it opens off. |
 | lighting | The plan's one `lighting` setting, applied to every enclosed box by the ordinary relight pass. |
+| the record | `validation/blockout.json`: the binding line and every place still massed by name, which the staging gate reads — a stand-in never ships. |
 
-Its diagnostics and the battery that judges the result are `DW0821`/`DW0836`–`DW0839`/`DW0877`/`DW0986`.
+Its diagnostics and the battery that judges the result are `DW0821`/`DW0836`–`DW0839`/`DW0877`/`DW0986`/`DW0990`.
 
 ### l10n sidecars (`l10n/<code>.json`)
 
@@ -2709,8 +2745,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the body takes hold, where it lets go (both kept waypoints), the lowest and
   highest cell it holds in, the block, and a ladder's facing. The cells held
   between `from` and `to` are not waypoints (a waypoint is a place to stand), so
-  a climb is one hop, and the harness drives it. Omitted for a leg that climbs
-  nothing. **Validation metadata, not shipped gameplay** —
+  a climb is one hop, and the harness drives it. **A climb is one column**: a
+  body changes column only by letting go onto a standable cell, so where one
+  ladder tops out onto the foot of the next the route is two climbs, the first
+  letting go at that cell and the second taking hold from it, and the cell is
+  held by the climb whose column it is in (`World::climb_runs`; the gallery's
+  causeway stacks two ladders this way on its critical path). Omitted for a leg
+  that climbs nothing. **Validation metadata, not shipped gameplay** —
   excluded from the delve image (like `packtest-datapack/`); emitted only when a
   walked critical leg exists, so a fully-transported campaign stays
   byte-identical.
@@ -3304,7 +3345,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `camera.requested_pos` and `camera.standoff` on that shot. `pov` is never
   moved — that eye IS the player's — so a `pov` violation stays a build error
   against the derivation. The plan carries the proof's binding counts:
-  `"camera_eye_proof": {"cameras": N, "pulled_in": M}`.
+  `"camera_eye_proof": {"cameras": N, "pulled_in": M}`. An `interior`
+  overview's eye stands three courses over the highest of: its piece's top, a
+  horizon's ground, the site's declared fill at the eye's column, and every
+  placement or site-plan place stacked over that column (its ceiling course and
+  roof, out to its eaves) — a place over another is a stack the overview looks
+  down into, never a block its eye stands inside.
 - **Every showcase camera photographs the scene** (`DW0724`, second shape;
   spec-0069). When the campaign has `design/cameras.json` (read by the loader,
   hashed into the manifest's inputs), `render_plan` proves each of its cameras
@@ -3366,11 +3412,23 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - **The sky of a scene** (`crate::view::scene::sky_of`, spec-0079 §4): the one
   writer of every `sky`, `sun` and `fog` key under `compiler::view`; the review
   frames (`scene::scenes_from_plan`), the panorama and every showcase camera
-  (`camera::world_scene`) take their sky through it. **`clear`** is the hour's
-  sun direction and nothing more — Chunky's simulated sky with its default sun is
-  a clear sky — so a clear scene's bytes are the bytes the engine wrote before
-  the weather reached a scene (pinned by `clear_scenes_keep_their_base_bytes`
-  against goldens emitted at spec-0079's base). **`rain`** and **`thunder`** write
+  (`camera::world_scene`) take their sky through it. **`clear`** under a lit or
+  ramping sky is the hour's sun direction and nothing more — Chunky's
+  simulated sky with its default sun is a clear sky — so such a scene's bytes are
+  the bytes the engine wrote before the weather reached a scene (pinned by
+  `clear_scenes_keep_their_base_bytes` against goldens emitted at spec-0079's
+  base). **A clear night** — the scene's tick on the vendored day timeline's
+  dark-sky plateau, where `visual/sky_color` holds black (ticks 13670..=22330,
+  `celestial::sky_is_dark`) — is not left to the renderer: the pinned core's
+  `PreethamSky.updateSun` clamps a sun's altitude to `[0, π]` before it shades
+  the sky, so a sun under the horizon draws a sunset. In the dusk and dawn
+  ramps the sun stands on or just under the horizon and that clamped sunset is
+  the nearer picture, so they keep the renderer's sky. A clear night writes the whole block of the **night cell** (`scene::BELOW_CLEAR`, spec-0079
+  departure 1): the vendored day timeline's night plateau — the visible sky
+  multiplied by black, `rgb(0, 0, 0)` (`apparentSkyLight` 0), the sky's light at
+  `sky_light_factor` 0.24 in `sky_light_color` `#7a7aff` (`skyLight`,
+  `sky.color`), `fog.color` `#0f0f16` at density 0 — and no sun, pinned to the
+  timeline by `the_clear_night_cell_is_the_timelines_night_plateau`. **`rain`** and **`thunder`** write
   the whole overcast block on every scene: the sun's direction from `sun_at`,
   `sun.intensity`, `sun.color` and `sun.drawTexture false`; `sky.mode
   SOLID_COLOR`, `sky.color`, `sky.skyLight` (the light the sky casts) and
@@ -3391,6 +3449,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   | `high` × `thunder` | 1.92 | 0.72 | 0.125 | 0.003 |
   | `low` × `thunder` | 0.96 | 0.36 | 0.125 | 0.003 |
   | `below` × `thunder` | 0.096 | 0.036 | 0 | 0.003 |
+  | `clear`, dark sky (night cell) | 0.24 | 0 | 0 | 0 |
 
   `low` × `rain` is the overcast dusk measured on one delve
   (`docs/reference/showcase-shots.md` §2b); the other five derive from it by two
@@ -3487,6 +3546,29 @@ relight's colliding fixtures. The nav `World`'s cell sets are copy-on-write
 gate, a counterfactual — shares the bulk and stores only its own edits, and a
 set that fills its bounding box is held as a bitset. Iteration over either is in
 `[i32; 3]` order, as a `BTreeSet` iterates.
+
+**A template places what the game places** (spec-0098 §7). Every cell a
+template names is written — **air included**, which carves the mass and any
+earlier block under it, exactly as `/place template` does — except a
+`minecraft:structure_void`, which places nothing, so whatever stood there shows
+through, as at a cell the template omits. This is what a piece's voids rely on:
+a bound piece holds `structure_void` at every cell of its frame its place does
+not own, and the model reads the neighbour's wall, the ring's fixed ground or
+the fill standing there. (The surround's templates do not carve the map: the
+map wins the argument, and the surround is read without its air.)
+
+**The template ships the way the model reads it.** The pinned game's `/place
+template` places every block a template lists, a listed `structure_void`
+included — `PlaceCommand.placeTemplate` builds a bare `StructurePlaceSettings`
+and `StructureTemplate.placeInWorld` names no block (1.21.11 server, Mojang
+mappings) — so a void shipped as a block deletes the floor it lands on. Vanilla's
+own save never lists one: the structure block hands `structure_void` to
+`fillFromWorld` as a block to skip. Every template the datapack ships (and the
+admission gallery's) therefore goes through `admit::structure::as_placed`: each
+`structure_void` cell is dropped from the block list and the palette re-indexed
+without it; everything else in the file is carried, and a template holding no
+void ships byte-identical. The placement sentinel is read off the shipped bytes
+and never picks a void.
 
 **Socket sealing is a property of a placed piece, not of the layout solver.**
 `solver::seal_layout` runs over the placed pieces of **every** area, pool or
@@ -5457,7 +5539,10 @@ over its region files in name order is printed. No light arrays, heightmaps,
 entities, block entities or ticks. **`--world` is gone**: a showcase frame has
 one world source. The server save (`validation/world-save.sh`) is the
 instrument that checks the writer (`DW0955`, `tools/ci/check-written-world.py`),
-and stays the world source of `delvec scene` and `delvec panorama`.
+and stays the world source of `delvec scene` and `delvec panorama`. The check is
+bound to staging: `check-written-world.py --record` writes its verdict named by
+the build's manifest sha256, and `tools/creator/staging-gate.py` mints no
+admission token without a passing record of that build (`--written-world`).
 
 **What a frame does not show, by name** (spec-0089 §6): entities (the pinned
 core draws none of the kinds the engine summons, from any world); block-entity
@@ -5510,10 +5595,11 @@ alike (`compiler::design::answered`, exit 3), one sentence wherever it is read.
 **Binding line**, printed by every `delvec cameras` run, refused or not, beside
 the `answers:` sentence: one line per camera this run frames — `sky: <name>
 <time>+<weather> <derived from <row> | stated> class <high|low|below> — <the
-renderer's own clear sky | overcast cell <class>×<weather>: skyLight …,
+renderer's own clear sky | overcast cell <class>×<weather> | night cell <class>×clear: skyLight …,
 apparentSkyLight …, sun …, fog …>` — and `skies: D derived, S stated, over C
 camera(s)[ (R refused)]; weathers emitted: {…}`, whose set names the non-clear
-weathers (a clear scene emits no sky block). A record stating no sky prints `0
+weathers (a clear night's block is the night cell, named on its own `sky:`
+line). A record stating no sky prints `0
 stated`; a rain delve rendering clear prints the empty set. Beside them, per
 framed camera, `after: <name> at load` or `after: <name> after <step> (step <i>
 of <n> on <the critical path | branch `<id>`'s path>): <c> cells moved from load,
@@ -5963,9 +6049,7 @@ calibration flag: walking a level cannot make a player 0.7 blocks wide.
 Two of them are worth naming because the obvious filing is wrong. The width and
 clearance at which a body can **pass** (`passable.width`, `passable.clearance`)
 are functions of the collision box and belong here, not among the standards —
-no walk can change them. What a walk decides is the **designed** minimum — a
-way class's `min_width` and `min_clearance` — which is a comfort judgement and
-can never be chosen below the physical floor. And the jump arc
+no walk can change them. And the jump arc
 (`jump.airborne`, `walk.ticks-per-block`) is the derivation behind the nav
 model's elevation weight, which lived in a doc comment where nothing could read
 it; it is data here, and the weight is **asserted** against it rather than
@@ -5973,45 +6057,20 @@ computed from it, because the weight is a tuned figure an owner playtest
 settled and re-deriving it at run time would move every route in every campaign
 the first time somebody edited a physics fact.
 
-**Building metrics** are standards this project fixes: the kit grid's quantum
-and datum convention, the standard seam opening set, the stair pitch standards,
-storey heights, the size-class ladder, **the way vocabulary**, the designed-drop
-policy cap, and the pacing coefficients. Every one carries `calibrated`, and
-every one is `false` — the metrics gym has not been walked. The pacing
-coefficients additionally carry **no threshold anywhere**: a threshold on a
-number this uncertain would be defending nothing.
+**Building metrics** are standards this project fixes: the datum convention,
+the standard seam opening set, the stair pitch standards, storey heights and
+the pacing coefficients. Every one carries `calibrated`, and every one is
+`false` — the metrics gym has not been walked. The pacing coefficients
+additionally carry **no threshold anywhere**: a threshold on a number this
+uncertain would be defending nothing.
 
-**Two vocabularies classify a place, and they answer different questions.** A
-`size-class.<name>` bounds a footprint on both horizontal axes and carries a
-nominal traverse; a `way-class.<name>` bounds a **cross-section** —
-`{min_width, max_width, min_clearance}` — and says nothing about the run,
-because a route's length is per-campaign geometry and never a standard. A place
-declares one or the other (`DW0875`), and `Metrics::resolve` is the one path
-from either name to its entry.
-
-`way-class.corridor` **subsumes** the corridor's width and clearance: they are
-its `min_width` and `min_clearance` rather than keys of their own, so there is
-one authority for the narrow way instead of a class beside two loose numbers
-nothing could spell — no bay can instantiate an entry no document can name.
-`self_check`
-re-asserts both inherited floors over **every** way class, not over the one that
-inherited them, since a designed minimum under the physical passable size is a
-standard nothing can use whether it is a road or a corridor.
-
-A way class's `max_width` is held to the kit quantum, and its `min_width`
-deliberately is not. A box's horizontal extents are multiples of the quantum
-(`DW0825`), so a `max_width` off it would make the widest member of the class
-uninstantiable and the gym unable to rule on it. The narrow bound is a different
-matter: the corridor's inherited floor of two sits under a quantum of four, so
-the narrowest way any plan can currently DRAW is four cells. Both numbers are
-provisional and the walk owns both — which of them moves is the gym's judgement,
-and the entry's own note asks for it.
-
-The drop cap and the survivable fall sit beside each other on purpose. The cap
-is a **policy** and is deliberately far tighter than the physics, because a drop
-edge is a topology decision and should not also be a health decision; the
-self-check refuses a cap that reaches the physical ceiling, since a cap there is
-not a policy at all.
+**The table states no size of a place.** A box's `extent` is the author's
+declaration and the piece detailed into it may not exceed it (`DW0843`), so a
+class range beside it would confirm nothing; there is no size-class ladder, no
+way vocabulary and no footprint quantum. **Nor does it cap a designed drop**: a
+cap on how far a declared fall may go is the author's to declare, on the site
+plan's `max_drop`, and the physical ceiling — the unarmoured survivable fall —
+holds every drop whether or not one is declared (`DW0831`).
 
 ### Provenance, per entry
 
@@ -6069,9 +6128,8 @@ Three things on stderr, each stated whether or not it found anything:
 The self-check is the table checked against itself and against the player half:
 every opening admits a standing body, every standard pitch presents a tread
 inside the walk-up budget (so a "standard" pitch is *walked*, never jumped),
-every size class sits on the kit grid with a clearance above the passable
-floor, every storey leaves interior between its courses, the drop cap is under
-the survivability ceiling, and the route pace is under the pure-walk one.
+every storey leaves interior between its courses, and the route pace is under
+the pure-walk one.
 
 Two failures are **internal errors** (exit ≥10), not diagnostics. A table that
 contradicts itself is a defect in `dsl::metrics` and not in anybody's campaign,
@@ -6086,13 +6144,13 @@ nine stage documents, no authored geometry, built by the ordinary stage-5
 derivation. It is what a walk calibrates the table on.
 
 What it lays out is read out of the table rather than typed beside it — a
-**spine** of bays, one per rung of the size-class ladder at each of its two
-bounds, chained by seams that take the widest standard opening both faces admit,
-so a body walks from the smallest place the ladder allows to the largest through
-every doorway it defines; and off the spine, two climbs to the same rise whose
-hosts differ only in the run they afford, so the derivation picks the gentlest
-standard pitch for one and the steepest for the other, and a designed fall at
-exactly the drop policy's cap with a stair back out of it.
+**spine** of bays chained by one seam per standard opening, in table order, so a
+body walks through every doorway the table defines; and off the spine, two
+climbs to the same rise of one low storey whose hosts differ only in the run
+they afford, so the derivation picks the gentlest standard pitch for one and the
+steepest for the other, and a designed fall of that storey with a stair back
+out of it. The bays' footprints are the gym's own declaration, sized so each
+opening fits its face and each host affords its pitch's run.
 
 Every one of those choices reads the table through the accessor `DW0813` binds
 to, which is what makes the coverage count above mean something: the generator

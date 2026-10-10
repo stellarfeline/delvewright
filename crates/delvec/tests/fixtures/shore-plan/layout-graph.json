@@ -76,33 +76,28 @@
       {
         "id": "node/landing",
         "intent": "arrival",
-        "note": "Where a body starts, and the only place on the map it has not chosen to be.",
-        "size_class": "alcove"
+        "note": "Where a body starts, and the only place on the map it has not chosen to be."
       },
       {
         "id": "node/hall",
         "intent": "hub",
-        "note": "The keeper stands here; every other place is entered from it.",
-        "size_class": "room"
+        "note": "The keeper stands here; every other place is entered from it."
       },
       {
         "id": "node/loft",
         "intent": "vista",
-        "note": "Climbed by the stair and left by the fall, which is what makes the fall a shortcut.",
-        "size_class": "alcove"
+        "note": "Climbed by the stair and left by the fall, which is what makes the fall a shortcut."
       },
       {
         "id": "node/cell",
-        "intent": "gate-house",
-        "size_class": "alcove"
+        "intent": "gate-house"
       },
       {
         "id": "node/exit",
-        "intent": "goal-chamber",
-        "size_class": "alcove"
+        "intent": "goal-chamber"
       }
     ]
   },
-  "dsl_version": "0.37.0",
+  "dsl_version": "0.38.0",
   "stage": "layout-graph"
 }

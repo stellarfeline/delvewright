@@ -9,8 +9,8 @@
 //! merely forbidden (spec-0049 §7.2) — there is nothing to author early.
 //!
 //! Both authored documents are named because both reach the bytes: a seam is
-//! cut to air or filled with the bar by its edge's `class`, and a sky-open box
-//! takes its headroom from its node's `size_class`.
+//! cut to air or filled with the bar by its edge's `class`, and every box's
+//! extent and headroom are the plan's own declaration.
 //!
 //! # Where it enters the build
 //!
@@ -61,8 +61,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use delvewright_dsl::StationKind;
 use delvewright_dsl::metrics::{MetricKind, MetricValue, Metrics, Reads, passable_width_cells};
 use delvewright_dsl::siteplan::{
-    Crossing, ENTRY_ANCHOR, PlacedBox, PlacedSeam, SITE_AREA, VolumeRole, node_anchor, seam_anchor,
-    seam_unlock_anchor,
+    Aabb, Crossing, ENTRY_ANCHOR, Ground, Owner, PlacedBox, PlacedSeam, SITE_AREA, Site,
+    SitePlanContent, VolumeRole, merge_cells, node_anchor, seam_anchor, seam_unlock_anchor,
 };
 use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
 use serde::Serialize;
@@ -90,10 +90,9 @@ pub mod palette {
     /// A stair's half-courses. A bottom slab presents an 8/16 top face, which is
     /// inside the walk-up budget, so a derived stair is walked and never jumped.
     pub const TREAD_HALF: &str = "minecraft:polished_diorite_slab[type=bottom]";
-    /// Solid mass the whole owns — the mountain a cave system is inside.
-    pub const MASSIF: &str = "minecraft:deepslate";
-    /// The ground the places stand on.
-    pub const GROUND: &str = "minecraft:tuff";
+    /// A declared roof zone over a place no piece has drawn yet (spec-0098
+    /// §8): massed solid so the skyline is walked before it is drawn.
+    pub const ROOF: &str = "minecraft:bricks";
     /// What a sealed `barred` seam stands in until content opens it.
     ///
     /// Re-exported, never restated: `DW0343` asks whether a gate anchor declares
@@ -148,6 +147,11 @@ pub struct Blockout {
     pub boxes: Vec<PlacedBox>,
     /// The plan's connections, resolved into world cells.
     pub seams: Vec<PlacedSeam>,
+    /// The site's fill, resolved.
+    pub ground: Ground,
+    /// The places this derivation stood a stand-in in — every place no piece is
+    /// bound to, by name, in plan order. A stand-in never ships (spec-0098 §8).
+    pub massed: Vec<String>,
     /// What the derivation bound to.
     pub binding: Binding,
 }
@@ -248,6 +252,8 @@ pub struct Binding {
     /// derivation laid**. A stair hosted in a bound box is the piece's to build,
     /// so it is not counted here — the count means what it says.
     pub stairs: usize,
+    /// Of those, climbs whose ladder this derivation hung in a stand-in.
+    pub climbs: usize,
     /// Cells of a floor cut over a through-floor stair's run beyond the hole the
     /// plan allocated — the stairwell [`stairwell`] measured the climb to need.
     /// Zero on a plan whose every through-floor run already climbs inside its
@@ -263,6 +269,11 @@ pub struct Binding {
     pub fills: usize,
     /// World cells the writes cover.
     pub cells: u64,
+    /// Cells of the rings' fixed ground the terrain pass wrote (spec-0098 §2
+    /// rule 0), for every place, bound or not.
+    pub fixed_cells: u64,
+    /// Roof zones massed over stand-ins (spec-0098 §8).
+    pub roofs: usize,
 }
 
 impl Binding {
@@ -277,13 +288,18 @@ impl Binding {
     pub fn line(&self) -> String {
         format!(
             "blockout binding: {b} place(s) massed ({de} detailed, so {un} massed by the \
-             derivation), {s} seam(s) cut ({st} stair, {ba} barred), {sw} stairwell cell(s) cut \
-             over through-floor runs, {v} whole-owned volume(s), {a} anchor(s) synthesized, {f} region write(s) over {c} cell(s).",
+             derivation; {r} roof zone(s) massed), {fx} fixed ring ground cell(s) laid, {s} \
+             seam(s) cut ({st} stair, {cl} climb, {ba} barred), {sw} stairwell cell(s) cut over \
+             through-floor runs, {v} whole-owned volume(s), {a} anchor(s) synthesized, {f} \
+             region write(s) over {c} cell(s).",
+            r = self.roofs,
+            fx = self.fixed_cells,
             de = self.detailed,
             un = self.boxes.saturating_sub(self.detailed),
             b = self.boxes,
             s = self.seams,
             st = self.stairs,
+            cl = self.climbs,
             sw = self.stairwell_cells,
             ba = self.barred,
             v = self.volumes,
@@ -398,6 +414,21 @@ impl Mass {
         }
         // Whatever survived all three axes is the intersection with the frame,
         // and the frame is the piece's.
+    }
+
+    /// Write `block` over `lo..=hi`, but only in the cells of `mask` — the
+    /// cells one place owns (spec-0098 §8: a stand-in is written only in its own
+    /// place's claim). A non-zero `sink` is the `Perturb::sink` defect, which
+    /// writes unmasked so the displaced mass lands where the defect puts it.
+    fn write_within(&mut self, lo: [i64; 3], hi: [i64; 3], block: &str, mask: &[Aabb], sink: i64) {
+        if sink != 0 {
+            return self.write(lo, hi, block);
+        }
+        for (mlo, mhi) in mask {
+            let a = [lo[0].max(mlo[0]), lo[1].max(mlo[1]), lo[2].max(mlo[2])];
+            let b = [hi[0].min(mhi[0]), hi[1].min(mhi[1]), hi[2].min(mhi[2])];
+            self.write(a, b, block);
+        }
     }
 
     fn write_raw(&mut self, lo: [i64; 3], hi: [i64; 3], block: &str) {
@@ -558,33 +589,47 @@ pub fn derive_with(
     let table = Metrics::table();
     let boxes = delvewright_dsl::siteplan::placed_boxes(c, reads);
     let seams = delvewright_dsl::siteplan::placed_seams(c, &boxes, reads);
+    let ground = delvewright_dsl::siteplan::Ground::of(c);
+    let site = Site::new(&boxes, &seams, &ground);
     let by_node: BTreeMap<&str, &PlacedBox> =
         boxes.iter().map(|b| (b.node.0.as_str(), b)).collect();
 
-    // The frames a binding owns, in plan document order. `Mass::holes` is what
-    // the fabric split IS; everything below writes as it always did.
-    let holes: Vec<([i64; 3], [i64; 3])> = boxes
-        .iter()
-        .filter(|b| bound.contains(b.node.0.as_str()))
-        .map(|b| {
-            let f = delvewright_dsl::Frame::of(b);
-            (f.lo, f.hi)
-        })
+    // Who owns what, once, from the one rule every reader shares.
+    let owned: Vec<Vec<Aabb>> = (0..boxes.len()).map(|i| site.ownership(i).owned).collect();
+    let is_bound = |i: usize| bound.contains(boxes[i].node.0.as_str());
+    // The cells a binding owns, in plan document order. `Mass::holes` is what
+    // the fabric split IS: nothing below writes a cell a bound piece owns.
+    let holes: Vec<Aabb> = (0..boxes.len())
+        .filter(|i| is_bound(*i))
+        .flat_map(|i| owned[i].iter().copied())
         .collect();
-    let detailed = holes.len();
+    let detailed = (0..boxes.len()).filter(|i| is_bound(*i)).count();
     let mut mass = Mass::new(holes);
     let mut pieces: Vec<PiecePlacement> = Vec::new();
+    let (rlo, rhi) = (plan.region.min, plan.region.max());
 
-    // (1) The whole's own mass.
+    // (0) What undeclared space becomes (spec-0098 §2b): the declared fill, laid
+    // over the whole region before anything is placed in it.
+    lay_fill(&mut mass, &ground, plan, rlo, rhi);
+
+    // (1) The whole's own mass, each volume of the block its kind takes from
+    // the fill unless it names its own.
     for v in &plan.volumes {
         let lo = v.region.min;
         let hi = v.region.max();
-        let block = match v.role {
-            VolumeRole::Massif => palette::MASSIF,
-            VolumeRole::Ground => palette::GROUND,
-            VolumeRole::Clearance => palette::AIR,
-        };
-        mass.write(lo, hi, block);
+        match (&v.block, v.role) {
+            (_, VolumeRole::Clearance) => mass.write(lo, hi, palette::AIR),
+            (Some(b), _) => mass.write(lo, hi, b),
+            (None, role) => {
+                let top = hi[1];
+                let body = ground.volume_block(role, [lo[0], top - 1, lo[2]], top);
+                let cap = ground.volume_block(role, [lo[0], top, lo[2]], top);
+                if top > lo[1] {
+                    mass.write(lo, [hi[0], top - 1, hi[2]], body.unwrap_or(palette::AIR));
+                }
+                mass.write([lo[0], top, lo[2]], hi, cap.unwrap_or(palette::AIR));
+            }
+        }
         pieces.push(piece(
             format!("blockout/{}", v.id.0),
             lo,
@@ -592,54 +637,82 @@ pub fn derive_with(
         ));
     }
 
-    // (2) Every place's shell.
+    // (2) **The stand-ins** (spec-0098 §8): the shell of every place no piece
+    // is bound to, written only in the cells that place owns — never in the
+    // fixed ground, never in a neighbour's cells, never in a gap.
+    let mut roofs_massed = 0usize;
     for (i, b) in boxes.iter().enumerate() {
-        let sink = perturb.drop_of(&b.node);
-        let (mut lo, mut hi) = shell(b);
-        lo[1] -= sink;
-        hi[1] -= sink;
-        // Floor course: the accent, so the colour under a body's feet names the
-        // place it is standing in.
-        mass.write(
-            [lo[0], lo[1], lo[2]],
-            [hi[0], lo[1], hi[2]],
-            palette::accent(i),
-        );
-        // Four walls, from the walk plane to the top of the play space.
-        let (wy0, wy1) = (
-            b.floor - sink,
-            if perturb.short_walls {
-                b.floor - sink
-            } else {
-                b.floor - sink + i64::from(b.clearance) - 1
-            },
-        );
-        for (x0, x1, z0, z1) in [
-            (lo[0], lo[0], lo[2], hi[2]),
-            (hi[0], hi[0], lo[2], hi[2]),
-            (lo[0] + 1, hi[0] - 1, lo[2], lo[2]),
-            (lo[0] + 1, hi[0] - 1, hi[2], hi[2]),
-        ] {
-            mass.write([x0, wy0, z0], [x1, wy1, z1], palette::WALL);
-        }
-        // What closes it overhead. A sky-open place claims the ground and its
-        // class's own headroom and NOTHING above that, so it gets no course.
-        if !b.open {
-            mass.write(
-                [lo[0], hi[1], lo[2]],
-                [hi[0], hi[1], hi[2]],
-                palette::CEILING,
-            );
-        }
+        let (slo, shi) = site.shell(i);
         pieces.push(piece(
             format!("blockout/{}", b.node.0),
-            lo,
-            [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1],
+            slo,
+            [
+                shi[0] - slo[0] + 1,
+                shi[1] - slo[1] + 1,
+                shi[2] - slo[2] + 1,
+            ],
         ));
+        if is_bound(i) {
+            continue;
+        }
+        let sink = perturb.drop_of(&b.node);
+        let mask: &[Aabb] = &owned[i];
+        let down = |c: [i64; 3]| [c[0], c[1] - sink, c[2]];
+        // The ring: wall from the claim's bottom to the top of the play space —
+        // over the fixed ground, which the mask leaves out.
+        let wall_top = if perturb.short_walls {
+            b.floor - sink
+        } else {
+            b.top() - sink
+        };
+        let (x0, x1, z0, z1) = (slo[0], shi[0], slo[2], shi[2]);
+        let wall_bottom = if perturb.hollow_edge {
+            b.floor_course_y()
+        } else {
+            slo[1]
+        };
+        let slo = [slo[0], wall_bottom, slo[2]];
+        for (a, c) in [
+            ([x0, slo[1], z0], [x0, wall_top, z1]),
+            ([x1, slo[1], z0], [x1, wall_top, z1]),
+            ([x0 + 1, slo[1], z0], [x1 - 1, wall_top, z0]),
+            ([x0 + 1, slo[1], z1], [x1 - 1, wall_top, z1]),
+        ] {
+            mass.write_within(down(a), [c[0], c[1], c[2]], palette::WALL, mask, sink);
+        }
+        // Floor course: the accent, so the colour under a body's feet names the
+        // place it is standing in.
+        let fy = b.floor_course_y();
+        mass.write_within(
+            down([x0, fy, z0]),
+            down([x1, fy, z1]),
+            palette::accent(i),
+            mask,
+            sink,
+        );
+        if !b.open {
+            if let Some((zlo, zhi)) = b.roof_zone() {
+                roofs_massed += 1;
+                mass.write_within(zlo, zhi, palette::ROOF, mask, 0);
+            }
+            let ly = b.top() + 1;
+            mass.write_within(
+                down([x0, ly, z0]),
+                down([x1, ly, z1]),
+                palette::CEILING,
+                mask,
+                sink,
+            );
+        }
     }
 
-    // (3) Every place's interior, cleared — see the ordering note above.
+    // (3) Every unbound place's interior, cleared — after every shell, so the
+    // play space the plan allocated is air whatever order two boxes were
+    // written in.
     for b in &boxes {
+        if bound.contains(b.node.0.as_str()) {
+            continue;
+        }
         let sink = perturb.drop_of(&b.node);
         let (mut lo, mut hi) = b.space();
         lo[1] -= sink;
@@ -663,6 +736,36 @@ pub fn derive_with(
         }
     }
 
+    // (3b) **The ring's fixed ground** (spec-0098 §2 rule 0), for every place,
+    // bound or not: the terrain continued to the plot's edge, so the plot's edge
+    // is the same ground at stage 5 as in the shipped world.
+    let mut by_block: BTreeMap<String, BTreeSet<[i64; 3]>> = BTreeMap::new();
+    for i in 0..boxes.len() {
+        for (cell, g) in site.fixed_cells(i) {
+            by_block
+                .entry(ground.ground_block(cell, g).to_string())
+                .or_default()
+                .insert(cell);
+        }
+    }
+    let fixed_cells: u64 = by_block.values().map(|v| v.len() as u64).sum();
+    for (block, cells) in &by_block {
+        for (lo, hi) in merge_cells(cells) {
+            mass.write(lo, hi, block);
+        }
+    }
+
+    // Who owns each seam's plane, and whether a piece stands there to cut it.
+    let plane_owner: Vec<Option<usize>> = seams
+        .iter()
+        .map(|s| match site.owner(s.opening.0) {
+            Owner::Place(n) => site.index_of(&n),
+            _ => None,
+        })
+        .collect();
+    let cut_by_derivation =
+        |k: usize| plane_owner[k].is_none_or(|i| !bound.contains(boxes[i].node.0.as_str()));
+
     // (4) Every PORTAL's frame.
     //
     // A contact gets none, and that is what a contact IS: the boundary is
@@ -670,13 +773,18 @@ pub fn derive_with(
     // (spec-0053 §4). A frame ring around a 55-cell front would be a wall drawn
     // in a second block — the exact thing the span says is not there — and it
     // would stand in every column the crossing profile is measured over.
+    //
+    // Only where the plane's owner is a stand-in, and only in the cells it
+    // owns: a bound owner's piece draws its own doorway, and the ring's fixed
+    // ground under a sill is the whole's.
     let mut anchors: BTreeMap<String, AnchorSpec> = BTreeMap::new();
-    for s in &seams {
-        if s.crossing == Crossing::Contact {
+    for (k, s) in seams.iter().enumerate() {
+        if s.crossing == Crossing::Contact || !cut_by_derivation(k) {
             continue;
         }
+        let mask: &[Aabb] = plane_owner[k].map_or(&[], |i| owned[i].as_slice());
         for (flo, fhi) in frame_ring(s) {
-            mass.write(flo, fhi, palette::FRAME);
+            mass.write_within(flo, fhi, palette::FRAME, mask, 0);
         }
     }
 
@@ -710,8 +818,13 @@ pub fn derive_with(
     // plan allocated is open* an invariant of the derivation rather than a
     // property of which pass happened to run second: the massing may do what it
     // likes, and the hole is the last word.
-    for s in &seams {
+    for (k, s) in seams.iter().enumerate() {
         let (olo, ohi) = slide(s, perturb.slide_openings);
+        if !cut_by_derivation(k) && !(s.crossing == Crossing::Contact && perturb.wall_contacts) {
+            // The plane is a bound piece's: its opening, and a `barred` way's
+            // shut state, are the piece's to ship (spec-0098 §2).
+            continue;
+        }
         if s.crossing == Crossing::Contact && perturb.wall_contacts {
             // The deliberate defect: the front the plan allocated, walled.
             mass.write(olo, ohi, palette::WALL);
@@ -728,6 +841,89 @@ pub fn derive_with(
         } else {
             mass.write(olo, ohi, palette::AIR);
         }
+    }
+
+    // (6b) **Every climb's ladder**, in the lower place when it is a stand-in
+    // (spec-0098 §2c, spec-0099). Through a floor: a ladder rises from the
+    // lower floor up into the hole's first cell, hung on a pillar the stand-in
+    // raises beside it and, in the hole, on the floor course itself. Up a
+    // wall: a ladder against the wall under the opening, up to the sill's own
+    // course, so a body on it steps into the opening. Written after the
+    // openings so the hole it climbs into is the last word only where the
+    // ladder stands. The rung in a floor's hole is the hole's owner's: a
+    // stand-in that cut the hole hangs it whatever the lower place's binding.
+    let mut climbs = 0usize;
+    for (k, s) in seams.iter().enumerate() {
+        if s.class != "climb" {
+            continue;
+        }
+        let (Some(pa), Some(pb)) = (
+            boxes.iter().position(|b| b.node == s.a),
+            boxes.iter().position(|b| b.node == s.b),
+        ) else {
+            continue;
+        };
+        let lo_i = if boxes[pa].floor <= boxes[pb].floor {
+            pa
+        } else {
+            pb
+        };
+        let low = &boxes[lo_i];
+        if boxes[pa].floor == boxes[pb].floor {
+            continue;
+        }
+        let low_is_stand_in = !bound.contains(low.node.0.as_str());
+        let mask = owned[lo_i].clone();
+        let (olo, _) = (s.opening.0, s.opening.1);
+        if s.normal_axis == 1 {
+            let (x, z, top) = (olo[0], olo[2], olo[1]);
+            let ladder = "minecraft:ladder[facing=east,waterlogged=false]";
+            // The rung in the hole belongs to whoever cut the hole, and the
+            // run under it to the lower place: each writer is asked about
+            // its own cells only. A bound lower piece hangs its ladder up to
+            // its own ceiling and no further, so a rung left to the lower
+            // place's binding is a rung nobody writes.
+            let hole_is_ours = cut_by_derivation(k);
+            if !low_is_stand_in && !hole_is_ours {
+                continue;
+            }
+            if low_is_stand_in {
+                mass.write_within(
+                    [x - 1, low.floor, z],
+                    [x - 1, top - 1, z],
+                    palette::WALL,
+                    &mask,
+                    0,
+                );
+                mass.write_within([x, low.floor, z], [x, top - 1, z], ladder, &mask, 0);
+            }
+            if hole_is_ours {
+                mass.write([x, top, z], [x, top, z], ladder);
+            }
+        } else if !low_is_stand_in {
+            continue;
+        } else {
+            let a = s.normal_axis;
+            let (lc, hc) = low.space();
+            let toward = if (lc[a] + hc[a]) / 2 > s.plane { 1 } else { -1 };
+            let facing = match (a, toward) {
+                (0, 1) => "east",
+                (0, _) => "west",
+                (_, 1) => "south",
+                _ => "north",
+            };
+            let ladder = format!("minecraft:ladder[facing={facing},waterlogged=false]");
+            let mut at = olo;
+            at[a] = s.plane + toward;
+            mass.write_within(
+                [at[0], low.floor, at[2]],
+                [at[0], olo[1], at[2]],
+                &ladder,
+                &mask,
+                0,
+            );
+        }
+        climbs += 1;
     }
 
     // The deliberate defect `Perturb::bury_barred` names: the far side of every
@@ -759,9 +955,16 @@ pub fn derive_with(
     // The synthesized spatial vocabulary (spec-0049 §5.2), read off the mass
     // that has just been laid — see `Mass::solid_in` for why it cannot be read
     // off the plan.
+    // Exactly the names the one authority says the derivation provides: a
+    // scenery place (`reached: false`) has no place anchor.
+    let provided = delvewright_dsl::synthesized_anchors(c);
     for b in &boxes {
+        let name = node_anchor(&b.node);
+        if !provided.contains(&name) {
+            continue;
+        }
         anchors.insert(
-            node_anchor(&b.node),
+            name,
             AnchorSpec::Point(narrow(footing(&mass, b, b.centre()))),
         );
     }
@@ -863,13 +1066,21 @@ pub fn derive_with(
         detailed,
         seams: seams.len(),
         stairs,
+        climbs,
         stairwell_cells,
         barred: seams.iter().filter(|s| s.class == "barred").count(),
         volumes: plan.volumes.len(),
         anchors: anchors.len(),
         fills: mass.fills.len(),
         cells: mass.cells,
+        fixed_cells,
+        roofs: roofs_massed,
     };
+    let massed: Vec<String> = boxes
+        .iter()
+        .filter(|b| !bound.contains(b.node.0.as_str()))
+        .map(|b| b.node.0.clone())
+        .collect();
     Some((
         AreaPlacement {
             area_id: SITE_AREA.to_string(),
@@ -881,9 +1092,79 @@ pub fn derive_with(
             synthesized: anchors.into_iter().collect(),
             boxes,
             seams,
+            ground,
+            massed,
             binding,
         },
     ))
+}
+
+/// **Lay the declared fill over the whole region** (spec-0098 §2b): a `solid`
+/// site's block everywhere; an `open` site's terrain column by column — the
+/// `surface` block at the terrain's height, `below` under it, air above —
+/// merged into rectangles of equal height so a smooth slope costs few writes.
+/// Deterministic: the merge walks columns in `x`-then-`z` order (ADR-0006).
+fn lay_fill(
+    mass: &mut Mass,
+    ground: &Ground,
+    plan: &SitePlanContent,
+    rlo: [i64; 3],
+    rhi: [i64; 3],
+) {
+    let _ = plan;
+    if !ground.is_declared() {
+        return;
+    }
+    if !ground.is_open() {
+        if let Some(b) = ground.fill_block(rlo) {
+            let b = b.to_string();
+            mass.write(rlo, rhi, &b);
+        }
+        return;
+    }
+    // Equal-height rectangles over the region's columns.
+    let mut done: BTreeSet<(i64, i64)> = BTreeSet::new();
+    for x in rlo[0]..=rhi[0] {
+        for z in rlo[2]..=rhi[2] {
+            if done.contains(&(x, z)) {
+                continue;
+            }
+            let Some(top) = ground.top(x, z) else {
+                continue;
+            };
+            let same =
+                |xx: i64, zz: i64| !done.contains(&(xx, zz)) && ground.top(xx, zz) == Some(top);
+            let mut z1 = z;
+            while z1 < rhi[2] && same(x, z1 + 1) {
+                z1 += 1;
+            }
+            let mut x1 = x;
+            while x1 < rhi[0] && (z..=z1).all(|zz| same(x1 + 1, zz)) {
+                x1 += 1;
+            }
+            for xx in x..=x1 {
+                for zz in z..=z1 {
+                    done.insert((xx, zz));
+                }
+            }
+            let top = top.min(rhi[1]);
+            if top < rlo[1] {
+                continue;
+            }
+            let (Some(surface), below) = (
+                ground.fill_block([x, top, z]).map(str::to_string),
+                ground.fill_block([x, top - 1, z]).map(str::to_string),
+            ) else {
+                continue;
+            };
+            if top > rlo[1]
+                && let Some(below) = below
+            {
+                mass.write([x, rlo[1], z], [x1, top - 1, z1], &below);
+            }
+            mass.write([x, top, z], [x1, top, z1], &surface);
+        }
+    }
 }
 
 /// A template-less placed piece: what the world's AABB readers (forceload,
@@ -900,20 +1181,6 @@ fn piece(prefab_id: String, lo: [i64; 3], size: [i64; 3]) -> PiecePlacement {
         // the site plan and proved by `DW0836`, never mated.
         mated: Vec::new(),
     }
-}
-
-/// A place's shell: the play space grown by one cell on every side.
-///
-/// The one cell is the wall, and it is the same cell for two connected places —
-/// `DW0828` allocates a seam only on a face whose two boxes stand exactly one
-/// apart, so their shells share that column and the derivation writes it twice
-/// with the same block rather than arbitrating between two.
-fn shell(b: &PlacedBox) -> ([i64; 3], [i64; 3]) {
-    let (lo, hi) = b.space();
-    (
-        [lo[0] - 1, lo[1] - 1, lo[2] - 1],
-        [hi[0] + 1, hi[1] + 1, hi[2] + 1],
-    )
 }
 
 /// A seam's opening, displaced along its face's first in-plane axis.
@@ -1439,6 +1706,15 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW0990`: the plot does not stitch (spec-0098 §2c, §7). Two shapes of
+    /// one claim — that a place meets the ground the whole gave it: a piece
+    /// writes a fixed ring cell (read off its own `.nbt` at validation, beside
+    /// `DW0987`), and a crack along a claim boundary (measured over the
+    /// assembled bytes in this battery).
+    pub const DW_PLOT_UNSTITCHED: DwCode = DwCode::new("DW0990", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0838`: a connection nothing allocated.
     pub const DW_CROSSING_UNALLOCATED: DwCode = DwCode::new("DW0838", ExitTier::Build);
 }
@@ -1482,6 +1758,8 @@ pub struct BatteryBinding {
     pub stairwell_cells: usize,
     /// Places proven reached — `DW0837`.
     pub nodes: usize,
+    /// Of those, scenery (`reached: false`) proven NOT reached — `DW0837`.
+    pub scenery: usize,
     /// Standable cells classified by owner — `DW0838`.
     pub standable: usize,
     /// Unordered place pairs tested for an unallocated crossing — `DW0838`.
@@ -1495,6 +1773,27 @@ pub struct BatteryBinding {
     pub identities_declared_only: usize,
     /// Critical-path legs measured — `DW0822`'s second call site.
     pub legs: usize,
+    /// Fixed ring ground cells the plan hands — what `DW0990`'s stitch stands on.
+    pub fixed_cells: usize,
+    /// Plot-edge columns compared with the ring beside them — `DW0990`.
+    pub boundary_columns: usize,
+    /// Of those, cracks.
+    pub cracks: usize,
+    /// Aloft places, which stand on no ground and have none to stitch —
+    /// counted, never judged, by `DW0990`'s crack shape.
+    pub aloft: usize,
+    /// Standable cells inside the region and outside every claim. On an
+    /// `open` site they are the **commons** (spec-0098 §14, a ruling):
+    /// ordinary walkable ground every place may open onto. On a `solid` site
+    /// there is no commons, and `DW0838`'s second shape refuses a place that
+    /// reaches one.
+    pub unclaimed_standable: usize,
+    /// Whether the site's fill is `open`, so that ground is the commons.
+    pub commons: bool,
+    /// Unordered place pairs walk-joined through the commons, with no
+    /// allocated opening and no direct crossing between them — legal, and
+    /// counted, so a reader sees which places the commons joins.
+    pub commons_pairs: usize,
 }
 
 impl BatteryBinding {
@@ -1506,9 +1805,24 @@ impl BatteryBinding {
              {ct} contact(s), {cc} crossable column(s) measured; {pt} portal(s) measured \
              over {pc} standable opening cell(s), {ps} left to `DW0836` as solid; {sw} \
              unallocated open cell(s) admitted as a stair's stairwell), {n} place(s) \
-             proven reached, {c} standable cell(s) classified over {p} place pair(s), \
+             proven reached ({sc} of them scenery, proven not reached), {c} standable cell(s) classified over {p} place pair(s), \
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
-             {l} critical-path leg(s) measured.",
+             {l} critical-path leg(s) measured; {fx} fixed ring ground cell(s) handed, {bc} \
+             plot-edge column(s) examined, {ck} crack(s), {al} aloft place(s) with no ground \
+             to stitch (DW0990); {uc} standable cell(s) \
+             outside every claim ({kind}), {cp} place pair(s) joined through the commons \
+             (DW0838).",
+            kind = if self.commons {
+                "the commons: the site is open"
+            } else {
+                "no commons: the site is solid, so a place reaching one is refused"
+            },
+            cp = self.commons_pairs,
+            fx = self.fixed_cells,
+            bc = self.boundary_columns,
+            ck = self.cracks,
+            al = self.aloft,
+            uc = self.unclaimed_standable,
             s = self.seams,
             ct = self.contacts,
             cc = self.contact_columns,
@@ -1518,6 +1832,7 @@ impl BatteryBinding {
             w = self.walls,
             sw = self.stairwell_cells,
             n = self.nodes,
+            sc = self.scenery,
             c = self.standable,
             p = self.pairs,
             sl = self.sightlines,
@@ -1660,6 +1975,7 @@ pub fn check(
     seams_built(b, &open, &mut binding, &mut findings);
     nodes_reached(c, b, &sealed, &mut binding, &mut findings);
     crossings(c, b, &open, &mut binding, &mut findings);
+    stitches(b, &open, &mut binding, &mut findings);
     sightlines(c, b, &open, &mut binding, &mut findings);
     identities(c, b, &open, &mut binding, &mut findings);
     pacing(c, b, &open, &mut binding, &mut findings);
@@ -2106,9 +2422,12 @@ fn portal_crossing(
     // The floor of the opening: its standable cells, and every standable cell of
     // the same wall a body walks to from them without leaving the wall's plane.
     let (lo, hi) = s.opening;
+    // A `climb` is crossed on its ladder: a cell of the opening a body holds
+    // on (spec-0099) is a cell it is in, and the climb moves step it out.
+    let climb = s.class == "climb";
     let mut floor: BTreeSet<[i32; 3]> = cells_of(lo, hi)
         .map(narrow)
-        .filter(|c| world.is_standable(*c))
+        .filter(|c| world.is_standable(*c) || (climb && world.holds_body(*c)))
         .collect();
     let mut frontier: Vec<[i32; 3]> = floor.iter().copied().collect();
     while let Some(c) = frontier.pop() {
@@ -2341,7 +2660,7 @@ fn owned_by_other(boxes: &[PlacedBox], me: &PlacedBox, cell: [i64; 3]) -> bool {
 /// physical rise between two standing surfaces. It models no free fall, and
 /// deliberately — a router that could fall would prove routes a body cannot
 /// come back from. A `drop` seam is exactly such a fall, and it is *designed*:
-/// the plan allocated it, `DW0831` held its depth under the policy cap, and
+/// the plan allocated it, `DW0831` held its depth under the survivable fall, and
 /// `DW0836` has just proved the hole is where the plan cut it. So the closure
 /// below seeds the far side of a drop whose near side is already reached, and
 /// iterates. That is the graph's own declaration carried into the bytes, the
@@ -2450,8 +2769,45 @@ fn nodes_reached(
         }
     }
 
+    // Scenery (`reached: false`, spec-0098 §14): the declared intent is
+    // confirmed the other way — a body getting into it is the design failing.
+    let scenery: BTreeSet<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| !n.reached)
+        .map(|n| n.id.0.as_str())
+        .collect();
     for x in &b.boxes {
         binding.nodes += 1;
+        if scenery.contains(x.node.0.as_str()) {
+            binding.scenery += 1;
+            if !stands_in(x, &b.boxes, world, &reached) {
+                continue;
+            }
+            let (lo, hi) = x.space();
+            let witness = cells_of(lo, hi)
+                .map(narrow)
+                .find(|c| reached.contains(c))
+                .map_or_else(|| "a cell of it".to_string(), |c| format!("{c:?}"));
+            raise(
+                d,
+                DW_NODE_UNREACHED,
+                Diagnostic::error(
+                    DW_NODE_UNREACHED,
+                    "site-plan",
+                    format!("/content/boxes[{}]", x.node),
+                    format!(
+                        "`{node}` is declared `reached: false` — scenery, built to be seen and \
+                         never entered — and a body reaches {witness} inside it in the built \
+                         world, from the campaign's entry over the step rule. Close the way in \
+                         (the place's own walls, or the edge of whatever a body walks from), \
+                         or take `reached: false` off and make it a place a body visits.",
+                        node = x.node,
+                    ),
+                ),
+            );
+            continue;
+        }
         if stands_in(x, &b.boxes, world, &reached) {
             continue;
         }
@@ -2631,9 +2987,6 @@ fn crossings(
 ) {
     let n = b.boxes.len();
     binding.pairs = n * n.saturating_sub(1) / 2;
-    if n < 2 {
-        return; // one place cannot be joined to another; the pair count says so.
-    }
     let seam: BTreeSet<[i32; 3]> = seam_cells(&b.seams);
     // Every standable cell the whole map has, minus the ways the plan cut.
     let (rlo, rhi) = region_span(c);
@@ -2649,38 +3002,122 @@ fn crossings(
     }
     binding.standable = open.len();
 
-    // Flood each place's own cells and see who else is in the component.
-    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
-    for x in &b.boxes {
-        let (lo, hi) = x.space();
-        let starts: Vec<[i32; 3]> = cells_of(lo, hi)
-            .map(narrow)
-            .filter(|c| open.contains(c) && !seen.contains(c))
-            .collect();
-        if starts.is_empty() {
-            continue;
-        }
+    // **The second shape** (spec-0098 §2c): ground outside every claim. In a
+    // bounded map every cell a body can reach is inside some place, so a
+    // standable cell of the region no claim covers must be reached from none.
+    let site = Site::new(&b.boxes, &b.seams, &b.ground);
+    type Bounds = ([i64; 3], [i64; 3]);
+    let bounds: Vec<(usize, Bounds)> = (0..b.boxes.len())
+        .map(|i| (i, site.claim_bounds(i)))
+        .collect();
+    let (plo, phi) = c
+        .site_plan
+        .as_ref()
+        .map(|p| (p.content.region.min, p.content.region.max()))
+        .unwrap_or(([0; 3], [-1; 3]));
+    let unclaimed: BTreeSet<[i32; 3]> = open
+        .iter()
+        .filter(|cell| {
+            let w = [i64::from(cell[0]), i64::from(cell[1]), i64::from(cell[2])];
+            if (0..3).any(|a| w[a] < plo[a] || w[a] > phi[a]) {
+                return false;
+            }
+            let near: Vec<usize> = bounds
+                .iter()
+                .filter(|(_, (lo, hi))| (0..3).all(|a| w[a] >= lo[a] && w[a] <= hi[a]))
+                .map(|(i, _)| *i)
+                .collect();
+            near.is_empty() || site.owner_among(w, &near) == Owner::Nobody
+        })
+        .copied()
+        .collect();
+    binding.unclaimed_standable = unclaimed.len();
+    binding.commons = b.ground.is_open();
+    let commons: &BTreeSet<[i32; 3]> = &unclaimed;
+    let massed: BTreeSet<&str> = b.massed.iter().map(String::as_str).collect();
+    let mut outside_reported = false;
+    let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
         let mut queue: std::collections::VecDeque<[i32; 3]> = starts.iter().copied().collect();
         let mut component: BTreeSet<[i32; 3]> = starts.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
             for next in world.neighbors(cur) {
-                if open.contains(&next) && component.insert(next) {
+                if open.contains(&next)
+                    && (through_commons || !commons.contains(&next))
+                    && component.insert(next)
+                {
                     queue.push_back(next);
                 }
             }
         }
-        seen.extend(component.iter().copied());
-        // Who else lives in this component?
-        for y in &b.boxes {
-            if y.node == x.node {
-                continue;
-            }
-            let (ylo, yhi) = y.space();
-            let Some(witness) = component
-                .iter()
-                .find(|c| (0..3).all(|i| i64::from(c[i]) >= ylo[i] && i64::from(c[i]) <= yhi[i]))
-            else {
-                continue;
+        component
+    };
+    let inside = |c: &[i32; 3], y: &PlacedBox| {
+        let (ylo, yhi) = y.space();
+        (0..3).all(|i| i64::from(c[i]) >= ylo[i] && i64::from(c[i]) <= yhi[i])
+    };
+    let mut direct: BTreeSet<(usize, usize)> = BTreeSet::new();
+    let mut via_commons: BTreeSet<(usize, usize)> = BTreeSet::new();
+
+    for (xi, x) in b.boxes.iter().enumerate() {
+        let (lo, hi) = x.space();
+        let starts: Vec<[i32; 3]> = cells_of(lo, hi)
+            .map(narrow)
+            .filter(|c| open.contains(c) && !commons.contains(c))
+            .collect();
+        if starts.is_empty() {
+            continue;
+        }
+        // **The leak**: what a body reaches from this place without the
+        // allocated openings and without the commons — another place's
+        // space is a crossing nothing allocated.
+        // On a solid site nothing outside a claim is the commons, so the walk
+        // goes wherever the bytes let it.
+        let own = flood(&starts, !binding.commons);
+        // What it reaches when the commons is walkable ground too.
+        let wide = if binding.commons {
+            flood(&starts, true)
+        } else {
+            own.clone()
+        };
+        // The second shape. On a solid site there is no commons, so ground
+        // outside every claim is a way out of the designed places, whoever
+        // reaches it. On an open site the commons is ordinary ground a piece
+        // opens onto through its own openings — but a stand-in is the
+        // engine's closed shell, with no opening but the seams, so a stand-in
+        // reaching the commons is the derivation's own leak.
+        let leak_out = !binding.commons || massed.contains(x.node.0.as_str());
+        if leak_out
+            && !outside_reported
+            && let Some(witness) = wide.iter().find(|c| commons.contains(*c))
+        {
+            outside_reported = true;
+            let message = if binding.commons {
+                format!(
+                    "`{a}` is a stand-in — the engine's closed shell, whose only openings are \
+                     the seams the plan allocated — and a body standing in it can walk to \
+                     {w:?}, ground outside every place's claim, with every allocated opening \
+                     removed from the world. The stand-in leaks: its shell did not close. Detail \
+                     the place (its own piece opens onto the commons where it means to), or \
+                     find what broke the shell. {u} standable cell(s) of the commons were \
+                     examined.",
+                    a = x.node,
+                    w = witness,
+                    u = unclaimed.len(),
+                )
+            } else {
+                format!(
+                    "a body standing in `{a}` can walk to {w:?}, which is ground outside every \
+                     place's claim, on a site whose fill is `solid`. A solid site has no \
+                     commons: with every allocated opening removed from the world, the walk \
+                     still leaves the designed places. Close the edge — the place draws a wall \
+                     on the ring it owns; make the ground a place, with seams to the places it \
+                     joins; or declare the site's fill `open`, where ground outside every claim \
+                     is the commons every place may open onto. {u} standable cell(s) outside \
+                     every claim were examined.",
+                    a = x.node,
+                    w = witness,
+                    u = unclaimed.len(),
+                )
             };
             raise(
                 d,
@@ -2688,26 +3125,169 @@ fn crossings(
                 Diagnostic::error(
                     DW_CROSSING_UNALLOCATED,
                     "site-plan",
-                    "/content/seams",
-                    format!(
-                        "`{a}` and `{b}` are joined by geometry the plan allocated no seam for. With \
-                     every one of the {s} allocated opening(s) removed from the world, a body \
-                     standing in `{a}` can still walk to {w:?}, which is inside `{b}`. **Seams \
-                     are allocated, not discovered**: a way that exists because a wall came out \
-                     low, a corner did not close or a roof turned out to be standable is a \
-                     connection nothing in the design agreed to and nothing downstream can name — \
-                     not the graph, not the pacing projection, not the bot. {n} standable cell(s) \
-                     were classified over {p} place pair(s) to find this.",
-                        a = x.node,
-                        b = y.node,
-                        s = b.seams.len(),
-                        w = witness,
-                        n = open.len(),
-                        p = binding.pairs,
-                    ),
+                    "/content/boxes",
+                    message,
                 ),
             );
         }
+        if n < 2 {
+            continue; // one place cannot be joined to another; the pair count says so.
+        }
+        for (yi, y) in b.boxes.iter().enumerate() {
+            if y.node == x.node {
+                continue;
+            }
+            let key = (xi.min(yi), xi.max(yi));
+            if let Some(witness) = own.iter().find(|c| inside(c, y)) {
+                if !direct.insert(key) {
+                    continue;
+                }
+                raise(
+                    d,
+                    DW_CROSSING_UNALLOCATED,
+                    Diagnostic::error(
+                        DW_CROSSING_UNALLOCATED,
+                        "site-plan",
+                        "/content/seams",
+                        format!(
+                            "`{a}` and `{b}` are joined by geometry the plan allocated no seam \
+                             for. With every one of the {s} allocated opening(s) removed from \
+                             the world, and without crossing the commons, a body standing in \
+                             `{a}` can still walk to {w:?}, which is inside `{b}`. **Seams are \
+                             allocated, not discovered**: a way that exists because a wall came \
+                             out low, a corner did not close or a roof turned out to be \
+                             standable is a connection nothing in the design agreed to and \
+                             nothing downstream can name. Close the wall, or allocate a seam \
+                             between them. {n} standable cell(s) were classified over {p} place \
+                             pair(s) to find this.",
+                            a = x.node,
+                            b = y.node,
+                            s = b.seams.len(),
+                            w = witness,
+                            n = open.len(),
+                            p = binding.pairs,
+                        ),
+                    ),
+                );
+            } else if binding.commons && wide.iter().any(|c| inside(c, y)) {
+                via_commons.insert(key);
+            }
+        }
+    }
+    binding.commons_pairs = via_commons.difference(&direct).count();
+}
+
+/// `DW0990`'s second shape: **a crack along a claim boundary**, read off the
+/// assembled bytes (spec-0098 §2c).
+///
+/// Along every edge of every plot — each column just inside a place's
+/// footprint beside the ring column just outside it — the two ground surfaces
+/// either side are compared: the lowest standable cell of each column between
+/// the claim's bottom and the top of the play space. They pass when they differ
+/// by at most one block (a step a body walks), or when the higher one stands on
+/// a solid face reaching down to the lower (a retaining element: a plinth's
+/// face, a wall, the fixed ground under a sunken yard), or when a seam crosses
+/// the ring there (the crossing is declared). What is refused is air between
+/// the two surfaces under the higher edge — an edge nothing holds up. A column
+/// with no standable cell in range offers no surface to compare and is counted
+/// but not judged. A stand-in shell and a piece are judged alike: nothing here
+/// asks who wrote the bytes. An aloft place stands on no ground and has none
+/// to stitch: it is counted in the binding and not judged.
+fn stitches(
+    b: &Blockout,
+    world: &crate::compiler::nav::World,
+    binding: &mut BatteryBinding,
+    d: &mut Vec<(DwCode, Diagnostic)>,
+) {
+    let site = Site::new(&b.boxes, &b.seams, &b.ground);
+    for (i, p) in b.boxes.iter().enumerate() {
+        if site.is_aloft(i) {
+            binding.aloft += 1;
+            continue;
+        }
+        binding.fixed_cells += site.fixed_cells(i).len();
+        let bottom = site.bottom(i);
+        let top = p.top();
+        let surface = |x: i64, z: i64| -> Option<i64> {
+            (bottom + 1..=top + 1).find(|y| world.is_standable(narrow([x, *y, z])))
+        };
+        let seam_column = |x: i64, z: i64| {
+            b.seams.iter().any(|s| {
+                (s.a == p.node || s.b == p.node) && s.normal_axis != 1 && {
+                    let (along, across, other) = if s.normal_axis == 0 {
+                        (z, x, 2)
+                    } else {
+                        (x, z, 0)
+                    };
+                    across == s.plane && along >= s.opening.0[other] && along <= s.opening.1[other]
+                }
+            })
+        };
+        let [x0, x1, z0, z1] = p.foot;
+        let mut edges: Vec<([i64; 2], [i64; 2])> = Vec::new();
+        for z in z0..=z1 {
+            edges.push(([x0, z], [x0 - 1, z]));
+            edges.push(([x1, z], [x1 + 1, z]));
+        }
+        for x in x0..=x1 {
+            edges.push(([x, z0], [x, z0 - 1]));
+            edges.push(([x, z1], [x, z1 + 1]));
+        }
+        let mut cracks: Vec<String> = Vec::new();
+        for (inside, ring) in edges {
+            binding.boundary_columns += 1;
+            if seam_column(ring[0], ring[1]) {
+                continue;
+            }
+            let (Some(hp), Some(hr)) = (surface(inside[0], inside[1]), surface(ring[0], ring[1]))
+            else {
+                continue;
+            };
+            if (hp - hr).abs() <= 1 {
+                continue;
+            }
+            let (high_col, low, high) = if hp > hr {
+                (inside, hr, hp)
+            } else {
+                (ring, hp, hr)
+            };
+            let faced = (low..high).all(|y| !world.is_clear(narrow([high_col[0], y, high_col[1]])));
+            if faced {
+                continue;
+            }
+            binding.cracks += 1;
+            if cracks.len() < 6 {
+                cracks.push(format!(
+                    "plot column [{}, {}] stands at y {hp} and the ring column [{}, {}] at y {hr}",
+                    inside[0], inside[1], ring[0], ring[1]
+                ));
+            }
+        }
+        if cracks.is_empty() {
+            continue;
+        }
+        raise(
+            d,
+            DW_PLOT_UNSTITCHED,
+            Diagnostic::error(
+                DW_PLOT_UNSTITCHED,
+                "site-plan",
+                format!("/content/boxes[{}]", p.node),
+                format!(
+                    "`{node}` does not stitch to the ground the whole gave it: along its edge \
+                     the ground inside the plot and the ring's ground beside it differ by more \
+                     than a step, with air under the higher edge — {list}. Between `{node}` and \
+                     the whole's ring the two ground surfaces either differ by at most one \
+                     block, or the higher one stands on a solid face down to the lower (the \
+                     plinth's face, a retaining wall the piece draws inside its claim), or a seam \
+                     crosses there. Face the edge, step it, or bring the plot's ground to the \
+                     ring's — `delvec allocation {node}` hands the ring's height along the \
+                     whole perimeter.",
+                    node = p.node,
+                    list = cracks.join("; "),
+                ),
+            ),
+        );
     }
 }
 
@@ -2906,9 +3486,15 @@ fn identities(
             delvewright_dsl::siteplan::Measure::DistanceXz { from, to } => {
                 match (by_node.get(from.0.as_str()), by_node.get(to.0.as_str())) {
                     (Some(p), Some(q)) => {
-                        let a = built_centre(p, world);
-                        let e = built_centre(q, world);
-                        Some(((e.0 - a.0).powi(2) + (e.1 - a.1).powi(2)).sqrt())
+                        match (
+                            built_centre(p, &b.boxes, world),
+                            built_centre(q, &b.boxes, world),
+                        ) {
+                            (Some(a), Some(e)) => {
+                                Some(((e.0 - a.0).powi(2) + (e.1 - a.1).powi(2)).sqrt())
+                            }
+                            _ => None,
+                        }
                     }
                     _ => None,
                 }
@@ -3095,20 +3681,52 @@ fn built_height(
     Some(best)
 }
 
-/// The centre of a place's built interior, on the two horizontal axes.
-fn built_centre(b: &PlacedBox, world: &crate::compiler::nav::World) -> (f64, f64) {
-    let mid = |axis: usize, fallback: i64| {
-        built_span(b, world, axis).map_or(fallback as f64, |(lo, hi)| (lo as f64 + hi as f64) / 2.0)
+/// **The centre of a place's built floor**, on the two horizontal axes: the
+/// midpoint of the extent its standable cells span at its realized walk plane,
+/// over its own play space and none of another place's. `None` when nothing in
+/// the place is stood on at all — a place with no footing, whose own refusal is
+/// `DW0837`.
+///
+/// # A place, and not one column of it
+///
+/// This measured one probe: the run of clear cells through the box's centre at
+/// the top course, and the box's INTEGER centre wherever that centre cell held
+/// a block. Both readings answered a column rather than the place. A solid
+/// centre cell gave `(x0 + x1) / 2` rounded down — 42 for a footprint whose
+/// centre is 42.5 — so an exact identity reddened on the rounding; and a
+/// stand-in's ladder pillar standing in the probe's run cut the run short on
+/// one side and moved the midpoint off the place it was measuring. The floor's
+/// extent is what a body standing in the place meets, it is what the plan's
+/// centre is the centre OF, and furniture inside the room cannot narrow it
+/// unless it fills a whole edge course — which is a room built narrower.
+///
+/// Public so the instrument is demonstrable on its own: a test reads it over a
+/// derived world and over the same world perturbed, and the identity it feeds
+/// is `DW0833`'s `distance-xz`.
+#[must_use]
+pub fn built_centre(
+    b: &PlacedBox,
+    boxes: &[PlacedBox],
+    world: &crate::compiler::nav::World,
+) -> Option<(f64, f64)> {
+    let plane = built_plane(b, boxes, world)?;
+    let (lo, hi) = b.space();
+    let floor: Vec<[i64; 3]> = cells_of([lo[0], plane, lo[2]], [hi[0], plane, hi[2]])
+        .filter(|c| !owned_by_other(boxes, b, *c) && world.is_standable(narrow(*c)))
+        .collect();
+    let mid = |axis: usize| -> Option<f64> {
+        let lo = floor.iter().map(|c| c[axis]).min()?;
+        let hi = floor.iter().map(|c| c[axis]).max()?;
+        Some((lo as f64 + hi as f64) / 2.0)
     };
-    let c = b.centre();
-    (mid(0, c[0]), mid(2, c[2]))
+    Some((mid(0)?, mid(2)?))
 }
 
 /// `DW0822`'s **second call site**: the route the critical path really is, in
 /// blocks, measured over the built world.
 ///
-/// The stage-3 site printed a PROJECTION — nominal traverse lengths from the
-/// size-class ladder, summed and divided by an uncalibrated coefficient. This
+/// The stage-3 site printed a PROJECTION — each place's long horizontal
+/// extent, summed and divided by an uncalibrated coefficient. This
 /// prints the MEASUREMENT: the A* route a body actually walks from one place's
 /// anchor to the next, over the blockout, under the compiler's own step rule. It
 /// carries no threshold either, and for the same reason — the two numbers exist
@@ -3171,7 +3789,7 @@ fn pacing(
              {minutes} minute(s){un}. Like the projection printed over the graph, this figure \
              carries NO threshold and refuses nothing: the coefficient is uncalibrated until the \
              metrics gym has been walked and a full playtest has run. The two are printed so they \
-             can be set side by side — the projection is what the size-class ladder says the map \
+             can be set side by side — the projection is what the boxes' extents say the map \
              should cost, and this is what it costs.",
                 legs = binding.legs,
                 minutes = (blocks as u64).div_euclid(rate)
@@ -3282,6 +3900,16 @@ pub struct Perturb {
     /// `DW0837`, and only when a barred door is the sole way into its `b` place
     /// — the gallery's far hall is also entered through the annex chute.
     pub bury_barred: bool,
+    /// Stand every stand-in's ring wall only from its floor course up, leaving
+    /// air between the ring's fixed ground and the floor wherever the terrain
+    /// lies lower than the floor course. Reddens `DW0990`'s second shape: the
+    /// plot's edge stands over the terrain with nothing under it.
+    ///
+    /// It is the only thing that can produce that red. The play spaces, the
+    /// openings and the floors are untouched, so `DW0836`/`DW0837` stay green;
+    /// the gap opened is under a floor a body stands on, never between two
+    /// places, so `DW0838` stays green.
+    pub hollow_edge: bool,
 }
 
 impl Perturb {
@@ -3297,6 +3925,7 @@ impl Perturb {
             wall_contacts: false,
             open_stairwells: false,
             bury_barred: false,
+            hollow_edge: false,
         }
     }
 
@@ -3351,11 +3980,13 @@ pub enum Knob {
     OpenStairwells,
     /// [`Perturb::bury_barred`].
     BuryBarred,
+    /// [`Perturb::hollow_edge`].
+    HollowEdge,
 }
 
 impl Knob {
     /// Every knob, in declaration order.
-    pub const ALL: [Knob; 8] = [
+    pub const ALL: [Knob; 9] = [
         Knob::SlideOpenings,
         Knob::Sink,
         Knob::ShortWalls,
@@ -3364,6 +3995,7 @@ impl Knob {
         Knob::WallContacts,
         Knob::OpenStairwells,
         Knob::BuryBarred,
+        Knob::HollowEdge,
     ];
 
     /// The kebab-case name a creator types.
@@ -3378,6 +4010,7 @@ impl Knob {
             Knob::WallContacts => "wall-contacts",
             Knob::OpenStairwells => "open-stairwells",
             Knob::BuryBarred => "bury-barred",
+            Knob::HollowEdge => "hollow-edge",
         }
     }
 
@@ -3393,6 +4026,7 @@ impl Knob {
             Knob::WallContacts => "wall every contact's span the plan allocated",
             Knob::OpenStairwells => "cut the floor over every course of a through-floor stair",
             Knob::BuryBarred => "wall the far side flush behind every barred door",
+            Knob::HollowEdge => "leave air under every stand-in's edge above the terrain",
         }
     }
 
@@ -3423,6 +4057,7 @@ impl Knob {
             Knob::WallContacts => "DW0877",
             Knob::OpenStairwells => "DW0836",
             Knob::BuryBarred => "DW0986",
+            Knob::HollowEdge => "DW0990",
         }
     }
 
@@ -3467,6 +4102,10 @@ impl Knob {
             },
             Knob::BuryBarred => Perturb {
                 bury_barred: true,
+                ..Perturb::none()
+            },
+            Knob::HollowEdge => Perturb {
+                hollow_edge: true,
                 ..Perturb::none()
             },
         })
