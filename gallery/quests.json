@@ -630,6 +630,69 @@
         "type": "drop-stake"
       }
     ],
+    "pulses": [
+      {
+        "at": {
+          "anchor": "anchor/hearth",
+          "offset": [
+            0,
+            -1,
+            0
+          ]
+        },
+        "every": 30,
+        "floor": 0.4,
+        "id": "pulse/the-heart",
+        "place": "area/hall",
+        "sound": "entity.warden.heartbeat",
+        "when": {
+          "forbids_flags": [
+            "flag/boarded"
+          ],
+          "requires_flags": [
+            "flag/lid-fell"
+          ]
+        }
+      },
+      {
+        "at": {
+          "anchor": "anchor/hearth",
+          "offset": [
+            0,
+            -1,
+            0
+          ]
+        },
+        "every": 14,
+        "floor": 0.4,
+        "id": "pulse/the-heart-racing",
+        "pitch": 1.2,
+        "place": "area/hall",
+        "sound": "minecraft:entity.warden.heartbeat",
+        "when": {
+          "requires_flags": [
+            "flag/boarded"
+          ]
+        }
+      },
+      {
+        "at": {
+          "anchor": "anchor/annex-second-bay"
+        },
+        "every": 40,
+        "floor": 0.2,
+        "id": "pulse/the-drip",
+        "region": {
+          "anchor": "anchor/annex-second-bay",
+          "extent": [
+            3,
+            1,
+            3
+          ]
+        },
+        "sound": "block.pointed_dripstone.drip_water"
+      }
+    ],
     "quests": [
       {
         "cast": {

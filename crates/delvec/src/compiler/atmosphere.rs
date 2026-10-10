@@ -49,8 +49,8 @@ delvewright_dsl::dw_code! {
     pub const DW_ATMOSPHERE_ATTRIBUTE: DwCode = DwCode::new("DW0928", ExitTier::Build);
 }
 delvewright_dsl::dw_code! {
-    /// `DW0929`: a paint that reaches cells it may not — a `set-atmosphere` naming
-    /// neither or both of `region` / `place`, a repaint volume outside the map's
+    /// `DW0929`: a paint that reaches cells it may not — a `set-atmosphere` (or a
+    /// pulse, spec-0102) naming neither or both of `region` / `place`, a repaint volume outside the map's
     /// extent, or two carried places whose painted cells meet with different
     /// atmospheres.
     pub const DW_ATMOSPHERE_PAINT: DwCode = DwCode::new("DW0929", ExitTier::Build);
@@ -634,6 +634,25 @@ fn paint_exclusivity(c: &Campaign, d: &mut Vec<Diagnostic>) {
                  (an anchor-centred box) for a volume inside a place, or a `place` (an \
                  `area/…` or a site-plan box's `node/…`) for the whole of one — whose bounds \
                  the compiler reads from the placement and nobody types. Keep exactly one."
+            ),
+        ));
+    }
+    // A pulse carries the same `PlaceRef` (spec-0102 §3.4), refused by the
+    // same rule wherever it is read.
+    for (i, p) in c.quests.content.pulses.iter().enumerate() {
+        let Some(msg) = p.heard.ambiguity() else {
+            continue;
+        };
+        d.push(Diagnostic::error(
+            DW_ATMOSPHERE_PAINT,
+            "quests",
+            format!("/content/pulses/{i}"),
+            format!(
+                "pulse `{}` {msg}. A pulse is heard in exactly one volume: a `region` (an \
+                 anchor-centred box) for a volume inside a place, or a `place` (an `area/…` \
+                 or a site-plan box's `node/…`) for the whole of one — whose bounds the \
+                 compiler reads from the placement and nobody types. Keep exactly one.",
+                p.id
             ),
         ));
     }

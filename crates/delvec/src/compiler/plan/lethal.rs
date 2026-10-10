@@ -45,6 +45,33 @@ pub struct StagedGate {
 }
 
 impl StagedGate {
+    /// A declared [`delvewright_dsl::Guard`], resolved: its three axes and
+    /// [`gate_terms_of`]'s reduction of them. The one constructor every staged
+    /// object takes — a lethal volume (spec-0088) and a pulse (spec-0102).
+    pub fn of(campaign: &Campaign, g: &delvewright_dsl::Guard) -> Self {
+        StagedGate {
+            requires_flags: g
+                .requires_flags
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+            forbids_flags: g
+                .forbids_flags
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+            requires_state: g.requires_state.clone(),
+            terms: gate_terms_of(
+                campaign,
+                delvewright_dsl::gate::Gate::of(
+                    &g.requires_flags,
+                    &g.forbids_flags,
+                    &g.requires_state,
+                ),
+            ),
+        }
+    }
+
     /// The gate's terms in words, for a diagnostic: `requires flag/x`,
     /// `forbids flag/y`, `state/z at-least 3`.
     pub fn words(&self) -> String {
@@ -110,20 +137,7 @@ pub(super) fn collect_lethal_volumes(
                     .damage_type
                     .unwrap_or(delvewright_dsl::DamageKind::Generic),
                 shown_by: v.shown_by.clone(),
-                staged: v.when.as_ref().map(|g| StagedGate {
-                    requires_flags: g
-                        .requires_flags
-                        .iter()
-                        .map(|f| f.as_str().to_string())
-                        .collect(),
-                    forbids_flags: g
-                        .forbids_flags
-                        .iter()
-                        .map(|f| f.as_str().to_string())
-                        .collect(),
-                    requires_state: g.requires_state.clone(),
-                    terms: gate_terms_of(campaign, v.gate()),
-                }),
+                staged: v.when.as_ref().map(|g| StagedGate::of(campaign, g)),
             })
         })
         .collect()

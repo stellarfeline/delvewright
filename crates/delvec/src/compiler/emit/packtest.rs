@@ -31,6 +31,7 @@ mod sequence;
 mod shortcut;
 mod standin;
 mod teleport;
+mod pulse;
 mod timed_gate;
 mod trap;
 mod trigger;
@@ -121,6 +122,9 @@ pub(super) fn emit_packtest(
     // spec-0031 lethal volumes: the runtime half, one template per volume.
     lethal::emit_lethal_packtests(plan, out);
     r#loop::emit_loop_packtests(plan, out);
+    // spec-0102: a pulse's open edge, its cut and its re-arm. Emits nothing for
+    // a campaign that declares no pulse.
+    pulse::emit_pulse_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
 
     // spec-0031 teleport: the runtime half of TOTALITY, one template per teleport.
@@ -238,6 +242,7 @@ pub(super) fn watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
         class::class_apply_watch_claim(plan),
         npc::npc_talk_watch_claim(plan),
         cast::cast_ladder_watch_claim(plan),
+        pulse::pulse_watch_claim(plan),
     ];
     watch_claims.extend(trigger::env_trigger_watch_claims(plan));
     watch_claims.extend(dialogue::dialogue_mask_watch_claims(plan));
