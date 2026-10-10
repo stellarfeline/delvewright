@@ -1376,7 +1376,8 @@ pub(crate) fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
              `PersistenceRequired` does not save one — so every wave, hostile actor and \
              ambush in this campaign would silently cease to exist. Declare `easy`, `normal` \
              or `hard`; for a delve that is genuinely combat-free, simply omit `difficulty` \
-             (a campaign with no waves already ships peaceful by derivation)"
+             (a campaign that fields no wave and stages no body peaceful discards ships \
+             peaceful by derivation)"
                 .to_string(),
         ));
     }

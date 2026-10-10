@@ -121,6 +121,36 @@ pub fn entity_in_tag(entity: &str, tag: &str) -> bool {
         .is_some_and(|members| members.contains(&id))
 }
 
+/// The entity types the pinned game **discards while the world is peaceful**,
+/// namespaced (`crates/dsl/data/peaceful-despawn-1.21.11.json`, regenerated per
+/// MC pin by `tools/maintenance/extract-peaceful-despawn.py`;
+/// `crates/delvec/data/PROVENANCE.md`).
+///
+/// Read from the 1.21.11 server jar, never written by hand. Every ticked entity
+/// runs `Entity#checkDespawn()`; the `Mob` and `WitherBoss` implementations
+/// discard the body when the difficulty is peaceful and its type's
+/// `EntityType#isAllowedInPeaceful()` is false (`EntityType.Builder#notInPeaceful()`
+/// clears it), `ShulkerBullet`'s discards it on peaceful unconditionally, and
+/// `Entity`'s and `EnderDragon`'s never do. `NoAI`, `PersistenceRequired` and a
+/// `/summon` origin are not consulted. The extractor proves that list of five
+/// implementations is the whole list, and cross-checks the flag read at runtime
+/// against the `notInPeaceful()` calls in `EntityType`'s static initialiser.
+pub fn peaceful_despawn() -> &'static BTreeSet<String> {
+    static SET: std::sync::LazyLock<BTreeSet<String>> = std::sync::LazyLock::new(|| {
+        let raw = include_str!("../data/peaceful-despawn-1.21.11.json");
+        let ids: Vec<String> =
+            serde_json::from_str(raw).expect("vendored peaceful-despawn table is valid JSON");
+        ids.into_iter().collect()
+    });
+    &SET
+}
+
+/// Whether the pinned game discards a body of type `entity` while the world is
+/// peaceful — membership of [`peaceful_despawn`]. Accepts a bare or namespaced id.
+pub fn removed_on_peaceful(entity: &str) -> bool {
+    peaceful_despawn().contains(&namespaced_entity(entity))
+}
+
 /// A prefab lighting profile (spec-0001 "Lighting contract"). `lit` = floor
 /// light ≥ 7; `dim` = 3–6 (needs a rationale); `dark` = < 3 (valid only where
 /// analysis proves a night-vision mitigation — the compiler's `DW0210` check).

@@ -55,8 +55,8 @@ fi
 # and nothing about the change would have looked dangerous.
 prop() { sed -n "/^$1=/{s///;p;q;}" "$props"; }
 # Difficulty. v0.6: `world.difficulty` is DECLARED by the campaign (easy/normal/
-# hard) and the compiler writes it here; absent, it derives easy for a wave
-# campaign and peaceful for a wave-free one (peaceful removes summoned mobs).
+# hard) and the compiler writes it here; absent, it derives easy for a campaign
+# with a wave or a staged body peaceful discards, and peaceful otherwise.
 # Either way the file is the authority: the image's DIFFICULTY env is a fallback
 # for an absent file only, and this line is what stops it from deciding how hard
 # the delve is. The seed is the compiler's (ADR-0006).

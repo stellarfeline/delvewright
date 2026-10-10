@@ -12,7 +12,8 @@
 ## Difficulty
 
 - **Difficulty is declarable** (`world.difficulty`: `easy`/`normal`/`hard`).
-  Absent, the compiler derives `easy` for a wave campaign — which HALVES the
+  Absent, the compiler derives `easy` for a campaign with a wave or a staged
+  body peaceful would discard (a still husk figure counts) — which HALVES the
   damage players take (`min(dmg/2+1, dmg)`), the setting behind "the enemies are
   too weak". A souls-style brief almost certainly wants `normal` or `hard`; when
   you change it, retune the combat arithmetic (mob `attributes`, class gear, wave
