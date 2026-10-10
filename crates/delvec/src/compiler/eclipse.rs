@@ -766,6 +766,10 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
 /// already compiled and could be walked.
 pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
     let affordances = affordances(plan);
+    // The campaign's own order model, built only when a same-quest pair of
+    // objective boxes on one cell needs it — every other campaign never pays for it.
+    let flow = std::cell::OnceCell::new();
+    let order = || flow.get_or_init(|| crate::compiler::flow::Flow::new(plan.campaign));
     for (i, a) in affordances.iter().enumerate() {
         for b in affordances.iter().skip(i + 1) {
             // Two standard press bodies contest when their cells coincide (the
@@ -779,7 +783,7 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
                 let (x, y) = (a.boxed(), b.boxed());
                 (0..3).all(|i| x[i].overlaps(y[i]))
             };
-            if contest && can_share_a_moment(&a.arming, &b.arming) {
+            if contest && can_share_a_moment(a, b, order) {
                 return Err(affordance_contest_error(a, b));
             }
         }
@@ -801,27 +805,44 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
 /// The arming windows are read off the emitter, never modelled:
 ///
 /// * an [`Arming::Persistent`] box is placed at setup or by a beat that never
-///   retires it, so it shares a moment with anything — every pair with one of
-///   these on either side is judged;
-/// * an [`Arming::Objective`] box is summoned under `emit::pending_guard` (its
-///   quest active, its `after` set complete, its own gate open) and killed by
-///   `emit::completion_cleanup` the moment the objective completes.
+///   retires it, so its lifetime has no end the compiler can name and it shares a
+///   moment with anything — every pair with one of these on either side is judged;
+/// * an [`Arming::Objective`] box is summoned under `emit::quest::pending_guard`
+///   (its quest active, its `after` set complete, its own gate open, itself not
+///   done), once, behind the `#act_<obj>` latch, and killed by
+///   `emit::objective::completion_cleanup` inside the same `complete_<obj>`
+///   function that sets the objective's score — the only write of that score, and
+///   one nothing ever clears.
 ///
 /// So two objective boxes are only known to coexist when they are declared in
-/// **one quest** — one quest is active as a whole, so its objectives' guards can
-/// all be open together — and then only if no flag proves them exclusive, the
-/// same test [`crate::compiler::crosshair`] applies to two NPCs the cast ledger puts in one
-/// scene. Across quests, co-presence is **unestablished**, and the compiler
-/// withholds rather than guesses.
+/// **one quest** — one quest is active as a whole — and then only if neither is
+/// armed strictly after the other completes, and no flag proves them exclusive.
 ///
-/// That is a named blind spot, in the same family as `DW0359`'s parked-body rule
-/// and `DW0489`'s silence about actors: two objectives in different quests that a
-/// player really can hold open at once, on one cell, are not caught. Closing it
-/// needs a quest-co-activation model this compiler does not have — asserting it
-/// without one is what refused correct content, and the direction that withholds
-/// a diagnostic is the one that cannot invent a defect.
-fn can_share_a_moment(a: &Arming, b: &Arming) -> bool {
-    match (a, b) {
+/// * **Ordered by `after`.** When one is in the other's transitive `after`
+///   closure ([`crate::compiler::flow::Flow::completes_before_armed`], the same
+///   relation the state-path replay orders writes by), the later box's guard
+///   cannot open until the earlier objective's score is set, and the function
+///   that sets it has already killed the earlier box. The two lifetimes are
+///   disjoint in every play order: a hearthstone lifted by one `interact` and
+///   what lies under it taken by a second on the same cell is a sequence, not a
+///   contest.
+/// * **Exclusive by flag.** One's `requires_flags` meets the other's
+///   `forbids_flags` — the test [`crate::compiler::crosshair`] applies to two NPCs
+///   the cast ledger puts in one scene.
+///
+/// Across quests, co-presence is **unestablished**, and the compiler withholds
+/// rather than guesses. That is a named blind spot, in the same family as
+/// `DW0359`'s parked-body rule and `DW0489`'s silence about actors: two objectives
+/// in different quests that a player really can hold open at once, on one cell,
+/// are not caught. Closing it needs a quest-co-activation model this compiler does
+/// not have — asserting it without one is what refused correct content, and the
+/// direction that withholds a diagnostic is the one that cannot invent a defect.
+fn can_share_a_moment<'f>(
+    a: &Affordance,
+    b: &Affordance,
+    order: impl Fn() -> &'f crate::compiler::flow::Flow<'f>,
+) -> bool {
+    match (&a.arming, &b.arming) {
         (Arming::Persistent, _) | (_, Arming::Persistent) => true,
         (
             Arming::Objective {
@@ -835,7 +856,11 @@ fn can_share_a_moment(a: &Arming, b: &Arming) -> bool {
                 forbids: fb,
             },
         ) => {
-            qa == qb && ra.intersection(fb).next().is_none() && rb.intersection(fa).next().is_none()
+            qa == qb
+                && ra.intersection(fb).next().is_none()
+                && rb.intersection(fa).next().is_none()
+                && !order().completes_before_armed(&a.id, &b.id)
+                && !order().completes_before_armed(&b.id, &a.id)
         }
     }
 }
