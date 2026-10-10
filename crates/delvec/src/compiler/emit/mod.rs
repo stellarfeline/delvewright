@@ -420,6 +420,15 @@ pub fn build_with_warnings(
         .triggers
         .iter()
         .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
+    // A fill whose cell lies in a place still standing in its stand-in is owed by
+    // that place's detail: judged by the build that details it, counted here.
+    let (judged_loot, judged_fills, containers) = crate::compiler::loot::split_owed_by_detail(
+        &assembled.blocks,
+        plan.blockout.as_ref(),
+        &plan.loot,
+        &plan.collect_fills,
+    );
+    eprintln!("{}", containers.line());
     if !plan.loot.is_empty()
         || !plan.collect_fills.is_empty()
         || !plan.traps.is_empty()
@@ -438,13 +447,13 @@ pub fn build_with_warnings(
             &plan.loot,
             &plan.collect_fills,
         );
-        crate::compiler::loot::check_loot_containers(blocks, &plan.loot, &available).map_err(
+        crate::compiler::loot::check_loot_containers(blocks, &judged_loot, &available).map_err(
             |e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
             },
         )?;
-        crate::compiler::loot::check_collect_containers(blocks, &plan.collect_fills, &available)
+        crate::compiler::loot::check_collect_containers(blocks, &judged_fills, &available)
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
