@@ -28,6 +28,7 @@ pub mod jigsaw;
 pub mod light;
 pub mod meta;
 pub mod run;
+pub mod scenery;
 pub mod settling;
 pub mod socket;
 pub mod spatial;

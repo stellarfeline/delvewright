@@ -519,7 +519,9 @@ Admission order for an imported piece (**`resolve-jigsaw` runs before `socket`**
 delvec prefab audit <nbt|manifest.json> [--allowlist <json>] [-o report.json]   # CI gate
     # also: the spatial contract's second door — a piece whose metadata declares
     # spaces is judged against its own bytes by the same checker `delvec grammar
-    # expand` uses, and a disagreement is DW0782 (exit 1). An edge declared
+    # expand` uses, and a disagreement is DW0782 (exit 1). A piece some campaign
+    # under ../campaigns/ places at a `reached: false` node (and none at a
+    # reached one) is judged sealed, as `delvec detail` judged it. An edge declared
     # contingent is judged here too: severed on the bytes on disk, crossable on
     # the copy its way opens, with the way enumerated by name, sign and cells.
     # A door that did NOT open says so as DW0783, with the count of what it did
