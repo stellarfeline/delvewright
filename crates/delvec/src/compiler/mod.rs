@@ -100,6 +100,7 @@
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
 //! - [`view`]: the CPU render surface — the visual channel that ships in the one binary a creator installs.
 //! - [`watch`]: runtime-watch coverage of per-object bodies, in two tiers.
+//! - [`watching`]: a still body that turns to face the nearest player in reach (spec-0101).
 //! - [`waypoints`]: the compiler-proven critical-path waypoint polyline, as validation metadata.
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
 //! - [`wrongside`]: which side of a sealed shortcut door a player is standing on.
