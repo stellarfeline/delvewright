@@ -11,8 +11,8 @@ use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::Campaign;
 use crate::metrics::Metrics;
 use crate::registry::{
-    AnchorRegistry, BlockRegistry, EntityRegistry, ItemBackedBlockRegistry, ItemRegistry,
-    VendoredAnchorRegistry, VendoredEffectRegistry, VendoredEntityRegistry, VendoredItemRegistry,
+    AnchorRegistry, BlockRegistry, EntityRegistry, ItemRegistry, VendoredAnchorRegistry,
+    VendoredBlockRegistry, VendoredEffectRegistry, VendoredEntityRegistry, VendoredItemRegistry,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -118,10 +118,9 @@ pub fn validate_campaign_with(
     crate::quest::check::quest_reference_checks(c, items, anchors, &mut d);
     crate::trigger::trigger_effect_flag_checks(c, &mut d);
     // Skins, wave-mob effects, props, set-block, triggers, dialogue flags and the
-    // NPC lifecycle. The status-effect registry is a fixed vanilla list; the block registry derives
-    // from the item registry (see [`ItemBackedBlockRegistry`]), so no new
-    // caller-supplied registry is needed.
-    let blocks = ItemBackedBlockRegistry::new(items);
+    // NPC lifecycle. The status-effect and block registries are fixed vanilla lists
+    // (see [`VendoredBlockRegistry`]), so no caller-supplied registry is needed.
+    let blocks = VendoredBlockRegistry;
     let effects_reg = VendoredEffectRegistry::v1_21_11();
     crate::npc::npc_skin_checks(c, &mut d);
     crate::wave::mob_effect_checks(c, &effects_reg, &mut d);
@@ -174,7 +173,7 @@ pub fn validate_campaign_with(
     // checks only — frame/region *resolution* happens at build time against the
     // solved layout (the compiler's `DW0323`).
     if c.world_edits.is_some() {
-        let blocks = ItemBackedBlockRegistry::new(items);
+        let blocks = VendoredBlockRegistry;
         crate::world_edits::world_edits_checks(c, &blocks, &mut d);
     }
     // spec-0049: the map-pipeline documents. Bound to the EVENT it guards
