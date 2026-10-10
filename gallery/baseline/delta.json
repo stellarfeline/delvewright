@@ -1,7 +1,36 @@
 {
   "added": [],
-  "base_commit": "507a5e0e20712c8c1e80f52ab1583b1ef91adaaa",
-  "changed": [],
-  "classes": {},
+  "base_commit": "c9176ae48b94b9493b538bdd27c96c6802fa3981",
+  "changed": [
+    "easy.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "easy.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "easy.en:render-plan.json",
+    "easy.en:validation/piece-exposure.json",
+    "hard.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "hard.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "hard.en:render-plan.json",
+    "hard.en:validation/piece-exposure.json",
+    "ocean-horizon.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "ocean-horizon.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "ocean-horizon.en:render-plan.json",
+    "ocean-horizon.en:validation/piece-exposure.json",
+    "primary.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "primary.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "primary.en:render-plan.json",
+    "primary.en:validation/piece-exposure.json",
+    "primary.zh-cn:datapack/data/gallery/function/setup_finish.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/structure/gallery-hall.nbt",
+    "primary.zh-cn:render-plan.json",
+    "primary.zh-cn:validation/piece-exposure.json",
+    "void-horizon.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "void-horizon.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "void-horizon.en:render-plan.json",
+    "void-horizon.en:validation/piece-exposure.json"
+  ],
+  "classes": {
+    "datapack function": 12,
+    "other": 6,
+    "validation ledger": 6
+  },
   "removed": []
 }
