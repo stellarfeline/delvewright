@@ -475,3 +475,29 @@ fn the_inert_sculk_blocks_pass_and_the_acting_ones_are_shown() {
         );
     }
 }
+
+/// **Terrain surface blocks of the `grass_block` class pass; farmland, a block
+/// that changes the world after the proofs judged it, is still shown.**
+#[test]
+fn dirt_path_and_mycelium_pass_and_farmland_is_shown() {
+    use delvec::admit::structure::PaletteEntry;
+    let admitted = ["minecraft:dirt_path", "minecraft:mycelium"];
+    let mut s = fixtures::clean_room();
+    s.set_cell([1, 1, 1], PaletteEntry::simple(admitted[0]), None);
+    s.set_cell([2, 1, 1], PaletteEntry::simple(admitted[1]), None);
+    let (rep, _) = audit("surface", &s, &Allowlist::default_building());
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+    for id in admitted {
+        assert!(rep.palette.iter().any(|b| b == id), "{id} was not examined");
+    }
+    let mut c = fixtures::clean_room();
+    c.set_cell([1, 1, 1], PaletteEntry::simple("minecraft:farmland"), None);
+    let (rep, _) = audit("farm", &c, &Allowlist::default_building());
+    assert!(
+        rep.findings
+            .iter()
+            .any(|f| f.code == "DW0730" && f.message.contains("minecraft:farmland")),
+        "{:?}",
+        rep.findings
+    );
+}
