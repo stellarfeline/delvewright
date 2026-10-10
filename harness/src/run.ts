@@ -558,6 +558,7 @@ async function main(): Promise<number> {
     // spec-0102 §5.3: every pulse was heard at its listening station and not
     // at its silent one; a pulse with no station is reported, never passed.
     const pulseVerdicts = executor.pulseVerdicts();
+    report.recordPulseStations(executor.pulseStations);
     if (pulsePlan) {
       process.stderr.write(`${pulseBindingLine(pulsePlan, pulseVerdicts)}\n`);
     }

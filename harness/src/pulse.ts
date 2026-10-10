@@ -223,6 +223,19 @@ export function stationsBefore(
   return out;
 }
 
+/** What one station heard, for the run report. */
+export interface StationRecord {
+  readonly pulse: string;
+  readonly kind: "listening" | "silent";
+  readonly cell: Vec3Tuple;
+  readonly ticks: number;
+  /** Sounds naming the pulse's sound. */
+  readonly named: number;
+  /** Of those, the beats as the compiler wrote them. */
+  readonly beats: number;
+  readonly failure: string | null;
+}
+
 /** What one pulse's stations concluded. */
 export interface PulseVerdict {
   readonly id: string;

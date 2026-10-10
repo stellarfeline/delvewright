@@ -115,6 +115,8 @@ export class MineflayerExecutor implements StepExecutor {
   pulsePlan: PulsePlan | undefined;
   /** Station key → `undefined` when the station judged as owed, else the failure. */
   readonly pulseRecorded = new Map<string, string | undefined>();
+  /** Every station stood at, with what it heard — the run report's `pulse_stations`. */
+  readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
   /**
    * How many times each marker token has been broadcast this run. A repeatable
    * trigger broadcasts its marker every time it fires, and a hit count on the

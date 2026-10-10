@@ -2,7 +2,9 @@
 
 import type { Step } from "../critical-path.ts";
 import {
+  isBeat,
   judgeListening,
+  namesSound,
   judgeSilent,
   pulseVerdicts,
   standTicks,
@@ -95,10 +97,21 @@ export const methods = {
       const failure =
         d.kind === "listening" ? judgeListening(d.pulse, heard) : judgeSilent(d.pulse, heard);
       this.pulseRecorded.set(d.key, failure);
+      const named = heard.filter((h) => namesSound(d.pulse, h)).length;
+      const beats = heard.filter((h) => isBeat(d.pulse, h)).length;
+      this.pulseStations.push({
+        pulse: d.pulse.id,
+        kind: d.kind,
+        cell: d.station.cell,
+        ticks: standTicks(d.pulse),
+        named,
+        beats,
+        failure: failure ?? null,
+      });
       process.stderr.write(
         `[pulse] ${d.pulse.id}: ${d.kind} station ${JSON.stringify(d.station.cell)} — ` +
-          `${heard.filter((h) => h.name.replace(/^minecraft:/, "") === d.pulse.sound.replace(/^minecraft:/, "")).length} ` +
-          `beat(s) heard over ${standTicks(d.pulse)} ticks: ${failure ?? "as the compiler wrote it"}\n`,
+          `${beats} beat(s) as written, ${named} naming the sound, over ` +
+          `${standTicks(d.pulse)} ticks: ${failure ?? "as the compiler wrote it"}\n`,
       );
     }
   },

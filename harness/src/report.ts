@@ -131,6 +131,7 @@ export class RunReport {
   private readonly staged: StagedRemoval[] = [];
   private readonly trials: DeathTrial[] = [];
   private readonly muster: string[] = [];
+  private readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
@@ -205,6 +206,11 @@ export class RunReport {
   /** A declared fact the live bodies did not carry. */
   recordMusterFinding(finding: string): void {
     this.muster.push(finding);
+  }
+
+  /** What every pulse station heard (spec-0102 §5.3). */
+  recordPulseStations(stations: readonly import("./pulse.ts").StationRecord[]): void {
+    this.pulseStations.push(...stations);
   }
 
   /** Everything the musters found, for the stage that owns them. */
@@ -616,6 +622,9 @@ export class RunReport {
       // run read. Empty beside a non-zero `declared_facts` is the pass; empty
       // beside zero is a build the muster could not bind to.
       muster_findings: [...this.muster],
+      // Every pulse station the walk stood at (spec-0102 §5.3), with the beats
+      // it heard; empty for a build that declares no pulse or stations none.
+      pulse_stations: this.pulseStations.map((s) => ({ ...s, cell: [...s.cell] })),
     };
   }
 }
