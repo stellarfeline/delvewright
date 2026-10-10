@@ -86,7 +86,10 @@ pub(super) fn emit_pulse_functions(
     for r in rows {
         let p = &r.plan;
         let beat = pulse_playsound(r);
-        let next = format!("schedule function {ns}:pulse_{} {}t replace", p.safe, p.every);
+        let next = format!(
+            "schedule function {ns}:pulse_{} {}t replace",
+            p.safe, p.every
+        );
         let body = match &p.staged {
             None => vec![beat, next],
             Some(gate) => {

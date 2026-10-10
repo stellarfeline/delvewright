@@ -33,6 +33,7 @@ import type { ResourcePackState } from "./resource-pack.ts";
 import { type LoadWindowTracer } from "./load-window.ts";
 import { type CensusMob, type CensusSummary } from "./markers.ts";
 import { RepaintWatch } from "./repaint.ts";
+import type { PulsePlan } from "./pulse.ts";
 import { type Waypoints } from "./waypoints.ts";
 import type { BotConfig } from "./executor/connection.ts";
 import { LOOP_CROSS_TIMEOUT_MS } from "./executor/loop.ts";
@@ -55,6 +56,7 @@ import { methods as loopMethods } from "./executor/loop.ts";
 import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
 import { methods as repaintMethods } from "./executor/repaint.ts";
+import { methods as pulseMethods } from "./executor/pulse.ts";
 import { methods as scoreMethods } from "./executor/score.ts";
 import { methods as lethalMethods } from "./executor/lethal.ts";
 import { methods as stakeMethods } from "./executor/stake.ts";
@@ -109,6 +111,10 @@ export class MineflayerExecutor implements StepExecutor {
   readonly completedObjectives = new Map<string, number>();
   /** The repaint ledger (spec-0080 §5.2), when the build repaints anything. */
   repaintWatch: RepaintWatch | undefined;
+  /** The pulses and their stations (spec-0102 §5.3), when the build declares any. */
+  pulsePlan: PulsePlan | undefined;
+  /** Station key → `undefined` when the station judged as owed, else the failure. */
+  readonly pulseRecorded = new Map<string, string | undefined>();
   /**
    * How many times each marker token has been broadcast this run. A repeatable
    * trigger broadcasts its marker every time it fires, and a hit count on the
@@ -558,6 +564,7 @@ type Methods = typeof connectionMethods &
   typeof sustainMethods &
   typeof deathMethods &
   typeof repaintMethods &
+  typeof pulseMethods &
   typeof scoreMethods &
   typeof lethalMethods &
   typeof stakeMethods &
@@ -571,4 +578,4 @@ type Methods = typeof connectionMethods &
   typeof collectMethods &
   typeof settleMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);

@@ -393,7 +393,7 @@ export const methods = {
    * the step walks on. What is due is the compiler's `run_backs` filtered by
    * what this walk did (`dueRunBacks`); the harness decides nothing else.
    */
-  async beforeStep(this: MineflayerExecutor, step: Step): Promise<void> {
+  async runBacksBefore(this: MineflayerExecutor, step: Step): Promise<void> {
     const after = "cutsceneSeconds" in step ? step.cutsceneSeconds : undefined;
     const enRoute = "enRouteCutsceneSeconds" in step ? step.enRouteCutsceneSeconds : undefined;
     this.stepCutsceneAllowanceS =

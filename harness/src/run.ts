@@ -7,6 +7,7 @@
 // comes from critical-path.json.
 
 import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
+import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -322,6 +323,19 @@ async function main(): Promise<number> {
   } else {
     process.stderr.write(`repaint plan: none in this build (no set-atmosphere)\n`);
   }
+  // spec-0102 §5.3: where each pulse must be heard and where it must not.
+  // Absent → the build declares no pulse, said out loud.
+  const pulsePlan = await loadPulsePlanForCriticalPath(pathArg);
+  if (pulsePlan) {
+    executor.usePulsePlan(pulsePlan);
+    process.stderr.write(
+      `pulse plan: ${pulsePlan.pulses.length} pulse(s), ` +
+        `${pulsePlan.pulses.filter((p) => p.listening).length} with a listening station, ` +
+        `${pulsePlan.pulses.filter((p) => p.silent).length} with a silent station\n`,
+    );
+  } else {
+    process.stderr.write(`pulse plan: none in this build (no pulse)\n`);
+  }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
@@ -541,16 +555,30 @@ async function main(): Promise<number> {
       process.stderr.write(`${repaintBindingLine(repaintPlan, repaintVerdicts)}\n`);
     }
     const repaintFailures = repaintVerdicts.flatMap((v) => (v.failure ? [v.failure] : []));
+    // spec-0102 §5.3: every pulse was heard at its listening station and not
+    // at its silent one; a pulse with no station is reported, never passed.
+    const pulseVerdicts = executor.pulseVerdicts();
+    if (pulsePlan) {
+      process.stderr.write(`${pulseBindingLine(pulsePlan, pulseVerdicts)}\n`);
+    }
+    const pulseFailures = pulseVerdicts.flatMap((v) => [
+      ...v.failures,
+      ...(pathFailure === undefined ? v.unreached : []),
+    ]);
     report.stage({
       stage: "critical-path",
       ran: true,
       passed:
-        pathFailure === undefined && musterFailures.length === 0 && repaintFailures.length === 0,
+        pathFailure === undefined &&
+        musterFailures.length === 0 &&
+        repaintFailures.length === 0 &&
+        pulseFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
         ...musterFailures,
         ...repaintFailures,
+        ...pulseFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that

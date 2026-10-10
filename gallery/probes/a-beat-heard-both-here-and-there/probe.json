@@ -1,0 +1,13 @@
+{
+  "code": "DW0929",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/pulses/2/place",
+      "value": "area/annex"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the annex drip, heard in a `region`, also given `place: area/annex`. A pulse is heard in exactly one volume — the `PlaceRef` `set-atmosphere` carries too — so naming both is refused by the same rule that refuses a repaint naming both, `DW0929`, and no second code. It declares no unit."
+}

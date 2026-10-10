@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::serde_fields::is_zero3;
 use crate::{
     ActorId, AnchorId, AssemblyId, AtmosphereId, CameraShot, Carrier, CutsceneParty, DamageKind,
-    DespawnStyle, EndingId, FireworkExplosion, FlagId, Mark, NpcId, PlaceRef, PrefabId, QuestEffect,
-    SequenceStep, StakeId, StateId, StealthZone, WaveId, WorldTime, WorldWeather,
+    DespawnStyle, EndingId, FireworkExplosion, FlagId, Mark, NpcId, PlaceRef, PrefabId,
+    QuestEffect, SequenceStep, StakeId, StateId, StealthZone, WaveId, WorldTime, WorldWeather,
 };
 
 #[cfg(doc)]

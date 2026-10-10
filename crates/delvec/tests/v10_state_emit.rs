@@ -146,6 +146,11 @@ static QUESTS: LazyLock<String> = LazyLock::new(|| {
         ]
       }
     ],
+    "pulses": [
+      { "id": "pulse/the-hum", "sound": "block.bell.use", "at": { "anchor": "anchor/rafter" },
+        "place": "area/keep", "every": 40, "floor": 0.5,
+        "when": { "requires_state": [ { "state": "state/toll", "op": "at-least", "value": 2 } ] } }
+    ],
     "lethal_volumes": [
       { "id": "lethal/the-draught", "region": { "anchor": "anchor/rafter", "extent": [0, 0, 0] },
         "message": "The draught under the rafters is colder than it should be.",
@@ -538,6 +543,25 @@ fn the_comparison_reaches_every_consumers_guard() {
         draught.trim_end(),
         "execute if score #party dw.s_toll matches 2.. run function cast-ledger:lethal_the_draught",
         "a staged volume's guard must carry the comparison"
+    );
+
+    // 10. pulse — the tick's open edge and the beat's own guard (spec-0102),
+    //     party predicates.
+    let tick = body(&out, "tick");
+    assert!(
+        tick.lines().any(|l| l
+            == "execute if score #party dw.s_toll matches 2.. unless score #pulse_the_hum dw.sys \
+                matches 1 run function cast-ledger:pulse_the_hum"),
+        "a pulse's open edge must carry the comparison:\n{tick}"
+    );
+    let hum = body(&out, "pulse_the_hum");
+    assert!(
+        hum.contains("execute if score #party dw.s_toll matches 2.. run playsound ")
+            && hum.contains(
+                "execute unless score #party dw.s_toll matches 2.. run scoreboard players set \
+                 #pulse_the_hum dw.sys 0"
+            ),
+        "a pulse's beat and its clearing line must carry the comparison:\n{hum}"
     );
 }
 

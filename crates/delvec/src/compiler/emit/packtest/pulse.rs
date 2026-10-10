@@ -22,7 +22,8 @@ pub(super) fn emit_pulse_packtests(plan: &Plan, out: &mut BuildOutput) {
         let s = &p.safe;
         let holder = pulse_holder(s);
         let cleared = format!("#pclr_{s} dw.sys");
-        let clear = format!("execute store result score {cleared} run schedule clear {ns}:pulse_{s}");
+        let clear =
+            format!("execute store result score {cleared} run schedule clear {ns}:pulse_{s}");
         let Some(gate) = &p.staged else {
             let mut t = packtest_header(&format!(
                 "{title}: pulse `{}` beats and re-arms itself from world load (spec-0102)",

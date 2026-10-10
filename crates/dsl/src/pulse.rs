@@ -186,8 +186,11 @@ pub(crate) fn pulse_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut V
                 ),
             ));
         }
-        let mut anchors_named: Vec<(String, &str, &str)> =
-            vec![("/at/anchor".to_string(), p.at.anchor.as_str(), "a pulse's source")];
+        let mut anchors_named: Vec<(String, &str, &str)> = vec![(
+            "/at/anchor".to_string(),
+            p.at.anchor.as_str(),
+            "a pulse's source",
+        )];
         if let Some(r) = &p.heard.region {
             anchors_named.push((
                 "/region/anchor".to_string(),

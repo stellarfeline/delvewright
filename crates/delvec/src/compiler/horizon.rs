@@ -576,10 +576,9 @@ pub fn claimed_areas(plan: &crate::compiler::plan::Plan) -> Vec<([i32; 3], [i32;
         .collect();
     for (_, _, eff) in crate::compiler::atmosphere::set_atmospheres(plan.campaign) {
         if let delvewright_dsl::Verb::SetAtmosphere {
-            at:
-                delvewright_dsl::PlaceRef {
-                    place: Some(place), ..
-                },
+            at: delvewright_dsl::PlaceRef {
+                place: Some(place), ..
+            },
             ..
         } = &eff.verb
         {
