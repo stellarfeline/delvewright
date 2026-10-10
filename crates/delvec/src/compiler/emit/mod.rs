@@ -576,15 +576,19 @@ pub fn build_with_warnings(
     let population = walked_population(plan, &world);
     let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding> =
         Some(prove_assemblies(plan, &world, &population)?);
-    // ---- spec-0101: the watchers (`DW0997`), over the same population ----
-    let mut watch_binding = prove_watchers(plan, &population)?;
-    drop(population);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     prove_blockout(plan, assembled, &mut warnings)?;
 
     // ---- the declaration proofs: no occupancy model, `DW0360` first ----
     let teleport_gate = prove_declarations(plan, &mut warnings)?;
+
+    // ---- spec-0101: the watchers (`DW0997`), over the assemblies' population ----
+    //
+    // After the declaration proofs, so a body whose mark leaves its piece
+    // (`DW0897`) is sent to that line rather than told nobody can reach it.
+    let mut watch_binding = prove_watchers(plan, &population)?;
+    drop(population);
 
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
