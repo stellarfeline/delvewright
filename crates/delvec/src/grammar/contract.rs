@@ -580,7 +580,7 @@ pub fn check(
 /// edge of a traversal class, and declaring one is the contradiction this
 /// refuses — and its zero exterior faces are stated, not refused. The kind is
 /// the place's (the layout graph's `reached`, read through
-/// `LayoutGraphContent::is_scenery`), handed by `delvec detail` and derived
+/// `admit::scenery::is_scenery`), handed by `delvec detail` and derived
 /// the same way by `delvec prefab audit` (`crate::admit::scenery`), never the
 /// piece's own word.
 pub fn check_sealed(

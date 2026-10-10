@@ -13,7 +13,7 @@
 //! the one name the piece already carries, its `prefab_id`, which each
 //! campaign's `detail-plan` binds to a place. A piece is judged sealed only
 //! when at least one campaign places it and **every** campaign that places it
-//! places it at a scenery node, through [`LayoutGraphContent::is_scenery`],
+//! places it at a scenery node, through [`is_scenery`],
 //! the rule `delvec detail` seals on.
 //!
 //! Where the campaigns are: a prefab library is `<root>/prefabs/`, and the
@@ -33,12 +33,25 @@
 
 use std::path::Path;
 
-use delvewright_dsl::Envelope;
 use delvewright_dsl::detailplan::DetailPlanContent;
 use delvewright_dsl::layout::LayoutGraphContent;
+use delvewright_dsl::{Envelope, NodeId};
 
 use crate::compiler::load::{DETAIL_PLAN_FILE, LAYOUT_GRAPH_FILE};
 use crate::schem::prefab::PrefabMeta;
+
+/// **Whether `node` is scenery in `graph`** (spec-0098 §14): a place the graph
+/// names with `reached: false`, built to be seen and never entered. A node the
+/// graph does not name is not scenery — absent means reached.
+///
+/// The one rule every judge of a piece reads the place's kind through:
+/// `delvec detail` seals the piece's contract on it before writing, and
+/// [`place_kind`] derives the audit's kind through it, so the writer and the
+/// audit cannot judge one piece two ways.
+#[must_use]
+pub fn is_scenery(graph: &LayoutGraphContent, node: &NodeId) -> bool {
+    graph.nodes.iter().any(|n| &n.id == node && !n.reached)
+}
 
 /// The directory beside a prefab library that holds the campaigns built
 /// against it.
@@ -213,7 +226,7 @@ pub fn place_kind(meta_path: &Path, meta: &PrefabMeta) -> PlaceKind {
                 place: row.place.as_str().to_string(),
                 scenery: graph
                     .as_ref()
-                    .is_some_and(|g| g.content.is_scenery(&row.place)),
+                    .is_some_and(|g| is_scenery(&g.content, &row.place)),
             });
         }
     }
