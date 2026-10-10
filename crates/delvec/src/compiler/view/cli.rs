@@ -992,6 +992,84 @@ pub fn run_place_camera(
     ExitCode::SUCCESS
 }
 
+/// One world the engine wrote: its binding line, its absolute path, and how
+/// many block-entity pictures it draws blank.
+struct WorldWritten {
+    line: String,
+    path: String,
+    omitted: usize,
+}
+
+/// **The one writer of a configuration's world** (spec-0089 §5): `blocks`
+/// written under `dir` by [`crate::compiler::view::world::write`] with the
+/// build's biome answer and spawn, and the binding line that names it. Both
+/// `delvec cameras` and `delvec written-world` write through here.
+fn write_world(
+    key: &str,
+    blocks: &crate::compiler::blockstate::BlockMap,
+    stood: &crate::compiler::view::beat::Stood,
+    dir: &Path,
+) -> Result<WorldWritten, Diagnostic> {
+    let written = crate::compiler::view::world::write(blocks, &*stood.biome, stood.spawn, dir)
+        .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
+    let abs = std::path::absolute(dir)
+        .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("resolve {}: {e}", dir.display())))?
+        .display()
+        .to_string();
+    Ok(WorldWritten {
+        line: format!(
+            "world: {key} {} chunk(s), {} cell(s), sha256 {} -> {abs}",
+            written.chunks, written.cells, written.sha256
+        ),
+        path: abs,
+        omitted: crate::compiler::view::world::block_entities_omitted(blocks),
+    })
+}
+
+/// `delvec written-world`: the world the engine models at load — the
+/// configuration arriving at the critical path's first step, every world-load
+/// seal in place, no beat fired — written under `out` (its `level.dat` and
+/// `region/`), with no camera record. It is the world `delvec cameras` writes
+/// as `<out>/worlds/at-load`, through the same writer, and the written half of
+/// `DW0955` (`tools/ci/check-written-world.py`). `stood` is the caller's
+/// assembly of the campaign, carrying exactly the load world.
+pub fn run_written_world(
+    out: &Path,
+    json: bool,
+    stood: Result<crate::compiler::view::beat::Stood, (Option<Diagnostic>, u8)>,
+) -> ExitCode {
+    let stood = match stood {
+        Ok(s) => s,
+        Err((Some(d), code)) => return fail(d, json, code),
+        Err((None, code)) => return ExitCode::from(code),
+    };
+    let (key, blocks) = stood
+        .stands
+        .worlds
+        .first()
+        .expect("the load assembly carries the load world");
+    let w = match write_world(key, blocks, &stood, out) {
+        Ok(w) => w,
+        Err(d) => return fail(d, json, exit::OUTPUT),
+    };
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "world": w.path,
+                "key": key,
+                "block_entities_omitted": w.omitted,
+            })
+        );
+    }
+    eprintln!("{}", w.line);
+    eprintln!(
+        "block entities drawn blank: {} (sign, banner, head, lectern: the written world carries no block-entity NBT)",
+        w.omitted
+    );
+    ExitCode::SUCCESS
+}
+
 /// `delvec cameras`: emit one scene per camera the run frames, each naming the
 /// world the engine writes for the configuration it stands in (spec-0089 §5.3).
 /// `ask` is the caller's assembly of the campaign; it is consulted after every
@@ -1088,37 +1166,13 @@ pub fn run_cameras(
     let mut paths = std::collections::BTreeMap::new();
     let mut omitted = std::collections::BTreeMap::new();
     for (key, blocks) in &stood.stands.worlds {
-        let dir = worlds_dir.join(key);
-        let written =
-            match crate::compiler::view::world::write(blocks, &*stood.biome, stood.spawn, &dir) {
-                Ok(w) => w,
-                Err(e) => {
-                    return fail(
-                        Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())),
-                        json,
-                        exit::OUTPUT,
-                    );
-                }
-            };
-        let abs = match std::path::absolute(&dir) {
-            Ok(a) => a.display().to_string(),
-            Err(e) => {
-                return fail(
-                    Diagnostic::error(DW_OUTPUT, format!("resolve {}: {e}", dir.display())),
-                    json,
-                    exit::OUTPUT,
-                );
-            }
+        let w = match write_world(key, blocks, &stood, &worlds_dir.join(key)) {
+            Ok(w) => w,
+            Err(d) => return fail(d, json, exit::OUTPUT),
         };
-        world_lines.push(format!(
-            "world: {key} {} chunk(s), {} cell(s), sha256 {} -> {abs}",
-            written.chunks, written.cells, written.sha256
-        ));
-        omitted.insert(
-            key.clone(),
-            crate::compiler::view::world::block_entities_omitted(blocks),
-        );
-        paths.insert(key.clone(), abs);
+        world_lines.push(w.line);
+        omitted.insert(key.clone(), w.omitted);
+        paths.insert(key.clone(), w.path);
     }
     for s in &stood.stands.stands {
         eprintln!("{}", s.line(omitted.get(&s.key).copied().unwrap_or(0)));

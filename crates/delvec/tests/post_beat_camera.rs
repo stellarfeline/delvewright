@@ -829,19 +829,74 @@ fn the_plan_states_where_every_review_frame_stands() {
     assert!(log.contains(&want), "`{want}` in:\n{log}");
 }
 
+/// `delvec written-world <campaign> -o <dir>`: the load world, no camera record.
+fn written_world(camp: &Path, dir: &Path) -> (i32, String) {
+    run(&[
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+        "written-world",
+        camp.to_str().unwrap(),
+        "-o",
+        dir.to_str().unwrap(),
+    ])
+}
+
+/// **The written load world needs no camera record.** A campaign with no
+/// `design/` at all (the pinned hello-world: no `design.json`, no
+/// `design/cameras.json`) — a demo level built without a design gate — is
+/// written by `delvec written-world`; and on a campaign that does carry a
+/// record, the world it writes is `delvec cameras`' `worlds/at-load` byte for
+/// byte, because both go through the one writer.
+#[test]
+fn the_load_world_is_written_without_a_camera_record() {
+    let camp = tmp("ww-bare-camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    assert!(!camp.join("design").exists() && !camp.join("design.json").exists());
+    let written = tmp("ww-bare-world");
+    let (code, log) = written_world(&camp, &written);
+    assert_eq!(code, 0, "{log}");
+    assert!(log.contains("world: at-load "), "{log}");
+    assert!(written.join("level.dat").is_file(), "{log}");
+    assert!(!read_back(&written).is_empty(), "{log}");
+
+    let camp = hello("ww-same", &[("door", Some("obj/talk"))]);
+    let out = built("ww-same", &camp);
+    let scenes = tmp("ww-same-scenes");
+    // A record whose every camera stands after a step: `cameras` writes no
+    // load world of its own, and `written-world` still does.
+    let (code, log) = cameras(&out, &camp, &scenes, &[]);
+    assert_eq!(code, 0, "{log}");
+    assert!(!scenes.join("worlds/at-load").exists(), "{log}");
+    let camp_hero = hello("ww-hero", &[("hero", None)]);
+    let scenes = tmp("ww-hero-scenes");
+    let (code, log) = cameras(&built("ww-hero", &camp_hero), &camp_hero, &scenes, &[]);
+    assert_eq!(code, 0, "{log}");
+    let direct = tmp("ww-hero-world");
+    let (code, log) = written_world(&camp_hero, &direct);
+    assert_eq!(code, 0, "{log}");
+    for f in ["level.dat", "region/r.0.0.mca"] {
+        assert_eq!(
+            std::fs::read(scenes.join("worlds/at-load").join(f)).unwrap(),
+            std::fs::read(direct.join(f)).unwrap(),
+            "{f}"
+        );
+    }
+}
+
 /// **`DW0955` — the cross-check reds on a world that is not the server's.**
 /// The gate is the instrument (`tools/ci/check-written-world.py`); this holds
 /// its code to the engine's declaration and its two perturbations: one cell
 /// moved in a copy of the written world reds it, a gravel column the server
-/// settled lands in the gravity class and does not.
+/// settled lands in the gravity class and does not. The written world is
+/// `delvec written-world`'s, on a campaign with no camera record.
 #[test]
 fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
-    let camp = hello("dw0955", &[("hero", None)]);
+    let camp = tmp("dw0955-camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
     let out = built("dw0955", &camp);
-    let scenes = tmp("dw0955-scenes");
-    let (code, log) = cameras(&out, &camp, &scenes, &[]);
+    let written = tmp("dw0955-written");
+    let (code, log) = written_world(&camp, &written);
     assert_eq!(code, 0, "{log}");
-    let written = scenes.join("worlds/at-load");
     let gate = common::repo_root().join("tools/ci/check-written-world.py");
     let check = |server: &Path| {
         let o = Command::new("python3")

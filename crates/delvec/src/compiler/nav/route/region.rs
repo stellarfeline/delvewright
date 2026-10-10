@@ -294,7 +294,7 @@ impl World {
             if forced {
                 match write {
                     RegionWrite::Clear | RegionWrite::Unseal => st.laid.push((region, None)),
-                    RegionWrite::Fill | RegionWrite::Flood => {
+                    RegionWrite::Fill | RegionWrite::Flood | RegionWrite::Pass => {
                         if block.is_some() {
                             st.laid.push((region, block));
                         }
@@ -308,7 +308,7 @@ impl World {
             //
             // A `Fill` splits on forcedness and nothing else does. `Flood` needs no
             // split (impassable and never floor is already the worst of both
-            // futures); `Clear` and `Unseal` never reach here unforced, because
+            // futures); `Clear`, `Unseal` and `Pass` never reach here unforced, because
             // `plan::collect_region_events` drops them — an unforced firing may make
             // a region impassable and may never make one passable.
             let into = match write {
@@ -317,7 +317,8 @@ impl World {
                     &mut st.unforced
                 }
                 RegionWrite::Fill => &mut st.solid,
-                RegionWrite::Clear => &mut st.cleared,
+                // A pass leaves cells a body occupies: to the walk, a clear.
+                RegionWrite::Clear | RegionWrite::Pass => &mut st.cleared,
                 RegionWrite::Flood => {
                     st.flood_regions.push(region);
                     &mut st.flooded

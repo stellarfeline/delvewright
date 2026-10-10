@@ -4524,7 +4524,19 @@ direction off a placed piece's exported contract, spec-0042), plus a
 leaves behind is read off the command it emits (`plan::RegionWrite`), which is why
 an `open-gate` is a third case and not a synonym for a clear: it is
 `replace`-filtered to the gate's own block, so it removes nothing the model believed
-was there, while an unfiltered `clear-region` does. Collapsing the two says an
+was there, while an unfiltered `clear-region` does. A fill's conclusion is read off
+its **block** through the collision table measured from the pinned jar
+(`RegionWrite::of_block` over `blockshape::collision_class`, the classifier every
+assembled cell goes through; a link's own root writes are classified by the same
+call): a block a body collides with (a full cube, a partial floor, a fence, wall
+or fence gate) is a `Fill` — solid and floor, a partial floor modelled as a full
+cube, which can only refuse; water, lava, a block that brings its own water
+(seagrass, kelp) or a waterlogged block a body passes through is a `Flood` —
+impassable and never floor; a block with no collision box or one under the
+auto-step, or a climb (a sculk vein, glow lichen, a flower, a torch, a carpet, a
+vine, a ladder) is a `Pass` — to the walk a clear, credited only when forced and
+dated by its own step even under a trigger, while the configuration's bytes lay
+its block; `fill … minecraft:air` is a `Clear`. Collapsing the two says an
 `open-gate` deletes a `collapse`'s debris resting in the doorway — measured: the
 `DW0445` burial test goes green, i.e. stops proving anything, the moment they are
 collapsed. Where a fill and a clear overlap, the fill wins: a proof that survives the
@@ -5552,6 +5564,19 @@ and stays the world source of `delvec scene` and `delvec panorama`. The check is
 bound to staging: `check-written-world.py --record` writes its verdict named by
 the build's manifest sha256, and `tools/creator/staging-gate.py` mints no
 admission token without a passing record of that build (`--written-world`).
+
+**`delvec written-world <campaign-dir> -o <world-dir>`** writes the load world
+alone — the configuration `view::beat::load_blocks` derives, the world a camera
+with no `after` stands in — from the campaign and `--prefabs`, with no
+`design.json` or `design/cameras.json` read, so a campaign built without a
+design gate (a demo level) has its written world. It assembles the campaign as
+`delvec cameras` does and writes through the same writer, so on a campaign whose
+record frames a camera at load its `level.dat` and region files are
+`<out>/worlds/at-load`'s byte for byte; `-o` is the world directory itself.
+Prints the `world: at-load …` line (chunks, cells, sha-256, absolute path) and
+the count of block-entity pictures drawn blank; `--json` prints the path. A
+campaign that does not plan exits 3 with its own refusal. It is the written half
+`check-written-world.py` reads, in CI and at the skill's step 10.
 
 **What a frame does not show, by name** (spec-0089 §6): entities (the pinned
 core draws none of the kinds the engine summons, from any world); block-entity

@@ -48,11 +48,10 @@ pub struct RootWrite {
     pub tick: u32,
     /// The written box's inclusive corners.
     pub region: ([i32; 3], [i32; 3]),
-    /// `true` for a fill of a full block, `false` for a clear. A fluid fill is
-    /// neither floor nor way and is recorded as a fill that lays no footing.
-    pub fill: bool,
-    /// `true` when the fill is a fluid — impassable and never floor.
-    pub fluid: bool,
+    /// What the write leaves, read off its block by the one classifier,
+    /// [`crate::compiler::plan::RegionWrite::of_block`] — a clear when it lays
+    /// no block.
+    pub write: crate::compiler::plan::RegionWrite,
 }
 
 /// A **link**: a repeatable trigger that carries whoever stands in its volume
@@ -341,12 +340,13 @@ pub fn collect(campaign: &Campaign, anchors: &AnchorTable) -> (Vec<LinkPlan>, Ve
                 .filter_map(|t| {
                     let (z, block) = t.eff.region_write()?;
                     let region = zone(anchors, z)?;
-                    let fluid = block.is_some_and(crate::compiler::assembled::is_fluid);
                     Some(RootWrite {
                         tick: t.tick,
                         region,
-                        fill: block.is_some(),
-                        fluid,
+                        write: block.map_or(
+                            crate::compiler::plan::RegionWrite::Clear,
+                            crate::compiler::plan::RegionWrite::of_block,
+                        ),
                     })
                 })
                 .collect();
