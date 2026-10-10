@@ -223,6 +223,40 @@ not third-party reconstructions.
   `tools/maintenance/collision/FaceDump.java` names no obfuscated member; the
   dumper's state count must equal the rows' coverage.
 
+- **`support-1.21.11.tsv`** and **`support-bases-1.21.11.tsv`** (in
+  `crates/dsl/data/`) — what every 1.21.11 blockstate needs beside it to
+  survive, asked inside the pinned server jar (same jar sha256 and mappings
+  sha1 as the collision table, both recorded in each file's header). Each state
+  is set at `BlockPos.ZERO` in a proxy `LevelReader` holding nothing but it and
+  air, with the vanilla block and fluid tags bound as a server reload binds
+  them, and the game's own `BlockState.canSurvive(level, pos)` is asked once in
+  air and then once for every neighbour cell and every registry state at it
+  (1,232,322,553 calls). 29,671 states: 22,516 `free`, 6,618 `support`, 537
+  `unjudged` (error 37 — a crop's or a mushroom's light; far 299 — a vine, glow
+  lichen, sugar cane, chorus plant reading past its neighbours; none 201 — no
+  single neighbour keeps it), collapsed to 1,621 rows. A support set is written
+  as the nearest base the game names plus its exact differences; a seeded
+  sample of 256 whole neighbourhoods per state (seed 1002) found no state held
+  by a combination the single-neighbour reading misses, and 1,101
+  neighbourhoods where a held state was still dropped by a second, killing
+  condition. The bases table carries the CENTER/RIGID faces some rule asks
+  (`isFaceSturdy` with `SupportType.CENTER`/`RIGID`) and the air, solid and
+  still-water flags, each column its own collapse: 4,602 rows.
+  **Why it exists**: a block the build writes and the server drops — a wall
+  torch on a glass pane, a lantern hung under air — was seen only by the
+  staging-time written-world comparison (`DW0955`). Consumed by
+  `delvewright_dsl::support`, which `DW1002`, the relight pass's fixture rule
+  and `DW0354` judge by. Cross-checked against a sample of the Minecraft Wiki's
+  placement statements (`crates/dsl/tests/support_wiki.rs`, 57 assertions; one
+  disagreement, settled for the jar and written there).
+  **Reproduce it**: `python3 tools/maintenance/dump-support.py [--check]
+  [--work DIR]` (JDK ≥ 21 on `PATH`, network for the mappings). Its pin, fetch
+  and collapse steps are `dump-collision-tops.py`'s own, imported;
+  `tools/maintenance/support/SupportDump.java` names no obfuscated member, and
+  the driver resolves each from the mappings by exact signature; the dumper's
+  state count must equal each collapse's coverage, and two runs give the same
+  bytes.
+
 - **`block-renames-1.21.11.json`** (in `crates/dsl/data/`) — the block-id
   **renames** the pinned game's DataFixerUpper applies on load: an id 1.21.11
   does not have → the id it becomes, with the greatest `DataVersion` at which
@@ -566,6 +600,8 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
 | `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
 | `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
+| `support-1.21.11.tsv` | `c70c0fab67a9c236b7df85f7107a667f4c56f9142f3c1300f7ead807ca45cd4b` |
+| `support-bases-1.21.11.tsv` | `30785b0ed7f96aab5159618a2a0f621255d8c6918d39db946a023bc1d5b7dfc2` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
 
 ## Not committed

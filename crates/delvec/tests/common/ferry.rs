@@ -27,6 +27,9 @@ pub const PIT: [i32; 3] = [17, 1, 2];
 /// end — a cell a body arrives on only by walking round by the step.
 pub const LEDGE: [i32; 3] = [16, 5, 6];
 
+/// The post under `anchor/tiller`, local: the fence its sign stands on.
+pub const TILLER_POST: [i32; 3] = [7, 3, 4];
+
 /// Every non-air cell of the strait, with or without [`PIT`] and [`LEDGE`].
 pub fn strait_cells(pit: bool, ledge: bool) -> Vec<([i32; 3], &'static str)> {
     let [sx, sy, sz] = SIZE;
@@ -45,6 +48,14 @@ pub fn strait_cells(pit: bool, ledge: bool) -> Vec<([i32; 3], &'static str)> {
                         || (x == 19 && y == 3 && z == 5));
                 if pillar {
                     cells.push(([x, y, z], "minecraft:stone"));
+                    continue;
+                }
+                // The tiller's post: the tiller's sign stands on it. A sign
+                // asks the block under it to be solid, and with air there the
+                // server drops it (`DW1002`). A fence, so its top is no floor
+                // a body could press the tiller from.
+                if [x, y, z] == TILLER_POST {
+                    cells.push(([x, y, z], "minecraft:oak_fence"));
                     continue;
                 }
                 if y == sy - 1 && z % 3 == 1 && x % 3 == 1 && x != 8 {

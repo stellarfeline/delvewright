@@ -1092,6 +1092,15 @@ fn block_at(
     {
         return ("minecraft:stone", None);
     }
+    // The lidded pit's own light, set in its south wall under the lid: the
+    // hall's relight hung its lantern from the lid, and the lid is the stone a
+    // beat clears, so that lantern fell with it (`DW1002`). The shaft's two air
+    // cells are its anchor's body, so the light is a wall block — the
+    // `shroomlight` the relight pass itself embeds in a wall bordering air —
+    // and stays whatever the beat takes away.
+    if (x, z) == (LID_PIT.0, LID_PIT.1 + 1) && y == TERRACE_TOP_Y - 1 {
+        return ("minecraft:shroomlight", None);
+    }
     let (ax0, ax1, az0, az1) = TERRACE_ANNEX;
     if (ax0..=ax1).contains(&x)
         && (az0..=az1).contains(&z)
@@ -2992,7 +3001,7 @@ fn build_shard() -> Structure {
     let mut palette = Palette::new();
     for (name, props) in [
         ("minecraft:polished_blackstone", None),
-        ("minecraft:lantern", Some(&[("hanging", "true")][..])),
+        ("minecraft:lantern", Some(&[("hanging", "false")][..])),
     ] {
         palette.idx(name, props);
     }
@@ -3000,12 +3009,15 @@ fn build_shard() -> Structure {
     for x in 0..SHARD_SIZE[0] {
         for y in 0..SHARD_SIZE[1] {
             for z in 0..SHARD_SIZE[2] {
-                // A hanging lantern at the top centre, so the stamp is visible
-                // and asymmetric — a rotation nobody can see is a rotation
-                // nobody can check.
+                // A lantern standing on one top corner, so the stamp is
+                // visible and asymmetric — a rotation nobody can see is a
+                // rotation nobody can check. It STANDS (`hanging=false`) on the
+                // blackstone under it: a hanging one asks the block above it
+                // for a ceiling, and over the stamp there is none, so the
+                // server drops it (`DW1002`).
                 let lantern = [x, y, z] == [0, SHARD_SIZE[1] - 1, 0];
                 let (name, props): (&str, Option<&[(&str, &str)]>) = if lantern {
-                    ("minecraft:lantern", Some(&[("hanging", "true")]))
+                    ("minecraft:lantern", Some(&[("hanging", "false")]))
                 } else {
                     ("minecraft:polished_blackstone", None)
                 };

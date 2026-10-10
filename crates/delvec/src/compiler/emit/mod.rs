@@ -652,6 +652,23 @@ pub fn build_with_warnings(
         }
     }
 
+    // DW1002: every block the build writes is one the pinned server keeps —
+    // judged over the world `DW0955` compares (the load world, then every
+    // configuration the critical path passes, around its laid writes), after
+    // the route proofs, so a climbable a forced leg needs is named by
+    // `DW0991` first. The binding is printed whichever way it goes.
+    let picture = crate::compiler::view::beat::picture_base(plan, assembled, &relight.placements);
+    {
+        let attached = crate::compiler::attached::judge(plan, &world, &picture);
+        eprintln!("{}", attached.line());
+        if let Some(message) = attached.refusal() {
+            return Err(BuildFailure::Diagnostic {
+                code: crate::compiler::attached::DW_BLOCK_DROPPED,
+                message,
+            });
+        }
+    }
+
     // ---- datapack ----
     put_json(
         &mut out,
@@ -919,11 +936,7 @@ pub fn build_with_warnings(
         prefabs,
         &pov_shots,
         &world,
-        Some(&crate::compiler::view::beat::picture_base(
-            plan,
-            assembled,
-            &relight.placements,
-        )),
+        Some(&picture),
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);

@@ -1,7 +1,35 @@
 {
   "added": [],
-  "base_commit": "507a5e0e20712c8c1e80f52ab1583b1ef91adaaa",
-  "changed": [],
-  "classes": {},
+  "base_commit": "a3e7a4d8983bce26eef3d1f393bafe5945b4654f",
+  "changed": [
+    "carcass.en:datapack/data/gallery/structure/gallery-carcass.nbt",
+    "easy.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "easy.en:datapack/data/gallery/function/world_build.mcfunction",
+    "easy.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "easy.en:validation/chain-length.json",
+    "hard.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "hard.en:datapack/data/gallery/function/world_build.mcfunction",
+    "hard.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "hard.en:validation/chain-length.json",
+    "ocean-horizon.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "ocean-horizon.en:datapack/data/gallery/function/world_build.mcfunction",
+    "ocean-horizon.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "primary.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "primary.en:datapack/data/gallery/function/world_build.mcfunction",
+    "primary.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "primary.en:validation/chain-length.json",
+    "primary.zh-cn:datapack/data/gallery/function/setup_finish.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/function/world_build.mcfunction",
+    "primary.zh-cn:datapack/data/gallery/structure/gallery-hall.nbt",
+    "primary.zh-cn:validation/chain-length.json",
+    "void-horizon.en:datapack/data/gallery/function/setup_finish.mcfunction",
+    "void-horizon.en:datapack/data/gallery/function/world_build.mcfunction",
+    "void-horizon.en:datapack/data/gallery/structure/gallery-hall.nbt",
+    "void-horizon.en:validation/chain-length.json"
+  ],
+  "classes": {
+    "datapack function": 19,
+    "validation ledger": 5
+  },
   "removed": []
 }
