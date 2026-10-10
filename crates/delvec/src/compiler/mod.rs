@@ -13,6 +13,7 @@
 //! - [`assembly`]: an assembly's hitbox, reach and strike judgements, and its emission (spec-0082).
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
 //! - [`atmosphere`]: a campaign's declared skies (spec-0080) — the attribute, paint and declaration refusals (`DW0928`–`DW0930`), the biome each atmosphere ships as, and the one writer of `fillbiome`.
+//! - [`attached`]: every block the build writes is one the server keeps, by the jar's measured `canSurvive` (`DW1002`).
 //! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
 //! - [`blind`]: a blinding beside a drop — the reach a `give-effect` of blindness or darkness owes the world it lands in (`DW0943`).
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.

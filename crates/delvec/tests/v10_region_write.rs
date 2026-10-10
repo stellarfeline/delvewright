@@ -326,18 +326,24 @@ fn doorway_filled_with(block: &str) -> (Campaign, PathBuf) {
 }
 
 /// **A fill of a block a body passes through leaves the route walkable**: a
-/// `fill-region` of `sculk_vein` (no collision box) or of a carpet (1/16, under
-/// the auto-step) over the only doorway, on the leg the party must still walk,
-/// builds; the identical fill of stone is refused — same box, same verb, same
+/// `fill-region` of a carpet (1/16, under the auto-step) over the only doorway,
+/// on the leg the party must still walk, builds; the identical fill of stone is
+/// refused — same box, same verb, same
 /// step, only the block differs. Before the block was classified through the
 /// collision table, every non-fluid block was modelled as a wall here, and the
 /// vein was refused as stone is.
+///
+/// A `sculk_vein[down=true]` (no collision box) and a poppy reach the route
+/// model as the same pass — the route proof lets them by — and the same
+/// three-high box of them is refused for another reason: a
+/// vein over a vein and a poppy over a poppy are blocks the server drops, and
+/// the build says so (`DW1002`) once the write lands.
 #[test]
 fn a_fill_of_a_block_a_body_passes_through_leaves_the_route_walkable() {
-    for block in [
-        "minecraft:sculk_vein[down=true]",
-        "minecraft:white_carpet",
-        "minecraft:poppy",
+    for (block, kept) in [
+        ("minecraft:sculk_vein[down=true]", false),
+        ("minecraft:white_carpet", true),
+        ("minecraft:poppy", false),
     ] {
         let (c, dir) = doorway_filled_with(block);
         let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
@@ -350,9 +356,14 @@ fn a_fill_of_a_block_a_body_passes_through_leaves_the_route_walkable() {
                     && e.region == ([3, 65, 6], [5, 67, 6])),
             "`{block}` reaches the model as a Pass that lays its block"
         );
-        try_build(&c, &dir).unwrap_or_else(|f| {
-            panic!("a fill of `{block}` over the doorway leaves it walkable: {f:?}")
-        });
+        match (kept, try_build(&c, &dir)) {
+            (true, Ok(_)) => {}
+            (false, Err(emit::BuildFailure::Diagnostic { code, message })) => {
+                assert_eq!(code, "DW1002", "`{block}`: wrong code: {message}");
+                assert!(message.contains(block), "`{block}` is named: {message}");
+            }
+            (_, other) => panic!("a fill of `{block}` over the doorway (kept: {kept}): {other:?}"),
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
     let (stone, dir) = doorway_filled_with("minecraft:stone");
