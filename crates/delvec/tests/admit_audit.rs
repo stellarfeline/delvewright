@@ -422,23 +422,18 @@ fn an_anvil_and_a_trapped_chest_pass_the_default_allowlist() {
     assert!(rep.findings.iter().any(|f| f.code == "DW0730"));
 }
 
-/// **The sculk family: the two inert members pass, the four that act do not**
-/// (the allowlist's own criterion — inert building and decoration admitted,
-/// a block with a runtime behaviour shown to a reviewer). `sculk` is a full
-/// block and `sculk_vein` its collision-free decal; `sculk_catalyst` rewrites
-/// the blocks around it when a living entity dies near it, the two sensors are
-/// redstone sources fired by vibrations, and the shrieker summons a warden
-/// when its `can_summon` state is true. Each is placed in its own room so a
-/// refusal names exactly one block; vacuous if a block were not examined: each
-/// admitted id is asserted in the report's palette.
+/// **The sculk family passes at rest** (spec-0100 §3.1, acceptance criterion
+/// 3): a piece carrying all six sculk blocks in their rest states is admitted
+/// with no `DW0730`, and the same piece with one state off rest is refused by
+/// the one rest rule — `can_summon=true` as `DW0998`, a sensor caught
+/// mid-click as `DW0999` — as is a cell whose block entity carries a pending
+/// vibration. Vacuous if the allowlist still named them: the rest piece would
+/// be `DW0730`; each id is asserted in the report's palette.
 #[test]
-fn the_inert_sculk_blocks_pass_and_the_acting_ones_are_shown() {
+fn the_sculk_family_passes_at_rest() {
     use delvec::admit::structure::PaletteEntry;
-    let admitted = ["minecraft:sculk", "minecraft:sculk_vein"];
-    let mut s = fixtures::clean_room();
-    s.set_cell([1, 1, 1], PaletteEntry::simple(admitted[0]), None);
-    // A vein on the floor, its connection state written as the design means.
-    let faces = [
+    use delvec::schem::nbt::Nbt;
+    let vein = [
         ("down", "true"),
         ("east", "false"),
         ("north", "false"),
@@ -447,31 +442,123 @@ fn the_inert_sculk_blocks_pass_and_the_acting_ones_are_shown() {
         ("waterlogged", "false"),
         ("west", "false"),
     ];
-    s.set_cell(
-        [2, 1, 1],
-        PaletteEntry::with_props(admitted[1], &faces),
-        None,
+    let piece = |shrieker: &[(&str, &str)], sensor: &[(&str, &str)], nbt: Option<Nbt>| {
+        let mut s = fixtures::clean_room();
+        s.set_cell([1, 1, 1], PaletteEntry::simple("minecraft:sculk"), None);
+        s.set_cell(
+            [2, 1, 1],
+            PaletteEntry::with_props("minecraft:sculk_vein", &vein),
+            None,
+        );
+        s.set_cell(
+            [3, 1, 1],
+            PaletteEntry::with_props("minecraft:sculk_sensor", sensor),
+            nbt,
+        );
+        s.set_cell(
+            [1, 1, 2],
+            PaletteEntry::with_props(
+                "minecraft:calibrated_sculk_sensor",
+                &[
+                    ("facing", "north"),
+                    ("power", "0"),
+                    ("sculk_sensor_phase", "inactive"),
+                    ("waterlogged", "false"),
+                ],
+            ),
+            None,
+        );
+        s.set_cell(
+            [2, 1, 2],
+            PaletteEntry::with_props("minecraft:sculk_shrieker", shrieker),
+            None,
+        );
+        s.set_cell(
+            [3, 1, 2],
+            PaletteEntry::with_props("minecraft:sculk_catalyst", &[("bloom", "false")]),
+            None,
+        );
+        s
+    };
+    let rest_shrieker = [
+        ("can_summon", "false"),
+        ("shrieking", "false"),
+        ("waterlogged", "false"),
+    ];
+    let rest_sensor = [
+        ("power", "0"),
+        ("sculk_sensor_phase", "inactive"),
+        ("waterlogged", "false"),
+    ];
+    let (rep, _) = audit(
+        "listening",
+        &piece(&rest_shrieker, &rest_sensor, None),
+        &Allowlist::default_building(),
     );
-    let (rep, _) = audit("sculk", &s, &Allowlist::default_building());
     assert!(rep.is_pass(), "{:?}", rep.findings);
-    for id in admitted {
-        assert!(rep.palette.iter().any(|b| b == id), "{id} was not examined");
-    }
+    assert!(rep.findings.iter().all(|f| f.code != "DW0730"));
     for id in [
-        "minecraft:sculk_catalyst",
+        "minecraft:sculk",
+        "minecraft:sculk_vein",
         "minecraft:sculk_sensor",
         "minecraft:calibrated_sculk_sensor",
         "minecraft:sculk_shrieker",
+        "minecraft:sculk_catalyst",
     ] {
-        let mut c = fixtures::clean_room();
-        c.set_cell([1, 1, 1], PaletteEntry::simple(id), None);
-        let (rep, _) = audit("sculk-device", &c, &Allowlist::default_building());
-        assert!(
-            rep.findings
-                .iter()
-                .any(|f| f.code == "DW0730" && f.message.contains(id)),
-            "{id}: {:?}",
-            rep.findings
-        );
+        assert!(rep.palette.iter().any(|b| b == id), "{id} was not examined");
     }
+
+    let summoning = [
+        ("can_summon", "true"),
+        ("shrieking", "false"),
+        ("waterlogged", "false"),
+    ];
+    let (rep, _) = audit(
+        "listening",
+        &piece(&summoning, &rest_sensor, None),
+        &Allowlist::default_building(),
+    );
+    assert!(!rep.is_pass());
+    assert!(
+        rep.findings.iter().any(|f| f.code == "DW0998"),
+        "{:?}",
+        rep.findings
+    );
+
+    let clicking = [
+        ("power", "0"),
+        ("sculk_sensor_phase", "active"),
+        ("waterlogged", "false"),
+    ];
+    let (rep, _) = audit(
+        "listening",
+        &piece(&rest_shrieker, &clicking, None),
+        &Allowlist::default_building(),
+    );
+    assert!(
+        rep.findings
+            .iter()
+            .any(|f| f.code == "DW0999" && f.message.contains("sculk_sensor_phase")),
+        "{:?}",
+        rep.findings
+    );
+
+    // A sensor saved with a vibration in flight replays it on load.
+    let mut listener = std::collections::BTreeMap::new();
+    listener.insert("event".to_string(), Nbt::Compound(Default::default()));
+    let mut be = std::collections::BTreeMap::new();
+    be.insert("id".to_string(), Nbt::String("minecraft:sculk_sensor".into()));
+    be.insert("listener".to_string(), Nbt::Compound(listener));
+    let (rep, _) = audit(
+        "listening",
+        &piece(&rest_shrieker, &rest_sensor, Some(Nbt::Compound(be))),
+        &Allowlist::default_building(),
+    );
+    assert!(
+        rep.findings
+            .iter()
+            .any(|f| f.code == "DW0999" && f.message.contains("nbt.listener.event")),
+        "{:?}",
+        rep.findings
+    );
 }
