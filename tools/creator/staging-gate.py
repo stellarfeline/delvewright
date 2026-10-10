@@ -1640,7 +1640,7 @@ def refuse_unproven(reasons: list[str], subj: Subject, report: pathlib.Path | No
         f"({len(reasons)} reason(s)); `--stage-anyway` does not reach this refusal:",
         *[f"  {r}" for r in reasons],
         "  Run the ladder and the written-world comparison on THIS build "
-        "(`validation/bot-run.sh`, `validation/world-save.sh`, `delvec cameras`, "
+        "(`validation/bot-run.sh`, `validation/world-save.sh`, `delvec written-world`, "
         "`tools/ci/check-written-world.py --record`) and present both records.",
     ]
     if report is not None and report.is_file():
