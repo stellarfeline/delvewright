@@ -432,8 +432,7 @@ fn detail_one(
     let scenery = campaign
         .layout_graph
         .as_ref()
-        .and_then(|g| g.content.nodes.iter().find(|n| &n.id == node))
-        .is_some_and(|n| !n.reached);
+        .is_some_and(|g| delvec::admit::scenery::is_scenery(&g.content, node));
     let mut opts = ExpandOptions::seeded(seed).with_overrides(overrides);
     opts.sealed = scenery;
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];

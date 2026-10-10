@@ -736,7 +736,7 @@ includes both.
 
 | Element | Behavior |
 |---------|----------|
-| `nodes[]` | `{id: node/<kebab>, intent, note?, stations?, reached?}`. `reached: false` (spec-0098 §14) declares the place **scenery** — built to be seen and never entered, a tree's crown over a treehouse — and the checks confirm it both ways: the closure must not reach it (`DW0816`) and no body may get into it in the built world (`DW0837`). Scenery still owns its outside and stitches its ground ring; it owes no node anchor and no play light, and its piece is judged sealed (no way in claimed, and its floor gates excuse every standable cell of the piece — a crown's leaf tops included — stating the count, since none is stood in; `delvec detail`'s light probe states the cells it excludes with theirs and grades none). Absent means reached. A **place**: a room, a courtyard, an arena, a stretch of shore, a cavern, a road. `intent` is a free non-empty label no check keys on — recorded judgement for the reviewer and for the later per-place brief, kept free-form because an enum of intents would be one genre wearing a schema's clothes; empty is `DW0814`. A place carries no size class: its size is its box's `extent`, the author's declaration in the site plan, and the piece detailed into it may not exceed it (`DW0843`). |
+| `nodes[]` | `{id: node/<kebab>, intent, note?, stations?, reached?}`. `reached: false` (spec-0098 §14) declares the place **scenery** — built to be seen and never entered, a tree's crown over a treehouse — and the checks confirm it both ways: the closure must not reach it (`DW0816`) and no body may get into it in the built world (`DW0837`). Scenery still owns its outside and stitches its ground ring; it owes no node anchor and no play light, and its piece is judged sealed — by `delvec detail` before it writes and by `delvec prefab audit` after, both through `admit::scenery::is_scenery` (the audit derives the kind from the layout graph of every campaign under the library's sibling `campaigns/` whose `detail-plan` places the piece, sealed only when at least one does and every one places it at a `reached: false` node; never from the piece's own document) — (no way in claimed, and its floor gates excuse every standable cell of the piece — a crown's leaf tops included — stating the count, since none is stood in; `delvec detail`'s light probe states the cells it excludes with theirs and grades none). Absent means reached. A **place**: a room, a courtyard, an arena, a stretch of shore, a cavern, a road. `intent` is a free non-empty label no check keys on — recorded judgement for the reviewer and for the later per-place brief, kept free-form because an enum of intents would be one genre wearing a schema's clothes; empty is `DW0814`. A place carries no size class: its size is its box's `extent`, the author's declaration in the site plan, and the piece detailed into it may not exceed it (`DW0843`). |
 | `edges[]` | A connection, internally tagged on `class`: `walk`, `stair`, `climb`, `drop`, `barred`, `carry`, `vision`. All carry `{id: edge/<kebab>, a, b}`. A `climb` (spec-0098 §2c) is a way a body climbs on a ladder or a vine the lower place hangs (spec-0099): a hole through a floor or a door high in a wall, with no treads and no sill; the rise is the two floors' difference, and a climb between two places on one plane is `DW0992`. A climb **inside one place** is the piece's own: its spatial contract declares the two floors as two spaces and a `climb` edge between them, proved over the body's climb moves (`docs/reference/grammar.md`, the contract's edge classes). `walk`/`stair`/`climb`/`barred` carry `one_way` (`a-to-b` \| `b-to-a`; absent = both ways); a `drop` is one-way by construction and so carries a **required** `falls` instead. `barred` carries `opens_from` (`a` \| `b` \| `either`, default `either`) — the one-side-openable door, spelled as a property of the connection rather than of any campaign's fiction — and a **required** `gating`. `carry` (spec-0083 §7) is a connection a body is **carried** over: `one_way` as `walk` carries it (absent = both ways, each direction then owed a link) and a **required** `gating` (empty is `DW0818`, as for `barred`: a carry live from world load is a hole in the graph's claim); it has no shortcut mark, no seam, no sill and no sightline, and the derivation writes nothing for it. The closure crosses it like any gated edge, and stage 5 matches each link to the `carry` edge joining the node of its `from` station to the node of its `to` mark in its direction, and each `carry` direction to at least one link (`DW0934`). `vision` carries a line of sight and no body, so it has no direction, no gating and no shortcut mark; stage 4 gives it a sightline rather than a seam. Because the class is the serde tag, a field the class does not read (an `opens_from` on a walk, a `drop` with no `falls`) is an ordinary `DW0100` and no rule has to police it. |
 | `edges[].gating` | `{flags[]?, quest?}` — what a body must already hold to pass. **Deliberately not the campaign's `Gate`.** A gate is a runtime object emission evaluates against an acting player; a layout-graph edge is evaluated by nothing at run time, so making it a gate consumer would push a never-emitted object into machinery whose whole subject is emission. It is also narrower on purpose: the closure below is monotone, so a negative flag term and a numeric comparison are terms no proof here could honour, and a surface an author may write and nothing honours is worse than one that is absent. What it states is a **projection** of the campaign's runtime gating into topology, and `DW0818` keeps it a projection — every flag it names must be one the campaign really produces, and every quest must exist. |
 | `entry` / `goal` | Node ids. Every proof over the graph starts or ends at one, so a name nothing defines is `DW0814`. |
@@ -4588,7 +4588,19 @@ direction off a placed piece's exported contract, spec-0042), plus a
 leaves behind is read off the command it emits (`plan::RegionWrite`), which is why
 an `open-gate` is a third case and not a synonym for a clear: it is
 `replace`-filtered to the gate's own block, so it removes nothing the model believed
-was there, while an unfiltered `clear-region` does. Collapsing the two says an
+was there, while an unfiltered `clear-region` does. A fill's conclusion is read off
+its **block** through the collision table measured from the pinned jar
+(`RegionWrite::of_block` over `blockshape::collision_class`, the classifier every
+assembled cell goes through; a link's own root writes are classified by the same
+call): a block a body collides with (a full cube, a partial floor, a fence, wall
+or fence gate) is a `Fill` — solid and floor, a partial floor modelled as a full
+cube, which can only refuse; water, lava, a block that brings its own water
+(seagrass, kelp) or a waterlogged block a body passes through is a `Flood` —
+impassable and never floor; a block with no collision box or one under the
+auto-step, or a climb (a sculk vein, glow lichen, a flower, a torch, a carpet, a
+vine, a ladder) is a `Pass` — to the walk a clear, credited only when forced and
+dated by its own step even under a trigger, while the configuration's bytes lay
+its block; `fill … minecraft:air` is a `Clear`. Collapsing the two says an
 `open-gate` deletes a `collapse`'s debris resting in the doorway — measured: the
 `DW0445` burial test goes green, i.e. stops proving anything, the moment they are
 collapsed. Where a fill and a clear overlap, the fill wins: a proof that survives the
@@ -5616,6 +5628,19 @@ and stays the world source of `delvec scene` and `delvec panorama`. The check is
 bound to staging: `check-written-world.py --record` writes its verdict named by
 the build's manifest sha256, and `tools/creator/staging-gate.py` mints no
 admission token without a passing record of that build (`--written-world`).
+
+**`delvec written-world <campaign-dir> -o <world-dir>`** writes the load world
+alone — the configuration `view::beat::load_blocks` derives, the world a camera
+with no `after` stands in — from the campaign and `--prefabs`, with no
+`design.json` or `design/cameras.json` read, so a campaign built without a
+design gate (a demo level) has its written world. It assembles the campaign as
+`delvec cameras` does and writes through the same writer, so on a campaign whose
+record frames a camera at load its `level.dat` and region files are
+`<out>/worlds/at-load`'s byte for byte; `-o` is the world directory itself.
+Prints the `world: at-load …` line (chunks, cells, sha-256, absolute path) and
+the count of block-entity pictures drawn blank; `--json` prints the path. A
+campaign that does not plan exits 3 with its own refusal. It is the written half
+`check-written-world.py` reads, in CI and at the skill's step 10.
 
 **What a frame does not show, by name** (spec-0089 §6): entities (the pinned
 core draws none of the kinds the engine summons, from any world); block-entity

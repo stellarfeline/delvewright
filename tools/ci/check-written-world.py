@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""The world `delvec cameras` writes is the world the pinned server builds
+"""The world the engine writes is the world the pinned server builds
 (spec-0089 §5.4, `DW0955`).
 
     python3 tools/ci/check-written-world.py <build-dir> <written-world> <server-save>
 
 Two methods that share no configuration: the written world is the compiler's
-model of the world at load (`delvec cameras … -o <out>` writes it to
-`<out>/worlds/at-load`), and the server save is the pinned game executing the
+model of the world at load (`delvec written-world <campaign> -o <dir>` writes
+it from the campaign and `--prefabs`, no camera record needed; `delvec cameras`
+writes the same world through the same writer as `<out>/worlds/at-load`), and
+the server save is the pinned game executing the
 compiler's datapack (`validation/world-save.sh <build-dir>` writes it to
 `<build-dir>/world`). Both are read through the one reader, `tools/lib/anvil.py`,
 and compared cell by cell inside the build's `layout_aabb`
@@ -208,7 +210,7 @@ def write_record(path: Path, build: Path, written: Path, server: Path, code: int
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("build", type=Path, help="a `delvec build` output directory")
-    ap.add_argument("written", type=Path, help="the world `delvec cameras` wrote (<out>/worlds/at-load)")
+    ap.add_argument("written", type=Path, help="the load world `delvec written-world <campaign> -o <dir>` wrote")
     ap.add_argument("server", type=Path, help="the save `validation/world-save.sh` wrote (<build>/world)")
     ap.add_argument(
         "--record",

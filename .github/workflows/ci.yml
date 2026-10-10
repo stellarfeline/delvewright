@@ -1682,11 +1682,10 @@ jobs:
             --delvec target/debug/delvec --prefabs gallery-prefabs
           bash validation/world-save.sh validation/delve-output-gallery-site-plan \
             --project dw-ci-gallery-site-world
-          target/debug/delvec --prefabs gallery-prefabs cameras \
-            validation/delve-output-gallery-site-plan \
-            --campaign validation/gallery-src-site-plan -o written-world-site-plan
+          target/debug/delvec --prefabs gallery-prefabs written-world \
+            validation/gallery-src-site-plan -o written-world-site-plan
           python3 tools/ci/check-written-world.py validation/delve-output-gallery-site-plan \
-            written-world-site-plan/worlds/at-load validation/delve-output-gallery-site-plan/world
+            written-world-site-plan validation/delve-output-gallery-site-plan/world
       - name: job summary
         if: always()
         run: |
@@ -1946,7 +1945,7 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-gallery \
             --output ./delve-output-gallery
 
-      # spec-0089 §5.4 (`DW0955`): the world `delvec cameras` writes is the world
+      # spec-0089 §5.4 (`DW0955`): the world `delvec written-world` writes is the world
       # the pinned server builds. The two share no configuration — one is the
       # compiler's model, the other the game executing the compiler's datapack —
       # so the save is booted once from the gallery build above, seeded from this
@@ -1958,10 +1957,9 @@ jobs:
           set -euo pipefail
           bash validation/world-save.sh validation/delve-output-gallery \
             --project dw-ci-gallery-world --seed validation/server-cache
-          target/debug/delvec --prefabs gallery-prefabs cameras \
-            validation/delve-output-gallery --campaign gallery -o written-world
+          target/debug/delvec --prefabs gallery-prefabs written-world gallery -o written-world
           python3 tools/ci/check-written-world.py validation/delve-output-gallery \
-            written-world/worlds/at-load validation/delve-output-gallery/world
+            written-world validation/delve-output-gallery/world
 
       - name: build the keep-trial delve output (held-item interact)
         run: |
