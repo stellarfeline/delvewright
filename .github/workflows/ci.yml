@@ -1655,6 +1655,7 @@ jobs:
           python3 - <<'PY'
           import json
           import sys
+          sys.stdout.reconfigure(newline="\n")
           built = json.load(open("validation/delve-output-gallery-primary/validation/watchers.json"))
           r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
           b = r.get("watch_binding")

@@ -136,7 +136,10 @@ export const methods = {
     const ownLine = all.find((l) => l.includes(ownMarker));
     const me: Vec3Tuple | undefined = ownLine ? parsePosReply(ownLine) : undefined;
     if (!me) {
-      ledger.fail(`${label}: the server did not state the bot's own position`);
+      ledger.fail(
+        `${label}: the server did not state the bot's own position (its answer: ` +
+          `${JSON.stringify(ownLine ?? all)})`,
+      );
       return;
     }
     for (const w of near) {

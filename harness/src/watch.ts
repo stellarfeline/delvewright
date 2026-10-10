@@ -99,15 +99,16 @@ export function mayReach(w: Watcher, pos: Vec3Tuple): boolean {
 }
 
 /**
- * The position a `data get entity … Pos` reply states, or `undefined`.
- * Vanilla answers `<name> has the following entity data: [x d, y d, z d]`; the
- * name is the entity's, so the LAST bracketed triple is the data.
+ * The position an NBT component rendering `Pos` states, or `undefined` — the
+ * LAST bracketed triple of doubles in `line`, since a marker or an entity name
+ * may carry brackets of its own. The separator is read with optional
+ * whitespace: the pinned server prints a list `[20.5d,67.0d,5.5d]`, and the
+ * spaced form is accepted too (the shape `readServerPos` reads).
  */
 export function parsePosReply(line: string): Vec3Tuple | undefined {
-  const all = [
-    ...line.matchAll(/\[(-?[\d.]+(?:E-?\d+)?)d, (-?[\d.]+(?:E-?\d+)?)d, (-?[\d.]+(?:E-?\d+)?)d\]/g),
-  ];
-  const m = all.at(-1);
+  const num = String.raw`(-?[\d.]+(?:[eE]-?\d+)?)d`;
+  const triple = new RegExp(String.raw`\[\s*${num}\s*,\s*${num}\s*,\s*${num}\s*\]`, "g");
+  const m = [...line.matchAll(triple)].at(-1);
   if (!m) return undefined;
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }

@@ -17,7 +17,7 @@ import {
 
 function pathWith(watchers: unknown): Record<string, unknown> {
   return {
-    version: "0.39.0",
+    version: "fixture",
     format_version: 4,
     campaign_id: "gallery",
     non_combatants: { kinds: ["villager"], ambiguous: [], examined: 1, unbound: false },
@@ -71,6 +71,8 @@ test("a y_rotation range across the seam is written wrapped, as the selector rea
 
 test("a position and a yaw are read off the server's NBT renderings", () => {
   assert.deepEqual(parsePosReply("[dw:watch-pos npc/warden [20.5d, 67.0d, 5.5d]]"), [20.5, 67, 5.5]);
+  // The pinned server prints a list with no space after the comma.
+  assert.deepEqual(parsePosReply("[dw:watch-pos @s [19.3d,67.0d,12.68d]]"), [19.3, 67, 12.68]);
   assert.equal(parsePosReply("[dw:watch-pos npc/warden ]"), undefined);
   assert.deepEqual(parsePosReply("x [1.0d, 2.0d, 3.0d] y [-4.5d, 6.0d, -1.25E-4d]"), [-4.5, 6, -0.000125]);
   assert.equal(parseYawReply("-90.0f]"), -90);
