@@ -309,9 +309,15 @@ fn a_region_write_reads_its_conclusion_off_the_block() {
 /// `[3,65,6]..[5,67,6]` (`anchor/doorway`, local `[4,2,6]`, extent `[1,1,0]`:
 /// the box is anchor-centred, so it stands on the doorstep and leaves it).
 fn doorway_filled_with(block: &str) -> (Campaign, PathBuf) {
+    doorway_filled_with_in("doorway", block)
+}
+
+/// [`doorway_filled_with`] in a prefab copy named by `tag`, so two tests that
+/// fill with the same block never share a directory.
+fn doorway_filled_with_in(tag: &str, block: &str) -> (Campaign, PathBuf) {
     let dir = prefabs_with_anchor(
         &format!(
-            "dw-region-write-doorway-{}",
+            "dw-region-write-{tag}-{}",
             block.replace([':', '[', ']', '=', ','], "-")
         ),
         "anchor/doorway",
@@ -361,6 +367,40 @@ fn a_fill_of_a_block_a_body_passes_through_leaves_the_route_walkable() {
             assert_eq!(code, "DW0311", "wrong code: {message}");
         }
         other => panic!("a fill of stone over the only doorway must be refused: {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **The sculk family reads every runtime write, whatever the walk makes of
+/// it** (spec-0100 × the collision-table classification): the vein a
+/// `fill-region` lays is a Pass to the walk and still reaches the sculk
+/// proofs' list of laid blocks, so the containment proof judges it; and the
+/// rest rule refuses a sensor laid out of rest by the same fill, a half-floor
+/// the walk reads as a Fill — the region class decides the walk, never
+/// whether the rest rule runs.
+#[test]
+fn the_sculk_proofs_judge_a_runtime_write_whatever_the_walk_makes_of_it() {
+    let vein = "minecraft:sculk_vein[down=true]";
+    let (c, dir) = doorway_filled_with_in("sculk", vein);
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let laid = delvec::compiler::sculk::runtime_writes(&plan);
+    assert!(
+        laid.iter()
+            .any(|w| w.block == vein && w.region == ([3, 65, 6], [5, 67, 6])),
+        "the vein the Pass lays reaches the sculk proofs: {laid:?}"
+    );
+    try_build(&c, &dir).unwrap_or_else(|f| panic!("the vein fill builds: {f:?}"));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let active = "minecraft:sculk_sensor[sculk_sensor_phase=active]";
+    assert_eq!(RegionWrite::of_block(active), RegionWrite::Fill);
+    let (c, dir) = doorway_filled_with_in("sculk", active);
+    match try_build(&c, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0999", "wrong code: {message}");
+        }
+        other => panic!("a sensor laid out of rest must be refused: {other:?}"),
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

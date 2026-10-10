@@ -643,6 +643,47 @@ fn a_pulse_the_route_never_hears_is_the_dw0995_advisory() {
     );
 }
 
+/// **A fill a body walks through moves neither the place nor its stations**
+/// (spec-0102 × the collision-table classification): the first beat, which
+/// opens the heart's gate, also lays a sculk vein over every walk-course cell
+/// of the heart's box. The vein is a Pass, so the body still stands on the
+/// floor beneath it and the ledger — far, range, volume, the listening and the
+/// silent stations — is byte-identical to the keep without it. The identical
+/// fill of stone is a Fill: the body steps up onto it, so the listening
+/// station rides one block higher, while `far` — measured over the place as
+/// assembled at load (spec-0102 §4.1) — does not move.
+#[test]
+fn a_fill_a_body_walks_through_moves_neither_the_place_nor_its_stations() {
+    let fill = |block: &str| {
+        format!(
+            r#"{SET_FLAG}, {{ "type": "fill-region",
+              "region": {{ "anchor": "anchor/hearth", "extent": [5, 0, 3] }},
+              "block": "{block}" }}"#
+        )
+    };
+    let ledger = |out: &BuildOutput| -> serde_json::Value {
+        serde_json::from_str(&text(out, "validation/pulses.json").unwrap()).unwrap()
+    };
+    let (bare, _) = build("pass-bare", GATED, SET_FLAG);
+    let (vein, _) = build("pass-vein", GATED, &fill("minecraft:sculk_vein[down=true]"));
+    assert_eq!(
+        text(&vein, "validation/pulses.json"),
+        text(&bare, "validation/pulses.json")
+    );
+    let bare = ledger(&bare);
+    let listening = |l: &serde_json::Value| l["pulses"][0]["stations"]["listening"]["cell"].clone();
+    assert!(listening(&bare).is_array(), "{bare:#}");
+    let (stone, _) = build("pass-stone", GATED, &fill("minecraft:stone"));
+    let stone = ledger(&stone);
+    assert_eq!(stone["pulses"][0]["far"], bare["pulses"][0]["far"]);
+    let (b, s) = (listening(&bare), listening(&stone));
+    assert_eq!(
+        (s[0].clone(), s[1].as_i64().unwrap() - 1, s[2].clone()),
+        (b[0].clone(), b[1].as_i64().unwrap(), b[2].clone()),
+        "the stone raises the station one block: {stone:#}"
+    );
+}
+
 /// Criterion 6: the ledger carries every row field of §5.1.
 #[test]
 fn the_ledger_carries_every_row_field() {
