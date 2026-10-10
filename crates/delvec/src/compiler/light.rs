@@ -70,9 +70,6 @@ pub struct Relight {
     /// Fixture placements, in deterministic emission order (area order, then
     /// greedy-placement order within each area).
     pub placements: Vec<Placement>,
-    /// The colliding fixtures' cells (campfire / floor lantern) that post-relight
-    /// nav verification must treat as solid (spec-0010).
-    pub extra_solid: BTreeSet<[i32; 3]>,
     /// Gate diagnostics (`DW0210`/`DW0211`); non-empty means the build fails
     /// (exit 2). Sorted by `(code, message)`.
     pub diagnostics: Vec<Failure>,
@@ -1164,6 +1161,82 @@ pub fn geometry_world(assembled: &crate::compiler::assembled::Assembled) -> Worl
     )
 }
 
+/// **The nav model of `assembled` with `relight`'s fixtures standing in it** —
+/// the world every post-relight proof walks (spec-0010: verification re-runs
+/// after placement).
+///
+/// A fixture is a block, so it is classified the way every block is: the map
+/// with the placements written in goes through
+/// [`crate::compiler::assembled::occupancy_over`], which reads the one collision
+/// table ([`delvewright_dsl::blockshape::collision_class`]). A torch or a wall
+/// torch adds nothing a body meets; a lantern is a floor at its measured height
+/// whether it hangs or stands, and so is in the way of a body in its cell; a
+/// campfire is what the table says it is. No fixture carries a flag of its own
+/// saying whether it collides, so there is no second answer to drift from the
+/// table's.
+///
+/// `geometry` is [`geometry_world`] of the same `assembled`, handed back under
+/// `premises` when the pass placed nothing; `premises` are the campaign's
+/// ([`crate::compiler::nav::Premises::of_plan`]), which the walked world states.
+pub fn lit_world(
+    assembled: &crate::compiler::assembled::Assembled,
+    relight: &Relight,
+    geometry: World,
+    premises: crate::compiler::nav::Premises,
+) -> World {
+    if relight.placements.is_empty() {
+        return geometry.with_premises(premises);
+    }
+    let mut blocks = (*assembled.blocks).clone();
+    for p in &relight.placements {
+        blocks.insert(
+            p.pos,
+            crate::compiler::blockstate::BlockState::new(&p.block),
+        );
+    }
+    World::from_occupancy(
+        crate::compiler::assembled::occupancy_over(&blocks, &assembled.open_gates),
+        premises,
+    )
+}
+
+/// **The cells a relight fixture may neither stand in nor hang from** — the
+/// one set both relight entry points (the area pass and the `relight` verb)
+/// hand the siting rule.
+///
+/// - Every cell a required walk stands in (the critical path's legs and the
+///   `move-npc` waypoints, planned over `nav`).
+/// - Every cell a write of the campaign's own rewrites after load: a gate's
+///   region (the datapack writes its block back at setup, and `open-gate` /
+///   `close-gate` rewrite it), every region write the plan dates
+///   (`fill-region`, `clear-region`, shortcut seals), and every `collapse`
+///   region. A fixture in such a cell is overwritten or deleted by the write,
+///   and a fixture hung from one is dropped by the game when its mount goes:
+///   light the proof counted and the game does not keep, a lantern the walk
+///   reads as standing where it has fallen, debris settled on a lantern that
+///   is no longer there.
+pub(crate) fn fixture_keep_out(plan: &Plan, nav: &World) -> BTreeSet<[i32; 3]> {
+    use crate::compiler::assembled::region_cells;
+    let moves = crate::compiler::nav::plan_moves(plan, nav).unwrap_or_default();
+    let mut out = nav.required_path_cells(plan, &moves);
+    for anchor in plan.anchors.values() {
+        if let ResolvedAnchor::Gate { from, to, .. } = anchor {
+            out.extend(region_cells(*from, *to));
+        }
+    }
+    for ev in &plan.region_events {
+        out.extend(region_cells(ev.region.0, ev.region.1));
+    }
+    for (e, _) in crate::compiler::timeline::walk(plan) {
+        if let Some((zone, _, _)) = e.collapse()
+            && let Some((lo, hi)) = plan.zone_box(zone)
+        {
+            out.extend(region_cells(lo, hi));
+        }
+    }
+    out
+}
+
 /// [`relight_over`] over `nav`, the [`geometry_world`] of `assembled`.
 pub fn relight_with(
     plan: &Plan,
@@ -1191,8 +1264,7 @@ pub fn relight_with(
     // move-npc waypoint cells are part of the required paths; plan them on the base
     // world (an unroutable move is a separate DW0307 handled by emit — here we
     // just collect paths, ignoring routing errors).
-    let moves = crate::compiler::nav::plan_moves(plan, nav).unwrap_or_default();
-    let required = nav.required_path_cells(plan, &moves);
+    let required = fixture_keep_out(plan, nav);
 
     let mut model = LightModel::from_shared(std::sync::Arc::clone(&assembled.blocks));
     let mut out = Relight::default();
@@ -1429,9 +1501,6 @@ pub(crate) fn relight_area(
             Some(site) => {
                 model.set(site.pos, &site.block);
                 field.set(site.pos, &site.block);
-                if site.colliding {
-                    out.extra_solid.insert(site.pos);
-                }
                 out.placements.push(Placement {
                     pos: site.pos,
                     block: site.block,
@@ -1926,12 +1995,12 @@ fn dark_diagnostic(
     })
 }
 
-/// A valid fixture placement site: the world cell, the block to write, and
-/// whether the block adds collision (so post-relight nav verification sees it).
+/// A valid fixture placement site: the world cell and the block to write. What
+/// the block does to a body is not recorded here: [`lit_world`] reads it from
+/// the one collision table, as it reads every other block.
 struct Site {
     pos: [i32; 3],
     block: String,
-    colliding: bool,
 }
 
 /// Pick the best valid placement site for `fixture` near the dark cell `dark`,
@@ -2000,12 +2069,26 @@ fn candidate(
     let solid =
         |cell: [i32; 3]| nav.solid_at(cell) && !base_id(model.block_at(cell)).ends_with("_leaves");
     let free = |cell: [i32; 3]| air(cell) && !required.contains(&cell);
-    let site = |block: String, colliding: bool| {
-        Some(Site {
-            pos: c,
-            block,
-            colliding,
-        })
+    // A fixture the collision table says a body cannot share a cell with — a
+    // lantern, hanging or standing; a campfire — is never sited in a cell a
+    // standing body occupies: the feet or the head cell of a reachable or
+    // required standing cell. A hanging lantern in a corridor's head cell is a
+    // box the player walks into, and the walked world ([`lit_world`]) would
+    // see it there and refuse the route; the pass sites it elsewhere instead.
+    // A torch, which a body passes through, is not held to this.
+    let body_cell = |cell: [i32; 3]| {
+        let feet_below = [cell[0], cell[1] - 1, cell[2]];
+        [cell, feet_below]
+            .iter()
+            .any(|f| reachable.contains(f) || required.contains(f))
+    };
+    // `mount` is the block that holds the fixture where it is: a fixture whose
+    // mount is a cell the campaign rewrites (`required` carries those, see
+    // [`fixture_keep_out`]) falls when its mount goes, so it is not sited.
+    let site = |block: String, mount: [i32; 3]| {
+        ((delvewright_dsl::blockshape::passes_body(&block) || !body_cell(c))
+            && !required.contains(&mount))
+        .then_some(Site { pos: c, block })
     };
 
     match fixture {
@@ -2013,7 +2096,7 @@ fn candidate(
         // torch on a wall face as fallback.
         Fixture::Torch => {
             if free(c) && solid(below) {
-                return site("minecraft:torch".to_string(), false);
+                return site("minecraft:torch".to_string(), below);
             }
             // wall_torch: an air cell (off path) with a solid horizontal neighbour
             // to mount against; face points away from the wall.
@@ -2026,26 +2109,29 @@ fn candidate(
                 ] {
                     let wall = [c[0] - d[0], c[1], c[2] - d[2]];
                     if solid(wall) {
-                        return site(format!("minecraft:wall_torch[facing={facing}]"), false);
+                        return site(format!("minecraft:wall_torch[facing={facing}]"), wall);
                     }
                 }
             }
             None
         }
-        // Lantern hung under a ceiling block; floor-sitting as fallback (colliding).
+        // Lantern hung under a ceiling block; floor-sitting as fallback.
         Fixture::Lantern => {
-            if free(c) && solid(above) {
-                return site("minecraft:lantern[hanging=true]".to_string(), false);
+            if free(c)
+                && solid(above)
+                && let Some(hung) = site("minecraft:lantern[hanging=true]".to_string(), above)
+            {
+                return Some(hung);
             }
             if free(c) && solid(below) && !reachable.contains(&c) {
-                // floor lantern occupies the cell → colliding; keep it off walkable
-                // cells so it can never wall a walker in.
-                return site("minecraft:lantern[hanging=false]".to_string(), true);
+                // A floor lantern is a 9/16 floor in its cell; keep it off
+                // walkable cells so it can never wall a walker in.
+                return site("minecraft:lantern[hanging=false]".to_string(), below);
             }
             None
         }
         // Campfire on solid floor with headroom, never on or adjacent to a
-        // required path cell (it is a damage source). Colliding.
+        // required path cell (it is a damage source).
         Fixture::Campfire => {
             let adj_required = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
                 .iter()
@@ -2057,7 +2143,7 @@ fn candidate(
                 && solid(below)
                 && air(above)
             {
-                return site("minecraft:campfire[lit=true]".to_string(), true);
+                return site("minecraft:campfire[lit=true]".to_string(), below);
             }
             None
         }
@@ -2077,7 +2163,7 @@ fn candidate(
                 .iter()
                 .any(|d| air([c[0] + d[0], c[1] + d[1], c[2] + d[2]]));
                 if borders_air {
-                    return site("minecraft:shroomlight".to_string(), false);
+                    return site("minecraft:shroomlight".to_string(), c);
                 }
             }
             None
@@ -3788,5 +3874,133 @@ mod tests {
             )
         };
         assert_eq!(build(), build());
+    }
+
+    /// **A relight fixture is classified by the collision table, like every
+    /// block** ([`lit_world`]). A 1-wide, 2-high corridor: a hanging lantern
+    /// at head height is a floor at 10/16 in that cell, so a body cannot pass
+    /// under it — the game's lantern box is in the way — and the far end is cut
+    /// off; a torch on the floor and a wall torch at head height leave the walk
+    /// exactly as it was. The fixture carries no flag of its own saying whether
+    /// it collides, so a perturbation that drops the placements from the walked
+    /// world reds the lantern half of this test.
+    #[test]
+    fn a_fixture_reaches_the_walk_through_the_collision_table() {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..=6 {
+            blocks.insert([x, 64, 0], "minecraft:stone".to_string()); // floor
+            blocks.insert([x, 67, 0], "minecraft:stone".to_string()); // ceiling
+            for y in 65..=66 {
+                blocks.insert([x, y, -1], "minecraft:stone".to_string());
+                blocks.insert([x, y, 1], "minecraft:stone".to_string());
+            }
+        }
+        let assembled = crate::compiler::assembled::Assembled {
+            blocks: std::sync::Arc::new(crate::compiler::blockstate::interned(blocks)),
+            settled: Vec::new(),
+            open_gates: BTreeSet::new(),
+            gate_seals: Vec::new(),
+        };
+        let walk_with = |placements: &[([i32; 3], &str)]| {
+            let relight = Relight {
+                placements: placements
+                    .iter()
+                    .map(|(pos, block)| Placement {
+                        pos: *pos,
+                        block: (*block).to_string(),
+                    })
+                    .collect(),
+                ..Relight::default()
+            };
+            lit_world(
+                &assembled,
+                &relight,
+                geometry_world(&assembled),
+                crate::compiler::nav::Premises::geometry_only(),
+            )
+            .reachable_walkable(&[[0, 65, 0]])
+        };
+        let open = walk_with(&[]);
+        assert!(
+            open.contains(&[6, 65, 0]),
+            "the bare corridor walks end to end"
+        );
+        for fixture in [
+            ([3, 65, 0], "minecraft:torch"),
+            ([3, 66, 0], "minecraft:wall_torch[facing=south]"),
+        ] {
+            assert_eq!(
+                walk_with(&[fixture]),
+                open,
+                "`{}` has no collision box: the walk is the bare corridor's",
+                fixture.1
+            );
+        }
+        let lantern = walk_with(&[([3, 66, 0], "minecraft:lantern[hanging=true]")]);
+        assert!(
+            !lantern.contains(&[3, 65, 0]) && !lantern.contains(&[6, 65, 0]),
+            "a hanging lantern at head height is in the body's way, and the far end \
+             of a 1-wide corridor is cut off: {lantern:?}"
+        );
+    }
+
+    /// **A fixture a body cannot share a cell with is never sited in a body's
+    /// cell.** The relight's own siting reads the collision table too: in a
+    /// 2-high corridor whose floor cell is reachable, the head cell under the
+    /// ceiling is refused to a hanging lantern (a body walking there would walk
+    /// into it, and one falling in would land on it), while a torch may still
+    /// take the floor cell, and a lantern still hangs over a 3-high room's
+    /// head cell — unless its ceiling is a cell the campaign rewrites.
+    #[test]
+    fn a_blocking_fixture_is_not_sited_in_a_body_cell() {
+        let room = |ceiling: i32| {
+            let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+            blocks.insert([0, 64, 0], "minecraft:stone".to_string());
+            blocks.insert([0, ceiling, 0], "minecraft:stone".to_string());
+            let shared = std::sync::Arc::new(crate::compiler::blockstate::interned(blocks));
+            let nav = World::from_occupancy(
+                crate::compiler::assembled::occupancy_over(&shared, &BTreeSet::new()),
+                crate::compiler::nav::Premises::geometry_only(),
+            );
+            (LightModel::from_shared(shared), nav)
+        };
+        let reachable: BTreeSet<[i32; 3]> = [[0, 65, 0]].into_iter().collect();
+        let none = BTreeSet::new();
+        let site = |ceiling: i32, fixture: Fixture, c: [i32; 3]| {
+            let (model, nav) = room(ceiling);
+            candidate(&model, &nav, &none, &reachable, fixture, c).map(|s| s.block)
+        };
+        assert_eq!(
+            site(67, Fixture::Lantern, [0, 66, 0]),
+            None,
+            "the head cell of a reachable standing cell takes no lantern"
+        );
+        assert_eq!(
+            site(67, Fixture::Torch, [0, 65, 0]).as_deref(),
+            Some("minecraft:torch"),
+            "a torch, which a body passes through, still takes the floor cell"
+        );
+        assert_eq!(
+            site(68, Fixture::Lantern, [0, 67, 0]).as_deref(),
+            Some("minecraft:lantern[hanging=true]"),
+            "over a 3-high room's head cell a lantern still hangs"
+        );
+        // The same lantern under a ceiling the campaign rewrites after load (a
+        // `collapse` region, a gate, a region write — [`fixture_keep_out`]):
+        // its mount goes, so it is not hung there.
+        let (model, nav) = room(68);
+        let keep_out: BTreeSet<[i32; 3]> = [[0, 68, 0]].into_iter().collect();
+        assert!(
+            candidate(
+                &model,
+                &nav,
+                &keep_out,
+                &reachable,
+                Fixture::Lantern,
+                [0, 67, 0]
+            )
+            .is_none(),
+            "a lantern is not hung from a cell a write removes"
+        );
     }
 }

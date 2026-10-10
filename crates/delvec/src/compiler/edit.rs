@@ -653,8 +653,8 @@ fn replay_with(
 
 /// Re-prove the post-edit invariants over the current assembled world, naming
 /// `bid` in any failure. Mirrors the final build's pass order: relight first
-/// (its colliding fixtures join the nav world), then the walkability proofs,
-/// then boundary safety.
+/// (its fixtures join the nav world, classified by the collision table), then
+/// the walkability proofs, then boundary safety.
 fn check_batch_invariants(
     plan: &Plan,
     assembled: &Assembled,
@@ -685,9 +685,7 @@ fn check_batch_invariants(
     // declared lethal volumes are another, and were missing here exactly as they
     // were missing from `emit::build`'s edit arm.
     let premises = crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone());
-    let with_fixtures = geometry
-        .with_premises(premises)
-        .with_extra_solid(&relight.extra_solid);
+    let with_fixtures = crate::compiler::light::lit_world(assembled, &relight, geometry, premises);
     let ctx = |e: Failure| Failure {
         code: e.code,
         message: format!("after world-edits batch `{bid}`: {}", e.message),
@@ -1932,8 +1930,7 @@ fn relight_region(
         assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         crate::compiler::nav::Premises::geometry_only(),
     );
-    let moves = crate::compiler::nav::plan_moves(plan, &nav).unwrap_or_default();
-    let required = nav.required_path_cells(plan, &moves);
+    let required = crate::compiler::light::fixture_keep_out(plan, &nav);
     let (amin, amax) = match bounds_of(cells.iter()) {
         Some(b) => b,
         None => return Ok(()), // unreachable: used_region rejects empty regions
@@ -2697,5 +2694,112 @@ mod tests {
             rows.iter().map(|r| r.domain).sum::<usize>()
         );
         assert_eq!(j["verbs"].as_array().map(Vec::len), Some(rows.len()));
+    }
+
+    /// An open stone strip at `y = 64`, `x = 0..=6`, one cell wide — the floor a
+    /// world edit writes over.
+    fn strip() -> Assembled {
+        let blocks: BTreeMap<[i32; 3], String> = (0..=6)
+            .map(|x| ([x, 64, 0], "minecraft:stone".to_string()))
+            .collect();
+        Assembled {
+            blocks: std::sync::Arc::new(crate::compiler::blockstate::interned(blocks)),
+            settled: Vec::new(),
+            open_gates: BTreeSet::new(),
+            gate_seals: Vec::new(),
+        }
+    }
+
+    /// The walk over `a` from the strip's west end, and the feet height of a body
+    /// standing over its middle column.
+    fn walk(a: &Assembled, at: [i32; 3]) -> (BTreeSet<[i32; 3]>, f64) {
+        let w = crate::compiler::light::geometry_world(a);
+        (w.reachable_walkable(&[[0, 65, 0]]), w.feet_y(at))
+    }
+
+    /// **What a world edit writes is classified by the collision table** — the
+    /// block a `set-block`/`fill` lays reaches the walk through
+    /// [`assembled::occupancy_over`], never a rule of its own. A block with no
+    /// collision box, or one under the auto-step line, written over a floor
+    /// leaves the walk exactly as it was: the body still stands in that cell, on
+    /// the floor beneath, at the floor's height. A carpet's 1/16 is under the
+    /// 8/16 line below which the model keeps no floor level of its own (it is
+    /// within the 0.6-block auto-step), so its body stands at the stone's top.
+    /// A climbable with nothing to hang on is removed by the game's first shape
+    /// update, so it reads as air too.
+    #[test]
+    fn a_block_with_no_footing_written_over_a_floor_leaves_the_walk_as_it_was() {
+        let at = [3, 65, 0];
+        let (open, feet) = walk(&strip(), at);
+        assert_eq!(open.len(), 7, "the bare strip walks end to end: {open:?}");
+        assert_eq!(feet, 65.0);
+        for block in [
+            "minecraft:white_carpet",
+            "minecraft:torch",
+            "minecraft:wall_torch[facing=north]",
+            "minecraft:poppy",
+            "minecraft:short_grass",
+            "minecraft:snow[layers=3]",
+            "minecraft:stone_pressure_plate",
+            "minecraft:ladder[facing=north]",
+            "minecraft:vine[north=true]",
+        ] {
+            let mut a = strip();
+            write_cell(&mut a, &mut BTreeMap::new(), at, block);
+            assert_eq!(
+                walk(&a, at),
+                (open.clone(), feet),
+                "`{block}` written over the floor must leave the walk and the feet \
+                 height as they were"
+            );
+        }
+    }
+
+    /// A partial floor is modelled at its measured height: a five-layer snow
+    /// drift written over the floor is a floor at 8/16, so the body stands one
+    /// cell up with its feet half a block above the stone; a `dirt_path` written
+    /// in place of the stone puts the feet one sixteenth down.
+    #[test]
+    fn a_partial_floor_written_by_an_edit_is_stood_on_at_its_measured_height() {
+        let mut snow = strip();
+        write_cell(
+            &mut snow,
+            &mut BTreeMap::new(),
+            [3, 65, 0],
+            "minecraft:snow[layers=5]",
+        );
+        let (walked, feet) = walk(&snow, [3, 66, 0]);
+        assert!(walked.contains(&[3, 66, 0]) && !walked.contains(&[3, 65, 0]));
+        assert!(
+            walked.contains(&[6, 65, 0]),
+            "a half-block rise is stepped over"
+        );
+        assert_eq!(feet, 65.5);
+        let mut path = strip();
+        write_cell(
+            &mut path,
+            &mut BTreeMap::new(),
+            [3, 64, 0],
+            "minecraft:dirt_path",
+        );
+        let (walked, feet) = walk(&path, [3, 65, 0]);
+        assert_eq!(walked.len(), 7);
+        assert_eq!(feet, 65.0 - 1.0 / 16.0);
+    }
+
+    /// A full cube written by an edit still blocks: two courses of stone across
+    /// the strip cut its east end off.
+    #[test]
+    fn a_stone_written_by_an_edit_blocks_the_walk() {
+        let mut a = strip();
+        for y in [65, 66] {
+            write_cell(&mut a, &mut BTreeMap::new(), [3, y, 0], "minecraft:stone");
+        }
+        let (walked, _) = walk(&a, [3, 65, 0]);
+        assert!(
+            !walked.contains(&[3, 65, 0]) && !walked.contains(&[4, 65, 0]),
+            "a stone wall across a one-wide strip is not walked through: {walked:?}"
+        );
+        assert!(walked.contains(&[2, 65, 0]));
     }
 }

@@ -966,8 +966,9 @@ impl World {
         )
     }
 
-    /// This world with `extra` cells added to its solid set — the relight
-    /// pass's colliding fixtures ([`World::from_plan_with_extra`]).
+    /// This world with `extra` cells added to its solid set, as full cubes — a
+    /// test's way to wall a cell off. A block the build writes is classified
+    /// through the collision table instead ([`crate::compiler::light::lit_world`]).
     pub fn with_extra_solid(mut self, extra: &BTreeSet<[i32; 3]>) -> World {
         self.solid.extend(extra.iter().copied());
         self.solid.compact();
@@ -1071,19 +1072,6 @@ impl World {
             Ambient::Void => false,
             Ambient::Ocean(sea) => c[1] > sea.floor_top && c[1] <= sea.level && !self.is_built(c),
         }
-    }
-
-    /// Build the occupancy model exactly like [`World::from_plan`], then add
-    /// `extra_solid` cells (the relight pass's colliding fixtures — campfire /
-    /// floor lantern — so post-relight nav verification sees them; spec-0010). A
-    /// fixture that adds no collision (torch, wall/hanging fixtures, embedded
-    /// shroomlight) contributes nothing here.
-    pub fn from_plan_with_extra(
-        plan: &Plan,
-        structures: &BTreeMap<String, Vec<u8>>,
-        extra_solid: &BTreeSet<[i32; 3]>,
-    ) -> Self {
-        Self::from_plan(plan, structures).with_extra_solid(extra_solid)
     }
 
     /// Whether a cell is occupied by a solid block in the assembled world.
