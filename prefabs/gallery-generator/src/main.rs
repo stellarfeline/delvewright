@@ -1100,6 +1100,14 @@ fn block_at(
     {
         return ("minecraft:stone", None);
     }
+    // The lidded pit carries its own light, on its west wall at head height: it
+    // is sealed until its beat, so nothing the hall's grid hangs reaches it,
+    // and the only cell a hung lantern could take is the head cell of the body
+    // that falls in — where a lantern is a floor that body lands on. A wall
+    // torch is a light a falling body passes through.
+    if (x, z) == LID_PIT && y == TERRACE_TOP_Y - 1 {
+        return ("minecraft:wall_torch", Some(&[("facing", "east")]));
+    }
     if z == WELL.1
         && TERRACE_STEPS
             .iter()
@@ -1269,16 +1277,19 @@ fn assert_anchors_are_standable(s: &Structure) {
             "{ID}: anchor `{}` stands in a solid cell",
             a.name
         );
-        assert_eq!(
-            at([x, y + 1, z]),
-            "minecraft:air",
-            "{ID}: anchor `{}` has no headroom",
+        // Headroom and floor are what the engine's one collision table says
+        // they are: a wall torch at head height is headroom, a tuft of grass
+        // under the feet is no floor.
+        let head = at([x, y + 1, z]);
+        assert!(
+            delvewright_dsl::blockshape::passes_body(head),
+            "{ID}: anchor `{}` has no headroom: `{head}` is in it",
             a.name
         );
-        assert_ne!(
-            at([x, y - 1, z]),
-            "minecraft:air",
-            "{ID}: anchor `{}` has no floor under it",
+        let floor = at([x, y - 1, z]);
+        assert!(
+            delvewright_dsl::blockshape::supports_body(floor),
+            "{ID}: anchor `{}` has no floor under it: `{floor}` holds no body",
             a.name
         );
     }

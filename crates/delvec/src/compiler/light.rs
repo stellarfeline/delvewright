@@ -2031,7 +2031,23 @@ fn candidate(
     let solid =
         |cell: [i32; 3]| nav.solid_at(cell) && !base_id(model.block_at(cell)).ends_with("_leaves");
     let free = |cell: [i32; 3]| air(cell) && !required.contains(&cell);
-    let site = |block: String| Some(Site { pos: c, block });
+    // A fixture the collision table says a body cannot share a cell with — a
+    // lantern, hanging or standing; a campfire — is never sited in a cell a
+    // standing body occupies: the feet or the head cell of a reachable or
+    // required standing cell. A hanging lantern in a corridor's head cell is a
+    // box the player walks into, and the walked world ([`lit_world`]) would
+    // see it there and refuse the route; the pass sites it elsewhere instead.
+    // A torch, which a body passes through, is not held to this.
+    let body_cell = |cell: [i32; 3]| {
+        let feet_below = [cell[0], cell[1] - 1, cell[2]];
+        [cell, feet_below]
+            .iter()
+            .any(|f| reachable.contains(f) || required.contains(f))
+    };
+    let site = |block: String| {
+        (delvewright_dsl::blockshape::passes_body(&block) || !body_cell(c))
+            .then_some(Site { pos: c, block })
+    };
 
     match fixture {
         // Floor torch on solid ground, off required paths (no collision); wall
@@ -2059,8 +2075,11 @@ fn candidate(
         }
         // Lantern hung under a ceiling block; floor-sitting as fallback.
         Fixture::Lantern => {
-            if free(c) && solid(above) {
-                return site("minecraft:lantern[hanging=true]".to_string());
+            if free(c)
+                && solid(above)
+                && let Some(hung) = site("minecraft:lantern[hanging=true]".to_string())
+            {
+                return Some(hung);
             }
             if free(c) && solid(below) && !reachable.contains(&c) {
                 // A floor lantern is a 9/16 floor in its cell; keep it off
@@ -3875,6 +3894,49 @@ mod tests {
             !lantern.contains(&[3, 65, 0]) && !lantern.contains(&[6, 65, 0]),
             "a hanging lantern at head height is in the body's way, and the far end \
              of a 1-wide corridor is cut off: {lantern:?}"
+        );
+    }
+
+    /// **A fixture a body cannot share a cell with is never sited in a body's
+    /// cell.** The relight's own siting reads the collision table too: in a
+    /// 2-high corridor whose floor cell is reachable, the head cell under the
+    /// ceiling is refused to a hanging lantern (a body walking there would walk
+    /// into it, and one falling in would land on it), while a torch may still
+    /// take the floor cell, and a lantern still hangs over a 3-high room's
+    /// head cell.
+    #[test]
+    fn a_blocking_fixture_is_not_sited_in_a_body_cell() {
+        let room = |ceiling: i32| {
+            let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+            blocks.insert([0, 64, 0], "minecraft:stone".to_string());
+            blocks.insert([0, ceiling, 0], "minecraft:stone".to_string());
+            let shared = std::sync::Arc::new(crate::compiler::blockstate::interned(blocks));
+            let nav = World::from_occupancy(
+                crate::compiler::assembled::occupancy_over(&shared, &BTreeSet::new()),
+                crate::compiler::nav::Premises::geometry_only(),
+            );
+            (LightModel::from_shared(shared), nav)
+        };
+        let reachable: BTreeSet<[i32; 3]> = [[0, 65, 0]].into_iter().collect();
+        let none = BTreeSet::new();
+        let site = |ceiling: i32, fixture: Fixture, c: [i32; 3]| {
+            let (model, nav) = room(ceiling);
+            candidate(&model, &nav, &none, &reachable, fixture, c).map(|s| s.block)
+        };
+        assert_eq!(
+            site(67, Fixture::Lantern, [0, 66, 0]),
+            None,
+            "the head cell of a reachable standing cell takes no lantern"
+        );
+        assert_eq!(
+            site(67, Fixture::Torch, [0, 65, 0]).as_deref(),
+            Some("minecraft:torch"),
+            "a torch, which a body passes through, still takes the floor cell"
+        );
+        assert_eq!(
+            site(68, Fixture::Lantern, [0, 67, 0]).as_deref(),
+            Some("minecraft:lantern[hanging=true]"),
+            "over a 3-high room's head cell a lantern still hangs"
         );
     }
 }
