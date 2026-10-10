@@ -223,6 +223,25 @@ ROWS: dict[str, list[dict[str, object]]] = {
             "shape": "cargo-written",
             "sites": None,
         },
+        {
+            "path": "docs/reference/compiler.md",
+            "label": "the version header's `delvec` claim — written by "
+            "`python3 tools/ci/check-reference-versions.py --write`",
+            "kind": "present",
+            "shape": "tool-written",
+            "sites": 1,
+        },
+        {
+            "path": "crates/delvec/README.md",
+            "label": "the crates.io front page's `[dependencies]` snippet, at major.minor — "
+            "written by `python3 tools/ci/check-reference-versions.py --write`",
+            "kind": "present",
+            "form": "major.minor",
+            "prefix": 'delvec = "',
+            "suffix": '"',
+            "shape": "tool-written",
+            "sites": 1,
+        },
     ],
 }
 
@@ -317,7 +336,10 @@ def _resolve(root: Path, row: dict[str, object], version: str) -> str | None:
     if not p.is_file():
         return f"no such file: {row['path']}"
     text = p.read_text(encoding="utf-8")
-    want = str(row.get("prefix", "")) + version
+    # `form: major.minor` is a cargo requirement a page states for its own crate
+    # (`delvec = "1.12"`), which names the release line rather than the release.
+    stated = ".".join(version.split(".")[:2]) if row.get("form") == "major.minor" else version
+    want = str(row.get("prefix", "")) + stated + str(row.get("suffix", ""))
 
     if row["kind"] == "regex":
         # A row whose pattern is a DERIVATION carries no version to interpolate;
