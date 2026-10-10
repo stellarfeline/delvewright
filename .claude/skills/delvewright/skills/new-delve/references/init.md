@@ -376,6 +376,7 @@ The subcommand tree is the whole surface, and this page uses all of it:
 | `delvec snapshot` / `blocking-chart` / `allocation` / `detail` / `edit` / `calibrate` | the layout loop |
 | `delvec viewer` / `palette` / `scene` / `panorama` / `contact-sheet` / `index` | the CPU render arms |
 | `delvec cameras` / `place-camera` | the showcase cameras, and the one writer of their record |
+| `delvec written-world` | the world the engine models at load, written as a save for the step-10 comparison |
 | `delvec render` | the GPU arms (`piece`, `batch`, `fidelity-gate`) |
 | `delvec grammar` | writes a new prefab from a rule program |
 | `delvec prefab` | admits a prefab into the library |
