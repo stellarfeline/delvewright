@@ -1,0 +1,53 @@
+{
+  "code": "DW0999",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/probe-cell",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                8,
+                2,
+                23
+              ],
+              "min": [
+                8,
+                2,
+                23
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:sculk_sensor[power=0,sculk_sensor_phase=active,waterlogged=false]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/probe-cell",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/catch-the-sensor-mid-click",
+        "note": "The listening floor's sensor refilled in the middle of a click."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A sensor saved mid-click. The listening floor's sensor is refilled in its own cell with `sculk_sensor_phase=active`: the world would load with the sensor already firing, a click nobody made, and the state is one the game never schedules back from a fill. The one rest rule refuses it where the recipe types it, naming the property and the recipe's path. It declares no unit."
+}
