@@ -552,14 +552,11 @@ pub struct MobEffect {
 // Validation — the checks `dsl::validate` runs over this object (ADR-0031)
 // ---------------------------------------------------------------------------
 
+use crate::Objective;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::registry::{AnchorRegistry, EffectRegistry, EntityRegistry, ItemRegistry};
-use crate::validate::{
-    AnchorProviders, declares_bonfire, for_each_effect_deep, for_each_trap_payload_deep,
-    for_each_trigger_effect_deep, quest_ancestors, station_kind_diag,
-};
-use crate::{Objective, Verb};
+use crate::validate::{AnchorProviders, declares_bonfire, quest_ancestors, station_kind_diag};
 use std::collections::BTreeSet;
 
 crate::dw_code! {
@@ -651,15 +648,14 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// (v0.6) A campaign fields scripted `actors[]` (an
-    /// ambush desugars into these too) but **no** `waves[]` and no declared
-    /// `world.difficulty`, so the compiler's historical derivation ships
-    /// `difficulty=peaceful` — under which every one of those actors that is a
-    /// hostile species is discarded on the tick it spawns. The compiler cannot
-    /// decide the question for the author: the pinned entity registry is a
-    /// membership set with no mob-category data, so "is this actor a monster" is
-    /// not something it can verify rather than guess. Advisory (warning,
-    /// exit 0) — declaring `world.difficulty` settles it either way.
+    /// (v0.6) A campaign stages actors meant to **fight** — unleashed, or
+    /// declared `vulnerable` — but declares no `world.difficulty`, and the
+    /// engine's derivation ([`crate::derived_difficulty`]) ships `peaceful`
+    /// because it fields no wave and stages no body peaceful discards. Every
+    /// such fighter is a species peaceful keeps, and on peaceful every hit it
+    /// lands on a player whose damage scales with difficulty — a mob's melee and
+    /// its projectiles — is zero. Advisory (warning, exit 0): declaring
+    /// `world.difficulty` settles it.
     pub const DIFFICULTY_UNDECLARED_ACTORS: DwCode = DwCode::new("DW0469", ExitTier::Build);
 }
 
@@ -724,58 +720,34 @@ fn bare_entity(id: &str) -> &str {
     id.strip_prefix("minecraft:").unwrap_or(id)
 }
 
-/// The advisory half of the difficulty surface
-/// (`DW0469`): a campaign that stages a **fighting** actor but declares no
-/// `waves[]` and no `world.difficulty` ships the compiler's derived
-/// `difficulty=peaceful` — under which the server discards every
-/// hostile-category mob as it ticks it (`/summon`ed, `NoAI` and
-/// `PersistenceRequired` all irrelevant), so that fighter is gone on the tick it
-/// spawns and the beat that summoned it plays to an empty room.
+/// The advisory half of the difficulty surface (`DW0469`): a campaign that
+/// stages a **fighting** actor, declares no `world.difficulty`, and is derived
+/// `peaceful` ([`crate::derived_difficulty`]: no wave, no staged body peaceful
+/// discards).
 ///
-/// "Fighting" is read off the campaign's own declarations, never guessed from
-/// the species: an `unleash-actor` (the author asking for a real-AI twin) or
-/// `vulnerable: true` (the author declaring a damageable target). Both are
-/// statements of combat intent the compiler can see. The species question — is
-/// `minecraft:sheep` a monster? — is exactly what it cannot answer, because the
-/// pinned entity registry is a membership set with no mob-category data, which
-/// is also why this is advisory rather than an error.
+/// A fighter of a species peaceful discards never reaches this check: the
+/// derivation already ships `easy` for it. What remains is a fighter peaceful
+/// keeps — and on peaceful, `Player#hurtServer` scales every damage source that
+/// `scalesWithDifficulty()` (a living non-player attacker's melee and
+/// projectiles) to zero, so the fight lands no blow.
 ///
-/// Gated with the rest of the v0.6 quests surface, where actors live —
-/// deliberately NOT on the world stage's version, so a campaign whose world
-/// stage is older still hears about it.
+/// "Fighting" is read off the campaign's own declarations: an `unleash-actor`
+/// at any effect root ([`crate::fight::unleashed_actors`]) or `vulnerable: true`.
 pub(crate) fn difficulty_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if c.world.content.difficulty.is_some() || !c.quests.content.waves.is_empty() {
+    if c.world.content.difficulty.is_some()
+        || crate::derived_difficulty(c) != crate::WorldDifficulty::Peaceful
+    {
         return;
     }
-    let mut fighters: BTreeSet<String> = c
+    let unleashed = crate::fight::unleashed_actors(c);
+    let fighters: Vec<String> = c
         .quests
         .content
         .actors
         .iter()
-        .filter(|a| a.vulnerable)
-        .map(|a| a.id.as_str().to_string())
+        .filter(|a| a.vulnerable || unleashed.contains(a.id.as_str()))
+        .map(|a| format!("{} ({})", a.id.as_str(), a.entity))
         .collect();
-    for q in &c.quests.content.quests {
-        for_each_effect_deep(q, |_, eff| {
-            if let Verb::UnleashActor { actor, .. } = &eff.verb {
-                fighters.insert(actor.as_str().to_string());
-            }
-        });
-    }
-    for t in &c.quests.content.triggers {
-        for_each_trigger_effect_deep(t, |_, eff| {
-            if let Verb::UnleashActor { actor, .. } = &eff.verb {
-                fighters.insert(actor.as_str().to_string());
-            }
-        });
-    }
-    for t in &c.quests.content.traps {
-        for_each_trap_payload_deep(t, |_, eff| {
-            if let Verb::UnleashActor { actor, .. } = &eff.verb {
-                fighters.insert(actor.as_str().to_string());
-            }
-        });
-    }
     if fighters.is_empty() {
         return;
     }
@@ -784,20 +756,15 @@ pub(crate) fn difficulty_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         "world",
         "/content/difficulty".to_string(),
         format!(
-            "this campaign stages {} actor(s) meant to FIGHT ({}) — unleashed into a real-AI twin, \
-             or declared `vulnerable` — but declares no `waves[]` and no `world.difficulty`, so it \
-             ships the compiler's derived `difficulty=peaceful`. On peaceful the server discards \
-             every hostile-category mob as it ticks it, so a monster among these is gone on the \
-             tick it spawns and the beat that summoned it plays to an empty room. Declare \
-             `world.difficulty` on the world stage: `easy` reproduces the halved-damage world \
-             existing combat numbers were tuned in, `normal` is the vanilla baseline. (If every \
-             one of them is a passive species, there is nothing to fix.)",
+            "this campaign stages {} actor(s) meant to FIGHT — unleashed, or declared \
+             `vulnerable` — [{}], but declares no `world.difficulty`, and with no wave and no \
+             body peaceful discards the engine derives `difficulty=peaceful`. These species \
+             survive peaceful, but on peaceful every hit they land on a player whose damage \
+             scales with difficulty (a mob's melee and its projectiles) is zero, so the fight \
+             lands no blow. Declare `world.difficulty` on the world stage: `easy` halves \
+             incoming damage, `normal` is the vanilla baseline.",
             fighters.len(),
-            fighters
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                .join(", ")
+            fighters.join(", ")
         ),
     ));
 }

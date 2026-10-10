@@ -8,9 +8,10 @@
 //! earlier campaign keeps the derivation.
 //!
 //! `peaceful` is refused (`DW0468`): on peaceful the server discards every
-//! hostile-category mob as it ticks it, so the delve's whole cast of threats
-//! would silently not exist. The mirror case — actors but no waves and no
-//! declared difficulty, i.e. the derived `peaceful` deleting them — is the
+//! body whose type is not allowed in peaceful, so the delve's whole cast of
+//! threats would silently not exist. Absent, the engine derives the lowest
+//! difficulty that keeps every staged body (`delvewright_dsl::derived_difficulty`);
+//! a declared fight by a species peaceful keeps, on that derived peaceful, is the
 //! advisory `DW0469`.
 //!
 //! Actor `attributes` is the same v0.4 [`MobAttributes`] shape a wave mob takes,
@@ -18,7 +19,12 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, Severity, check_campaign};
+use delvewright_dsl::{
+    Campaign, DSL_VERSION, EntityRegistry, RawCampaign, Severity, VendoredAnchorRegistry,
+    VendoredItemRegistry, WorldDifficulty, bodies_removed_on_peaceful, check_campaign,
+    derived_difficulty, effective_difficulty, parse_campaign, peaceful_despawn,
+    removed_on_peaceful, validate_campaign_with,
+};
 
 fn raw_with(world: Option<&str>, quests: Option<&str>) -> RawCampaign {
     RawCampaign {
@@ -139,32 +145,237 @@ fn absent_difficulty_is_clean() {
     assert!(check_campaign(&raw_with(None, None)).is_empty());
 }
 
-// --- DW0469: the derived peaceful deleting scripted actors ---------------------
+// --- the derivation keeps every staged body -------------------------------------
 
-/// Actors, no waves, no declared difficulty ⇒ the build ships the derived
-/// `peaceful`, which discards every hostile-species actor. Advisory, because the
-/// pinned entity registry is a membership set and cannot tell the compiler
-/// whether `actor/giant` is a monster.
+/// A v0.6 quests document with one actor of `entity`, spawned on the first beat;
+/// `unleash` adds an `unleash-actor` after it, `extra` is spliced into the actor.
+fn quests_with_one_actor(entity: &str, unleash: bool, extra: &str) -> String {
+    let unleash = if unleash {
+        r#", { "type": "unleash-actor", "actor": "actor/figure" }"#
+    } else {
+        ""
+    };
+    format!(
+        r#"{{
+  "dsl_version": "{DSL_VERSION}",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [
+            {{ "type": "open-gate", "anchor": "anchor/door" }},
+            {{ "type": "spawn-actor", "actor": "actor/figure" }}{unleash}
+          ]
+        }},
+        "on_complete": [ {{ "type": "campaign-complete" }} ]
+      }}
+    ],
+    "actors": [
+      {{ "id": "actor/figure", "entity": "{entity}", "anchor": "anchor/keeper-stand"{extra} }}
+    ]
+  }}
+}}"#
+    )
+}
+
+fn parsed(raw: &RawCampaign) -> Campaign {
+    parse_campaign(raw).unwrap_or_else(|d| panic!("fixture parses: {d:#?}"))
+}
+
+/// The issue's shape: a still husk staged as a figure — never unleashed, never
+/// `vulnerable` — in a campaign with no waves. Peaceful discards a husk, so the
+/// derivation must not be peaceful.
 #[test]
-fn actors_without_waves_or_declared_difficulty_warn() {
-    let raw = raw_with(None, Some(&quests_with_actor("")));
-    let d = check_campaign(&raw);
+fn a_still_hostile_actor_derives_easy() {
+    let c = parsed(&raw_with(
+        None,
+        Some(&quests_with_one_actor("minecraft:husk", false, "")),
+    ));
+    assert_eq!(derived_difficulty(&c), WorldDifficulty::Easy);
+    assert_eq!(effective_difficulty(&c), WorldDifficulty::Easy);
+    let removed = bodies_removed_on_peaceful(&c);
+    assert_eq!(removed.len(), 1, "{removed:#?}");
+    assert_eq!(removed[0].id, "actor/figure");
+    assert_eq!(removed[0].entity, "minecraft:husk");
+}
+
+/// A body of a species peaceful keeps leaves the derivation at peaceful.
+#[test]
+fn a_still_peaceful_kept_actor_derives_peaceful() {
+    let c = parsed(&raw_with(
+        None,
+        Some(&quests_with_one_actor("minecraft:villager", false, "")),
+    ));
+    assert_eq!(derived_difficulty(&c), WorldDifficulty::Peaceful);
+    assert!(bodies_removed_on_peaceful(&c).is_empty());
+}
+
+/// A skinned actor ships as a mannequin, which peaceful keeps — until it is
+/// unleashed, when its real-AI twin is the declared entity.
+#[test]
+fn a_skinned_actor_counts_its_twin_only_when_unleashed() {
+    let skin = r#", "skin": { "texture_id": "figure", "model": "wide" }"#;
+    let still = parsed(&raw_with(
+        None,
+        Some(&quests_with_one_actor("minecraft:husk", false, skin)),
+    ));
+    assert_eq!(derived_difficulty(&still), WorldDifficulty::Peaceful);
+    let woken = parsed(&raw_with(
+        None,
+        Some(&quests_with_one_actor("minecraft:husk", true, skin)),
+    ));
+    assert_eq!(derived_difficulty(&woken), WorldDifficulty::Easy);
+    let removed = bodies_removed_on_peaceful(&woken);
+    assert_eq!(removed.len(), 1, "{removed:#?}");
+    assert_eq!(removed[0].what, "actor-twin");
+}
+
+/// An NPC is a staged body too: a zombie villager keeper derives `easy`.
+#[test]
+fn a_hostile_npc_derives_easy() {
+    let mut raw = raw_with(None, None);
+    assert_eq!(
+        raw.npcs.matches("\"minecraft:villager\"").count(),
+        1,
+        "the fixture has one villager NPC to swap"
+    );
+    raw.npcs = raw
+        .npcs
+        .replace("\"minecraft:villager\"", "\"minecraft:zombie_villager\"");
+    assert_eq!(derived_difficulty(&parsed(&raw)), WorldDifficulty::Easy);
+    assert_eq!(
+        derived_difficulty(&parsed(&raw_with(None, None))),
+        WorldDifficulty::Peaceful
+    );
+}
+
+/// A volley projectile is a staged body: peaceful discards a shulker bullet.
+#[test]
+fn a_shulker_bullet_volley_derives_easy() {
+    let mut c = parsed(&raw_with(None, None));
+    assert_eq!(derived_difficulty(&c), WorldDifficulty::Peaceful);
+    let volley: delvewright_dsl::QuestEffect = serde_json::from_str(
+        r#"{ "type": "volley", "projectile": "minecraft:shulker_bullet",
+             "from_anchor": "anchor/keeper-stand",
+             "kill_zone": { "anchor": "anchor/exit", "extent": [1, 1, 1] } }"#,
+    )
+    .expect("volley parses");
+    c.quests.content.quests[0]
+        .on_complete
+        .insert(0, volley.clone());
+    assert_eq!(derived_difficulty(&c), WorldDifficulty::Easy);
+    // ...and an arrow volley does not.
+    let mut arrow = volley;
+    if let delvewright_dsl::Verb::Volley { projectile, .. } = &mut arrow.verb {
+        *projectile = Some("minecraft:arrow".to_string());
+    }
+    c.quests.content.quests[0].on_complete[0] = arrow;
+    assert_eq!(derived_difficulty(&c), WorldDifficulty::Peaceful);
+}
+
+/// A declaration wins over the derivation.
+#[test]
+fn a_declaration_wins_over_the_derivation() {
+    let c = parsed(&raw_with(
+        Some(&world_with_difficulty("hard")),
+        Some(&quests_with_one_actor("minecraft:husk", false, "")),
+    ));
+    assert_eq!(effective_difficulty(&c), WorldDifficulty::Hard);
+}
+
+/// The vendored table answers what the pinned jar answers for the bodies the
+/// derivation's reasoning names.
+#[test]
+fn the_peaceful_table_holds_the_jar_facts() {
+    for id in [
+        "husk",
+        "minecraft:zombie",
+        "minecraft:shulker_bullet",
+        "minecraft:wither",
+    ] {
+        assert!(removed_on_peaceful(id), "{id} is discarded on peaceful");
+    }
+    for id in [
+        "minecraft:villager",
+        "minecraft:mannequin",
+        "minecraft:iron_golem",
+        "minecraft:ender_dragon",
+        "minecraft:piglin",
+        "minecraft:arrow",
+    ] {
+        assert!(!removed_on_peaceful(id), "{id} survives peaceful");
+    }
+    assert_eq!(
+        peaceful_despawn().len(),
+        38,
+        "the 1.21.11 table has 38 rows"
+    );
+}
+
+// --- DW0469: a declared fight on the derived peaceful ---------------------------
+
+/// Accepts every entity id: the DSL tier's vendored entity subset holds only
+/// hostile species, and `DW0469` is about a fighter peaceful keeps.
+struct AnyEntity;
+impl EntityRegistry for AnyEntity {
+    fn contains(&self, _: &str) -> bool {
+        true
+    }
+}
+
+fn diagnostics_any_entity(raw: &RawCampaign) -> Vec<delvewright_dsl::Diagnostic> {
+    validate_campaign_with(
+        &parsed(raw),
+        &VendoredItemRegistry::v1_21_11(),
+        &VendoredAnchorRegistry::hello_world(),
+        &AnyEntity,
+    )
+}
+
+/// An unleashed fighter of a species peaceful keeps, no waves, no declaration:
+/// the derivation is peaceful, and on peaceful its blows on a player scale to
+/// zero. Advisory.
+#[test]
+fn a_peaceful_kept_fighter_on_the_derived_peaceful_warns() {
+    let raw = raw_with(
+        None,
+        Some(&quests_with_one_actor("minecraft:iron_golem", true, "")),
+    );
+    let d = diagnostics_any_entity(&raw);
     let hit = d
         .iter()
         .find(|x| x.code == "DW0469")
-        .unwrap_or_else(|| panic!("actors + derived peaceful must warn: {d:#?}"));
+        .unwrap_or_else(|| panic!("a fighter on the derived peaceful must warn: {d:#?}"));
     assert_eq!(hit.severity, Severity::Warning);
     assert_eq!(hit.path, "/content/difficulty");
     assert!(
-        hit.message.contains("peaceful"),
-        "the warning must name the setting it is about: {}",
+        hit.message.contains("peaceful")
+            && hit.message.contains("actor/figure (minecraft:iron_golem)"),
+        "the warning names the setting and the fighter: {}",
         hit.message
     );
-    // Advisory only: nothing here is an error, so the campaign still builds.
     assert!(
         d.iter().all(|x| x.severity == Severity::Warning),
         "DW0469 must not fail the run: {d:#?}"
     );
+}
+
+/// A fighter peaceful discards moves the derivation to `easy`, so there is no
+/// peaceful to warn about.
+#[test]
+fn a_hostile_fighter_derives_easy_and_does_not_warn() {
+    let raw = raw_with(None, Some(&quests_with_actor("")));
+    assert_eq!(derived_difficulty(&parsed(&raw)), WorldDifficulty::Easy);
+    assert!(!codes(&raw).contains(&"DW0469".to_string()));
 }
 
 /// Declaring a difficulty settles the question — the warning is gone.
@@ -172,10 +383,12 @@ fn actors_without_waves_or_declared_difficulty_warn() {
 fn declared_difficulty_silences_the_actor_warning() {
     let raw = raw_with(
         Some(&world_with_difficulty("normal")),
-        Some(&quests_with_actor("")),
+        Some(&quests_with_one_actor("minecraft:iron_golem", true, "")),
     );
     assert!(
-        !codes(&raw).contains(&"DW0469".to_string()),
+        !diagnostics_any_entity(&raw)
+            .iter()
+            .any(|x| x.code == "DW0469"),
         "a declared difficulty answers the question DW0469 asks"
     );
 }

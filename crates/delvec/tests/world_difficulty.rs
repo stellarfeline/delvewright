@@ -249,6 +249,81 @@ fn the_server_readme_states_the_difficulty_the_properties_state() {
     }
 }
 
+// --- the derivation keeps every staged body ----------------------------------
+
+/// A v0.6 quests doc staging one STILL actor of `entity` — spawned, never
+/// unleashed, never `vulnerable`: a figure, not a fight.
+fn still_actor_quests(entity: &str) -> String {
+    format!(
+        r#"{{
+  "dsl_version": "{DSL_VERSION}",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [
+            {{ "type": "open-gate", "anchor": "anchor/door" }},
+            {{ "type": "spawn-actor", "actor": "actor/the-dry-one" }}
+          ]
+        }},
+        "on_complete": [ {{ "type": "campaign-complete" }} ]
+      }}
+    ],
+    "actors": [
+      {{ "id": "actor/the-dry-one", "entity": "{entity}", "anchor": "spawn" }}
+    ]
+  }}
+}}"#
+    )
+}
+
+/// A still husk in a wave-free campaign: peaceful discards a husk, so the
+/// shipped world is `easy` — in `server.properties` and in the README that
+/// describes it — and a still body peaceful keeps leaves it `peaceful`.
+#[test]
+fn a_still_body_peaceful_discards_ships_easy() {
+    for (entity, expected) in [
+        ("minecraft:husk", "easy"),
+        ("minecraft:villager", "peaceful"),
+    ] {
+        let out = build_hw(None, Some(&still_actor_quests(entity)));
+        assert!(
+            properties(&out).contains(&format!("difficulty={expected}")),
+            "a still `{entity}` must ship `difficulty={expected}`:\n{}",
+            properties(&out)
+        );
+        assert!(
+            text(&out, "server/README.md").contains(&format!("`difficulty={expected}`")),
+            "server/README.md must state `{expected}`"
+        );
+    }
+}
+
+/// Every row of the vendored peaceful table is an entity type of the pinned
+/// registry: a row the registry does not hold is a table from another game.
+#[test]
+fn the_peaceful_table_is_a_subset_of_the_pinned_registry() {
+    use delvewright_dsl::EntityRegistry;
+    let reg = delvec::compiler::registry::FullEntityRegistry::v1_21_11();
+    let table = delvewright_dsl::peaceful_despawn();
+    assert!(!table.is_empty());
+    for id in table {
+        assert!(
+            reg.contains(id),
+            "{id} is not in the pinned entity registry"
+        );
+    }
+}
+
 // --- the declaration wins, in both places ------------------------------------
 
 /// A declaration lands in `server.properties` (what the shipped image and the

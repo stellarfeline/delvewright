@@ -403,6 +403,27 @@ not third-party reconstructions.
   **Reproduce it**: `python3 tools/maintenance/extract-entity-tags.py
   <data/tag/entity_type/data.min.json> crates/dsl/data/entity-tags-1.21.11.json`.
 
+- **`peaceful-despawn-1.21.11.json`** (in `crates/dsl/data/`) — the entity types
+  the game **discards while the world is peaceful**, namespaced and sorted. 38 of
+  the 157 types. Read straight out of the pinned server jar (`versions.toml`
+  `[minecraft]` `server_jar_sha256`
+  `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726`) with the
+  official server mappings from piston-meta. Every ticked entity runs
+  `Entity#checkDespawn()`, which five classes declare: `Entity` and
+  `EnderDragon` (empty — never discarded), `Mob` and `WitherBoss` (discarded on
+  peaceful unless the type's `EntityType#isAllowedInPeaceful()` holds;
+  `EntityType.Builder#notInPeaceful()` clears it), and `ShulkerBullet`
+  (discarded on peaceful unconditionally). The extractor asserts those five are
+  the whole list, checks each body's bytecode reads exactly the facts its
+  classification claims, and cross-checks the 37 types whose flag is false at
+  runtime against the 37 registrations whose builder chain calls
+  `notInPeaceful()` in `EntityType`'s static initialiser — two methods that
+  share nothing but the jar. It lives in the DSL crate because the derived
+  difficulty (`delvewright_dsl::derived_difficulty`) is read by validation
+  (`DW0469`) and by the emitter alike. **Reproduce it**:
+  `JAVA_HOME=<a JDK 21> python3 tools/maintenance/extract-peaceful-despawn.py`
+  (`--check` to compare without writing).
+
 - **`timeline-day-1.21.11.json`** and **`timeline-moon-1.21.11.json`** (in
   `crates/dsl/data/`) — **not** from the misode summary: read straight out of the
   pinned server jar, `versions.toml` `[minecraft]` `server_jar_sha256`
