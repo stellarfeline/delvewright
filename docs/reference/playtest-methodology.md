@@ -214,8 +214,10 @@ A leg whose proven route sets a sculk sensor off carries `vibrations[]` in
 that answer it, predicted by the compiler (four route cells within `distSqr ≤
 49`, no sneak, no dampening, no occluder; a shrieker within `distSqr ≤ 64` of its
 sensor). The harness predicts nothing: the parse refuses a sensor more than 8
-blocks from every waypoint of its leg and a shrieker more than 8 from its sensor
-(`harness/src/waypoints.ts`). For each predicted sensor it waits for a
+blocks from its leg's route — the polyline through the leg's waypoints, on which
+every route cell the compiler predicted from lies, so a straight leg exported as
+two waypoints is measured along its length — and a shrieker more than 8 from its
+sensor (`harness/src/waypoints.ts`). For each predicted sensor it waits for a
 `blockUpdate` at the sensor's cell whose new state has `sculk_sensor_phase=active`;
 for each predicted shrieker a `world_event` packet with id 3007 at its cell —
 from the leg's start to three seconds after its end (`harness/src/sculk.ts`). A

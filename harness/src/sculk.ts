@@ -61,6 +61,36 @@ export function distSq(a: Vec3Tuple, b: Vec3Tuple): number {
   return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
 }
 
+/**
+ * Squared distance from `p` to the polyline through `route`'s points. The
+ * compiler predicts a leg's vibrations from its dense proven route cells, and
+ * the exported waypoints are those cells thinned to their corners: every route
+ * cell lies on a segment between two consecutive waypoints (a straight
+ * constant-delta run), so a sensor within earshot of a route cell is within
+ * earshot of the polyline, however few vertices a straight leg keeps.
+ */
+export function distSqToRoute(p: Vec3Tuple, route: readonly Vec3Tuple[]): number {
+  if (route.length === 0) return Infinity;
+  let best = distSq(p, route[0]!);
+  for (let i = 1; i < route.length; i += 1) {
+    const a = route[i - 1]!;
+    const b = route[i]!;
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]] as const;
+    const len = ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2;
+    const t =
+      len === 0
+        ? 0
+        : Math.min(
+            1,
+            Math.max(0, ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / len),
+          );
+    const d =
+      (a[0] + t * ab[0] - p[0]) ** 2 + (a[1] + t * ab[1] - p[1]) ** 2 + (a[2] + t * ab[2] - p[2]) ** 2;
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 /** What a leg heard of what it was predicted to make. */
 export interface LegHearing {
   readonly sensorsPredicted: number;

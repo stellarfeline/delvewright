@@ -16,7 +16,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Vec3Tuple } from "./critical-path.ts";
-import { LISTENER_RADIUS_SQ, distSq, type Vibration } from "./sculk.ts";
+import { LISTENER_RADIUS_SQ, distSq, distSqToRoute, type Vibration } from "./sculk.ts";
 
 /** The sub-path of the waypoints artifact relative to `critical-path.json`'s dir. */
 const WAYPOINTS_SUBPATH = ["validation", "critical-path-waypoints.json"] as const;
@@ -263,7 +263,9 @@ function parseClimbs(entry: Record<string, unknown>, pointer: string): Climb[] {
 
 /**
  * Parse a leg's optional `vibrations` (spec-0100 §4.6). Absent → `[]`. A sensor
- * not within 8 blocks (`distSqr ≤ 64`) of any waypoint of its leg, or a shrieker
+ * not within 8 blocks (`distSqr ≤ 64`) of its leg's route — the polyline through
+ * its waypoints, on which every route cell the compiler predicted from lies
+ * ({@link distSqToRoute}) — or a shrieker
  * not within 8 of its sensor, is a prediction the game cannot make, refused.
  */
 function parseVibrations(
@@ -282,8 +284,8 @@ function parseVibrations(
       fail(at, `must be an object, got ${describe(v)}`);
     }
     const sensor = requireVec3(v["sensor"], `${at}/sensor`);
-    if (!waypoints.some((w) => distSq(w, sensor) <= LISTENER_RADIUS_SQ)) {
-      fail(`${at}/sensor`, "is not within 8 blocks of any waypoint of its leg");
+    if (distSqToRoute(sensor, waypoints) > LISTENER_RADIUS_SQ) {
+      fail(`${at}/sensor`, "is not within 8 blocks of its leg's route");
     }
     const list = v["shriekers"];
     if (!Array.isArray(list)) {

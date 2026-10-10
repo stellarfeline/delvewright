@@ -18,6 +18,7 @@ import {
   nearestIndex,
 } from "../src/waypoints.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
+import { distSqToRoute } from "../src/sculk.ts";
 
 // A cave that VISITS [197, 69, -20] twice and RETURNS to the entry [262, 66, 1] —
 // exactly the nobodys-cave shape whose duplicate destinations broke a by-coordinate
@@ -600,7 +601,7 @@ test("a sensor out of earshot of its leg, or a shrieker out of its sensor's, is 
   const far = structuredClone(LISTENING);
   far.legs[0]!.vibrations![0]!.sensor = [8, 66, 40];
   assert.throws(() => parseWaypoints(far), (e: unknown) =>
-    e instanceof WaypointsParseError && /within 8 blocks of any waypoint/.test(e.message),
+    e instanceof WaypointsParseError && /within 8 blocks of its leg's route/.test(e.message),
   );
   // A shrieker more than 8 blocks from its sensor.
   const deaf = structuredClone(LISTENING);
@@ -612,4 +613,39 @@ test("a sensor out of earshot of its leg, or a shrieker out of its sensor's, is 
   const bad = structuredClone(LISTENING) as unknown as { legs: { vibrations: unknown }[] };
   bad.legs[0]!.vibrations = { sensor: [8, 66, 23] };
   assert.throws(() => parseWaypoints(bad), WaypointsParseError);
+});
+
+test("a sensor beside the middle of a straight two-waypoint leg is in earshot of its route", () => {
+  // The compiler predicts from the dense route cells and the export thins a
+  // straight run to its two ends: a demo level's sensor sat at distSqr 66 to
+  // the nearer of its leg's two waypoints, inside earshot of the route cells
+  // between them, and the parse refused it before the bot walked.
+  const straight = {
+    version: "0.0.0-fixture",
+    campaign_id: "straight",
+    legs: [
+      {
+        from: [0, 64, 0],
+        to: [30, 64, 0],
+        waypoints: [
+          [0, 64, 0],
+          [30, 64, 0],
+        ],
+        vibrations: [{ sensor: [15, 63, 7], shriekers: [] }],
+      },
+    ],
+  };
+  const wp = parseWaypoints(straight);
+  assert.deepEqual(wp.legs[0]!.vibrations[0]!.sensor, [15, 63, 7]);
+  // Measured along the route, not to its vertices: the nearest route cell
+  // [15, 64, 0] is at distSqr 50; the nearest waypoint at 275.
+  assert.equal(distSqToRoute([15, 63, 7], [[0, 64, 0], [30, 64, 0]]), 50);
+  // Beyond 8 blocks of every point of the route it is still refused.
+  const off = structuredClone(straight);
+  off.legs[0]!.vibrations[0]!.sensor = [15, 63, 9];
+  assert.throws(() => parseWaypoints(off), (e: unknown) =>
+    e instanceof WaypointsParseError && /within 8 blocks of its leg's route/.test(e.message),
+  );
+  // Past the leg's end the distance is to the end, not to the line's extension.
+  assert.equal(distSqToRoute([40, 64, 0], [[0, 64, 0], [30, 64, 0]]), 100);
 });
