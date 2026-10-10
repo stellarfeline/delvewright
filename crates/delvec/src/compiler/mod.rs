@@ -198,6 +198,7 @@ pub mod trap_trigger;
 pub mod traversal;
 pub mod view;
 pub mod watch;
+pub mod watching;
 pub mod waypoints;
 pub mod ways;
 pub mod wrongside;

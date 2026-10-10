@@ -34,6 +34,7 @@ mod teleport;
 mod timed_gate;
 mod trap;
 mod trigger;
+mod watching;
 mod wave;
 mod world;
 
@@ -52,6 +53,7 @@ pub(super) fn emit_packtest(
     waves: &WaveGeometry<'_>,
     payloads: &PayloadPlans,
     asm_locks: &crate::compiler::assembly::Locks,
+    watch_binding: &crate::compiler::watching::WatchBinding,
 ) {
     let ns = &plan.namespace;
     put_json(
@@ -133,6 +135,10 @@ pub(super) fn emit_packtest(
     // v0.6 (spec-0014): actor spawn/despawn (kill vs vanish), move-actor arrival,
     // unleash swap. Emits nothing for a campaign with no actors.
     actor::emit_v06_actor_packtests(plan, out, actor_moves);
+    // spec-0101 §5.3: per watching body, the turn, the hold and (for a class
+    // watch) the filter; per watching body with a walk, the yield. Emits nothing
+    // for a campaign that declares no watcher.
+    watching::emit_watch_packtests(plan, out, moves, actor_moves, watch_binding);
     // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
     // Emits nothing when the campaign declares no traps.
     trap::emit_trap_packtests(plan, out);

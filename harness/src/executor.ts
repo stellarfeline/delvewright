@@ -64,6 +64,8 @@ import { methods as stagingMethods } from "./executor/staging.ts";
 import { methods as musterMethods } from "./executor/muster.ts";
 import { methods as restMethods } from "./executor/rest.ts";
 import { methods as witnessMethods } from "./executor/witness.ts";
+import { methods as watchMethods } from "./executor/watch.ts";
+import type { WatchLedger } from "./watch.ts";
 import { methods as crosshairMethods } from "./executor/crosshair.ts";
 import { methods as collectMethods } from "./executor/collect.ts";
 import { methods as settleMethods } from "./executor/settle.ts";
@@ -192,6 +194,8 @@ export class MineflayerExecutor implements StepExecutor {
   windowsAtDeath = 0;
   /** Which reply belongs to which command. See {@link refusalOf}. */
   readonly brackets = new ReplyBrackets();
+  /** The record's watching bodies and what the walk found about them (spec-0101 §5.4). */
+  watch: WatchLedger | undefined;
   /**
    * Every entity the server has announced dead (the entity-event death status),
    * by id. A body in its death throes is still in the client's entity table, and a
@@ -567,8 +571,9 @@ type Methods = typeof connectionMethods &
   typeof musterMethods &
   typeof restMethods &
   typeof witnessMethods &
+  typeof watchMethods &
   typeof crosshairMethods &
   typeof collectMethods &
   typeof settleMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);

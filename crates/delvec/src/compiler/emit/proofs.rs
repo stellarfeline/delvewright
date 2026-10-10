@@ -15,10 +15,9 @@ use super::*;
 pub(super) fn prove_assemblies(
     plan: &Plan,
     world: &crate::compiler::nav::World,
+    population: &std::collections::BTreeSet<[i32; 3]>,
 ) -> Result<crate::compiler::assembly::AssemblyBinding, BuildFailure> {
     let entry = campaign_spawn(plan);
-    let open = world.without_exclusions();
-    let population = crate::compiler::lethal::walked_population(plan, &open, entry);
     let roots = crate::compiler::lethal::stands_at_roots(plan, entry);
     let returned = playable_region(plan).map(|r| (r.min, r.max));
     // Where the party can walk while each performed trigger is the next
@@ -44,9 +43,42 @@ pub(super) fn prove_assemblies(
             .filter(|p| !crate::compiler::nav::returned_from(returned, *p))
             .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))
     };
-    let (binding, findings) = crate::compiler::assembly::check(plan, &population, &reaches);
+    let (binding, findings) = crate::compiler::assembly::check(plan, population, &reaches);
     eprintln!("{}", binding.line());
     eprintln!("{}", binding.cost_line());
+    if let Some((first, rest)) = findings.split_first() {
+        for extra in rest {
+            eprintln!("{} [error] build: {}", extra.code, extra.message);
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: first.code,
+            message: first.message.clone(),
+        });
+    }
+    Ok(binding)
+}
+
+/// The walked population `P` (spec-0062 §2) over the lethality-free world —
+/// the one population the assemblies (`DW0938`) and the watchers (`DW0997`)
+/// are judged against, derived once per build.
+pub(super) fn walked_population(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+) -> std::collections::BTreeSet<[i32; 3]> {
+    let open = world.without_exclusions();
+    crate::compiler::lethal::walked_population(plan, &open, campaign_spawn(plan))
+}
+
+/// The watchers (`DW0997`, spec-0101 §5.2): every watching body has a walked
+/// cell within its reach. The binding line is printed on every build, zeroes
+/// included, before the verdict is taken; the binding travels to the PackTests
+/// (the cell each test stands its player on) and to `validation/watchers.json`.
+pub(super) fn prove_watchers(
+    plan: &Plan,
+    population: &std::collections::BTreeSet<[i32; 3]>,
+) -> Result<crate::compiler::watching::WatchBinding, BuildFailure> {
+    let (binding, findings) = crate::compiler::watching::prove(plan, population);
+    eprintln!("{}", binding.line());
     if let Some((first, rest)) = findings.split_first() {
         for extra in rest {
             eprintln!("{} [error] build: {}", extra.code, extra.message);

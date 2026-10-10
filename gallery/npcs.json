@@ -45,6 +45,10 @@
         "role": "flavor",
         "traversal": {
           "locomotion": "flier"
+        },
+        "watch": {
+          "who": "nearest",
+          "within": 8
         }
       },
       {

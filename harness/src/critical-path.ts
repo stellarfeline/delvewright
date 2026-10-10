@@ -17,6 +17,8 @@
 // (`markers.ts`). The harness never infers an objective; it only compares the id the
 // compiler put here (CLAUDE.md: assertions and navigation, no game logic).
 
+import type { Watcher } from "./watch.ts";
+
 /**
  * `version` is the `dsl_version` the compiler built the campaign at. The harness
  * records it and never judges it: the engine accepts exactly one number
@@ -437,6 +439,12 @@ export interface CriticalPath {
   /** Who the bot may never swing at. Required — see the format-4 note. */
   readonly nonCombatants: NonCombatants;
   readonly steps: readonly Step[];
+  /**
+   * Every watching body (spec-0101 §5.4). The compiler writes the key only for a
+   * campaign that declares a watcher, so its absence is the empty record — the
+   * delve declares none — and the binding line states the zero.
+   */
+  readonly watchers: readonly Watcher[];
 }
 
 /**
@@ -1178,7 +1186,7 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
   const root = requireObject(raw, "");
   rejectUnknownKeys(
     root,
-    ["version", "format_version", "campaign_id", "non_combatants", "steps"],
+    ["version", "format_version", "campaign_id", "non_combatants", "steps", "watchers"],
     "",
   );
 
@@ -1221,6 +1229,7 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
   });
 
   const nonCombatants = parseNonCombatants(root["non_combatants"], "/non_combatants");
+  const watchers = parseWatchers(root["watchers"], "/watchers");
 
   return {
     version,
@@ -1228,7 +1237,77 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
     campaignId,
     nonCombatants,
     steps,
+    watchers,
   };
+}
+
+/**
+ * The watching bodies (spec-0101 §5.4), or a refusal. Absent is the empty
+ * record; present, every row is required whole — a row the bot cannot address
+ * would bind its assertion to nothing.
+ */
+function parseWatchers(value: unknown, pointer: string): Watcher[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail(pointer, `must be an array, got ${describe(value)}`);
+  }
+  if (value.length === 0) {
+    fail(pointer, "is written only when a watcher is declared, and is empty");
+  }
+  return value.map((entry, i) => {
+    const at = `${pointer}/${i}`;
+    const obj = requireObject(entry, at);
+    rejectUnknownKeys(
+      obj,
+      [
+        "id",
+        "class",
+        "tag",
+        "selector",
+        "feet",
+        "stands",
+        "home_yaw",
+        "who",
+        "class_tag",
+        "within",
+        "drawable_cells",
+        "test_cell",
+        "test_yaw",
+      ],
+      at,
+    );
+    const within = requireInteger(obj, "within", at);
+    if (within < 1) fail(`${at}/within`, `must be at least 1, got ${within}`);
+    const homeYaw = obj["home_yaw"];
+    if (typeof homeYaw !== "number" || !Number.isFinite(homeYaw)) {
+      fail(`${at}/home_yaw`, `must be a finite number, got ${describe(homeYaw)}`);
+    }
+    const rawStands = obj["stands"];
+    if (!Array.isArray(rawStands) || rawStands.length === 0) {
+      fail(`${at}/stands`, `must be a non-empty array, got ${describe(rawStands)}`);
+    }
+    const stands = rawStands.map((p, j) => requireVec3({ [String(j)]: p }, String(j), `${at}/stands`));
+    const classTag = obj["class_tag"];
+    if (classTag !== null && (typeof classTag !== "string" || classTag.length === 0)) {
+      fail(`${at}/class_tag`, `must be null or a non-empty string, got ${describe(classTag)}`);
+    }
+    const who = requireString(obj, "who", at);
+    if ((who === "nearest") !== (classTag === null)) {
+      fail(at, "a `nearest` watch carries no class tag, and a class watch carries one");
+    }
+    return {
+      id: requireString(obj, "id", at),
+      class: requireString(obj, "class", at),
+      tag: requireString(obj, "tag", at),
+      selector: requireString(obj, "selector", at),
+      feet: requireVec3(obj, "feet", at),
+      stands,
+      homeYaw,
+      who,
+      ...(typeof classTag === "string" ? { classTag } : {}),
+      within,
+    };
+  });
 }
 
 /**

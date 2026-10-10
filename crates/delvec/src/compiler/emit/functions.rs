@@ -1145,10 +1145,14 @@ pub(super) fn emit_functions(
     // spec-0082: every live assembly's clip driver and strike machine. Empty
     // for a campaign that declares none → byte-identical.
     tick.extend(crate::compiler::assembly::tick_lines(plan));
+    // spec-0101: every watching body turns to the player it watches. Empty for
+    // a campaign that declares no watcher → byte-identical.
+    tick.extend(crate::compiler::watching::tick_lines(plan));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
     fns.push(("tick".to_string(), lines(&tick)));
     fns.extend(crate::compiler::healthbar::functions(ns, &health_bars));
+    fns.extend(crate::compiler::watching::functions(plan));
     // spec-0082: the assemblies' bodies, clips, drivers and landings. A landing
     // is an ordinary effect bundle, lowered here under its root's audience.
     fns.extend(crate::compiler::assembly::assembly_functions(
