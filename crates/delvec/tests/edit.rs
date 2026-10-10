@@ -1411,11 +1411,14 @@ fn edit_inside_a_close_gate_region_warns_dw0353() {
     );
 }
 
-/// **Finding 5b (`DW0354`, advisory).** `scatter` dropping flowers onto bare
-/// stone: vanilla pops every one of them off on the first chunk tick, so the
-/// dressing the author sees in `delvec snapshot` never reaches players.
+/// **Finding 5b, now refused (`DW1002`).** `scatter` dropping flowers onto
+/// bare stone: the server pops every one of them off at the first shape
+/// update, so the dressing the author sees in `delvec snapshot` never reaches
+/// players. It was an advisory (`DW0354`) the build shipped past; the build
+/// that would ship them is now refused, naming each flower's cell and the soil
+/// it lacks.
 #[test]
-fn scatter_on_non_soil_warns_dw0354() {
+fn scatter_on_non_soil_is_refused_dw1002() {
     let dir = edits_copy("edits-flora");
     set_batches(
         &dir,
@@ -1441,12 +1444,14 @@ fn scatter_on_non_soil_warns_dw0354() {
         &prefabs_arg(),
     ]);
     let stdout = combined(&r);
-    assert!(r.status.success(), "advisory only:\n{stdout}");
-    assert!(stdout.contains("DW0354"), "expected DW0354:\n{stdout}");
-    assert!(stdout.contains("[warning]"), "warning tier:\n{stdout}");
+    assert_eq!(r.status.code(), Some(3), "refused at build:\n{stdout}");
     assert!(
-        stdout.contains("flowers cannot root in"),
-        "names the reason:\n{stdout}"
+        stdout.contains("DW1002") && stdout.contains("`minecraft:poppy` at ["),
+        "the shipped world is refused, naming a flower:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("minecraft:grass_block"),
+        "names the soil it lacks:\n{stdout}"
     );
 }
 

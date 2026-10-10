@@ -131,21 +131,23 @@ impl Rule {
         self.base.holds(neighbour, face) || self.added.iter().any(|p| pattern_has(p, neighbour))
     }
 
-    /// What the rule asks of its neighbour, for a message: the base, and the
-    /// states it adds (listed when there are few, counted when many).
+    /// What the rule asks of its neighbour, as a verb phrase for a message
+    /// ("give a full (sturdy) south face", "be one of …"): the base, then the
+    /// states it adds — listed whole up to a dozen, counted beyond.
     pub fn describe(&self) -> String {
         let face = self.cell.opposite();
         let added = match self.added.len() {
             0 => String::new(),
-            n if n <= 6 => format!(" or one of {}", self.added.join(", ")),
+            n if n <= 12 => format!("be one of {}", self.added.join(", ")),
             n => format!(
-                " or one of {n} listed states ({}, …)",
+                "be one of {n} listed states ({}, …)",
                 self.added[..3].join(", ")
             ),
         };
         match (self.base, added.is_empty()) {
-            (Base::None, false) => added.trim_start_matches(" or ").to_string(),
-            _ => format!("{}{added}", self.base.describe(face)),
+            (Base::None, false) => added,
+            (base, true) => format!("give {}", base.describe(face)),
+            (base, false) => format!("give {}, or {added}", base.describe(face)),
         }
     }
 }
