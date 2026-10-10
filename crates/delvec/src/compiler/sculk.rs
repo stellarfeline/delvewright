@@ -853,7 +853,8 @@ mod tests {
     #[test]
     fn a_sensor_reaches_its_neighbours_and_the_cell_above_conducts() {
         let s = [0, 1, 0];
-        let door = "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]";
+        let door =
+            "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]";
         // An iron door beside the sensor.
         let beside = map(&[(s, "minecraft:sculk_sensor"), ([1, 1, 0], door)]);
         assert_eq!(reach_code(&beside), Some("DW1000"));
@@ -865,7 +866,10 @@ mod tests {
         ]);
         let (b, f) = prove_reach(&through_stone, &[]);
         assert_eq!(f.map(|f| f.code.id()), Some("DW1000"));
-        assert_eq!(b.reach_cells, 11, "6 neighbours + 5 of the conducting cell above");
+        assert_eq!(
+            b.reach_cells, 11,
+            "6 neighbours + 5 of the conducting cell above"
+        );
         // Glass above does not conduct: the same door is out of reach.
         let through_glass = map(&[
             (s, "minecraft:sculk_sensor"),
@@ -897,8 +901,9 @@ mod tests {
         let blocks = map(&[([0, 1, 0], "minecraft:sculk_sensor")]);
         let w = Write {
             region: ([1, 1, 0], [1, 1, 0]),
-            block: "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
-                .to_string(),
+            block:
+                "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
+                    .to_string(),
             label: "`fill-region` at `/content/quests/0/on_complete/0`".to_string(),
         };
         let f = prove_reach(&blocks, std::slice::from_ref(&w))
@@ -999,12 +1004,22 @@ mod tests {
             cells.push(([5, 1, 1], device));
             let world = world_of(&map(&cells));
             let mut slab = hall();
-            slab.push(([5, 1, 1], "minecraft:stone_slab[type=bottom,waterlogged=false]"));
+            slab.push((
+                [5, 1, 1],
+                "minecraft:stone_slab[type=bottom,waterlogged=false]",
+            ));
             let slab = world_of(&map(&slab));
             let on = [5, 2, 1];
             assert!(world.is_standable(on), "{device}: its top is standable");
-            assert_eq!(world.feet_y(on), slab.feet_y(on), "{device}: a slab's height");
-            assert!(world.find_path([4, 1, 1], on).is_some(), "{device}: onto it");
+            assert_eq!(
+                world.feet_y(on),
+                slab.feet_y(on),
+                "{device}: a slab's height"
+            );
+            assert!(
+                world.find_path([4, 1, 1], on).is_some(),
+                "{device}: onto it"
+            );
             assert!(world.find_path(on, [6, 1, 1]).is_some(), "{device}: off it");
             assert_eq!(
                 world.find_path([4, 1, 1], [6, 1, 1]),
@@ -1037,7 +1052,10 @@ mod tests {
         assert!(l.leg_vibrations(&route, true).is_empty(), "a sneak leg");
         // A leg that walks fewer than four cells inside the radius sets off
         // nothing a bot can be held to.
-        assert!(l.leg_vibrations(&route[..3], false).is_empty(), "three cells");
+        assert!(
+            l.leg_vibrations(&route[..3], false).is_empty(),
+            "three cells"
+        );
         assert_eq!(l.leg_vibrations(&route[..4], false).len(), 1, "four cells");
         // Wool between the shrieker and the sensor occludes.
         let walled = map(&[

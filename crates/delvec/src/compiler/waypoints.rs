@@ -101,10 +101,8 @@ pub fn waypoints_json(
             // off and the shriekers that answer each, predicted by the
             // compiler for the bot to assert. Emitted only when present, so a
             // campaign with no sensor stays byte-identical.
-            let heard = listening.leg_vibrations(
-                &leg.cells,
-                sneak.get(leg.to_step).copied().unwrap_or(false),
-            );
+            let heard = listening
+                .leg_vibrations(&leg.cells, sneak.get(leg.to_step).copied().unwrap_or(false));
             if !heard.is_empty() {
                 leg_json["vibrations"] = json!(
                     heard

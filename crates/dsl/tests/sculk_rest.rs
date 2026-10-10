@@ -112,7 +112,11 @@ fn a_set_block_of_a_summoning_shrieker_is_refused_where_it_is_typed() {
     let hits = with_code(&d, "DW0998");
     assert_eq!(hits.len(), 1, "{d:#?}");
     assert!(hits[0].path.ends_with("/block"), "{:?}", hits[0].path);
-    assert!(hits[0].path.contains("on_objective_complete"), "{:?}", hits[0].path);
+    assert!(
+        hits[0].path.contains("on_objective_complete"),
+        "{:?}",
+        hits[0].path
+    );
     // The rest state passes the same entry point.
     let d = check_campaign(&hello(quests_doc(
         r#"{ "type": "set-block", "anchor": "anchor/exit",

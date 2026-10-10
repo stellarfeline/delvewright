@@ -517,12 +517,11 @@ pub(super) fn prove_world(
             // of the catalyst proof; it reads no route, so nothing below is lost
             // by asking it here. Each line prints before its verdict, zeroes
             // included.
-            crate::compiler::sculk::check(plan, world, blocks, campaign_spawn(plan), &waves).map_err(
-                |f| BuildFailure::Diagnostic {
+            crate::compiler::sculk::check(plan, world, blocks, campaign_spawn(plan), &waves)
+                .map_err(|f| BuildFailure::Diagnostic {
                     code: f.code,
                     message: f.message,
-                },
-            )?;
+                })?;
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
                 let m = crate::compiler::nav::plan_moves(plan, world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if

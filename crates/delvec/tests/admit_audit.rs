@@ -547,7 +547,10 @@ fn the_sculk_family_passes_at_rest() {
     let mut listener = std::collections::BTreeMap::new();
     listener.insert("event".to_string(), Nbt::Compound(Default::default()));
     let mut be = std::collections::BTreeMap::new();
-    be.insert("id".to_string(), Nbt::String("minecraft:sculk_sensor".into()));
+    be.insert(
+        "id".to_string(),
+        Nbt::String("minecraft:sculk_sensor".into()),
+    );
     be.insert("listener".to_string(), Nbt::Compound(listener));
     let (rep, _) = audit(
         "listening",
