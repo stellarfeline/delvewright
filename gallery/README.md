@@ -102,6 +102,24 @@ Turn the rungs to face into the wall, with the open hall behind them, and the
 world no longer keeps them: the build is refused `DW0991`, naming each rung and
 the sturdy face it lacks (`probes/a-ladder-with-nothing-behind-it`).
 
+The far hall has a **listening floor** (spec-0100). A sculk sensor is set into
+the floor course beside the walk off the loft stair to the ferry deck, so every
+footstep on that stretch clicks it; four courses south of it a shrieker stands
+on the floor with summoning off, close enough to hear the click, and answers a
+player's footstep with sound and particles and nothing else. At the foot of the
+long gallery's stair a calibrated sensor faces north with air behind it, so its
+filter stays open and it hears every vibration within sixteen blocks; it is more
+than eight blocks from the shrieker, so only the plain sensor wakes it. Nothing
+in either sensor's reach reads a redstone signal. Over the near hall's roof, in
+the solid stone, a sculk catalyst is sealed where no body can stand within eight
+blocks: the build states the nearest body cell and its distance. The waypoint
+export carries the plain sensor and its shrieker on the legs that walk past them
+and the calibrated sensor on the legs up and down the stair, and the bot asserts
+each click and shriek and closes the run with `[sculk] darkness 0, warden 0`.
+Four probes each refill one cell: the shrieker with summoning on (`DW0998`), the
+sensor caught mid-click (`DW0999`), an iron door in the floor beside the sensor
+(`DW1000`), and a catalyst set into the near hall's floor (`DW1001`).
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor
@@ -212,6 +230,10 @@ holding them at once.
 | `a-stage-one-player-holds` | `DW0953` | `validate` | staging the lidded pit on the tokens, a datum each player holds for themselves |
 | `a-wait-longer-than-two-minutes` | `DW0925` | `validate` | making a fallen player wait 121 seconds before rejoining, one past the two minutes a wait may last |
 | `a-ladder-with-nothing-behind-it` | `DW0991` | `build` | turning the cabin ladder's four rungs to face into the cabin's wall, so each hangs on the open hall behind it |
+| `a-shrieker-that-can-summon` | `DW0998` | `validate` | refilling the listening floor's shrieker with `can_summon=true`, a warden no wave declares |
+| `a-sensor-caught-mid-click` | `DW0999` | `validate` | refilling the listening floor's sensor with `sculk_sensor_phase=active`, a click nobody made |
+| `an-iron-door-beside-a-sensor` | `DW1000` | `build` | setting an iron door into the floor beside the listening floor's sensor, a door every footstep would open |
+| `a-catalyst-over-the-floor` | `DW1001` | `build` | setting a sculk catalyst into the near hall's floor, under a cell the party walks |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

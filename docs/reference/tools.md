@@ -593,16 +593,20 @@ conversion strip uses, so the two cannot drift. The **palette allowlist**
 (`crates/delvec/src/admit/allowlist.rs`: stone, wood, glass and copper families, inert
 flora, furniture and job-site blocks — anvils in every damage stage included —,
 the trap trigger blocks (pressure plates, buttons, the trapped chest), decorative
-minerals and ores, archaeology, and the inert sculk blocks `sculk` and
-`sculk_vein`) that deliberately still flags surprising blocks — redstone
-contraption parts (dispensers, droppers, pistons, observers, repeaters), tnt,
-note blocks, and the sculk blocks that act at runtime: `sculk_catalyst` (rewrites
-the blocks around it when a living entity dies within 8 blocks),
-`sculk_sensor` and `calibrated_sculk_sensor` (redstone sources fired by any
-vibration within 8 blocks) and `sculk_shrieker` (summons a warden and inflicts
-Darkness when `can_summon` is true, a state a name-level list cannot hold) — for
-review, and is overridable with `--allowlist <file>`
-(`{ "allow": [...], "allow_suffixes": [...] }`). Jigsaw is deliberately NOT
+minerals and ores, archaeology, and all six sculk blocks) that deliberately still
+flags surprising blocks — redstone contraption parts (dispensers, droppers,
+pistons, observers, repeaters), tnt, note blocks — for review, and is overridable
+with `--allowlist <file>`
+(`{ "allow": [...], "allow_suffixes": [...] }`). The four sculk blocks that act
+at runtime — `sculk_sensor`, `calibrated_sculk_sensor`, `sculk_shrieker`,
+`sculk_catalyst` — are admitted by **state**, not by name (spec-0100): the audit
+judges every one with the one rest rule (`delvewright_dsl::blocks::sculk_rest`)
+over its palette state and its block entity's fields, so a shrieker with
+`can_summon=true` is `DW0998` and a block not at rest (a sensor caught mid-click,
+a blooming catalyst, a pending `listener` vibration, a non-zero
+`warning_level`) is `DW0999`; the build then proves a sensor's power reaches no
+block that reads a signal (`DW1000`) and a catalyst stands where no body can die
+in its range (`DW1001`). Jigsaw is deliberately NOT
 forbidden here: the conversion strip forbids it on raw community schematics,
 but a library prefab's jigsaw blocks are the sockets the compiler's solver
 mates, and a jigsaw block entity cannot carry a `Command`.
@@ -1820,7 +1824,7 @@ The extractors write a committed table whose provenance
 say what they do instead. `blocklight/BlockLightDump.java` and
 `patroltypes/PatrolTypeDump.java` are the Java sources `dump-block-light.py` and
 `check-patrol-types.py` compile and run against the pinned jar, and
-`collision/CollisionTopDump.java` and `collision/FaceDump.java` the ones `dump-collision-tops.py` and `dump-faces.py` do.
+`collision/CollisionTopDump.java`, `collision/FaceDump.java` and `collision/RedstoneDump.java` the ones `dump-collision-tops.py`, `dump-faces.py` and `dump-redstone.py` do.
 
 | Tool | Class | Invocation |
 |---|---|---|
@@ -1831,6 +1835,7 @@ say what they do instead. `blocklight/BlockLightDump.java` and
 | `tools/maintenance/extract-shape-properties.py` | agent (rare) | `python3 tools/maintenance/extract-shape-properties.py <minecraft-1.21.11-client.jar> crates/dsl/data/blockstate-shape-props-1.21.11.json` — regenerate the shape-carrying (multipart) property table behind `DW0735` from the client jar's blockstate definitions. Pins the jar's `version.json` to 1.21.11 / DataVersion 4671 and cross-checks every derived property against the block registry; see `crates/delvec/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/maintenance/dump-collision-tops.py` | agent (rare) | `python3 tools/maintenance/dump-collision-tops.py [--check] [--work DIR]` — regenerate `crates/dsl/data/collision-tops-1.21.11.tsv`, the vertical extent of every blockstate's collision box as the game's own `BlockState.getCollisionShape` returns it inside the pinned server jar. `blockshape::collision_top_16` reads a partial block's standing height from it, and `blockshape::tests::every_height_is_the_jars_or_the_full_cube_default` holds every hand-written height against it. Refuses a jar whose sha256 is not the pin; every obfuscated name is resolved from the sha1-verified mappings for the same version, through `dump-block-light.py`'s own pin, fetch and mapping functions (imported); the dumper prints its state count and the collapse must cover it. `--check` re-derives and diffs. Needs a JDK ≥ 21 on `PATH` and network access; CI reads the committed table and never runs this |
 | `tools/maintenance/dump-faces.py` | agent (rare) | `python3 tools/maintenance/dump-faces.py [--check] [--work DIR]` — regenerate `crates/dsl/data/faces-1.21.11.tsv`, which of every blockstate's six faces are full: `sturdy` as the game's own `BlockState.isFaceSturdy(BlockGetter, BlockPos, Direction)` answers it inside the pinned server jar, and `full` as `Block.isFaceFull` answers it of the collision shape. `blockshape::face_is_sturdy` / `face_is_full` read it, and the climb model (spec-0099) asks it which ladders and vines the world keeps. Its pin, fetch, mapping and collapse steps are `dump-collision-tops.py`'s own, imported; the dumper prints its state count and the collapse must cover it. `--check` re-derives and diffs. Needs a JDK ≥ 21 on `PATH` and network access; CI reads the committed table and never runs this |
+| `tools/maintenance/dump-redstone.py` | agent (rare) | `python3 tools/maintenance/dump-redstone.py [--check] [--work DIR]` — regenerate `crates/dsl/data/redstone-1.21.11.tsv`, one row per block id: `conductor` (`shape`/`always`/`never`, the game's own `isRedstoneConductor` set against its default `isCollisionShapeFullBlock`, which the dumper asserts equals six full collision faces on every state), `signal_source` (`isSignalSource` on any state) and `reads_signal` (whether the block's classes, its block entity's, or any class nested in them invoke a `SignalGetter` read, from `javap -c -p` with names and descriptors resolved from the mappings). `blockshape::redstone_conductor` / `redstone_source` / `redstone_reader` read it, and `compiler::sculk` asks it what a sculk sensor's power reaches (spec-0100). Its pin, fetch and mapping steps are `dump-collision-tops.py`'s own, imported; the dumper prints its state count and the rows must cover it; the header names the jar sha256 and the mappings sha1. `--check` re-derives and diffs. Needs a JDK ≥ 21 (with `javap`) on `PATH` and network access; CI reads the committed table and never runs this |
 | `tools/maintenance/dump-block-light.py` | agent (rare) | `python3 tools/maintenance/dump-block-light.py [--check] [--work DIR]` — regenerate `crates/delvec/tests/fixtures/light/emission-1.21.11.tsv`, the fixture `crates/delvec/tests/emission_table.rs` measures `light::emission()` against. **The emitter table is measured, not cited**: every value is what the game's own `BlockState.getLightEmission()` returns for that blockstate inside the pinned server jar, so the never-overestimate contract (`DW0210`/`DW0211` are only sound if the model is a lower bound on vanilla) is a red test rather than a reading of a wiki page. Fetches the jar `versions.toml` names and **refuses any jar whose sha256 is not the pin**, plus the Mojang mappings for that same version (sha1-verified) — so no obfuscated name is written down anywhere and a version bump is a pin edit and nothing else. `--check` re-derives and diffs instead of writing, and the dumper prints its own state/block counts so a truncated run cannot read as a clean one. Needs a JDK and network access; CI reads the committed fixture and never runs this |
 | `tools/maintenance/build-deepslate-bundle.sh` | agent (rare) | `tools/maintenance/build-deepslate-bundle.sh` — rebuild the renderer the prefab review page embeds (`crates/delvec/src/compiler/view/viewer/deepslate.bundle.js`). Needs `npm` and network; installs into a scratch directory, never into the repo. Pins deepslate, gl-matrix and esbuild by exact version, applies the local banner/shield texture-id patch with an exact expected hit count, and prints the licence of everything in the bundle. Two consecutive builds are byte-identical, which is what keeps the page byte-identical (ADR-0006). Refuses if upstream has moved the ids it patches — which is the signal to drop the patch rather than widen it |
 | `tools/maintenance/derive-client-textures.py` | human | `python3 tools/maintenance/derive-client-textures.py <client jar> [--check]` — writes `crates/delvec/data/textures-<pin>.json`, the census a `world.textures[]` row is resolved against (spec-0084 §3.1): every `assets/minecraft/textures/**.png` of the pinned client, keyed `minecraft:<path>`, with its size, the sha256 of vanilla's bytes, whether vanilla ships a sidecar and, for an animation, one frame's size. Refuses a jar whose sha256 is not `versions.toml` `[render] textures_sha256`, and states that sha256 in the table's header. `--check` compares against the committed file and writes nothing. Run when ADR-0009's Minecraft pin moves; never by CI or a build |

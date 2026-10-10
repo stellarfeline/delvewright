@@ -2751,7 +2751,20 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   letting go at that cell and the second taking hold from it, and the cell is
   held by the climb whose column it is in (`World::climb_runs`; the gallery's
   causeway stacks two ladders this way on its critical path). Omitted for a leg
-  that climbs nothing. **Validation metadata, not shipped gameplay** —
+  that climbs nothing. A leg that sets a sculk sensor off (spec-0100 §4.6)
+  carries a `vibrations` array: each `{sensor, shriekers}` — the sensor's cell
+  and the cells of the shriekers that answer it. A sensor is **predicted** for a
+  leg when the leg is not a `sneak` leg and four consecutive cells of its proven
+  route (three blocks walked) lie within integer `distSqr ≤ 49` of it — one
+  block inside its listener radius — each with no `#dampens_vibrations` block
+  (wool, a wool carpet) in its feet cell or under it and no
+  `#occludes_vibration_signals` block (wool) in the box it and the sensor span;
+  a shrieker is predicted for that sensor when its cell is within `distSqr ≤ 64`
+  of the sensor's and no occluder lies in the box between. A sensor or shrieker
+  a runtime write covers is never predicted. Read off the world as placed
+  (`sculk::Listening`); omitted for a leg that sets nothing off, and the build
+  prints `sculk walk:` with the devices no leg predicts.
+  **Validation metadata, not shipped gameplay** —
   excluded from the delve image (like `packtest-datapack/`); emitted only when a
   walked critical leg exists, so a fully-transported campaign stays
   byte-identical.
@@ -3762,6 +3775,30 @@ one-block cell between ticks) under the body's feet. `fatal_step_off` slides a
 caught body to the bottom of its run and asks the fall below it. Scaffolding and
 the open-trapdoor-over-ladder rule are not modelled (spec-0099 §3.3–3.4). A
 ladder dams a flood; a vine does not, and a flooded cell holds no climb.
+
+**The sculk family (spec-0100).** `sculk_sensor`, `calibrated_sculk_sensor` and
+`sculk_shrieker` are 8/16 boxes (`collision-tops`), so each is a
+`PartialFloor(8)` — a bottom slab to a body — and `sculk_catalyst` a full cube;
+their light is already in `compiler::light` (catalyst 6, sensors 1). Nothing
+else is modelled: they enter the world at rest and stay deterministic because
+of four rules the build proves over this model. The **rest rule**
+(`delvewright_dsl::blocks::sculk_rest`) judges every acting sculk cell of the
+assembled world and every block a runtime write lays (`DW0998` a shrieker that
+can summon, `DW0999` a block not at rest); the entry points judge the same state
+where it is typed. The **reach** (`sculk::prove_reach`, `DW1000`): a sensor's six
+face neighbours, plus the five other neighbours of the cell above when it
+conducts, hold no block that reads a redstone signal, and a calibrated sensor's
+input cell holds neither a source nor a conductor — read from the pinned jar's
+redstone table (`crates/dsl/data/redstone-1.21.11.tsv`, `dump-redstone.py`;
+`blockshape::redstone_conductor` / `redstone_source` / `redstone_reader`), over
+the world as placed and every block a runtime write may lay. The **catalyst
+proof** (`sculk::prove_catalysts`, `DW1001`): no cell of the closure of
+`body_moves` from every put-at root, or of `mob_moves` from every wave seat,
+lies within integer `distSqr ≤ 64` of a catalyst. A sensor is never a story
+trigger — vanilla gives a datapack no event for its firing (spec-0011, spec-0100
+§3.6) — and the walk's predicted vibrations travel on the waypoint export for
+the bot to assert. The written-world comparison (`DW0955`) is of the save at
+load, where every sculk block is at rest.
 
 Modelled **conservatively** — treated as a full solid cube, never as
 walkable-through: stairs, doors, trapdoors, and every other partial-collision

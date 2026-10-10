@@ -184,6 +184,33 @@ walked it with no proven leg at all, and the line's absence is the finding.
 cave vine is refused by name at the hop — a harness gap, not a route defect — and
 is the owner's hour until the physics carries it.
 
+## What the ladder asserts at a sculk device
+
+**The bot hears what the compiler predicted, and never a warden** (spec-0100).
+A leg whose proven route sets a sculk sensor off carries `vibrations[]` in
+`validation/critical-path-waypoints.json`: each sensor's cell and the shriekers
+that answer it, predicted by the compiler (four route cells within `distSqr ≤
+49`, no sneak, no dampening, no occluder; a shrieker within `distSqr ≤ 64` of its
+sensor). The harness predicts nothing: the parse refuses a sensor more than 8
+blocks from every waypoint of its leg and a shrieker more than 8 from its sensor
+(`harness/src/waypoints.ts`). For each predicted sensor it waits for a
+`blockUpdate` at the sensor's cell whose new state has `sculk_sensor_phase=active`;
+for each predicted shrieker a `world_event` packet with id 3007 at its cell —
+from the leg's start to three seconds after its end (`harness/src/sculk.ts`). A
+device the previous leg set off is deaf for its busy span — a sensor's active
+and cooldown ticks (2 s), a shrieker's `shrieking` (4.5 s) — so an event within
+that span before the leg's start answers for it. A predicted event not heard
+fails the step.
+
+**The binding count.** Every walk whose leg carries vibrations prints
+`[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s) predicted, M heard`.
+At the end of every run, passed or failed, `[sculk] darkness D, warden W`
+counts every `darkness` effect on the bot and every `warden` that spawned; either
+non-zero fails the run, because a shrieker with `can_summon=false` applies no
+darkness and summons nothing. The build's own `sculk walk:` line says how many of
+the world's sensors and shriekers some leg predicts; a device off the walk is
+stated there, never asserted.
+
 ## Rule 1 — a green gate that binds to nothing must report VACUOUS, not pass
 
 Most of the early "green" was vacuous. Three distinct ways this happens, all
