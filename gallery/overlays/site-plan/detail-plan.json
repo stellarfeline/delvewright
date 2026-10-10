@@ -88,6 +88,6 @@
       "role/wall": "minecraft:polished_blackstone_bricks"
     }
   },
-  "dsl_version": "0.38.0",
+  "dsl_version": "0.39.0",
   "stage": "detail-plan"
 }
