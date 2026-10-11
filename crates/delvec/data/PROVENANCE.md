@@ -72,13 +72,8 @@ not third-party reconstructions.
   `delvec prefab audit`'s `DW0733`) and by `prefabs/invariants/src/invariants.rs` +
   `prefabs/invariants/src/connections.rs` (the `prefab-invariants` crate every
   `prefabs/*-generator` depends on).
-  **Note on the nearest existing check**: `DW0193` validates DSL-authored block
-  ids against the *item* registry plus five technical ids
-  (`ItemBackedBlockRegistry`). Measured against this registry, that proxy has
-  **149 false rejects** (real blocks with no item form — wall signs, crops,
-  `bubble_column`) and **492 false accepts** (items that are not blocks —
-  `minecraft:diamond` passes as a block id). Widening `DW0193` onto this file is
-  a `dsl_version`-scale change and is deliberately NOT done here.
+  `DW0193` (every DSL block-id site) validates against this registry
+  (`dsl::registry::VendoredBlockRegistry`).
   **Reproduce it**: `python3 tools/maintenance/extract-block-registry.py
   <blocks/data.min.json> crates/dsl/data/blocks-1.21.11.json`. The script
   pins and checks the source SHA-256 and the block count.
