@@ -110,6 +110,26 @@ the story shuts the party into is not this: its objective is inside it. The
 build prints the leave-proof binding line either way; the counts are in
 `validation/leave-proof.json`.
 
+**Every campaign: every block the build writes is one the server keeps.** A
+block that needs a neighbour to stay — a wall torch, a lever, a ladder, a
+lantern, a flower, a carpet, a door's upper half — is judged by the pinned
+server's own measured rule, over the world at load and over every
+configuration the critical path passes. One that no neighbour holds is
+`DW1002`, naming the block, its cell, the piece whose box holds it, and what
+each neighbour would have to give. Repair it where the block is authored — in
+the piece, the edit or the fill: give it the neighbour it asks for, hang it on a
+face that holds it, or choose a block that needs nothing there. The build prints
+`attached blocks (DW1002): …` either way, and a block the rule cannot judge is
+counted there, never refused. Rule:
+`$DELVEWRIGHT_ENGINE/docs/reference/delvec/compiler/attached.md`.
+
+**Three binding lines name what step 10 will assert**, zeroes included:
+`sculk walk: P of S sensor(s) predicted …` (a sculk device no leg predicts is
+named, and is never asserted), `pulse binding: … H of N with a listening
+station` (a pulse with no station is never heard by the ladder), and `watch
+binding: … D drawable, R refused, U unobservable`. Read them against what you
+declared before you run the ladder.
+
 **There is no blockout document and nothing to author early.** A site-plan
 campaign's geometry is derived from the plan and the metrics table by this
 command, which then runs the battery over the bytes it laid: every seam built

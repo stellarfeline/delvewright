@@ -1,5 +1,14 @@
 # Step 10 — the machine ladder
 
+## Contents
+
+- [PackTest and the bot](#packtest-and-the-bot)
+- [The written world](#the-written-world)
+- [Reading the run report](#reading-the-run-report)
+- [Branch runs](#branch-runs)
+- [On a red](#on-a-red)
+
+## PackTest and the bot
 
 Docker required. Every entry script takes a **`--project <id>`** and it is
 required everywhere: the validation stack pins no container name and publishes
@@ -22,6 +31,8 @@ project-scoped, so two ladders can never overwrite each other's. Keep its path:
 the staging gate in step 13 admits only on it (`--run-report`), and only while
 its `build.manifest_sha256` is the build being staged.
 
+## The written world
+
 **Then the world the server built, against the world the engine models.** Every
 proof walks the engine's model; this is the one comparison with what the pinned
 server actually placed (`DW0955`). Mandatory on the build that ships:
@@ -37,10 +48,14 @@ delvec --prefabs "$DELVEWRIGHT_PREFABS" written-world campaigns/<id> -o .out/wri
 
 `delvec written-world` writes the world the engine models at load from the
 campaign and `--prefabs` alone — no camera record, no server boot — so a campaign
-with no `design/cameras.json` walks this step the same way. It must exit 0. A red names every cell the server holds differently from the
-model, by state pair: that is a toolchain bug (the engine's model or emission
+with no `design/cameras.json` walks this step the same way.
+
+The check must exit 0. A red names every cell the server holds differently from
+the model, by state pair: that is a toolchain bug (the engine's model or emission
 is wrong), never a campaign to rearrange. Keep `.out/written-world.json` for the
 staging gate (`--written-world`).
+
+## Reading the run report
 
 - The bot ladder has two labelled stages once the delve has mandatory combat:
   `critical-path` and `die-retry`. The die-retry stage adds two scripted deaths
@@ -57,6 +72,17 @@ staging gate (`--written-world`).
   bodies nothing, and the step would have been green whatever you shipped. Report
   that as **unbound**, never as a pass. `muster: null` means the step never got as
   far as reading, which is again not a pass.
+- **Sculk, watchers and pulses are asserted on the walk, each with its own
+  line.** `[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s)
+  predicted, M heard` per leg — a predicted vibration not heard fails the step —
+  and `[sculk] darkness D, warden W` at the end of every run, where either
+  non-zero fails it. `[watch] W watcher(s) in the record, K within reach on the
+  proven path, K asserted …` — a watcher not facing the bot where the route
+  passes in reach fails the critical path; one the path never reaches is named,
+  not failed. `pulse binding: H of N pulse(s) heard at a listening station, S
+  silent at a silent station`, every station a `pulse_stations` row of the run
+  report; a pulse with no station reads `not_heard: no station`, never a pass.
+  What each asserts: `$DELVEWRIGHT_ENGINE/docs/reference/playtest-methodology.md`.
 - **The ladder does not fight, and says nothing about whether a fight can be
   won.** `staged_removals` lists every body the HARNESS took out of the delve and
   why; it is the harness acting, not your delve behaving. Whether the delve is too
@@ -71,6 +97,8 @@ staging gate (`--written-world`).
   set `DELVEWRIGHT_DIE_RETRY=0` to get green — the report records a skipped stage
   as skipped, not as passed.
 
+## Branch runs
+
 **Branch runs, required whenever the build emitted `validation/branch-plan.json`.**
 One critical-path run proves one storyline; a campaign that forks must have every
 branch walked, each in its own fresh world.
@@ -83,6 +111,8 @@ It writes `$DELVEWRIGHT_ENGINE/validation/run-out/<id>/branch-runs.json`: per br
 skipped-with-reason, and the result. `DELVEWRIGHT_BRANCHES=<ids>` narrows it for
 local iteration, and **a narrowed run is not a validated campaign** — the report
 says which branches it skipped.
+
+## On a red
 
 **On any red, triage before touching anything.**
 

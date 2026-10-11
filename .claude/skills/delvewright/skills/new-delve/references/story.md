@@ -39,6 +39,8 @@ and looping against them is the one way to spend an afternoon here.
     back turned is the commonest first-draft defect there is. The engine holds
     the other half: a walked body arrives facing its destination anchor's
     declared facing, or, where none is declared, back down the path it walked.
+    A figure that should turn to follow the party declares `watch` (*Reference:
+    what a quest can do*, Bodies).
 - **Classes**: pre-provided gear, no grind. If the campaign places a bonfire,
   **every class kit must declare a flask** (`DW0476`) — see *Reference:
   authoring pitfalls*.
