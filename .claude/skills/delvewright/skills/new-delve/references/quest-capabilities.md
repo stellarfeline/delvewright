@@ -89,7 +89,11 @@ this section is what they are *for* and the traps in each.
      plausibly full — it counts padding SLOTS after the objective's own stack,
      and `1 + fill_count` must fit the container's 27. The container must really
      be there in the piece (`DW0438`) and must not also be filled by a `loot`
-     entry or another `collect` (`DW0435`).
+     entry or another `collect` (`DW0435`). On a site-plan campaign, a
+     container inside a place still standing in its stand-in is deferred to
+     that place's detail at step 9 — counted on the build's `container binding`
+     line, never refused before the step that places the furniture — and judged
+     once the place is detailed. A `loot` anchor is deferred the same way.
 
      **Few shipped pieces stand an anchor on a container**, and an anchor's
      name is no evidence of one: **two pieces declare an anchor literally named
@@ -224,8 +228,13 @@ this section is what they are *for* and the traps in each.
   the threshold, and for these when the box is yours: a bridge that
   materialises, a floor that sinks, a wall that opens, a platform summoned under
   the party. The completability proof honours them from the point in the quest
-  graph where the effect fires: a fill the only route must cross afterwards
-  fails the build (`DW0311`), and a clear is credited as passable, so a route may
+  graph where the effect fires, and the fill's **block** decides what it is: a
+  block a body collides with (a full cube, a slab, a fence, a wall) is solid,
+  and a fill of one the only route must cross afterwards fails the build
+  (`DW0311`); water, lava, kelp or seagrass, or a waterlogged block a body
+  passes through, is impassable and never floor; a dry block a body passes
+  through (a carpet, a vine, a sculk vein, a torch) is walked through like a
+  clear. A clear is credited as passable, so a route may
   legitimately depend on one. **Two things it will not model, so do not build on
   them**: a clear that opens a box into water (the water flows back in and the
   proof does not know), and a clear over rubble another mechanism dropped there
