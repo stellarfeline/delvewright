@@ -438,6 +438,28 @@ mod tests {
         assert!(needs("example:not_a_block").is_none());
     }
 
+    /// The sculk blocks spec-0100 places stand on nothing (sensor, calibrated
+    /// sensor, shrieker, catalyst, sculk), and a vein on a floor is held only by
+    /// a full face under it: on stone or on sculk it stays, and a vein stacked
+    /// on another vein is dropped, because a vein's top is not a full face.
+    #[test]
+    fn sculk_stands_free_and_a_vein_stack_falls() {
+        for free in [
+            "minecraft:sculk_sensor",
+            "minecraft:calibrated_sculk_sensor",
+            "minecraft:sculk_shrieker",
+            "minecraft:sculk_catalyst",
+            "minecraft:sculk",
+        ] {
+            assert_eq!(needs(free), Some(&Needs::Free), "{free}");
+        }
+        let vein = "minecraft:sculk_vein[down=true,east=false,north=false,south=false,up=false,west=false]";
+        assert_eq!(kept(vein, Face::Down, "minecraft:stone"), Some(true));
+        assert_eq!(kept(vein, Face::Down, "minecraft:sculk"), Some(true));
+        assert_eq!(kept(vein, Face::Down, vein), Some(false));
+        assert_eq!(kept(vein, Face::Down, "minecraft:air"), Some(false));
+    }
+
     /// A door's upper half stands on its own lower half.
     #[test]
     fn a_door_half_stands_on_its_other_half() {
