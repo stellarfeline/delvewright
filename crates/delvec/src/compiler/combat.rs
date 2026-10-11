@@ -268,16 +268,10 @@ pub fn mandatory_fights(plan: &Plan) -> Fights {
 }
 
 /// The effective world difficulty: what the campaign declared, else the
-/// compiler's historical derivation (`easy` once any wave exists, `peaceful`
-/// otherwise) — the same rule the emitter ships to `server.properties`.
+/// engine's derivation — the one rule ([`delvewright_dsl::effective_difficulty`])
+/// the emitter ships to `server.properties`.
 pub fn effective_difficulty(c: &Campaign) -> WorldDifficulty {
-    c.world.content.difficulty.unwrap_or({
-        if c.quests.content.waves.is_empty() {
-            WorldDifficulty::Peaceful
-        } else {
-            WorldDifficulty::Easy
-        }
-    })
+    delvewright_dsl::effective_difficulty(c)
 }
 
 /// Apply the world difficulty's player-damage multiplier.
