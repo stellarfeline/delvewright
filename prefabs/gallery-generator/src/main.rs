@@ -1165,15 +1165,6 @@ fn block_at(
     {
         return ("minecraft:stone", None);
     }
-    // The lidded pit's own light, set in its south wall under the lid: the
-    // hall's relight hung its lantern from the lid, and the lid is the stone a
-    // beat clears, so that lantern fell with it (`DW1002`). The shaft's two air
-    // cells are its anchor's body, so the light is a wall block — the
-    // `shroomlight` the relight pass itself embeds in a wall bordering air —
-    // and stays whatever the beat takes away.
-    if (x, z) == (LID_PIT.0, LID_PIT.1 + 1) && y == TERRACE_TOP_Y - 1 {
-        return ("minecraft:shroomlight", None);
-    }
     let (ax0, ax1, az0, az1) = TERRACE_ANNEX;
     if (ax0..=ax1).contains(&x)
         && (az0..=az1).contains(&z)
@@ -1186,8 +1177,10 @@ fn block_at(
     // wall at the head height of a body on its bottom. A pit a lid or a hatch
     // seals is out of reach of everything the hall's grid hangs, and the only
     // cell a hung lantern could take there is the head cell of the body that
-    // falls in — where a lantern is a floor that body lands on. A wall torch is
-    // a light a falling body passes through.
+    // falls in — where a lantern is a floor that body lands on, and the lid's
+    // stone is a beat's to clear, so a lantern hung from it would fall with it
+    // (`DW1002`). A wall torch is a light a falling body passes through, held by
+    // a wall no beat takes away.
     if ((x, z) == LID_PIT || (x, z) == WELL) && y == 2 {
         return ("minecraft:wall_torch", Some(&[("facing", "east")]));
     }

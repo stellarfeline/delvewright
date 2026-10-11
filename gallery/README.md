@@ -125,8 +125,8 @@ each block whose pinned `canSurvive` rule asks a neighbour for something — the
 hall's hanging lanterns, the torches and lanterns the relight pass sites, the
 cabin ladder, the floor levers the triggers set, the stamped shards' standing lanterns — against
 the neighbours the world gives it, and prints the count on the `attached
-blocks` line. The lidded pit carries a shroomlight in its south wall, because a
-lantern hung from the lid would fall with the lid. Hang a lever on a glass
+blocks` line. The lidded pit and the west well each carry a wall torch on their west wall,
+because a lantern hung from the lid would fall with the lid. Hang a lever on a glass
 pane's side and the build is refused, naming the lever, its cell and the full
 face the pane does not give (`probes/a-lever-hung-on-a-pane`).
 
