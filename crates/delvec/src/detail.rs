@@ -133,10 +133,20 @@ fn run(
         }
     };
 
-    let mut done: Vec<String> = Vec::new();
+    // Every place this run details is expanded, gated, measured and audited in
+    // memory first; then the whole the run would leave is judged ONCE, with
+    // every one of those pieces standing in place of the library's copy; only
+    // then is anything written. The verdict is a function of the inputs: a
+    // sibling this run re-details is never judged by the piece it is about to
+    // replace, so the order of the targets decides nothing.
+    let mut prepared: Vec<Prepared> = Vec::new();
     for node in &targets {
-        let written = detail_one(campaign_dir, &campaign, &library, prefabs_dir, node, json)?;
-        done.push(written);
+        prepared.push(prepare(campaign_dir, &campaign, node, json)?);
+    }
+    judge_run(&campaign, &library, &prepared, json)?;
+    let mut done: Vec<String> = Vec::new();
+    for p in &prepared {
+        done.push(write_one(campaign_dir, &campaign, prefabs_dir, p, json)?);
     }
     eprintln!(
         "detail: {} place(s) detailed of {} named — {}",
@@ -291,15 +301,35 @@ fn handed(a: &Allocation) -> BTreeMap<String, i64> {
     out
 }
 
-/// Detail one place: steps 1–8 of spec-0058 §2.2. Returns the piece id written.
-fn detail_one(
+/// One place, detailed in memory and judged on its own terms, waiting for the
+/// run's bindings check and its write.
+struct Prepared {
+    place: String,
+    id: String,
+    program_path: PathBuf,
+    size: [u32; 3],
+    seed: u64,
+    declared: usize,
+    handed: usize,
+    seams: usize,
+    owed: usize,
+    exported: export::ZoneExport,
+    meta: PrefabMeta,
+    tiles: Vec<(TilePart, Structure)>,
+    report: gates::Report,
+    probe: Option<light::LightProbe>,
+    row: Detail,
+}
+
+/// Detail one place in memory: steps 1–5 and 7 of spec-0058 §2.2 — the
+/// program bound, expanded, gated, exported, lit and audited. Writes nothing;
+/// the bindings check (step 6) judges every prepared place together.
+fn prepare(
     campaign_dir: &Path,
     campaign: &Campaign,
-    library: &PrefabRegistry,
-    prefabs_dir: &Path,
     node: &NodeId,
     json: bool,
-) -> Result<String, u8> {
+) -> Result<Prepared, u8> {
     let stem = stem_of(node);
     let place = node.0.as_str();
     let a = engine::allocation(campaign, node).expect("a target is a place the plan allocates");
@@ -547,28 +577,6 @@ fn detail_one(
         admit_meta::set_lighting_from_probe(&mut meta, probe);
     }
 
-    // ---- 6. the bindings check, on the row this run would write ----
-    let row = row_for(campaign, node, &id, &meta);
-    let mut registry = library.clone();
-    registry.insert(meta.clone());
-    let judged = with_row(campaign, &row);
-    let (diags, binding) = engine::check(&judged, &registry);
-    let errors: Vec<&Diagnostic> = diags
-        .iter()
-        .filter(|d| d.severity == delvewright_dsl::Severity::Error)
-        .collect();
-    if !errors.is_empty() {
-        for d in &errors {
-            print_one_diag(d, json);
-        }
-        eprintln!(
-            "error: `{place}`: the piece `{}` would not bind; nothing was written. {}",
-            exported.prefab_id(),
-            binding.line()
-        );
-        return Err(1);
-    }
-
     // ---- 7. the admission audit ----
     let allow = Allowlist::default_building();
     let (audit_report, audit_diags) = if tiles.len() == 1 {
@@ -588,10 +596,100 @@ fn detail_one(
         return Err(1);
     }
 
-    // ---- 8. the write ----
+    let row = row_for(campaign, node, &id, &meta);
+    Ok(Prepared {
+        place: place.to_string(),
+        id,
+        program_path,
+        size,
+        seed,
+        declared: declared.len(),
+        handed: handed.len(),
+        seams: a.seams.len(),
+        owed: a.owed_anchors.len(),
+        exported,
+        meta,
+        tiles,
+        report,
+        probe,
+        row,
+    })
+}
+
+/// Step 6 of spec-0058 §2.2, once per run: the bindings check on the whole
+/// this run would leave — every row it writes standing in the detail plan and
+/// every piece it writes standing in the library in place of the copy on disk.
+/// A row this run does not re-detail is judged against the piece the library
+/// holds, so a sibling that IS stale after the run is still refused.
+fn judge_run(
+    campaign: &Campaign,
+    library: &PrefabRegistry,
+    prepared: &[Prepared],
+    json: bool,
+) -> Result<(), u8> {
+    let mut registry = library.clone();
+    let mut judged = campaign.clone();
+    for p in prepared {
+        registry.insert(p.meta.clone());
+        judged = with_row(&judged, &p.row);
+    }
+    let (diags, binding) = engine::check(&judged, &registry);
+    let errors: Vec<&Diagnostic> = diags
+        .iter()
+        .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    if errors.is_empty() {
+        return Ok(());
+    }
+    for d in &errors {
+        print_one_diag(d, json);
+    }
+    eprintln!(
+        "error: {places}: the piece(s) {pieces} would not bind; nothing was written. The \
+         check judged the detail plan as this run would leave it — the {n} piece(s) it \
+         re-details in place of the library's copies, every other row against the piece the \
+         library holds. {line}",
+        places = prepared
+            .iter()
+            .map(|p| format!("`{}`", p.place))
+            .collect::<Vec<_>>()
+            .join(", "),
+        pieces = prepared
+            .iter()
+            .map(|p| format!("`{}`", p.exported.prefab_id()))
+            .collect::<Vec<_>>()
+            .join(", "),
+        n = prepared.len(),
+        line = binding.line()
+    );
+    Err(1)
+}
+
+/// Step 8 of spec-0058 §2.2: freeze one judged place into the library and its
+/// row into the detail plan. Returns the piece id written.
+fn write_one(
+    campaign_dir: &Path,
+    campaign: &Campaign,
+    prefabs_dir: &Path,
+    p: &Prepared,
+    json: bool,
+) -> Result<String, u8> {
+    let Prepared {
+        place,
+        program_path,
+        size,
+        seed,
+        exported,
+        meta,
+        tiles,
+        report,
+        probe,
+        row,
+        ..
+    } = p;
     let mut files: Vec<String> = Vec::new();
-    for (part, _) in &tiles {
-        let bytes = match &exported {
+    for (part, _) in tiles {
+        let bytes = match exported {
             export::ZoneExport::Single(e) => &e.nbt,
             export::ZoneExport::Tiled(e) => {
                 &e.tiles
@@ -610,14 +708,14 @@ fn detail_one(
         meta.to_json().as_bytes(),
     )?;
     files.push(exported.metadata_file().to_string());
-    let report_file = format!("{id}{REPORT_SUFFIX}");
+    let report_file = format!("{}{REPORT_SUFFIX}", p.id);
     write(prefabs_dir, &report_file, report.to_json().as_bytes())?;
     files.push(report_file);
-    write_row(campaign_dir, campaign, &row)?;
+    write_row(campaign_dir, campaign, row)?;
 
     // ---- what was done, with every count beside its denominator ----
     let faces = meta.spatial_contract.as_ref().map_or(0, |c| c.faces.len());
-    let (profile, measured, dark) = match &probe {
+    let (profile, measured, dark) = match probe {
         Some(p) => (
             p.profile,
             p.measured_cells,
@@ -629,24 +727,25 @@ fn detail_one(
         ),
         None => ("scenery", 0, String::new()),
     };
+    let program = program_path
+        .strip_prefix(campaign_dir)
+        .unwrap_or(program_path)
+        .display()
+        .to_string();
     eprintln!(
-        "{place}: `{}` written from `{}` — frame {}x{}x{}, seed {seed}; {} of {} handed name(s) \
-         bound; {} declared face(s) answering {} allocated seam(s); {} of {} owed name(s) bound; \
-         light `{}` over {} measured cell(s){}; files: {}",
+        "{place}: `{}` written from `{program}` — frame {}x{}x{}, seed {seed}; {} of {} handed \
+         name(s) bound; {} declared face(s) answering {} allocated seam(s); {} of {} owed \
+         name(s) bound; light `{}` over {} measured cell(s){}; files: {}",
         exported.prefab_id(),
-        program_path
-            .strip_prefix(campaign_dir)
-            .unwrap_or(&program_path)
-            .display(),
         size[0],
         size[1],
         size[2],
-        declared.len(),
-        handed.len(),
+        p.declared,
+        p.handed,
         faces,
-        a.seams.len(),
+        p.seams,
         row.anchors.len(),
-        a.owed_anchors.len(),
+        p.owed,
         profile,
         measured,
         dark,
@@ -658,12 +757,12 @@ fn detail_one(
             serde_json::json!({
                 "place": place,
                 "piece": exported.prefab_id(),
-                "program": program_path.strip_prefix(campaign_dir).unwrap_or(&program_path).display().to_string(),
+                "program": program,
                 "frame": size,
                 "seed": seed,
-                "handed": { "bound": declared.len(), "offered": handed.len() },
-                "seams": { "faces": faces, "allocated": a.seams.len() },
-                "owed": { "bound": row.anchors.len(), "owed": a.owed_anchors.len() },
+                "handed": { "bound": p.declared, "offered": p.handed },
+                "seams": { "faces": faces, "allocated": p.seams },
+                "owed": { "bound": row.anchors.len(), "owed": p.owed },
                 "lighting": { "profile": profile, "measured_cells": measured },
                 "files": files,
             })

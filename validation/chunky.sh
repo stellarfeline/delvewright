@@ -46,6 +46,27 @@ fi
 . "$repo/tools/lib/chunky-home.sh"
 dw_resolve_chunky_home
 
+# A review render reaches the scene's declared budget (tools/lib/chunky_budget.py):
+# a draft's `-target` is saved into the scene by Chunky, so a pass run without one
+# is handed the budget the emitter wrote. A `-target` the caller names is theirs.
+scene_dir=""; scene=""; explicit=""; prev=""
+for a in "$@"; do
+  case "$prev" in
+    -scene-dir) scene_dir="$a";;
+    -render) scene="$a";;
+  esac
+  [ "$a" = "-target" ] && explicit="--explicit"
+  prev="$a"
+done
+budget_args=()
+if [ -n "$scene" ]; then
+  budget="$(python3 "$repo/tools/lib/chunky_budget.py" resolve "${scene_dir:-.}" "$scene" $explicit)"
+  if [ -n "$budget" ]; then
+    budget_args=(-target "$budget")
+    echo "chunky: $scene renders to its declared budget, -target $budget" >&2
+  fi
+fi
+
 status=0
 classpath="$(python3 "$repo/tools/lib/chunky_core.py" classpath --home "$DW_CHUNKY_HOME")" || status=$?
 if [ "$status" -ne 0 ]; then
@@ -58,6 +79,6 @@ if [ -n "$pack" ]; then
   jar="${DELVEWRIGHT_CLIENT_JAR:-$DW_CHUNKY_HOME/resources/minecraft.jar}"
   [ -f "$jar" ] || { echo "chunky: --pack needs the client jar beneath it, and $jar is not a file" >&2; exit 2; }
   echo "chunky: textures $pack layered above $jar (-textures, first listed wins)" >&2
-  exec java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" -textures "$pack:$jar" "$@"
+  exec java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" -textures "$pack:$jar" "${budget_args[@]+"${budget_args[@]}"}" "$@"
 fi
-exec java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "$@"
+exec java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${budget_args[@]+"${budget_args[@]}"}" "$@"

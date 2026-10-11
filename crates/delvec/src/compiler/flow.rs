@@ -1473,7 +1473,7 @@ impl<'a> Flow<'a> {
                     return false;
                 };
                 if qx == qy {
-                    self.after_closure(y).contains(x)
+                    self.completes_before_armed(x, y)
                 } else {
                     ancestor(qx, qy)
                 }
@@ -1808,6 +1808,21 @@ impl<'a> Flow<'a> {
             .iter()
             .find(|q| q.objectives.iter().any(|o| o.id().as_str() == id))
             .map(|q| q.id.as_str())
+    }
+
+    /// Whether objective `earlier` has completed, in every legal play order, before
+    /// objective `later` can activate: both are declared by one quest and
+    /// `earlier` is in `later`'s transitive `after` closure. `emit::quest::pending_guard`
+    /// holds `later` until every `after` objective's score is set, and a completed
+    /// objective's score is never cleared, so the relation is the emitter's own.
+    ///
+    /// Across quests it answers `false` — the quest-chain order is
+    /// [`Self::beat_precedes`]'s to add, from the ancestor map it is handed.
+    pub(crate) fn completes_before_armed(&self, earlier: &str, later: &str) -> bool {
+        match (self.objective_quest(earlier), self.objective_quest(later)) {
+            (Some(qe), Some(ql)) if qe == ql => self.after_closure(later).contains(earlier),
+            _ => false,
+        }
     }
 
     /// The transitive `after` closure of `id` — every beat the DSL declares must

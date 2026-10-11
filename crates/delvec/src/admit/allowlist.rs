@@ -244,6 +244,15 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:rooted_dirt",
     "minecraft:grass_block",
     "minecraft:podzol",
+    // Surface blocks of the same class as `grass_block` and `podzol`: inert
+    // terrain with no block entity. `dirt_path` turns to dirt when a solid block
+    // is placed on top of it (Minecraft Wiki, Dirt Path) and has no random tick;
+    // `mycelium` spreads and reverts to dirt on a random tick exactly as
+    // `grass_block` does (Minecraft Wiki, Mycelium). `farmland` and the crops
+    // are left OUT: moisture, trampling and growth change the world after the
+    // proofs judged it.
+    "minecraft:dirt_path",
+    "minecraft:mycelium",
     "minecraft:gravel",
     "minecraft:sand",
     "minecraft:red_sand",

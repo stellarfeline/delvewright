@@ -347,6 +347,95 @@ pub fn check_collect_containers(
     })
 }
 
+/// **Which container fills this world can judge, and which it owes to a detail.**
+///
+/// A container is furniture a piece places. On a site-plan campaign a place no
+/// detail plan binds yet stands in the derivation's stand-in — massing nobody
+/// furnished — so a `loot` or adopting `collect` whose cell lies there names an
+/// obligation the place's detail must meet, and refusing it would refuse the
+/// declared intent before the step that fulfils it. One rule for both doors,
+/// keyed on the cell: a fill whose cell holds no container and lies inside a
+/// place still standing in its stand-in ([`Blockout::stand_in_holding`]) is
+/// deferred; every other fill is judged now — a container that IS there (a
+/// stage-7 batch can stand one in massing) is proven, and a detailed place that
+/// lacks its container is refused exactly as before. A deferral is counted and
+/// named on [`ContainerBinding::line`], never passed silently.
+///
+/// [`Blockout::stand_in_holding`]: crate::compiler::blockout::Blockout::stand_in_holding
+pub fn split_owed_by_detail(
+    blocks: &crate::compiler::blockstate::BlockMap,
+    blockout: Option<&crate::compiler::blockout::Blockout>,
+    loot: &[LootPlan],
+    fills: &[CollectFillPlan],
+) -> (Vec<LootPlan>, Vec<CollectFillPlan>, ContainerBinding) {
+    let mut binding = ContainerBinding {
+        loot: loot.len(),
+        collect: fills.len(),
+        deferred: Vec::new(),
+    };
+    let place = |cell: [i32; 3]| {
+        if blocks.get(&cell).is_some_and(|b| is_container(b.as_str())) {
+            return None;
+        }
+        blockout.and_then(|b| b.stand_in_holding(cell))
+    };
+    let mut judged_loot = Vec::new();
+    for l in loot {
+        match place(l.cell) {
+            Some(p) => binding.deferred.push(format!("loot `{}` in `{p}`", l.id)),
+            None => judged_loot.push(l.clone()),
+        }
+    }
+    let mut judged_fills = Vec::new();
+    for f in fills {
+        match place(f.cell) {
+            Some(p) => binding
+                .deferred
+                .push(format!("collect `{}` in `{p}`", f.objective_id)),
+            None => judged_fills.push(f.clone()),
+        }
+    }
+    (judged_loot, judged_fills, binding)
+}
+
+/// What the container proofs (`DW0431`/`DW0438`) bound to on one build.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ContainerBinding {
+    /// `loot` fills that resolved to a cell.
+    pub loot: usize,
+    /// Adopting `collect` fills that resolved to a cell.
+    pub collect: usize,
+    /// The fills owed to a place's detail, each naming the fill and the place.
+    pub deferred: Vec<String>,
+}
+
+impl ContainerBinding {
+    /// One line, for stderr: the denominator, how many were judged against the
+    /// world, and every deferral by name.
+    #[must_use]
+    pub fn line(&self) -> String {
+        let total = self.loot + self.collect;
+        let judged = total - self.deferred.len();
+        let named = if self.deferred.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " ({}); a deferred container is owed by its place's detail, and the build that \
+                 details the place refuses it (DW0431/DW0438) if the piece does not stand it there",
+                self.deferred.join(", ")
+            )
+        };
+        format!(
+            "container binding: {total} container fill(s) ({l} loot, {c} adopting collect), {judged} \
+             judged against the assembled world, {d} deferred to the detail of a place still \
+             standing in its stand-in{named}.",
+            l = self.loot,
+            c = self.collect,
+            d = self.deferred.len(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

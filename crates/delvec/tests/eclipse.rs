@@ -86,6 +86,15 @@ fn build_quests(
     npc_anchor: &str,
     quests: &str,
 ) -> Result<Vec<Diagnostic>, BuildFailure> {
+    build_quests_out(base_entity, npc_anchor, quests).map(|(_, warnings)| warnings)
+}
+
+/// The same, keeping the emitted datapack beside the advisories.
+fn build_quests_out(
+    base_entity: &str,
+    npc_anchor: &str,
+    quests: &str,
+) -> Result<(emit::BuildOutput, Vec<Diagnostic>), BuildFailure> {
     let raw = RawCampaign {
         world: read_hw("world.json"),
         npcs: npcs_doc(base_entity, npc_anchor),
@@ -122,7 +131,6 @@ fn build_quests(
         None,
         &BTreeMap::new(),
     )
-    .map(|(_, warnings)| warnings)
 }
 
 /// The red fixture — the island's exact shape: the NPC stands on the very anchor
@@ -595,5 +603,160 @@ fn opposed_flags_inside_one_quest_are_not_a_contest() {
     assert!(
         !warnings.iter().any(|d| d.code == "DW0878"),
         "opposed flag gates are not co-presence: {warnings:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `DW0878` — two boxes on one cell whose lifetimes an `after` makes disjoint
+// ---------------------------------------------------------------------------
+//
+// A content demo lifted a hearthstone with one `interact` on `anchor/hearth` and
+// wanted the party to take what lay under it with a second `interact` on the
+// same anchor, `after` the first. The build refused the pair as coincident,
+// although the second box is summoned only once the first objective has
+// completed — and the function that completes it kills the first box. The
+// author had to rewrite the beat as a `collect` to get past a contest that
+// cannot happen.
+
+/// `one_quest_two_objectives`, with the second box armed `after` the first
+/// objective instead of beside it.
+fn one_quest_second_after_first() -> String {
+    let doc = one_quest_two_objectives("");
+    let patched = doc.replace(
+        r#""after": ["obj/talk"], "title": "Board again","#,
+        r#""after": ["obj/board-first"], "title": "Board again","#,
+    );
+    assert_ne!(patched, doc, "the `after` patch must apply");
+    patched
+}
+
+/// **(a)** Two `interact` objectives on one anchor, the second armed only after
+/// the first completes: the two boxes are never in the world together, so the
+/// build is green and `DW0878` does not speak. The emitted datapack is read for
+/// the two facts the verdict rests on, so a change to the emitter that made the
+/// lifetimes overlap reddens this test rather than leaving the proof believing
+/// in an order the datapack no longer keeps.
+#[test]
+fn a_second_box_armed_after_the_first_completes_is_not_a_contest() {
+    let (out, warnings) = build_quests_out(
+        "minecraft:villager",
+        "spawn",
+        &one_quest_second_after_first(),
+    )
+    .expect("two boxes whose lifetimes are disjoint must build");
+    assert!(
+        !warnings.iter().any(|d| d.code == "DW0878"),
+        "a sequence on one cell is not a contest: {warnings:#?}"
+    );
+    let text = |suffix: &str| -> String {
+        let hits: Vec<&String> = out
+            .keys()
+            .filter(|k| k.starts_with("datapack/") && k.ends_with(suffix))
+            .collect();
+        assert_eq!(hits.len(), 1, "exactly one emitted `{suffix}`: {hits:?}");
+        String::from_utf8(out[hits[0]].clone()).unwrap()
+    };
+    // Both boxes are emitted at the same cell — otherwise there was never a pair.
+    let first_act = text("/activate_o_board_first.mcfunction");
+    let second_act = text("/activate_o_board_second.mcfunction");
+    let summon_at = |f: &str| -> String {
+        let line = f
+            .lines()
+            .find(|l| l.starts_with("summon minecraft:interaction "))
+            .unwrap_or_else(|| panic!("an interaction box is summoned: {f}"))
+            .to_string();
+        line.split_whitespace()
+            .skip(2)
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    assert_eq!(
+        summon_at(&first_act),
+        summon_at(&second_act),
+        "the two boxes must stand at one cell, or this test judges nothing"
+    );
+    // The first box dies in the function that completes the first objective,
+    // after the score that releases the second is set.
+    let complete = text("/complete_o_board_first.mcfunction");
+    let set = complete
+        .lines()
+        .position(|l| l == "scoreboard players set #party dw.o_board_first 1")
+        .unwrap_or_else(|| panic!("completion sets the score: {complete}"));
+    let kill = complete
+        .lines()
+        .position(|l| l == "kill @e[tag=dw_i_board_first]")
+        .unwrap_or_else(|| panic!("completion kills the first box: {complete}"));
+    assert!(set < kill, "{complete}");
+    // …and the second box is summoned only once that score is set.
+    let tick = text("/tick.mcfunction");
+    let arm = tick
+        .lines()
+        .find(|l| l.contains("run function") && l.ends_with(":activate_o_board_second"))
+        .unwrap_or_else(|| panic!("the tick arms the second box: {tick}"));
+    assert!(
+        arm.contains("if score #party dw.o_board_first matches 1"),
+        "the second box waits on the first objective: {arm}"
+    );
+}
+
+/// …and the order may run through an intermediate beat: `after` is read
+/// transitively, because a completed objective's score is never cleared.
+#[test]
+fn a_transitive_after_is_an_order_too() {
+    let doc = one_quest_two_objectives("").replace(
+        r#"          { "type": "interact", "id": "obj/board-second""#,
+        r#"          { "type": "reach-anchor", "id": "obj/step-back", "anchor": "anchor/keeper-stand",
+             "radius": 2, "after": ["obj/board-first"] },
+          { "type": "interact", "id": "obj/board-second""#,
+    );
+    let doc = doc.replace(
+        r#""after": ["obj/talk"], "title": "Board again","#,
+        r#""after": ["obj/step-back"], "title": "Board again","#,
+    );
+    assert!(
+        doc.contains("obj/step-back") && doc.contains(r#""after": ["obj/step-back"]"#),
+        "fixture patches applied: {doc}"
+    );
+    let warnings = build_quests("minecraft:villager", "spawn", &doc)
+        .expect("a box armed after an objective that follows the first must build");
+    assert!(
+        !warnings.iter().any(|d| d.code == "DW0878"),
+        "a transitive sequence on one cell is not a contest: {warnings:#?}"
+    );
+}
+
+/// **(b)**, the half that keeps the loosening from being a hole: an `after`
+/// that orders the second box behind some OTHER beat than the first leaves
+/// both boxes live together once that beat is done, and `DW0878` refuses the
+/// pair with its message unchanged.
+#[test]
+fn an_after_that_does_not_reach_the_first_box_is_still_a_contest() {
+    let doc = one_quest_two_objectives("").replace(
+        r#""after": ["obj/talk"], "title": "Board again","#,
+        r#""after": ["obj/talk", "obj/exit-look"], "title": "Board again","#,
+    );
+    let doc = doc.replace(
+        r#"          { "type": "interact", "id": "obj/board-second""#,
+        r#"          { "type": "reach-anchor", "id": "obj/exit-look", "anchor": "anchor/keeper-stand",
+             "radius": 2, "after": ["obj/talk"] },
+          { "type": "interact", "id": "obj/board-second""#,
+    );
+    assert!(
+        doc.contains(r#""id": "obj/exit-look""#),
+        "fixture patch applied: {doc}"
+    );
+    let err = build_quests("minecraft:villager", "spawn", &doc)
+        .expect_err("two boxes one quest can hold live together must fail the build");
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a coded build diagnostic, got {err:?}");
+    };
+    assert_eq!(code, DW_AFFORDANCE_CONTEST, "{message}");
+    assert!(
+        message.contains("obj/board-first")
+            && message.contains("obj/board-second")
+            && message.contains("COINCIDENT")
+            && message.contains("non-pickable"),
+        "the message is unchanged in substance: {message}"
     );
 }
