@@ -2147,7 +2147,7 @@ mod tests {
     }
 
     /// The namespace is not part of the question, at the static site as at the
-    /// runtime one: `is_technical_block` accepts a bare `lava`, so a hand-written
+    /// runtime one: the DSL's block registry accepts a bare `lava`, so a hand-written
     /// block id can reach the model without `minecraft:` on it.
     #[test]
     fn a_bare_namespace_lava_cell_is_flooded_too() {
