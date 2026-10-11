@@ -4020,4 +4020,83 @@ mod tests {
             "a lantern is not hung from a cell a write removes"
         );
     }
+
+    /// **One siting rule: the jar's support table, read through the keep-out
+    /// set.** A lantern hangs only from a ceiling the measured `canSurvive`
+    /// rule says holds it, and a cell `fixture_keep_out` holds reads as air to
+    /// that rule. Under stone it hangs; under leaves, which the walker reads as
+    /// solid, it does not (the table says leaves hold no lantern); under stone a
+    /// write of the campaign removes it does not. A torch on a floor follows the
+    /// same rule: stone holds it, the same stone in the keep-out set does not.
+    #[test]
+    fn a_fixture_is_held_by_the_support_table_outside_the_keep_out() {
+        let room = |ceiling: &str| {
+            let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+            blocks.insert([0, 64, 0], "minecraft:stone".to_string());
+            blocks.insert([0, 68, 0], ceiling.to_string());
+            let shared = std::sync::Arc::new(crate::compiler::blockstate::interned(blocks));
+            let nav = World::from_occupancy(
+                crate::compiler::assembled::occupancy_over(&shared, &BTreeSet::new()),
+                crate::compiler::nav::Premises::geometry_only(),
+            );
+            (LightModel::from_shared(shared), nav)
+        };
+        let reachable: BTreeSet<[i32; 3]> = [[0, 65, 0]].into_iter().collect();
+        let site = |ceiling: &str, keep_out: &[[i32; 3]], fixture: Fixture, c: [i32; 3]| {
+            let (model, nav) = room(ceiling);
+            let keep_out: BTreeSet<[i32; 3]> = keep_out.iter().copied().collect();
+            candidate(&model, &nav, &keep_out, &reachable, fixture, c).map(|s| s.block)
+        };
+        let hung = Some("minecraft:lantern[hanging=true]".to_string());
+        assert_eq!(
+            site("minecraft:stone", &[], Fixture::Lantern, [0, 67, 0]),
+            hung
+        );
+        assert!(
+            nav_solid("minecraft:oak_leaves"),
+            "the walker reads leaves as solid, so only the table refuses them"
+        );
+        assert_eq!(
+            site("minecraft:oak_leaves", &[], Fixture::Lantern, [0, 67, 0]),
+            None,
+            "leaves hold no lantern"
+        );
+        assert_eq!(
+            site(
+                "minecraft:stone",
+                &[[0, 68, 0]],
+                Fixture::Lantern,
+                [0, 67, 0]
+            ),
+            None,
+            "a ceiling a write removes holds no lantern"
+        );
+        assert_eq!(
+            site("minecraft:stone", &[], Fixture::Torch, [0, 66, 0]),
+            None,
+            "a torch is not sited in mid-air"
+        );
+        // The floor cell over the stone at y = 64 is reachable; a torch passes
+        // a body, so it may stand there.
+        assert_eq!(
+            site("minecraft:stone", &[], Fixture::Torch, [0, 65, 0]).as_deref(),
+            Some("minecraft:torch")
+        );
+        assert_eq!(
+            site("minecraft:stone", &[[0, 64, 0]], Fixture::Torch, [0, 65, 0]),
+            None,
+            "a floor a write removes holds no torch"
+        );
+
+        fn nav_solid(block: &str) -> bool {
+            let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+            blocks.insert([0, 64, 0], block.to_string());
+            let shared = std::sync::Arc::new(crate::compiler::blockstate::interned(blocks));
+            World::from_occupancy(
+                crate::compiler::assembled::occupancy_over(&shared, &BTreeSet::new()),
+                crate::compiler::nav::Premises::geometry_only(),
+            )
+            .solid_at([0, 64, 0])
+        }
+    }
 }
