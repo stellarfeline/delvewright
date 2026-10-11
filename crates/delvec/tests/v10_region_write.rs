@@ -389,6 +389,11 @@ fn a_fill_of_a_block_a_body_passes_through_leaves_the_route_walkable() {
 /// rest rule refuses a sensor laid out of rest by the same fill, a half-floor
 /// the walk reads as a Fill — the region class decides the walk, never
 /// whether the rest rule runs.
+///
+/// The fill is three high, so it stacks veins on veins, and a vein is held
+/// only by a full face under it: the sculk proofs (run with the route proofs)
+/// let it by, and the build is refused afterwards by the support rule
+/// (`DW1002`), naming only the stacked veins — never the course on the floor.
 #[test]
 fn the_sculk_proofs_judge_a_runtime_write_whatever_the_walk_makes_of_it() {
     let vein = "minecraft:sculk_vein[down=true]";
@@ -401,7 +406,20 @@ fn the_sculk_proofs_judge_a_runtime_write_whatever_the_walk_makes_of_it() {
             .any(|w| w.block == vein && w.region == ([3, 65, 6], [5, 67, 6])),
         "the vein the Pass lays reaches the sculk proofs: {laid:?}"
     );
-    try_build(&c, &dir).unwrap_or_else(|f| panic!("the vein fill builds: {f:?}"));
+    match try_build(&c, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW1002", "past every sculk proof: {message}");
+            assert!(
+                message.contains(&format!("`{vein}` at [")),
+                "the stacked veins are named: {message}"
+            );
+            assert!(
+                !message.contains(", 65, 6] (in the box"),
+                "the course on the floor is held: {message}"
+            );
+        }
+        other => panic!("a vein stacked on a vein is dropped: {other:?}"),
+    }
     let _ = std::fs::remove_dir_all(&dir);
 
     let active = "minecraft:sculk_sensor[sculk_sensor_phase=active]";
