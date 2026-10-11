@@ -1,0 +1,53 @@
+{
+  "code": "DW0998",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/probe-cell",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                8,
+                3,
+                27
+              ],
+              "min": [
+                8,
+                3,
+                27
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:sculk_shrieker[can_summon=true,shrieking=false,waterlogged=false]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/probe-cell",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/let-the-shrieker-summon",
+        "note": "The listening floor's shrieker refilled with summoning on."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A shrieker that can summon. The listening floor's shrieker is refilled in its own cell with `can_summon=true`: it would answer the party's footsteps by summoning a warden no wave declares, placed by the game's random up to six cells away, with a warning level the game keeps per player across sessions, and lay Darkness on everyone nearby. The one rest rule refuses the state where the recipe types it, naming the recipe's path, before any world is assembled. It declares no unit: a block state is registry data, not DSL surface."
+}

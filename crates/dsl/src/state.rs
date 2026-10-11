@@ -472,6 +472,27 @@ pub(crate) fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                             ),
                         ));
                     } else if decl.scope == crate::StateScope::Player
+                        && site.consumer == crate::gate::GateConsumer::Pulse
+                    {
+                        // The same fault, with the pulse's own code (spec-0102
+                        // §6.1): one check site, the code chosen by the consumer.
+                        d.push(Diagnostic::error(
+                            crate::pulse::PULSE_DECL,
+                            stage,
+                            path,
+                            format!(
+                                "pulse `{}` is staged on `{}`, which is `player`-scoped — a pulse \
+                                 addresses every player standing in its place, so a term one \
+                                 player satisfies and another does not would be a beat one body \
+                                 hears and the one beside it does not, and the tick that opens it \
+                                 reads the party, not a player. Name a flag or a `party`-scoped \
+                                 datum in `when`, or leave `when` out to make it beat from world \
+                                 load",
+                                pulse_id_at(c, &site.path),
+                                cmp.state.as_str()
+                            ),
+                        ));
+                    } else if decl.scope == crate::StateScope::Player
                         && site.consumer.evaluates_per_player() == Some(false)
                         && site.consumer != crate::gate::GateConsumer::Loop
                     {
@@ -840,6 +861,16 @@ pub(crate) fn gate_contradiction_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             ),
         ));
     });
+}
+
+/// The id of the pulse a `/content/pulses/<i>/…` pointer names, for a
+/// diagnostic's wording; the pointer itself when it names none.
+fn pulse_id_at(c: &Campaign, path: &str) -> String {
+    path.strip_prefix("/content/pulses/")
+        .and_then(|rest| rest.split('/').next())
+        .and_then(|i| i.parse::<usize>().ok())
+        .and_then(|i| c.quests.content.pulses.get(i))
+        .map_or_else(|| path.to_string(), |p| p.id.as_str().to_string())
 }
 
 /// The id of the lethal volume a `/content/lethal_volumes/<i>/…` pointer names,

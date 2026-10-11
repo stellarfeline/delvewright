@@ -1,0 +1,13 @@
+{
+  "code": "DW0993",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/pulses/0/every",
+      "value": 0
+    }
+  ],
+  "units": [],
+  "why": "One edit: the slow heartbeat under the hearth set to beat `every: 0` ticks. `schedule … 0t` is the same tick again, forever, so the interval is refused at the document, naming the pulse and the remedy — the interval in server ticks, at least 1. It declares no unit."
+}

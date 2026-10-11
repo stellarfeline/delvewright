@@ -18,7 +18,13 @@
 //!   party arrives. The end room is station 5's shell, floor, catalysts,
 //!   sensors and shrieker; its pool, its ceiling veins and its entities are
 //!   left out (water and entities are not what a view is compared on), and
-//!   four lanterns hang under its roof so a body can stand in it.
+//!   four lanterns hang under its roof so a body can stand in it. Its four
+//!   sculk catalysts stand where a body walks, which a catalyst may not
+//!   (`DW1001`, spec-0100: it would rewrite the room on any death beside it),
+//!   so each is an inactive vault — the one full-cube block of the pinned game
+//!   that emits the catalyst's light 6 with the same full collision and faces;
+//!   every loop reading of this file is unchanged by the swap, the calibrated
+//!   threshold included.
 //! * **The ground.** The lab floor of polished deepslate runs under the
 //!   rooms and the hall; outside them the piece is void.
 
@@ -283,7 +289,12 @@ impl Station4 {
             (ROOM_X0 + 1, rz1 - 1),
             (ROOM_X1 - 1, rz1 - 1),
         ] {
-            fill(&mut m, [x, WY, z], [x, WY, z], "minecraft:sculk_catalyst");
+            fill(
+                &mut m,
+                [x, WY, z],
+                [x, WY, z],
+                "minecraft:vault[facing=east,ominous=false,vault_state=inactive]",
+            );
         }
         let mut z = rz0 + 4;
         while z < rz1 - 1 {

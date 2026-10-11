@@ -5552,3 +5552,163 @@ test("the death-loop trial of a staged volume whose gate reads shut records not_
   assert.equal(binding.stagedLiveAtTrial, 0);
   assert.equal(binding.volumesEntered, 0);
 });
+
+// --- the sculk family's runtime assertions (spec-0100 §4.7) -------------------
+
+/** A block update as mineflayer emits it: the new block's position and state. */
+function sensorUpdate(pos: [number, number, number], phase: string): unknown {
+  return {
+    position: new FakeVec3(pos[0], pos[1], pos[2]),
+    getProperties: () => ({ sculk_sensor_phase: phase, power: 0, waterlogged: false }),
+  };
+}
+
+test("a predicted shrieker whose 3007 is never heard fails the step; heard, it passes", async () => {
+  const bot = new FakeBot();
+  const client = new EventEmitter();
+  (bot as unknown as { _client: EventEmitter })._client = client;
+  const executor = attach(bot);
+  const vibrations = [{ sensor: [8, 66, 23] as [number, number, number], shriekers: [[8, 67, 27] as [number, number, number]] }];
+  const from = Date.now();
+  // The sensor clicks; the shrieker never shrieks.
+  bot.emit("blockUpdate", null, sensorUpdate([8, 66, 23], "active"));
+  await within(
+    "hearVibrations(unheard shrieker)",
+    assert.rejects(
+      () => executor.hearVibrations("walk to [9, 67, 21]", vibrations, from),
+      (err: unknown) => err instanceof Error && /shrieker at \[8, 67, 27\] never shrieked/.test(err.message),
+    ),
+  );
+  // The shriek arrives: the same leg passes, and a block update of another
+  // phase or another cell is not a click.
+  bot.emit("blockUpdate", null, sensorUpdate([8, 66, 24], "active"));
+  client.emit("world_event", { effectId: 2001, location: { x: 8, y: 67, z: 27 }, data: 0, global: false });
+  client.emit("world_event", { effectId: 3007, location: { x: 8, y: 67, z: 27 }, data: 0, global: false });
+  await within("hearVibrations(heard)", executor.hearVibrations("walk to [9, 67, 21]", vibrations, from));
+  // A leg that started after the click and the shriek, beyond their busy
+  // spans, cannot borrow them.
+  const ear = executor.sculk;
+  const later = ear.hear(vibrations, Date.now() + 10_000, Date.now() + 11_000);
+  assert.equal(later.sensorsHeard, 0);
+  assert.equal(later.shriekersHeard, 0);
+  const now = ear.hear(vibrations, from, Date.now());
+  assert.deepEqual(
+    [now.sensorsPredicted, now.sensorsHeard, now.shriekersPredicted, now.shriekersHeard],
+    [1, 1, 1, 1],
+  );
+});
+
+test("a darkness effect on the bot, or a warden, fails the run; others do not", () => {
+  const bot = new FakeBot();
+  (bot.entity as unknown as { id: number }).id = 7;
+  (bot as unknown as { registry: unknown }).registry = {
+    effects: { 32: { name: "Darkness" }, 16: { name: "NightVision" } },
+  };
+  const executor = attach(bot);
+  assert.equal(executor.sculkRunVerdict(), undefined, "a run with neither passes");
+  // An effect on another entity, or another effect on the bot, is not darkness.
+  bot.emit("entityEffect", { id: 99 }, { id: 32 });
+  bot.emit("entityEffect", bot.entity, { id: 16 });
+  bot.emit("entitySpawn", { id: 50, name: "zombie" });
+  assert.equal(executor.sculkRunVerdict(), undefined);
+  bot.emit("entityEffect", bot.entity, { id: 32 });
+  const verdict = executor.sculkRunVerdict();
+  assert.ok(verdict !== undefined && /darkness 1, warden 0/.test(verdict), verdict);
+  const spawned = new FakeBot();
+  const other = attach(spawned);
+  spawned.emit("entitySpawn", { id: 51, name: "warden" });
+  assert.match(other.sculkRunVerdict() ?? "", /darkness 0, warden 1/);
+});
+
+// --- the sculk window opens with the first walk along the leg (spec-0100 §4.7) ---
+
+import { parsePulsePlan } from "../src/pulse.ts";
+
+/**
+ * A pathfinder that walks to any goal, a sensor that clicks the first time the
+ * body reaches a goal past it, and a stand that takes real time — longer than
+ * a sensor's busy span, as a pulse station's `2 · every + 10` ticks do.
+ */
+class SensorWalkBot extends HeldRadiusBot {
+  clickAtX = Infinity;
+  clickCell: [number, number, number] = [0, 0, 0];
+  clicked = false;
+  standMs = 0;
+  constructor() {
+    super();
+    const goto = this.pathfinder.goto;
+    this.pathfinder.goto = async (goal?: { x: number; y: number; z: number }): Promise<void> => {
+      await goto(goal);
+      if (!this.clicked && goal && goal.x >= this.clickAtX) {
+        this.clicked = true;
+        this.emit("blockUpdate", null, sensorUpdate(this.clickCell, "active"));
+      }
+    };
+  }
+  async waitForTicks(): Promise<void> {
+    await delay(this.standMs);
+  }
+}
+
+test("a sensor the pulse station walk sets off answers for the leg the station is on", async () => {
+  // A sensor between the leg's start and a pulse station on the leg clicks on
+  // the station walk, which runs in beforeStep, before the step's own walk.
+  // The station stand outlasts the sensor's busy span, so a window opened at
+  // the step's walk would fail the leg for a click its own route made.
+  const bot = new SensorWalkBot();
+  (bot as unknown as { _client: EventEmitter })._client = new EventEmitter();
+  bot.entity.position = new FakeVec3(0.5, 64, 0.5);
+  bot.clickAtX = 5;
+  bot.clickCell = [5, 63, 3];
+  bot.standMs = 2_500; // > SENSOR_BUSY_MS
+  const executor = attach(bot);
+  executor.useCampaign("sensor-walk");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.0.0-fixture",
+      campaign_id: "sensor-walk",
+      legs: [
+        {
+          from: [0, 64, 0],
+          to: [30, 64, 0],
+          waypoints: [
+            [0, 64, 0],
+            [10, 64, 0],
+            [30, 64, 0],
+          ],
+          vibrations: [{ sensor: [5, 63, 3], shriekers: [] }],
+        },
+      ],
+    }),
+  );
+  executor.usePulsePlan(
+    parsePulsePlan({
+      declared: 1,
+      pulses: [
+        {
+          id: "pulse/the-bell",
+          sound: "minecraft:block.bell.use",
+          source: [10.5, 66.5, 0.5],
+          every: 20,
+          volume: 1.0,
+          pitch: 1.0,
+          stations: { listening: { cell: [10, 64, 0], step: 1, before: "obj/far" }, silent: null },
+        },
+      ],
+    }),
+  );
+  const far: ReachStep = {
+    action: "reach",
+    objective: "obj/far",
+    anchor: "anchor/far",
+    pos: [30, 64, 0],
+    radius: 2,
+    completion: { kind: "cube", lo: [29, 63, -1], hi: [31, 65, 1] },
+  };
+  await within("executor.beforeStep(far)", executor.beforeStep(far));
+  assert.ok(bot.clicked, "the station walk passed the sensor");
+  assert.equal(executor.pulseStations.length, 1, "and stood at the station");
+  await within("executor.walkTo(far)", executor.walkTo([30, 64, 0], 1, "walk to anchor/far"));
+  assert.equal(executor.legCursor, 1, "the step's walk consumed the leg");
+  assert.equal(executor.legHearingFrom, undefined, "and its window");
+});

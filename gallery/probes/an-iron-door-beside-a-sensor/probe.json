@@ -1,0 +1,53 @@
+{
+  "code": "DW1000",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/probe-cell",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                8,
+                2,
+                24
+              ],
+              "min": [
+                8,
+                2,
+                24
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/probe-cell",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/hang-a-door-beside-the-sensor",
+        "note": "An iron door set into the floor course beside the listening floor's sensor."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A door a footstep would open. The floor cell south of the listening floor's sensor becomes an iron door: the sensor powers its six neighbours on every footstep within eight blocks, and a door reads that power — it would swing open as anyone walked past, a mechanism nothing declared. The build refuses it naming the sensor's cell, the door's cell and the block. It declares no unit: what a block does with redstone is the pinned jar's measured table, not DSL surface."
+}

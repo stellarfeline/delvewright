@@ -1071,7 +1071,7 @@ fn borne(
 
 /// The first term of `gate` that does not hold on the forced route at the
 /// arrival `at` — what `DW0954` names.
-fn never_held_term(
+pub(crate) fn never_held_term(
     gate: &crate::compiler::plan::StagedGate,
     events: &crate::compiler::plan::RegionEvents,
     at: usize,

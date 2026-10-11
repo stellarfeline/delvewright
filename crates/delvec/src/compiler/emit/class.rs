@@ -238,9 +238,18 @@ pub(super) fn emit_flask_function(plan: &Plan) -> Option<(String, String)> {
     Some(("bonfire_flask".to_string(), lines(&body)))
 }
 
+/// Whether any body watches a class (spec-0101): the class apply then tags its
+/// player with [`class_tag`], which the watch line filters on.
+pub(super) fn campaign_watches_a_class(plan: &Plan) -> bool {
+    delvewright_dsl::body_watch_sites(plan.campaign)
+        .iter()
+        .any(|s| s.watch.who.class().is_some())
+}
+
 /// The per-player tag marking which class a player took — the only thing that
 /// tells a bonfire rest which flask to refill (`dw.class` is a trigger the class
-/// apply resets, and `dw.classed` records only *that* a class was taken).
+/// apply resets, and `dw.classed` records only *that* a class was taken), and
+/// the filter a class watch reads (spec-0101).
 pub(super) fn class_tag(class_safe: &str) -> String {
     format!("dw_class_{class_safe}")
 }
@@ -326,7 +335,9 @@ pub(super) fn class_apply_fns(plan: &Plan) -> Vec<(String, String)> {
         // this function resets and `dw.classed` records only that a class was
         // taken. Emitted only when the campaign declares a flask, so every other
         // campaign's class apply is byte-identical.
-        if !plan.flasks().is_empty() {
+        // spec-0101: a watch filtered to a class reads the same tag, so a
+        // campaign whose bodies watch a class carries it too.
+        if !plan.flasks().is_empty() || campaign_watches_a_class(plan) {
             body.push(format!("tag @s add {}", class_tag(&plan_class.safe)));
         }
         body.push("scoreboard players set @s dw.classed 1".to_string());

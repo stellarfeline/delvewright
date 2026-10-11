@@ -28,7 +28,16 @@ const PLAYER_OCCUPANCY: i32 = 2;
 /// Build the waypoints validation artifact for the campaign's proven walked legs.
 /// Keys/coordinates mirror `critical-path.json` so the harness can match a leg by
 /// its destination anchor.
-pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
+///
+/// `listening` is the world's sculk sensors and shriekers and `sneak` the
+/// path's per-step stealth hint (indexed by a leg's `to_step`): a leg that sets
+/// a sensor off carries `vibrations` (spec-0100 §4.6).
+pub fn waypoints_json(
+    plan: &Plan,
+    routes: &[LegRoute],
+    listening: &crate::compiler::sculk::Listening,
+    sneak: &[bool],
+) -> Value {
     let gates: Vec<([i32; 3], [i32; 3])> = plan
         .timed_gates
         .iter()
@@ -88,6 +97,20 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
             if !crossed.is_empty() {
                 leg_json["timed_gates"] = json!(crossed);
             }
+            // spec-0100 §4.6: the sculk sensors this leg's proven route sets
+            // off and the shriekers that answer each, predicted by the
+            // compiler for the bot to assert. Emitted only when present, so a
+            // campaign with no sensor stays byte-identical.
+            let heard = listening
+                .leg_vibrations(&leg.cells, sneak.get(leg.to_step).copied().unwrap_or(false));
+            if !heard.is_empty() {
+                leg_json["vibrations"] = json!(
+                    heard
+                        .iter()
+                        .map(|v| json!({"sensor": v.sensor, "shriekers": v.shriekers}))
+                        .collect::<Vec<Value>>()
+                );
+            }
             leg_json
         })
         .collect();
@@ -112,6 +135,44 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
         );
     }
     root
+}
+
+/// The build's line about the walk's vibrations (spec-0100 §4.6): how many of
+/// the world's sensors and shriekers some leg of `doc` predicts, over how many
+/// legs, and how many devices a runtime write covers and so are never
+/// predicted. A device no leg predicts is stated, never refused: a sensor off
+/// the walk is a legitimate declaration.
+pub fn vibration_line(doc: &Value, listening: &crate::compiler::sculk::Listening) -> String {
+    let mut sensors = std::collections::BTreeSet::new();
+    let mut shriekers = std::collections::BTreeSet::new();
+    let mut legs = 0usize;
+    for leg in doc["legs"].as_array().into_iter().flatten() {
+        let Some(vs) = leg["vibrations"].as_array() else {
+            continue;
+        };
+        legs += 1;
+        for v in vs {
+            sensors.insert(v["sensor"].to_string());
+            for k in v["shriekers"].as_array().into_iter().flatten() {
+                shriekers.insert(k.to_string());
+            }
+        }
+    }
+    format!(
+        "sculk walk: {} of {} sensor(s) predicted on {legs} leg(s), {} of {} shrieker(s); {} \
+         unpredicted sensor(s), {} unpredicted shrieker(s), {} device(s) a runtime write covers",
+        sensors.len(),
+        listening.sensors(),
+        shriekers.len(),
+        listening.shriekers(),
+        listening.sensors() - sensors.len().min(listening.sensors()),
+        listening.shriekers() - shriekers.len().min(listening.shriekers()),
+        listening.rewritten().len(),
+    ) + &listening
+        .rewritten()
+        .iter()
+        .map(|(c, w)| format!(" — {c:?} by {w}"))
+        .collect::<String>()
 }
 
 /// Whether `c` is a cell a climb on `leg` holds in strictly between where the

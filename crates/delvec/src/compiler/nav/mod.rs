@@ -707,6 +707,9 @@ pub fn needs_world(plan: &Plan) -> bool {
     // (spec-0086 §4).
         || !plan.loops.is_empty()
         || !plan.traps.is_empty()
+    // A pulse's reach is derived over the standable cells of its place
+    // (spec-0102 §4.1).
+        || !plan.campaign.quests.content.pulses.is_empty()
 }
 
 /// The spec-0016 §7 pacing lints. **Warning tier** — every finding here is a

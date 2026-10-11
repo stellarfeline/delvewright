@@ -1,0 +1,20 @@
+{
+  "code": "DW0994",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/pulses/2/region",
+      "value": {
+        "anchor": "anchor/east-vault",
+        "extent": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the annex drip's `region` moved onto `anchor/east-vault` with no extent — one cell inside the stone canopy over the hall's east bay. No cell of that box holds footing a body can stand in, so the beat has no farthest ear, its reach cannot be derived from `floor`, and nobody can ever stand in hearing of it. Refused at build, naming the box and the nearest standable cell; the remedy is the box. It declares no unit."
+}

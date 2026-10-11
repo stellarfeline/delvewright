@@ -28,7 +28,6 @@ pub(super) fn npc_summon_commands(
     plan: &Plan,
     npc: &plan::NpcPlan,
 ) -> Vec<String> {
-    let area = plan.npc_area(&npc.npc_id).unwrap_or("");
     let dsl_npc = c
         .npcs
         .content
@@ -36,27 +35,27 @@ pub(super) fn npc_summon_commands(
         .iter()
         .find(|n| n.id.as_str() == npc.npc_id);
     let anchor = dsl_npc.map(|n| n.anchor.as_str()).unwrap_or("");
-    // **The one authority answers this**, as `BodyScope::Declared` — the same
-    // function the cast ledger's per-beat station and `DW0461` ask. A private
-    // `(area, name)` lookup here is how the world-init summon and the plan came
-    // to describe two buildings 256 blocks apart in one build.
-    let station = plan::body_station(&plan.anchors, plan::BodyScope::Declared { area }, anchor);
     let offset = dsl_npc.map(|n| n.offset).unwrap_or([0, 0, 0]);
-    let (pos, facing) = match &station {
-        plan::BodyStation::At {
-            anchor: ResolvedAnchor::Point { pos, facing },
-            ..
-        } => (
-            delvewright_dsl::offset_cell(*pos, offset),
-            facing.as_deref(),
-        ),
-        _ => ([0, plan::BASE_Y, 0], None),
+    // **The one authority answers this** (`watching::npc_home`, as
+    // `BodyScope::Declared`) — the same function the cast ledger's per-beat
+    // station and `DW0461` ask, and the one the watch's proof and PackTests read
+    // the body's feet and home facing from. A private `(area, name)` lookup here
+    // is how the world-init summon and the plan came to describe two buildings
+    // 256 blocks apart in one build.
+    let (pos, yaw) = match dsl_npc {
+        Some(n) => crate::compiler::watching::npc_home(plan, n),
+        None => ([0, plan::BASE_Y, 0], 0),
     };
     let name = dsl_npc.map(|n| n.name.as_str()).unwrap_or("NPC");
     let base = dsl_npc
         .map(|n| n.base_entity.as_str())
         .unwrap_or("minecraft:villager");
-    let yaw = facing_yaw(facing);
+    // spec-0101: a watching body carries the live-watch tag from its summon.
+    let watch_tag = if dsl_npc.is_some_and(|n| n.watch.is_some()) {
+        format!(",\"{}\"", crate::compiler::watching::WATCH_TAG)
+    } else {
+        String::new()
+    };
     let p = ent_xyz(pos);
     let mut out = Vec::new();
     if let Some(skin) = dsl_npc.and_then(|n| n.skin.as_ref()) {
@@ -72,7 +71,7 @@ pub(super) fn npc_summon_commands(
         // wrong data for a standing NPC. Valid 1.21.11 mannequin poses: standing,
         // crouching, swimming, fall_flying, sleeping (spec-0009 template).
         out.push(format!(
-            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}}{},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
+            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}}{},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"{watch_tag}]}}",
             p[0], p[1], p[2], skin.texture_id, skin.model.token(),
             mannequin_hidden_layers_nbt(skin), snbt_text_component(name), npc.tag
         ));
@@ -82,7 +81,7 @@ pub(super) fn npc_summon_commands(
         let cname_field = snbt_component(name);
         let pose = mannequin_pose_nbt(base);
         out.push(format!(
-            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
+            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"{watch_tag}],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
             p[0], p[1], p[2], npc.tag, cname_field
         ));
     }
@@ -517,6 +516,13 @@ pub(super) fn movenpc_fns(
                 "execute if score #mrun_{bare} dw.sys matches 1 run return fail"
             ));
         }
+        // spec-0101: a watching body yields its yaw to the walk for as long as
+        // the walk runs; the arrival tick below hands it back.
+        let watches = crate::compiler::watching::body_watches(plan, &m.npc);
+        let body_sel = format!("tag=dw_npc_{safe},tag=dw_npc");
+        if watches {
+            start.push(crate::compiler::watching::yield_line(&body_sel));
+        }
         start.push(format!("scoreboard players set #mrun_{bare} dw.sys 1"));
         start.push(format!("scoreboard players set #mt_{bare} dw.sys 0"));
         start.push(format!("schedule function {ns}:mv_tick_{bare} 1t"));
@@ -541,6 +547,12 @@ pub(super) fn movenpc_fns(
                 fmt_f64(w[0]),
                 fmt_f64(w[1]),
                 fmt_f64(w[2])
+            ));
+        }
+        if watches {
+            tick.push(crate::compiler::watching::resume_line(
+                &format!("score #mt_{bare} dw.sys matches {total}"),
+                &body_sel,
             ));
         }
         if !on_arrive.is_empty() {

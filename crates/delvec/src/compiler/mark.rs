@@ -64,6 +64,8 @@ pub struct MarkBinding {
     pub cast_marks: usize,
     /// Assemblies (spec-0082), every one standing at a mark.
     pub assemblies: usize,
+    /// Pulse sources (spec-0102), every one at a mark.
+    pub pulse_sources: usize,
     /// Marks refused for leaving their anchor's piece (`DW0897`).
     pub refused: usize,
 }
@@ -73,14 +75,15 @@ impl MarkBinding {
     pub fn line(&self) -> String {
         format!(
             "mark binding: {} body site(s), {} with a non-zero offset; {} destination(s), {} with \
-             a non-zero offset; {} cast row(s) at a mark; {} assembl(ies) at a mark; {} refused \
-             for leaving the piece (DW0897).",
+             a non-zero offset; {} cast row(s) at a mark; {} assembl(ies) at a mark; {} pulse \
+             source(s) at a mark; {} refused for leaving the piece (DW0897).",
             self.bodies,
             self.offset_bodies,
             self.destinations,
             self.offset_destinations,
             self.cast_marks,
             self.assemblies,
+            self.pulse_sources,
             self.refused
         )
     }
@@ -234,6 +237,24 @@ pub fn check_marks_in_piece(plan: &Plan<'_>) -> (MarkBinding, Result<(), Failure
             "quests",
             format!("/content/loops/{li}/to/offset"),
             &l.to,
+            &area,
+            anchor_cell,
+            &mut refused,
+        );
+    }
+
+    // A pulse's source (spec-0102 §3.3): where the sound stands is a mark.
+    for (pi, p) in c.quests.content.pulses.iter().enumerate() {
+        b.pulse_sources += 1;
+        let Some((area, anchor_cell)) = plan.point_any_site(p.at.anchor.as_str()) else {
+            continue;
+        };
+        judge(
+            plan,
+            format!("the source of pulse `{}`", p.id),
+            "quests",
+            format!("/content/pulses/{pi}/at/offset"),
+            &p.at,
             &area,
             anchor_cell,
             &mut refused,

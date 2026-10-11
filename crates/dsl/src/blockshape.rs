@@ -934,6 +934,128 @@ pub fn face_is_full(name: &str, face: Face) -> bool {
     pinned_row(face_rows(), name).is_some_and(|r| r.full & face_bit(face) != 0)
 }
 
+// ---------------------------------------------------------------------------
+// What redstone does to a block (spec-0100 §4.2)
+// ---------------------------------------------------------------------------
+
+/// The pinned jar's redstone table: `crates/dsl/data/redstone-1.21.11.tsv`,
+/// written by `tools/maintenance/dump-redstone.py` (provenance in
+/// `crates/delvec/data/PROVENANCE.md`). One row per block id.
+const REDSTONE_TSV: &str = include_str!("../data/redstone-1.21.11.tsv");
+
+/// Whether a block conducts a strong signal to its neighbours, as the game's
+/// `isRedstoneConductor` answers it over every state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Conductor {
+    /// Every state conducts, whatever its shape (mud, soul sand).
+    Always,
+    /// No state conducts, whatever its shape (glass, leaves, a redstone block).
+    Never,
+    /// The game's default: a state conducts exactly when its collision shape is
+    /// the full block, which the dumper measured equal to "all six collision
+    /// faces full" on every state, so it is read from the face table.
+    Shape,
+}
+
+/// One block's three measured redstone facts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RedstoneRow {
+    /// Whether it conducts a strong signal.
+    pub conductor: Conductor,
+    /// Whether any state is a signal source (`isSignalSource`).
+    pub source: bool,
+    /// Whether any of its classes invokes a `SignalGetter` read: a block whose
+    /// behaviour power can change.
+    pub reads: bool,
+}
+
+fn redstone_rows() -> &'static std::collections::BTreeMap<String, RedstoneRow> {
+    static ROWS: std::sync::OnceLock<std::collections::BTreeMap<String, RedstoneRow>> =
+        std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        let flag = |s: &str, line: &str| match s {
+            "true" => true,
+            "false" => false,
+            _ => panic!("redstone table flag is neither true nor false: {line:?}"),
+        };
+        REDSTONE_TSV
+            .lines()
+            .filter(|l| !l.starts_with('#'))
+            .map(|line| {
+                let cols: Vec<&str> = line.split('\t').collect();
+                let [id, conductor, source, reads] = cols[..] else {
+                    panic!("redstone table row is not four columns: {line:?}");
+                };
+                let conductor = match conductor {
+                    "always" => Conductor::Always,
+                    "never" => Conductor::Never,
+                    "shape" => Conductor::Shape,
+                    _ => panic!("redstone table conductor is not always/never/shape: {line:?}"),
+                };
+                (
+                    id.to_string(),
+                    RedstoneRow {
+                        conductor,
+                        source: flag(source, line),
+                        reads: flag(reads, line),
+                    },
+                )
+            })
+            .collect()
+    })
+}
+
+/// **The pinned jar's redstone row for this block**, or `None` when the table
+/// does not hold it (a foreign namespace, an id the pin lacks).
+pub fn redstone_row(name: &str) -> Option<RedstoneRow> {
+    let id = base_id(name);
+    let id = if id.contains(':') {
+        std::borrow::Cow::Borrowed(id)
+    } else {
+        std::borrow::Cow::Owned(format!("minecraft:{id}"))
+    };
+    redstone_rows().get(id.as_ref()).copied()
+}
+
+/// The number of rows the redstone table holds — one per pinned block id.
+pub fn redstone_row_count() -> usize {
+    redstone_rows().len()
+}
+
+/// **Does this block state conduct a strong signal to its neighbours?** —
+/// `isRedstoneConductor` as the pinned jar answers it: `always`/`never` per
+/// block, else the state's collision shape being the full block (all six faces
+/// full in the face table). `false` for a block the table does not hold.
+pub fn redstone_conductor(name: &str) -> bool {
+    match redstone_row(name).map(|r| r.conductor) {
+        Some(Conductor::Always) => true,
+        Some(Conductor::Never) | None => false,
+        Some(Conductor::Shape) => [
+            Face::Down,
+            Face::Up,
+            Face::North,
+            Face::South,
+            Face::West,
+            Face::East,
+        ]
+        .into_iter()
+        .all(|f| face_is_full(name, f)),
+    }
+}
+
+/// **Is this block a signal source?** (`isSignalSource` on any state). `false`
+/// for a block the table does not hold.
+pub fn redstone_source(name: &str) -> bool {
+    redstone_row(name).is_some_and(|r| r.source)
+}
+
+/// **Does this block read a redstone signal?** — whether its block, block-entity
+/// or nested classes invoke a `SignalGetter` read, so power reaching it can
+/// change what it does. `false` for a block the table does not hold.
+pub fn redstone_reader(name: &str) -> bool {
+    redstone_row(name).is_some_and(|r| r.reads)
+}
+
 /// Whether a block is thin enough to be **walked over rather than onto**
 /// ([`THIN_HEIGHT_16`]): its cell is passable and never a floor level of its own,
 /// so a walker standing there rests on the block below it. Vanilla agrees — none
@@ -1633,6 +1755,187 @@ mod tests {
             "collision heights: {judged} measured row(s), {exact} answered exactly, {} wall \
              hanging sign row(s) read as empty against a 14..16 bracket (open defect)",
             open_defect.len()
+        );
+    }
+
+    /// **The redstone table reads the jar** (spec-0100 §4.2): every spot check the
+    /// spec names, and one row per pinned block. A missing row answers `false` to
+    /// every question, so `oak_door` reading and `stone` not is what proves the
+    /// table is read at all.
+    #[test]
+    fn the_redstone_table_reads_the_jar() {
+        for id in [
+            "minecraft:oak_door",
+            "minecraft:iron_door",
+            "minecraft:rail",
+            "minecraft:bell",
+            "minecraft:redstone_lamp",
+            "minecraft:copper_bulb",
+            "minecraft:big_dripleaf",
+            "minecraft:calibrated_sculk_sensor",
+        ] {
+            assert!(redstone_reader(id), "{id} reads a signal");
+        }
+        for id in [
+            "minecraft:stone",
+            "minecraft:lever",
+            "minecraft:stone_pressure_plate",
+            "minecraft:sculk_sensor",
+            "minecraft:sculk_shrieker",
+            "minecraft:sculk_catalyst",
+        ] {
+            assert!(!redstone_reader(id), "{id} reads no signal");
+        }
+        for id in [
+            "minecraft:lever",
+            "minecraft:sculk_sensor",
+            "minecraft:lightning_rod",
+        ] {
+            assert!(redstone_source(id), "{id} is a source");
+        }
+        assert!(!redstone_source("minecraft:stone"));
+        assert_eq!(
+            redstone_row("minecraft:stone").map(|r| r.conductor),
+            Some(Conductor::Shape)
+        );
+        assert_eq!(
+            redstone_row("minecraft:glass").map(|r| r.conductor),
+            Some(Conductor::Never)
+        );
+        assert!(redstone_conductor("minecraft:stone"));
+        assert!(!redstone_conductor("minecraft:glass"));
+        // `shape` is read per state: a bottom slab does not conduct, a double does.
+        assert!(!redstone_conductor("minecraft:stone_slab[type=bottom]"));
+        assert!(redstone_conductor("minecraft:stone_slab[type=double]"));
+        // An id the pin does not hold answers false to every question.
+        assert!(redstone_row("minecraft:not_a_block").is_none());
+        assert!(!redstone_reader("minecraft:not_a_block"));
+        assert!(!redstone_conductor("minecraft:not_a_block"));
+        assert_eq!(
+            redstone_row_count(),
+            crate::blocks::BlockRegistry::v1_21_11().len(),
+            "one row per pinned block id"
+        );
+    }
+
+    /// **The redstone table agrees with the Minecraft Wiki** — the second method,
+    /// sharing nothing with the dumper's reflection and bytecode read. Each row
+    /// below is compared against the wording of the wiki's *Conductivity* page
+    /// (<https://minecraft.wiki/w/Conductivity>) and the navbox of its
+    /// *Mechanism* page (<https://minecraft.wiki/w/Mechanism>):
+    ///
+    /// - conductive: "Stone" (listed); "most conductive blocks are full solid
+    ///   blocks with the exception of soul sand and mud" — the two `always` rows;
+    /// - non-conductive: "Glass", "Leaves", "Glowstone", "Ice", "TNT",
+    ///   "Observer", "Piston", "Block of redstone", "Copper bulb" (listed); the
+    ///   page also says "Blocks of redstone, observers, and pistons are full
+    ///   solid blocks … but are non-conductive";
+    /// - power emission (navbox): block of redstone, buttons, daylight detector,
+    ///   detector rail, jukebox, lectern, lever, lightning rod, observer,
+    ///   pressure plates, comparator, redstone torch, sculk sensor, target,
+    ///   trapped chest, tripwire hook;
+    /// - mechanisms (navbox): bell, big dripleaf, copper bulb, doors, fence gate,
+    ///   head, note block, redstone lamp, shelf, TNT, trapdoors, crafter,
+    ///   dispenser, dropper, hopper, piston, activator and powered rails. The
+    ///   navbox's "misc." group also lists the armor stand and the creaking
+    ///   heart, neither of which reacts to power (an entity, and a block that
+    ///   only emits a comparator signal); the table's `false` for
+    ///   `creaking_heart` is the one row compared that disagrees with the
+    ///   group's wording, and the group is not a claim that it reads power.
+    #[test]
+    fn the_redstone_table_agrees_with_the_wiki() {
+        for id in ["stone", "soul_sand", "mud"] {
+            assert!(redstone_conductor(id), "wiki: {id} is conductive");
+        }
+        assert_eq!(
+            redstone_row("soul_sand").map(|r| r.conductor),
+            Some(Conductor::Always)
+        );
+        assert_eq!(
+            redstone_row("mud").map(|r| r.conductor),
+            Some(Conductor::Always)
+        );
+        for id in [
+            "glass",
+            "oak_leaves",
+            "glowstone",
+            "ice",
+            "tnt",
+            "observer",
+            "piston",
+            "redstone_block",
+            "copper_bulb",
+        ] {
+            assert!(!redstone_conductor(id), "wiki: {id} is non-conductive");
+        }
+        for id in [
+            "redstone_block",
+            "oak_button",
+            "daylight_detector",
+            "detector_rail",
+            "jukebox",
+            "lectern",
+            "lever",
+            "lightning_rod",
+            "observer",
+            "stone_pressure_plate",
+            "comparator",
+            "redstone_torch",
+            "sculk_sensor",
+            "target",
+            "trapped_chest",
+            "tripwire_hook",
+        ] {
+            assert!(redstone_source(id), "wiki power emission: {id}");
+        }
+        for id in [
+            "bell",
+            "big_dripleaf",
+            "copper_bulb",
+            "oak_door",
+            "iron_door",
+            "copper_door",
+            "oak_fence_gate",
+            "creeper_head",
+            "note_block",
+            "redstone_lamp",
+            "oak_shelf",
+            "tnt",
+            "oak_trapdoor",
+            "iron_trapdoor",
+            "crafter",
+            "dispenser",
+            "dropper",
+            "hopper",
+            "piston",
+            "activator_rail",
+            "powered_rail",
+        ] {
+            assert!(redstone_reader(id), "wiki mechanism: {id}");
+        }
+        assert!(!redstone_reader("creaking_heart"));
+    }
+
+    /// **The sculk blocks are half floors** (spec-0100 §2.1): the three 8/16
+    /// blocks are a bottom slab to the nav model and the catalyst a full cube,
+    /// read from the measured collision table.
+    #[test]
+    fn the_sculk_blocks_are_half_floors() {
+        for id in [
+            "minecraft:sculk_sensor",
+            "minecraft:calibrated_sculk_sensor",
+            "minecraft:sculk_shrieker",
+        ] {
+            assert_eq!(collision_class(id), Collision::PartialFloor(8), "{id}");
+        }
+        assert_eq!(
+            collision_class("minecraft:sculk_catalyst"),
+            Collision::FullCube
+        );
+        assert_eq!(
+            collision_class("minecraft:stone_slab[type=bottom]"),
+            collision_class("minecraft:sculk_sensor"),
+            "a sensor is a bottom slab to a body"
         );
     }
 

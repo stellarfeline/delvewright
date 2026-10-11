@@ -8,8 +8,8 @@ use crate::{
     ActorId, AnchorId, CameraShot, CameraSubject, Carrier, CutsceneParty,
     DEFAULT_COLLAPSE_FALLING_BLOCK, DEFAULT_VOLLEY_INTERVAL, DEFAULT_VOLLEY_PROJECTILE,
     DEFAULT_VOLLEY_SALVOS, FlagId, Happening, HappeningSubject, Mark, NarrateStyle, NpcId,
-    ParticleAt, PrefabId, SoundAt, StateCompare, StateId, StateWrite, StationKind, StealthZone,
-    Verb, WaveId, WorldTime, WorldWeather,
+    ParticleAt, PlaceRef, PrefabId, SoundAt, StateCompare, StateId, StateWrite, StationKind,
+    StealthZone, Verb, WaveId, WorldTime, WorldWeather,
 };
 
 #[cfg(doc)]
@@ -982,7 +982,11 @@ impl QuestEffect {
             // A repaint's box centre names a location, exactly as a region
             // write's does.
             Verb::SetAtmosphere {
-                region: Some(region),
+                at:
+                    PlaceRef {
+                        region: Some(region),
+                        ..
+                    },
                 ..
             } => vec![("region/anchor".to_string(), &region.anchor, None)],
             // Both cutscene spellings (`DW0199` polices mixing them): the v0.6

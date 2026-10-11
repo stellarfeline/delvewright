@@ -108,6 +108,7 @@ fn mk_actor(id: &str, entity: &str, vulnerable: bool) -> delvewright_dsl::Actor 
         attributes: None,
         tier: None,
         traversal: None,
+        watch: None,
         health_bar: None,
     }
 }

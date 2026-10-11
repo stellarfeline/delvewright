@@ -311,6 +311,32 @@ export const methods = {
       const p = bot.entity?.position;
       if (p) this.tickPos = { x: p.x, y: p.y, z: p.z };
     });
+    // spec-0100 §4.7: the sculk family's ear, from connect — a sensor click is a
+    // block update, a shriek a `world_event` 3007, and a darkness effect or a
+    // warden fails the run.
+    bot.on("blockUpdate", (_old: unknown, block: unknown) => {
+      const b = block as
+        | { position?: { x: number; y: number; z: number }; getProperties?: () => Record<string, unknown> }
+        | null;
+      if (!b?.position || typeof b.getProperties !== "function") return;
+      this.sculk.onBlockUpdate([b.position.x, b.position.y, b.position.z], b.getProperties(), Date.now());
+    });
+    const client = (bot as unknown as { _client?: { on: (e: string, f: (p: unknown) => void) => void } })
+      ._client;
+    client?.on("world_event", (packet: unknown) => {
+      const p = packet as { effectId?: number; location?: { x: number; y: number; z: number } };
+      if (typeof p.effectId !== "number" || !p.location) return;
+      this.sculk.onWorldEvent(p.effectId, [p.location.x, p.location.y, p.location.z], Date.now());
+    });
+    bot.on("entityEffect", (entity: Entity, effect: { id: number }) => {
+      if (!entity || entity.id !== bot.entity?.id) return;
+      const registry = (bot as unknown as { registry?: { effects?: Record<number, { name?: string }> } })
+        .registry;
+      this.sculk.onSelfEffect(registry?.effects?.[effect.id]?.name);
+    });
+    bot.on("entitySpawn", (entity: Entity) => {
+      this.sculk.onSpawn(entity?.name);
+    });
   },
 
   /**

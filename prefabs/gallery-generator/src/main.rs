@@ -77,6 +77,64 @@ const CABIN_LADDER: (i32, i32) = (5, 28);
 /// The block state of every rung of [`CABIN_LADDER`].
 const CABIN_LADDER_STATE: &[(&str, &str)] = &[("facing", "east")];
 
+/// **The listening floor** (spec-0100 §6): a sculk sensor set into the far
+/// hall's floor course beside the walk the party takes off the loft stair to
+/// the ferry, so every footstep on that stretch sets it off; a shrieker on the
+/// floor four courses south of it, within its listener range (`distSqr` 17 ≤
+/// 64), summoning off, so it answers a player's footstep with sound and
+/// particles and nothing else; and a calibrated sensor at the foot of the long
+/// gallery's stair, facing north with air behind it, so its frequency filter
+/// stays open and it hears every vibration within sixteen blocks.
+///
+/// Nothing in either sensor's reach reads a redstone signal — the cells around
+/// them are floor stone and air — which is what `DW1000` judges. The plain
+/// sensor and the shrieker stand west of the loft, clear of the muster room's
+/// fight (`anchor/muster`), which is over before the party walks past them;
+/// the calibrated sensor is more than eight blocks from the shrieker, so only
+/// the plain sensor's click wakes it.
+const LISTENING_SENSOR: [i32; 3] = [8, 0, 23];
+
+/// The block state of [`LISTENING_SENSOR`]: at rest (`DW0999` refuses any other).
+const LISTENING_SENSOR_STATE: &[(&str, &str)] = &[
+    ("power", "0"),
+    ("sculk_sensor_phase", "inactive"),
+    ("waterlogged", "false"),
+];
+
+/// The shrieker that answers [`LISTENING_SENSOR`].
+const LISTENING_SHRIEKER: [i32; 3] = [8, 1, 27];
+
+/// The block state of [`LISTENING_SHRIEKER`]: `can_summon=false` (`DW0998`
+/// refuses `true`), at rest.
+const LISTENING_SHRIEKER_STATE: &[(&str, &str)] = &[
+    ("can_summon", "false"),
+    ("shrieking", "false"),
+    ("waterlogged", "false"),
+];
+
+/// The calibrated sensor at the long gallery stair's foot; its input side
+/// (`facing.getOpposite()`, south) is the air cell behind it.
+const LISTENING_CALIBRATED: [i32; 3] = [24, 1, 26];
+
+/// The block state of [`LISTENING_CALIBRATED`].
+const LISTENING_CALIBRATED_STATE: &[(&str, &str)] = &[
+    ("facing", "north"),
+    ("power", "0"),
+    ("sculk_sensor_phase", "inactive"),
+    ("waterlogged", "false"),
+];
+
+/// **The sealed catalyst** (spec-0100 §3.7, `DW1001`): a sculk catalyst set
+/// into the solid stone over the near hall's roof, three courses above it,
+/// east of the terrace and west of the long gallery. The nearest place a body
+/// can stand is the near hall's floor nine courses below (`distSqr` 81 > 64)
+/// — so it can hear no death, and the build states the nearest body cell. Set
+/// six cells further west, over the terrace annex's rim, it is `DW1001`.
+const SEALED_CATALYST: [i32; 3] = [18, 10, 8];
+
+/// The block state of [`SEALED_CATALYST`].
+const SEALED_CATALYST_STATE: &[(&str, &str)] = &[("bloom", "false")];
+
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
 
@@ -1047,6 +1105,21 @@ fn block_at(
     &'static str,
     Option<&'static [(&'static str, &'static str)]>,
 ) {
+    if [x, y, z] == LISTENING_SENSOR {
+        return ("minecraft:sculk_sensor", Some(LISTENING_SENSOR_STATE));
+    }
+    if [x, y, z] == LISTENING_SHRIEKER {
+        return ("minecraft:sculk_shrieker", Some(LISTENING_SHRIEKER_STATE));
+    }
+    if [x, y, z] == LISTENING_CALIBRATED {
+        return (
+            "minecraft:calibrated_sculk_sensor",
+            Some(LISTENING_CALIBRATED_STATE),
+        );
+    }
+    if [x, y, z] == SEALED_CATALYST {
+        return ("minecraft:sculk_catalyst", Some(SEALED_CATALYST_STATE));
+    }
     if y == 0 {
         let (bx0, bx1, bz0, bz1) = BURNING_STRIP;
         if (bx0..=bx1).contains(&x) && (bz0..=bz1).contains(&z) {

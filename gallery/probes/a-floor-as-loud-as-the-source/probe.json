@@ -1,0 +1,13 @@
+{
+  "code": "DW0993",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/pulses/0/floor",
+      "value": 1.0
+    }
+  ],
+  "units": [],
+  "why": "One edit: the slow heartbeat's `floor` set to 1.0 — the farthest standing ear as loud as the source. The reach is derived as `far / (1 - floor)`, so at 1 it is infinite; `floor` is at least 0 and less than 1, and the pulse is refused at the document with the range to write inside. It declares no unit."
+}
