@@ -208,6 +208,41 @@ fn a_still_hostile_actor_derives_easy() {
     assert_eq!(removed[0].entity, "minecraft:husk");
 }
 
+/// A watching body (spec-0101) is a staged body like any other: a still husk
+/// that turns to face the nearest player is discarded by peaceful exactly as a
+/// husk that does not, so it derives `easy`, and the watch adds no body of its
+/// own to the census.
+#[test]
+fn a_watching_hostile_actor_derives_easy() {
+    let watch = r#", "watch": { "who": "nearest", "within": 8 }"#;
+    let raw = raw_with(
+        None,
+        Some(&quests_with_one_actor("minecraft:husk", false, watch)),
+    );
+    let c = parsed(&raw);
+    assert!(
+        c.quests.content.actors[0].watch.is_some(),
+        "the fixture declares the watch"
+    );
+    assert_eq!(derived_difficulty(&c), WorldDifficulty::Easy);
+    let removed = bodies_removed_on_peaceful(&c);
+    assert_eq!(removed.len(), 1, "{removed:#?}");
+    assert_eq!(
+        (
+            removed[0].what,
+            removed[0].id.as_str(),
+            removed[0].entity.as_str()
+        ),
+        ("actor", "actor/figure", "minecraft:husk")
+    );
+    // The same watcher of a species peaceful keeps leaves it at peaceful.
+    let kept = parsed(&raw_with(
+        None,
+        Some(&quests_with_one_actor("minecraft:villager", false, watch)),
+    ));
+    assert_eq!(derived_difficulty(&kept), WorldDifficulty::Peaceful);
+}
+
 /// A body of a species peaceful keeps leaves the derivation at peaceful.
 #[test]
 fn a_still_peaceful_kept_actor_derives_peaceful() {

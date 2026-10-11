@@ -1455,6 +1455,50 @@ fn scatter_on_non_soil_is_refused_dw1002() {
     );
 }
 
+/// **A block with no item form passes the registry and meets the support
+/// rule.** `minecraft:wall_torch` is a block the item registry does not hold:
+/// `DW0193` asks the block registry, so a world edit may place it, and the
+/// build then judges it like every block it writes (`DW1002`). Scattered onto
+/// bare floor with nothing behind it, every torch hangs on air and the build is
+/// refused by the support rule, never by the registry.
+#[test]
+fn a_block_with_no_item_form_is_placed_and_judged_by_dw1002() {
+    let dir = edits_copy("edits-flora");
+    set_batches(
+        &dir,
+        serde_json::json!([{
+            "id": "batch/torches-on-air",
+            "area": "area/keep",
+            "edits": [
+                piece_box("region/f", [1, 0, 7], [3, 0, 9]),
+                { "verb": "select", "name": "region/air", "shape": {
+                    "kind": "surface-band", "over": "region/f", "from": 1, "to": 1 } },
+                { "verb": "scatter", "region": "region/air", "density": 1.0,
+                  "items": [ { "block": "minecraft:wall_torch[facing=north]", "weight": 1.0 } ] }
+            ]
+        }]),
+    );
+    let out = tmp("edits-wall-torch-out");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    let stdout = combined(&r);
+    assert!(
+        !stdout.contains("DW0193"),
+        "a block with no item form is in the block registry:\n{stdout}"
+    );
+    assert_eq!(r.status.code(), Some(3), "refused at build:\n{stdout}");
+    assert!(
+        stdout.contains("DW1002") && stdout.contains("`minecraft:wall_torch[facing=north]` at ["),
+        "the support rule names the torch:\n{stdout}"
+    );
+}
+
 /// **Finding 5b (`DW0354`, error tier).** A fixture the script's own `relight`
 /// verb placed is a DECLARED `min_light` guarantee: a later batch that carves
 /// its support drops the light source on the floor and silently re-darkens a
