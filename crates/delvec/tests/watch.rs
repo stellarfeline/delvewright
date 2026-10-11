@@ -326,9 +326,9 @@ fn the_emitted_watch_is_exactly_the_specified_bytes() {
     assert_eq!(
         function(&out, "watch_tick").expect("watch_tick emitted"),
         "execute as @e[tag=dw_npc_keeper,tag=dw_npc,tag=dw_watch,tag=!dw_unseen,limit=1] at @s \
-         run rotate @s facing entity @p[distance=..8,tag=!dw_cutscene] eyes\n\
-         execute as @e[tag=dw_pup_walker,tag=dw_watch,tag=!dw_unseen,limit=1] at @s run rotate \
-         @s facing entity @p[distance=..6,tag=!dw_cutscene,tag=dw_class_wanderer] eyes\n"
+         anchored eyes run rotate @s facing entity @p[distance=..8,tag=!dw_cutscene] eyes\n\
+         execute as @e[tag=dw_pup_walker,tag=dw_watch,tag=!dw_unseen,limit=1] at @s anchored eyes \
+         run rotate @s facing entity @p[distance=..6,tag=!dw_cutscene,tag=dw_class_wanderer] eyes\n"
     );
     let tick = function(&out, "tick").unwrap();
     assert_eq!(

@@ -11,10 +11,18 @@
 //!
 //! # The mechanism
 //!
-//! `rotate <body> facing entity <player> eyes` [cited — the pinned command
-//! tree `rotate → target → facing → entity → facingEntity → facingAnchor`]
-//! hands a non-player body to `Entity.lookAt`, which writes yaw and pitch from
-//! that tick's two positions with no interpolation, and `LivingEntity.lookAt`
+//! `execute … anchored eyes run rotate <body> facing entity <player> eyes`
+//! [cited — the pinned command tree `rotate → target → facing → entity →
+//! facingEntity → facingAnchor`] hands a non-player body to
+//! `LookAt.LookAtEntity.perform`, which calls `Entity.lookAt(source.getAnchor(),
+//! anchor.apply(player))`: the trailing `eyes` picks the player's point, and the
+//! *source's* anchor picks the body's — `feet` unless `anchored eyes` sets it
+//! [cited — pinned 1.21.11 server bytes, `app$a.perform`, `cgk.a(ep$a, ftm)`].
+//! `Anchor.EYES` is the entity's position plus `Entity.getEyeHeight()`, the
+//! field `refreshDimensions` writes from `getDimensions(pose)` — the species',
+//! pose's and scale's own eye height, for every body class alike. So the turn
+//! aims from the body's eyes to the player's eyes. `Entity.lookAt` writes yaw
+//! and pitch from that tick's two positions with no interpolation, and `LivingEntity.lookAt`
 //! sets the body's yaw to the head's: body and head turn together, at once.
 //! The compiler computes no bearing and eases nothing; every tick's facing is
 //! the game's own arithmetic over that tick's state (`compiler.md` §4, "A
@@ -241,7 +249,7 @@ pub fn watch_line(w: &Watcher) -> String {
         .map(|t| format!(",tag={t}"))
         .unwrap_or_default();
     format!(
-        "execute as {} at @s run rotate @s facing entity @p[distance=..{},tag=!dw_cutscene{class}] eyes",
+        "execute as {} at @s anchored eyes run rotate @s facing entity @p[distance=..{},tag=!dw_cutscene{class}] eyes",
         w.live_selector(),
         w.within
     )
