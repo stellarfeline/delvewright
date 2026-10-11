@@ -199,7 +199,12 @@ and at least one block away horizontally, it asks the server whether
 from the body's feet to the bot's (`judgeWatchers`, `harness/src/executor/watch.ts`;
 the arithmetic in `harness/src/watch.ts`). A denial fails the critical-path stage
 with the body's yaw read beside the bearing; it is recorded, never thrown into the
-walk, so the walk's recovery never reads it as a stalled hop. Only the critical
+walk, so the walk's recovery never reads it as a stalled hop. The bot judges the
+yaw and never the pitch: the expected pitch needs the body's eye height, which the
+record does not carry and no read-only command states, and at close range a tenth
+of a block of the bot's own height moves the angle by degrees. The pitch — eye to
+eye — is proved by the generated `watch_*` PackTest, which places the dummy
+exactly by the body's eye point (`compiler.md` §3 "body watch"). Only the critical
 path's walks judge — the death loop's walks are not the proven path. The binding
 line is printed at load and after the path:
 `[watch] W watcher(s) in the record, K within reach on the proven path, K asserted

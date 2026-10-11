@@ -1,10 +1,23 @@
 use super::*;
 
 use crate::compiler::creator::FREE_TAG;
-use crate::compiler::watching::{WATCH_FN, WATCH_TAG, WatchBinding, Watcher, y_rotation_range};
+use crate::compiler::watching::{
+    WATCH_FN, WATCH_TAG, WatchBinding, Watcher, pitch, x_rotation_range, y_rotation_range,
+};
+use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
 
 /// The tolerance, in degrees, a generated PackTest reads a body's yaw within.
 const YAW_TOLERANCE: f64 = 1.0;
+
+/// The tolerance, in degrees, a generated PackTest reads a body's pitch within.
+const PITCH_TOLERANCE: f64 = 1.0;
+
+/// The pitch steps' horizontal offset and rise, in blocks: two out and one up,
+/// halved into a short watch's reach (`within / 2`).
+fn pitch_geometry(within: u32) -> (f64, f64) {
+    let half = f64::from(within) / 2.0;
+    (half.min(2.0), half.min(1.0))
+}
 
 /// The height the wiring check lifts the body's feet to, up its own column:
 /// above the overworld's build limit (320), where no campaign's content stands.
@@ -44,6 +57,15 @@ const WIRING_Y: i32 = 400;
 /// tick only, the free camera's `dw_free` (the boundary does not return it from
 /// above the map). Each template is one atomic function, so no sibling observes
 /// any of it.
+///
+/// **The gaze is eye to eye.** Two pitch steps place the dummy by the body's
+/// own eye point (`anchored eyes positioned ^ ^ ^`, the game's
+/// `Entity.getEyeHeight()` for that body, whatever its species, pose or
+/// scale): `h` blocks out with its eyes level with the body's (its feet
+/// [`PLAYER_EYE_HEIGHT`] below), where `watch_tick` must leave a pitch of 0
+/// (±1°); then one rise higher, where it must be the game's `-atan2(rise, h)`.
+/// A look from the body's feet reads `-atan2(eye height, h)` instead — about
+/// -39° for a human-scale body two blocks out.
 ///
 /// A watcher the drawability proof found no observable cell for (`unobservable`
 /// in the binding line) gets no turn template: a turn smaller than the
@@ -218,6 +240,23 @@ fn turn_template(plan: &Plan, w: &Watcher, k: usize, cell: [i32; 3], yaw: f64) -
     ));
     b.push(format!("function {ns}:{WATCH_FN}"));
     b.push(facing_count(w, yaw, &format!("#wk_{k}")));
+    // 4b. the gaze is eye to eye: level eyes read 0, one rise higher reads
+    //     the game's -atan2(rise, h)
+    let (h, rise) = pitch_geometry(w.within);
+    for (step, dy) in [("wpl", 0.0), ("wpu", rise)] {
+        b.push(format!(
+            "execute as @e[{},limit=1] at @s anchored eyes positioned ^ ^ ^ run tp @a[tag={me},limit=1] ~{} ~{} ~",
+            w.selector,
+            fmt_f64(h),
+            fmt_f64(dy - PLAYER_EYE_HEIGHT)
+        ));
+        b.push(format!("function {ns}:{WATCH_FN}"));
+        b.push(format!(
+            "execute store result score #{step}_{k} dw.sys if entity @e[{},x_rotation={}]",
+            w.selector,
+            x_rotation_range(pitch(dy, h), PITCH_TOLERANCE)
+        ));
+    }
     // 5. the root `tick` reaches the watch: the body put back home and lifted
     //    with the dummy to WIRING_Y in the same geometry, one real tick
     b.extend(resummon_body(plan, w));
@@ -259,6 +298,8 @@ fn turn_template(plan: &Plan, w: &Watcher, k: usize, cell: [i32; 3], yaw: f64) -
     }
     b.push(format!("assert score #wt_{k} dw.sys matches 1"));
     b.push(format!("assert score #wk_{k} dw.sys matches 1"));
+    b.push(format!("assert score #wpl_{k} dw.sys matches 1"));
+    b.push(format!("assert score #wpu_{k} dw.sys matches 1"));
     b.push(format!("assert score #wr_{k} dw.sys matches 1"));
     b
 }

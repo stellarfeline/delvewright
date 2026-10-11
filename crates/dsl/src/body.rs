@@ -92,7 +92,8 @@ pub struct BodyTraversal {
 /// both body classes carry, as one type, because facing belongs to the body and
 /// not to the verb that first wanted it turned.
 ///
-/// The run-time turn is `rotate <body> facing entity <player> eyes`, re-issued
+/// The run-time turn is `execute … anchored eyes run rotate <body> facing
+/// entity <player> eyes` (the body's eyes to the player's eyes), re-issued
 /// from the root `tick` by one generated function (`watch_tick`): every tick a
 /// player [`Self::who`] names stands within [`Self::within`] blocks of the
 /// body's feet, the body faces that player's eyes with its own, body and head

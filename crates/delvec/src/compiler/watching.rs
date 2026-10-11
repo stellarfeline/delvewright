@@ -114,6 +114,19 @@ pub fn bearing(from: [f64; 3], to: [f64; 3]) -> f64 {
     wrap_degrees(dz.atan2(dx) * 57.295_776_367_187_5 - 90.0)
 }
 
+/// The game's pitch for a point `dy` blocks above and `horizontal` blocks out
+/// from the look's origin (`Entity.lookAt`: `wrapDegrees(-(atan2(dy, h) *
+/// 57.2957763671875))`): negative is up.
+pub fn pitch(dy: f64, horizontal: f64) -> f64 {
+    wrap_degrees(-(dy.atan2(horizontal) * 57.295_776_367_187_5))
+}
+
+/// An `x_rotation` range of `±tol` about `pitch`. Pitch lives in `[-90, 90]`
+/// and is never wrapped.
+pub fn x_rotation_range(pitch: f64, tol: f64) -> String {
+    format!("{:.2}..{:.2}", pitch - tol + 0.0, pitch + tol + 0.0)
+}
+
 /// `Mth.wrapDegrees`: an angle in `[-180, 180)`.
 pub fn wrap_degrees(a: f64) -> f64 {
     let mut w = a % 360.0;
@@ -526,6 +539,15 @@ mod tests {
         assert!(yaw_difference(bearing(o, [-4.5, 64.0, 0.5]), 90.0) < 1e-4);
         assert!(yaw_difference(bearing(o, [0.5, 64.0, -4.5]), 180.0) < 1e-4);
         assert!(yaw_difference(bearing(o, [5.5, 64.0, 0.5]), -90.0) < 1e-4);
+    }
+
+    #[test]
+    fn the_pitch_is_the_games_arithmetic_and_negative_is_up() {
+        assert!(pitch(0.0, 2.0).abs() < 1e-9);
+        assert!((pitch(1.0, 2.0) + 26.565_051).abs() < 1e-4);
+        assert!((pitch(-1.0, 1.0) - 45.0).abs() < 1e-4);
+        assert_eq!(x_rotation_range(0.0, 1.0), "-1.00..1.00");
+        assert_eq!(x_rotation_range(-26.565_051, 1.0), "-27.57..-25.57");
     }
 
     #[test]

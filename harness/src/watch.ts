@@ -7,6 +7,8 @@
 // within that reach of a body it can draw, it stands, lets a tick pass, and
 // asks the server whether the body faces it: `@e[<body>,y_rotation=<yaw±2>]`,
 // the yaw the game's own look-at computes from the body's feet to the bot's.
+// Yaw only: the pitch needs the body's eye height, which nothing here can read
+// robustly; the generated `watch_*` PackTest proves the pitch eye to eye.
 // No step action is added: the assertion rides the walk legs the path has.
 //
 // This file holds the arithmetic and the ledger; `executor/watch.ts` speaks to

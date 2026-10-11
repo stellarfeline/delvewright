@@ -489,7 +489,33 @@ fn the_packtests_stand_on_the_recorded_cell_and_yield_on_every_walk() {
                 .any(|l| l.starts_with("tp @e[") && l.contains(" 400.0 ")),
             "{turn} lifts the body above the build limit for the wiring check:\n{t}"
         );
-        for assert_ in ["#wh_", "#wt_", "#wk_", "#wr_"] {
+        // The gaze is eye to eye: the dummy is placed by the body's own eye
+        // point, two blocks out, eyes level and then one block higher, and the
+        // pitch read is the eye-to-eye angle, never the feet-to-eye one.
+        let place = |rise: &str| {
+            format!(
+                "execute as @e[{},limit=1] at @s anchored eyes positioned ^ ^ ^ run tp \
+                 @a[tag=dw_wt_{},limit=1] ~2.0 ~{rise} ~",
+                row["selector"].as_str().unwrap(),
+                if turn == "watch_npc_keeper" { 0 } else { 1 }
+            )
+        };
+        for (rise, step, range) in [
+            ("-1.62", "#wpl_", "x_rotation=-1.00..1.00]"),
+            ("-0.6200000000000001", "#wpu_", "x_rotation=-27.57..-25.57]"),
+        ] {
+            let at = lines
+                .iter()
+                .position(|l| *l == place(rise))
+                .unwrap_or_else(|| panic!("{turn} places the dummy {rise} below eye level:\n{t}"));
+            assert_eq!(lines[at + 1], "function hello-world:watch_tick", "{turn}");
+            assert!(
+                lines[at + 2].contains(step) && lines[at + 2].ends_with(range),
+                "{turn} reads {step} as {range}: {}",
+                lines[at + 2]
+            );
+        }
+        for assert_ in ["#wh_", "#wt_", "#wk_", "#wpl_", "#wpu_", "#wr_"] {
             assert!(
                 t.lines()
                     .any(|l| l.starts_with("assert score") && l.contains(assert_)),
