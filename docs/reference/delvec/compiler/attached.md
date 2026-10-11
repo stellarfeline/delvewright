@@ -15,7 +15,7 @@ A block whose pinned `canSurvive` rule asks a neighbour for something — a wall
 
 **Binding line**, printed on every build that reaches it: `attached blocks (DW1002): A of N non-air cell(s) at load need a neighbour to stay — H held, D dropped; C configuration(s) the critical path passes re-judged R cell(s) around their writes, E dropped there; unjudged by the measured rule: U cell(s) (block xn, …); not in the table: K cell(s) (…)`.
 
-**The same rule everywhere a block is chosen.** The relight pass sites a fixture only where the measured rule holds it, reading every cell a runtime region write can change as air (`light::LightModel::with_volatile`), and `DW0354` judges an edit's placed blocks by the same table. Nothing in the engine states a support rule by hand.
+**The same rule everywhere a block is chosen.** The relight pass sites a fixture only where the measured rule holds it, reading every cell the campaign rewrites after load as air (`light::fixture_keep_out`), and `DW0354` judges an edit's placed blocks by the same table. Nothing in the engine states a support rule by hand.
 
 ## Diagnostics
 

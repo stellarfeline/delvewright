@@ -2183,8 +2183,8 @@ mod tests {
     /// The DSL's block registry accepts every block, item form or not; these are
     /// the air and fluid ids a `fill`/`set-block` may name.
     /// Every one of them must reach a class `occupancy_of` handles **on purpose**:
-    /// an air variant (no cell) or a fluid (flooded). An id that is neither falls
-    /// through to the final `else` and becomes floor, which is precisely how
+    /// an air variant (no cell) or a fluid (flooded). An id that is neither gets
+    /// the collision table's full-cube default and becomes floor, which is how
     /// `minecraft:lava` shipped as standable ground — so a sixth technical block
     /// added to that list reds here rather than being discovered in a delve.
     ///
@@ -2209,8 +2209,8 @@ mod tests {
             );
             assert!(
                 is_air(id) || is_fluid(id),
-                "`{id}` is a block the DSL accepts but this model classifies by its \
-                 final `else`, i.e. as full-cube floor"
+                "`{id}` is a block the DSL accepts but the collision table gives \
+                 its full-cube default, i.e. floor"
             );
             if is_fluid(id) {
                 fluids += 1;
