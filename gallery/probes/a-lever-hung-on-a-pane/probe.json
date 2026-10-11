@@ -1,0 +1,87 @@
+{
+  "code": "DW1002",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/pane",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                16,
+                6,
+                12
+              ],
+              "min": [
+                16,
+                6,
+                12
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:glass_pane",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/pane",
+            "verb": "fill"
+          },
+          {
+            "name": "region/pane-lever",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                16,
+                6,
+                11
+              ],
+              "min": [
+                16,
+                6,
+                11
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:lever[face=wall,facing=north]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/pane-lever",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/hang-a-lever-on-a-pane",
+        "note": "A glass pane under the near hall's roof, and a lever hung on its north side."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A block the build writes and the server drops. A lever on a wall facing north hangs on the block south of it, and the pinned jar keeps it only while that block shows it a full (sturdy) north face; a glass pane's side is a thin post, not a full face. The edit writes both blocks, every snapshot shows the lever on the pane, and the server removes the lever the first time a shape update reaches it, so the world the party walks is not the one the build wrote. The build refuses it, naming the lever's cell, the face it needs and the pane standing there. It declares no unit: which block holds which is the pinned game's rule over blocks a piece or an edit already writes, and states no DSL surface."
+}

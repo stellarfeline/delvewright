@@ -47,10 +47,44 @@
             },
             "region": "region/well-mouth",
             "verb": "fill"
+          },
+          {
+            "name": "region/well-lamp",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                1,
+                4,
+                3
+              ],
+              "min": [
+                1,
+                4,
+                3
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:shroomlight",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/well-lamp",
+            "verb": "fill"
           }
         ],
         "id": "batch/hatch-the-well",
-        "note": "A trapdoor laid shut over the west well's mouth, flush with the terrace rim."
+        "note": "A trapdoor laid shut over the west well's mouth, flush with the terrace rim, and a shroomlight set in the well's west wall: shut, the hatch keeps the hall's light out of the well, and a lantern cannot hang from a trapdoor's underside."
       }
     }
   ],

@@ -308,20 +308,24 @@ fn facing_of(step: [i32; 3]) -> Facing {
         .expect("a horizontal unit step is a cardinal")
 }
 
-/// The cover's orientation: a stair whose full-height half is on the room
-/// side of a wall (or covers a vault's underside, its raised quarter away from
-/// the slot), half bottom; a bottom slab.
+/// The cover's orientation: on a wall, a stair whose full-height half is on
+/// the room side, half bottom, or a bottom slab. In a vault the source stands
+/// ON the cover, so the cover is its top half — a top-half stair, its quarter
+/// hanging away from the slot, or a top slab: a lantern asks the face under it
+/// to be sturdy at its centre, a bottom half's top is not, and the server drops
+/// a source stood on one (`DW1002`).
 fn cover_shape(hull: &Hull, c: &Candidate) -> CoverShape {
     let cover = hull.cover.as_deref().unwrap_or_default();
+    let vault = c.surface != Surface::Wall;
     if cover.ends_with("_slab") {
-        return CoverShape::Slab(false);
+        return CoverShape::Slab(vault);
     }
     let u = c.u.expect("a recessed candidate has a slot");
     let facing = match c.surface {
         Surface::Wall => facing_of(c.d),
         _ => facing_of(neg(u)),
     };
-    CoverShape::Stair(facing, Half::Bottom)
+    CoverShape::Stair(facing, if vault { Half::Top } else { Half::Bottom })
 }
 
 /// **Place every `hull` light** of `form` into `blocks`, after the fit, the

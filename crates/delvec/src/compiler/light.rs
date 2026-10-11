@@ -482,6 +482,9 @@ pub struct LightModel {
     /// Inclusive world AABB of all cells (for the sky-column scan).
     min: [i32; 3],
     max: [i32; 3],
+    /// Cells a runtime write can change ([`LightModel::with_volatile`]): a
+    /// fixture is never sited where its hold is one of them.
+    volatile: BTreeSet<[i32; 3]>,
 }
 
 /// The inclusive box `cells` occupy, or the unit box at the origin when there
@@ -545,6 +548,7 @@ impl LightModel {
             blocks: crate::compiler::blockstate::interned(blocks).into(),
             min,
             max,
+            volatile: BTreeSet::new(),
         }
     }
 
@@ -556,7 +560,22 @@ impl LightModel {
             blocks: crate::compiler::cellset::CellMap::from_shared(blocks),
             min,
             max,
+            volatile: BTreeSet::new(),
         }
+    }
+
+    /// This model with every cell a runtime region write of `plan`'s path can
+    /// change marked volatile: a fixture hung on one of them is dropped by the
+    /// server when the write lands (`DW1002`), so no fixture is sited with its
+    /// hold there. Every write counts, forced or not, fill or clear.
+    pub fn with_volatile(mut self, plan: &Plan) -> Self {
+        for e in &plan.region_events {
+            self.volatile
+                .extend(crate::compiler::assembled::region_cells(
+                    e.region.0, e.region.1,
+                ));
+        }
+        self
     }
 
     /// The block id at a cell (`"minecraft:air"` if absent).
@@ -1194,7 +1213,8 @@ pub fn relight_with(
     let moves = crate::compiler::nav::plan_moves(plan, nav).unwrap_or_default();
     let required = nav.required_path_cells(plan, &moves);
 
-    let mut model = LightModel::from_shared(std::sync::Arc::clone(&assembled.blocks));
+    let mut model =
+        LightModel::from_shared(std::sync::Arc::clone(&assembled.blocks)).with_volatile(plan);
     let mut out = Relight::default();
     // The dark set of the whole build, kept per SITE and reported once at the end
     // (`dark_diagnostic`). Accumulated rather than raised per area because the
@@ -1991,12 +2011,27 @@ fn candidate(
     let below = [c[0], c[1] - 1, c[2]];
     let above = [c[0], c[1] + 1, c[2]];
     let air = |cell: [i32; 3]| model.block_at(cell) == "minecraft:air";
-    // A fixture is mounted on a block that holds it. Leaves collide and so are
-    // solid to the walker, and they hold no fixture: the pinned server dropped
-    // every lantern this pass hung under `oak_leaves` in the gallery's save on
-    // the first block update (`tools/ci/check-written-world.py`, spec-0089),
-    // so a fixture planned there is light the light proof counts and the game
-    // never shows.
+    // **A fixture is mounted on a block that holds it**, by the pinned jar's
+    // own `canSurvive` rule (`delvewright_dsl::support`, measured): a torch on
+    // a face sturdy at its centre, a wall torch on a full face, a lantern under
+    // a ceiling face sturdy at its centre. A cell a runtime write can change
+    // holds nothing, because the write drops the fixture when it lands. A
+    // fixture this pass sites anywhere else is one the server drops at the
+    // first shape update, and `DW1002` refuses the build that writes it.
+    let held = |block: &str| -> bool {
+        let at = |f: delvewright_dsl::blockshape::Face| -> &str {
+            let o = f.offset();
+            let n = [c[0] + o[0], c[1] + o[1], c[2] + o[2]];
+            if model.volatile.contains(&n) {
+                "minecraft:air"
+            } else {
+                model.block_at(n)
+            }
+        };
+        delvewright_dsl::support::needs(block).and_then(|n| n.kept(at)) == Some(true)
+    };
+    // A campfire needs nothing under it in the jar; it is still set on a floor,
+    // never on leaves, which the walker reads as solid and nobody reads as one.
     let solid =
         |cell: [i32; 3]| nav.solid_at(cell) && !base_id(model.block_at(cell)).ends_with("_leaves");
     let free = |cell: [i32; 3]| air(cell) && !required.contains(&cell);
@@ -2012,21 +2047,16 @@ fn candidate(
         // Floor torch on solid ground, off required paths (no collision); wall
         // torch on a wall face as fallback.
         Fixture::Torch => {
-            if free(c) && solid(below) {
+            if free(c) && held("minecraft:torch") {
                 return site("minecraft:torch".to_string(), false);
             }
             // wall_torch: an air cell (off path) with a solid horizontal neighbour
             // to mount against; face points away from the wall.
             if free(c) {
-                for (d, facing) in [
-                    ([1, 0, 0], "east"),
-                    ([-1, 0, 0], "west"),
-                    ([0, 0, 1], "south"),
-                    ([0, 0, -1], "north"),
-                ] {
-                    let wall = [c[0] - d[0], c[1], c[2] - d[2]];
-                    if solid(wall) {
-                        return site(format!("minecraft:wall_torch[facing={facing}]"), false);
+                for facing in ["east", "west", "south", "north"] {
+                    let block = format!("minecraft:wall_torch[facing={facing}]");
+                    if held(&block) {
+                        return site(block, false);
                     }
                 }
             }
@@ -2034,10 +2064,10 @@ fn candidate(
         }
         // Lantern hung under a ceiling block; floor-sitting as fallback (colliding).
         Fixture::Lantern => {
-            if free(c) && solid(above) {
+            if free(c) && held("minecraft:lantern[hanging=true]") {
                 return site("minecraft:lantern[hanging=true]".to_string(), false);
             }
-            if free(c) && solid(below) && !reachable.contains(&c) {
+            if free(c) && held("minecraft:lantern[hanging=false]") && !reachable.contains(&c) {
                 // floor lantern occupies the cell → colliding; keep it off walkable
                 // cells so it can never wall a walker in.
                 return site("minecraft:lantern[hanging=false]".to_string(), true);

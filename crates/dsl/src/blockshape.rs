@@ -578,14 +578,19 @@ pub struct MeasuredExtent {
 
 /// A per-blockstate table measured from the pinned jar, keyed by namespaced
 /// block id: each row's distinguishing properties and the value they select.
-/// Both measured tables in this module are this shape, written by the one
-/// collapse in `tools/maintenance/dump-collision-tops.py`, and read by the one
-/// lookup [`pinned_row`].
-type PinnedRows<T> = std::collections::BTreeMap<String, Vec<(Vec<(String, String)>, T)>>;
+/// Every measured per-blockstate table in this crate is this shape, written by
+/// the one collapse in `tools/maintenance/dump-collision-tops.py` (the support
+/// tables, `crate::support`, then write each block's most common value once,
+/// last and bare), and read by the one lookup [`pinned_row`].
+pub(crate) type PinnedRows<T> = std::collections::BTreeMap<String, Vec<(Vec<(String, String)>, T)>>;
 
 /// Parse a measured table: `#` lines skipped, every other line
 /// `block[props]<TAB>a<TAB>b<TAB>count`, the two value columns handed to `value`.
-fn pinned_rows<T>(tsv: &str, what: &str, value: impl Fn(&str, &str) -> T) -> PinnedRows<T> {
+pub(crate) fn pinned_rows<T>(
+    tsv: &str,
+    what: &str,
+    value: impl Fn(&str, &str) -> T,
+) -> PinnedRows<T> {
     let mut out = PinnedRows::new();
     for line in tsv.lines().filter(|l| !l.starts_with('#')) {
         let cols: Vec<&str> = line.split('\t').collect();
@@ -608,27 +613,41 @@ fn pinned_rows<T>(tsv: &str, what: &str, value: impl Fn(&str, &str) -> T) -> Pin
     out
 }
 
-/// The row of a measured table this block state selects, or `None` when the
-/// table does not hold the block. A property the name leaves out is read at the
-/// block's pinned default ([`crate::blocks::BlockRegistry::default_state`]) —
-/// what the game resolves it to.
-fn pinned_row<'r, T>(rows: &'r PinnedRows<T>, name: &str) -> Option<&'r T> {
+/// The row of a measured table this block state selects — the FIRST row of its
+/// block whose properties it matches ([`state_has`]) — or `None` when the table
+/// does not hold the block.
+pub(crate) fn pinned_row<'r, T>(rows: &'r PinnedRows<T>, name: &str) -> Option<&'r T> {
+    let id = namespaced_id(name);
+    rows.get(id.as_ref())?
+        .iter()
+        .find(|(props, _)| state_has(name, props))
+        .map(|(_, e)| e)
+}
+
+/// The namespaced block id of a block name (`oak_slab[type=top]` →
+/// `minecraft:oak_slab`).
+pub(crate) fn namespaced_id(name: &str) -> std::borrow::Cow<'_, str> {
     let id = base_id(name);
-    let id = if id.contains(':') {
+    if id.contains(':') {
         std::borrow::Cow::Borrowed(id)
     } else {
         std::borrow::Cow::Owned(format!("minecraft:{id}"))
-    };
-    let rows = rows.get(id.as_ref())?;
-    let defaults = crate::blocks::BlockRegistry::v1_21_11().default_state(&id);
-    rows.iter()
-        .find(|(props, _)| {
-            props.iter().all(|(k, v)| {
-                state_value(name, k).or_else(|| defaults.and_then(|d| d.get(k)).map(String::as_str))
-                    == Some(v.as_str())
-            })
-        })
-        .map(|(_, e)| e)
+    }
+}
+
+/// Whether a block state carries every one of `props`. A property the name
+/// leaves out is read at the block's pinned default
+/// ([`crate::blocks::BlockRegistry::default_state`]) — what the game resolves
+/// it to. The one property comparison every measured-table reader makes.
+pub(crate) fn state_has(name: &str, props: &[(String, String)]) -> bool {
+    if props.is_empty() {
+        return true;
+    }
+    let defaults = crate::blocks::BlockRegistry::v1_21_11().default_state(&namespaced_id(name));
+    props.iter().all(|(k, v)| {
+        state_value(name, k).or_else(|| defaults.and_then(|d| d.get(k)).map(String::as_str))
+            == Some(v.as_str())
+    })
 }
 
 fn measured_rows() -> &'static PinnedRows<MeasuredExtent> {

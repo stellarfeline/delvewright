@@ -1760,19 +1760,83 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
     );
 }
 
-/// `DW0318` on the shipped library, both horizons, one placement.
+/// **The shore**, engine-owned (`prefab/test-shore`, synthesised here): a
+/// beach whose water runs out of its own outer faces, `13 x 8 x 16`.
 ///
-/// `island-beach-camp` is a real shoreline piece: its own bytes pass the
-/// piece-level containment rule, and `delvec prefab` counts 171 run directions
-/// leaving its outer faces, which that rule deliberately does not judge —
-/// *whatever this piece is placed against decides where that water goes*. This
-/// test is the thing that decides it.
+/// Land for `z < SHORE_SEA_Z`: a stone plinth to local y=2, so the walk plane
+/// is y=3, one block clear of the sea (the island convention), with four
+/// glowstones set in its top course so the beach is lit at night and `DW0210`
+/// is not what this is about. Sea for `z >= SHORE_SEA_Z`: a stone bed to y=1
+/// and water at y=2 — the sea's own plane once an `ocean` area seats the piece
+/// at `63 - walk_y` = 60 — open to the piece's east, west and south faces. Its
+/// own bytes pass the piece-level containment rule; the run directions that
+/// leave its faces are the ones that rule deliberately does not judge,
+/// *whatever this piece is placed against decides where that water goes*. No
+/// block in it asks a neighbour for anything it does not have (`DW1002`).
+const SHORE_SIZE: [i32; 3] = [13, 8, 16];
+const SHORE_SEA_Z: i32 = 9;
+
+fn shore_cells() -> Vec<([i32; 3], &'static str)> {
+    let [sx, _, sz] = SHORE_SIZE;
+    let mut cells = Vec::new();
+    for x in 0..sx {
+        for z in 0..sz {
+            if z < SHORE_SEA_Z {
+                for y in 0..=2 {
+                    let lamp = y == 2 && matches!((x, z), (3, 2) | (9, 2) | (3, 6) | (9, 6));
+                    cells.push((
+                        [x, y, z],
+                        if lamp {
+                            "minecraft:glowstone"
+                        } else {
+                            "minecraft:stone"
+                        },
+                    ));
+                }
+            } else {
+                cells.push(([x, 0, z], "minecraft:stone"));
+                cells.push(([x, 1, z], "minecraft:sand"));
+                cells.push(([x, 2, z], "minecraft:water"));
+            }
+        }
+    }
+    cells
+}
+
+/// A private copy of the library holding `prefab/test-shore` — what the shore
+/// test seats, so no content-repository piece is this engine's test surface.
+fn shore_prefabs(tag: &str) -> std::path::PathBuf {
+    let pf = common::shown_prefabs_dir(tag);
+    common::write_single_prefab(
+        &pf,
+        "test-shore",
+        SHORE_SIZE,
+        &shore_cells(),
+        serde_json::json!({
+            "entry": { "pos": [6, 3, 4], "facing": "south", "role": "entry" },
+            "anchor/crew-a": { "pos": [4, 3, 4], "facing": "east" },
+            "anchor/camp-fire": { "pos": [8, 3, 4], "facing": "north" },
+        }),
+    );
+    common::declare_shown_faces(&pf, "test-shore");
+    // The piece's claims about itself: its land plane, and the plane its sea
+    // meets (`waterline_y`, spec-0060 §4) — both read off `shore_cells`.
+    let path = pf.join("test-shore.json");
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    doc["walk_y"] = serde_json::json!(3);
+    doc["waterline_y"] = serde_json::json!(2);
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    pf
+}
+
+/// `DW0318`, both horizons, one placement of [`shore_cells`].
 ///
 /// Placed under `horizon: ocean` the water meets the sea the piece depicts and
 /// the build is green. Placed under `horizon: void` — the default, and what any
 /// campaign that never declares a horizon gets — the identical geometry pours
-/// thousands of water cells off the edge of the world, forever, and before this
-/// check existed the build was **green** and shipped it.
+/// water off the edge of the world, forever, and before this check existed the
+/// build was **green** and shipped it.
 fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::hello_world_dir(), &camp);
@@ -1787,7 +1851,7 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
         std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     };
     edit("world.json", &|d| {
-        d["content"]["areas"][0]["prefab"] = serde_json::json!("prefab/island-beach-camp");
+        d["content"]["areas"][0]["prefab"] = serde_json::json!("prefab/test-shore");
         if ocean {
             let c = d["content"].as_object_mut().unwrap();
             c.insert("horizon".into(), serde_json::json!("ocean"));
@@ -1818,26 +1882,9 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
 
 #[test]
 fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_does_not() {
-    // The shore piece stands under an open sky here, so `DW0885` asks it which
-    // of its sides are finished surface; this fixture is about where its water
-    // goes. See `common::shown_prefabs_dir`.
-    let pf = common::shown_prefabs_dir("dw0318");
-    // **The island tileset's own walk plane**, written onto this fixture's
-    // private copy rather than measured: `prefabs/island-tileset.md` states the
-    // convention (water to local y=2, the land plane one block above it at 3),
-    // and the shipped documents do not yet carry the field — that is
-    // spec-0060 §8's content round. The general helper writes the LOWEST
-    // standable cell, which on this piece is a single beach cell down at the
-    // waterline itself; the number below is the piece's claim about what it is,
-    // and the second half of this test is what the engine then says about the
-    // difference between the two.
-    {
-        let path = pf.join("island-beach-camp.json");
-        let mut doc: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        doc["walk_y"] = serde_json::json!(3);
-        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
-    }
+    // The shore stands under an open sky, so `DW0885` asks it which of its
+    // sides are finished surface; this fixture is about where its water goes.
+    let pf = shore_prefabs("dw0318");
 
     // --- void: the water runs out of the world ------------------------------
     let camp = beach_camp_campaign("dw0318-void", false);
@@ -1865,7 +1912,7 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
     assert_eq!(code(&r), 1, "refused at validation:\n{log}");
     assert!(log.contains("DW0886"), "expected DW0886:\n{log}");
     assert!(
-        log.contains("prefab/island-beach-camp"),
+        log.contains("prefab/test-shore"),
         "names the piece the water came from:\n{log}"
     );
     assert!(
@@ -1879,23 +1926,9 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
 
     // --- ocean: the sea holds the water, and the piece stands clear of it ---
     //
-    // This half carried a MEASURED FINDING for one round, pinned here so the
-    // repair would have a red to turn green: `island-beach-camp` declaring
-    // `walk_y: 3` is placed at y=60 and stands its land at 63, and the engine
-    // then read one more standable cell down at local y=2, landing at world
-    // y=62 — the sea's own plane, with a party apparently standing in it.
-    //
-    // The cell was `minecraft:seagrass` at local (20,2,11), and there is no body
-    // in it: a seagrass block's cell holds a water SOURCE in vanilla, which is
-    // what the generator that laid it says in its own comment, and the collision
-    // table read it as a thin decoration a body steps over. That is repaired in
-    // `blockshape::is_submerged_by_nature`, and the piece measures 223 standable
-    // cells at local y=3 and none below it.
-    //
-    // So the finding is closed by the instrument being right rather than by the
-    // library moving, and what this half asserts now is the green with the
-    // binding that makes it a measurement: every walk cell judged against the
-    // sea, none at or below it, over a non-zero count.
+    // What it asserts is the green with the binding that makes it a
+    // measurement: every walk cell judged against the sea, none at or below
+    // it, over a non-zero count.
     let camp = beach_camp_campaign("dw0318-ocean", true);
     let out = tmp("dw0318-ocean-out");
     let r = delvec(&[
