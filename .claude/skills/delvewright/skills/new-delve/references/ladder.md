@@ -29,14 +29,15 @@ server actually placed (`DW0955`). Mandatory on the build that ships:
 ```sh
 EULA=TRUE "$DELVEWRIGHT_ENGINE/validation/world-save.sh" "$DELVEWRIGHT_ENGINE/validation/delve-output" \
     --project dw-<campaign>-r1-world
-delvec --prefabs "$DELVEWRIGHT_PREFABS" cameras "$DELVEWRIGHT_ENGINE/validation/delve-output" \
-    --campaign campaigns/<id> -o .out/written-world
+delvec --prefabs "$DELVEWRIGHT_PREFABS" written-world campaigns/<id> -o .out/written-world
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/ci/check-written-world.py" \
-    "$DELVEWRIGHT_ENGINE/validation/delve-output" .out/written-world/worlds/at-load \
+    "$DELVEWRIGHT_ENGINE/validation/delve-output" .out/written-world \
     "$DELVEWRIGHT_ENGINE/validation/delve-output/world" --record .out/written-world.json
 ```
 
-It must exit 0. A red names every cell the server holds differently from the
+`delvec written-world` writes the world the engine models at load from the
+campaign and `--prefabs` alone — no camera record, no server boot — so a campaign
+with no `design/cameras.json` walks this step the same way. It must exit 0. A red names every cell the server holds differently from the
 model, by state pair: that is a toolchain bug (the engine's model or emission
 is wrong), never a campaign to rearrange. Keep `.out/written-world.json` for the
 staging gate (`--written-world`).
