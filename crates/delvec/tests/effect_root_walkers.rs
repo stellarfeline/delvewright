@@ -336,9 +336,8 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
             .expect("probe actor parses");
             actor.on_kill.as_mut().expect("declared above").effects = bundle;
             c.quests.content.actors.push(actor);
-            // A fight in a campaign with no waves ships `peaceful` unless the
-            // world says otherwise (`DW0469`), and a zombie on peaceful is gone
-            // on the tick it spawns.
+            // The probe declares its difficulty rather than leaning on the
+            // derivation (`delvewright_dsl::derived_difficulty`).
             c.world.content.difficulty =
                 Some(serde_json::from_str("\"easy\"").expect("difficulty parses"));
         }

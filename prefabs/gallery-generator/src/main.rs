@@ -1173,6 +1173,17 @@ fn block_at(
     {
         return ("minecraft:stone", None);
     }
+    // The lidded pit and the west well carry their own light, each on its west
+    // wall at the head height of a body on its bottom. A pit a lid or a hatch
+    // seals is out of reach of everything the hall's grid hangs, and the only
+    // cell a hung lantern could take there is the head cell of the body that
+    // falls in — where a lantern is a floor that body lands on, and the lid's
+    // stone is a beat's to clear, so a lantern hung from it would fall with it
+    // (`DW1002`). A wall torch is a light a falling body passes through, held by
+    // a wall no beat takes away.
+    if ((x, z) == LID_PIT || (x, z) == WELL) && y == 2 {
+        return ("minecraft:wall_torch", Some(&[("facing", "east")]));
+    }
     if z == WELL.1
         && TERRACE_STEPS
             .iter()
@@ -1194,6 +1205,18 @@ fn block_at(
     let (cx0, cx1, cy, cz0, cz1) = CANOPY;
     if y == cy && (cx0..=cx1).contains(&x) && (cz0..=cz1).contains(&z) {
         return ("minecraft:stone", None);
+    }
+    // The east bay carries its own light on the hall's east wall: the canopy
+    // over it shades it from the ceiling grid, and a lantern hung from the
+    // canopy falls with it when the collapse brings it down — light the bay
+    // would lose in the beat the debris lands. Torches on the wall stay. Each
+    // hangs in the cell west of the wall, held by the wall's full west face:
+    // the canopy ends a cell short of the wall, so a torch at the canopy's own
+    // east edge would hang on air (`DW1002`). None at the bay's south end,
+    // where the oak the lane's batch plants in the east corner spreads its
+    // leaves.
+    if x == SIZE[0] - 2 && y == cy - 2 && [cz0, (cz0 + cz1) / 2].contains(&z) {
+        return ("minecraft:wall_torch", Some(&[("facing", "west")]));
     }
     // The mezzanine: solid to its top course, and nothing carves a way into it.
     // The flight that climbs it is outside this footprint entirely, which is
@@ -1342,16 +1365,19 @@ fn assert_anchors_are_standable(s: &Structure) {
             "{ID}: anchor `{}` stands in a solid cell",
             a.name
         );
-        assert_eq!(
-            at([x, y + 1, z]),
-            "minecraft:air",
-            "{ID}: anchor `{}` has no headroom",
+        // Headroom and floor are what the engine's one collision table says
+        // they are: a wall torch at head height is headroom, a tuft of grass
+        // under the feet is no floor.
+        let head = at([x, y + 1, z]);
+        assert!(
+            delvewright_dsl::blockshape::passes_body(head),
+            "{ID}: anchor `{}` has no headroom: `{head}` is in it",
             a.name
         );
-        assert_ne!(
-            at([x, y - 1, z]),
-            "minecraft:air",
-            "{ID}: anchor `{}` has no floor under it",
+        let floor = at([x, y - 1, z]);
+        assert!(
+            delvewright_dsl::blockshape::supports_body(floor),
+            "{ID}: anchor `{}` has no floor under it: `{floor}` holds no body",
             a.name
         );
     }
@@ -3065,7 +3091,7 @@ fn build_shard() -> Structure {
     let mut palette = Palette::new();
     for (name, props) in [
         ("minecraft:polished_blackstone", None),
-        ("minecraft:lantern", Some(&[("hanging", "true")][..])),
+        ("minecraft:lantern", Some(&[("hanging", "false")][..])),
     ] {
         palette.idx(name, props);
     }
@@ -3073,12 +3099,15 @@ fn build_shard() -> Structure {
     for x in 0..SHARD_SIZE[0] {
         for y in 0..SHARD_SIZE[1] {
             for z in 0..SHARD_SIZE[2] {
-                // A hanging lantern at the top centre, so the stamp is visible
-                // and asymmetric — a rotation nobody can see is a rotation
-                // nobody can check.
+                // A lantern standing on one top corner, so the stamp is
+                // visible and asymmetric — a rotation nobody can see is a
+                // rotation nobody can check. It STANDS (`hanging=false`) on the
+                // blackstone under it: a hanging one asks the block above it
+                // for a ceiling, and over the stamp there is none, so the
+                // server drops it (`DW1002`).
                 let lantern = [x, y, z] == [0, SHARD_SIZE[1] - 1, 0];
                 let (name, props): (&str, Option<&[(&str, &str)]>) = if lantern {
-                    ("minecraft:lantern", Some(&[("hanging", "true")]))
+                    ("minecraft:lantern", Some(&[("hanging", "false")]))
                 } else {
                     ("minecraft:polished_blackstone", None)
                 };

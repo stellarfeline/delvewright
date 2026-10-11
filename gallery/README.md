@@ -120,6 +120,16 @@ Four probes each refill one cell: the shrieker with summoning on (`DW0998`), the
 sensor caught mid-click (`DW0999`), an iron door in the floor beside the sensor
 (`DW1000`), and a catalyst set into the near hall's floor (`DW1001`).
 
+Every block the build writes is one the server keeps (`DW1002`): the build judges
+each block whose pinned `canSurvive` rule asks a neighbour for something — the
+hall's hanging lanterns, the torches and lanterns the relight pass sites, the
+cabin ladder, the floor levers the triggers set, the stamped shards' standing lanterns — against
+the neighbours the world gives it, and prints the count on the `attached
+blocks` line. The lidded pit and the west well each carry a wall torch on their west wall,
+because a lantern hung from the lid would fall with the lid. Hang a lever on a glass
+pane's side and the build is refused, naming the lever, its cell and the full
+face the pane does not give (`probes/a-lever-hung-on-a-pane`).
+
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
 the entry because it declares the entry **role**; ten cells down the same floor
@@ -242,6 +252,7 @@ holding them at once.
 | `a-beat-heard-both-here-and-there` | `DW0929` | `validate` | giving the annex drip, heard in a `region`, a `place` as well |
 | `a-beat-in-solid-rock` | `DW0994` | `build` | moving the annex drip's box into the stone canopy over the hall's east bay, where no body can stand |
 | `a-beat-the-game-never-heard` | `DW0326` | `validate` | misspelling the slow heartbeat's sound `entity.warden.heartbeats`, an id the pinned game does not hold |
+| `a-lever-hung-on-a-pane` | `DW1002` | `build` | hanging a lever on the north side of a glass pane under the near hall's roof: a pane's side is not the full face a wall-hung block asks for, so the server drops the lever |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

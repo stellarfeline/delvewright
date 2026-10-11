@@ -43,10 +43,10 @@ ENV TYPE=VANILLA \
     # void/superflat + fixed seed). The campaign-varying values (`difficulty`,
     # `level-seed`, and — spec-0013 v0.6 — `level-type` + `generator-settings`) are
     # sourced from that file by the entrypoint wrapper below, so they cannot drift;
-    # these ENV values are only the fallback if the file is absent. (v0.3: combat-wave
-    # campaigns need `difficulty=easy` — peaceful removes summoned mobs — while
-    # wave-free delves stay `peaceful`. v0.6: `horizon:"ocean"` campaigns emit an
-    # ocean superflat generator-settings the wrapper picks up here.)
+    # these ENV values are only the fallback if the file is absent. (The compiler
+    # derives `difficulty=easy` for a campaign with a wave or a staged body
+    # peaceful discards, and `peaceful` otherwise. `horizon:"ocean"` campaigns emit
+    # an ocean superflat generator-settings the wrapper picks up here.)
     MODE=adventure \
     DIFFICULTY=peaceful \
     FORCE_GAMEMODE=true \
@@ -133,8 +133,8 @@ fi
 # and nothing about the change would have looked dangerous.
 prop() { sed -n "/^$1=/{s///;p;q;}" "$props"; }
 # Difficulty. v0.6: `world.difficulty` is DECLARED by the campaign (easy/normal/
-# hard) and the compiler writes it here; absent, it derives easy for a wave
-# campaign and peaceful for a wave-free one (peaceful removes summoned mobs).
+# hard) and the compiler writes it here; absent, it derives easy for a campaign
+# with a wave or a staged body peaceful discards, and peaceful otherwise.
 # Either way the file is the authority: the image's DIFFICULTY env is a fallback
 # for an absent file only, and this line is what stops it from deciding how hard
 # the delve is. The seed is the compiler's (ADR-0006).

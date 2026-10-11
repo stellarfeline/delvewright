@@ -461,3 +461,30 @@ fn v06_blockstate_base_id_still_registry_checked() {
         "an unknown base id must still be DW0193 even with a valid state: {diags:#?}"
     );
 }
+
+/// Blocks and items are different registries: a block with no item form is a
+/// valid `set-block` target (`DW0193` asks the block registry).
+#[test]
+fn v06_block_without_item_form_validates_clean() {
+    let ok = QUESTS_V06_BLOCKSTATE.replacen(
+        "minecraft:water[level=0]",
+        "minecraft:wall_torch[facing=north]",
+        1,
+    );
+    let diags = check_campaign(&campaign_with_quests(&ok));
+    assert!(
+        diags.is_empty(),
+        "`minecraft:wall_torch` is a block with no item form and must validate: {diags:#?}"
+    );
+}
+
+/// An item that is not a block is not a `set-block` target.
+#[test]
+fn v06_item_that_is_not_a_block_is_dw0193() {
+    let bad = QUESTS_V06_BLOCKSTATE.replacen("minecraft:water[level=0]", "minecraft:iron_sword", 1);
+    let diags = check_campaign(&campaign_with_quests(&bad));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0193"),
+        "`minecraft:iron_sword` is in the item registry and is not a block: {diags:#?}"
+    );
+}

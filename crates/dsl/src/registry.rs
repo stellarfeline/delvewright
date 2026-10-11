@@ -121,6 +121,36 @@ pub fn entity_in_tag(entity: &str, tag: &str) -> bool {
         .is_some_and(|members| members.contains(&id))
 }
 
+/// The entity types the pinned game **discards while the world is peaceful**,
+/// namespaced (`crates/dsl/data/peaceful-despawn-1.21.11.json`, regenerated per
+/// MC pin by `tools/maintenance/extract-peaceful-despawn.py`;
+/// `crates/delvec/data/PROVENANCE.md`).
+///
+/// Read from the 1.21.11 server jar, never written by hand. Every ticked entity
+/// runs `Entity#checkDespawn()`; the `Mob` and `WitherBoss` implementations
+/// discard the body when the difficulty is peaceful and its type's
+/// `EntityType#isAllowedInPeaceful()` is false (`EntityType.Builder#notInPeaceful()`
+/// clears it), `ShulkerBullet`'s discards it on peaceful unconditionally, and
+/// `Entity`'s and `EnderDragon`'s never do. `NoAI`, `PersistenceRequired` and a
+/// `/summon` origin are not consulted. The extractor proves that list of five
+/// implementations is the whole list, and cross-checks the flag read at runtime
+/// against the `notInPeaceful()` calls in `EntityType`'s static initialiser.
+pub fn peaceful_despawn() -> &'static BTreeSet<String> {
+    static SET: std::sync::LazyLock<BTreeSet<String>> = std::sync::LazyLock::new(|| {
+        let raw = include_str!("../data/peaceful-despawn-1.21.11.json");
+        let ids: Vec<String> =
+            serde_json::from_str(raw).expect("vendored peaceful-despawn table is valid JSON");
+        ids.into_iter().collect()
+    });
+    &SET
+}
+
+/// Whether the pinned game discards a body of type `entity` while the world is
+/// peaceful — membership of [`peaceful_despawn`]. Accepts a bare or namespaced id.
+pub fn removed_on_peaceful(entity: &str) -> bool {
+    peaceful_despawn().contains(&namespaced_entity(entity))
+}
+
 /// A prefab lighting profile (spec-0001 "Lighting contract"). `lit` = floor
 /// light ≥ 7; `dim` = 3–6 (needs a rationale); `dark` = < 3 (valid only where
 /// analysis proves a night-vision mitigation — the compiler's `DW0210` check).
@@ -463,7 +493,7 @@ impl EnchantmentRegistry for VendoredEnchantmentRegistry {
 /// Complete and stable for the pinned version, so unlike the item/entity
 /// registries there is **nothing for the compiler to inject**: this const IS the
 /// registry, and [`is_potion_id`] is the whole membership test (same treatment as
-/// [`TECHNICAL_BLOCK_IDS`]).
+/// [`VendoredBlockRegistry`]).
 pub const POTION_IDS_1_21_11: &[&str] = &[
     "minecraft:awkward",
     "minecraft:fire_resistance",
@@ -582,20 +612,6 @@ pub const EFFECT_IDS_1_21_11: &[&str] = &[
     "minecraft:breath_of_the_nautilus",
 ];
 
-/// Technical / fluid blocks that are NOT items but are valid `set-block` targets
-/// (`air` clears a cell; fluids fill one). Block validation otherwise reuses the
-/// item registry — every placeable *affordance* block a prop/set-block would use
-/// (lever, button, chest, door, pressure plate, …) is an item in 1.21.11, so an
-/// item-registry membership test is a sound, false-reject-free block check; this
-/// allowlist covers the handful of placeable blocks that have no item form.
-pub const TECHNICAL_BLOCK_IDS: &[&str] = &[
-    "minecraft:air",
-    "minecraft:cave_air",
-    "minecraft:void_air",
-    "minecraft:water",
-    "minecraft:lava",
-];
-
 /// A status-effect id in its canonical namespaced form: `blindness` and
 /// `minecraft:blindness` are the same effect to vanilla and must be the same
 /// effect to the compiler.
@@ -614,33 +630,25 @@ pub fn namespaced_effect_id(id: &str) -> String {
     }
 }
 
-/// True if `id` (optionally un-namespaced) is a technical/fluid block.
-pub fn is_technical_block(id: &str) -> bool {
-    let norm = if id.contains(':') {
-        id.to_string()
-    } else {
-        format!("minecraft:{id}")
-    };
-    TECHNICAL_BLOCK_IDS.contains(&norm.as_str())
-}
+/// The [`BlockRegistry`] of the pinned 1.21.11 jar: every block id the game has,
+/// from `crates/dsl/data/blocks-1.21.11.json` ([`crate::blocks::BlockRegistry`]).
+///
+/// Blocks and items are different registries. A block with no item form
+/// (`minecraft:wall_torch`, wall signs, `minecraft:fire`, crops) is a valid
+/// placement target, and an item that is not a block (`minecraft:diamond`) is
+/// not; every site that places a block by id asks this registry, never the item
+/// registry. A bare id is read as `minecraft:`-namespaced, as the game does.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VendoredBlockRegistry;
 
-/// A [`BlockRegistry`] backed by an [`ItemRegistry`] plus the technical-block
-/// allowlist. Blocks that have an item form (the placeable affordances) resolve
-/// through the item registry; `air`/fluids resolve through the allowlist.
-pub struct ItemBackedBlockRegistry<'a> {
-    items: &'a dyn ItemRegistry,
-}
-
-impl<'a> ItemBackedBlockRegistry<'a> {
-    /// Wrap an item registry as a block registry.
-    pub fn new(items: &'a dyn ItemRegistry) -> Self {
-        Self { items }
-    }
-}
-
-impl BlockRegistry for ItemBackedBlockRegistry<'_> {
+impl BlockRegistry for VendoredBlockRegistry {
     fn contains(&self, block_id: &str) -> bool {
-        is_technical_block(block_id) || self.items.contains(block_id)
+        let reg = crate::blocks::BlockRegistry::v1_21_11();
+        if block_id.contains(':') {
+            reg.has(block_id)
+        } else {
+            reg.has(&format!("minecraft:{block_id}"))
+        }
     }
 }
 
@@ -786,5 +794,32 @@ mod lighting_tests {
             .is_err(),
             "deny_unknown_fields must survive the hand-written Deserialize"
         );
+    }
+}
+
+#[cfg(test)]
+mod block_registry_tests {
+    use super::*;
+
+    #[test]
+    fn the_block_registry_is_not_the_item_registry() {
+        let r = VendoredBlockRegistry;
+        for block_without_item in [
+            "minecraft:wall_torch",
+            "minecraft:fire",
+            "minecraft:oak_wall_sign",
+            "minecraft:air",
+            "minecraft:water",
+            "lava",
+        ] {
+            assert!(r.contains(block_without_item), "{block_without_item}");
+        }
+        for not_a_block in [
+            "minecraft:diamond",
+            "minecraft:iron_sword",
+            "minecraft:nope",
+        ] {
+            assert!(!r.contains(not_a_block), "{not_a_block}");
+        }
     }
 }

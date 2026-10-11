@@ -332,26 +332,12 @@ pub(super) fn pack_note(
 pub const DELVE_SIMULATION_DISTANCE: u32 = 10;
 
 pub(super) fn emit_server(plan: &Plan, out: &mut BuildOutput) {
-    // Difficulty. Declared (`world.difficulty`, v0.6) wins; absent falls back to
-    // the historical derivation, which is what keeps every pre-0.6 campaign
-    // byte-identical: combat waves (v0.3) require a non-peaceful difficulty
-    // because peaceful *removes* hostile mobs even when summoned, and wave-free
-    // campaigns stay `peaceful` (hello-world / keep-crawl unchanged). Natural
+    // Difficulty: the declared `world.difficulty`, else the engine's derivation
+    // (`delvewright_dsl::derived_difficulty`) — `easy` once the campaign fields a
+    // wave or stages a body peaceful discards, `peaceful` otherwise. Natural
     // spawning is off either way (`spawn-monsters=false` + gamerule `spawn_mobs
     // false`); only the compiler's own summons exist.
-    let difficulty = plan
-        .campaign
-        .world
-        .content
-        .difficulty
-        .map(|d| d.token())
-        .unwrap_or_else(|| {
-            if plan.campaign.quests.content.waves.is_empty() {
-                "peaceful"
-            } else {
-                "easy"
-            }
-        });
+    let difficulty = delvewright_dsl::effective_difficulty(plan.campaign).token();
     // Horizon (DSL v0.6, spec-0013). `void` (default/absent) is the empty-layer
     // superflat over the delve's own void biome. `ocean` swaps in a
     // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
