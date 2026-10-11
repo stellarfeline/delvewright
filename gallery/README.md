@@ -218,7 +218,7 @@ holding them at once.
 | `a-second-purse-on-the-one-sidebar` | `DW0919` | `validate` | asking the relics to stand on the sidebar beside the tokens, when the slot holds one objective |
 | `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
 | `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
-| `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well, with a shroomlight in the well's wall because the shut hatch keeps the hall's light out: a player can open it and leave it open, and the muster then falls in |
+| `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
 | `a-sky-the-sun-does-not-obey` | `DW0928` | `validate` | holding the hall's sun in place: the overworld's day timeline overrides `visual/sun_angle` every tick, so the line would ship and do nothing |
 | `an-attribute-the-game-never-heard-of` | `DW0928` | `validate` | spelling `visual/sky_colour`, which the pinned game does not register — the refusal names `visual/sky_color` |
 | `a-colour-that-is-a-number` | `DW0928` | `validate` | writing the hall's sky colour as an integer where vanilla's data writes `#rrggbb` |
