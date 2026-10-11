@@ -1209,10 +1209,13 @@ fn block_at(
     // The east bay carries its own light on the hall's east wall: the canopy
     // over it shades it from the ceiling grid, and a lantern hung from the
     // canopy falls with it when the collapse brings it down — light the bay
-    // would lose in the beat the debris lands. Torches on the wall stay. None
-    // at the bay's south end, where the oak the lane's batch plants in the east
-    // corner spreads its leaves.
-    if x == cx1 && y == cy - 2 && [cz0, (cz0 + cz1) / 2].contains(&z) {
+    // would lose in the beat the debris lands. Torches on the wall stay. Each
+    // hangs in the cell west of the wall, held by the wall's full west face:
+    // the canopy ends a cell short of the wall, so a torch at the canopy's own
+    // east edge would hang on air (`DW1002`). None at the bay's south end,
+    // where the oak the lane's batch plants in the east corner spreads its
+    // leaves.
+    if x == SIZE[0] - 2 && y == cy - 2 && [cz0, (cz0 + cz1) / 2].contains(&z) {
         return ("minecraft:wall_torch", Some(&[("facing", "west")]));
     }
     // The mezzanine: solid to its top course, and nothing carves a way into it.
