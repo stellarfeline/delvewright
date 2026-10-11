@@ -81,7 +81,9 @@ included) is `DW0987`, one that writes the ring's fixed ground `DW0990`.
 4. **After any plan or graph edit** — including one that answers a playtest
    finding in a later round: `delvec --prefabs "$DELVEWRIGHT_PREFABS"
    detail <campaign-dir> --all`. Every program-detailed place is re-made; one
-   that no longer fits is refused by name.
+   that no longer fits is refused by name. The run judges the whole it would
+   leave, so the order of the places decides nothing, and it writes nothing
+   unless every place and that whole pass.
 
 Only when `details[]` binds every node does a declared vista stop being an
 advisory and become a refusal (`DW0821`) — by then there is nothing left to

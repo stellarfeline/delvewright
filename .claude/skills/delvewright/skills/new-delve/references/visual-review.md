@@ -170,6 +170,8 @@ stops — and it is the one knob that trades render time against noise; it is no
 a lighting, framing or quality setting, and nothing about the picture's content
 changes with it. The command above passes none, so each scene renders to the
 budget `delvec scene` already wrote into it — `sppTarget: 500`, the review tier.
+`chunky.sh` hands that recorded budget to every render that names no `-target`,
+so a full pass after a 64 draft still reaches it.
 Add `-target <n>` only to go somewhere else on the ladder: ~64 for a draft you
 only need to judge framing on, ~300 for final art (`delvec --prefabs "$DELVEWRIGHT_PREFABS" panorama --spp`'s own
 default), 500 for a review frame. A POV frame you are reading as primary

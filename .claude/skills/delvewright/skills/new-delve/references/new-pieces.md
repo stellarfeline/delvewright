@@ -351,6 +351,10 @@ this needs are subcommands of the one binary Init I3 installed.
    metadata to write into, and the fix is to create it, never to let the tool
    invent a `spdx: UNKNOWN` one.
 
+   `audit` admits the four acting sculk blocks by state: a shrieker that can
+   summon is `DW0998`, and a palette entry or block entity not at rest is
+   `DW0999`. Re-expand with the rest state; the bare id is at rest.
+
 ## A body has to be able to walk up it
 
 **A step of one whole block is a jump, not a stair.** Vanilla walks a body up
@@ -423,6 +427,10 @@ these three rules, whichever route makes the piece
 - **Place them staggered and irregular, in three dimensions**: on walls and on
   the vault as well as near the floor, at uneven spacings and uneven heights.
   Never a grid, and never one course at one height.
+- **Every fixture hangs on a face that holds it.** A wall torch needs a full
+  face behind it, a lantern a face sturdy at its centre; the build refuses a
+  block no neighbour holds (`DW1002`), so a lever or a torch hung on a pane is
+  moved to a face that holds it.
 
 A piece the `lighting` block calls dark is repaired by re-arranging these
 sources or adding more of them, never by another kind of light.
