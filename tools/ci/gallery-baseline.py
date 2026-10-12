@@ -376,8 +376,10 @@ def prepare_comparison(sha: str, work: Path, target_dir: Path) -> tuple[Path, Pa
         raise Red("comparison checkout failed", r.stderr)
     env = dict(os.environ, CARGO_TARGET_DIR=str(target_dir))
     print(f"gallery-baseline: building the comparison tree `{sha[:12]}` from source", flush=True)
+    # `--manifest-path` names the comparison tree's own workspace, and `cwd` is
+    # that tree so its own `rust-toolchain.toml` picks the compiler.
     b = subprocess.run(
-        ["cargo", "build", "--locked", "-p", "delvec", "--bin", "delvec"],
+        ["cargo", "build", "--locked", "--manifest-path", str(root / "Cargo.toml"), "-p", "delvec", "--bin", "delvec"],
         cwd=root,
         env=env,
         capture_output=True,

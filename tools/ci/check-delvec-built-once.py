@@ -92,11 +92,17 @@ def joined(run: str) -> str:
     return re.sub(r"\\\n\s*", " ", run)
 
 
+# A line that PRINTS a command — a remedy in an error message — runs nothing.
+PRINTS = re.compile(r"^\s*(?:echo|printf)\b")
+
+
 def shell_compiles(text: str) -> list[str]:
-    """Each line of shell that compiles the root workspace."""
+    """Each line of shell that compiles the root workspace (a printed remedy is not one)."""
     out = []
     for line in joined(text).splitlines():
         code = line.split("#", 1)[0] if not line.lstrip().startswith("#") else ""
+        if PRINTS.match(code):
+            continue
         if CARGO_COMPILE.search(code) and not OTHER_WORKSPACE.search(code):
             out.append(line.strip())
     return out
