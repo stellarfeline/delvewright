@@ -581,7 +581,8 @@ fn cameras_prints_the_sky_binding_line() {
             a_camera("hall", "concept/hall"),
             0,
             vec![
-                "sky: gate dusk+clear derived from concept/gate class low — the renderer's own clear sky",
+                "sky: gate dusk+clear derived from concept/gate class low — clear cell at daytime \
+                 12000: skyLight 0.690126, apparentSkyLight 0.489308, sun 0, fog 0.0001, sky fog 1",
                 "sky: hall dusk+clear derived from concept/hall class low",
                 "skies: 2 derived, 0 stated, over 2 camera(s); weathers emitted: {}",
             ],

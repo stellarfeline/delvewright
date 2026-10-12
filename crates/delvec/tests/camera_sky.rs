@@ -479,7 +479,10 @@ fn the_gallery_reaches_every_weather_and_every_class() {
         "the stated sky's tick reaches the clear cell's bytes"
     );
     let v: serde_json::Value = serde_json::from_slice(&noon.scenes[i].1).unwrap();
-    assert!(carries_clear_cell(&v, WorldTime::Noon.daytime_ticks()), "{v}");
+    assert!(
+        carries_clear_cell(&v, WorldTime::Noon.daytime_ticks()),
+        "{v}"
+    );
     eprintln!(
         "gallery clear cell: hall-exterior skyLight {} at its own tick, {} at noon",
         sky_of(&emission.scenes[i].1)["skyLight"],

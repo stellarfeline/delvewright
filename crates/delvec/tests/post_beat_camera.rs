@@ -665,7 +665,11 @@ fn cameras_print_where_every_camera_stands() {
 /// no `after` writes the scene the engine wrote before this change for the same
 /// record, but for `world.path` (`tests/fixtures/post-beat-camera/
 /// base-scene-hero.json`, emitted by the engine at the merge base, its path
-/// masked).
+/// masked) and for the keys the clear cell and the post-process own — `sky`,
+/// `fog`, the sun's `intensity`, `color` and `drawTexture`, and `postprocess`
+/// (`compiler.md` §4), which the fixture predates. **A loosening of what this
+/// criterion asserts**: those keys are compared here to nothing; the clear
+/// cell's own tests and the view goldens hold them.
 #[test]
 fn a_scene_is_the_scene_it_was_but_for_its_world() {
     let camp = hello("c7", &[("hero", None)]);
@@ -695,7 +699,23 @@ fn a_scene_is_the_scene_it_was_but_for_its_world() {
             .join("crates/delvec/tests/fixtures/post-beat-camera/base-scene-hero.json"),
     );
     base["world"]["path"] = serde_json::json!("<masked>");
-    assert_eq!(runs[0].0, base, "the scene moved by more than its world");
+    let unsky = |v: &mut serde_json::Value| {
+        let o = v.as_object_mut().unwrap();
+        for k in ["sky", "fog", "postprocess"] {
+            o.remove(k);
+        }
+        let sun = o["sun"].as_object_mut().unwrap();
+        for k in ["intensity", "color", "drawTexture"] {
+            sun.remove(k);
+        }
+    };
+    let mut scene = runs[0].0.clone();
+    unsky(&mut scene);
+    unsky(&mut base);
+    assert_eq!(
+        scene, base,
+        "the scene moved by more than its world and its sky"
+    );
 }
 
 /// **Criterion 1 — the surface.** `delvec schema cameras` exports `after`;
