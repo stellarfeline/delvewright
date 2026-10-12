@@ -74,29 +74,21 @@ Compose cannot compute an absolute default, so this is a real pair and not
 something a better default removes. Set neither and everything above is
 unchanged.
 
-The build writes more than a datapack. Four things to read, and **the last two
-stand on site-plan campaigns only** — an `areas[]` build emits neither, and
-their absence there is the placement model, not a run that went wrong:
+The build writes more than a datapack. Four things to read, on every build:
 
 - `critical-path.json`, at the **root** of the output — the playthrough the
-  proof found, step by step. **Every campaign.** A step that crosses areas
-  carries a `transport` key; step 2A is about what puts it there.
+  proof found, step by step.
 - `render-plan.json` — the deterministic shot list, each shot with the `expect`
-  line step 12 checks it against. **Every campaign.**
-- **Site-plan campaigns**: `DW0822`, the pacing line — it stands beside
-  `DW0813` on every site-plan build and on no other. It measures the critical
-  path over the built
-  blockout — so many blocks of route, and about so many minutes at the
-  metrics table's blocks-per-minute rate — and it carries **no threshold and
-  refuses nothing**, so nothing in the engine compares it to your
-  `target_minutes`. **You do that.** A map that measures twelve minutes
-  against a `target_minutes` of 150 is not a warning anyone will raise; it is
-  a map whose walking is a twelfth of its billing, and the gap is either
-  content you have not written yet or a design that is smaller than it says.
-  **On an `areas[]` campaign there is no pacing measurement at all**, so
-  `target_minutes` there is your own estimate and nothing reads it — do not go
-  looking for this line, and do not read its absence as a build that skipped
-  something.
+  line step 12 checks it against.
+- `DW0822`, the pacing line — it stands beside `DW0813` on every build. It
+  measures the critical path over the built blockout — so many blocks of
+  route, and about so many minutes at the metrics table's blocks-per-minute
+  rate — and it carries **no threshold and refuses nothing**, so nothing in
+  the engine compares it to your `target_minutes`. **You do that.** A map that
+  measures twelve minutes against a `target_minutes` of 150 is not a warning
+  anyone will raise; it is a map whose walking is a twelfth of its billing, and
+  the gap is either content you have not written yet or a design that is
+  smaller than it says.
 
 **Every campaign: no place a player can get into and not out of.**
 The build moves a body the way a player does — walks, falls off edges, jumps

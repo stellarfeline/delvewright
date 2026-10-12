@@ -145,7 +145,7 @@ this needs are subcommands of the one binary Init I3 installed.
    mark wrapping a column that includes its own floor slab lands *in* the floor
    and reds `contract-anchors`; mark the void, or use `at: offset` with the
    walkable Y. A `mark` may also carry `role` (`grammar.md` §2b; a mark is a
-   point, so of the two terms it takes `entry`) — that is how a grammar-authored piece declares the 2A entry point
+   point, so of the two terms it takes `entry`) — that is how a grammar-authored piece declares an area's entry point
    without needing to write a name it structurally cannot write; one anchor per
    area may carry it (`DW0804`), and every other anchor still binds by name.
    For a hand-built or ingested piece, where no `mark` ever ran, the same role

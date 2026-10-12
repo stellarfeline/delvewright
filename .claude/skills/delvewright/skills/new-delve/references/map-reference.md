@@ -7,7 +7,7 @@
 - [What the sequence form costs, and what checks it](#what-the-sequence-form-costs-and-what-checks-it)
 - [Confirmed views become campaign files](#confirmed-views-become-campaign-files)
 
-Needed at step 2B on path B of Init I7. On path A the views are already in
+Needed at step 2 on path B of Init I7. On path A the views are already in
 `design/reference/` and this section is how to *extend* the series, not how to
 start one.
 
