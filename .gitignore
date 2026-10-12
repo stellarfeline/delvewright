@@ -170,3 +170,12 @@ determinism-macos.txt
 # command writes into the repository root is ignored wherever the command puts
 # it by default, or the next run offers it to `git add -A`.
 /determinism-subject-work/
+# The gallery emission baseline is computed in the run, never committed
+# (ADR-0034): `tools/ci/gallery-baseline.py` writes its comparison worktree, the
+# comparison's cargo target and its report under `--work`, which defaults here.
+# Only `gallery/baseline/warnings.json`, the expected-warnings ledger, is
+# committed; the three documents that used to sit beside it may not return.
+/.gallery-baseline/
+gallery/baseline/header.json
+gallery/baseline/manifests.json
+gallery/baseline/delta.json

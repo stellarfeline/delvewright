@@ -51,7 +51,7 @@ Rows say where the number is SUPPOSED to be. For as long as that was all they
 said, the number was also in 446 other files: a `dsl_version` bump touched 816
 occurrences and **319 of the 489 files in that pull request changed nothing but
 that one string**. So `verify` also SWEEPS the tree — see the block above
-`GENERATED_JSON_ROOTS` for the rule it applies and the three shapes a version
+the counter-example allowlist for the rule it applies and the three shapes a version
 literal may take — and `blast-radius` answers *what does a bump edit* with a
 number a person can check.
 """
@@ -272,13 +272,6 @@ ROWS: dict[str, list[dict[str, object]]] = {
 # rule below is structural — every occurrence must be the value of a
 # `dsl_version` key, i.e. the document describing itself — and not a path list.
 
-# Generated artifacts whose `dsl_version` values are NESTED (an emitted
-# `manifest.json` recorded inside a baseline), so `delvec fmt` does not stamp
-# them and a bump is the generator's own command. Prefix -> the command.
-GENERATED_JSON_ROOTS: dict[str, str] = {
-    "gallery/baseline/": "python3 tools/ci/gallery-baseline.py --delvec <bin> --prefabs <dir> --write",
-}
-
 # Deliberate counter-examples: a STATEMENT, inside a named file, that spells this
 # exact number where the number is some other subject's, so a bump must NOT move
 # it. The type specimen, `crates/dsl/fixtures/invalid/DW0102-bad-dsl-version.json`,
@@ -481,15 +474,11 @@ def _classify(root: Path, rel: str, text: str, version: str, by_path: dict[str, 
             return None, f"states the number but is not valid JSON ({exc})"
         declared = _dsl_version_values(doc, version)
         if declared == occurrences:
-            for prefix, cmd in GENERATED_JSON_ROOTS.items():
-                if rel.startswith(prefix):
-                    return "tool-written", cmd
             if isinstance(doc, dict) and doc.get("dsl_version") == version and occurrences == 1:
                 return "tool-written", "delvec fmt <path>"
             return None, (
                 f"states the number {occurrences} time(s), all as `dsl_version` values, "
-                "but not as the ONE top-level envelope key `delvec fmt` writes and not "
-                f"under a generated root ({', '.join(GENERATED_JSON_ROOTS) or 'none'}). "
+                "but not as the ONE top-level envelope key `delvec fmt` writes. "
                 "Name the command that writes it"
             )
         return None, (

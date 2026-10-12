@@ -31,26 +31,28 @@ written-world records, which a push does not make here — and each build tree i
 then asserted to hold none. Judging a build is a question about coverage; it is
 not an act of handing anything to anybody.
 
-## The domain is enumerated, never typed
+## The domain is enumerated from the objects, never typed
 
-The points come from `gallery/baseline/manifests.json` — the ladder's own build
-ledger, one row per build the baseline records, which is the primary in every
-declared language plus each overlay in `en`. A hand-written list here would be a
-second opinion on what the gallery is, and it would go stale silently the first
-time an overlay was added: the job would keep passing while judging less than
-the ladder builds, which is this project's `unbound` vacuity wearing a green
-tick.
+The points come from `gallery_domain.points()` — the one enumeration rule, read
+off the gallery itself: the primary in `en` and in every language
+`gallery/world.json` declares, plus each directory under `gallery/overlays/` in
+`en`. A hand-written list here would be a second opinion on what the gallery is,
+and it would go stale silently the first time an overlay was added: the job
+would keep passing while judging less than the ladder builds, which is this
+project's `unbound` vacuity wearing a green tick. Probes are counted and named
+as not points: they exist to be refused, and `check-gallery-coverage.py` runs
+them.
 
-Cross-checked against the directory (`gallery_domain.overlays()` plus the
-primary), which shares no configuration with the committed ledger: a point the
-domain has and the ledger does not means the two have drifted, and this refuses
-rather than judging the smaller set.
+Each point is built by `tools/ci/gallery-build.py`, which proves its tree
+against the manifests the same run's baseline measured (`--manifests`); a point
+that run did not measure is refused there.
 
 ## Binding count
 
-Every run states the rows enumerated, the points judged, and the denominator.
-Judging zero points, or fewer points than the ledger holds, is a red — a gate
-that examined nothing is not a pass.
+Every run states the points judged against the denominator the gallery
+declares — languages, overlays, and probes excluded by name. Judging zero
+points, or fewer points than the domain holds, is a red — a gate that examined
+nothing is not a pass.
 """
 
 from __future__ import annotations
@@ -66,10 +68,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 import parallel  # noqa: E402
-from gallery_domain import GALLERY, build_id, overlays  # noqa: E402
+import gallery_domain  # noqa: E402
+from gallery_domain import build_id  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-BASELINE = GALLERY / "baseline" / "manifests.json"
 GALLERY_BUILD = REPO / "tools" / "ci" / "gallery-build.py"
 STAGING_GATE = REPO / "tools" / "creator" / "staging-gate.py"
 PRIMARY = "primary"
@@ -98,47 +100,28 @@ def die(msg: str) -> None:
     raise SystemExit(1)
 
 
-def ledger_rows() -> list[tuple[str, str]]:
-    """The `(point, lang)` pairs the baseline records, in the ledger's own order.
+def domain_rows() -> list[tuple[str, str]]:
+    """The `(point, lang)` pairs of the domain, from `gallery_domain.points()`.
 
-    `build_id` owns the key format, so the split here is checked against it
-    rather than trusted: a key this tool parses into a pair that does not
-    re-encode to the same string is a key shape nobody agreed on, and guessing
-    at it would silently drop a build from the domain.
+    `build_id` owns the key format; the point name used here is the one it
+    encodes, so a pair this tool builds re-encodes to the key the baseline
+    run measured it under.
     """
-    if not BASELINE.is_file():
-        die(
-            f"`{BASELINE.relative_to(REPO)}` is missing, so there is no build ledger to "
-            "enumerate the domain from. Write it with `python3 tools/ci/gallery-baseline.py --write`."
-        )
-    rows = json.loads(BASELINE.read_text())
-    if not isinstance(rows, dict):
-        die(f"`{BASELINE.relative_to(REPO)}` is not a mapping of build id to manifest")
     out: list[tuple[str, str]] = []
-    for key in sorted(rows):
-        point, dot, lang = key.rpartition(".")
-        if not dot or not point or not lang:
-            die(f"`{key}` is not a `<point>.<lang>` build id")
-        if build_id(None if point == PRIMARY else point, lang) != key:
-            die(f"`{key}` does not re-encode from the pair ({point}, {lang})")
+    for overlay, lang in gallery_domain.points():
+        point = overlay or PRIMARY
+        assert build_id(overlay, lang) == f"{point}.{lang}"
         out.append((point, lang))
     return out
 
 
-def domain_points() -> list[str]:
-    """What the gallery directory says its points are — the second observer."""
-    return [PRIMARY, *overlays()]
-
-
-def uncovered_points(rows: list[tuple[str, str]], declared: list[str]) -> list[str]:
-    """Points the gallery directory has and the build ledger does not record.
-
-    The comparison is the reason the ledger may be the enumeration at all: a
-    ledger that has fallen behind the directory would let this step pass while
-    judging less than the ladder builds, which is a green over an unbound gate.
-    """
-    have = {point for point, _ in rows}
-    return [p for p in declared if p not in have]
+def denominator() -> dict:
+    """What the gallery declares, counted from the objects: languages, overlays, probes."""
+    return {
+        "languages": 1 + len([lang for lang in gallery_domain.languages() if lang != "en"]),
+        "overlays": len(gallery_domain.overlays()),
+        "probes": len(gallery_domain.probes()),
+    }
 
 
 def token_in_tree(out: Path) -> bool:
@@ -147,7 +130,7 @@ def token_in_tree(out: Path) -> bool:
 
 
 def run_build(
-    delvec: Path, prefabs: Path, work: Path, point: str, lang: str
+    delvec: Path, prefabs: Path, manifests: Path, work: Path, point: str, lang: str
 ) -> tuple[Path, Path, subprocess.CompletedProcess]:
     """Materialise and compile one point, through the one tool that owns that act.
 
@@ -172,6 +155,8 @@ def run_build(
             str(delvec),
             "--prefabs",
             str(prefabs),
+            "--manifests",
+            str(manifests),
             "--src",
             str(src),
             "--out",
@@ -252,6 +237,12 @@ def main() -> int:
     ap.add_argument("--delvec", help="the `delvec` under test (default: this tree's build)")
     ap.add_argument("--prefabs", required=True, help="the generated gallery prefab directory")
     ap.add_argument(
+        "--manifests",
+        required=True,
+        type=Path,
+        help="the head manifests this run's `gallery-baseline.py` measured, handed to `gallery-build.py`",
+    )
+    ap.add_argument(
         "--work",
         default=str(REPO / "validation" / "gallery-stageable"),
         help="where campaigns, build trees, reports and admission tokens are written",
@@ -277,34 +268,24 @@ def main() -> int:
     work = Path(args.work)
     delvec = Path(args.delvec) if args.delvec else REPO / "target" / "debug" / "delvec"
 
-    rows = ledger_rows()
-    if not rows:
-        die(
-            f"`{BASELINE.relative_to(REPO)}` holds zero build rows, so this gate would judge "
-            "nothing. A domain with no points is a finding, not a pass."
-        )
-    points = {p for p, _ in rows}
-    declared = domain_points()
-    missing = uncovered_points(rows, declared)
-    if missing:
-        die(
-            "the build ledger does not cover the domain: "
-            + ", ".join(missing)
-            + " exist in `gallery/` and are recorded by no baseline row, so judging the ledger "
-            "would judge fewer points than the gallery has. Regenerate the baseline "
-            "(`python3 tools/ci/gallery-baseline.py --write`)."
-        )
-
+    rows = domain_rows()
+    den = denominator()
+    expected = den["languages"] + den["overlays"]
     print(
-        f"gallery stageability: {len(rows)} build row(s) of {len(rows)} in "
-        f"`{BASELINE.relative_to(REPO)}`, over {len(points)} point(s) of the "
-        f"{len(declared)} the gallery directory declares ({', '.join(declared)}).",
+        f"gallery stageability: {len(rows)} point(s) of the domain — the primary in "
+        f"{den['languages']} language(s) plus {den['overlays']} overlay(s) in `en` = {expected}; "
+        f"{den['probes']} probe(s) are refusal points and are not built here.",
         flush=True,
     )
+    if not rows or len(rows) != expected:
+        die(
+            f"the domain enumerated {len(rows)} point(s) against the {expected} the gallery "
+            "declares, so this gate would judge a different set than the ladder builds."
+        )
 
     def run_point(row: tuple[str, str]):
         point, lang = row
-        src, out, b = run_build(delvec, prefabs, work, point, lang)
+        src, out, b = run_build(delvec, prefabs, args.manifests, work, point, lang)
         if b.returncode != 0:
             return src, out, b, None
         return src, out, b, run_judge(args.ledger, work, point, lang, src, out)
