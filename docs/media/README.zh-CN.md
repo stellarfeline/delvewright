@@ -2,7 +2,7 @@
 
 # 用 Delvewright 做出来的战役
 
-这里的每一座 delve 都由 Delvewright 做成，在任何玩家进去之前，机器人已经把它从头玩到了结局。点开标题，跟着一路走一遍。[回到首页](../../README.zh-CN.md)。
+这里的每一座 delve 都由 Delvewright 做成，在任何玩家进去之前，机器人已经把它从头玩到了结局。点开标题，按游戏内顺序走一遍（含剧透）。[回到首页](../../README.zh-CN.md)。
 
 ## [维斯珀堡（Vesperhold）](vesperhold/README.md)
 
