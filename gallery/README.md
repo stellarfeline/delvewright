@@ -55,7 +55,7 @@ order a player would:
 | `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
 | `overlays/` | parameter points — settings that take one value per world |
 | `probes/` | documents the engine **refuses**, each naming the diagnostic |
-| `baseline/` | the committed emission index, the expected-warnings ledger, and the review delta — which names the commit it was measured from, so it can be recomputed rather than believed |
+| `baseline/` | the expected-warnings ledger — the one baseline document committed; the emission baseline is computed in every CI run from the merge base and the head, both built from source (ADR-0034) |
 
 The hall itself is generated, not committed: one 31 × 8 × 31 stone room split by
 a barred wall, with three doors in it and a mezzanine in the far half whose
@@ -327,6 +327,11 @@ python3 tools/ci/check-gallery-render.py --prefabs gallery-prefabs \
   --build-out gallery-out --frames gallery-frames
 python3 tools/ci/gallery-baseline.py --prefabs gallery-prefabs
 ```
+
+The last one builds the domain twice — this tree, and the commit it branched
+from (`merge-base(origin/main, HEAD)`) checked out under `.gallery-baseline/`
+and built there from its own sources — and prints the delta between them; its
+report lands in `.gallery-baseline/report/`.
 
 `gallery-coverage.md` is the map from every declared surface to the place the
 gallery writes it — and, for anything written nowhere, the word **nowhere**.
@@ -814,7 +819,4 @@ to anchor where the real question is hitbox to box.
 ## Why the jobs gate
 
 The gallery's four jobs — pieces, coverage, views, baseline — are each a required status check. `tools/ci/check-required-contexts.py`
-holds the manifest and `ci.yml` in lockstep, and it reads the coverage count out
-of `gallery/baseline/header.json` and the render findings out of
-`gallery/render-plan.json` — both committed by the tools that measure them, so
-the condition is evaluated rather than recited.
+holds the manifest and `ci.yml` in lockstep.

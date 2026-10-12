@@ -6,7 +6,8 @@
   reads), 0015 (the render arms), 0004 (fixture-build discipline for CI)
 - **ADRs**: 0006 (determinism — the baseline leans on it), 0007 (licensing —
   §2 reconciles the gallery with the no-campaigns-in-this-repo zone), 0008
-  (CI as arbiter; every job required)
+  (CI as arbiter; every job required), 0034 (the baseline is computed in CI,
+  never committed)
 - **Non-goals**: grammar-IR coverage (spec-0033's corpus owns it); the
   prefab-admission and render tool surfaces (their own gates own them);
   red-path diagnostic coverage (fixtures + `check-dw-codes.py` own it — the
@@ -28,8 +29,9 @@ Three obligations, deliberately distinct, each with its own machinery:
    ever compiled end to end. The gallery build reports which of the DSL's
    declared surfaces it binds, and a zero binding is a red.
 2. **Regression** (§5): every element lives in ONE campaign, so a change's
-   effect on existing elements is a diff in one named artifact — a committed
-   emission baseline — rather than scattered test failures.
+   effect on existing elements is a diff in one named artifact — the emission
+   delta every CI run computes between the merge base and the head — rather
+   than scattered test failures.
 3. **Inspection** (§7): the elements are concrete, so "what does this surface
    look like when written" has an answer that is authored JSON and a rendered
    frame, not prose.
@@ -37,14 +39,14 @@ Three obligations, deliberately distinct, each with its own machinery:
 ## 2. Where it lives, and what it is not
 
 `gallery/` at the repository root: stage documents, l10n sidecars, overlays
-(§3), generator programs for its pieces (§6), render plan (§7), baseline
-(§5). The implementing PR adds the row to CLAUDE.md's layout listing.
+(§3), generator programs for its pieces (§6), render plan (§7), the
+expected-warnings ledger (§5). The implementing PR adds the row to CLAUDE.md's layout listing.
 
 **Versus the forbidden zone / ADR-0007.** "Generated campaigns do not live in
 this repo" forbids shipping player content from the GPL tree. The gallery is
 not player content: it is authored engine-test source, licensed with the code,
 never released, never staged. Its build outputs are CI artifacts and are never
-committed — only source and the hash baseline are. The release pipeline and
+committed — only source and the expected-warnings ledger are. The release pipeline and
 the staging surface enumerate content-repo campaigns; a test asserts the
 gallery id is not reachable by either (§8.13).
 
@@ -191,49 +193,56 @@ it; revisit only if a real unreached-element escape is found.
 
 ## 5. The emission baseline
 
-**What is committed.** Never the output tree — only, per build in the domain
-(primary × declared languages, plus each overlay): a copy of that build's
-`manifest.json` (the compiler's SHA-256 reproducibility index over inputs and
-every output file), under `gallery/baseline/`. A header records the delvec
-version, `dsl_version`, the gallery source-tree hash, and the generator-input
-hash (§6). The comparison **asserts** the header — a baseline taken by a
-different delvec, or over different source, refuses with its own message
-instead of diffing noise (this is the queued finding about a baseline that
-records its own SHA, adopted).
+**Computed, never committed.** Every CI run builds the domain (primary ×
+declared languages, plus each overlay) twice, from source, in one invocation of
+`tools/ci/gallery-baseline.py`: the **head**, and the **comparison** —
+`merge-base(origin/main, HEAD)` on a pull request, `HEAD^1` on a push to
+`main`. The comparison is checked out into a worktree of its own and built
+there entirely from its own tree: its own `delvec`, its own
+`gallery-prefabs.py`, its own gallery source, its own `gallery_domain.py`. A
+measurement is, per build, the compiler's `manifest.json` (the SHA-256
+reproducibility index over inputs and every output file) and its warning rows,
+plus a header per side: the commit, the delvec version, `dsl_version`, the
+gallery source-tree hash, the generator-input hash and the coverage counts
+(§6). A build failure on either side is a red, never a fallback.
 
-**The check.** CI builds the domain and byte-compares each manifest to its
-committed copy. A mismatch is a red naming every differing output path. Two
-distinct verdicts, because they mean opposite things:
+**The delta.** Every added/removed/changed emitted path, grouped by output
+class (datapack function, structure, PackTest, plan, …), and every
+recorded-but-not-emitted manifest value that moved. It is the review artifact,
+published in the job summary and as a CI artifact, and it opens with the
+question its reviewer answers: *is every path class listed here a consequence
+this change claims to have?* An unclaimed class is a finding. Two verdicts,
+because they mean opposite things:
 
-- the PR touches gallery source or `crates/` — an **emission change**, and the
-  red says: regenerate the baseline in this PR or explain the drift;
-- the PR touches neither — a **determinism finding** (ADR-0006), named as
-  such. The baseline is thereby also a standing cross-machine determinism
-  probe, for free.
+- the change reaches an emission input — the compiler (`crates/`, the root
+  `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`), the gallery source, the
+  piece generator, or the tools that materialise a point and make its prefab
+  directory — an **emission change**, reported for review;
+- it reaches none — a **determinism finding** (ADR-0006), a red, named as
+  such.
 
-**Who updates it, and what stops the rubber stamp.** Only
-`tools/ci/gallery-baseline.py --write` regenerates it; it also writes
-`gallery/baseline/delta.json`: every added/removed/changed emitted path,
-grouped by output class (datapack function, structure, PackTest, plan, …). CI
-recomputes the delta from the two baseline versions in git (merge-base vs
-head) and asserts equality — a stale or hand-edited delta is a red, so the
-delta always tells the truth about the update it rode in on. The delta file is
-the review artifact and opens with the question its reviewer answers: *is
-every path class listed here a consequence this PR claims to have?* An
-unclaimed class is a finding. Which review lane reads it — and the fact that a
-PR changing player-reachable emission is never mechanical — is operating
-practice, referenced here and deliberately not restated.
+**The ledger.** The emitted warning set equals the committed
+`gallery/baseline/warnings.json` exactly (§8.5); it is the one baseline
+document in git, and `tools/ci/gallery-baseline.py --write` is the only writer,
+refusing a write that would not move a byte.
 
-A baseline updated in a PR with an empty delta is a red (a noise commit); a
-baseline update is never split from the change that caused it.
+**The determinism probe across hosts.** The `cross-OS determinism (macOS vs
+Linux bytes)` job builds the gallery primary — its generated pieces, the
+materialised campaign and its build — on both hosts through
+`tools/ci/determinism-subject.sh --subject gallery` and compares the digests.
+
+**Who reads the measurement.** `tools/ci/gallery-build.py` proves the tree it
+writes against the head manifests the same run measured, and refuses manifests
+measured at any other commit. `tools/ci/check-gallery-stageable.py` enumerates
+its points from the gallery's own languages and overlays.
 
 ## 6. Growth, cost, and the pieces
 
 **The numbers are reported from day one.** Every run's job summary states:
 units total / bound / refusal-proven; elements; builds performed; wall-clock
 per build and total; emitted bytes per build; PackTest count contributed to
-tier 2. The deterministic counts also live in the baseline header, so growth
-is a diffable number, not a complaint. **No wall-clock threshold**: a timing
+tier 2. The deterministic counts also live in each side's baseline header, so
+growth is a diffable number, not a complaint. **No wall-clock threshold**: a timing
 red on a shared runner is an intermittent red, and the debug doctrine forbids
 re-running those, so a threshold would manufacture findings that cannot be
 honestly retried. If the total ever crowds the PR budget, the sanctioned moves
@@ -309,18 +318,24 @@ dev-machine render, and follows rule 8 of the playtest methodology
 6. Compiler-stated binding counts (`RootBinding` and every stated-binding
    proof) appear in the coverage report; a zero binding on machinery the
    gallery writes is a red.
-7. `gallery/baseline/` holds one manifest copy per build in the domain with
-   the version/source header; CI byte-compares each and refuses (distinct
-   message) on a header mismatch rather than diffing.
-8. A manifest mismatch reds naming every differing path, classed
-   emission-change vs determinism-finding by whether the PR diff touches
-   `gallery/` or `crates/`; the determinism verdict cites ADR-0006.
-9. The baseline changes only together with a `delta.json` that CI recomputes
-   from the merge-base and head baseline versions and asserts byte-equal; an
-   empty-delta baseline change is a red.
+7. Every CI run builds the domain from the comparison tree and from the head,
+   each from source in its own tree, and publishes one manifest per build per
+   side with a header per side (commit, version, source and generator hashes,
+   coverage counts); a build failure on either side is a red. Under
+   `gallery/baseline/` git tracks only `warnings.json`.
+8. The delta names every differing emitted path and every moved recorded
+   manifest value; a non-empty delta on a change reaching no emission input is
+   a red citing ADR-0006, and on a change reaching one it is reported in the
+   job summary, which states which of red, report or green the run is.
+9. Nothing measured is committed: the delta is computed by the run from the
+   two builds; `gallery-build.py` proves its tree against the head manifests
+   the same run measured and refuses manifests measured at another commit; the
+   cross-OS determinism job compares the gallery primary's digest from macOS
+   and Linux.
 10. The job summary states, every run: units total/bound/refusal-proven,
-    elements, builds, wall-clock per build, emitted bytes, PackTest count; the
-    deterministic counts are asserted against the baseline header. No
+    elements, builds per side, emitted paths per side, delta size, wall-clock
+    per build, emitted bytes, PackTest count; the deterministic counts are
+    stated in both sides' headers, so a moved count is in the delta. No
     wall-clock value gates.
 11. The gallery's generated PackTests run inside the required `tier 2` job on
     PR; its critical-path and branch bot runs are wired into the
@@ -353,7 +368,7 @@ dev-machine render, and follows rule 8 of the playtest methodology
 - **Schema-walk edge semantics** beyond §3's rule (properties and variants are
   units; registry values are not): any case the implementation finds genuinely
   ambiguous is decided in the tool with a comment citing this spec, and the
-  decision surfaces as a unit-count change the baseline header makes visible.
+  decision surfaces as a unit-count change the baseline headers make visible.
 - **Whether `RootBinding`-style stated bindings are uniformly machine-readable
   today** (`--json` carries diagnostics; binding statements may need a small
   compiler-side report surface). If a report surface must be added, it is an
