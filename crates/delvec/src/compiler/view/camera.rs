@@ -962,7 +962,7 @@ pub(crate) fn world_scene(
         dump_frequency: 500,
         save_snapshots: false,
         emitters_enabled: true,
-        emitter_intensity: 13.0,
+        emitter_intensity: scene::emitter_intensity(),
         sun_enabled: true,
         still_water: false,
         water_world_enabled: None,

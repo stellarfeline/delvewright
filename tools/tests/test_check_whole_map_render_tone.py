@@ -44,8 +44,8 @@ PRESET = {
 }
 
 
-def scene(settings, post="TONEMAP3"):
-    doc = {"postprocess": post}
+def scene(settings, post="TONEMAP3", intensity=195.5382):
+    doc = {"postprocess": post, "emitterIntensity": intensity}
     if settings is not None:
         doc["postprocessSettings"] = dict(settings)
     return doc
@@ -76,3 +76,17 @@ def test_another_post_process_is_refused():
 def test_a_curve_off_by_more_than_the_tolerance_is_refused():
     brighter = dict(ANCHORED, linearStrength=ANCHORED["linearStrength"] * 1.01)
     assert gate().tone_findings(scene(brighter)), "a one-percent linear-section change"
+
+
+def test_the_core_default_emitter_intensity_is_refused():
+    bad = gate().tone_findings(scene(ANCHORED, intensity=13.0))
+    assert len(bad) == 1 and "emitterIntensity is 13.0" in bad[0], bad
+
+
+def test_an_emulation_keeps_its_calibrated_glow():
+    doc = scene(ANCHORED)
+    doc["materials"] = {"minecraft:stone": {"emittance": 0.003324}}
+    assert gate().tone_findings(doc) == []
+    doc["materials"] = {"minecraft:stone": {"emittance": 0.05}}
+    bad = gate().tone_findings(doc)
+    assert len(bad) == 1 and "calibrated" in bad[0], bad

@@ -667,7 +667,8 @@ fn cameras_print_where_every_camera_stands() {
 /// base-scene-hero.json`, emitted by the engine at the merge base, its path
 /// masked) and for the keys the clear cell and the post-process own — `sky`,
 /// `fog`, the sun's `intensity`, `color` and `drawTexture`, `postprocess`, its
-/// `postprocessSettings` and the sky map's `delvewrightSky` marker
+/// `postprocessSettings`, the `emitterIntensity` the lantern scale owns and the
+/// sky map's `delvewrightSky` marker
 /// (`compiler.md` §4), which the fixture predates. **A loosening of what this
 /// criterion asserts**: those keys are compared here to nothing; the clear
 /// cell's own tests and the view goldens hold them.
@@ -707,6 +708,7 @@ fn a_scene_is_the_scene_it_was_but_for_its_world() {
             "fog",
             "postprocess",
             "postprocessSettings",
+            "emitterIntensity",
             "delvewrightSky",
         ] {
             o.remove(k);

@@ -118,10 +118,49 @@ pub const REVIEW_POLICY: &str = "night-vision-emulated — review only";
 
 /// Uniform emittance applied to non-emitting palette blocks of an emulated
 /// scene. Calibrated on the nobodys-cave-island cavern (2026-08-01): 0.02 is
-/// legible but dim, 0.15 verges on overbright; 0.05 (× the scene's
-/// `emitterIntensity` 13) reads like the in-game night-vision view while real
+/// legible but dim, 0.15 verges on overbright; 0.05 (× the core's default
+/// `emitterIntensity` 13, [`review_emittance`]) reads like the in-game night-vision view while real
 /// emitters (the camp fire pit) still stand out.
 pub const REVIEW_EMITTANCE: f64 = 0.05;
+
+/// The emittance an emulated scene writes, so that it times the scene's
+/// [`emitter_intensity`] stays the calibrated `REVIEW_EMITTANCE ×
+/// CORE_EMITTER_INTENSITY`: the emulation's glow does not move with the
+/// lantern light.
+pub fn review_emittance() -> f64 {
+    round6(REVIEW_EMITTANCE * CORE_EMITTER_INTENSITY / emitter_intensity())
+}
+
+/// The pinned core's default `emitterIntensity`: an emitter's radiance is its
+/// texel colour squared × its material's `emittance` × this
+/// (`Scene.DEFAULT_EMITTER_INTENSITY` 13; `PathTracer.doDiffuseReflection`).
+/// **Cited.**
+pub const CORE_EMITTER_INTENSITY: f64 = 13.0;
+
+/// **The scale on the core's emitter light that makes a lantern-lit surface
+/// read, on average, as the game draws it.** The game spreads a lantern's
+/// block light flat over 14 blocks (`lightmap.fsh`, the block factor 1.5
+/// `LightTexture` writes); the core's lantern is a small emitter whose light
+/// falls off with distance, and the only controls it gives a scene over
+/// emitted light are this global intensity, a per-material `emittance` and the
+/// emitter sampling strategy, which changes noise and not the mean. The scale
+/// is the one at which the mean display luma of lantern-lit pixels under
+/// [`tone_curve`] equals the game model's: over every pixel of the Treehouse
+/// Camp's twelve showcase frames that lands on a full cube of a single-texture
+/// block with game block light 1–15 (102 139 pixels at 400 × 225), equal weight
+/// per pixel, the render taken as the sky pass plus the scale times the emitter
+/// pass, each a raw sample buffer of the pinned core, the game model the
+/// texture's albedo × the pinned client's lightmap × `ClientLevel.getShade`
+/// with the game's light flooded over the same world. Resampling the twelve
+/// frames puts it between 9.8 and 27.5 (5–95%). `compiler.md` §4 holds the
+/// record. **Authored from that measurement.**
+pub const LANTERN_LIGHT_SCALE: f64 = 15.0414;
+
+/// The `emitterIntensity` every scene is written with:
+/// [`CORE_EMITTER_INTENSITY`] × [`LANTERN_LIGHT_SCALE`].
+pub fn emitter_intensity() -> f64 {
+    round6(CORE_EMITTER_INTENSITY * LANTERN_LIGHT_SCALE)
+}
 
 /// How far below a water cell's top face the rendered surface sits, in blocks.
 /// Vanilla draws a full source block 1/8 short of the cell top; Chunky matches
@@ -1445,7 +1484,7 @@ fn emulation_overrides(palette: &[String]) -> BTreeMap<String, MaterialOverride>
             (
                 name,
                 MaterialOverride {
-                    emittance: REVIEW_EMITTANCE,
+                    emittance: review_emittance(),
                 },
             )
         })
@@ -1524,7 +1563,7 @@ pub fn scenes_from_plan(
             dump_frequency: 500,
             save_snapshots: false,
             emitters_enabled: true,
-            emitter_intensity: 13.0,
+            emitter_intensity: emitter_intensity(),
             sun_enabled: true,
             still_water: false,
             water_world_enabled: None,
@@ -1675,12 +1714,18 @@ mod tests {
         // Structural blocks are overridden at the review emittance, with state
         // brackets stripped; air/water and real emitters are not.
         let m = v["materials"].as_object().unwrap();
-        assert_eq!(m["minecraft:stone"]["emittance"], REVIEW_EMITTANCE);
+        assert_eq!(m["minecraft:stone"]["emittance"], review_emittance());
         assert_eq!(
             m["minecraft:cobblestone_stairs"]["emittance"],
-            REVIEW_EMITTANCE
+            review_emittance()
         );
-        assert_eq!(m["minecraft:tuff"]["emittance"], REVIEW_EMITTANCE);
+        assert_eq!(m["minecraft:tuff"]["emittance"], review_emittance());
+        // The emulation's glow is the calibrated one whatever the lantern scale.
+        let glow = review_emittance() * v["emitterIntensity"].as_f64().unwrap();
+        assert!(
+            (glow - REVIEW_EMITTANCE * CORE_EMITTER_INTENSITY).abs() < 1e-3,
+            "{glow}"
+        );
         for excluded in [
             "minecraft:air",
             "minecraft:water",
@@ -1988,6 +2033,21 @@ mod tests {
             emitted,
             "the preset itself is not what a scene carries"
         );
+    }
+
+    /// The lantern scale is the derivation's input, and it moves the emitted
+    /// `emitterIntensity`; the emulation's glow does not move with it.
+    #[test]
+    fn the_lantern_scale_moves_the_emitted_intensity() {
+        assert_eq!(emitter_intensity(), 195.5382);
+        let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
+        for (name, bytes) in &scenes {
+            let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+            assert_eq!(v["emitterIntensity"], emitter_intensity(), "{name}");
+        }
+        let moved = round6(CORE_EMITTER_INTENSITY * (LANTERN_LIGHT_SCALE * 1.01));
+        assert_ne!(moved, emitter_intensity());
+        assert!((review_emittance() * emitter_intensity() - REVIEW_EMITTANCE * 13.0).abs() < 1e-3);
     }
 
     #[test]
