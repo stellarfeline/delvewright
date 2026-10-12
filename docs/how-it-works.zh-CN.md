@@ -53,13 +53,10 @@ flowchart TD
 ```mermaid
 flowchart TD
     P(["你的提示——一个主题，或一份完整的简报"]) --> WS["1 · 工作区<br/>campaigns/‹id›/ · world.json<br/>DESIGN.md · GENERATION.md"]
-    WS --> PICK{"采用哪种摆放模型？<br/>每个 campaign 恰好一种"}
-    PICK -->|"库里已有的几个房间"| AR["2A · world.json areas[]<br/>来自 piece 库的 prefab，<br/>由原版 jigsaw 按种子拼装<br/>delvec viewer · delvec prefab anchors"]
-    PICK -->|"地点本身就是内容"| MR["2B · 地图的参考视图<br/>refimg.py：单张满幅视图，<br/>每一张都锚定在视图 1 上"]
+    WS --> MR["2 · 地图的参考视图<br/>refimg.py：单张满幅视图，<br/>每一张都锚定在视图 1 上"]
     MR --> GB["geometry-brief.json<br/>用数字描述的整体"]
-    GB --> LG["layout-graph.json<br/>什么连着什么"]
-    LG --> SP["site-plan.json<br/>每个地点的包围盒、基准面和接缝<br/>delvec metrics · delvec metrics --gym"]
-    AR --> ST
+    GB --> LG["layout-graph.json<br/>有哪些地点，彼此怎么相连"]
+    LG --> SP["site-plan.json<br/>每个地点的包围盒、基准面和接缝，<br/>以及地点之间的地面由什么填充<br/>delvec metrics · delvec metrics --gym"]
     SP --> ST
 
     subgraph LOOP ["每一份文档，每一个阶段"]
@@ -97,7 +94,7 @@ flowchart TD
         direction TB
         B1["加载并校验<br/>每份文档对照其 schema，<br/>每个引用都能解析"]
         B1 --> B2["分析<br/>走遍每条任务和对话路径，<br/>重放关键路径"]
-        B2 --> B3["摆放<br/>areas[]：按种子求解 jigsaw<br/>site plan：推导出 blockout 并运行其检查组"]
+        B2 --> B3["摆放<br/>由 site plan 推导出 blockout，跑完接缝检查组；<br/>已细化地点的 piece 落进各自的框"]
         B3 --> B4["在摆好的方块上证明<br/>可到达的地面是亮的 · 没有进得去出不来的地方<br/>每次点击都够得着 · 每个致死区域都看得见"]
         B4 --> B5["生成<br/>每一行 mcfunction 都按固定版本<br/>1.21.11 的命令树解析"]
     end
@@ -107,17 +104,15 @@ flowchart TD
     OUT --> CAM["8b · 展示机位<br/>delvec cameras · delvec place-camera<br/>→ design/cameras.json，每张认可图片一个"]
 ```
 
-构建树里没有世界存档，也没有服务器 jar（[ADR-0010](adr/0010-oci-packaging.md)）。服务器是虚空世界上的原版服务器；datapack 在首次启动时放置每一个 prefab 模板（[ADR-0004](adr/0004-prefab-jigsaw.md)）。库里没有的 piece，由 box-split 语法根据规则程序写出（`delvec grammar`），每个 piece 都经过 `delvec prefab` 收录才进入库。编译器可能打印的每一条诊断都在 [`compiler.md`](reference/compiler.md) 里。
+构建树里没有世界存档，也没有服务器 jar（[ADR-0010](adr/0010-oci-packaging.md)）。服务器是虚空世界上的原版服务器；datapack 在首次启动时放下每个 piece 的模板（[ADR-0004](adr/0004-prefab-jigsaw.md)）。某个地点还没细化时，构建会在它的包围盒里先立一个朴素的替身，所以哪怕一栋建筑都还没有，地图也能构建、能走、能渲染；替身永远不会发布出去。地点的 piece 要么由 box-split 语法根据规则程序写出（`delvec grammar`），要么是经过 `delvec prefab` 收录进库的现成 piece。编译器可能打印的每一条诊断都在 [`compiler.md`](reference/compiler.md) 里。
 
 ## 4 · 细化与验证阶梯——先让机器过一遍
 
-在 site plan campaign 上，先把推导出来的 blockout 一个地点一个地点地细化，这样之后的一切——机器也好，人也好——检验的都是最终发布的那个世界。随后验证阶梯在真实服务器上玩这个 delve，所用的 Docker Compose 装置与 CI 和发布所用的相同（[ADR-0005](adr/0005-two-layer-validation.md)）。
+每张地图都是一份 site plan（[ADR-0032](adr/0032-one-map-route.md)），它的 blockout 要先一个地点一个地点地细化，这样之后的一切——机器也好，人也好——检验的都是最终发布的那个世界。随后验证阶梯在真实服务器上玩这个 delve，所用的 Docker Compose 装置与 CI 和发布所用的相同（[ADR-0005](adr/0005-two-layer-validation.md)）。
 
 ```mermaid
 flowchart TD
-    T(["构建树"]) --> SPQ{"是 site plan campaign？"}
-    SPQ -->|"是"| DET["9 · 细化，一次一个地点<br/>delvec allocation · delvec detail<br/>在规划分给它的包围盒里运行一个语法程序，<br/>通过检查后冻结进 prefab 库"]
-    SPQ -->|"否"| PT
+    T(["构建树"]) --> DET["9 · 细化每一个地点，一次一个<br/>delvec allocation · delvec detail<br/>语法程序在规划交给它的框里<br/>画出这个地点的墙、屋顶和地面，<br/>通过检查后写进 prefab 库"]
     DET --> PT
 
     subgraph LADDER ["10 · 机器验证阶梯 · validation/compose.yaml"]
