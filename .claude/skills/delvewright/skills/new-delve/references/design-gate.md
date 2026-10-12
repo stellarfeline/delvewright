@@ -46,9 +46,9 @@ is confirmed is the design, not a build. A **render** is a candidate prefab
 imaged by `delvec render`, and belongs to curation later. Two stages, two
 producers; building prefabs first and rendering them inverts the gate.
 
-**A derived blockout has no reference image to judge.** On a site-plan campaign
-the pictures at this gate are still design art — the map's own reference views
-from step 2B, and the scene concept art anchored on view 1 — and what they show
+**A derived blockout has no reference image to judge.** The pictures at this
+gate are design art — the map's own reference views from step 2, and the scene
+concept art anchored on view 1 — and what they show
 is the design. **None of them shows the blockout**, and none is drawn to: the
 massing is not authored, it is derived from the plan and the metrics table at
 step 8, so a picture of it could only be made by inventing what the derivation is
@@ -104,7 +104,7 @@ the yes you are asking for is a yes to the picture and the hour together rather
 than to the picture alone. Where a picture and the document disagree, make them
 agree **now** — a one-field edit here, or a night's worth of art redrawn later.
 The same reading applies to anything else in the images the documents have to
-carry: a piece the library does not hold (step 2A says what you owe for one),
+carry: a building no piece exists for yet (step 9 is where it is drawn),
 and a room whose light the pictures show as a mood rather than as a lighting
 declaration.
 

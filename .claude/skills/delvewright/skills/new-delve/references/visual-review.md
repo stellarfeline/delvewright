@@ -6,7 +6,7 @@
 - [Read every frame against the approved image](#read-every-frame-against-the-approved-image)
 - [Saving the world, and installing Chunky](#saving-the-world-and-installing-chunky)
 - [What the set costs](#what-the-set-costs)
-- [The pieces, on an `areas[]` campaign](#the-pieces-on-an-areas-campaign)
+- [Reading the set](#reading-the-set)
 
 
 Yours to do, not a checklist to hand off: judging a frame is the whole task.
@@ -85,20 +85,12 @@ scene emitter makes legible, and it marks those frames as emulations; everything
 else you read as the player will see it. Never raise a budget, an exposure or an
 hour to make a picture come out.
 
-Two shapes to expect, because they are what the machine cannot say:
-
-- **The area is a different place.** A shore drawn as a black rock headland
-  built as a flat sand floor in a box of cobble is not a lighting note or a
-  detail gap; it is the pool having no piece that is the thing the design is
-  about, arriving five steps after step 2A could have acted on it. Record it as
-  a finding against the placement model, not against the render.
-- **The area is that place with something wrong in it** — a floating slab, a
-  seam that does not meet, furniture the design does not have. Those are
-  document-level fixes, below.
-
-**A site-plan campaign has no approved image of its blockout** and this
-paragraph does not apply to it — step 4 says why, and its own judgement is this
-POV review of the built map.
+What the machine cannot say, and this review can: **the place is that place
+with something wrong in it** — a floating slab, a seam that does not meet,
+furniture the design does not have. Those are document-level fixes: a piece's
+program at step 9, or the plan. **No approved image shows the blockout** — step
+4 says why — so the built map's own judgement is this POV review, read against
+the scene concept art.
 
 ## Saving the world, and installing Chunky
 
@@ -212,36 +204,16 @@ in off a stand-off that was inside geometry, and treat a shot carrying
 `camera.requested_pos` as a hint about the build — the room is tighter than the
 shot wanted, which is worth a look while you are there.
 
-## The pieces, on an `areas[]` campaign
-
-**Then the pieces**, for an `areas[]` campaign. Render **the pieces your
-campaign actually uses**, one at a time:
-
-```sh
-delvec --prefabs "$DELVEWRIGHT_PREFABS" render piece "$DELVEWRIGHT_PREFABS/<piece>.nbt" \
-    -o <workspace>/renders/<piece>
-delvec --prefabs "$DELVEWRIGHT_PREFABS" render fidelity-gate
-```
-
-`delvec --prefabs "$DELVEWRIGHT_PREFABS" render batch <dir>` renders every prefab in a directory — the whole
-shipped library — which is a library-curation tool, not a
-campaign-review one. A site-plan campaign has no prefabs at this step at all.
-
-**A piece with floor in it whose light nobody has measured is refused here**
-(`DW0894`). An expansion measures its own, so this is a library piece that came
-from somewhere else: `delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab lighting
-<piece> --write` measures it over its own bytes and writes the profile, and a
-measured `dark` renders. Read the `DW0895` line the same run prints: how much of
-that piece's roofed floor no body can walk to.
+## Reading the set
 
 Open the exterior/top/interior/anchor PNGs and check each against its `expect`
 line: marker visible? room not dark? NPC facing the camera with its name as text
 rather than JSON? seam clean? **Findings are document-level** — fix the campaign
-(lighting profile, anchor, NPC facing, name string) and rebuild. Never hand-edit
-output. Declared-dark interiors render faithfully dark, and no render will tell you
-whether one is playable: that judgement belongs to the user's play, under the
-night-vision mitigation. Put it on the list step 13's report hands them.
-Never brighten a scene to make a review pass.
+(a place's program, an anchor, NPC facing, a name string) and rebuild. Never
+hand-edit output. Declared-dark interiors render faithfully dark, and no render
+will tell you whether one is playable: that judgement belongs to the user's
+play, under the night-vision mitigation. Put it on the list step 13's report
+hands them. Never brighten a scene to make a review pass.
 
 `delvec --prefabs "$DELVEWRIGHT_PREFABS" viewer <nbt|dir|manifest.json> -o <page.html>` is the CPU half of the
 same channel and needs no GPU. Read its fidelity list before handing the page to
@@ -249,4 +221,4 @@ anyone: it names every blockstate the page cannot draw as the game draws it — 
 block the pinned version does not have (`DW0790`), and the one that reads as
 fine and is not, a palette entry that leaves shape-carrying properties unwritten
 (`DW0791`), where the shape comes from the version's default state rather than
-from the file. That is a defect in the prefab, not in the page.
+from the file. That is a defect in the piece, not in the page.
