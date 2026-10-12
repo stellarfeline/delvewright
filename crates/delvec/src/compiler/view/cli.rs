@@ -1021,16 +1021,24 @@ fn write_world(
     stood: &crate::compiler::view::beat::Stood,
     dir: &Path,
 ) -> Result<WorldWritten, Diagnostic> {
-    let written = crate::compiler::view::world::write(blocks, &*stood.biome, stood.spawn, dir)
-        .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
+    // The generator shows through every cell no write reached: held out of
+    // the assembled world's and the setup's cells already, and here out of
+    // the regions this world's own configuration lays.
+    let mut ground = stood.ground.clone();
+    for (lo, hi) in stood.stands.laid_in(key) {
+        ground.mark_box(*lo, *hi);
+    }
+    let written =
+        crate::compiler::view::world::write(blocks, &*stood.biome, stood.spawn, &ground, dir)
+            .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
     let abs = std::path::absolute(dir)
         .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("resolve {}: {e}", dir.display())))?
         .display()
         .to_string();
     Ok(WorldWritten {
         line: format!(
-            "world: {key} {} chunk(s), {} cell(s), sha256 {} -> {abs}",
-            written.chunks, written.cells, written.sha256
+            "world: {key} {} chunk(s), {} cell(s), {} ground cell(s), sha256 {} -> {abs}",
+            written.chunks, written.cells, written.ground, written.sha256
         ),
         path: abs,
         omitted: crate::compiler::view::world::block_entities_omitted(blocks),

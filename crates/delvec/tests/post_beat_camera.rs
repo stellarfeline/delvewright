@@ -185,6 +185,7 @@ fn write(
         blocks,
         &|_| "minecraft:plains".to_string(),
         [5, 65, 2],
+        &world::Ground::void(),
         &dir,
     )
     .unwrap();
@@ -405,11 +406,11 @@ fn the_writer_is_whole_and_deterministic() {
             "minecraft:desert".into()
         }
     };
-    let a = world::encode(blocks, &biome, [5, 65, 2]);
-    let b = world::encode(blocks, &biome, [5, 65, 2]);
+    let a = world::encode(blocks, &biome, [5, 65, 2], &world::Ground::void());
+    let b = world::encode(blocks, &biome, [5, 65, 2], &world::Ground::void());
     assert_eq!(a, b, "two writes of one map are byte-identical");
     let dir = tmp("c4-x");
-    let w = world::write(blocks, &biome, [5, 65, 2], &dir).unwrap();
+    let w = world::write(blocks, &biome, [5, 65, 2], &world::Ground::void(), &dir).unwrap();
     assert_eq!(w, a, "the files written are the bytes encoded");
     let back = read_back(&dir);
     // Read back cell for cell equal, every state completed by the pinned
@@ -904,6 +905,140 @@ fn the_load_world_is_written_without_a_camera_record() {
     }
 }
 
+/// **A cell no write reached holds the generator's block** (`DW0955`). Under
+/// `horizon: ocean` the server is a superflat — bedrock at the build floor,
+/// stone to the sea floor (54), water to sea level (62) — and the datapack
+/// writes over it, so wherever no write reaches, the generator's block is what
+/// the server shows: under a piece standing over open sea, beside it, down to
+/// bedrock. A cell a write did reach keeps the write, air included: the
+/// pocket of air the template places in its own plinth, under sea level, is
+/// air in the server and in the written world, never sea.
+///
+/// The shore room stands at origin `[0, 60, 0]`, eleven wide, its plinth solid
+/// over y 60..62; the template here also places one air cell in the plinth.
+#[test]
+fn a_cell_no_write_reached_holds_the_horizon_generators_block() {
+    let pf = common::ocean_prefabs_dir("ww-ocean-prefabs", common::OceanRoom::Shore);
+    // One air cell the template places, inside the plinth and under the sea.
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(pf.join("hello-room.json")).unwrap())
+            .unwrap();
+    let size: Vec<i32> = meta["structure"]["size"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap() as i32)
+        .collect();
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..size[0] {
+        for z in 0..size[2] {
+            for y in 0..3 {
+                let block = match [x, y, z] {
+                    [1, 2, 1] => "minecraft:water",
+                    [5, 0, 5] => "minecraft:air",
+                    _ => "minecraft:stone",
+                };
+                cells.push(([x, y, z], block));
+            }
+            let lamp = matches!((x, z), (3, 3) | (3, 7) | (7, 3) | (7, 7));
+            for y in 3..size[1] {
+                if x == 0 || x == size[0] - 1 || z == 0 || z == size[2] - 1 || y == size[1] - 1 {
+                    let roof = y == size[1] - 1;
+                    cells.push((
+                        [x, y, z],
+                        if roof && lamp {
+                            "minecraft:glowstone"
+                        } else {
+                            "minecraft:stone"
+                        },
+                    ));
+                }
+            }
+        }
+    }
+    std::fs::write(
+        pf.join("hello-room.nbt"),
+        common::structure_nbt([size[0], size[1], size[2]], &cells),
+    )
+    .unwrap();
+    let camp = tmp("ww-ocean-camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
+    doc["content"]["horizon"] = serde_json::json!("ocean");
+    doc["content"]["boundary"] = serde_json::json!({});
+    std::fs::write(camp.join("world.json"), doc.to_string()).unwrap();
+    let written = tmp("ww-ocean-world");
+    let (code, log) = run(&[
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "written-world",
+        camp.to_str().unwrap(),
+        "-o",
+        written.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let back = read_back(&written);
+    let at = |x: i32, y: i32, z: i32| base_name(back.get(&format!("{x},{y},{z}")));
+    // The room is where this test says it is.
+    assert_eq!(at(3, 68, 3), Some("minecraft:glowstone"), "{log}");
+    assert_eq!(at(5, 61, 5), Some("minecraft:stone"), "{log}");
+    // The air the template places under the sea stays air.
+    assert_eq!(at(5, 60, 5), None, "{log}");
+    // Under the piece and beside it, inside its chunk: the generator's stack.
+    for (x, z) in [(5, 5), (12, 5), (5, 14)] {
+        let under = if (x, z) == (5, 5) { 59 } else { 62 };
+        for y in 55..=under {
+            assert_eq!(at(x, y, z), Some("minecraft:water"), "{x},{y},{z}: {log}");
+        }
+        for y in [54, 40, 0, -63] {
+            assert_eq!(at(x, y, z), Some("minecraft:stone"), "{x},{y},{z}: {log}");
+        }
+        assert_eq!(
+            at(x, -64, z),
+            Some("minecraft:bedrock"),
+            "{x},-64,{z}: {log}"
+        );
+    }
+    // Above the stack the generator lays nothing.
+    assert_eq!(at(12, 63, 5), None, "{log}");
+    let line = log
+        .lines()
+        .find(|l| l.starts_with("world: at-load "))
+        .unwrap_or_else(|| panic!("{log}"));
+    let ground: usize = line
+        .split(", ")
+        .find_map(|p| p.strip_suffix(" ground cell(s)"))
+        .unwrap_or_else(|| panic!("{line}"))
+        .parse()
+        .unwrap();
+    // One chunk, every cell of it under sea level that no write reached.
+    assert_eq!(
+        ground,
+        back.values()
+            .filter(|s| {
+                ["minecraft:water", "minecraft:stone", "minecraft:bedrock"]
+                    .contains(&base_name(Some(*s)).unwrap())
+            })
+            .count()
+            - cells_written_below_sea(&back, &cells),
+        "{line}"
+    );
+}
+
+/// How many of the read-back water/stone/bedrock cells the template itself
+/// wrote (the room's own plinth, walls and pool), so the ground count is held
+/// to the cells the generator alone accounts for.
+fn cells_written_below_sea(back: &BTreeMap<String, String>, cells: &[([i32; 3], &str)]) -> usize {
+    cells
+        .iter()
+        .filter(|(c, b)| {
+            ["minecraft:water", "minecraft:stone"].contains(b)
+                && back.contains_key(&format!("{},{},{}", c[0], c[1] + 60, c[2]))
+        })
+        .count()
+}
+
 /// **`DW0955` — the cross-check reds on a world that is not the server's.**
 /// The gate is the instrument (`tools/ci/check-written-world.py`); this holds
 /// its code to the engine's declaration and its two perturbations: one cell
@@ -954,7 +1089,14 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         delvec::compiler::blockstate::BlockState::new("minecraft:gold_block"),
     );
     let moved = tmp("dw0955-moved");
-    world::write(&blocks, &|_| "minecraft:plains".into(), [5, 65, 2], &moved).unwrap();
+    world::write(
+        &blocks,
+        &|_| "minecraft:plains".into(),
+        [5, 65, 2],
+        &world::Ground::void(),
+        &moved,
+    )
+    .unwrap();
     let (code, said) = check(&moved);
     assert_eq!(code, 1, "{said}");
     assert!(
@@ -977,6 +1119,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         &blocks,
         &|_| "minecraft:plains".into(),
         [5, 65, 2],
+        &world::Ground::void(),
         &settled,
     )
     .unwrap();
@@ -1007,8 +1150,22 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         delvec::compiler::blockstate::BlockState::new("minecraft:grass_block[snowy=false]"),
     );
     let (wa, wb) = (tmp("dw0955-turf-written"), tmp("dw0955-turf-server"));
-    world::write(&grassed, &|_| "minecraft:plains".into(), [5, 65, 2], &wa).unwrap();
-    world::write(&ticked, &|_| "minecraft:plains".into(), [5, 65, 2], &wb).unwrap();
+    world::write(
+        &grassed,
+        &|_| "minecraft:plains".into(),
+        [5, 65, 2],
+        &world::Ground::void(),
+        &wa,
+    )
+    .unwrap();
+    world::write(
+        &ticked,
+        &|_| "minecraft:plains".into(),
+        [5, 65, 2],
+        &world::Ground::void(),
+        &wb,
+    )
+    .unwrap();
     let o = Command::new("python3")
         .arg(&gate)
         .arg(&out)
@@ -1024,7 +1181,14 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         turf,
         delvec::compiler::blockstate::BlockState::new("minecraft:stone"),
     );
-    world::write(&ticked, &|_| "minecraft:plains".into(), [5, 65, 2], &wb).unwrap();
+    world::write(
+        &ticked,
+        &|_| "minecraft:plains".into(),
+        [5, 65, 2],
+        &world::Ground::void(),
+        &wb,
+    )
+    .unwrap();
     let o = Command::new("python3")
         .arg(&gate)
         .arg(&out)
@@ -1046,7 +1210,14 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         delvec::compiler::blockstate::BlockState::new("minecraft:structure_void"),
     );
     let voided = tmp("dw0955-voided");
-    world::write(&blocks, &|_| "minecraft:plains".into(), [5, 65, 2], &voided).unwrap();
+    world::write(
+        &blocks,
+        &|_| "minecraft:plains".into(),
+        [5, 65, 2],
+        &world::Ground::void(),
+        &voided,
+    )
+    .unwrap();
     let record = tmp("dw0955-record").join("written-world.json");
     let o = Command::new("python3")
         .arg(&gate)
