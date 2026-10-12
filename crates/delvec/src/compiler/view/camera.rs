@@ -975,6 +975,7 @@ pub(crate) fn world_scene(
         // night-vision review emulation never applies to it.
         materials: None,
         delvewright_review_policy: None,
+        delvewright_sky: None,
         world: WorldRef {
             path: world_path.to_string(),
             dimension: 0,

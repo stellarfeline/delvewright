@@ -10,7 +10,7 @@ use std::process::{Command, Output};
 use delvec::compiler::view::camera::{
     self, ApprovedRow, Camera, CameraSheet, CameraSky, EmitOptions, Source,
 };
-use delvec::compiler::view::{panorama, scene};
+use delvec::compiler::view::{panorama, scene, sky_image};
 use delvewright_dsl::{WorldTime, WorldWeather};
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
@@ -48,17 +48,23 @@ fn log(o: &Output) -> String {
     )
 }
 
-/// Whether an emitted scene carries the clear cell of `tick`
-/// ([`scene::clear_cell`]): sky fog painted over the lens's sky, no light from
-/// the sun, and the cell's sky light as the scene's six-place rounding writes it.
+/// Whether an emitted scene carries the clear sky of `tick`
+/// ([`scene::clear_cell`]): the game's sky as a map drawn for its camera at that
+/// tick, seen whole by the lens, its `skyLight` the multiplier that makes the
+/// light it casts the lightmap's ([`sky_image::clear_sky`]), and no light from
+/// the sun.
 fn carries_clear_cell(v: &serde_json::Value, tick: i64) -> bool {
-    let cell = scene::clear_cell(tick);
+    let o = &v["camera"]["orientation"];
+    let view = sky_image::view_of(o["yaw"].as_f64().unwrap(), o["pitch"].as_f64().unwrap());
+    let map = sky_image::clear_sky(tick, view);
     let near = |a: &serde_json::Value, b: f64| a.as_f64().is_some_and(|a| (a - b).abs() < 5e-7);
-    v["sky"]["mode"] == "SOLID_COLOR"
-        && v["fog"]["skyFogDensity"] == 1.0
+    v["sky"]["mode"] == "SKYMAP_EQUIRECTANGULAR"
+        && v["sky"]["skyMirrored"] == false
+        && v["delvewrightSky"]["daytimeTicks"] == tick
+        && v["fog"]["skyFogDensity"] == 0.0
         && v["sun"]["intensity"] == 0.0
-        && near(&v["sky"]["skyLight"], cell.sky_light)
-        && near(&v["sky"]["apparentSkyLight"], cell.apparent_sky_light)
+        && near(&v["sky"]["skyLight"], map.sky_light)
+        && v["sky"]["apparentSkyLight"] == 1.0
 }
 
 fn cam(name: &str, answers: &str, sky: Option<CameraSky>) -> Camera {
@@ -483,6 +489,19 @@ fn the_gallery_reaches_every_weather_and_every_class() {
         carries_clear_cell(&v, WorldTime::Noon.daytime_ticks()),
         "{v}"
     );
+    // …and the sky map written beside the scene: its bytes move with the tick,
+    // and are a function of it.
+    let map = |bytes: &[u8]| {
+        sky_image::companion(bytes)
+            .expect("a clear scene names a map")
+            .1
+    };
+    let (own, moved) = (map(&emission.scenes[i].1), map(&noon.scenes[i].1));
+    assert_ne!(
+        own, moved,
+        "the stated sky's tick reaches the sky map's bytes"
+    );
+    assert_eq!(own, map(&emission.scenes[i].1), "the map is byte-stable");
     eprintln!(
         "gallery clear cell: hall-exterior skyLight {} at its own tick, {} at noon",
         sky_of(&emission.scenes[i].1)["skyLight"],
@@ -513,7 +532,8 @@ fn the_gallery_reaches_every_weather_and_every_class() {
 /// under `{"moon": "high"}` in the clear, in a delve whose world opens at
 /// dusk. The camera's sun is the row's hour — the moon high puts the sun at
 /// the nadir — and the scene carries the clear cell of that tick: the lens
-/// sees no sky, the sky casts the timeline's night light, the sun gives none
+/// sees the game's night sky, black above, the sky casts the timeline's night
+/// light, the sun gives none
 /// and its disc is not drawn. The same camera answering a clear dusk row
 /// carries the clear cell of the dusk tick: a lit sky the lens sees, and the
 /// sun's disc above the horizon, still giving no light.
@@ -535,7 +555,6 @@ fn a_camera_at_a_night_beat_renders_the_night_sky() {
         "the moon high puts the sun under the horizon: {altitude}"
     );
     assert!(carries_clear_cell(&night, 18000), "{night}");
-    assert_eq!(night["sky"]["apparentSkyLight"], 0.0, "{night}");
     assert_eq!(night["sun"]["drawTexture"], false, "{night}");
 
     let dusk = scene_of(MINI, cam("evening", "concept/evening", None), &rows);

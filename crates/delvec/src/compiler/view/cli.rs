@@ -621,6 +621,17 @@ fn write_scenes(out: &Path, scenes: &[(String, Vec<u8>)]) -> Result<usize, (Diag
         purged += cache::purge_scene_caches(out, name)
             .map_err(|d| (d, exit::OUTPUT))?
             .len();
+        // A clear scene names a sky map drawn from its own tick and camera
+        // (`sky_image::companion`); it is written beside the scene, so the two
+        // are always one emission.
+        if let Some((map, bytes)) = crate::compiler::view::sky_image::companion(data) {
+            std::fs::write(out.join(&map), bytes).map_err(|e| {
+                (
+                    Diagnostic::error(DW_OUTPUT, format!("write {map}: {e}")),
+                    exit::OUTPUT,
+                )
+            })?;
+        }
     }
     Ok(purged)
 }

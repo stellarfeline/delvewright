@@ -292,36 +292,6 @@ def timeline_float(name: str, tick: int) -> float:
     return float(a) + (float(b) - float(a)) * p
 
 
-def clear_cell(tick: int) -> dict:
-    """The clear cell of a tick, derived here: the lightmap shader's full-sky
-    colour (`lightmap.fsh`) as the light the sky casts, the timeline's sky and
-    fog colours multiplied into the ground's, decoded by Python's own `**`."""
-    factor = timeline_float("sky_light_factor", tick)
-    light = timeline_rgb("sky_light_color", tick)
-    c = [min(1.0, max(0.0, (v / 255.0 * factor) * 0.96 + 0.03)) for v in light]
-    top = max(c)
-    curve = 1.0 - (1.0 - top) ** 4
-    lit = [(v + (v * curve / top - v) * BRIGHTNESS) * 0.96 + 0.03 for v in c]
-    cast = [v**2.2 for v in lit]
-    peak = max(cast)
-    hue = [v / peak for v in cast]
-
-    def mul(a, b):
-        return [x * y // 255 for x, y in zip(a, b)]
-
-    def lum(v):
-        return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]
-
-    seen = [(v / 255.0) ** 2.2 for v in mul(timeline_rgb("sky_color", tick), GROUND_SKY)]
-    fog = [(v / 255.0) ** 2.2 for v in mul(timeline_rgb("fog_color", tick), OVERWORLD_FOG)]
-    return {
-        "color": hue,
-        "skyLight": peak,
-        "apparentSkyLight": lum(seen) / lum(hue),
-        "fog": fog,
-    }
-
-
 def closed_form_altitude(tick: float) -> float:
     """The sun's altitude in degrees at a `daytime` tick, by minecraft.wiki's
     closed-form sky angle (*Daylight cycle*, §Sky angle) — not the vendored
@@ -350,43 +320,244 @@ def tick_of_sun(altitude_rad: float, azimuth_rad: float) -> int:
     return int(round(0.5 * (lo + hi))) % 24000
 
 
-def clear_cell_findings(doc: dict) -> tuple[list[str], int]:
-    """How a clear scene departs from the clear cell of its sun's tick, if it
-    does, and the tick read. A value is accepted when it lies within what the
-    cell takes over `TICK_SLACK` ticks either side, plus the scene's rounding."""
+def timeline_argb(name: str, tick: int) -> tuple[int, int, int, int]:
+    """An `#aarrggbb` track at a tick, each 8-bit channel `a + floor(p·(b−a))`."""
+    a, b, p = _between(_track(name), tick)
+    ca = [int(str(a)[1 + 2 * i : 3 + 2 * i], 16) for i in range(4)]
+    cb = [int(str(b)[1 + 2 * i : 3 + 2 * i], 16) for i in range(4)]
+    return tuple(x + math.floor(p * (y - x)) for x, y in zip(ca, cb))  # type: ignore[return-value]
+
+
+def _mul(a, b):
+    return [x * y // 255 for x, y in zip(a, b)]
+
+
+def lightmap_light(tick: int) -> list[float]:
+    """The lightmap shader's full-sky colour (`lightmap.fsh`, sky light 15,
+    block light 0, the gamma option at 0.5), decoded by Python's `**`: the light
+    a clear sky casts on an open top face."""
+    factor = timeline_float("sky_light_factor", tick)
+    light = timeline_rgb("sky_light_color", tick)
+    c = [min(1.0, max(0.0, (v / 255.0 * factor) * 0.96 + 0.03)) for v in light]
+    top = max(c)
+    curve = 1.0 - (1.0 - top) ** 4
+    lit = [(v + (v * curve / top - v) * BRIGHTNESS) * 0.96 + 0.03 for v in c]
+    return [v**2.2 for v in lit]
+
+
+# The client's defaults and the sky geometry its `SkyRenderer` builds, read
+# here off the same bytecode the engine cites: render distance 12 chunks,
+# `visual/sky_fog_end_distance` 512, the sky disc an octagon at height 16 with
+# its rim at 512, the sunrise fan from (0, 100, 0) to a rim of radius 120 lifted
+# 40 × alpha, 16 steps. The map is 360 × 180, rows from the nadir up.
+RENDER_DISTANCE = 12
+SKY_FOG_END = 512.0
+MAP_W, MAP_H = 360, 180
+
+
+def game_sky_colours(tick: int, view: tuple[float, float, float]) -> dict:
+    """The clear colour, the sky colour and the fan of a tick for a look vector,
+    as display values — `AtmosphericFogEnvironment.getBaseColor`'s steps."""
+    fog = _mul(timeline_rgb("fog_color", tick), OVERWORLD_FOG)
+    sky = _mul(timeline_rgb("sky_color", tick), GROUND_SKY)
+    a, r, g, b = timeline_argb("sunrise_sunset_color", tick)
+    alpha = a / 255.0
+    angle = closed_form_angle(tick)
+    west = 0.0 < angle < 180.0
+    side = -1.0 if west else 1.0
+    dot = view[0] * side
+    lerp = lambda f, x, y: [u + math.floor(f * (v - u)) for u, v in zip(x, y)]  # noqa: E731
+    if RENDER_DISTANCE >= 4 and dot > 0 and alpha > 0:
+        fog = lerp(dot * alpha, fog, [r, g, b])
+    reach = min(max(min(SKY_FOG_END / 16, RENDER_DISTANCE) / 32, 0.25), 1.0)
+    fog = lerp(1 - reach**0.25, fog, sky)
+    return {
+        "fog": [v / 255 for v in fog],
+        "sky": [v / 255 for v in sky],
+        "fan": ([r / 255, g / 255, b / 255], alpha, side) if alpha > 0.001 else None,
+    }
+
+
+def closed_form_angle(tick: float) -> float:
+    """The sun angle in degrees from the zenith, westward, by the closed form."""
+    t = tick - 6000.0
+    turn = (t / 24000.0) % 1.0
+    quarters = (t / 6000.0) % 4.0
+    return ((1.0 - math.cos(math.pi * turn) + quarters) * 60.0) % 360.0
+
+
+def _fan_alpha(fan, d) -> float:
+    rgb, alpha, s = fan
+    c = (100.0 * s, 0.0, 0.0)
+
+    def rim(j):
+        a = 2 * math.pi * j / 16
+        return (120.0 * s * math.cos(a), 40.0 * alpha * math.cos(a), -120.0 * s * math.sin(a))
+
+    def sub(p, q):
+        return (p[0] - q[0], p[1] - q[1], p[2] - q[2])
+
+    def cross(p, q):
+        return (p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0])
+
+    def dot(p, q):
+        return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]
+
+    for j in range(16):
+        e1, e2 = sub(rim(j), c), sub(rim(j + 1), c)
+        p = cross(d, e2)
+        det = dot(e1, p)
+        if abs(det) < 1e-12:
+            continue
+        tv = (-c[0], -c[1], -c[2])
+        u = dot(tv, p) / det
+        if not 0 <= u <= 1:
+            continue
+        q = cross(tv, e1)
+        v = dot(d, q) / det
+        if v < 0 or u + v > 1:
+            continue
+        if dot(e2, q) / det > 0:
+            return alpha * (1 - u - v)
+    return 0.0
+
+
+def game_sky_pixel(colours: dict, d) -> list[float]:
+    """What the client draws along `d`, decoded to linear."""
+    c = colours["fog"]
+    if d[1] > 0:
+        k = 16.0 / d[1]
+        px, pz = d[0] * k, d[2] * k
+        proj = max(
+            px * math.cos(-math.pi + math.pi / 8 + e * math.pi / 4)
+            + pz * math.sin(-math.pi + math.pi / 8 + e * math.pi / 4)
+            for e in range(8)
+        )
+        f = proj / (512.0 * math.cos(math.pi / 8))
+        if f < 1:
+            sph = 16 + (math.hypot(512.0, 16.0) - 16) * f
+            cyl = 16 + (512 - 16) * f
+            end = min(RENDER_DISTANCE * 16, SKY_FOG_END)
+            fv = max(min(max(sph / end, 0.0), 1.0), 0.0 if cyl <= end else 1.0)
+            c = [s + (g - s) * fv for s, g in zip(colours["sky"], colours["fog"])]
+    if colours["fan"]:
+        a = _fan_alpha(colours["fan"], d)
+        c = [v * (1 - a) + t * a for v, t in zip(c, colours["fan"][0])]
+    return [max(v, 0.0) ** 2.2 for v in c]
+
+
+def map_direction(i: int, j: int) -> tuple[float, float, float]:
+    th = 2 * math.pi * i / MAP_W
+    ph = math.pi * j / MAP_H - math.pi / 2
+    return (math.cos(ph) * math.cos(th), math.sin(ph), math.cos(ph) * math.sin(th))
+
+
+def read_pfm(path: Path) -> list[float] | str:
+    """The floats of a `PF` map, or why it cannot be read."""
+    import struct
+
+    raw = path.read_bytes()
+    head = f"PF\n{MAP_W} {MAP_H}\n-1.0\n".encode()
+    if not raw.startswith(head):
+        return f"{path.name} does not start with the {MAP_W} x {MAP_H} little-endian `PF` header"
+    body = raw[len(head) :]
+    if len(body) != MAP_W * MAP_H * 12:
+        return f"{path.name} holds {len(body)} bytes of pixels, not {MAP_W * MAP_H * 12}"
+    return list(struct.unpack(f"<{MAP_W * MAP_H * 3}f", body))
+
+
+# Where the map is sampled against the gate's own drawing of the game's sky: a
+# 24 x 12 grid over the whole sphere, rows from just above the nadir.
+SAMPLE_COLUMNS = range(0, MAP_W, 15)
+SAMPLE_ROWS = range(7, MAP_H, 15)
+
+
+def clear_sky_findings(doc: dict, scene_dir: Path | None) -> tuple[list[str], int]:
+    """How a clear scene departs from the game's clear sky at its tick, if it
+    does, and the tick read. The tick is the scene's `delvewrightSky` marker,
+    held to the sun's own altitude by the closed form. The map must be the
+    game's sky — drawn here, with this gate's own port of the client — plus one
+    uniform non-negative veil; and `skyLight` times the map's cosine-weighted
+    mean over the upper hemisphere must be the lightmap's light."""
     sun = doc.get("sun") or {}
-    tick = tick_of_sun(sun["altitude"], sun.get("azimuth", 0.0))
-    cells = [clear_cell(tick + d) for d in range(-TICK_SLACK, TICK_SLACK + 1)]
-    bad = []
+    read = tick_of_sun(sun["altitude"], sun.get("azimuth", 0.0))
+    tick = (doc.get("delvewrightSky") or {}).get("daytimeTicks")
+    bad: list[str] = []
+    if not isinstance(tick, int):
+        return [f"carries no `delvewrightSky.daytimeTicks` (its sun reads tick {read})"], read
+    if abs((tick - read + 12000) % 24000 - 12000) > TICK_SLACK:
+        bad.append(f"names tick {tick}, and its sun stands where tick {read} puts it")
     sky, fog = doc.get("sky") or {}, doc.get("fog") or {}
     for (obj, key), want in {
-        ("sky", "mode"): "SOLID_COLOR",
-        ("fog", "mode"): "UNIFORM",
-        ("fog", "skyFogDensity"): 1.0,
+        ("sky", "mode"): "SKYMAP_EQUIRECTANGULAR",
+        ("sky", "skyMirrored"): False,
+        ("sky", "apparentSkyLight"): 1.0,
+        ("fog", "uniformDensity"): 0.0,
+        ("fog", "skyFogDensity"): 0.0,
         ("sun", "intensity"): 0.0,
     }.items():
         got = (doc.get(obj) or {}).get(key)
         if got != want:
-            bad.append(f"`{obj}.{key}` is {got!r}, the clear cell's is {want!r}")
+            bad.append(f"`{obj}.{key}` is {got!r}, the clear sky's is {want!r}")
     disc = math.degrees(sun["altitude"]) >= -SUN_DISC_HALF_DEG
     if sun.get("drawTexture") != disc:
         bad.append(
             f"`sun.drawTexture` is {sun.get('drawTexture')!r}; the disc is "
             f"{'partly up' if disc else 'wholly down'} at {math.degrees(sun['altitude']):.3f}°"
         )
-
-    def within(label: str, got, values: list[float]) -> None:
-        if not isinstance(got, (int, float)) or not (min(values) - 1e-6 <= got <= max(values) + 1e-6):
+    name = sky.get("skymap")
+    if scene_dir is None or not isinstance(name, str):
+        return bad + ["names no sky map the gate can read"], tick
+    path = scene_dir / name
+    if not path.is_file():
+        return bad + [f"names the sky map {name}, which was not written beside it"], tick
+    px = read_pfm(path)
+    if isinstance(px, str):
+        return bad + [px], tick
+    o = (doc.get("camera") or {}).get("orientation") or {}
+    yaw, pitch = o.get("yaw", 0.0), o.get("pitch", 0.0)
+    view = (
+        math.cos(yaw) * math.sin(pitch),
+        -math.cos(pitch),
+        -math.sin(yaw) * math.sin(pitch),
+    )
+    colours = game_sky_colours(tick, view)
+    veils = []
+    for j in SAMPLE_ROWS:
+        for i in SAMPLE_COLUMNS:
+            game = game_sky_pixel(colours, map_direction(i, j))
+            k = (j * MAP_W + i) * 3
+            veils.append([px[k + c] - game[c] for c in range(3)])
+    for c in range(3):
+        lo, hi = min(v[c] for v in veils), max(v[c] for v in veils)
+        if hi - lo > 2e-3 or lo < -1e-3:
             bad.append(
-                f"`{label}` is {got!r}; the clear cell at tick {tick} (±{TICK_SLACK}) is "
-                f"{min(values):.6f}..{max(values):.6f}"
+                f"its map is not the game's sky plus one uniform veil: channel {c} departs "
+                f"from the gate's drawing by {lo:.5f}..{hi:.5f} over {len(veils)} sample(s)"
             )
-
-    within("sky.skyLight", sky.get("skyLight"), [c["skyLight"] for c in cells])
-    within("sky.apparentSkyLight", sky.get("apparentSkyLight"), [c["apparentSkyLight"] for c in cells])
-    for i, ch in enumerate(("red", "green", "blue")):
-        within(f"sky.color.{ch}", (sky.get("color") or {}).get(ch), [c["color"][i] for c in cells])
-        within(f"fog.color.{ch}", (fog.get("color") or {}).get(ch), [c["fog"][i] for c in cells])
+    acc, weight = [0.0, 0.0, 0.0], 0.0
+    for j in range(MAP_H):
+        ph = math.pi * j / MAP_H - math.pi / 2
+        dy = math.sin(ph)
+        if dy <= 0:
+            continue
+        w = dy * math.cos(ph)
+        row = j * MAP_W * 3
+        for c in range(3):
+            acc[c] += w * sum(px[row + c : row + MAP_W * 3 : 3])
+        weight += w * MAP_W
+    light = lightmap_light(tick)
+    s = sky.get("skyLight")
+    if not isinstance(s, (int, float)):
+        bad.append(f"`sky.skyLight` is {s!r}")
+    else:
+        for c in range(3):
+            cast = s * acc[c] / weight
+            if abs(cast - light[c]) > 2e-3 * max(light[c], 1e-3):
+                bad.append(
+                    f"casts {cast:.6f} in channel {c} on an open top face (`skyLight` x the map's "
+                    f"mean), where the lightmap's light at tick {tick} is {light[c]:.6f}"
+                )
     return bad, tick
 
 
@@ -397,6 +568,7 @@ def sky_matches(
     weathers: dict[str, int],
     classes: dict[str, int],
     clear_cells: dict[str, int] | None = None,
+    scene_dir: Path | None = None,
 ) -> list[str]:
     """Whether a camera's scene is under its picture's sky; tallies what it saw."""
     rows = {r["name"]: r for r in design.get("content", {}).get("references", [])}
@@ -404,7 +576,7 @@ def sky_matches(
     sky = cam.get("sky") or ({"time": row["time"], "weather": row["weather"]} if row else None)
     if sky is None:
         return [f"answers `{cam['answers']}`, which design.json has no row for"]
-    bad = judge_sky(doc, sky["weather"], clear_cells)
+    bad = judge_sky(doc, sky["weather"], clear_cells, scene_dir)
     alt = math.degrees(doc["sun"]["altitude"])
     cls = "high" if alt >= 20.0 else "low" if alt >= 0.0 else "below"
     weathers[sky["weather"]] = weathers.get(sky["weather"], 0) + 1
@@ -412,9 +584,14 @@ def sky_matches(
     return bad
 
 
-def judge_sky(doc: dict, weather: str, clear_cells: dict[str, int] | None = None) -> list[str]:
+def judge_sky(
+    doc: dict,
+    weather: str,
+    clear_cells: dict[str, int] | None = None,
+    scene_dir: Path | None = None,
+) -> list[str]:
     """A scene under `weather`: an overcast block under rain or thunder, the
-    clear cell of its sun's tick under a clear sky. Tallies clear scenes by
+    game's clear sky of its tick under a clear sky. Tallies clear scenes by
     where on the day their tick falls."""
     if weather != "clear":
         if (doc.get("sky") or {}).get("mode") == "SOLID_COLOR" and (doc.get("fog") or {}).get(
@@ -422,7 +599,7 @@ def judge_sky(doc: dict, weather: str, clear_cells: dict[str, int] | None = None
         ) == "UNIFORM":
             return []
         return [f"is under {weather} and its scene carries no overcast sky and fog"]
-    bad, tick = clear_cell_findings(doc)
+    bad, tick = clear_sky_findings(doc, scene_dir)
     if clear_cells is not None:
         sky_dark = all(v == 0 for v in timeline_rgb("sky_color", tick))
         light_full = timeline_float("sky_light_factor", tick) == 1.0
@@ -594,7 +771,13 @@ def main() -> int:
                             findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
                         design = json.loads((src / "design.json").read_text())
                         for why in sky_matches(
-                            doc, cam, design, weathers_seen, classes_seen, clear_seen
+                            doc,
+                            cam,
+                            design,
+                            weathers_seen,
+                            classes_seen,
+                            clear_seen,
+                            scene_file.parent,
                         ):
                             findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
 
@@ -622,7 +805,7 @@ def main() -> int:
                         findings.append(f"{base} ({label}): render-plan.json states no sky.weather")
                     else:
                         plan_skies += 1
-                        for why in judge_sky(doc, plan_weather, clear_seen):
+                        for why in judge_sky(doc, plan_weather, clear_seen, f.parent):
                             findings.append(f"{base} ({label}) {f.name}: {why}")
                     chunks = doc.get("chunkList") or []
                     if not chunks:
