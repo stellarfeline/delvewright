@@ -952,6 +952,7 @@ pub(crate) fn world_scene(
         y_clip_max: (loaded_max[1] + 16).min(320),
         exposure: round6(frame.exposure),
         postprocess: scene::POSTPROCESS,
+        postprocess_settings: scene::tone_curve(),
         output_mode: "PNG",
         render_time: 0,
         spp: 0,

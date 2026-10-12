@@ -144,11 +144,153 @@ pub const WATER_SURFACE_GAP: f64 = 0.125;
 /// (any channel at 254 or more: 0.60 → 0.37%, 0.18 → 0.02%, 0.49 → 0.11%)
 /// without crushing the shadows (luma at 8 or less: 5.24 → 7.59%, 0.39 →
 /// 0.70%, 0.84 → 1.22%); `TONEMAP1`, ACES and UE4 clip less too, and crush
-/// 3–85 points more, because their toes sink the dim half of a frame. The
-/// cost, stated: at linear 0.18 Hable shows 0.393 where `GAMMA` shows 0.459,
-/// so a mid-tone reads about a seventh darker than the game draws it.
+/// 3–85 points more, because their toes sink the dim half of a frame. At its
+/// preset the curve shows linear 0.18 at 0.393 where the game's transfer shows
+/// 0.459, so it is written with its mid-grey anchored ([`tone_curve`]).
 /// The record is `compiler.md` §4, *The sky of a scene*. **Authored.**
 pub const POSTPROCESS: &str = "TONEMAP3";
+
+/// The pinned core's Hable curve as a scene stores it: `postprocessSettings`,
+/// seven floats `HableToneMappingFilter.loadConfiguration` reads by these
+/// names. Per channel the core computes `y = 2 · exposure · x`, `h(y) =
+/// (y(Ay + CB) + DE) / (y(Ay + B) + DF) − E/F` with each product of two
+/// parameters taken in float, the white scale `1 / h(W)` in float arithmetic
+/// (`recalculateWhiteScale`), and shows `(h(y) · whiteScale)^0.45454543828964233`
+/// clamped at 1 (`processPixel`, `SimplePixelPostProcessingFilter`). **Cited**:
+/// the pinned core's bytecode.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HableCurve {
+    /// `A`.
+    pub shoulder_strength: f32,
+    /// `B`.
+    pub linear_strength: f32,
+    /// `C`.
+    pub linear_angle: f32,
+    /// `D`.
+    pub toe_strength: f32,
+    /// `E`.
+    pub toe_numerator: f32,
+    /// `F`.
+    pub toe_denominator: f32,
+    /// `W`, the linear value the curve shows as white.
+    pub linear_white_point_value: f32,
+}
+
+/// The core's default Hable preset, `FILMIC_WORLDS` (`HableToneMappingFilter.
+/// applyPreset`, the values `reset` applies). **Cited.**
+pub const HABLE_FILMIC_WORLDS: HableCurve = HableCurve {
+    shoulder_strength: 0.15,
+    linear_strength: 0.5,
+    linear_angle: 0.1,
+    toe_strength: 0.2,
+    toe_numerator: 0.02,
+    toe_denominator: 0.3,
+    linear_white_point_value: 11.2,
+};
+
+/// The mid-tone a tone curve is anchored at: linear 0.18, the reflectance of
+/// the photographic grey card exposure is metered against. **Cited**: the
+/// 18% grey card as the standard metering reference (Kodak Gray Card, R-27).
+pub const MID_GREY: f64 = 0.18;
+
+/// The exponent the core's display transfer raises a value to
+/// (`0.45454543828964233`, the float nearest `1/2.2`, in both `GAMMA` and
+/// `TONEMAP3`). The game's transfer for a decoded colour `x` is `x^(1/2.2)`
+/// ([`to_linear`] inverted), so a curve whose value before this exponent is
+/// `x` shows `x` as the game draws it.
+pub const CORE_DISPLAY_EXPONENT: f64 = 0.45454543828964233;
+
+impl HableCurve {
+    /// `1 / h(W)`, in float arithmetic as the core computes it.
+    fn white_scale(&self) -> f32 {
+        let (a, b, c, d, e, f, w) = self.params();
+        let num = w * (a * w + c * b) + d * e;
+        let den = w * (a * w + b) + d * f;
+        1.0 / (num / den - e / f)
+    }
+
+    fn params(&self) -> (f32, f32, f32, f32, f32, f32, f32) {
+        (
+            self.shoulder_strength,
+            self.linear_strength,
+            self.linear_angle,
+            self.toe_strength,
+            self.toe_numerator,
+            self.toe_denominator,
+            self.linear_white_point_value,
+        )
+    }
+
+    /// `h(y)` with the parameter products in float, the rest in double, as
+    /// `processPixel` evaluates it.
+    fn h(&self, y: f64) -> f64 {
+        let (a, b, c, d, e, f, _) = self.params();
+        let (a, b) = (f64::from(a), f64::from(b));
+        let (cb, de, df, ef) = (
+            f64::from(c * self.linear_strength),
+            f64::from(d * e),
+            f64::from(d * f),
+            f64::from(e / f),
+        );
+        (y * (a * y + cb) + de) / (y * (a * y + b) + df) - ef
+    }
+
+    /// The value the core holds for linear `x` at exposure 1, before its
+    /// display exponent ([`CORE_DISPLAY_EXPONENT`]).
+    pub fn before_gamma(&self, x: f64) -> f64 {
+        self.h(2.0 * x) * f64::from(self.white_scale())
+    }
+
+    /// The same curve read `k` times brighter, its white point held: `h_k(y)
+    /// = h(k · y)` is the curve with `A · k²`, `B · k`, `C`, `D`, `E`, `F`
+    /// (multiply out the numerator and denominator), and `W / k` keeps
+    /// `h_k(W / k) = h(W)`, so the white scale is the preset's.
+    pub fn brightened(&self, k: f64) -> HableCurve {
+        HableCurve {
+            shoulder_strength: (f64::from(self.shoulder_strength) * k * k) as f32,
+            linear_strength: (f64::from(self.linear_strength) * k) as f32,
+            linear_angle: self.linear_angle,
+            toe_strength: self.toe_strength,
+            toe_numerator: self.toe_numerator,
+            toe_denominator: self.toe_denominator,
+            linear_white_point_value: (f64::from(self.linear_white_point_value) / k) as f32,
+        }
+    }
+
+    /// The gain `k` at which [`HableCurve::brightened`] holds linear `m` at
+    /// `m` before the display exponent, so `m` shows as the game draws it. In
+    /// closed form: with `y = 2km` and `q = m / whiteScale + E/F`, `h(y) =
+    /// m / whiteScale` is `A(1 − q)y² + (CB − qB)y + (DE − qDF) = 0`, whose
+    /// positive root is the one on the curve's rising branch. A square root and
+    /// the four operations: a function of the IEEE arithmetic (ADR-0006).
+    pub fn mid_grey_gain(&self, m: f64) -> f64 {
+        let (a, b, c, d, e, f, _) = self.params();
+        let (a, b) = (f64::from(a), f64::from(b));
+        let (cb, de, df, ef) = (
+            f64::from(c * self.linear_strength),
+            f64::from(d * e),
+            f64::from(d * f),
+            f64::from(e / f),
+        );
+        let q = m / f64::from(self.white_scale()) + ef;
+        let (qa, qb, qc) = (a * (1.0 - q), cb - q * b, de - q * df);
+        let y = (-qb + (qb * qb - 4.0 * qa * qc).sqrt()) / (2.0 * qa);
+        y / (2.0 * m)
+    }
+}
+
+/// **The curve every scene is written with** (`postprocessSettings` under
+/// [`POSTPROCESS`]): the core's preset ([`HABLE_FILMIC_WORLDS`]) brightened by
+/// the gain that shows [`MID_GREY`] as the game shows it
+/// ([`HableCurve::mid_grey_gain`], 1.463761 at the pin). Below the mid-grey the
+/// curve sits within a few hundredths of the game's transfer, and above it
+/// rolls off along Hable's shoulder where the game would clip. Measured on the
+/// Treehouse Camp's twelve showcase frames, re-exposed from their accumulated
+/// renders (`compiler.md` §4). **Derived**; the anchor is cited.
+pub fn tone_curve() -> HableCurve {
+    HABLE_FILMIC_WORLDS.brightened(HABLE_FILMIC_WORLDS.mid_grey_gain(MID_GREY))
+}
 
 /// Chunky's ambient "water world" plane — the sea a delve's world save does not
 /// contain (see [`water_world`]).
@@ -378,6 +520,7 @@ pub(crate) struct ChunkyScene {
     pub(crate) y_clip_max: i32,
     pub(crate) exposure: f64,
     pub(crate) postprocess: &'static str,
+    pub(crate) postprocess_settings: HableCurve,
     pub(crate) output_mode: &'static str,
     pub(crate) render_time: u64,
     pub(crate) spp: u32,
@@ -1371,6 +1514,7 @@ pub fn scenes_from_plan(
             y_clip_max,
             exposure: 1.0,
             postprocess: POSTPROCESS,
+            postprocess_settings: tone_curve(),
             output_mode: "PNG",
             render_time: 0,
             spp: 0,
@@ -1800,6 +1944,52 @@ mod tests {
     /// unless the file equals live emitter output byte for byte, and
     /// `every_golden_is_emitter_output` refuses any OTHER file appearing beside
     /// it. Together those are strictly stronger than canonical form would be.
+    /// The curve every scene is written with shows linear [`MID_GREY`] at the
+    /// value the game's transfer shows it, where the core's preset shows 0.393;
+    /// the gain is the closed form's, and the curve is the preset read brighter.
+    #[test]
+    fn the_tone_curve_shows_mid_grey_as_the_game_does() {
+        let game = MID_GREY.powf(CORE_DISPLAY_EXPONENT);
+        let preset = HABLE_FILMIC_WORLDS
+            .before_gamma(MID_GREY)
+            .powf(CORE_DISPLAY_EXPONENT);
+        assert_eq!(round6(preset), 0.393285, "the preset's mid-grey");
+        let shown = tone_curve().before_gamma(MID_GREY);
+        assert!((shown - MID_GREY).abs() < 1e-6, "mid-grey held at {shown}");
+        assert!((shown.powf(CORE_DISPLAY_EXPONENT) - game).abs() < 1e-6);
+        let k = HABLE_FILMIC_WORLDS.mid_grey_gain(MID_GREY);
+        assert_eq!(round6(k), 1.463761);
+        // The brightened curve is the preset at `k` times the light, over the
+        // whole range a frame holds, black to past white.
+        for i in 0..=400 {
+            let x = 1e-4 * 1.04f64.powi(i);
+            let (a, b) = (
+                tone_curve().before_gamma(x),
+                HABLE_FILMIC_WORLDS.before_gamma(k * x),
+            );
+            assert!(
+                (a - b).abs() <= 1e-5 * b.abs().max(1e-3),
+                "x {x}: {a} vs {b}"
+            );
+        }
+        // Monotone, and white stays white: the shoulder is the preset's.
+        assert!(tone_curve().before_gamma(11.2 / k) > 0.9999);
+    }
+
+    /// The anchor is the derivation's input, and it moves the emitted curve: a
+    /// different mid-grey writes different `postprocessSettings` bytes.
+    #[test]
+    fn the_anchor_moves_the_emitted_curve() {
+        let emitted = serde_json::to_string(&tone_curve()).unwrap();
+        let moved = HABLE_FILMIC_WORLDS.brightened(HABLE_FILMIC_WORLDS.mid_grey_gain(0.2));
+        assert_ne!(serde_json::to_string(&moved).unwrap(), emitted);
+        assert_ne!(
+            serde_json::to_string(&HABLE_FILMIC_WORLDS).unwrap(),
+            emitted,
+            "the preset itself is not what a scene carries"
+        );
+    }
+
     #[test]
     fn golden_scene_matches() {
         let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
@@ -2189,6 +2379,14 @@ mod tests {
                     assert_eq!(v["sun"]["intensity"], cell.sun_intensity, "{at}");
                     assert_eq!(v["fog"]["uniformDensity"], cell.fog_density, "{at}");
                     assert_eq!(v["postprocess"], POSTPROCESS, "{at}");
+                    assert_eq!(
+                        v["postprocessSettings"],
+                        serde_json::from_str::<serde_json::Value>(
+                            &serde_json::to_string(&tone_curve()).unwrap()
+                        )
+                        .unwrap(),
+                        "{at}"
+                    );
                     // The sun's direction is the hour's, whatever the weather.
                     let sun = sun_at(time.daytime_ticks());
                     assert_eq!(v["sun"]["altitude"], sun.altitude, "{at}");
