@@ -72,19 +72,20 @@ And for `delvec cameras`, on every point whose campaign carries a
   `sky`, else the `time` and `weather` of the `design.json` row it answers —
   read here from the two documents, sharing nothing with the engine's
   resolution. A `rain` or `thunder` scene carries `sky.mode SOLID_COLOR` and
-  `fog.mode UNIFORM`. A `clear` scene carries exactly the **clear cell** of its
-  tick (`compiler.md` §4): the tick is read off the scene's own sun by
-  minecraft.wiki's closed-form sky angle, which the engine's emission (the
-  vendored track) does not share, and the cell is derived here from the
-  vendored day timeline with this gate's own reader — the lightmap shader's
-  full-sky colour of `visual/sky_light_factor` and `visual/sky_light_color` as
-  `sky.color` and `sky.skyLight`, `visual/sky_color` times the ground's
-  `#7ba4ff` at its luminance as `sky.apparentSkyLight`, `visual/fog_color`
-  times the overworld's `#c0d8ff` as `fog.color`, `fog.skyFogDensity` 1,
-  `sun.intensity` 0, and the sun's disc drawn exactly while some of it stands
-  above the horizon. A value is accepted within what the cell takes over
-  `TICK_SLACK` ticks either side of the tick read, because the closed form and
-  the track agree to 0.056°. The panorama and review scenes of a clear plan
+  `fog.mode UNIFORM`. A `clear` scene carries the **game's own sky of its
+  tick** (`compiler.md` §4): its `delvewrightSky.daytimeTicks` is held within
+  `TICK_SLACK` ticks of the tick its own sun names by minecraft.wiki's
+  closed-form sky angle, which the engine's emission (the vendored track) does
+  not share; the fixed keys are `SKYMAP_EQUIRECTANGULAR`, `skyMirrored` false,
+  `apparentSkyLight` 1, no fog, no sun light and the disc drawn exactly while
+  some of it stands above the horizon; the map written beside the scene is
+  held, on a 24 × 12 sample grid, to this gate's own Python port of the
+  client's sky (the clear colour with its look-dependent sunrise tint, the
+  octagonal sky disc with `sky.fsh`'s fog, the sunrise fan) plus ONE uniform
+  non-negative veil; and `skyLight` times the map's cosine-weighted mean over
+  the upper hemisphere is held to the lightmap shader's full-sky light of
+  `visual/sky_light_factor` and `visual/sky_light_color`. The panorama and
+  review scenes of a clear plan
   are judged by the same rule. Over the domain the weathers emitted are `{clear, rain, thunder}`
   and the daylight classes — read off each scene's sun altitude, at or above
   20° `high`, from 0° `low`, under 0° `below` — are `{high, low, below}`; a
@@ -839,12 +840,12 @@ def main() -> int:
         f"camera skies: weathers {dict(sorted(weathers_seen.items()))}, daylight classes "
         f"{dict(sorted(classes_seen.items()))}, over {cameras_judged} camera scene(s) and "
         f"{plan_skies} panorama/review scene(s); {sum(clear_seen.values())} clear scene(s) "
-        f"judged against the clear cell derived here from the timeline "
+        f"judged against the game's clear sky drawn here from the timeline "
         f"({', '.join(f'{k} {v}' for k, v in sorted(clear_seen.items())) or 'none'})."
     )
     if builds and not clear_seen:
         findings.append(
-            "ZERO clear scenes were judged against the clear cell: the domain reaches no "
+            "ZERO clear scenes were judged against the game's clear sky: the domain reaches no "
             "clear sky, so the clear-cell rule examined nothing"
         )
     if cameras_judged and (

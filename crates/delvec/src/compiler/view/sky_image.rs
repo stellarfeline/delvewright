@@ -427,13 +427,9 @@ mod tests {
             DEFAULT_BRIGHTNESS,
         )
         .map(to_linear);
-        for k in 0..3 {
+        for (k, want) in light.iter().enumerate() {
             let cast = sky.sky_light * (sky.mean[k] + sky.veil[k]);
-            assert!(
-                (cast - light[k]).abs() < 1e-12,
-                "{k}: {cast} vs {}",
-                light[k]
-            );
+            assert!((cast - want).abs() < 1e-12, "{k}: {cast} vs {want}");
             assert!(sky.veil[k] >= 0.0);
         }
     }
