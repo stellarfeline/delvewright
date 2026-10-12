@@ -67,6 +67,7 @@ pub mod scene;
 pub mod sheet;
 pub mod showing;
 pub mod sight;
+pub mod sky_image;
 pub mod tileset;
 pub mod viewer;
 pub mod world;

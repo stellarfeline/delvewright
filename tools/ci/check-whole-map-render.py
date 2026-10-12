@@ -71,21 +71,22 @@ And for `delvec cameras`, on every point whose campaign carries a
 - **every camera is under its picture's sky** (spec-0079): the camera's own
   `sky`, else the `time` and `weather` of the `design.json` row it answers —
   read here from the two documents, sharing nothing with the engine's
-  resolution. A `clear` camera's scene whose sky is lit or in its dusk or dawn
-  ramp carries no `sky` and no `fog` key; a `clear` one whose sky is dark — the
-  vendored day timeline's `visual/sky_color` night plateau, its two edge ticks
-  read off the file and turned into a sun altitude by minecraft.wiki's
-  closed-form sky angle, a method the engine's emission (the vendored track)
-  does not share — carries exactly the night cell (spec-0079, departure 1: the
-  pinned core's simulated sky clamps a sun under the horizon to a sunset). A
-  scene within `EDGE_DEG` of the plateau's edge may be either. The night cell's
-  values are derived here from the timeline's night plateau (`NIGHT_TIMELINE`)
-  and never from the engine's constant — `sky.mode SOLID_COLOR`, `sky.color` the
-  `visual/sky_light_color` plateau, `sky.skyLight` the `visual/sky_light_factor`
-  plateau, `sky.apparentSkyLight` 0 because `visual/sky_color` is black there,
-  `sun.intensity` 0, `fog.mode UNIFORM` at density 0 in the `visual/fog_color`
-  plateau; a `rain` or `thunder` one carries `sky.mode SOLID_COLOR` and
-  `fog.mode UNIFORM`. Over the domain the weathers emitted are `{clear, rain, thunder}`
+  resolution. A `rain` or `thunder` scene carries `sky.mode SOLID_COLOR` and
+  `fog.mode UNIFORM`. A `clear` scene carries the **game's own sky of its
+  tick** (`compiler.md` §4): its `delvewrightSky.daytimeTicks` is held within
+  `TICK_SLACK` ticks of the tick its own sun names by minecraft.wiki's
+  closed-form sky angle, which the engine's emission (the vendored track) does
+  not share; the fixed keys are `SKYMAP_EQUIRECTANGULAR`, `skyMirrored` false,
+  `apparentSkyLight` 1, no fog, no sun light and the disc drawn exactly while
+  some of it stands above the horizon; the map written beside the scene is
+  held, on a 24 × 12 sample grid, to this gate's own Python port of the
+  client's sky (the clear colour with its look-dependent sunrise tint, the
+  octagonal sky disc with `sky.fsh`'s fog, the sunrise fan) plus ONE uniform
+  non-negative veil; and `skyLight` times the map's cosine-weighted mean over
+  the upper hemisphere is held to the lightmap shader's full-sky light of
+  `visual/sky_light_factor` and `visual/sky_light_color`. The panorama and
+  review scenes of a clear plan
+  are judged by the same rule. Over the domain the weathers emitted are `{clear, rain, thunder}`
   and the daylight classes — read off each scene's sun altitude, at or above
   20° `high`, from 0° `low`, under 0° `below` — are `{high, low, below}`; a
   domain reaching fewer is a red, because the gallery owes every cell a frame.
@@ -238,33 +239,58 @@ def camera_matches(doc: dict, cam: dict) -> list[str]:
 # The share of the frame a panorama's subject must cover. A third is what the
 # island's accepted release art measures: its built place's bounding rectangle
 # over its frame.
-# The pinned game's day timeline, vendored for the engine; the night cell a
-# clear scene under the horizon carries is read off its night plateau here.
-NIGHT_TIMELINE = REPO / "crates/dsl/data/timeline-day-1.21.11.json"
+# The pinned game's day timeline, vendored for the engine; the clear cell a
+# clear scene carries is derived from it here, with a reader of this gate's own.
+DAY_TIMELINE = REPO / "crates/dsl/data/timeline-day-1.21.11.json"
+
+# Cited from the pinned jars, read here and not taken from the engine: the
+# ground biomes' `visual/sky_color` (`the_void` and `ocean` both `#7ba4ff`), the
+# overworld dimension's `visual/fog_color` (`#c0d8ff`), and the client's
+# `gamma` option default (0.5), the lightmap's brightness factor.
+GROUND_SKY = (0x7B, 0xA4, 0xFF)
+OVERWORLD_FOG = (0xC0, 0xD8, 0xFF)
+BRIGHTNESS = 0.5
+# Half the angle the sun's drawn disc spans: `atan(30 × 8/32 / 100)`.
+SUN_DISC_HALF_DEG = math.degrees(math.atan(30 * 8 / 32 / 100))
+# How many ticks either side of the tick a scene's sun names by the closed form
+# the cell may come from: the closed form and the pinned track agree to 0.056°,
+# a few ticks where the sun is lowest.
+TICK_SLACK = 12
 
 
-def night_plateau(timeline: Path = NIGHT_TIMELINE) -> dict:
-    """The night-plateau value of the four visual tracks the night cell reads.
-
-    Each of these tracks rises from a day plateau to a night plateau and back:
-    the night value is the one its keyframes hold for the longest stretch that
-    is not the day value (`#ffffff` / 1.0) — read off the file, never typed.
-    """
-    tracks = json.loads(timeline.read_text())["tracks"]
-    out = {}
-    for name in ("sky_color", "sky_light_color", "sky_light_factor", "fog_color"):
-        kf = tracks[f"minecraft:visual/{name}"]["keyframes"]
-        day = kf[0]["value"]
-        night = [k["value"] for k in kf if k["value"] != day]
-        if not night or any(v != night[0] for v in night):
-            die(f"{timeline}: `visual/{name}` has no single night plateau: {kf}")
-        out[name] = night[0]
-    return out
+def _track(name: str, timeline: Path = DAY_TIMELINE) -> list[dict]:
+    tr = json.loads(timeline.read_text())["tracks"][f"minecraft:visual/{name}"]
+    if tr.get("ease") is not None:
+        die(f"{timeline}: `visual/{name}` declares an ease this gate does not read")
+    return tr["keyframes"]
 
 
-# How close to the dark plateau's edge altitude a scene may stand and be
-# judged either way: the closed form and the pinned track agree to 0.056°.
-EDGE_DEG = 0.1
+def _between(kf: list[dict], tick: int) -> tuple[object, object, float]:
+    t = tick % 24000
+    idx = [i for i, k in enumerate(kf) if k["ticks"] <= t]
+    if idx:
+        i = idx[-1]
+        a = kf[i]
+        b, bt = (kf[i + 1], kf[i + 1]["ticks"]) if i + 1 < len(kf) else (kf[0], kf[0]["ticks"] + 24000)
+        at = a["ticks"]
+    else:
+        a, b = kf[-1], kf[0]
+        at, bt = a["ticks"] - 24000, b["ticks"]
+    p = 0.0 if bt <= at else (t - at) / (bt - at)
+    return a["value"], b["value"], p
+
+
+def timeline_rgb(name: str, tick: int) -> tuple[int, int, int]:
+    """A colour track at a tick, each 8-bit channel `a + floor(p·(b−a))`."""
+    a, b, p = _between(_track(name), tick)
+    ca = [int(str(a)[1 + 2 * i : 3 + 2 * i], 16) for i in range(3)]
+    cb = [int(str(b)[1 + 2 * i : 3 + 2 * i], 16) for i in range(3)]
+    return tuple(x + math.floor(p * (y - x)) for x, y in zip(ca, cb))  # type: ignore[return-value]
+
+
+def timeline_float(name: str, tick: int) -> float:
+    a, b, p = _between(_track(name), tick)
+    return float(a) + (float(b) - float(a)) * p
 
 
 def closed_form_altitude(tick: float) -> float:
@@ -278,52 +304,262 @@ def closed_form_altitude(tick: float) -> float:
     return 90.0 - angle if angle <= 180.0 else angle - 270.0
 
 
-def dark_edge_altitude(timeline: Path = NIGHT_TIMELINE) -> float:
-    """The highest sun altitude on the timeline's dark-sky plateau: the
-    `visual/sky_color` keyframes that both carry the night value bound it."""
-    kf = json.loads(timeline.read_text())["tracks"]["minecraft:visual/sky_color"]["keyframes"]
-    day = kf[0]["value"]
-    edges = [
-        t
-        for a, b in zip(kf, kf[1:])
-        if a["value"] != day and b["value"] != day
-        for t in (a["ticks"], b["ticks"])
-    ]
-    if not edges:
-        die(f"{timeline}: `visual/sky_color` has no night plateau: {kf}")
-    return max(closed_form_altitude(t) for t in edges)
+def tick_of_sun(altitude_rad: float, azimuth_rad: float) -> int:
+    """The `daytime` tick whose closed-form sun stands at a scene's altitude, on
+    the side its azimuth names (π = west, the afternoon half 6000..18000)."""
+    alt = math.degrees(altitude_rad)
+    west = abs(azimuth_rad - math.pi) < 1e-3
+    lo, hi = (6000.0, 18000.0) if west else (18000.0, 30000.0)
+    # Altitude falls monotonically from noon to midnight and rises back.
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        above = closed_form_altitude(mid) > alt
+        if above == west:
+            lo = mid
+        else:
+            hi = mid
+    return int(round(0.5 * (lo + hi))) % 24000
 
 
-def _rgb(hex_colour: str) -> list[float]:
-    h = hex_colour.lstrip("#")
-    return [round(int(h[i : i + 2], 16) / 255.0, 6) for i in (0, 2, 4)]
+def timeline_argb(name: str, tick: int) -> tuple[int, int, int, int]:
+    """An `#aarrggbb` track at a tick, each 8-bit channel `a + floor(p·(b−a))`."""
+    a, b, p = _between(_track(name), tick)
+    ca = [int(str(a)[1 + 2 * i : 3 + 2 * i], 16) for i in range(4)]
+    cb = [int(str(b)[1 + 2 * i : 3 + 2 * i], 16) for i in range(4)]
+    return tuple(x + math.floor(p * (y - x)) for x, y in zip(ca, cb))  # type: ignore[return-value]
 
 
-def night_cell_findings(doc: dict, plateau: dict) -> list[str]:
-    """How a below-horizon clear scene departs from the night cell, if it does."""
-    want = {
-        ("sky", "mode"): "SOLID_COLOR",
-        ("sky", "skyLight"): float(plateau["sky_light_factor"]),
-        ("sky", "apparentSkyLight"): 0.0 if _rgb(plateau["sky_color"]) == [0.0, 0.0, 0.0] else None,
-        ("sun", "intensity"): 0.0,
-        ("fog", "mode"): "UNIFORM",
+def _mul(a, b):
+    return [x * y // 255 for x, y in zip(a, b)]
+
+
+def lightmap_light(tick: int) -> list[float]:
+    """The lightmap shader's full-sky colour (`lightmap.fsh`, sky light 15,
+    block light 0, the gamma option at 0.5), decoded by Python's `**`: the light
+    a clear sky casts on an open top face."""
+    factor = timeline_float("sky_light_factor", tick)
+    light = timeline_rgb("sky_light_color", tick)
+    c = [min(1.0, max(0.0, (v / 255.0 * factor) * 0.96 + 0.03)) for v in light]
+    top = max(c)
+    curve = 1.0 - (1.0 - top) ** 4
+    lit = [(v + (v * curve / top - v) * BRIGHTNESS) * 0.96 + 0.03 for v in c]
+    return [v**2.2 for v in lit]
+
+
+# The client's defaults and the sky geometry its `SkyRenderer` builds, read
+# here off the same bytecode the engine cites: render distance 12 chunks,
+# `visual/sky_fog_end_distance` 512, the sky disc an octagon at height 16 with
+# its rim at 512, the sunrise fan from (0, 100, 0) to a rim of radius 120 lifted
+# 40 × alpha, 16 steps. The map is 360 × 180, rows from the nadir up.
+RENDER_DISTANCE = 12
+SKY_FOG_END = 512.0
+MAP_W, MAP_H = 360, 180
+
+
+def game_sky_colours(tick: int, view: tuple[float, float, float]) -> dict:
+    """The clear colour, the sky colour and the fan of a tick for a look vector,
+    as display values — `AtmosphericFogEnvironment.getBaseColor`'s steps."""
+    fog = _mul(timeline_rgb("fog_color", tick), OVERWORLD_FOG)
+    sky = _mul(timeline_rgb("sky_color", tick), GROUND_SKY)
+    a, r, g, b = timeline_argb("sunrise_sunset_color", tick)
+    alpha = a / 255.0
+    angle = closed_form_angle(tick)
+    west = 0.0 < angle < 180.0
+    side = -1.0 if west else 1.0
+    dot = view[0] * side
+    lerp = lambda f, x, y: [u + math.floor(f * (v - u)) for u, v in zip(x, y)]  # noqa: E731
+    if RENDER_DISTANCE >= 4 and dot > 0 and alpha > 0:
+        fog = lerp(dot * alpha, fog, [r, g, b])
+    reach = min(max(min(SKY_FOG_END / 16, RENDER_DISTANCE) / 32, 0.25), 1.0)
+    fog = lerp(1 - reach**0.25, fog, sky)
+    return {
+        "fog": [v / 255 for v in fog],
+        "sky": [v / 255 for v in sky],
+        "fan": ([r / 255, g / 255, b / 255], alpha, side) if alpha > 0.001 else None,
+    }
+
+
+def closed_form_angle(tick: float) -> float:
+    """The sun angle in degrees from the zenith, westward, by the closed form."""
+    t = tick - 6000.0
+    turn = (t / 24000.0) % 1.0
+    quarters = (t / 6000.0) % 4.0
+    return ((1.0 - math.cos(math.pi * turn) + quarters) * 60.0) % 360.0
+
+
+def _fan_alpha(fan, d) -> float:
+    rgb, alpha, s = fan
+    c = (100.0 * s, 0.0, 0.0)
+
+    def rim(j):
+        a = 2 * math.pi * j / 16
+        return (120.0 * s * math.cos(a), 40.0 * alpha * math.cos(a), -120.0 * s * math.sin(a))
+
+    def sub(p, q):
+        return (p[0] - q[0], p[1] - q[1], p[2] - q[2])
+
+    def cross(p, q):
+        return (p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0])
+
+    def dot(p, q):
+        return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]
+
+    for j in range(16):
+        e1, e2 = sub(rim(j), c), sub(rim(j + 1), c)
+        p = cross(d, e2)
+        det = dot(e1, p)
+        if abs(det) < 1e-12:
+            continue
+        tv = (-c[0], -c[1], -c[2])
+        u = dot(tv, p) / det
+        if not 0 <= u <= 1:
+            continue
+        q = cross(tv, e1)
+        v = dot(d, q) / det
+        if v < 0 or u + v > 1:
+            continue
+        if dot(e2, q) / det > 0:
+            return alpha * (1 - u - v)
+    return 0.0
+
+
+def game_sky_pixel(colours: dict, d) -> list[float]:
+    """What the client draws along `d`, decoded to linear."""
+    c = colours["fog"]
+    if d[1] > 0:
+        k = 16.0 / d[1]
+        px, pz = d[0] * k, d[2] * k
+        proj = max(
+            px * math.cos(-math.pi + math.pi / 8 + e * math.pi / 4)
+            + pz * math.sin(-math.pi + math.pi / 8 + e * math.pi / 4)
+            for e in range(8)
+        )
+        f = proj / (512.0 * math.cos(math.pi / 8))
+        if f < 1:
+            sph = 16 + (math.hypot(512.0, 16.0) - 16) * f
+            cyl = 16 + (512 - 16) * f
+            end = min(RENDER_DISTANCE * 16, SKY_FOG_END)
+            fv = max(min(max(sph / end, 0.0), 1.0), 0.0 if cyl <= end else 1.0)
+            c = [s + (g - s) * fv for s, g in zip(colours["sky"], colours["fog"])]
+    if colours["fan"]:
+        a = _fan_alpha(colours["fan"], d)
+        c = [v * (1 - a) + t * a for v, t in zip(c, colours["fan"][0])]
+    return [max(v, 0.0) ** 2.2 for v in c]
+
+
+def map_direction(i: int, j: int) -> tuple[float, float, float]:
+    th = 2 * math.pi * i / MAP_W
+    ph = math.pi * j / MAP_H - math.pi / 2
+    return (math.cos(ph) * math.cos(th), math.sin(ph), math.cos(ph) * math.sin(th))
+
+
+def read_pfm(path: Path) -> list[float] | str:
+    """The floats of a `PF` map, or why it cannot be read."""
+    import struct
+
+    raw = path.read_bytes()
+    head = f"PF\n{MAP_W} {MAP_H}\n-1.0\n".encode()
+    if not raw.startswith(head):
+        return f"{path.name} does not start with the {MAP_W} x {MAP_H} little-endian `PF` header"
+    body = raw[len(head) :]
+    if len(body) != MAP_W * MAP_H * 12:
+        return f"{path.name} holds {len(body)} bytes of pixels, not {MAP_W * MAP_H * 12}"
+    return list(struct.unpack(f"<{MAP_W * MAP_H * 3}f", body))
+
+
+# Where the map is sampled against the gate's own drawing of the game's sky: a
+# 24 x 12 grid over the whole sphere, rows from just above the nadir.
+SAMPLE_COLUMNS = range(0, MAP_W, 15)
+SAMPLE_ROWS = range(7, MAP_H, 15)
+
+
+def clear_sky_findings(doc: dict, scene_dir: Path | None) -> tuple[list[str], int]:
+    """How a clear scene departs from the game's clear sky at its tick, if it
+    does, and the tick read. The tick is the scene's `delvewrightSky` marker,
+    held to the sun's own altitude by the closed form. The map must be the
+    game's sky — drawn here, with this gate's own port of the client — plus one
+    uniform non-negative veil; and `skyLight` times the map's cosine-weighted
+    mean over the upper hemisphere must be the lightmap's light."""
+    sun = doc.get("sun") or {}
+    read = tick_of_sun(sun["altitude"], sun.get("azimuth", 0.0))
+    tick = (doc.get("delvewrightSky") or {}).get("daytimeTicks")
+    bad: list[str] = []
+    if not isinstance(tick, int):
+        return [f"carries no `delvewrightSky.daytimeTicks` (its sun reads tick {read})"], read
+    if abs((tick - read + 12000) % 24000 - 12000) > TICK_SLACK:
+        bad.append(f"names tick {tick}, and its sun stands where tick {read} puts it")
+    sky, fog = doc.get("sky") or {}, doc.get("fog") or {}
+    for (obj, key), want in {
+        ("sky", "mode"): "SKYMAP_EQUIRECTANGULAR",
+        ("sky", "skyMirrored"): False,
+        ("sky", "apparentSkyLight"): 1.0,
         ("fog", "uniformDensity"): 0.0,
-    }
-    colours = {
-        ("sky", "color"): _rgb(plateau["sky_light_color"]),
-        ("fog", "color"): _rgb(plateau["fog_color"]),
-    }
-    bad = []
-    for (obj, key), value in want.items():
+        ("fog", "skyFogDensity"): 0.0,
+        ("sun", "intensity"): 0.0,
+    }.items():
         got = (doc.get(obj) or {}).get(key)
-        if value is None or got != value:
-            bad.append(f"`{obj}.{key}` is {got!r}, the night cell's is {value!r}")
-    for (obj, key), value in colours.items():
-        c = (doc.get(obj) or {}).get(key) or {}
-        got = [c.get("red"), c.get("green"), c.get("blue")]
-        if got != value:
-            bad.append(f"`{obj}.{key}` is {got}, the night cell's is {value}")
-    return bad
+        if got != want:
+            bad.append(f"`{obj}.{key}` is {got!r}, the clear sky's is {want!r}")
+    disc = math.degrees(sun["altitude"]) >= -SUN_DISC_HALF_DEG
+    if sun.get("drawTexture") != disc:
+        bad.append(
+            f"`sun.drawTexture` is {sun.get('drawTexture')!r}; the disc is "
+            f"{'partly up' if disc else 'wholly down'} at {math.degrees(sun['altitude']):.3f}°"
+        )
+    name = sky.get("skymap")
+    if scene_dir is None or not isinstance(name, str):
+        return bad + ["names no sky map the gate can read"], tick
+    path = scene_dir / name
+    if not path.is_file():
+        return bad + [f"names the sky map {name}, which was not written beside it"], tick
+    px = read_pfm(path)
+    if isinstance(px, str):
+        return bad + [px], tick
+    o = (doc.get("camera") or {}).get("orientation") or {}
+    yaw, pitch = o.get("yaw", 0.0), o.get("pitch", 0.0)
+    view = (
+        math.cos(yaw) * math.sin(pitch),
+        -math.cos(pitch),
+        -math.sin(yaw) * math.sin(pitch),
+    )
+    colours = game_sky_colours(tick, view)
+    veils = []
+    for j in SAMPLE_ROWS:
+        for i in SAMPLE_COLUMNS:
+            game = game_sky_pixel(colours, map_direction(i, j))
+            k = (j * MAP_W + i) * 3
+            veils.append([px[k + c] - game[c] for c in range(3)])
+    for c in range(3):
+        lo, hi = min(v[c] for v in veils), max(v[c] for v in veils)
+        if hi - lo > 2e-3 or lo < -1e-3:
+            bad.append(
+                f"its map is not the game's sky plus one uniform veil: channel {c} departs "
+                f"from the gate's drawing by {lo:.5f}..{hi:.5f} over {len(veils)} sample(s)"
+            )
+    acc, weight = [0.0, 0.0, 0.0], 0.0
+    for j in range(MAP_H):
+        ph = math.pi * j / MAP_H - math.pi / 2
+        dy = math.sin(ph)
+        if dy <= 0:
+            continue
+        w = dy * math.cos(ph)
+        row = j * MAP_W * 3
+        for c in range(3):
+            acc[c] += w * sum(px[row + c : row + MAP_W * 3 : 3])
+        weight += w * MAP_W
+    light = lightmap_light(tick)
+    s = sky.get("skyLight")
+    if not isinstance(s, (int, float)):
+        bad.append(f"`sky.skyLight` is {s!r}")
+    else:
+        for c in range(3):
+            cast = s * acc[c] / weight
+            if abs(cast - light[c]) > 2e-3 * max(light[c], 1e-3):
+                bad.append(
+                    f"casts {cast:.6f} in channel {c} on an open top face (`skyLight` x the map's "
+                    f"mean), where the lightmap's light at tick {tick} is {light[c]:.6f}"
+                )
+    return bad, tick
 
 
 def sky_matches(
@@ -332,7 +568,8 @@ def sky_matches(
     design: dict,
     weathers: dict[str, int],
     classes: dict[str, int],
-    night_cells: dict[str, int] | None = None,
+    clear_cells: dict[str, int] | None = None,
+    scene_dir: Path | None = None,
 ) -> list[str]:
     """Whether a camera's scene is under its picture's sky; tallies what it saw."""
     rows = {r["name"]: r for r in design.get("content", {}).get("references", [])}
@@ -340,36 +577,36 @@ def sky_matches(
     sky = cam.get("sky") or ({"time": row["time"], "weather": row["weather"]} if row else None)
     if sky is None:
         return [f"answers `{cam['answers']}`, which design.json has no row for"]
-    bad = []
-    overcast = sky["weather"] != "clear"
-    has = doc.get("sky") is not None or doc.get("fog") is not None
+    bad = judge_sky(doc, sky["weather"], clear_cells, scene_dir)
     alt = math.degrees(doc["sun"]["altitude"])
     cls = "high" if alt >= 20.0 else "low" if alt >= 0.0 else "below"
-    if overcast and not (
-        (doc.get("sky") or {}).get("mode") == "SOLID_COLOR"
-        and (doc.get("fog") or {}).get("mode") == "UNIFORM"
-    ):
-        bad.append(f"is under {sky['weather']} and its scene carries no overcast sky and fog")
-    if not overcast:
-        edge = dark_edge_altitude()
-        night = night_cell_findings(doc, night_plateau())
-        if alt > edge + EDGE_DEG and has:
-            bad.append(
-                "is under a clear sky that is lit or ramping and its scene carries a `sky` "
-                "or `fog` key"
-            )
-        elif alt < edge - EDGE_DEG:
-            bad.extend(f"is under a clear dark sky and {why}" for why in night)
-            if night_cells is not None:
-                night_cells["night cell"] = night_cells.get("night cell", 0) + 1
-        elif has and night:
-            bad.append(
-                "stands at the dark sky's edge and carries a sky block that is not the "
-                "night cell: " + "; ".join(night)
-            )
     weathers[sky["weather"]] = weathers.get(sky["weather"], 0) + 1
     classes[cls] = classes.get(cls, 0) + 1
     return bad
+
+
+def judge_sky(
+    doc: dict,
+    weather: str,
+    clear_cells: dict[str, int] | None = None,
+    scene_dir: Path | None = None,
+) -> list[str]:
+    """A scene under `weather`: an overcast block under rain or thunder, the
+    game's clear sky of its tick under a clear sky. Tallies clear scenes by
+    where on the day their tick falls."""
+    if weather != "clear":
+        if (doc.get("sky") or {}).get("mode") == "SOLID_COLOR" and (doc.get("fog") or {}).get(
+            "mode"
+        ) == "UNIFORM":
+            return []
+        return [f"is under {weather} and its scene carries no overcast sky and fog"]
+    bad, tick = clear_sky_findings(doc, scene_dir)
+    if clear_cells is not None:
+        sky_dark = all(v == 0 for v in timeline_rgb("sky_color", tick))
+        light_full = timeline_float("sky_light_factor", tick) == 1.0
+        where = "night plateau" if sky_dark else "day plateau" if light_full else "ramp"
+        clear_cells[where] = clear_cells.get(where, 0) + 1
+    return [f"is under a clear sky and {why}" for why in bad]
 
 
 MIN_FILL = 1.0 / 3.0
@@ -451,7 +688,8 @@ def main() -> int:
     records = 0
     weathers_seen: dict[str, int] = {}
     classes_seen: dict[str, int] = {}
-    night_seen: dict[str, int] = {}
+    clear_seen: dict[str, int] = {}
+    plan_skies = 0
 
     def engine_runs(base: str) -> dict:
         """Every engine run one base needs, in directories named for its point.
@@ -534,7 +772,13 @@ def main() -> int:
                             findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
                         design = json.loads((src / "design.json").read_text())
                         for why in sky_matches(
-                            doc, cam, design, weathers_seen, classes_seen, night_seen
+                            doc,
+                            cam,
+                            design,
+                            weathers_seen,
+                            classes_seen,
+                            clear_seen,
+                            scene_file.parent,
                         ):
                             findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
 
@@ -557,6 +801,13 @@ def main() -> int:
                 for f in files:
                     scenes_judged += 1
                     doc = json.loads(f.read_text())
+                    plan_weather = (plan.get("sky") or {}).get("weather")
+                    if plan_weather is None:
+                        findings.append(f"{base} ({label}): render-plan.json states no sky.weather")
+                    else:
+                        plan_skies += 1
+                        for why in judge_sky(doc, plan_weather, clear_seen, f.parent):
+                            findings.append(f"{base} ({label}) {f.name}: {why}")
                     chunks = doc.get("chunkList") or []
                     if not chunks:
                         findings.append(f"{base} ({label}) {f.name}: empty chunkList")
@@ -587,10 +838,16 @@ def main() -> int:
 
     print(
         f"camera skies: weathers {dict(sorted(weathers_seen.items()))}, daylight classes "
-        f"{dict(sorted(classes_seen.items()))}, over {cameras_judged} camera scene(s); "
-        f"{night_seen.get('night cell', 0)} clear scene(s) under a dark sky judged against the "
-        f"night cell (dark-sky edge at {dark_edge_altitude():.2f}° by the closed form)."
+        f"{dict(sorted(classes_seen.items()))}, over {cameras_judged} camera scene(s) and "
+        f"{plan_skies} panorama/review scene(s); {sum(clear_seen.values())} clear scene(s) "
+        f"judged against the game's clear sky drawn here from the timeline "
+        f"({', '.join(f'{k} {v}' for k, v in sorted(clear_seen.items())) or 'none'})."
     )
+    if builds and not clear_seen:
+        findings.append(
+            "ZERO clear scenes were judged against the game's clear sky: the domain reaches no "
+            "clear sky, so the clear-cell rule examined nothing"
+        )
     if cameras_judged and (
         set(weathers_seen) != {"clear", "rain", "thunder"}
         or set(classes_seen) != {"high", "low", "below"}

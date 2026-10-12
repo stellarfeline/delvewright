@@ -1458,7 +1458,7 @@ the picture (the camera's `sky`, else its row's), never from the world's initial
 hour, and `delvec cameras` prints the sky each camera is emitted under —
 `sky: <name> <time>+<weather> <derived from <row> | stated> class <class> — …`
 — and `skies: D derived, S stated, over C camera(s); weathers emitted: {…}`.
-What the engine writes for each weather is `compiler.md` §4, *The sky of a scene* (the look table). A record for another campaign than the build, two cameras of one name, a
+What the engine writes for each weather is `compiler.md` §4, *The sky of a scene* (the clear cell and the overcast table). A record for another campaign than the build, two cameras of one name, a
 pitch past vertical, a zero frame or sample target, and an empty record are
 refused (`DW0721`) before any scene is written. **Every approved image is
 answered, or nothing is emitted**: `delvec cameras` writes no scene while a row
@@ -1567,7 +1567,10 @@ scene Chunky re-saved after each render carries the emitted `sky`, `sun` and
 carries Chunky's defaults (`SIMULATED`, sun 1.25, disc drawn). Hashes are
 sha-256 of the emitted scene (before Chunky re-saves it) and of the frame; a
 path-traced frame is not byte-reproducible, so the frame hash names the frame
-this record was taken from:
+this record was taken from. The scenes were emitted by the engine at `685359a2e`,
+with `postprocess` `GAMMA` and the clear control carrying no sky block, so the
+hashes name those bytes and not this engine's; the overcast cells' values are
+the ones `compiler.md` §4 states:
 
 | Cell | Time + weather | Scene | Frame |
 |---|---|---|---|
@@ -1583,19 +1586,118 @@ At the camera's exposure 1.0 the two `below` frames are near-black — a night
 under cloud — and the `high` and `low` frames read as a grey overcast with no
 sun disc and no hard shadow, `thunder` darker than `rain` in each class.
 
-**The night cell** (a clear scene under a dark sky, spec-0079 departure 1), recorded on the
-camera that found it: the Treehouse Camp's `lantern-night` (content
-`f6000d06`, its build at that revision, the camera's own pose and exposure 4.0),
-answering a row drawn under `{"moon": "high"}` + `clear`, emitted by `delvec
-cameras --draft --only lantern-night` (400×225, 128 samples) and rendered by
-`validation/chunky.sh --pack <its resourcepack.zip> -render … -threads 8` on the
-pinned core. Chunky's re-save carries `SOLID_COLOR`, `skyLight` 0.24,
-`apparentSkyLight` 0 and sun intensity 0 back. Scene
-`2f0c68d46c3803c76534938df04bf3bf437635fccc5eacd8a77d8c8d640c086f`, frame
-`4aadc195080ac8615ffacde9be3c223b13ffaef5545aa8eb61d7b579bb75809c`: a black sky,
-the valley and the trees dim and blue, the lantern lines lit. The same camera's
-frame under the renderer's own sky (sun at −90°, no block) drew a pale
-late-afternoon sky over a sunlit camp.
+**The clear cell** (`compiler.md` §4), recorded on the camera set that found
+it: the Treehouse Camp (content `demo/the-treehouse-camp` at `10ec44d`, its
+documents copied with `dsl_version` set to this engine's, built by the engine at
+`60afcf8a5` with `--prefabs` its own `prefabs/`), cameras `from-the-glade`,
+`north-east-aerial` (both `{"sun": "setting"}` + clear, tick 12782) and
+`lantern-night` (`{"moon": "high"}` + clear, tick 18000), each at its own pose
+and exposure (1.4, 1.0, 4.0), emitted by `delvec cameras --draft` (400 × 225,
+128 samples) and rendered by `validation/chunky.sh --pack <its
+resourcepack.zip> -render … -threads 3` on the pinned core. The two engines
+wrote byte-identical worlds (10 files); only the scenes differ. Before is the
+engine at `60afcf8a5` (no sky block on a clear scene with the sun up, the night
+cell on the dark plateau, `GAMMA`), after is the engine at `46584df58` (a
+solid clear cell, `TONEMAP3`). Clipped is any channel at 254 or more, crushed is Rec. 709 luma at
+8 or less, the sky hue is the median of the brightest half of the top fifth of
+the frame (Pillow, sRGB); the five in-game screenshots of the same camp at the
+same hour (5120 × 2880, converted from their embedded display profile to sRGB)
+measure clipped 0.00–0.01%, crushed 0.41–2.90%, mean luma 41.4–47.9:
+
+| Camera | Before: clipped / crushed / mean / sky hue | After: clipped / crushed / mean / sky hue |
+|---|---|---|
+| `from-the-glade` | 0.71% / 1.85% / 46.2 / 198° | 0.43% / 4.74% / 35.0 / 236° |
+| `north-east-aerial` | 5.66% / 0.33% / 61.6 / 46° | 0.02% / 0.72% / 40.4 / 221° |
+| `lantern-night` | 0.87% / 27.77% / 40.5 / black | 0.43% / 0.16% / 34.3 / 236° |
+
+Scenes (sha-256 as emitted), before → after: `from-the-glade`
+`56feab213065d769e5279063a0b22cac9d571654743a339c18882340aba36133` →
+`7493fe0b63febb8eba475f7e3c55e8216cc96aa36ce9b623fc4106db3ea51393`,
+`north-east-aerial`
+`9b98e1e8c6b58bf012087916e6e8d9b3db472ee0b1b4cb6fd11cf79bda07279c` →
+`010ed12b1cdc9fdab52b3abe758dea0fa3c841e02d660c6d494aa28d80223142`,
+`lantern-night`
+`12464247199b7027f50658a9c643e3b01acd1987bb04676cdb690289fd851b2f` →
+`9a10fdfb90ee1f63e71267791f27bfec98e1d2c4174c0fcadd84c18ee1800f07`. Frames,
+before → after: `a52607578d690adc0bfa57ee859e816b92556636754fd542af40ff9d0ced4a80`
+→ `aaa1d4b0ad7ceda8f7b16bc6bff97b6e3858051b1ab0a1d4020d0aa83b78beac`,
+`72e159f1b508535e863646d4371b18bd060e1a57a609bf393b0d64beed6c35de` →
+`8ee7c42ed64cc75a61df7eb234793c9a255f1af097a8e6d756a2c129a3b9132d`,
+`823876dddec5bf5f063a36d6bbf002b6e57149dbefd9d53c2c0402086e8a5fcc` →
+`5b3edef6f82295eee3be412bf7c79a91a2800d43b7afe576e266c222c319897a`. A second
+reader sharing nothing with the first (ffmpeg's decoder and luma weights,
+counted in plain Python) reads the same frames within 0.6 points of crushed and
+0.07 of clipped. The sky pixels are predicted exactly: at four sky points of the
+after frames the timeline's sky and fog colours, the core's `(1 − dy)²` sky fog
+and the post-process's formula give the rendered 8-bit pixel to the unit (the
+aerial's top centre, 4.5° up: (84, 93, 113) predicted and rendered). Before,
+the setting sun drew a yellow-brown sky and a beam along the horizon; after, a
+dim, flat, blue-violet evening with no shadow from the sun, as the game draws
+it. The orange band the game shows at the horizon on the sun's side is not in
+either (the core cannot draw it).
+
+**The clear sky as the game's own map**, recorded on the same build, the same
+copy of the documents and the same pinned core, with one camera added to the
+copy's record for the sun's side: `toward-the-sun` at (118, 96, 56), yaw 90
+(west), pitch 4, `fov` 70, exposure 1.0, answering the `setting` row. Three
+engines emitted the four cameras (400 × 225, 128 samples): the engine at
+`60afcf8a5` (the renderer's sky), the engine at `46584df58` (a solid clear
+cell) and the engine at `fad7d4e1a` (the game's sky as a map); the worlds they wrote are
+byte-identical. Sky hue (Pillow, sRGB; the median of a named patch):
+
+| Where | Her screenshots | `60afcf8a5` | `46584df58` | `fad7d4e1a` |
+|---|---|---|---|---|
+| toward the sun, the band 2–4° up | (183, 66, 40) 11° (shot 2) | (198, 190, 142) 51° | (82, 89, 112) 226° | (139, 83, 96) 346° |
+| toward the sun, upper sky | (82, 63, 82) 300° (shot 2) | (144, 153, 145) 127° | (74, 78, 108) 233° | (80, 78, 116) 243° |
+| away from the sun, upper sky | (53, 67, 100) 222°, (67, 62, 90) 251° (shots 1, 5) | (107, 125, 131) 195° (glade) | (83, 87, 122) 234° | (85, 86, 131) 239° |
+
+Clipped / crushed / mean luma at `fad7d4e1a`: `toward-the-sun` 0.17% / 3.15% /
+41.6, `from-the-glade` 0.43% / 4.66% / 35.0, `north-east-aerial` 0.03% /
+0.71% / 40.9, `lantern-night` 0.40% / 0.14% / 35.7 (the night at
+`46584df58`: 0.43% / 0.13% / 34.3). A second reader (ffmpeg's decoder and
+luma, plain-Python counts) agrees within 0.6 points of crushed. The sky
+pixels agree three ways at four rows of the `toward-the-sun` frame's centre
+column, 9° to 28° up: the map's own value there (bilinear, as the core reads
+it), the game's sky drawn by `tools/ci/check-whole-map-render.py`'s Python
+port plus the map's veil, and the rendered pixel, each through the
+post-process — (143, 84, 96) at 9.4° in all three, and within one unit at the
+other three rows. Scenes and maps (sha-256 as emitted) and frames:
+`toward-the-sun` scene
+`263d5c31114d77a12444b330f03ab777e5e560766ba30ff31e9124591c396b47`, map
+`aff5a788917cc3aff7207db18a12784a8aa3f14ec21c1142f6578ff7bcccbed4`, frame
+`02b4cb44bd2306f9eb7e863de480ec8666cc6aa45f7298c85d7fd13acc34ab00` (at
+`60afcf8a5`: `c8a0bd792c062aabc8ed9efeb8553c5b5defdb000f38e1f62977d74df02ed1e0`);
+`from-the-glade` map
+`038b60a4b0609a74fbf89b04fbea69bf4ec48b39ce157c0a8da7c5d705ce00dc`, frame
+`871128c7229cde0c600d3bc800f2664d03a9e8beffb0743c53b7d9925b5feed3`;
+`north-east-aerial` map
+`e3a5940486b6b615bcbf00b41f26535e43e2d7db094602530887378786451fbb`, frame
+`ff17a8016d369950b8df9a6962911859c1e3d9cf63a03bafa84885079c4a0b1c`;
+`lantern-night` map
+`daaef7867a15fbc5d9ac586ae641ef05f3fc9fdbfedf1609703dea28cba3379a`, frame
+`41f5310f97bbdaa1ffce4bcba7cb999044cda1ad09bc3124a31f40495580ef21`. Toward the
+sun the frame shows the sun's disc on the horizon under an orange-red band
+that fades through mauve to a blue-violet sky; away from it the sky is
+blue-violet; the light on the camp is the same dim, flat, blue-violet light
+in every direction.
+
+On the gallery's own cameras, the clear sky at two ramp ticks, by the engine at
+`fad7d4e1a`: the primary
+build (`--prefabs` from `tools/ci/gallery-prefabs.py`), `delvec cameras --draft
+--only hall-exterior --only quay-after-dark`, rendered by `validation/chunky.sh
+--pack <its resourcepack.zip> -render … -threads 4` on the pinned core.
+`hall-exterior` (`{"sun": "just-risen"}`, tick 23486, `skyLight` 1.300756):
+scene `b601d268da90f581c7763bbe2842c14c849bb1a7848d02dd5efff832cbd65f8f`, map
+`daea7450976792fa67b0153fa5ee2385c5261d3ec8b52f68d8f9cab30c061faf`, frame
+`bd76d487547e93a53da8fc9273b6e97a593bd9b4467e183f27a16e1eba51f44f`;
+`quay-after-dark` (`{"moon": "just-risen"}`, tick 12959, `skyLight` 1.662977):
+scene `7c4f42f048cd85336580a8416bc84289ffacfa3a9206744bd693b2961030f28d`, map
+`9c1839a61e32a6472c4e48d5f09c9da964eff98805a508d2789e56d8ab3de9ad`, frame
+`fb857aa55ba724de0d10ab4a1dae9ec472f19dc133c101068a87f6645014e00a`. The hall's
+top face is lit in the even blue-violet light under a blue-violet sky; the void
+under the gallery's boxes shows the clear colour below the horizon, warm on the
+sun's side, and the boxes' sides take light from it — the one place a clear
+scene's light is not the lightmap's (`compiler.md` §4).
 
 Finding a camera, cheapest first ([`showcase-shots.md`](showcase-shots.md) is the craft
 it applies):
@@ -1679,8 +1781,8 @@ Operational facts:
    (`mode` `UNIFORM`/`LAYERED`, `uniformDensity`, `skyFogDensity`, `color`,
    `layers[]` of `y`/`breadth`/`density`) and `sun` (`intensity`, `color`,
    `drawTexture`, `altitude`, `azimuth`) merge with Chunky's defaults on load,
-   and Chunky re-saves the whole object; an emitted scene carries only the
-   sun's position. Set them before the first render of a scene name, or delete
+   and Chunky re-saves the whole object; an emitted scene writes all three
+   (`compiler.md` §4). Set them before the first render of a scene name, or delete
    its `.dump` — a changed sky over an old dump averages into the old samples.
    The values a picture is taken under are
    [`showcase-shots.md`](showcase-shots.md) §2b.
@@ -1774,7 +1876,7 @@ A session runs one of these only to reproduce a red check locally.
 | `tools/ci/gallery-prefabs.py` | CI + agent | `python3 tools/ci/gallery-prefabs.py --out <dir> [--skins gallery/skins] [--delvec …]` — **the gallery's prefab directory, by the two committed acts that make it**: the generator (`prefabs/gallery-generator`) for the hand-built pieces, the skins and the texture images (`gallery/textures/`, spec-0084), then `delvec detail --all` over the materialised site-plan point for the program-detailed place (spec-0058). It asserts that the row the verb writes equals the row `gallery/overlays/site-plan/detail-plan.json` commits — a committed row is what the program produces, never a hand edit — and states pieces generated, places detailed and rows compared; zero on any is a red. Every gallery tool's `--prefabs` is what this produces. Job `gallery pieces (generator output)`, which packs what it wrote with `tools/ci/gallery-pieces.py` and hands it to the other gallery jobs |
 | `tools/ci/gallery-pieces.py` | CI | `python3 tools/ci/gallery-pieces.py --out <archive.tar> [--repo DIR]` — **the gallery's pieces, handed down whole.** Packs every file in the checkout that git does not track — on a fresh runner after `gallery-prefabs.py`, exactly what generation wrote: `gallery-prefabs/` and the generated files inside `gallery/` — so no typed list of roots can go stale. Skips and counts build caches (any `target/` or `__pycache__/` segment); refuses a tracked file the generation modified and an archive of zero files. Job `gallery pieces (generator output)`, whose step hashes the archive into the job's `sha256` output; `.github/actions/gallery-pieces` refuses a download that does not hash to it and unpacks it for the coverage, views and baseline jobs. |
 | `tools/ci/check-gallery-render.py` | CI + agent | `python3 tools/ci/check-gallery-render.py --prefabs <generated> --build-out <tree> --frames <dir> [--write]` — **every declared view of the gallery is produced and shows something** (spec-0039 §7). CI rendered nothing before this. Four assertions, each one a fact a machine can check and a reviewer cannot, across thirty-odd frames: the committed view set (`gallery/render-plan.json`) equals the set the build emits, so a shot that VANISHES is a red naming it rather than a shorter directory listing (`DW0721` semantics); every declared view is produced or refused LOUDLY, never merely absent; every produced frame is non-featureless by `detect::is_featureless` — the engine's own answer, computed by the arm that drew the frame and read back from its manifest rather than recomputed here, because a second verdict on one question is a second authority; and every view manifest binds a non-zero target count (`DW0726` discipline), since a camera that framed nothing declared checks nothing by having been taken. Uses the **CPU arms only** (`delvec snapshot`) — no GPU, no client jar, no `nucleation` — so it runs on an ordinary runner. **No pixel is committed or compared**: renderer output is not covered by ADR-0006 across drivers, so the manifests are the machine truth and the frames go up as a CI artifact for eyes. `--write` regenerates the committed view set. States views declared / produced / refused / judged; **declaring zero views or judging zero frames is a red**. On its first run over the gallery it found two: a POV frame of two distinct colours, and one binding zero targets — both cameras standing on wall-adjacent anchors and looking at the wall. Job `gallery views (render plan, whole map, cameras)`. Resolves its engine through `tools/lib/delvec_bin.py`, which NAMES the binary it found on every run and refuses one older than the compiler sources in the tree |
-| `tools/ci/check-whole-map-render.py` | CI + agent | `python3 tools/ci/check-whole-map-render.py --prefabs <generated> [--delvec <bin>] [--work <dir>]` — **the storybook illustration path runs, on every horizon the engine can build**. `delvec scene` and `delvec panorama` turn the compiler's `render-plan.json` into Chunky scenes — the storybook shot and the whole-scene review renders — and nothing in this repository invoked either of them; `check-gallery-render.py` runs `snapshot`, and only on the primary gallery. What that cost, measured: the render layer's `Horizon` enum carried ONE variant while the compiler had been emitting a second for as long as the base existed, and `#[serde(tag = "kind")]` has no fallback, so both commands refused every valley campaign outright with `DW0721 … unknown variant `valley`, expected `ocean``. **The population comes from the engine, not from this file**: the horizon bases are read from `delvec schema --stage all` — the same single authority the coverage gate enumerates units from — and every one must be exercised by a gallery point declaring it, so a base with no point is a red naming the base and there is no list here to go stale. Per point and per arm: exit 0 with the refusal reported verbatim otherwise, at least one scene file emitted, **the frame contains the ground** — a scene's `chunkList` must cover the landform the horizon declares, because `layout_aabb` (the union of placed AREAS) alone loads none of the landform a terrain-building horizon puts around it — and **the panorama frames the built place**: read the way Chunky reads the scene (orientation in Chunky's basis, `fov` vertical, horizontal scaled by width/height, a projection sharing no code with the engine's solve), every corner of `layout_aabb` is inside the frame and their bounding rectangle covers at least a third of it. Both defects render successfully and produce a picture, which is why they need an assertion rather than an eye; the second reds the base engine that fitted the frame to the landform, on the valley point only (0.09). The arms refuse a build with no world save, so each build gets a stub save (`level.dat` and one region file) — the shape the arms check, which Chunky could not load. And on every point whose campaign carries a `design/cameras.json` (the gallery's record), `delvec cameras` runs and **every stated camera is its scene's camera**: position, vertical `fov`, frame, exposure and sample target are the record's, and the view direction read from the stored orientation in Chunky's basis is the direction Minecraft looks for the record's yaw and pitch, written from the game's convention and sharing nothing with the engine's conversion — perturbed by reading the yaw with the wrong sign, it reds all six gallery cameras — and **every camera is under its picture's sky**: its own `sky`, else its `design.json` row's `time` and `weather`, read from the two documents, with an overcast `sky`+`fog` block present exactly when that weather is not `clear`; over the domain the weathers reached must be `{clear, rain, thunder}` and the daylight classes, read off each scene's sun altitude (20° and 0° thresholds), `{high, low, below}`, stated on a `camera skies:` line. States bases declared / points found / builds exercised / scene files judged / panoramas framed / stated cameras judged over camera records; **a base unaccounted for is a red, judging zero scenes is a red, and judging zero stated cameras is a red**. Job `gallery views (render plan, whole map, cameras)`. Resolves its engine through `tools/lib/delvec_bin.py`, which NAMES the binary it found on every run and refuses one older than the compiler sources in the tree |
+| `tools/ci/check-whole-map-render.py` | CI + agent | `python3 tools/ci/check-whole-map-render.py --prefabs <generated> [--delvec <bin>] [--work <dir>]` — **the storybook illustration path runs, on every horizon the engine can build**. `delvec scene` and `delvec panorama` turn the compiler's `render-plan.json` into Chunky scenes — the storybook shot and the whole-scene review renders — and nothing in this repository invoked either of them; `check-gallery-render.py` runs `snapshot`, and only on the primary gallery. What that cost, measured: the render layer's `Horizon` enum carried ONE variant while the compiler had been emitting a second for as long as the base existed, and `#[serde(tag = "kind")]` has no fallback, so both commands refused every valley campaign outright with `DW0721 … unknown variant `valley`, expected `ocean``. **The population comes from the engine, not from this file**: the horizon bases are read from `delvec schema --stage all` — the same single authority the coverage gate enumerates units from — and every one must be exercised by a gallery point declaring it, so a base with no point is a red naming the base and there is no list here to go stale. Per point and per arm: exit 0 with the refusal reported verbatim otherwise, at least one scene file emitted, **the frame contains the ground** — a scene's `chunkList` must cover the landform the horizon declares, because `layout_aabb` (the union of placed AREAS) alone loads none of the landform a terrain-building horizon puts around it — and **the panorama frames the built place**: read the way Chunky reads the scene (orientation in Chunky's basis, `fov` vertical, horizontal scaled by width/height, a projection sharing no code with the engine's solve), every corner of `layout_aabb` is inside the frame and their bounding rectangle covers at least a third of it. Both defects render successfully and produce a picture, which is why they need an assertion rather than an eye; the second reds the base engine that fitted the frame to the landform, on the valley point only (0.09). The arms refuse a build with no world save, so each build gets a stub save (`level.dat` and one region file) — the shape the arms check, which Chunky could not load. And on every point whose campaign carries a `design/cameras.json` (the gallery's record), `delvec cameras` runs and **every stated camera is its scene's camera**: position, vertical `fov`, frame, exposure and sample target are the record's, and the view direction read from the stored orientation in Chunky's basis is the direction Minecraft looks for the record's yaw and pitch, written from the game's convention and sharing nothing with the engine's conversion — perturbed by reading the yaw with the wrong sign, it reds all six gallery cameras — and **every camera is under its picture's sky**: its own `sky`, else its `design.json` row's `time` and `weather`, read from the two documents, with an overcast `sky`+`fog` block under `rain` or `thunder` and, under `clear`, the **game's own sky of the scene's tick** (`compiler.md` §4): the scene's `delvewrightSky.daytimeTicks` held within 12 ticks of the tick its sun names by minecraft.wiki's closed form; the fixed keys (`SKYMAP_EQUIRECTANGULAR`, `skyMirrored` false, `apparentSkyLight` 1, no fog, no sun light, the disc rule); the map written beside the scene read as `PF` floats and held, on a 24 × 12 sample grid, to the gate's own Python port of the client's sky (the clear colour with its look-dependent sunrise tint, the octagonal sky disc with `sky.fsh`'s fog, the sunrise fan) plus ONE uniform non-negative veil, within 2e-3; and `skyLight` times the map's cosine-weighted mean over the upper hemisphere held to the lightmap's light (the shader ported, colours as `a + floor(p(b − a))`, Python's `**`) within 0.2%; the panorama and review scenes of each point are judged by the same rule against the plan's weather; over the domain the weathers reached must be `{clear, rain, thunder}` and the daylight classes, read off each scene's sun altitude (20° and 0° thresholds), `{high, low, below}`, stated on a `camera skies:` line with the clear scenes judged, by where their tick falls (day plateau, ramp, night plateau) — measured on the gallery domain: 441 clear scenes over 24 camera and 423 panorama/review scenes (day plateau 87, ramp 354, night plateau 0); a domain with no clear scene is a red. Perturbed by reading the engine's clear cell 3000 ticks late, it reds 2825 findings. States bases declared / points found / builds exercised / scene files judged / panoramas framed / stated cameras judged over camera records; **a base unaccounted for is a red, judging zero scenes is a red, and judging zero stated cameras is a red**. Job `gallery views (render plan, whole map, cameras)`. Resolves its engine through `tools/lib/delvec_bin.py`, which NAMES the binary it found on every run and refuses one older than the compiler sources in the tree |
 | `tools/ci/check-gallery-post-beat.py` | CI (gallery views job) + agent | `python3 tools/ci/check-gallery-post-beat.py --delvec <bin> --prefabs <generated> --build-out <gallery build> --work <dir>` — **the gallery's showcase cameras stand where its record says** (spec-0089 §9). Runs `delvec cameras` over the gallery's own build — a cargo test cannot build the gallery — and asserts from the binding lines and the written worlds: exactly two worlds, `at-load` and `after-obj-clear-the-muster`, with `east-bay-after-the-muster` standing in the second at a positive `cells moved from load`; removing that camera's `after` (on a scratch copy of the gallery) moves its scene to `at-load` and the count to 0; moving it to `obj/take-the-bone` moves the world's hash and the count. Prints every run's `configurations:` line and each world's cells and sha-256 |
 | `tools/ci/check-written-world.py` | CI (tier 2 over the gallery primary; gallery bot over the site-plan point) + agent (**mandatory** at step 10, its record handed to the staging gate) | `python3 tools/ci/check-written-world.py <build-dir> <written-world> <server-save> [--record <file>]` — **the world the engine writes is the world the pinned server builds** (spec-0089 §5.4, `DW0955`). Reads the written load world (`delvec written-world <campaign> -o <dir>`, from the campaign and `--prefabs` alone with no camera record; the same world `delvec cameras` writes as `<out>/worlds/at-load`) and a `validation/world-save.sh` save of the same build through `tools/lib/anvil.py`, compares every cell inside `render-plan.json`'s `layout_aabb`, and prints the box, both worlds' non-air counts, the cells compared and every differing cell by state pair in its class — gravity, fluid, re-derived (a connection, stair shape or leaves distance the server re-derived), clock (a gate region a clock owns, `clocked` in `validation/gate-seal.json`) — each a measured count — plus random-tick (grass block or mycelium against dirt, turned by the server's random tick). Reds `DW0955` on any differing cell in no class. `--record <file>` (outside the build tree) also writes the verdict as JSON — `verdict`, `manifest_sha256` of the build, the box, the compared count, each class's count and up to twelve model cells — on a red as on a green; it is what `tools/creator/staging-gate.py --written-world` admits on. Its perturbations live in `crates/delvec/tests/post_beat_camera.rs` (one cell moved reds; a settled gravel lands in the gravity class; a `structure_void` the server holds over the model's air reds, and its record says so) |
 | `tools/ci/gallery-baseline.py` | CI + agent | `python3 tools/ci/gallery-baseline.py --prefabs <generated> [--delvec BIN] [--base origin/main] [--compare REV] [--work .gallery-baseline] [--compare-target-dir DIR] [--write]` — the gallery's **emission baseline, computed in the run, and its expected-warnings ledger** (spec-0039 §5, ADR-0034). One invocation measures the whole domain (`gallery_domain.points()`: the primary in every declared language, plus each overlay in `en`) **twice, from source**: the head, with the handed `delvec` and prefab directory; and the comparison tree — `merge-base(--base, HEAD)`, or `HEAD^1` when HEAD is on `--base` (a push to `main`) — checked out into a worktree of its own under `--work` and built there by its own `cargo build --locked -p delvec --bin delvec` (into `--compare-target-dir`, default `<work>/target`, which CI caches), its own `tools/ci/gallery-prefabs.py`, and its own `gallery_domain.py`/`gallery_units.py` loaded from its own tree. Head contributes only the loop that runs each tree's own engine over each tree's own points. A measurement is per build the compiler's `manifest.json` and its warning rows, plus a header (commit, delvec and `dsl_version`, gallery source hash, generator-input hash, coverage counts). It writes `<work>/report/`: `delta.json` (every added/removed/changed emitted path by output class, every recorded-but-not-emitted manifest value that moved, the header pair, the verdict and the binding), `header.json`, `manifests.json` (the head's, naming the commit it measured — what `gallery-build.py` proves a tree against) and `manifests-compare.json`; and the summary to `$GITHUB_STEP_SUMMARY` when set. **Red**: a build fails on either side (never a fallback); the head's warning set differs from the committed `gallery/baseline/warnings.json` (counted, never set-compared); the delta is non-empty while `git diff --name-only <comparison>` reaches none of `EMISSION_INPUTS` (`crates/`, `gallery/`, `prefabs/gallery-generator/`, the root `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, `tools/ci/gallery_domain.py`, `tools/ci/gallery-prefabs.py` — deliberately not `versions.toml`, which the compiler never reads) — a **determinism finding** (ADR-0006); either side measures zero builds or zero emitted paths; a warning line it cannot parse. **Report** (exit 0): a non-empty delta on a change reaching an emission input — the reviewer reads it. The summary's first line says which the run is, and states builds per side, emitted paths per side and weighed, delta size, warning rows against the ledger's, and changed paths. `--write` measures the head only and writes `warnings.json`, refusing a write that would not move a byte. Nothing else under `gallery/baseline/` is committed, and `.gitignore` refuses the three documents that used to be. Resolves the head engine through `tools/lib/delvec_bin.py` |

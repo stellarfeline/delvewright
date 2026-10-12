@@ -3465,23 +3465,65 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - **The sky of a scene** (`crate::view::scene::sky_of`, spec-0079 §4): the one
   writer of every `sky`, `sun` and `fog` key under `compiler::view`; the review
   frames (`scene::scenes_from_plan`), the panorama and every showcase camera
-  (`camera::world_scene`) take their sky through it. **`clear`** under a lit or
-  ramping sky is the hour's sun direction and nothing more — Chunky's
-  simulated sky with its default sun is a clear sky — so such a scene's bytes are
-  the bytes the engine wrote before the weather reached a scene (pinned by
-  `clear_scenes_keep_their_base_bytes` against goldens emitted at spec-0079's
-  base). **A clear night** — the scene's tick on the vendored day timeline's
-  dark-sky plateau, where `visual/sky_color` holds black (ticks 13670..=22330,
-  `celestial::sky_is_dark`) — is not left to the renderer: the pinned core's
-  `PreethamSky.updateSun` clamps a sun's altitude to `[0, π]` before it shades
-  the sky, so a sun under the horizon draws a sunset. In the dusk and dawn
-  ramps the sun stands on or just under the horizon and that clamped sunset is
-  the nearer picture, so they keep the renderer's sky. A clear night writes the whole block of the **night cell** (`scene::BELOW_CLEAR`, spec-0079
-  departure 1): the vendored day timeline's night plateau — the visible sky
-  multiplied by black, `rgb(0, 0, 0)` (`apparentSkyLight` 0), the sky's light at
-  `sky_light_factor` 0.24 in `sky_light_color` `#7a7aff` (`skyLight`,
-  `sky.color`), `fog.color` `#0f0f16` at density 0 — and no sun, pinned to the
-  timeline by `the_clear_night_cell_is_the_timelines_night_plateau`. **`rain`** and **`thunder`** write
+  (`camera::world_scene`) take their sky through it, and every scene carries
+  the whole block. **`clear`** is the **clear cell** of the scene's tick
+  (`scene::clear_cell`): the pinned game's day, one function for every hour,
+  with noon, the dusk and dawn ramps and the night plateau as points of it. The
+  game lights the world from the sky alone — a cell open to the sky is drawn at
+  the lightmap's sky colour whatever the sun's direction, and nothing casts a
+  shadow from the sun — so:
+
+  | Key | Value | Cited | Authored |
+  |---|---|---|---|
+  | the light the sky casts (`sky.color` and the cell's `sky_light`) | the lightmap's full-sky colour, decoded to linear: `L` | `assets/minecraft/shaders/core/lightmap.fsh` of the pinned client at sky light 15 with `SkyFactor` = `visual/sky_light_factor` and `SkyLightColor` = `visual/sky_light_color` (the two attributes `LightTexture` reads), `ambient_light` 0, the `gamma` option's default 0.5 as `BrightnessFactor`; the two tracks at the tick | decoding by `x^2.2` (`Scene.DEFAULT_GAMMA`, by arithmetic: `scene::to_linear`) and reading it as the radiance a top face is lit by — a Lambertian face under an open sky returns `albedo ×` the sky's cosine-weighted mean radiance, so the face shows at the shader's colour |
+  | `sky.mode SKYMAP_EQUIRECTANGULAR`, `sky.skymap`, `sky.skyMirrored false`, `sky.apparentSkyLight` 1 | what the lens sees: the game's own sky, as a 360 × 180 linear-float map `<scene>.sky.pfm` drawn for the scene's camera at its tick (`sky_image::clear_sky`) and written beside the scene by the scene writer from the scene's own `delvewrightSky.daytimeTicks` and orientation (`sky_image::companion`) | the pinned client's drawing, off its bytecode through Mojang's mappings: the clear colour of `AtmosphericFogEnvironment.getBaseColor` (`visual/fog_color` × `#c0d8ff`, lerped toward the opaque `visual/sunrise_sunset_color` by the camera look's dot with the sun's side times the colour's alpha, then toward `visual/sky_color` × `#7ba4ff` by `1 − clamp(min(512/16, 12)/32, 0.25, 1)^0.25`); the sky disc of `SkyRenderer.buildSkyDisc` (an octagon at height 16, rim at 512, every 45° from −180°) in the sky colour with `sky.fsh`'s fog at `sky_end` = `min(12 × 16, 512)` on the distances interpolated from centre to rim; the sunrise fan of `buildSunriseFan` / `renderSunriseAndSunset` (centre `(0, 100, 0)`, 17 rim vertices `(sin a · 120, cos a · 120, −cos a · 40)`, turned `XP 90°` then `ZP 90°` or `270°` by the sun's side, depth scaled by the alpha, `TRANSLUCENT`); render distance 12 (`options.renderDistance`) and `visual/sky_fog_end_distance` 512 at their defaults; the core's unmirrored equirectangular lookup and its `.pfm` reader (linear, no gamma) | — |
+  | `sky.skyLight` | the multiplier that makes the map's light `L`: the largest `s ≤ 50` with the veil `R = L/s − Ē ≥ 0` in every channel, `Ē` the game's sky's cosine-weighted mean over the upper hemisphere; the map is the game's sky plus `R` | `Sky.MAX_INTENSITY` 50; the core lights the scene with the map the lens sees — `getSkyColorInterpolated` and `getSkyColorDiffuseSun` both read `getSkyDiffuseColorInner`, scaled by `apparentSkyLight` or `skyLight` | the least uniform veil that makes the light exact; the lens carries it |
+  | `fog.uniformDensity` 0, `fog.skyFogDensity` 0, `fog.color` | none: the client's sky fog is in the map | `visual/fog_color` × `#c0d8ff` as the colour no ray reads | — |
+  | `sun.intensity` 0, `sun.color` white | no light | nothing in the lightmap depends on the sun's direction | the core's sun is a directional light the game does not have |
+  | `sun.drawTexture` | the disc, drawn while any of it is above the horizon (altitude ≥ −4.29°) | the disc half-width, `celestial::SUN_DISC_HALF_CENTIDEG` | — |
+
+  The core lets the lens and the light be set apart only by magnitude, and
+  that was measured on the Treehouse Camp's `toward-the-sun` draft (400 × 225,
+  128 samples): with `skyLight` 0 the lens's sky stays (80, 78, 116) and the
+  ground goes from (19, 25, 16) to (0, 0, 0); with the map's red channel
+  zeroed the lens's sky goes to (0, 78, 116) and the ground to (0, 25, 16).
+  Colour tracks are read as the client reads them: each 8-bit channel
+  `a + floor(p × (b − a))` between keyframes (`ARGB.srgbLerp` → `Mth.lerpInt`,
+  the alpha with the rest) and multiplied as `ARGB.multiply` (`scene::day_rgb`,
+  `scene::day_argb`, `scene::multiply_rgb`). Every sine and cosine of the map
+  is `sky_image::det_sin`, a Taylor series in IEEE arithmetic, and the file is
+  raw little-endian `f32`: its bytes are a function of the tick and the
+  camera. **Not expressed:** the stars, the moon and the clouds (the map draws
+  none of them, and the core draws no moon), and the dark disc the client
+  draws under a camera below the world's horizon height. A face that looks at
+  open sky under the horizon — the sides of a block over the void — takes
+  light from the clear colour the map holds there, warm on the sun's side,
+  which the game does not cast: the light is exact on an open top face, not
+  on a face that sees the void. A place's declared
+  atmosphere (spec-0080) is not read: the scene is lit as the ground biome is.
+  The veil pales the lens's sky where the game's sky is far from the light's
+  hue: at noon the light is white and the sky blue, so the veil is the light's
+  yellow remainder and the lens sees a pale zenith; at the setting sun it is
+  small; at night, under a black sky, `skyLight` is 50 and the veil `L/50`.
+  Pinned by `the_clear_cell_is_the_timeline_at_its_tick` (the night plateau,
+  noon and the setting sun read back from the timeline's keyframes),
+  `the_clear_cell_has_no_seam_over_the_day` (the largest change of the cell's
+  light between two adjacent ticks: 0.0005 `skyLight`, 0.0081
+  `sky.color.red`), `sky_image`'s tests (the fan on the sun's side, the clear
+  colour following the look, the light exact, the map byte-stable and moved by
+  the tick) and `every_scene_builder_writes_the_whole_block`. At the Treehouse
+  Camp's setting sun (tick 12782) the light is `sky.color` (0.357581,
+  0.357581, 1) at 0.374446, and the scenes' `skyLight` is 1.380618
+  (`from-the-glade`), 1.564742 (`north-east-aerial`), 1.490059
+  (`toward-the-sun`); at the night plateau the light is 0.209457 and
+  `skyLight` 50. Left to the renderer — the simulated sky and its default sun
+  at 1.25 — the setting sun draws a beam along the horizon over a
+  yellow-brown Preetham sky (the core clamps the sun to the horizon before it
+  shades the sky), where the game draws a dim, flat evening, blue-violet away
+  from the sun with an orange-red band toward it. spec-0079 criteria 4 and 5 —
+  byte identity with the base for a clear scene with the sun up, and "no
+  block keys" on it — do not hold: **a loosening of what those criteria
+  assert, replaced by the clear sky's own assertions above**. **`rain`** and **`thunder`** write
   the whole overcast block on every scene: the sun's direction from `sun_at`,
   `sun.intensity`, `sun.color` and `sun.drawTexture false`; `sky.mode
   SOLID_COLOR`, `sky.color`, `sky.skyLight` (the light the sky casts) and
@@ -3502,7 +3544,6 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   | `high` × `thunder` | 1.92 | 0.72 | 0.125 | 0.003 |
   | `low` × `thunder` | 0.96 | 0.36 | 0.125 | 0.003 |
   | `below` × `thunder` | 0.096 | 0.036 | 0 | 0.003 |
-  | `clear`, dark sky (night cell) | 0.24 | 0 | 0 | 0 |
 
   `low` × `rain` is the overcast dusk measured on one delve
   (`docs/reference/showcase-shots.md` §2b); the other five derive from it by two
@@ -3513,9 +3554,32 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   of what the engine emits; the constants are `scene::{HIGH,LOW,BELOW}_{RAIN,
   THUNDER}`. A night-vision review emulation (`REVIEW_POLICY`) is a material
   override and independent of the sky: a declared-dark room under rain gets both. The panorama's
-  bearing decides only which side is in shot, and a bearing that looks into the
-  sun at the declared hour is a backlit frame the creator re-shoots from
-  elsewhere.
+  bearing decides only which side is in shot; under a clear sky no face is in
+  the sun's shadow, and a bearing that looks into the sun puts its disc in
+  frame.
+- **The post-process** (`scene::POSTPROCESS`): every scene is written with
+  `TONEMAP3`, the pinned core's Hable filmic curve at its default preset,
+  which rolls a radiance above the display's white off along a shoulder where
+  `GAMMA` cuts it at 1. Chosen by measurement over the five the core offers,
+  each re-exposed (`-snapshot`) from one accumulated draft at exposure 1 under
+  the clear cell — the Treehouse Camp's `from-the-glade`, `north-east-aerial`
+  and `lantern-night` at 400 × 225 and 128 samples, Pillow reader, sRGB:
+
+  | Post-process | clipped (any channel ≥ 254) | crushed (luma ≤ 8) | mean luma |
+  |---|---|---|---|
+  | `GAMMA` | 0.60 / 0.18 / 0.49% | 5.24 / 0.39 / 0.84% | 34.4 / 46.3 / 21.2 |
+  | `TONEMAP1` | 0.00 / 0.00 / 0.00% | 51.32 / 31.76 / 85.83% | 21.6 / 33.9 / 5.5 |
+  | `TONEMAP2` (ACES) | 0.38 / 0.02 / 0.11% | 25.70 / 3.69 / 38.35% | 28.6 / 42.4 / 13.6 |
+  | `TONEMAP3` (Hable) | 0.37 / 0.02 / 0.11% | 7.59 / 0.70 / 1.22% | 30.3 / 40.4 / 18.8 |
+  | `UE4_FILMIC` | 0.37 / 0.02 / 0.10% | 36.56 / 9.44 / 55.83% | 26.1 / 40.2 / 10.8 |
+
+  Hable is the one curve that compresses the highlights without sinking the
+  dim half of the frame. Its cost: at linear 0.18 it shows 0.393 where `GAMMA`
+  shows 0.459, a mid-tone about a seventh darker than the game draws it.
+  **The game's exposure is 1**: the clear cell's radiances are the lightmap's
+  colours decoded, so at exposure 1 a sky-lit top face shows at the colour the
+  game draws it (exactly so under `GAMMA`, below the shoulder); an exterior
+  under a clear sky needs no exposure of its own to read.
 - **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
   ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
   ships a world save holding only the chunks its layout occupies — the sea around
@@ -5704,12 +5768,12 @@ the party can be in. The record's sky rule (`camera::resolve_sky`) is asked by
 alike (`compiler::design::answered`, exit 3), one sentence wherever it is read.
 **Binding line**, printed by every `delvec cameras` run, refused or not, beside
 the `answers:` sentence: one line per camera this run frames — `sky: <name>
-<time>+<weather> <derived from <row> | stated> class <high|low|below> — <the
-renderer's own clear sky | overcast cell <class>×<weather> | night cell <class>×clear: skyLight …,
-apparentSkyLight …, sun …, fog …>` — and `skies: D derived, S stated, over C
+<time>+<weather> <derived from <row> | stated> class <high|low|below> — <clear
+cell at daytime <tick>: the game's sky as a map, its light … (the lightmap's,
+peak channel), sun … | overcast cell <class>×<weather>: skyLight …,
+apparentSkyLight …, sun …, fog …, sky fog …>` — and `skies: D derived, S stated, over C
 camera(s)[ (R refused)]; weathers emitted: {…}`, whose set names the non-clear
-weathers (a clear night's block is the night cell, named on its own `sky:`
-line). A record stating no sky prints `0
+weathers. A record stating no sky prints `0
 stated`; a rain delve rendering clear prints the empty set. Beside them, per
 framed camera, `after: <name> at load` or `after: <name> after <step> (step <i>
 of <n> on <the critical path | branch `<id>`'s path>): <c> cells moved from load,

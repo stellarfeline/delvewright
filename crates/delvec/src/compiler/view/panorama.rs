@@ -69,7 +69,8 @@
 //! so it is the delve at its declared sky, overcast when that sky is rain or
 //! thunder. So the bearing is purely a choice of which side is in shot,
 //! and choosing it is the creator's job: at a given hour the sun stands east or
-//! west, and a bearing looking into it is a backlit frame. A delve declared at
+//! west, and a bearing looking into it puts the sun's disc in frame (a clear
+//! sky lights from every side, as the game does, so no face is in its shadow). A delve declared at
 //! `night` or `midnight` renders dark, which is what a night delve looks like;
 //! nothing here brightens a scene to make a picture come out.
 
