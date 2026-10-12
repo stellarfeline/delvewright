@@ -6,7 +6,7 @@
   "yClipMin": 48,
   "yClipMax": 96,
   "exposure": 2.0,
-  "postprocess": "GAMMA",
+  "postprocess": "TONEMAP3",
   "outputMode": "PNG",
   "renderTime": 0,
   "spp": 0,
@@ -25,7 +25,34 @@
   "waterWorldClipEnabled": true,
   "sun": {
     "altitude": 0.480763,
-    "azimuth": 0.0
+    "azimuth": 0.0,
+    "intensity": 0.0,
+    "color": {
+      "red": 1.0,
+      "green": 1.0,
+      "blue": 1.0
+    },
+    "drawTexture": true
+  },
+  "sky": {
+    "mode": "SOLID_COLOR",
+    "color": {
+      "red": 1.0,
+      "green": 1.0,
+      "blue": 1.0
+    },
+    "skyLight": 0.967729,
+    "apparentSkyLight": 0.385782
+  },
+  "fog": {
+    "mode": "UNIFORM",
+    "uniformDensity": 0.0001,
+    "color": {
+      "red": 0.535642,
+      "green": 0.694081,
+      "blue": 1.0
+    },
+    "skyFogDensity": 1.0
   },
   "world": {
     "path": "/abs/world",

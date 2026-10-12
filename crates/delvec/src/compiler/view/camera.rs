@@ -625,7 +625,7 @@ pub struct ResolvedSky {
     pub camera: String,
     pub sky: CameraSky,
     pub origin: SkyOrigin,
-    /// The daylight class the pair's sun falls in — the look-table row read.
+    /// The daylight class the pair's sun falls in — the overcast table's row.
     pub class: DaylightClass,
 }
 
@@ -951,7 +951,7 @@ pub(crate) fn world_scene(
         y_clip_min: (loaded_min[1] - 8).max(-64),
         y_clip_max: (loaded_max[1] + 16).min(320),
         exposure: round6(frame.exposure),
-        postprocess: "GAMMA",
+        postprocess: scene::POSTPROCESS,
         output_mode: "PNG",
         render_time: 0,
         spp: 0,
