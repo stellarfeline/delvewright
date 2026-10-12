@@ -4,7 +4,7 @@ Renders of **The Treehouse Camp**, a delve built with Delvewright: a forest clan
 
 ![The whole camp](01-hero-whole-map-south-southwest.jpg)
 
-The camp from high in the south-south-west at sunset: the Seed Tree in front, the Hearth Tree on the left, the Loom House on its cut-off trunk behind, and the Watch Tree on the right, its lookout above every other crown.
+The camp from high in the east-north-east, looking toward the setting sun: the Loom House on its cut-off trunk in front, the Watch Tree on the left, its lookout above every other crown, the Hearth Tree behind on the right, and the Seed Tree between them at the back.
 
 ![The Root Glade](02-root-glade.jpg)
 

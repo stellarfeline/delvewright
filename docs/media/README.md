@@ -12,7 +12,7 @@ A souls-like castle for one to four hired blades, about an hour long. The bell o
 
 ## [The Treehouse Camp](the-treehouse-camp/README.md)
 
-[![The Treehouse Camp: four giant trees with houses round their trunks and rope bridges between them, seen from high in the south-west at sunset](the-treehouse-camp/01-hero-whole-map-south-southwest.jpg)](the-treehouse-camp/README.md)
+[![The Treehouse Camp: four giant trees with houses round their trunks and rope bridges between them, seen from high in the east-north-east, looking toward the setting sun](the-treehouse-camp/01-hero-whole-map-south-southwest.jpg)](the-treehouse-camp/README.md)
 
 A gentle walk and climb for one to four guests, under half an hour, with nothing hostile in it. A forest clan lives in houses built round four giant trees, joined by rope bridges and rope ladders; on Lantern Night you fetch a lantern and its oil from two houses, carry it up the tallest tree, and watch the whole camp light up below you.
 
