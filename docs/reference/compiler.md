@@ -3558,11 +3558,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the sun's shadow, and a bearing that looks into the sun puts its disc in
   frame.
 - **The post-process** (`scene::POSTPROCESS`): every scene is written with
-  `TONEMAP3`, the pinned core's Hable filmic curve at its default preset,
-  which rolls a radiance above the display's white off along a shoulder where
+  `TONEMAP3`, the pinned core's Hable filmic curve, with the settings derived
+  below, which rolls a radiance above the display's white off along a shoulder where
   `GAMMA` cuts it at 1. Chosen by measurement over the five the core offers,
-  each re-exposed (`-snapshot`) from one accumulated draft at exposure 1 under
-  the clear cell — the Treehouse Camp's `from-the-glade`, `north-east-aerial`
+  each at its default and re-exposed (`-snapshot`) from one accumulated draft
+  at exposure 1 under the clear cell — the Treehouse Camp's `from-the-glade`, `north-east-aerial`
   and `lantern-night` at 400 × 225 and 128 samples, Pillow reader, sRGB:
 
   | Post-process | clipped (any channel ≥ 254) | crushed (luma ≤ 8) | mean luma |
@@ -3574,12 +3574,58 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   | `UE4_FILMIC` | 0.37 / 0.02 / 0.10% | 36.56 / 9.44 / 55.83% | 26.1 / 40.2 / 10.8 |
 
   Hable is the one curve that compresses the highlights without sinking the
-  dim half of the frame. Its cost: at linear 0.18 it shows 0.393 where `GAMMA`
-  shows 0.459, a mid-tone about a seventh darker than the game draws it.
-  **The game's exposure is 1**: the clear cell's radiances are the lightmap's
-  colours decoded, so at exposure 1 a sky-lit top face shows at the colour the
-  game draws it (exactly so under `GAMMA`, below the shoulder); an exterior
-  under a clear sky needs no exposure of its own to read.
+  dim half of the frame. **Its settings** (`scene::tone_curve`, written as
+  `postprocessSettings`, the seven floats `HableToneMappingFilter` reads): at
+  its preset (`scene::HABLE_FILMIC_WORLDS`, the core's `FILMIC_WORLDS`) the
+  curve shows linear 0.18 at 0.393 where the game's transfer of a decoded
+  colour, `x^(1/2.2)`, shows 0.459. Every scene therefore carries the preset
+  read `k` times brighter — `A·k²`, `B·k` and `W/k` with `C`, `D`, `E`, `F`
+  unchanged, which is the curve `h(k·y)` with its white scale held — at the `k`
+  that holds `scene::MID_GREY` 0.18 at 0.18 before the core's display exponent
+  (`HableCurve::mid_grey_gain`, the positive root of the quadratic `h(y) = m /
+  whiteScale` is in `y`): `k` = 1.463761, settings 0.32138956, 0.7318806, 0.1,
+  0.2, 0.02, 0.3, 7.651521. **Derived**; the anchor is the 18% grey card
+  exposure is metered against, **cited**. The camera's `exposure` stays its
+  own field, 1.0 for the light as measured. A second derivation was measured
+  and not taken: the `k` that best fits the game's transfer, in least squares
+  with equal weight per display level, over the range a clear cell lights,
+  `(0, L^(1/2.2)]` for its light `L` (the place frames below hold 99.6–99.9% of
+  their channel values under `L`, the two frames toward the sun 89–91%), is 1.491390 at the setting sun, 1.391937 on
+  the night plateau and 1.932816 at noon — a function of the tick where the
+  mid-grey gain is one constant, and within 2% of it at the setting sun. On the
+  Treehouse Camp's twelve showcase frames, re-exposed from their accumulated
+  sample buffers (the raw buffer written by `-snapshot` with `outputMode PFM`,
+  the curve applied by a numpy port the core's own PNG reproduces bit for bit
+  at the preset; clipped is any channel at 254 or more, crushed Rec. 709 luma
+  at 8 or less, both of 1 440 000 pixels):
+
+  | Frame | clipped, preset → anchored | crushed, preset → anchored | mean luma, preset → anchored |
+  |---|---|---|---|
+  | whole camp (sunset, toward the sun) | 0.39 → 0.40% | 0.78 → 0.33% | 50.6 → 58.9 |
+  | the nine place frames (sunset) | 0.10–0.39 → 0.12–0.44% | 1.62–9.32 → 0.88–5.86% | 24.5–32.7 → 28.9–38.6 |
+  | Crown Lookout (sunset, toward the sun) | 0.37 → 0.38% | 0.98 → 0.50% | 45.7 → 53.4 |
+  | Lantern Night | 0.14 → 0.18% | 1.08 → 0.60% | 20.4 → 24.2 |
+
+  **The light is the game's on an open top face that sees the whole sky, and
+  a frame's darkness is mostly elsewhere.** The clear cell's radiances are the
+  lightmap's colours decoded, so at exposure 1 a top face under the whole sky
+  shows at the colour the game draws it. Measured on the same eleven sunset
+  frames by casting every pixel through its scene's camera into the world the
+  scene loads (5 075 588 pixels on full cubes of 29 single-texture block types,
+  albedo the texture's mean), with the game's sky and block light flooded over
+  the same world and the pinned client's lightmap (`lightmap.fsh`, the block
+  factor `LightTexture` adds 1.5 to) and directional shade (`ClientLevel.
+  getShade`: up 1.0, down 0.5, north and south 0.8, east and west 0.6): the game
+  model of those pixels reads a mean luma of 35.2–48.2 (five in-game
+  screenshots of the camp at that hour, other views: 41.4–47.9), the frames 18.5–28.1 at the preset and 20.9–31.8
+  under no curve at all. 92.6% of the linear shortfall is in pixels a lantern
+  lights in the game: its block light reaches 14 blocks flat, where the path
+  tracer's lantern is a small emitter whose light falls with distance, and
+  those pixels take 0.21 of the game's light. Where no lantern reaches, an
+  open top face takes 0.53 of the game's light — its cosine-weighted sky
+  visibility is 0.57 on average, the camp's trees and the valley's rim hiding
+  sky the game's sky light ignores — and the sides 0.67 (north and south) and
+  1.19 (east and west, which the game shades to 0.6).
 - **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
   ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
   ships a world save holding only the chunks its layout occupies — the sea around
