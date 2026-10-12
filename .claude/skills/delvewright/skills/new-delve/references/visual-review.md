@@ -83,7 +83,8 @@ keyword night is a full moon; the phase the brief asked for is confirmed in the
 game, never on a render. Declared-dark areas with a `night-vision` mitigation are the one thing the
 scene emitter makes legible, and it marks those frames as emulations; everything
 else you read as the player will see it. Never raise a budget, an exposure or an
-hour to make a picture come out.
+hour to make a picture come out: a clear sky is drawn as the game draws it at
+that hour, at exposure 1, so an exterior that reads dark is dark in the game.
 
 Two shapes to expect, because they are what the machine cannot say:
 
