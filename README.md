@@ -4,6 +4,8 @@ English · [简体中文](README.zh-CN.md)
 
 ![Vesperhold as Delvewright built it: the whole hold on its crag from high in the south-west, the causeway running down to the wayside shrine](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
 
+The pictures are path-traced renders of the built world; in the game it looks like vanilla Minecraft unless you add a shader or a resource pack of your own.
+
 **[Inside Vesperhold](docs/media/vesperhold/README.md)** — the approach, the ward, the garden, the cloister, the chapel, the pool under it, the bell tower and the throne hall. **[Every campaign built with Delvewright](docs/media/README.md)** — Vesperhold, The Treehouse Camp and Doune Castle, a picture and a few lines each.
 
 **Delvewright is an AI Minecraft adventure map generator: it turns a creative prompt into a story-driven RPG dungeon for one to four friends — a vanilla datapack with quests and NPCs — and proves by machine that it can be finished before it is handed over.**
