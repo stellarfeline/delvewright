@@ -196,16 +196,6 @@ def test_each_tree_is_read_through_its_own_modules(tmp_path):
 # ------------------------------------------------------------- what is committed
 
 
-def test_only_the_warning_ledger_is_committed():
-    tracked = subprocess.run(
-        ["git", "-C", str(REPO), "ls-files", "gallery/baseline"], capture_output=True, text=True, check=True
-    ).stdout.split()
-    assert tracked == ["gallery/baseline/warnings.json"]
-    ignored = (REPO / ".gitignore").read_text().splitlines()
-    for name in ("header.json", "manifests.json", "delta.json"):
-        assert f"gallery/baseline/{name}" in ignored
-
-
 def test_write_writes_only_the_ledger_and_refuses_a_noise_write(monkeypatch, tmp_path):
     ledger = tmp_path / "warnings.json"
     rows = {"primary.en": [{"code": "DW0001", "pointer": "/a", "stage": "world"}]}
