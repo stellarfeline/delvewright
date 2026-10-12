@@ -367,9 +367,35 @@ def test_a_pieces_job_that_skips_a_consumers_group_is_refused(tmp_path, capsys):
     would skip `gallery-pieces`, so Actions would skip `gallery-baseline` with it."""
     wf = perturbed(
         tmp_path,
-        " || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-baseline == 'true'\n    runs-on",
-        " || needs.changes.outputs.gallery-views == 'true'\n    runs-on",
+        " || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-baseline == 'true' || needs.changes.outputs.gallery-bot == 'true' || needs.changes.outputs.rust == 'true'\n    runs-on",
+        " || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-bot == 'true' || needs.changes.outputs.rust == 'true'\n    runs-on",
     )
     code, out = run_gate(capsys, wf)
     assert code == 1
     assert "job `gallery-baseline` needs `gallery-pieces`, which does not run on a pull request that reaches `gallery-baseline`'s group `gallery-baseline`" in out
+
+
+def test_a_baseline_job_that_skips_the_bots_group_is_refused(tmp_path, capsys):
+    """The bot reads the manifests the baseline job measured (ADR-0034): a
+    bot-only pull request that skipped `gallery-baseline` would skip the bot."""
+    wf = perturbed(
+        tmp_path,
+        "    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-baseline == 'true' || needs.changes.outputs.gallery-bot == 'true'\n",
+        "    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-baseline == 'true'\n",
+    )
+    code, out = run_gate(capsys, wf)
+    assert code == 1
+    assert "job `gallery-bot` needs `gallery-baseline`, which does not run on a pull request that reaches `gallery-bot`'s group `gallery-bot`" in out
+
+
+def test_a_pieces_job_that_skips_the_rust_group_is_refused(tmp_path, capsys):
+    """The cross-OS job reads the Linux gallery digest `gallery-pieces` writes:
+    a rust-only pull request that skipped the pieces would skip that comparison."""
+    wf = perturbed(
+        tmp_path,
+        " || needs.changes.outputs.gallery-bot == 'true' || needs.changes.outputs.rust == 'true'\n    runs-on",
+        " || needs.changes.outputs.gallery-bot == 'true'\n    runs-on",
+    )
+    code, out = run_gate(capsys, wf)
+    assert code == 1
+    assert "job `determinism-cross-os` needs `gallery-pieces`, which does not run on a pull request that reaches `determinism-cross-os`'s group `rust`" in out

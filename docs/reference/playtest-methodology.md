@@ -625,10 +625,10 @@ The subject a push HAS is the gallery: engine-owned, built by every revision,
 holding one instance of every surface the DSL declares (spec-0039). So
 `tools/ci/check-gallery-stageable.py` runs this gate on **every point of the gallery
 domain**, as a step of the `gallery baseline (emission, warnings, served points)` job. The points
-are enumerated from `gallery/baseline/manifests.json`, the ladder's own build
-ledger, and cross-checked against the gallery directory; judging fewer points
-than the ladder builds is the `unbound` vacuity, so a disagreement between the
-two refuses rather than shrinking the subject.
+are enumerated by `gallery_domain.points()` from the gallery itself — its
+declared languages and its overlay directories — and the count is stated
+against that denominator; judging fewer points than the ladder builds is the
+`unbound` vacuity, so a disagreement refuses rather than shrinking the subject.
 
 The gallery is still never STAGED (spec-0039 §2). Judging a build is a question
 about coverage, not an act of handing anything to anybody — so every admission

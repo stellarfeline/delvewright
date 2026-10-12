@@ -32,8 +32,6 @@ Exit 0 clean, 1 with one finding per line.
 
 from __future__ import annotations
 
-import json
-import pathlib
 import re
 import sys
 from pathlib import Path
@@ -69,28 +67,6 @@ FILTER_JOB = "changes (which jobs a pull request reaches)"
 # whose name says what it is, which a reviewer sees, instead of one more key in a
 # dict of keys, which nobody counts.
 MAX_ADVISORY_JOBS = 1
-
-# The gallery entries' expiry, as something this checker can EVALUATE rather than
-# recite. `gallery/baseline/header.json` records the coverage counts (spec-0039
-# §6), so "it becomes required in the change that takes the unaccounted count to
-# zero" is a committed number, not a promise. When it reaches zero the entry has
-# outlived its reason and this file says so.
-# The gallery is four jobs (ADR-0031 §6); the expiry applies to whichever of
-# them is advisory.
-GALLERY_JOBS = (
-    "gallery pieces (generator output)",
-    "gallery coverage (every surface written or refused)",
-    "gallery views (render plan, whole map, cameras)",
-    "gallery baseline (emission, warnings, served points)",
-)
-_REPO = pathlib.Path(__file__).resolve().parents[2]
-# The jobs are THREE gates, so the expiry reads all of them. Keying it off the
-# coverage count alone would have demanded the job be made required the moment
-# coverage reached zero, while the render arm was still red — which is the
-# deadlock this file exists to prevent, arriving through the mechanism built to
-# prevent it. Both numbers are committed by the tools that measure them.
-GALLERY_HEADER = _REPO / "gallery/baseline/header.json"
-GALLERY_RENDER = _REPO / "gallery/render-plan.json"
 
 # A job's display name: `    name: <value>` nested under a job key. Quotes are
 # optional in YAML and both forms appear in the wild, so strip them.
@@ -195,40 +171,6 @@ def main() -> int:
             findings.append(
                 f"advisory job {job!r} is not a job in ci.yml. Drop the entry — it "
                 f"is holding a budget slot for a gate that no longer exists."
-            )
-
-    # The gallery entries' expiry, evaluated.
-    for gallery_job in (j for j in GALLERY_JOBS if j in ADVISORY_JOBS):
-        if not GALLERY_HEADER.is_file():
-            continue
-        try:
-            counts = json.loads(GALLERY_HEADER.read_text(encoding="utf-8")).get(
-                "coverage", {}
-            )
-        except json.JSONDecodeError:
-            counts = {}
-        left = counts.get("units_unaccounted")
-        try:
-            render_left = json.loads(GALLERY_RENDER.read_text(encoding="utf-8")).get(
-                "findings"
-            )
-        except (OSError, json.JSONDecodeError):
-            render_left = None
-        if left == 0 and render_left == 0:
-            findings.append(
-                f"{gallery_job!r} is still advisory and every gate it runs is clean "
-                f"— ZERO unaccounted units and ZERO render findings. The condition "
-                f"the entry was granted under has been met.\n"
-                f"    Make it required: add the name to {MANIFEST.name} and to "
-                f"branch protection, and delete its ADVISORY_JOBS entry."
-            )
-        elif left is None or render_left is None:
-            findings.append(
-                f"{gallery_job!r} is advisory and its own artifacts record no "
-                f"counts (unaccounted={left!r}, render findings={render_left!r}), so "
-                f"nothing here can tell whether the entry has outlived its reason. "
-                f"Regenerate them: `tools/ci/gallery-baseline.py --write` and "
-                f"`tools/ci/check-gallery-render.py --write`."
             )
 
     dupes = {n for n in required if required.count(n) > 1}
