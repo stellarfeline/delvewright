@@ -91,6 +91,15 @@ And for `delvec cameras`, on every point whose campaign carries a
   20° `high`, from 0° `low`, under 0° `below` — are `{high, low, below}`; a
   domain reaching fewer is a red, because the gallery owes every cell a frame.
 
+And on every scene of every arm: **mid-grey shows as the game shows it.** The
+scene's `postprocess` is `TONEMAP3` and its `postprocessSettings` are the seven
+floats the pinned core's `HableToneMappingFilter` reads; evaluated here by this
+gate's own port of the core's arithmetic (`processPixel` and
+`recalculateWhiteScale`), linear 0.18 shows within 1e-4 of `0.18^(1/2.2)`, the
+game's transfer of a decoded colour (`compiler.md` §4), and the white point
+shows white. Settings absent, a key missing, or the core's bare preset (which
+shows 0.18 at 0.393) is a red.
+
 The arms refuse a build with no world save (Chunky renders a missing world as an
 empty frame at exit 0). This gate judges scene bytes and renders nothing, so each
 build gets a stub save — `level.dat` and one region file — which is exactly the
@@ -110,6 +119,7 @@ import argparse
 import contextlib
 import json
 import math
+import struct
 import subprocess
 import sys
 import tempfile
@@ -609,6 +619,61 @@ def judge_sky(
     return [f"is under a clear sky and {why}" for why in bad]
 
 
+# The tone rule: the scene's curve, evaluated here as the pinned core
+# evaluates it, shows the mid-grey anchor at the game's transfer of it.
+MID_GREY = 0.18
+CORE_EXPONENT = 0.45454543828964233
+TONE_TOLERANCE = 1e-4
+HABLE_KEYS = (
+    "shoulderStrength",
+    "linearStrength",
+    "linearAngle",
+    "toeStrength",
+    "toeNumerator",
+    "toeDenominator",
+    "linearWhitePointValue",
+)
+
+
+def _f32(v: float) -> float:
+    return struct.unpack("<f", struct.pack("<f", v))[0]
+
+
+def hable_shown(settings: dict, x: float) -> float:
+    """What the pinned core shows for linear `x` at exposure 1 under these
+    settings: the products of two parameters and the white scale in float, the
+    rest in double, then the core's exponent, clamped at 1."""
+    a, b, c, d, e, f, w = (_f32(float(settings[k])) for k in HABLE_KEYS)
+    cb, de, df, ef = _f32(c * b), _f32(d * e), _f32(d * f), _f32(e / f)
+    num = _f32(_f32(w * _f32(_f32(a * w) + cb)) + de)
+    den = _f32(_f32(w * _f32(_f32(a * w) + b)) + df)
+    white = _f32(1.0 / _f32(_f32(num / den) - ef))
+    y = 2.0 * x
+    h = (y * (a * y + cb) + de) / (y * (a * y + b) + df) - ef
+    return min(1.0, max(0.0, h * white) ** CORE_EXPONENT)
+
+
+def tone_findings(doc: dict) -> list[str]:
+    """How a scene's tone curve departs from showing mid-grey as the game does."""
+    if doc.get("postprocess") != "TONEMAP3":
+        return [f"postprocess is {doc.get('postprocess')!r}, not the Hable curve TONEMAP3"]
+    settings = doc.get("postprocessSettings")
+    if not isinstance(settings, dict) or any(k not in settings for k in HABLE_KEYS):
+        return ["carries no complete postprocessSettings: the core would draw its bare preset"]
+    shown = hable_shown(settings, MID_GREY)
+    game = MID_GREY**CORE_EXPONENT
+    bad = []
+    if abs(shown - game) > TONE_TOLERANCE:
+        bad.append(
+            f"shows linear {MID_GREY} at {shown:.6f}, where the game's transfer shows "
+            f"{game:.6f}"
+        )
+    white = float(settings["linearWhitePointValue"])
+    if hable_shown(settings, white) < 0.9999:
+        bad.append(f"shows its own white point {white} at {hable_shown(settings, white):.6f}")
+    return bad
+
+
 MIN_FILL = 1.0 / 3.0
 
 
@@ -690,6 +755,7 @@ def main() -> int:
     classes_seen: dict[str, int] = {}
     clear_seen: dict[str, int] = {}
     plan_skies = 0
+    tones_judged = 0
 
     def engine_runs(base: str) -> dict:
         """Every engine run one base needs, in directories named for its point.
@@ -770,6 +836,9 @@ def main() -> int:
                         doc = json.loads(scene_file.read_text())
                         for why in camera_matches(doc, cam):
                             findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
+                        tones_judged += 1
+                        for why in tone_findings(doc):
+                            findings.append(f"{base} ({label}) camera `{cam['name']}`: {why}")
                         design = json.loads((src / "design.json").read_text())
                         for why in sky_matches(
                             doc,
@@ -801,6 +870,9 @@ def main() -> int:
                 for f in files:
                     scenes_judged += 1
                     doc = json.loads(f.read_text())
+                    tones_judged += 1
+                    for why in tone_findings(doc):
+                        findings.append(f"{base} ({label}) {f.name}: {why}")
                     plan_weather = (plan.get("sky") or {}).get("weather")
                     if plan_weather is None:
                         findings.append(f"{base} ({label}): render-plan.json states no sky.weather")
@@ -843,6 +915,15 @@ def main() -> int:
         f"judged against the game's clear sky drawn here from the timeline "
         f"({', '.join(f'{k} {v}' for k, v in sorted(clear_seen.items())) or 'none'})."
     )
+    print(
+        f"tone: {tones_judged} of {cameras_judged + scenes_judged} scene(s) judged for "
+        f"mid-grey {MID_GREY} shown at the game's {MID_GREY**CORE_EXPONENT:.6f} "
+        f"(tolerance {TONE_TOLERANCE})."
+    )
+    if builds and tones_judged != cameras_judged + scenes_judged:
+        findings.append(
+            f"the tone rule judged {tones_judged} of {cameras_judged + scenes_judged} scene(s)"
+        )
     if builds and not clear_seen:
         findings.append(
             "ZERO clear scenes were judged against the game's clear sky: the domain reaches no "
