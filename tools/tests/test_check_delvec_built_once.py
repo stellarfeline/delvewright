@@ -132,3 +132,13 @@ def test_a_build_job_that_builds_another_profile_is_refused(tmp_path, capsys):
     code, out = run_gate(capsys, wf)
     assert code == 1
     assert "`delvec-binary` has no step running exactly `cargo build --locked -p delvec --bin delvec`" in out
+
+
+def test_a_printed_remedy_is_not_a_compile():
+    """`determinism-subject.sh` prints `cargo build …` as the remedy for a missing
+    binary; printing a command runs nothing. A real invocation beside it still reds."""
+    script = 'echo "    cargo build --locked -p delvec --bin delvec" >&2\nprintf "cargo run -p delvec\\n"\n'
+    assert gate.shell_compiles(script) == []
+    assert gate.shell_compiles(script + "cargo build --locked -p delvec --bin delvec\n") == [
+        "cargo build --locked -p delvec --bin delvec"
+    ]

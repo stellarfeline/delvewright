@@ -1,173 +1,20 @@
-# Step 2 — placement, and which model a campaign takes
+# Step 2 — placement: the three site-plan documents
 
 ## Contents
 
-- [The test, and how to run it](#the-test-and-how-to-run-it)
-- [2A. `areas[]`](#2a-areas)
-- [2B. The site plan](#2b-the-site-plan)
+- [The order, and the worked example](#the-order-and-the-worked-example)
+- [The map's reference first](#the-maps-reference-first)
+- [The three documents](#the-three-documents)
+- [One area, and anchors nobody authored](#one-area-and-anchors-nobody-authored)
+- [The numbers are provisional](#the-numbers-are-provisional)
+- [A place's own sky](#a-places-own-sky)
 
-## The test, and how to run it
+**The map is a site plan, whatever its size** (*The map is a site plan* on the
+page). A map that is one building is a plan of one box and no seam; a town is
+many boxes and the seams that join them. The three documents below are the same
+in both cases, and nothing on this page asks which one you have.
 
-"There is no prefab that is the building the story is about" is the whole
-routing question, and it is not answered by reading pool names: a pool called
-`vertical-keep` is an entry hall, corridors and terminal rooms, which is the
-*inside* of a keep and not a keep. So ask the question in the form that has an
-answer:
-
-> **Does the thing the delve is named after have an exterior silhouette the
-> player is meant to read** — a shape they stand outside of and see against the
-> sky? A pool of interiors can be the inside of a building. It can never be the
-> building.
-
-Then look, rather than deciding from memory. One command draws the whole shipped
-library as one self-contained page — orbit, plan, cutaway, and a player eye at
-every anchor:
-
-```sh
-delvec --prefabs "$DELVEWRIGHT_PREFABS" viewer "$DELVEWRIGHT_PREFABS" -o .out/library.html
-```
-
-Open it and put one question to the thing the delve is named after. **Is it on
-that page, as a shape?** If it is not, and the story asks the player to look at
-it from outside, `areas[]` is over: take the site plan, where the geometry is
-derived from your own plan and there is no prefab left to be missing. **If
-instead it is a place the party walks through**, and the members of some pool
-are its rooms, `areas[]` holds — say so in `GENERATION.md` in one line, so the
-reading is visible to the next round rather than implied.
-
-Take the site plan on a tie. It costs four more documents and the map's own
-reference views; taking `areas[]` wrongly costs step 2 over again, and the page
-cannot get you back there from step 5.
-
----
-
-
-## 2A. `areas[]`
-
-`world.json`'s `content.areas` seats pieces from the prefab library. Prefer
-`prefab_pool` for real layouts; read `"$DELVEWRIGHT_PREFABS"/pools.json` and the
-per-prefab metadata for the pools, anchors and lighting profiles available.
-Respect the lighting contract — darkness only as declared design, with a
-mitigation the quest graph provides.
-
-**Two rules about multiple areas, and both are about pieces rather than about
-your story.** Areas sit 256 blocks apart across void with no walkable link, so
-crossing between them is not a walk — the compiler emits a one-way teleport on
-the objective that crosses, which is what makes "the boulder seals the cave" a
-fact about the geometry rather than an assertion. That crossing is emitted only
-under two conditions:
-
-1. **The campaign's first beat plays in the area the party starts in.** A
-   crossing rides on an objective completing, and at the spawn nothing has
-   completed yet — so there is no beat to hang the first crossing on. A delve
-   whose opening move would be a teleport out of its own spawn area has put its
-   spawn in the wrong area; move the spawn, or put a beat in the spawn area
-   first.
-
-2. **Every area a beat crosses into declares an entry point.** That is an
-   anchor carrying `"role": "entry"` in the piece's metadata, or an anchor
-   literally named `spawn` or `entry`. **Very few pieces have one**, and a pool usually holds exactly one
-   that does, so a multi-area campaign is a constraint on which piece each area
-   may bind rather than a free narrative move. How few is a fact about the
-   library and not about this page, so read it rather than taking a number from
-   here — the library is a separate artifact on its own cadence:
-
-```sh
-"$DELVEWRIGHT_PYTHON" - <<'EOF'
-import json, glob, os
-LIB = os.environ["DELVEWRIGHT_PREFABS"]
-n = 0
-for f in sorted(glob.glob(f"{LIB}/*.json")):
-    if os.path.basename(f) == "pools.json" or f.endswith(".report.json"): continue
-    n += 1
-    a = json.load(open(f)).get("anchors") or {}
-    if any(v.get("role") == "entry" for v in a.values()) or {"spawn","entry"} & set(a):
-        print(os.path.basename(f)[:-5])
-print(f"-- out of {n} piece(s) in the library")
-EOF
-```
-
-A crossing that was never emitted is not a quiet difference — it is a delve the
-party cannot finish. See *Reference: when something goes red* for what it looks
-like.
-
-**A pool area guarantees its `entry`-role member's anchors, plus whatever this
-campaign REQUIRES.** An area declaring `pieces: {min: 3, max: 4}` over a
-thirteen-member pool seats a subset: the `entry` member at the area origin on
-every draw, one carrier for each anchor the campaign requires the solver to
-guarantee, and `connector` fillers drawn from the seed. A `room` or `terminal`
-member nothing requires is never seated, and an anchor it declares is not in the
-built world.
-
-Ask the engine, before the story is shaped around something that is not there —
-it reads the library and needs no campaign, so you can ask it at this step:
-
-```sh
-delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab anchors            # every pool
-delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab anchors --pool pool/cave-shore
-```
-
-It prints, per pool, the member count, the `entry` member, the anchors that
-member declares — the unconditional guarantee — and every other name with the
-carrier it would have to arrive on and the role that decides when the layout
-seats it.
-
-**Read what it prints; do not carry a number off this page.**
-
-**Three ways to design against that.** Design against the entry member's anchors. Or *require* the anchor you
-want, at a site the solver must honour — an objective, an NPC stand, a wave
-spawn, a lane waypoint, or an anchor-bearing effect in that area — which forces
-its carrier to be seated, and everything else that carrier declares with it. Or
-bind a single `prefab` instead of a `prefab_pool`, in which case every anchor it
-declares is yours.
-
-**When you get it wrong, `validate` says so, not the build.** `DW0889`
-(advisory) names every anchor your documents carry that the area does not
-guarantee, with the piece it lives on and why the layout may not seat it. It is
-a warning because the filler draw may well seat the piece — but if it did not,
-`DW0360` fails the build at step 8. `DW0498` is a different line about the same
-area: it reports a pool that seated one anchor-bearing piece *twice*, which
-needs the settled draw and so still arrives at step 8.
-
-**One more piece fact worth knowing before you place anything.** An anchor name
-is unique per *area*, so binding the same prefab to two areas makes every anchor
-it declares ambiguous (`DW0857`); the fix available to you is a **different
-piece for one of the two areas**, not renaming an anchor in the shared library.
-A `DW0498` repeat is a hard `DW0305` the moment an objective, NPC stand, gate or
-wave spawn hangs on one of the names it made ambiguous.
-
-**When the library has no piece the design needs, decide which of two things you
-are looking at.** Neither answer is "make a prefab now".
-
-- **The missing piece is the building the story is about** — the keep, the mill,
-  the tower the delve is named after. Then `areas[]` was never the right
-  placement model: go back to *Which placement model* and take the site plan,
-  where the geometry is derived from your own plan and there is no prefab left to
-  be missing. This is the one decision that cannot be changed later without
-  redoing step 2, so change it here and not at step 5.
-- **The missing piece is a room `areas[]` still wants** — a second area's entry
-  point, a room whose chest a `collect` has to adopt, a shape the pools do not
-  hold. Then you owe a piece, and you build it **after the design gate at step 4
-  and before step 5**, entering *Reference: when the prefab library has no piece
-  you need* at that point. That is the section's second entrance; step 9.2 is
-  the other.
-
-**After the gate, for the gate's own reason.** Step 4 confirms the design on
-concept art drawn *before any prefab exists*; a piece built first and rendered
-for the gate is a build being approved as a design, which is the inversion step
-4 names. And before step 5, because step 5 binds anchors and the anchors are the
-piece's own — there is no `cast` block to write against a piece that has not
-declared its marks.
-
-**Until then, do not carry a name for a piece that does not exist.** An
-`areas[]` entry naming a piece the library does not have is `DW0856`, and the
-refusal is not the expensive part: an area whose piece is absent contributes no
-anchor set at all, so every per-area anchor proof over it is SKIPPED rather than
-failed, and steps 3 and 4 then read quieter than they are. Write the area entry
-when the piece is admitted; at the gate, say which pieces the design still owes
-and what each one is for.
-
-## 2B. The site plan
+## The order, and the worked example
 
 Three documents, in this order, each the input the next one needs. **The order
 is the only order that compiles** — there is no blockout document and nothing to
@@ -181,9 +28,13 @@ build — so it is where you go for a worked `geometry-brief.json`,
 `delvec schema --stage all`. Read the gym's copy, then write your own; the
 schema is still the authority on form.
 
+## The map's reference first
+
 **Before any of them: the whole map gets a reference of its own.** A composition
 written without one is free invention with no criterion. On path A of Init I7 it is already in `design/reference/` — read it. On path B, draw it now; the
 form and the commands are in *Reference: drawing the map's reference*.
+
+## The three documents
 
 1. **`geometry-brief.json`** — the whole's written design reduced to *numbers*:
    `facts[]` of `{id, value, unit?, note}`. A fact is a number with a name.
@@ -354,8 +205,10 @@ form and the commands are in *Reference: drawing the map's reference*.
      fewest chunks), because what its far end looks at is never sent to a
      client standing at its near end.
 
-**A site-plan campaign has one area, `area/site`.** Quests, NPCs and waves name
-it; `world.json`'s `areas[]` is empty, and declaring both authorities is
+## One area, and anchors nobody authored
+
+**The campaign has one area, `area/site`.** Quests, NPCs and waves name it;
+`world.json`'s `areas[]` is empty, and a plan beside a non-empty `areas[]` is
 `DW0839`.
 
 **The anchors are synthesized**, plus whatever a node's `stations[]` declares —
@@ -376,6 +229,8 @@ opened by an `open-gate` or `shortcut` naming its own `anchor/seam-<edge>`; a
 sealed door a player can push on owes an answer (`DW0429`) — a `use` trigger
 anchored on the gate.
 
+## The numbers are provisional
+
 **The numbers the whole thing is built to are provisional** until the metrics
 gym has been walked, and every build says so (`DW0813`). That is the gym's
 second job: `delvec metrics --gym <dir>` builds a site-plan campaign out of the
@@ -385,9 +240,11 @@ the gentlest standard pitch and the other the steepest), and a designed fall
 with a stair back out of it. It reports what the table defines that it could
 not instantiate (`DW0840`) — read that line, not just the green.
 
+## A place's own sky
+
 **A place's own sky** (spec-0080). A campaign declares its skies once, in
 `world.atmospheres[]`; a place carries one from the first tick
-(`areas[].atmosphere`, `boxes[].atmosphere`); a beat repaints with
+(`boxes[].atmosphere`); a beat repaints with
 `set-atmosphere`, naming a `place` (the tool hands its cells) or a `region` you
 size yourself, never both (`DW0929`). An atmosphere nothing carries and nothing
 paints is refused (`DW0930`), and so is an attribute the pinned game does not

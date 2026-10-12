@@ -3,7 +3,8 @@
 ## What it is
 
 A published set of `.nbt` prefabs with metadata beside each one, plus
-`pools.json` naming the pools an `areas[]` campaign draws from. It lives in the
+`pools.json` naming the pools the engine's `areas[]` assembly surface draws
+from — a surface this page does not use. It lives in the
 content repository, `stellarfeline/delvewright-campaigns`, under `prefabs/`, and
 it is **an optional input**: a campaign that takes none of it is an ordinary
 campaign, and every original-content path reaches a prefab without it —
@@ -15,15 +16,9 @@ read at the moment a campaign asks for it.
 
 ## When a campaign asks for it
 
-Two moments, and only two:
-
-- **step 2A**, when the campaign takes `areas[]` — the entries seat pieces from
-  a pool, so there has to be a pool;
-- **anywhere a document names a shipped piece by id** — a `prefab/<id>` binding,
-  a `detail-plan.json` row.
-
-A site-plan campaign that details nothing needs no library at all, and neither
-does a campaign whose pieces are its own.
+One moment: **anywhere a document names a shipped piece by id** — a
+`prefab/<id>` binding, a `detail-plan.json` row at step 9. A campaign whose
+pieces are its own needs no library at all.
 
 ## The revision it must stand at
 

@@ -89,8 +89,8 @@ this section is what they are *for* and the traps in each.
      plausibly full — it counts padding SLOTS after the objective's own stack,
      and `1 + fill_count` must fit the container's 27. The container must really
      be there in the piece (`DW0438`) and must not also be filled by a `loot`
-     entry or another `collect` (`DW0435`). On a site-plan campaign, a
-     container inside a place still standing in its stand-in is deferred to
+     entry or another `collect` (`DW0435`). A container inside a place still
+     standing in its stand-in is deferred to
      that place's detail at step 9 — counted on the build's `container binding`
      line, never refused before the step that places the furniture — and judged
      once the place is detailed. A `loot` anchor is deferred the same way.

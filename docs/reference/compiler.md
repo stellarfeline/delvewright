@@ -6138,7 +6138,7 @@ making the emitter actually emit its bytes — which is why it is not a hatch th
 tracked files, or if either pin has been deleted.
 
 Generated JSON is otherwise not exempt: it is made canonical **at the writer**.
-`tools/ci/gallery-baseline.py` writes `gallery/baseline/` with `ensure_ascii=False`
+`tools/ci/gallery-baseline.py` writes `gallery/baseline/warnings.json` with `ensure_ascii=False`
 for exactly that reason. Where a foreign program owns the file — npm's
 `package.json` and `package-lock.json`, the agent harness's `.claude/settings.json`
 — it is formatted anyway and re-formatted after that program rewrites it, the

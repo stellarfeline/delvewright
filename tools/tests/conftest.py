@@ -90,6 +90,7 @@ WHOLE_TREE = frozenset(
         "test_check_release_publish_gate.py",
         "test_check_shell_bash32.py",
         "test_check_shell_redirect_dirs.py",
+        "test_gallery_baseline_tracked.py",
         "test_mdtable.py",
         "test_server_heap.py",
         "test_version_sites.py",

@@ -679,11 +679,10 @@ for a run: the generate response was measured not to return one, so the code can
 only be read off the web UI, which is a human at a browser in the middle of an
 agent's series. Say out loud which of the two rows this run is on.
 
-On path B this is a **hard prerequisite of the whole run**, not of one step. For
-a site-plan campaign the map's own reference is the first thing written and
-everything below is written against it; for an `areas[]` campaign the same wall
-stands at step 4. Reaching either without a provider stops the line where
-stopping is most expensive.
+On path B this is a **hard prerequisite of the whole run**, not of one step. The
+map's own reference is the first thing written at step 2 and everything below
+is written against it, so reaching step 2 without a provider stops the line
+where stopping is most expensive.
 
 **The skin toolchain is not mentioned in Init at all.** A face is established
 when a design first calls for one, at step 5.

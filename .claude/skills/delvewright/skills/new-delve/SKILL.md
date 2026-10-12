@@ -18,7 +18,7 @@ Read the pointer's file when you reach that step, and not before.
 - [The shape of the run](#the-shape-of-the-run)
 - [Hard rules](#hard-rules)
 - [Init — build the toolchain before you author anything](#init--build-the-toolchain-before-you-author-anything)
-- [Which placement model](#which-placement-model)
+- [The map is a site plan](#the-map-is-a-site-plan)
 - [The steps](#the-steps)
 - [Where each reference lives](#where-each-reference-lives)
 
@@ -113,10 +113,8 @@ Init            every run: I0 · I1 · I1b, the pin check      ── §Init
                 subcommand is run; the rest of Init is run where
                 I1b names it. STOP at Init I5 — the jar is the user's
   ↓
-Decide          areas[] or a site plan — one campaign, one    ── §Which placement model
-  ↓
  1  workspace   the campaign directory and its documents
- 2  placement   world.json areas[]   OR   brief → graph → plan
+ 2  placement   the map's reference, then brief → graph → plan
  3  story       npcs · classes · quest-plan
  4  GATE        STOP — the design walkthrough, the user says yes
  5  content     quests · dialogue
@@ -124,22 +122,18 @@ Decide          areas[] or a site plan — one campaign, one    ── §Which p
  7  analyze     analyze the quest graph
  8  build       build the datapack and the world
  8b cameras     one showcase camera per approved image
- 9  detail      site-plan campaigns only
+ 9  detail      every place, one at a time
 10  ladder      PackTest · bot · branch runs, on the detailed build
 11  chronicle   only when the plan declares branch_points
 12  visual      the POV sequence, then the renders
 13  hand over   storybook, staging gate, play commands — the end
 ```
 
-Two branches change what you do, and both are decided before step 1:
-
-- **areas[] or a site plan.** A campaign has exactly one placement authority.
-  See *Which placement model* below — it is the one decision that cannot be
-  changed later without redoing step 2.
-- **Do you already have approved reference art?** A campaign being re-made from
-  an approved design carries its images in `campaigns/<id>/design/`. If that
-  directory exists, you need no image provider and Init I7 is a read rather than
-  a setup.
+One branch changes what you do, and it is decided before step 1: **do you
+already have approved reference art?** A campaign being re-made from an
+approved design carries its images in `campaigns/<id>/design/`. If that
+directory exists, you need no image provider and Init I7 is a read rather than
+a setup.
 
 ## Hard rules
 
@@ -237,33 +231,20 @@ half-built toolchain — `references/init.md`'s I8 says what each one means when
 it does not answer, and `render fidelity-gate` in particular says three
 different things.
 
-## Which placement model
+## The map is a site plan
 
-**A campaign has exactly one placement authority, and choosing is the first
-thing you do.** Declaring both is refused by name (`DW0839`), so this is not a
-decision you can defer or revisit cheaply.
-
-**`areas[]`** — pieces from the prefab library, seated on a fixed stride. Take
-it when the campaign is a small number of rooms the library already has, and
-read *The shipped library* before you commit to it: the library is an optional
-clone and this is the branch that needs it.
-
-**A site plan** — the whole map's design of record, from which the engine
-*derives* the geometry. Take it whenever the map is the point: when the brief
-describes a place with a shape, when the party has to walk somewhere and the
-walking is the content, when there is no prefab that is the building the story
-is about.
-
-The two branches differ only at step 2 and step 9. Everything else — quests,
-NPCs, dialogue, gates, shortcuts, the whole ladder — is identical and does not
-know the difference.
-
-**Take the site plan on a tie.** It costs four more documents and the map's own
-reference views; taking `areas[]` wrongly costs step 2 over again, and this page
-cannot get you back there from step 5.
-
-**The test, the worked example and the command that answers it** are in
-`references/placement.md`. Read it before you choose.
+**Every campaign's map is a site plan** (ADR-0032): the whole map's design of
+record — a brief of numbers, a graph of places and connections, and the plan
+that embeds the graph — from which the engine derives where everything stands,
+and one piece per place, each drawing its own walls, roof and ground inside the
+frame the plan hands it at step 9. A map that is one building is a plan of one
+box and no seam, whose one piece is the whole site; how many places a map has
+is the layout graph's node count, your design and nothing else. `areas[]`,
+`world.json`'s field that seats library pieces on the compiler's stride, is the
+engine's assembly surface for prefab pools and is not how this page makes a
+map: a campaign leaves it empty, and a plan beside a non-empty `areas[]` is
+refused (`DW0839`). The surface and its rules are
+`$DELVEWRIGHT_ENGINE/docs/reference/compiler.md`.
 
 # The steps
 
@@ -277,12 +258,9 @@ optional fields commit you to, and what a stub owes.
 
 ## 2. Placement — where everything is
 
-**Needs**: step 1, and the placement model chosen. **Produces**: `world.json`'s
-`areas[]`, or `geometry-brief.json` + `layout-graph.json` + `site-plan.json`.
-**Read**: `references/placement.md`. On `areas[]` also read
-`references/the-shipped-library.md` and take the library there — this is the
-step that needs it. On the site plan the map's own reference is drawn first:
-`references/map-reference.md`.
+**Needs**: step 1. **Produces**: `geometry-brief.json` + `layout-graph.json` +
+`site-plan.json`. **Read**: `references/placement.md`. The map's own reference
+is drawn first: `references/map-reference.md`.
 Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
@@ -331,7 +309,7 @@ dead quest is a design bug. **Read**: `references/build.md`.
 
 **Needs**: step 7 clean. **Produces**: the datapack tree at
 `"$DELVEWRIGHT_ENGINE/validation/delve-output"`, `critical-path.json` and
-`render-plan.json`; on a site-plan campaign the pacing line. Must exit 0. **Read**: `references/build.md`.
+`render-plan.json` and the pacing line. Must exit 0. **Read**: `references/build.md`.
 
 ## 8b. The showcase cameras
 
@@ -352,18 +330,18 @@ side, how high, how close, how wide — is
 hand, in the running game, is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`
 §4a.
 
-## 9. Detail — site-plan campaigns only
+## 9. Detail — every place
 
-Required on a site-plan campaign, for every place: the staging gate at step 13
-refuses a build with no detail plan, or with any place still standing in its
-stand-in. **Needs**:
+Required for every place: the staging gate at step 13 refuses a build with no
+detail plan, or with any place still standing in its stand-in. **Needs**:
 step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
 `references/detail.md`; a piece the library does not have is
-`references/new-pieces.md`.
+`references/new-pieces.md`; a row that binds a piece the shipped library holds
+takes the library through `references/the-shipped-library.md`.
 
 ## 10. The machine ladder
 
-**Needs**: step 9 done, or not a site-plan campaign. **Produces**: PackTest and bot runs at exit
+**Needs**: step 9 done. **Produces**: PackTest and bot runs at exit
 0, plus a branch run per branch whenever the build emitted
 `validation/branch-plan.json`, and the written-world record (the server's world
 against the engine's model, at exit 0) — on the build that ships. The bot's run
@@ -417,8 +395,8 @@ reference means the file listed here.
 | file | what it carries | named from |
 |---|---|---|
 | `references/init.md` | every Init command, and what each failure means | Init |
-| `references/the-shipped-library.md` | the optional prefab library: its revision, its postconditions, what a campaign records | I6, step 2 |
-| `references/placement.md` | the placement test, `areas[]`, and the three site-plan documents | *Which placement model*, step 2 |
+| `references/the-shipped-library.md` | the optional prefab library: its revision, its postconditions, what a campaign records | I6, step 9 |
+| `references/placement.md` | the three site-plan documents, in the order they compile | step 2 |
 | `references/workspace.md` | the campaign directory and every document in it | step 1 |
 | `references/map-reference.md` | drawing the map's own reference views | step 2 |
 | `references/story.md` | npcs, classes, the quest plan, and where step 3 ends | step 3 |
@@ -433,7 +411,7 @@ reference means the file listed here.
 | `references/chronicle.md` | reading a branch's chronicle against the design | step 11 |
 | `references/visual-review.md` | the POV sequence, Chunky, and what the set costs | step 12 |
 | `references/detail.md` | `detail-plan.json`, one place at a time | step 9 |
-| `references/new-pieces.md` | making a piece the library does not have | steps 2, 9 |
+| `references/new-pieces.md` | making a piece the library does not have | step 9 |
 | `references/hand-over.md` | the storybook, its marker, the play server, the staging gate, and the report | step 13 |
 | `references/playtest-rounds.md` | every round after the first | step 13 |
 | `references/when-red.md` | the symptoms most likely to stop you | any red |

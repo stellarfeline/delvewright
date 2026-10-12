@@ -23,28 +23,11 @@ and `DW0197` are the same absence seen from the branch, the fork and the cast.
 Writing empty stage-5 quests to get past them makes it worse, and `DW0150` says
 so.
 
-**`DW0311`: "the player cannot walk from [x] to [y] … no collision-free path",
-and the two points are hundreds of blocks apart.** They are in different areas,
-and the crossing between them was never emitted. The message's own suggestions —
-a wedged doorway seam, a void gap, a fence ring, a `close-gate` to reopen — are
-about the same-area case and will not apply. Read step 2A: **the destination
-area's piece must declare an entry point**, and few shipped prefabs do — step
-2A's probe lists them.
-Bind that area to one of them, or make a piece that has one.
-
 **`DW0991`: "the only route … climbs a climbable the world does not keep".** A
 ladder or vine on the route has nothing to hang on — usually a ladder facing
 INTO its wall. The message names each rung and the face it lacks. Turn the
 ladder to face away from the wall (`facing` is the way a body climbing it has
 its back), or give it a sturdy block behind; never move the objective.
-
-**The build is green, PackTest is green, and the bot fails its FIRST step with
-"No path to the goal!"** The party's first objective is in an area they did not spawn in,
-and no crossing carries them there — the delve is not completable and nothing
-before the bot said so. Read step 2A rule 1: put a beat in the spawn area first,
-or move the spawn. Confirm by reading `critical-path.json` at the build output's
-root: the first `reach`/`talk-to` step should be at coordinates inside the spawn
-area, and a step that crosses areas carries a `transport` key.
 
 **`DW0438`: a `collect` container "holds `minecraft:air`, not a container".**
 The anchor you pointed at is not standing on a chest or barrel — an anchor named
@@ -53,11 +36,6 @@ exactly that over air. Read *Reference: what a quest can do* → *Items,
 containers and loot*: use `dropped_by`, or drop the `container` field and let the
 compiler place one, or make a piece that carries the container. Do not point the
 field at a different anchor and hope.
-
-**`DW0857`: an anchor "is provided by 2 of this campaign's areas".** You bound
-one prefab to two areas. The remedy available to you is **a different piece for
-one of them** — not renaming an anchor, which belongs to the shared library and
-would change it for every campaign.
 
 **A bot step times out with "objective … did not complete".** Read the rest of
 that line before touching the campaign. The bot reports the server's own answer

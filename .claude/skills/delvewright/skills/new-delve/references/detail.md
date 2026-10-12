@@ -2,7 +2,7 @@
 
 
 Required before hand-over, for **every** place: the staging gate refuses a
-site-plan build with no detail plan, and one whose derivation still stands a
+build with no detail plan, and one whose derivation still stands a
 stand-in in any place — a stand-in never ships. Places are detailed one at a
 time. Until a place is detailed the derivation masses it with a stand-in —
 walkable, legible, made of concrete; detailing replaces that place's stand-in
