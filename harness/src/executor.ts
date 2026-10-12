@@ -72,6 +72,8 @@ import type { WatchLedger } from "./watch.ts";
 import { methods as crosshairMethods } from "./executor/crosshair.ts";
 import { methods as collectMethods } from "./executor/collect.ts";
 import { methods as settleMethods } from "./executor/settle.ts";
+import { methods as placementMethods } from "./executor/placement.ts";
+import { placementTimeoutFromEnv, type PlacementRecord } from "./placement.ts";
 
 export {
   type BotConfig,
@@ -329,6 +331,13 @@ export class MineflayerExecutor implements StepExecutor {
    * (`DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS`) so a test can shorten the give-up
    * path without waiting out the production default. */
   readonly entitySettleTimeoutMs: number;
+  /** Budget (ms) from the spawn to a placed world (`placement.ts`).
+   * Overridable (`DELVEWRIGHT_PLACEMENT_TIMEOUT_MS`); running out fails the run. */
+  readonly placementTimeoutMs: number;
+  /** Placement readings sent on this connection; numbers each reading's lines. */
+  placementReads = 0;
+  /** What the placement wait measured, once the world read placed. */
+  placement: PlacementRecord | undefined;
   /** spec-0086 §6: how long one loop crossing may take. Overridable
    * (`DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS`) so a test can reach the give-up path
    * without waiting out the production default. */
@@ -551,6 +560,7 @@ export class MineflayerExecutor implements StepExecutor {
     const settleParsed = settleRaw === undefined ? NaN : Number.parseInt(settleRaw, 10);
     this.entitySettleTimeoutMs =
       Number.isInteger(settleParsed) && settleParsed >= 0 ? settleParsed : ENTITY_SETTLE_TIMEOUT_MS;
+    this.placementTimeoutMs = placementTimeoutFromEnv(env);
     const crossRaw = env["DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS"];
     const crossParsed = crossRaw === undefined ? NaN : Number.parseInt(crossRaw, 10);
     this.loopCrossTimeoutMs =
@@ -595,6 +605,7 @@ type Methods = typeof connectionMethods &
   typeof watchMethods &
   typeof crosshairMethods &
   typeof collectMethods &
-  typeof settleMethods;
+  typeof settleMethods &
+  typeof placementMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods]) Object.assign(MineflayerExecutor.prototype, methods);

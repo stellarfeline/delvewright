@@ -4,7 +4,7 @@ import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
 import type { StageName } from "../report.ts";
 import { respawnReseats } from "../combat.ts";
-import { createHarnessBot } from "../client-loaded.ts";
+import { createHarnessBot, type HarnessBot } from "../client-loaded.ts";
 import type { PackPush } from "../resource-pack.ts";
 import { traceLoadWindows, type LoadWindowRecord, type TracedBot } from "../load-window.ts";
 import { serverAge } from "./death.ts";
@@ -109,9 +109,19 @@ export function disconnectReason(reason: unknown): string {
 
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
-  /** Connect and resolve once the bot has spawned into the world. */
-  async connect(this: MineflayerExecutor): Promise<void> {
-    const { bot, loaded, pack } = createHarnessBot({
+  /**
+   * Connect, and resolve once the bot has spawned into a world the delve has
+   * finished placing ({@link awaitPlacement}). This is the one way a live run gets
+   * a bot, so nothing that walks can start before it resolves.
+   *
+   * `make` is the harness's `createHarnessBot`; a test hands a fake server's bot
+   * in its place.
+   */
+  async connect(
+    this: MineflayerExecutor,
+    make: (options: Parameters<typeof createHarnessBot>[0]) => HarnessBot = createHarnessBot,
+  ): Promise<void> {
+    const { bot, loaded, pack } = make({
       host: this.config.host,
       port: this.config.port,
       username: this.config.username,
@@ -191,6 +201,11 @@ export const methods = {
       bot.once("end", onEnd);
       bot.once("kicked", onKicked);
     });
+    const spawnedAt = Date.now();
+    // The world is built AFTER the server reports ready, over as many ticks as
+    // the map needs; the login does not wait for it. Nothing reads the world, or
+    // walks it, before the server says it is placed — see placement.ts.
+    await this.awaitPlacement(spawnedAt);
     // Entity-tracker settle race (2026-08-06 island triage): `bot.entities` is empty
     // for a few seconds after spawn while world-persisted entities' packets are still
     // arriving. Waiting here, once, before the run does anything with `bot.entities`
