@@ -6,7 +6,7 @@
 
 这些图是建成的世界经路径追踪渲染而成；在游戏里，它就是原版 Minecraft 的样子，除非你自己另装了光影或资源包。
 
-**[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼与王座厅。**[所有用 Delvewright 做出来的战役](docs/media/README.zh-CN.md)** —— 维斯珀堡、树屋营地和杜恩城堡，每座一张图、几句介绍。
+**[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼与王座厅。**[更多战役](docs/media/README.zh-CN.md)**：树屋营地、杜恩城堡。
 
 **Delvewright 是一个 AI Minecraft 冒险地图生成器：它把一个创意提示变成一座供一到四位朋友游玩的、由故事驱动的 RPG 地牢——一个带任务与 NPC 的原版数据包——并在交付之前由机器证明它能被通关。**
 

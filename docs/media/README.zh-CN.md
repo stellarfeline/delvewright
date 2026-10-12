@@ -2,7 +2,7 @@
 
 # 用 Delvewright 做出来的战役
 
-这一页上的每一座 delve 都是经 Delvewright 写成的，交到玩家手里之前，都先由机器人从头玩到了结局。图都是建成后的地图渲染出来的；点进标题，能看到它的每一处地方各一张，顺序就是一队人走到那里的先后。[回到首页](../../README.zh-CN.md)。
+这里的每一座 delve 都由 Delvewright 做成，在任何玩家进去之前，机器人已经把它从头玩到了结局。点开标题，跟着一路走一遍。[回到首页](../../README.zh-CN.md)。
 
 ## [维斯珀堡（Vesperhold）](vesperhold/README.md)
 

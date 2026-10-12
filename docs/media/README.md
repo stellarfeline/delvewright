@@ -2,7 +2,7 @@ English · [简体中文](README.zh-CN.md)
 
 # Campaigns built with Delvewright
 
-Every delve on this page was written through Delvewright and played to its end by a bot before it was handed over. Each picture is a render of the built map; follow a title for one picture of each place, in the order a party reaches them. [Back to the front page](../../README.md).
+Every delve here was built with Delvewright, and a bot played each one to the end before any player did. Click a title to walk through it, place by place. [Back to the front page](../../README.md).
 
 ## [Vesperhold](vesperhold/README.md)
 

@@ -6,7 +6,7 @@ English · [简体中文](README.zh-CN.md)
 
 The pictures are path-traced renders of the built world; in the game it looks like vanilla Minecraft unless you add a shader or a resource pack of your own.
 
-**[Inside Vesperhold](docs/media/vesperhold/README.md)** — the approach, the ward, the garden, the cloister, the chapel, the pool under it, the bell tower and the throne hall. **[Every campaign built with Delvewright](docs/media/README.md)** — Vesperhold, The Treehouse Camp and Doune Castle, a picture and a few lines each.
+**[Inside Vesperhold](docs/media/vesperhold/README.md)** — the approach, the ward, the garden, the cloister, the chapel, the pool under it, the bell tower and the throne hall. **[More campaigns](docs/media/README.md)**: The Treehouse Camp and Doune Castle.
 
 **Delvewright is an AI Minecraft adventure map generator: it turns a creative prompt into a story-driven RPG dungeon for one to four friends — a vanilla datapack with quests and NPCs — and proves by machine that it can be finished before it is handed over.**
 
