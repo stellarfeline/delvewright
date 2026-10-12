@@ -422,14 +422,15 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      # Two workspaces: the engine, and `prefabs/gallery-generator`, which the
-      # gallery subject's `gallery-prefabs.py` compiles.
+      # Two workspaces: the engine, and `prefabs` (one workspace, target
+      # `prefabs/target`), whose `gallery-generator` member the gallery
+      # subject's `gallery-prefabs.py` compiles.
       - uses: Swatinem/rust-cache@v2
         with:
           key: determinism-macos
           workspaces: |
             . -> target
-            prefabs/gallery-generator -> target
+            prefabs -> target
       - name: build the engine under test
         run: cargo build --locked -p delvec --bin delvec
       - name: the macOS side's digest
