@@ -1,0 +1,15 @@
+{
+  "code": "DW0996",
+  "patch": [
+    {
+      "doc": "npcs.json",
+      "op": "replace",
+      "path": "/content/npcs/1/watch/who",
+      "value": {
+        "class": "class/pilgrim"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The Warden set to watch the nearest pilgrim, a class stage 3 does not declare. Nobody can take it, so no player ever wears its tag and the body could never turn; the refusal names the body and the class, and lists the classes the campaign does declare. It declares no unit: the class form of `who` is bound by `actor/standard-bearer`, which watches the warder's class."
+}

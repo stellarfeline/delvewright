@@ -34,11 +34,12 @@ fn region_state_at_derives_the_lethal_set_through_liveness_of() {
         vec![
             "compiler/lethal.rs::never_held_term",
             "compiler/nav/route/region.rs::loop_liveness",
-            "compiler/nav/route/region.rs::staged_liveness"
+            "compiler/nav/route/region.rs::staged_liveness",
+            "compiler/pulse.rs::measure"
         ],
         "liveness_of is read by staged_liveness (the lethal set), by loop_liveness \
-         (the held loop slabs, spec-0086) and by DW0954's per-term wording, and by \
-         nothing else"
+         (the held loop slabs, spec-0086), by DW0954's per-term wording and by a \
+         pulse's listening stations (spec-0102), and by nothing else"
     );
     let nav = std::fs::read_to_string(root.join("compiler/nav/route/region.rs")).unwrap();
     let body = &nav[nav.find("fn region_state_inner(").unwrap()..];

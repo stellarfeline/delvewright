@@ -89,7 +89,11 @@ this section is what they are *for* and the traps in each.
      plausibly full — it counts padding SLOTS after the objective's own stack,
      and `1 + fill_count` must fit the container's 27. The container must really
      be there in the piece (`DW0438`) and must not also be filled by a `loot`
-     entry or another `collect` (`DW0435`).
+     entry or another `collect` (`DW0435`). A container inside a place still
+     standing in its stand-in is deferred to
+     that place's detail at step 9 — counted on the build's `container binding`
+     line, never refused before the step that places the furniture — and judged
+     once the place is detailed. A `loot` anchor is deferred the same way.
 
      **Few shipped pieces stand an anchor on a container**, and an anchor's
      name is no evidence of one: **two pieces declare an anchor literally named
@@ -224,8 +228,13 @@ this section is what they are *for* and the traps in each.
   the threshold, and for these when the box is yours: a bridge that
   materialises, a floor that sinks, a wall that opens, a platform summoned under
   the party. The completability proof honours them from the point in the quest
-  graph where the effect fires: a fill the only route must cross afterwards
-  fails the build (`DW0311`), and a clear is credited as passable, so a route may
+  graph where the effect fires, and the fill's **block** decides what it is: a
+  block a body collides with (a full cube, a slab, a fence, a wall) is solid,
+  and a fill of one the only route must cross afterwards fails the build
+  (`DW0311`); water, lava, kelp or seagrass, or a waterlogged block a body
+  passes through, is impassable and never floor; a dry block a body passes
+  through (a carpet, a vine, a sculk vein, a torch) is walked through like a
+  clear. A clear is credited as passable, so a route may
   legitimately depend on one. **Two things it will not model, so do not build on
   them**: a clear that opens a box into water (the water flows back in and the
   proof does not know), and a clear over rubble another mechanism dropped there
@@ -296,6 +305,44 @@ this section is what they are *for* and the traps in each.
   with the blend margin; a `region` is painted exactly as sized. It never moves
   the sun or the moon — that is `set-time`. How a place carries its first sky,
   and how far the client blends it, is in *Step 2 — placement*.
+- **A sound can beat over a place for as long as the story holds it.**
+  `pulses[] {id, sound, at {anchor, offset?}, region | place, every, floor,
+  pitch?, when?}` on stage 5 sounds a vanilla sound event from a mark every
+  `every` ticks to every player standing in the place, loudest at the mark — a
+  heartbeat under the floor, a drip in the cistern, a bell tolling while the
+  siege lasts. A one-off sound is `play-sound`; a pulse is the recurring one.
+  You write how loud the beat is at the farthest cell a body can stand in the
+  place (`floor`, a fraction of the loudness at the source, `0 ≤ floor < 1`);
+  the engine measures that distance and derives the range and the volume, so
+  there is no volume to type. `when` is the gate every gated object carries:
+  absent, the pulse beats from world load to the end; present, it beats while
+  the gate holds, and only a flag or a `party`-scoped datum may gate it. A beat
+  that quickens is a second pulse on the same source with a disjoint `when`.
+  A value out of its range, `when: {}` or a `player`-scoped term is `DW0993`; a
+  box holding no standable cell is `DW0994`; a pulse the forced route never
+  hears is the advisory `DW0995` — a design, but one the ladder cannot exercise.
+  Rules: `$DELVEWRIGHT_ENGINE/docs/reference/compiler.md`, the `pulses[]` row.
+- **Sculk listens and answers, and changes nothing.** `sculk_sensor`,
+  `calibrated_sculk_sensor`, `sculk_shrieker` and `sculk_catalyst` may stand in
+  a piece, a world edit, a site-plan `fill` or a `set-block`/`fill-region`, and
+  as the party walks past a sensor clicks and the shriekers near it shriek — a
+  place that hears you. A sensor is never a story trigger: the game gives a
+  datapack no event for its firing, so a beat that answers a footstep is a
+  `trigger`. Every one enters the world at rest: a shrieker with
+  `can_summon=true` is `DW0998`, and a state typed mid-click
+  (`sculk_sensor_phase=active`, `shrieking=true`, `bloom=true`, a piece saved
+  with a pending vibration) is `DW0999`, refused where you typed it or at
+  `prefab audit`; the bare id is at rest. At the build, a sensor whose redstone
+  neighbourhood holds a block that reads a signal (a door, a trapdoor, a lamp, a
+  bell, …), or a calibrated sensor whose input cell holds a source or a
+  conductor, is `DW1000` — move the sensor or the block; a catalyst within 8
+  blocks of any cell a player or a wave mob can reach is `DW1001` — set it
+  where nobody can die near it, behind glass or in a sealed alcove. A step on
+  wool or a wool carpet makes no vibration, wool between the step and the
+  sensor stops one, and a `sneak` leg sets nothing off: the build predicts each leg's vibrations from the world as
+  placed and step 10's ladder asserts every one. Rules:
+  `$DELVEWRIGHT_ENGINE/docs/reference/delvec/compiler/sculk.md`, and the rest
+  rule in `$DELVEWRIGHT_ENGINE/docs/reference/dsl/blocks.md`.
 - **A firework is one effect at a mark.** `firework {at {anchor, offset?},
   flight?, explosions}` fires one rocket where the campaign says — over the gate
   when the guard is drawn up, over the court when the bell is rung — beside the
@@ -638,6 +685,18 @@ this section is what they are *for* and the traps in each.
   hold a body to it; and no declaration touches the error tier — a declared
   climber still cannot walk through a closed fence gate (`DW0452`). Declare it on
   the body, never on the beat.
+- **A still body can turn to follow the party with its eyes: `watch`.**
+  `"watch": {"who": "nearest", "within": 8}` on an NPC (stage 2) or an actor
+  (stage 5) turns it, every tick, to face the nearest player within `within`
+  blocks of its feet — its eyes to theirs, body and head together; `"who":
+  {"class": "class/<id>"}` watches only the nearest player who took that class.
+  With nobody in reach it keeps its last look; while a `move-npc` or
+  `move-actor` walks it, the walk owns its facing and the watch resumes on
+  arrival. On an actor it turns the puppet, never the unleashed body. Both
+  fields are required. A class stage 3 does not declare is `DW0996`; a body no
+  walked cell comes within `within` of is `DW0997` — raise `within`, or move the
+  body to where the party walks. The build prints `watch binding: …`, and step
+  10's ladder checks each watcher faces the bot where the route passes in reach.
 - **What a body can wear depends on what it is.** Dress it from this table;
   anything else is refused.
 

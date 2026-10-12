@@ -11,8 +11,8 @@ use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::Campaign;
 use crate::metrics::Metrics;
 use crate::registry::{
-    AnchorRegistry, BlockRegistry, EntityRegistry, ItemBackedBlockRegistry, ItemRegistry,
-    VendoredAnchorRegistry, VendoredEffectRegistry, VendoredEntityRegistry, VendoredItemRegistry,
+    AnchorRegistry, BlockRegistry, EntityRegistry, ItemRegistry, VendoredAnchorRegistry,
+    VendoredBlockRegistry, VendoredEffectRegistry, VendoredEntityRegistry, VendoredItemRegistry,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -90,6 +90,9 @@ pub fn validate_campaign_with(
     // spec-0034: the per-body traversal declaration. The walk is empty for a
     // campaign that declares none.
     crate::body::body_traversal_checks(c, &mut d);
+    // spec-0101: a watch names a class stage 3 declares. Empty for a campaign
+    // whose bodies declare no class watch.
+    crate::body::body_watch_checks(c, &mut d);
     // spec-0097: which overlay layers a skinned body hides. Empty for a campaign
     // that hides none.
     crate::npc::skin_layer_checks(c, &mut d);
@@ -118,10 +121,9 @@ pub fn validate_campaign_with(
     crate::quest::check::quest_reference_checks(c, items, anchors, &mut d);
     crate::trigger::trigger_effect_flag_checks(c, &mut d);
     // Skins, wave-mob effects, props, set-block, triggers, dialogue flags and the
-    // NPC lifecycle. The status-effect registry is a fixed vanilla list; the block registry derives
-    // from the item registry (see [`ItemBackedBlockRegistry`]), so no new
-    // caller-supplied registry is needed.
-    let blocks = ItemBackedBlockRegistry::new(items);
+    // NPC lifecycle. The status-effect and block registries are fixed vanilla lists
+    // (see [`VendoredBlockRegistry`]), so no caller-supplied registry is needed.
+    let blocks = VendoredBlockRegistry;
     let effects_reg = VendoredEffectRegistry::v1_21_11();
     crate::npc::npc_skin_checks(c, &mut d);
     crate::wave::mob_effect_checks(c, &effects_reg, &mut d);
@@ -174,7 +176,7 @@ pub fn validate_campaign_with(
     // checks only — frame/region *resolution* happens at build time against the
     // solved layout (the compiler's `DW0323`).
     if c.world_edits.is_some() {
-        let blocks = ItemBackedBlockRegistry::new(items);
+        let blocks = VendoredBlockRegistry;
         crate::world_edits::world_edits_checks(c, &blocks, &mut d);
     }
     // spec-0049: the map-pipeline documents. Bound to the EVENT it guards
@@ -224,6 +226,7 @@ pub fn validate_campaign_with(
     // is compiler-tier, because it needs the solved layout.
     crate::lethal::lethal_volume_checks(c, anchors, &mut d);
     crate::r#loop::loop_checks(c, anchors, &mut d);
+    crate::pulse::pulse_checks(c, anchors, &mut d);
     // spec-0032: a shop stands on a prefab anchor, and an anchor
     // no bound prefab provides is the same defect a lethal volume's is.
     crate::economy::shop_anchor_checks(c, anchors, &mut d);
@@ -636,6 +639,23 @@ pub(crate) fn split_blockstate(block: &str) -> Result<&str, String> {
     Ok(&block[..open])
 }
 
+/// **The one rest rule at the entry points** (spec-0100 §4.1): a block state an
+/// author places — a `set-block`/`fill-region` block, an `interact`/trigger
+/// prop, a world-edit recipe or scatter item — is judged by
+/// [`crate::blocks::sculk_rest`] where it is typed, so the refusal names the
+/// document path (`DW0998`, `DW0999`). The build judges the assembled world
+/// again with the same function, for the pieces no document typed.
+pub(crate) fn check_sculk_rest(block: &str, stage: &str, path: String, d: &mut Vec<Diagnostic>) {
+    if let Err(fault) = crate::blocks::sculk_rest(block, None) {
+        d.push(Diagnostic::error(
+            fault.code(),
+            stage,
+            path.clone(),
+            format!("{fault} (entered at `{path}`)"),
+        ));
+    }
+}
+
 /// Validate a block field (interact prop / set-block) allowing an optional
 /// verbatim blockstate suffix (DSL v0.6). The base id must be in the block
 /// registry (`DW0193`); a malformed `[...]` suffix reuses `DW0193` with a clear
@@ -654,13 +674,14 @@ pub(crate) fn check_block_field(
                 d.push(Diagnostic::error(
                     codes::BLOCK_UNKNOWN,
                     "quests",
-                    path,
+                    path.clone(),
                     format!(
                         "`{kind}` block `{block}` is not a known 1.21.11 block id — use a valid \
                          namespaced block id (e.g. `{example}`)"
                     ),
                 ));
             }
+            check_sculk_rest(block, "quests", path, d);
         }
         Err(reason) => {
             d.push(Diagnostic::error(

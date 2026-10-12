@@ -9,6 +9,11 @@
 //! module's whole job is to build its two arguments out of a `.nbt` and a
 //! `.json`.
 //!
+//! Three arguments, in fact: the checker is also told whether the piece's place
+//! is scenery, and that bit is derived the way its writer derived it — from the
+//! layout graph of each campaign that places the piece ([`crate::admit::scenery`]),
+//! never from the piece's own document.
+//!
 //! That is not tidiness. Two checkers over one contract agree right up until
 //! they do not, and the disagreement surfaces as a piece that passed admission
 //! and fails at expansion — or worse, the other way round.
@@ -16,8 +21,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::admit::scenery;
 use crate::grammar::block::BlockState;
-use crate::grammar::contract::{ContractReport, check};
+use crate::grammar::contract::{ContractReport, check_sealed};
 use crate::grammar::geom::Box3;
 use crate::grammar::model::VoxelModel;
 use crate::schem::prefab::PrefabMeta;
@@ -64,17 +70,6 @@ fn anchor_points(meta: &PrefabMeta) -> BTreeMap<String, [i32; 3]> {
             Some((name.clone(), pos))
         })
         .collect()
-}
-
-/// Judge a piece's declared contract against its own bytes, or `None` when it
-/// declares none.
-///
-/// The bare judgement, for a caller that already holds both arguments and knows
-/// which of the two answers it got. Everything that runs the door on files calls
-/// [`door`], which is the one that cannot answer "nothing" silently.
-pub fn audit(s: &Structure, meta: &PrefabMeta) -> Option<ContractReport> {
-    let contract = meta.spatial_contract.as_ref()?;
-    Some(check(&grid(s), contract, &anchor_points(meta)))
 }
 
 // ---------------------------------------------------------------------------
@@ -146,11 +141,17 @@ pub struct DoorBinding {
     pub failed_gates: usize,
     /// Anchors carrying a `resolves_to` — the drop-detector's binding count.
     pub resolved_anchors: usize,
+    /// `detail-plan` rows, across the campaigns beside the library, placing
+    /// this piece — the place-kind derivation's binding count.
+    pub owners: usize,
+    /// Whether the contract was judged sealed: every one of `owners` places
+    /// the piece at a scenery node (spec-0098 §14).
+    pub sealed: bool,
 }
 
 /// The word a report prints for a door that was never opened.
 ///
-/// The library-level [`audit`] and [`crate::admit::audit::audit`] do not open it; only
+/// The library-level [`crate::admit::audit::audit`] does not open it; only
 /// `delvec prefab audit` does. A report that says so is not the same artifact as a
 /// report that says the door opened and found nothing wrong, which is the whole
 /// obligation here.
@@ -172,6 +173,8 @@ impl Default for DoorBinding {
             objects: 0,
             failed_gates: 0,
             resolved_anchors: 0,
+            owners: 0,
+            sealed: false,
         }
     }
 }
@@ -264,7 +267,12 @@ impl Door {
         };
 
         let anchors = anchor_points(&meta);
-        let report = check(model, contract, &anchors);
+        // The place kind, derived from the campaigns that place this piece and
+        // never read from the piece itself; judged by the one checker the
+        // writer judged it by, with the kind `delvec detail` sealed it on.
+        let kind = scenery::place_kind(meta_path, &meta);
+        let mut report = check_sealed(model, contract, &anchors, kind.sealed);
+        report.enumeration.insert(0, kind.line());
         let binding = DoorBinding {
             spaces: contract.spaces.len(),
             no_body: contract.no_body.len(),
@@ -274,6 +282,8 @@ impl Door {
             objects: report.gates.iter().map(|g| g.bound).sum(),
             failed_gates: report.gates.iter().filter(|g| !g.passed()).count(),
             resolved_anchors,
+            owners: kind.owners.len(),
+            sealed: kind.sealed,
             ..DoorBinding::blocks("judged", files, model)
         };
         Door::Judged { report, binding }

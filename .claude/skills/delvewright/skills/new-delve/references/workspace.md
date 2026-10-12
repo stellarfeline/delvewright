@@ -48,9 +48,9 @@ with its own schema:
 
 | document | when |
 |---|---|
-| `geometry-brief.json` · `layout-graph.json` · `site-plan.json` | a site-plan campaign — step 2B; a site-plan campaign has no `areas[]` |
+| `geometry-brief.json` · `layout-graph.json` · `site-plan.json` | step 2, every campaign — the map's design of record; `world.json`'s `areas` stays empty |
 | `design.json` | step 4, the moment the user approves the reference images — one row per approved picture, and the only home the approved sky has |
-| `detail-plan.json` | step 9, required before a site-plan campaign is staged |
+| `detail-plan.json` | step 9, required before the campaign is staged |
 | `world-edits.json` | whenever the map editor was used to fix terrain — see *Reference: tools by symptom* |
 
 ## The envelope, and the number in it
@@ -90,7 +90,7 @@ delvec schema --stage all            # every document at once
 The schema is the authority on a document's form. Where anything else disagrees
 with it, the schema is what parses. If you want a filled-in example rather than
 a schema, `delvec metrics --gym .out/gym` writes nine complete documents that
-build (see *Which placement model*).
+build (step 2's reference says what each is).
 
 ## `DESIGN.md` and `GENERATION.md`
 
@@ -166,9 +166,8 @@ Two things to expect while stubbing:
 **`world.json` is written here, before placement**, because seven of its eight
 required fields are not about placement at all: `title`, `theme`, `premise`,
 `seed`, `target_minutes`, `time` and `weather`. Run `delvec schema --stage world`
-and write them now. The eighth is `areas`, and which of the two ways it is filled
-is step 2's whole question: `areas[]` on path 2A, and **empty** on a site-plan
-campaign, where the plan is the placement authority and declaring both is
+and write them now. The eighth is `areas`, and it is **empty**: the site plan
+is the placement authority, and a plan beside a non-empty `areas[]` is
 `DW0839`.
 
 ## The hour the delve is played at
@@ -206,7 +205,7 @@ from step 5 onward `DW0890` refuses a campaign whose reachable skies and whose
 approved rows are not the same two sets. Two measurements also key off the
 declared hour: the dark-cell proof measures under the **darkest reachable**
 `(time, weather)` sky, so a space lit only by the sky is judged at the night floor
-once a night hour is declared (`DW0210`, and the lighting contract at 2A); and
+once a night hour is declared (`DW0210`); and
 `DW0496`, the daylight-burning refusal, fires for any fight that can stand in a
 burning hour (`day`, `noon` or `dusk`) under a clear sky — `rain` and `thunder`
 fall on the play area and shelter a body standing in them — so declaring `night` is a design decision that also changes what that gate sees,
@@ -295,59 +294,16 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   ground around the map is part of the design. `void` keeps the area datum where
   every piece was authored for it and puts nothing outside them.
 - **`valley` rings the map in generated mountain, and it needs to know how big
-  the map is.** A surround rings a DECLARED extent, and a campaign states one in
-  exactly two ways: a site plan's `region`, or **one area bound to one
-  `prefab`** — the map is then that piece and the piece's own declared size is
-  the extent. Anything else is `DW0855`: two areas sit 256 blocks apart on the
-  compiler's stride and a pool's footprint is whatever the solver drew, so
-  neither is a statement of extent. The one-piece form is what a **site** is — a
-  zone that carries its own ground, its bank running out to the box's own edge,
-  and mass underneath — and it is the shape `delvec grammar expand` produces
-  when a program is the whole map. Two things follow for such a campaign:
-  - **The datum is derived, like the ocean's.** An area's origin is
-    `64 − walk_y`, so the piece's own walk plane lands on the valley's gap floor
-    and a body walks off the piece onto the ground without a step or a drop.
-    Every piece therefore owes `walk_y` here, as it does on `ocean` (`DW0886`).
-  - **What stands above that ground is the piece's to answer for.** The courses
-    under its bank are buried by the valley; anything proud of the floor on the
-    box's own boundary is `DW0885` unless the piece declares that side in
-    `shown_faces`. For a generated zone that declaration belongs to the grammar
-    program (`shown_faces`, program version `1.9.0`) — `expand` rewrites the
-    metadata every run, so a value typed into the `.json` by hand is gone at the
-    next expansion. Do not pad the list: a declared side with no solid cell on it
-    is refused too.
-  `valley` also obliges a `boundary`, for the reason below — its gap floor is
-  ground a body can walk on.
-- **`ocean` is different again and it is paired with a piece set**: it swaps in a
-  superflat sea at y=62 and DROPS the area datum to y=60 so a piece meets the
-  water at its own declared `waterline_y`. Only pieces carrying that field are
-  authored for it, and the invariant that proves the meeting (`DW0344`) examines
-  only those — a piece without it is not checked and is not lifted. So the
-  question is not "does the library have sea pieces", it is **how much of the
-  pool I am about to place is authored for the sea**. Ask it, per pool, before
-  you take `ocean`:
-
-  ```sh
-  "$DELVEWRIGHT_PYTHON" - <<'EOF'
-  import json, os
-  LIB = os.environ["DELVEWRIGHT_PREFABS"]
-  pools = json.load(open(f"{LIB}/pools.json"))["pools"]
-  for pid, p in sorted(pools.items()):
-      names = [m["prefab"].split("/", 1)[1] for m in p["members"]]
-      have = [n for n in names
-              if json.load(open(f"{LIB}/{n}.json")).get("waterline_y") is not None]
-      print(f"{pid}: {len(have)} of {len(names)} member(s) declare waterline_y  {sorted(have)}")
-  EOF
-  ```
-
-  **Read what it prints, and do not carry a number off this page** — the
-  library is a separate artifact on its own cadence, and a count written here
-  describes whichever version of it somebody last looked at. Zero for your pool
-  means `ocean` gives you a dropped datum, an invariant examining zero pieces
-  and no lever to lift anything clear: that campaign takes `void` and puts the
-  sea in the fiction. Short of every member means the unlisted ones stand in the
-  water with nothing checking them, which is exactly the silence `DW0344`
-  reports about itself.
+  the map is.** A surround rings a DECLARED extent, and the campaign's is the
+  site plan's `region` — required, and never grown by a box (`DW0826`). What
+  the surround is made of and where its gap floor meets the region is
+  `$DELVEWRIGHT_ENGINE/docs/reference/compiler.md`, *horizon*. `valley` also
+  obliges a `boundary`, for the reason below — its gap floor is ground a body
+  can walk on.
+- **`ocean` swaps in a superflat sea at y=62**, and that is where the delve's
+  sea level is declared: the site plan writes no water plane of its own, so a
+  shore's floor is a datum chosen against that number. The sea's rules are
+  `compiler.md`, *horizon*.
 - **`boundary`, which `ocean` and `valley` both oblige.** Absent = no boundary. It declares the
   playable region: the compiler derives one from the placed geometry plus a
   `margin` of blocks on every side (default 16, range `0..=64`), and a per-second

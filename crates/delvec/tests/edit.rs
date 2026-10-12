@@ -1411,11 +1411,14 @@ fn edit_inside_a_close_gate_region_warns_dw0353() {
     );
 }
 
-/// **Finding 5b (`DW0354`, advisory).** `scatter` dropping flowers onto bare
-/// stone: vanilla pops every one of them off on the first chunk tick, so the
-/// dressing the author sees in `delvec snapshot` never reaches players.
+/// **Finding 5b, now refused (`DW1002`).** `scatter` dropping flowers onto
+/// bare stone: the server pops every one of them off at the first shape
+/// update, so the dressing the author sees in `delvec snapshot` never reaches
+/// players. It was an advisory (`DW0354`) the build shipped past; the build
+/// that would ship them is now refused, naming each flower's cell and the soil
+/// it lacks.
 #[test]
-fn scatter_on_non_soil_warns_dw0354() {
+fn scatter_on_non_soil_is_refused_dw1002() {
     let dir = edits_copy("edits-flora");
     set_batches(
         &dir,
@@ -1441,12 +1444,58 @@ fn scatter_on_non_soil_warns_dw0354() {
         &prefabs_arg(),
     ]);
     let stdout = combined(&r);
-    assert!(r.status.success(), "advisory only:\n{stdout}");
-    assert!(stdout.contains("DW0354"), "expected DW0354:\n{stdout}");
-    assert!(stdout.contains("[warning]"), "warning tier:\n{stdout}");
+    assert_eq!(r.status.code(), Some(3), "refused at build:\n{stdout}");
     assert!(
-        stdout.contains("flowers cannot root in"),
-        "names the reason:\n{stdout}"
+        stdout.contains("DW1002") && stdout.contains("`minecraft:poppy` at ["),
+        "the shipped world is refused, naming a flower:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("minecraft:grass_block"),
+        "names the soil it lacks:\n{stdout}"
+    );
+}
+
+/// **A block with no item form passes the registry and meets the support
+/// rule.** `minecraft:wall_torch` is a block the item registry does not hold:
+/// `DW0193` asks the block registry, so a world edit may place it, and the
+/// build then judges it like every block it writes (`DW1002`). Scattered onto
+/// bare floor with nothing behind it, every torch hangs on air and the build is
+/// refused by the support rule, never by the registry.
+#[test]
+fn a_block_with_no_item_form_is_placed_and_judged_by_dw1002() {
+    let dir = edits_copy("edits-flora");
+    set_batches(
+        &dir,
+        serde_json::json!([{
+            "id": "batch/torches-on-air",
+            "area": "area/keep",
+            "edits": [
+                piece_box("region/f", [1, 0, 7], [3, 0, 9]),
+                { "verb": "select", "name": "region/air", "shape": {
+                    "kind": "surface-band", "over": "region/f", "from": 1, "to": 1 } },
+                { "verb": "scatter", "region": "region/air", "density": 1.0,
+                  "items": [ { "block": "minecraft:wall_torch[facing=north]", "weight": 1.0 } ] }
+            ]
+        }]),
+    );
+    let out = tmp("edits-wall-torch-out");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    let stdout = combined(&r);
+    assert!(
+        !stdout.contains("DW0193"),
+        "a block with no item form is in the block registry:\n{stdout}"
+    );
+    assert_eq!(r.status.code(), Some(3), "refused at build:\n{stdout}");
+    assert!(
+        stdout.contains("DW1002") && stdout.contains("`minecraft:wall_torch[facing=north]` at ["),
+        "the support rule names the torch:\n{stdout}"
     );
 }
 

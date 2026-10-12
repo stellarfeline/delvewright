@@ -67,6 +67,7 @@ mod onkill;
 mod packtest;
 mod piece;
 mod proofs;
+mod pulse;
 mod quest;
 mod removal;
 mod respawn;
@@ -116,6 +117,7 @@ use objective::*;
 use onkill::*;
 pub use piece::*;
 use proofs::*;
+use pulse::*;
 use quest::*;
 use removal::*;
 use respawn::*;
@@ -420,6 +422,15 @@ pub fn build_with_warnings(
         .triggers
         .iter()
         .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
+    // A fill whose cell lies in a place still standing in its stand-in is owed by
+    // that place's detail: judged by the build that details it, counted here.
+    let (judged_loot, judged_fills, containers) = crate::compiler::loot::split_owed_by_detail(
+        &assembled.blocks,
+        plan.blockout.as_ref(),
+        &plan.loot,
+        &plan.collect_fills,
+    );
+    eprintln!("{}", containers.line());
     if !plan.loot.is_empty()
         || !plan.collect_fills.is_empty()
         || !plan.traps.is_empty()
@@ -438,13 +449,13 @@ pub fn build_with_warnings(
             &plan.loot,
             &plan.collect_fills,
         );
-        crate::compiler::loot::check_loot_containers(blocks, &plan.loot, &available).map_err(
+        crate::compiler::loot::check_loot_containers(blocks, &judged_loot, &available).map_err(
             |e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
             },
         )?;
-        crate::compiler::loot::check_collect_containers(blocks, &plan.collect_fills, &available)
+        crate::compiler::loot::check_collect_containers(blocks, &judged_fills, &available)
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
@@ -491,8 +502,8 @@ pub fn build_with_warnings(
     // runtime critical-path bot).
     // Assembled-world lighting + deterministic relight pass (spec-0010): measure
     // real light over the assembled world, place declared fixtures, and gate on
-    // measured darkness. Runs before nav verification so the colliding fixtures it
-    // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
+    // measured darkness. Runs before nav verification so the fixtures it adds are
+    // re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
     // The geometry is classified once: relight surveys it as it stands, and the
@@ -508,9 +519,10 @@ pub fn build_with_warnings(
 
     // The voxel occupancy model backs both nav verification (move-npc / cutscene /
     // critical path) and spawn-wave mob placement, so build it once when
-    // either needs it. Includes any colliding relight fixtures (campfire / floor
-    // lantern) so a fixture can never wedge a required path shut *nor* be stood on
-    // by a spawned mob (spec-0010: verification re-runs after placement).
+    // either needs it. The relight fixtures stand in it, each classified by the
+    // one collision table ([`crate::compiler::light::lit_world`]), so a fixture
+    // can never wedge a required path shut unseen (spec-0010: verification
+    // re-runs after placement).
     //
     // It is built for EVERY campaign, not only the ones `assembles_world` says
     // need nav: the visual tier's clear-eye proof (`DW0724`) is owed by every
@@ -524,12 +536,12 @@ pub fn build_with_warnings(
     // seals, the clocked gate regions and the teleport sources — travel as one
     // value, [`crate::compiler::nav::Premises`], so an edited world and a
     // pristine one carry the identical set.
-    let world = geometry
-        .with_premises(crate::compiler::nav::Premises::of_plan(
-            plan,
-            assembled.gate_seals.clone(),
-        ))
-        .with_extra_solid(&relight.extra_solid);
+    let world = crate::compiler::light::lit_world(
+        assembled,
+        &relight,
+        geometry,
+        crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
+    );
 
     // What the camera reads in each carried place (spec-0080 §2.2): its fog
     // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so
@@ -573,14 +585,22 @@ pub fn build_with_warnings(
     //
     // The binding is kept: the critical path carries the bot's witness of each
     // blow, and the staging record states which were witnessed.
+    let population = walked_population(plan, &world);
     let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding> =
-        Some(prove_assemblies(plan, &world)?);
+        Some(prove_assemblies(plan, &world, &population)?);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
     prove_blockout(plan, assembled, &mut warnings)?;
 
     // ---- the declaration proofs: no occupancy model, `DW0360` first ----
     let teleport_gate = prove_declarations(plan, &mut warnings)?;
+
+    // ---- spec-0101: the watchers (`DW0997`), over the assemblies' population ----
+    //
+    // After the declaration proofs, so a body whose mark leaves its piece
+    // (`DW0897`) is sent to that line rather than told nobody can reach it.
+    let mut watch_binding = prove_watchers(plan, &population)?;
+    drop(population);
 
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
@@ -607,6 +627,7 @@ pub fn build_with_warnings(
         lightning_gate,
         stake_table,
         death_plan,
+        pulse_gate,
     } = prove_world(
         plan,
         &world,
@@ -648,6 +669,23 @@ pub fn build_with_warnings(
             return Err(BuildFailure::Diagnostic {
                 code: f.code,
                 message: f.message,
+            });
+        }
+    }
+
+    // DW1002: every block the build writes is one the pinned server keeps —
+    // judged over the world `DW0955` compares (the load world, then every
+    // configuration the critical path passes, around its laid writes), after
+    // the route proofs, so a climbable a forced leg needs is named by
+    // `DW0991` first. The binding is printed whichever way it goes.
+    let picture = crate::compiler::view::beat::picture_base(plan, assembled, &relight.placements);
+    {
+        let attached = crate::compiler::attached::judge(plan, &world, &picture);
+        eprintln!("{}", attached.line());
+        if let Some(message) = attached.refusal() {
+            return Err(BuildFailure::Diagnostic {
+                code: crate::compiler::attached::DW_BLOCK_DROPPED,
+                message,
             });
         }
     }
@@ -741,6 +779,32 @@ pub fn build_with_warnings(
         .as_ref()
         .map(|b| b.plans.clone())
         .unwrap_or_default();
+    // spec-0102: a pulse is measured over the assembled world; a campaign that
+    // assembles none has no cell to stand in hearing of a beat. The binding
+    // line is printed here for it, `0 pulse(s)` included.
+    let pulse_gate = match pulse_gate {
+        Some(g) => g,
+        None => {
+            let g = crate::compiler::pulse::PulseGate {
+                declared: plan.campaign.quests.content.pulses.len(),
+                rows: Vec::new(),
+            };
+            eprintln!("{}", g.line());
+            if let Some(p) = plan.campaign.quests.content.pulses.first() {
+                return Err(BuildFailure::Diagnostic {
+                    code: crate::compiler::pulse::DW_PULSE_UNHEARD,
+                    message: format!(
+                        "pulse `{}` is declared in a campaign that assembles no world, so no \
+                         cell of its box holds footing a body can stand in and its reach \
+                         cannot be derived. Place the pieces its box covers, or delete the \
+                         pulse.",
+                        p.id
+                    ),
+                });
+            }
+            g
+        }
+    };
     let functions = emit_functions(
         plan,
         &chrome,
@@ -759,6 +823,7 @@ pub fn build_with_warnings(
         &branch_transport,
         stake_table.as_ref(),
         &asm_locks,
+        &pulse_gate.rows,
     );
     // `DW0852` over the FINAL function list — after every emitter has had its say,
     // so a later pass that rewrote a judge cannot slip past a check that ran
@@ -870,7 +935,10 @@ pub fn build_with_warnings(
             rings: &wave_rings,
         },
         &payload_plans,
-        &asm_locks,
+        &packtest::Proved {
+            asm_locks: &asm_locks,
+            watch_binding: &watch_binding,
+        },
     );
 
     // ---- creator overlay (playtest-only; spec-0006) ----
@@ -902,6 +970,23 @@ pub fn build_with_warnings(
             put_json(&mut out, "validation/assembly.json", &b.to_json());
         }
     }
+    watch_binding.attach_walks(&moves, &actor_moves);
+    // spec-0101 §5.4: the bot's watchers ride the record it already reads, and
+    // the per-watcher record the PackTests stand on is stated beside it. Both
+    // absent for a campaign that declares no watcher → byte-identical.
+    if watch_binding.declared() > 0 {
+        if let Some(obj) = cp.as_object_mut() {
+            obj.insert(
+                "watchers".to_string(),
+                Value::Array(watch_binding.watcher_rows()),
+            );
+        }
+        put_json(
+            &mut out,
+            "validation/watchers.json",
+            &watch_binding.to_json(),
+        );
+    }
     put_json(&mut out, "critical-path.json", &cp);
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
@@ -919,11 +1004,7 @@ pub fn build_with_warnings(
         prefabs,
         &pov_shots,
         &world,
-        Some(&crate::compiler::view::beat::picture_base(
-            plan,
-            assembled,
-            &relight.placements,
-        )),
+        Some(&picture),
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
@@ -1160,6 +1241,11 @@ pub fn build_with_warnings(
     }
     if let Some(gate) = &loop_gate {
         put_json(&mut out, "validation/loop-gate.json", &gate.to_json());
+    }
+    // spec-0102 §5.1: one row per declared pulse, the stations the bot listens
+    // at included. A campaign that declares none emits no file.
+    if pulse_gate.declared > 0 {
+        put_json(&mut out, "validation/pulses.json", &pulse_gate.to_json());
     }
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());

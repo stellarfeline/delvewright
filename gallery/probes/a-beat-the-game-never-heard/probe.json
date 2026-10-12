@@ -1,0 +1,13 @@
+{
+  "code": "DW0326",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/pulses/0/sound",
+      "value": "minecraft:entity.warden.heartbeats"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the slow heartbeat's sound misspelled `entity.warden.heartbeats`, an id the pinned sound-event registry does not hold. A pulse's sound is read by the one rule every sound id is (`DW0326`), so it is refused the way a `play-sound` would be. It declares no unit."
+}

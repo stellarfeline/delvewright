@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Actor, Ambush, Assembly, CastEntry, EnvTrigger, Happening, LethalVolume, Loop, Loot, NpcId,
-    ObjectiveId, QuestId, Shop, Shortcut, Stake, StateDecl, TimedGate, Trap, TriggerOn, Wave,
+    ObjectiveId, Pulse, QuestId, Shop, Shortcut, Stake, StateDecl, TimedGate, Trap, TriggerOn,
+    Wave,
 };
 
 /// Stage 5 payload: quest expansions.
@@ -141,6 +142,12 @@ pub struct QuestsContent {
     /// stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loops: Vec<Loop>,
+    /// Pulses (spec-0102): sounds that beat from a mark on a fixed interval to
+    /// every player standing in a place, while a party gate holds.
+    /// Empty/absent for every campaign that declares none, so such a campaign
+    /// stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pulses: Vec<Pulse>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The

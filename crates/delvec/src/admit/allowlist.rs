@@ -244,6 +244,15 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:rooted_dirt",
     "minecraft:grass_block",
     "minecraft:podzol",
+    // Surface blocks of the same class as `grass_block` and `podzol`: inert
+    // terrain with no block entity. `dirt_path` turns to dirt when a solid block
+    // is placed on top of it (Minecraft Wiki, Dirt Path) and has no random tick;
+    // `mycelium` spreads and reverts to dirt on a random tick exactly as
+    // `grass_block` does (Minecraft Wiki, Mycelium). `farmland` and the crops
+    // are left OUT: moisture, trampling and growth change the world after the
+    // proofs judged it.
+    "minecraft:dirt_path",
+    "minecraft:mycelium",
     "minecraft:gravel",
     "minecraft:sand",
     "minecraft:red_sand",
@@ -330,19 +339,21 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:melon",
     "minecraft:vine",
     "minecraft:glow_lichen",
-    // The sculk family's two inert members: a full block and its multiface
-    // decal (no collision, no light, no block entity). The other four are
-    // left OUT, each for a runtime behaviour no proof models (Minecraft Wiki,
-    // Java Edition pages for each block): `sculk_catalyst` rewrites the blocks
-    // around it into sculk, veins, sensors and shriekers whenever a living
-    // entity dies within 8 blocks, so the world the proofs judged changes in
-    // every fight; `sculk_sensor` and `calibrated_sculk_sensor` are redstone
-    // signal sources fired by any vibration within 8 blocks, powering what
-    // they touch — a mechanism nothing declared; `sculk_shrieker` summons a
-    // warden and inflicts Darkness when its `can_summon` state is true, a
-    // state this name-level list cannot hold false.
+    // The sculk family, all six. `sculk` is a full block and `sculk_vein` its
+    // collision-free decal; the four that act at runtime are admitted by
+    // STATE, not by name (spec-0100 §3.1): the one rest rule
+    // (`delvewright_dsl::blocks::sculk_rest`) refuses a shrieker that can
+    // summon (`DW0998`) and any sculk block not at rest (`DW0999`) at every
+    // entry and over the assembled world, the compiler proves a sensor's power
+    // reaches no block that reads a signal and a calibrated sensor's filter
+    // stays open (`DW1000`), and a catalyst is admitted only where no body can
+    // die within its range (`DW1001`).
     "minecraft:sculk",
     "minecraft:sculk_vein",
+    "minecraft:sculk_sensor",
+    "minecraft:calibrated_sculk_sensor",
+    "minecraft:sculk_shrieker",
+    "minecraft:sculk_catalyst",
     "minecraft:moss_block",
     "minecraft:moss_carpet",
     "minecraft:pale_moss_block",

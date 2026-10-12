@@ -367,7 +367,7 @@ pub(in crate::compiler::nav) fn to_standable(
         let cells: Vec<[i32; 3]> =
             crate::compiler::assembled::region_cells(wr.region.0, wr.region.1).collect();
         if wr.tick >= l.tick {
-            if wr.fill {
+            if wr.write.fills() {
                 for c in &cells {
                     st.solid.remove(c);
                     st.unforced.remove(c);
@@ -380,14 +380,16 @@ pub(in crate::compiler::nav) fn to_standable(
             st.cleared.remove(&c);
             st.flooded.remove(&c);
             st.unforced.remove(&c);
-            match (wr.fill, wr.fluid) {
-                (true, true) => {
+            match wr.write {
+                crate::compiler::plan::RegionWrite::Flood => {
                     st.flooded.insert(c);
                 }
-                (true, false) => {
+                crate::compiler::plan::RegionWrite::Fill => {
                     st.solid.insert(c);
                 }
-                (false, _) => {
+                crate::compiler::plan::RegionWrite::Clear
+                | crate::compiler::plan::RegionWrite::Unseal
+                | crate::compiler::plan::RegionWrite::Pass => {
                     st.cleared.insert(c);
                 }
             }

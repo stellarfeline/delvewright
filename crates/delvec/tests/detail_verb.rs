@@ -1460,3 +1460,191 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
         "the piece is the unlit leafy room: {names:?}"
     );
 }
+
+/// **The audit judges a scenery piece exactly as its writer did** (spec-0098
+/// §14, departures 36–37). `delvec detail` writes the gallery's leafy scenery
+/// crown into `<root>/prefabs/` with the campaign at `<root>/campaigns/`, and
+/// `delvec prefab audit` over the written piece passes, deriving the kind from
+/// the campaign's layout graph through the rule the writer sealed on. The same
+/// bytes are refused with `DW0782` once the evidence moves: the node made
+/// reached, or the detail-plan row placing the piece removed. And a piece's
+/// own word buys nothing: a copy under its own id carrying a hand-written
+/// `scenery: true` / `reached: false`, and a copy claiming the scenery piece's
+/// id under another file name, are both judged strictly and refused.
+#[test]
+fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_itself() {
+    let tmp = tempdir("audit-scenery");
+    let campaigns = tmp.join("campaigns");
+    std::fs::create_dir_all(&campaigns).unwrap();
+    let dir = gallery_site_plan(&campaigns);
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"] = json!([]);
+    });
+    let programs = dir.join("programs");
+    std::fs::remove_dir_all(&programs).unwrap();
+    std::fs::create_dir_all(&programs).unwrap();
+    std::fs::write(
+        programs.join("beacon.json"),
+        serde_json::to_string_pretty(&leafy_beacon()).unwrap(),
+    )
+    .unwrap();
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let out = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        dir.to_str().unwrap(),
+        "--all",
+    ]);
+    assert_eq!(code(&out), 0, "the writer passes the crown: {}", text(&out));
+    let piece = prefabs.join("gallery-beacon.nbt");
+    let audit = |nbt: &Path| delvec(&["prefab", "audit", nbt.to_str().unwrap()]);
+
+    // (a) The writer passed it; the audit passes it, saying why.
+    let out = audit(&piece);
+    let t = text(&out);
+    assert_eq!(code(&out), 0, "the audit agrees with the writer: {t}");
+    assert!(
+        t.contains("place kind: scenery") && t.contains("`site-plan` at `node/beacon`"),
+        "the kind is stated with the row it came from: {t}"
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).expect("the report is JSON");
+    assert_eq!(report["contract"]["sealed"], true, "{}", report["contract"]);
+    assert_eq!(report["contract"]["owners"], 1, "{}", report["contract"]);
+
+    let refused_strictly = |nbt: &Path, why: &str| {
+        let out = audit(nbt);
+        let t = text(&out);
+        assert_eq!(code(&out), 1, "{why}: {t}");
+        assert!(
+            t.contains("DW0782")
+                && t.contains("contract-coverage FAILED")
+                && t.contains("place kind: reached (strict)"),
+            "{why}: the strict judgement refuses the leaf tops: {t}"
+        );
+    };
+
+    // (c) A piece vouching for itself. Under its own id, with hand-written
+    // scenery keys: no campaign places it, so it is judged strictly.
+    let meta: Value = serde_json::from_str(
+        &std::fs::read_to_string(prefabs.join("gallery-beacon.json")).unwrap(),
+    )
+    .unwrap();
+    let mut forged = meta.clone();
+    forged["prefab_id"] = json!("prefab/forged-crown");
+    forged["scenery"] = json!(true);
+    forged["reached"] = json!(false);
+    std::fs::copy(&piece, prefabs.join("forged-crown.nbt")).unwrap();
+    std::fs::write(
+        prefabs.join("forged-crown.json"),
+        serde_json::to_string_pretty(&forged).unwrap(),
+    )
+    .unwrap();
+    refused_strictly(
+        &prefabs.join("forged-crown.nbt"),
+        "a piece's own scenery claim is not evidence",
+    );
+    // ...and claiming the scenery piece's id under another file name: it is
+    // not the piece the campaign resolves for that id.
+    std::fs::copy(&piece, prefabs.join("impostor.nbt")).unwrap();
+    std::fs::write(
+        prefabs.join("impostor.json"),
+        serde_json::to_string_pretty(&meta).unwrap(),
+    )
+    .unwrap();
+    refused_strictly(
+        &prefabs.join("impostor.nbt"),
+        "another piece's id is not this piece's evidence",
+    );
+
+    // (b) The perturbations, on the very bytes that passed: the node reached...
+    let graph = dir.join("layout-graph.json");
+    let graph_bytes = std::fs::read(&graph).unwrap();
+    common::patch_file(&graph, |v| {
+        for n in v["content"]["nodes"].as_array_mut().unwrap() {
+            if n["id"] == "node/beacon" {
+                n.as_object_mut().unwrap().remove("reached");
+            }
+        }
+    });
+    refused_strictly(&piece, "a reached node's piece owes its floor");
+    std::fs::write(&graph, graph_bytes).unwrap();
+    assert_eq!(code(&audit(&piece)), 0, "restored, it passes again");
+    // ...and the row placing the piece removed: no campaign places it.
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"] = json!([]);
+    });
+    refused_strictly(&piece, "a piece no campaign places is judged strictly");
+}
+
+/// **A frame change is answered by ONE `detail --all`, whatever the order of
+/// the places it moved** (issue: the first run after a frame change refused
+/// `DW0843` on a sibling). The exit is detailed after the landing in plan
+/// order; its box shrinks. Judged place by place against the library as it
+/// stood before the run, the landing's bindings check met the exit's old piece
+/// and refused it, and nothing was written — so every re-run refused the same
+/// way. The run judges the whole it would leave: every piece it re-details
+/// stands in place of the library's copy. A sibling it does NOT re-detail is
+/// still judged by the piece on disk, and a stale one is still refused.
+#[test]
+fn after_a_frame_change_one_detail_all_passes_and_a_stale_sibling_it_leaves_is_refused() {
+    let tmp = tempdir("stale-sibling");
+    let places = ["node/landing", "node/exit", "node/tunnel"];
+    let (campaign, prefabs) = fixture(&tmp, &places);
+    let cs = campaign.to_str().unwrap();
+    let ps = prefabs.to_str().unwrap();
+    let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
+    assert_eq!(code(&out), 0, "{}", text(&out));
+    let shrink = |depth: i64| {
+        common::patch_file(&campaign.join("site-plan.json"), |v| {
+            let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+            let b = boxes.iter_mut().find(|b| b["node"] == "node/exit").unwrap();
+            b["extent"] = json!([8, depth]);
+        });
+    };
+    let size = || -> Value {
+        serde_json::from_str::<Value>(
+            &std::fs::read_to_string(prefabs.join("blockout-exit.json")).unwrap(),
+        )
+        .unwrap()["structure"]["size"]
+            .clone()
+    };
+
+    // The frame moves under a place detailed after another.
+    shrink(4);
+    let out = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
+    assert_eq!(
+        code(&out),
+        0,
+        "the FIRST run after the frame change: {}",
+        text(&out)
+    );
+    let t = text(&out);
+    assert!(!t.contains("DW0843"), "{t}");
+    assert!(t.contains("detail: 3 place(s) detailed of 3 named"), "{t}");
+    assert_eq!(size(), json!([9, 6, 6]));
+    // And the verdict is a function of the inputs: the identical command
+    // again passes and moves no byte.
+    let before = (snapshot(&prefabs), snapshot(&campaign));
+    let again = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
+    assert_eq!(code(&again), 0, "{}", text(&again));
+    assert_eq!(before, (snapshot(&prefabs), snapshot(&campaign)));
+
+    // Perturbation: the exit's program is withdrawn, so this run does not
+    // re-detail it, and its frame moves again. Its piece on disk is now stale
+    // AFTER the run, and the run refuses it by name, writing nothing.
+    std::fs::remove_file(campaign.join("programs/exit.json")).unwrap();
+    shrink(8);
+    let t = refused(
+        &campaign,
+        &prefabs,
+        &["--prefabs", ps, "detail", cs, "--all"],
+    );
+    assert!(t.contains("DW0843"), "{t}");
+    assert!(
+        t.contains("`prefab/blockout-exit` is not the shape of the box `node/exit` gives it"),
+        "{t}"
+    );
+    assert!(t.contains("The piece is 9x6x6; the frame is 9x6x10"), "{t}");
+}

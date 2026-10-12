@@ -6,7 +6,7 @@
   "yClipMin": 56,
   "yClipMax": 85,
   "exposure": 1.0,
-  "postprocess": "GAMMA",
+  "postprocess": "TONEMAP3",
   "outputMode": "PNG",
   "renderTime": 0,
   "spp": 0,
@@ -21,7 +21,39 @@
   "stillWater": false,
   "sun": {
     "altitude": 0.215917,
-    "azimuth": 3.141593
+    "azimuth": 3.141593,
+    "intensity": 0.0,
+    "color": {
+      "red": 1.0,
+      "green": 1.0,
+      "blue": 1.0
+    },
+    "drawTexture": true
+  },
+  "sky": {
+    "mode": "SKYMAP_EQUIRECTANGULAR",
+    "color": {
+      "red": 0.631909,
+      "green": 0.631909,
+      "blue": 1.0
+    },
+    "skyLight": 0.819187,
+    "apparentSkyLight": 1.0,
+    "skymap": "mini_spawn.sky.pfm",
+    "skyMirrored": false
+  },
+  "fog": {
+    "mode": "UNIFORM",
+    "uniformDensity": 0.0,
+    "color": {
+      "red": 0.453456,
+      "green": 0.585973,
+      "blue": 0.851252
+    },
+    "skyFogDensity": 0.0
+  },
+  "delvewrightSky": {
+    "daytimeTicks": 12000
   },
   "world": {
     "path": "world",

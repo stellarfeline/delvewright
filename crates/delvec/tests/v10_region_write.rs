@@ -274,6 +274,164 @@ fn a_region_write_reads_its_conclusion_off_the_block() {
             "`{solid}` occupies its cell with a block, waterlogged or not"
         );
     }
+    // The pinned collision table (`crates/dsl/data/collision-tops-1.21.11.tsv`)
+    // gives these no box (`sculk_vein`, `glow_lichen`, `poppy`, `torch`), a box
+    // under the auto-step (`white_carpet`, 1/16), or a climb (`vine`): a body
+    // occupies the cell, so the write is a Pass, not a wall.
+    for pass in [
+        "minecraft:sculk_vein[down=true]",
+        "minecraft:sculk_vein",
+        "glow_lichen",
+        "minecraft:poppy",
+        "minecraft:torch",
+        "minecraft:white_carpet",
+        "minecraft:vine[north=true]",
+    ] {
+        assert_eq!(
+            RegionWrite::of_block(pass),
+            RegionWrite::Pass,
+            "`{pass}` leaves cells a body passes through"
+        );
+    }
+    // The same vein waterlogged leaves the cell's water free; a seagrass tuft
+    // brings its own; air is what a clear writes.
+    for wet in [
+        "minecraft:sculk_vein[down=true,waterlogged=true]",
+        "minecraft:seagrass",
+    ] {
+        assert_eq!(RegionWrite::of_block(wet), RegionWrite::Flood, "`{wet}`");
+    }
+    assert_eq!(RegionWrite::of_block("minecraft:air"), RegionWrite::Clear);
+}
+
+/// `hello-world` whose `obj/talk` bundle fills the doorway — the only way from
+/// the keeper to the exit — with `block` after opening it: world
+/// `[3,65,6]..[5,67,6]` (`anchor/doorway`, local `[4,2,6]`, extent `[1,1,0]`:
+/// the box is anchor-centred, so it stands on the doorstep and leaves it).
+fn doorway_filled_with(block: &str) -> (Campaign, PathBuf) {
+    doorway_filled_with_in("doorway", block)
+}
+
+/// [`doorway_filled_with`] in a prefab copy named by `tag`, so two tests that
+/// fill with the same block never share a directory.
+fn doorway_filled_with_in(tag: &str, block: &str) -> (Campaign, PathBuf) {
+    let dir = prefabs_with_anchor(
+        &format!(
+            "dw-region-write-{tag}-{}",
+            block.replace([':', '[', ']', '=', ','], "-")
+        ),
+        "anchor/doorway",
+        [4, 2, 6],
+    );
+    let c = parse_hw(&quests_doc(&format!(
+        r#", {{ "type": "fill-region",
+              "region": {{ "anchor": "anchor/doorway", "extent": [1, 1, 0] }},
+              "block": "{block}" }}"#
+    )));
+    (c, dir)
+}
+
+/// **A fill of a block a body passes through leaves the route walkable**: a
+/// `fill-region` of a carpet (1/16, under the auto-step) over the only doorway,
+/// on the leg the party must still walk, builds; the identical fill of stone is
+/// refused — same box, same verb, same
+/// step, only the block differs. Before the block was classified through the
+/// collision table, every non-fluid block was modelled as a wall here, and the
+/// vein was refused as stone is.
+///
+/// A `sculk_vein[down=true]` (no collision box) and a poppy reach the route
+/// model as the same pass — the route proof lets them by — and the same
+/// three-high box of them is refused for another reason: a
+/// vein over a vein and a poppy over a poppy are blocks the server drops, and
+/// the build says so (`DW1002`) once the write lands.
+#[test]
+fn a_fill_of_a_block_a_body_passes_through_leaves_the_route_walkable() {
+    for (block, kept) in [
+        ("minecraft:sculk_vein[down=true]", false),
+        ("minecraft:white_carpet", true),
+        ("minecraft:poppy", false),
+    ] {
+        let (c, dir) = doorway_filled_with(block);
+        let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+        let plan = Plan::build(&c, &prefabs).expect("plan builds");
+        assert!(
+            plan.region_events
+                .iter()
+                .any(|e| e.write == RegionWrite::Pass
+                    && e.block() == Some(block)
+                    && e.region == ([3, 65, 6], [5, 67, 6])),
+            "`{block}` reaches the model as a Pass that lays its block"
+        );
+        match (kept, try_build(&c, &dir)) {
+            (true, Ok(_)) => {}
+            (false, Err(emit::BuildFailure::Diagnostic { code, message })) => {
+                assert_eq!(code, "DW1002", "`{block}`: wrong code: {message}");
+                assert!(message.contains(block), "`{block}` is named: {message}");
+            }
+            (_, other) => panic!("a fill of `{block}` over the doorway (kept: {kept}): {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    let (stone, dir) = doorway_filled_with("minecraft:stone");
+    match try_build(&stone, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0311", "wrong code: {message}");
+        }
+        other => panic!("a fill of stone over the only doorway must be refused: {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **The sculk family reads every runtime write, whatever the walk makes of
+/// it** (spec-0100 × the collision-table classification): the vein a
+/// `fill-region` lays is a Pass to the walk and still reaches the sculk
+/// proofs' list of laid blocks, so the containment proof judges it; and the
+/// rest rule refuses a sensor laid out of rest by the same fill, a half-floor
+/// the walk reads as a Fill — the region class decides the walk, never
+/// whether the rest rule runs.
+///
+/// The fill is three high, so it stacks veins on veins, and a vein is held
+/// only by a full face under it: the sculk proofs (run with the route proofs)
+/// let it by, and the build is refused afterwards by the support rule
+/// (`DW1002`), naming only the stacked veins — never the course on the floor.
+#[test]
+fn the_sculk_proofs_judge_a_runtime_write_whatever_the_walk_makes_of_it() {
+    let vein = "minecraft:sculk_vein[down=true]";
+    let (c, dir) = doorway_filled_with_in("sculk", vein);
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let laid = delvec::compiler::sculk::runtime_writes(&plan);
+    assert!(
+        laid.iter()
+            .any(|w| w.block == vein && w.region == ([3, 65, 6], [5, 67, 6])),
+        "the vein the Pass lays reaches the sculk proofs: {laid:?}"
+    );
+    match try_build(&c, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW1002", "past every sculk proof: {message}");
+            assert!(
+                message.contains(&format!("`{vein}` at [")),
+                "the stacked veins are named: {message}"
+            );
+            assert!(
+                !message.contains(", 65, 6] (in the box"),
+                "the course on the floor is held: {message}"
+            );
+        }
+        other => panic!("a vein stacked on a vein is dropped: {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let active = "minecraft:sculk_sensor[sculk_sensor_phase=active]";
+    assert_eq!(RegionWrite::of_block(active), RegionWrite::Fill);
+    let (c, dir) = doorway_filled_with_in("sculk", active);
+    match try_build(&c, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0999", "wrong code: {message}");
+        }
+        other => panic!("a sensor laid out of rest must be refused: {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// A `fill-region` whose block is a **fluid** is collected as a `Flood`, not as a

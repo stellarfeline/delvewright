@@ -277,7 +277,7 @@ use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::loot::check_stack_count;
 use crate::registry::{
-    AnchorRegistry, BlockRegistry, EntityRegistry, ItemBackedBlockRegistry, ItemRegistry,
+    AnchorRegistry, BlockRegistry, EntityRegistry, ItemRegistry, VendoredBlockRegistry,
 };
 use crate::validate::{
     AnchorProviders, collect_declared_flags, for_each_trap_payload_deep, station_kind_diag,
@@ -527,7 +527,7 @@ pub(crate) fn trap_checks(
                     then_floor,
                     ..
                 } => {
-                    let blocks = ItemBackedBlockRegistry::new(items);
+                    let blocks = VendoredBlockRegistry;
                     let fb = falling_block
                         .as_deref()
                         .unwrap_or(crate::DEFAULT_COLLAPSE_FALLING_BLOCK);

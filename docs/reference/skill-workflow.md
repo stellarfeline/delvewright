@@ -92,9 +92,10 @@ driving the skill splits the work, never a step on the page.
 
 **The page's spine is thirteen numbered steps in one contiguous block**, printed
 in the order they are performed, with every reference section behind them. The
-numbers used throughout this file are those. Two branches are decided before
-step 1 — `areas[]` or a site plan, and whether the campaign already carries an
-approved `design/` directory — and both are stated on the page before Init ends.
+numbers used throughout this file are those. One branch is decided before
+step 1 — whether the campaign already carries an approved `design/` directory —
+and it is stated on the page before Init ends. The map is a site plan on every
+campaign (ADR-0032); the page offers no other placement route.
 
 ---
 
@@ -110,14 +111,13 @@ flowchart TD
     SH --> IN
     HB --> IN
     IN[["Init — one binary, delvec,<br/>client jar, Chunky, reference-image path,<br/>content symlink"]]
-    IN --> PM{areas[] or site plan?}
-    PM --> WS
+    IN --> WS
     WS[["1 · workspace in the CONTENT repo<br/>campaigns/campaigns/id/<br/>documents + GENERATION.md + DESIGN.md"]]
 
     WS --> P2
-    subgraph P2 ["2 · placement — one authority per campaign"]
+    subgraph P2 ["2 · placement — the site plan"]
         direction LR
-        AR[areas in world.json] ~~~ SP[geometry-brief --> layout-graph --> site-plan]
+        SP[map reference --> geometry-brief --> layout-graph --> site-plan]
     end
     P2 --> L
     subgraph L ["3 · story"]
@@ -136,7 +136,7 @@ flowchart TD
     F --> A["7 · delvec analyze<br/>reachability / deadlock / dark mitigation"]
     A --> B["8 · delvec build -o validation/delve-output<br/>must exit 0"]
     B --> CAM["8b · showcase cameras<br/>one per approved image"]
-    CAM --> D["9 · detail plan — site plan only"]
+    CAM --> D["9 · detail — every place"]
     D --> G8{{"10 · MACHINE LADDER<br/>PackTest / bot / branch runs"}}
     G8 --> G7{{"11 · BRANCH CHRONICLE<br/>only when branch_points exist"}}
     G7 --> G9{{"12 · VISUAL REVIEW<br/>POV sequence first"}}
@@ -203,8 +203,8 @@ diagnostic code is the loop's own anti-thrash guard.
 **The loop's exit condition is not "clean" from `quest-plan` onward, and that
 is why the page names the residue.** Stage 4 plans quests that stage 5 expands,
 so between them a campaign necessarily carries one `DW0150` naming every planned
-quest and — on a site-plan campaign — `DW0818` for every beat and quest-gated
-way the graph borrows from an unwritten mission. Neither is a repair anybody
+quest and `DW0818` for every beat and quest-gated way the graph borrows from
+an unwritten mission. Neither is a repair anybody
 owes and neither has a stub: the cheapest-looking escape, writing schema-minimal
 stage-5 quests, is refused again by `DW0481` and `DW0460` and leaves the
 campaign with strictly more errors than it had. `DW0150` says all of that in its
@@ -261,12 +261,12 @@ forbidden zone). `campaigns/` is a symlink to a `delvewright-campaigns` checkout
 
 | File | What it is |
 |---|---|
-| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one), the optional map-pipeline documents a campaign planned as a whole map carries (`geometry-brief.json`, `layout-graph.json`, `site-plan.json`, and `detail-plan.json`), and `design.json` once a design is approved; `delvec validate` covers every stage document a campaign directory holds | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
+| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one), the map-pipeline documents every campaign carries (`geometry-brief.json`, `layout-graph.json`, `site-plan.json`, and `detail-plan.json`), and `design.json` once a design is approved; `delvec validate` covers every stage document a campaign directory holds | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
 | `DESIGN.md` | the single authoritative design document; every round conformance-reviews against it |
 | `GENERATION.md` | prompt verbatim, date, `dsl_version`, decisions, the **posture note**, the chronicle citation table, the **findings ledger** |
 | `README.md` | the storybook — reader-facing, background only, opens with the engine-version marker |
 
-### A campaign whose map is a site plan
+### The map is a site plan
 
 **The whole map is confirmed on a reference before it is composed**, and that is
 the first act, not a preliminary: a composition program written without one has
@@ -283,7 +283,7 @@ guarantees only *style*, so the geometric facts live in the written brief below
 and a drift is checked against text. Confirmed views and their sidecars are
 committed to `campaigns/<id>/design/reference/`.
 
-Such a campaign then writes **three documents the six-stage loop does not have**,
+Every campaign then writes **three documents the six-stage loop does not have**,
 and the skill carries the pipeline as a workflow step rather than as a note: a
 `geometry-brief` (the whole's written design reduced to checkable numbers), a
 `layout-graph` (the space as places and connections, before any coordinate
@@ -301,10 +301,11 @@ Every other gate on that pair asks whether the skill's claims are real; this one
 which is the question a skill written once and an engine that keeps moving needs
 somebody to ask.
 
-A campaign has **one placement authority**. The usual one is `areas[]`, which
-seats prefab pieces; a campaign planned as a whole map hands the space to its
-site plan instead, and then three things about the six stage JSONs are different
-and none of them is optional:
+A campaign has **one placement authority**, and on this page it is the site
+plan (ADR-0032): the engine's `areas[]`, which seats prefab pieces from a pool
+on the compiler's fixed stride, is an assembly surface the page does not
+present. A one-building map is a plan of one box and no seam. Three things
+about the six stage JSONs follow, and none of them is optional:
 
 - **`world.areas` is empty.** Declaring both is refused (`DW0839`) — `areas[]`
   seats pieces on the compiler's fixed stride and the plan seats the derived
@@ -321,10 +322,10 @@ and none of them is optional:
   Every barred connection must be opened by something naming its seam
   (`DW0818`).
 
-Nothing else about authoring changes: the quest, gate and shortcut surfaces are
-the ones every other campaign uses, and they do not know the difference.
+Nothing else about authoring changes: the quest, gate and shortcut surfaces do
+not know where the map came from.
 
-**The numbers such a campaign is built to are the metrics table's**, and they are
+**The numbers a campaign is built to are the metrics table's**, and they are
 provisional until the metrics gym has been walked — every build says so
 (`DW0813`). `delvec metrics --gym <dir>` generates that gym: a site-plan campaign
 built from the table itself, and the only artifact a walk can calibrate the
@@ -391,13 +392,12 @@ Not a proposal — an inventory.
 4a. **The inter-area crossing rule lives in prose and in nothing a document can
    state.** A crossing is emitted on the earlier objective of a consecutive pair
    whose areas differ, and only when the later area's piece resolves an entry
-   point; so the campaign's first beat must play in the area the party starts
-   in. The live schema export contains **zero** occurrences of `transport` or
+   point. The live schema export contains **zero** occurrences of `transport` or
    `inter-area` across every stage, so an author told to generate against the
-   schema has no spelling for the concept and no way to be refused by one. The
-   skill page states the rule as an authoring constraint, and has the agent
-   measure how few pieces satisfy it, because a promise that reads as free is the
-   half a reader believes.
+   schema has no spelling for the concept and no way to be refused by one. A
+   campaign this page builds has one area, `area/site`, so the page no longer
+   states the rule; it stands in `compiler.md`, where the `areas[]` surface
+   lives.
 
 4b. **`collect` + `container` is satisfiable by very few pieces in the shipped
    library.** Few prefabs stand an anchor on a chest or barrel, fewer than

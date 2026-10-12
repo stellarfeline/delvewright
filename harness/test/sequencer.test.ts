@@ -132,6 +132,7 @@ function path(steps: Step[]): CriticalPath {
       reason: "this fixture stages no NPC",
     },
     steps,
+    watchers: [],
   };
 }
 

@@ -613,7 +613,7 @@ fn replay_with(
         // catches. Recorded regardless of `enforce` (cheap, and a view replay
         // simply never evaluates it).
         for (cell, block) in &batch_writes {
-            if support_of(block).is_some() {
+            if needs_support(block) {
                 support_watch.insert(*cell, block.clone());
             }
         }
@@ -653,8 +653,8 @@ fn replay_with(
 
 /// Re-prove the post-edit invariants over the current assembled world, naming
 /// `bid` in any failure. Mirrors the final build's pass order: relight first
-/// (its colliding fixtures join the nav world), then the walkability proofs,
-/// then boundary safety.
+/// (its fixtures join the nav world, classified by the collision table), then
+/// the walkability proofs, then boundary safety.
 fn check_batch_invariants(
     plan: &Plan,
     assembled: &Assembled,
@@ -685,9 +685,7 @@ fn check_batch_invariants(
     // declared lethal volumes are another, and were missing here exactly as they
     // were missing from `emit::build`'s edit arm.
     let premises = crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone());
-    let with_fixtures = geometry
-        .with_premises(premises)
-        .with_extra_solid(&relight.extra_solid);
+    let with_fixtures = crate::compiler::light::lit_world(assembled, &relight, geometry, premises);
     let ctx = |e: Failure| Failure {
         code: e.code,
         message: format!("after world-edits batch `{bid}`: {}", e.message),
@@ -882,111 +880,30 @@ fn gate_region_warnings(
     out
 }
 
-/// What a block needs underneath it to survive a chunk tick.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Support {
-    /// Any full-support block below (torch, lantern, campfire, carpet, …).
-    SolidBelow,
-    /// A block flowers/grass can root in (dirt family, moss, farmland, mud).
-    Soil,
-}
-
-/// Blocks that pop off without a solid block below them.
-const NEEDS_SOLID_BELOW: &[&str] = &[
-    "torch",
-    "soul_torch",
-    "redstone_torch",
-    "lantern",
-    "soul_lantern",
-    "campfire",
-    "soul_campfire",
-    "candle",
-    "flower_pot",
-    "snow",
-    "sea_pickle",
-    "repeater",
-    "comparator",
-    "redstone_wire",
-    "rail",
-    "powered_rail",
-    "detector_rail",
-    "activator_rail",
-];
-
-/// Blocks that pop off unless they are rooted in soil.
-const NEEDS_SOIL: &[&str] = &[
-    "poppy",
-    "dandelion",
-    "blue_orchid",
-    "allium",
-    "azure_bluet",
-    "red_tulip",
-    "orange_tulip",
-    "white_tulip",
-    "pink_tulip",
-    "oxeye_daisy",
-    "cornflower",
-    "lily_of_the_valley",
-    "wither_rose",
-    "torchflower",
-    "short_grass",
-    "tall_grass",
-    "fern",
-    "large_fern",
-    "oak_sapling",
-    "spruce_sapling",
-    "birch_sapling",
-    "jungle_sapling",
-    "acacia_sapling",
-    "dark_oak_sapling",
-    "cherry_sapling",
-    "sweet_berry_bush",
-];
-
-/// Blocks flowers and grass root in.
-const SOIL: &[&str] = &[
-    "grass_block",
-    "dirt",
-    "coarse_dirt",
-    "rooted_dirt",
-    "podzol",
-    "mycelium",
-    "farmland",
-    "moss_block",
-    "mud",
-    "muddy_mangrove_roots",
-    "pale_moss_block",
-];
-
-/// The support a block field needs, or `None` when the block stands on its own
-/// (or attaches sideways/above — `wall_torch`, a hanging lantern — where the
-/// compiler models no support cell and must stay silent rather than guess).
-fn support_of(block: &str) -> Option<Support> {
-    if block.contains("hanging=true") {
-        return None; // a hanging lantern's support is the block ABOVE it
-    }
-    let id = strip_ns(base_id(block));
-    if NEEDS_SOIL.contains(&id) {
-        Some(Support::Soil)
-    } else if NEEDS_SOLID_BELOW.contains(&id) {
-        Some(Support::SolidBelow)
-    } else {
-        None
-    }
+/// Whether a block needs a neighbour to stay, by the pinned jar's measured
+/// `canSurvive` rule ([`delvewright_dsl::support`]) — the one rule `DW1002`
+/// judges the shipped world by.
+fn needs_support(block: &str) -> bool {
+    matches!(
+        delvewright_dsl::support::needs(block),
+        Some(delvewright_dsl::support::Needs::Support(_))
+    )
 }
 
 /// **Support validity** (`DW0354`) at batch close. Every support-dependent
 /// block the script has placed so far is re-checked against the *current*
-/// world: a later batch that carved the floor out from under a torch, or a
-/// `scatter` that dropped flowers onto bare stone, leaves a block vanilla pops
-/// off as an item the first time the chunk ticks — the edit silently undone,
-/// with the compile-time model (which has no item-drop physics) still showing
-/// it in every snapshot.
+/// world by the pinned jar's measured `canSurvive` rule
+/// ([`delvewright_dsl::support`]): a later batch that carved the floor out from
+/// under a torch, or a `scatter` that dropped flowers onto bare stone, leaves a
+/// block the server pops off as an item the first time a shape update reaches
+/// it — the edit silently undone, with the compile-time model (which has no
+/// item-drop physics) still showing it in every snapshot.
 ///
-/// Advisory for decoration. **Error** when the popped block is a fixture the
-/// script's own `relight` verb placed: that is a declared `min_light`
-/// guarantee, and losing it re-darkens a region the `DW0211` proof passed.
-/// Findings are aggregated per `(reason, block)` — a carved floor can strand
+/// Advisory for decoration — the finished world is judged by `DW1002`, which
+/// refuses a block the build ships unheld. **Error** when the popped block is a
+/// fixture the script's own `relight` verb placed: that is a declared
+/// `min_light` guarantee, and losing it re-darkens a region the `DW0211` proof
+/// passed. Findings are aggregated per block — a carved floor can strand
 /// hundreds of flowers, and hundreds of identical lines are noise, not
 /// information.
 fn check_support(
@@ -996,8 +913,8 @@ fn check_support(
     fixture_cells: &BTreeSet<[i32; 3]>,
     warnings: &mut Vec<Diagnostic>,
 ) -> Result<(), Failure> {
-    // (reason, block id) → (count, first offending cell)
-    let mut agg: BTreeMap<(&'static str, String), (usize, [i32; 3])> = BTreeMap::new();
+    // block id → (count, first offending cell, what its rule asks)
+    let mut agg: BTreeMap<String, (usize, [i32; 3], String)> = BTreeMap::new();
     for (cell, block) in watch {
         // A later batch overwrote this cell: it is no longer our placement.
         let base = strip_ns(base_id(block));
@@ -1005,24 +922,33 @@ fn check_support(
             Some(current) if strip_ns(base_id(current)) == base => {}
             _ => continue,
         }
-        let Some(need) = support_of(block) else {
+        let Some(delvewright_dsl::support::Needs::Support(rules)) =
+            delvewright_dsl::support::needs(block)
+        else {
             continue;
         };
-        let below = [cell[0], cell[1] - 1, cell[2]];
-        let under = assembled.blocks.get(&below);
-        // `(singular, plural)` phrasing of the same finding: the fixture-tier
-        // message names one block, the aggregated advisory names many.
-        let reason = match (need, under) {
-            (_, None) => (
-                "has no block below it at all",
-                "have no block below them at all",
-            ),
-            (Support::Soil, Some(u)) if !SOIL.contains(&strip_ns(base_id(u))) => (
-                "sits on a block flowers cannot root in",
-                "sit on a block flowers cannot root in",
-            ),
-            _ => continue,
+        let at = |f: delvewright_dsl::blockshape::Face| -> &str {
+            let o = f.offset();
+            assembled
+                .blocks
+                .get(&[cell[0] + o[0], cell[1] + o[1], cell[2] + o[2]])
+                .map_or("minecraft:air", |s| &**s)
         };
+        if rules.iter().any(|r| r.holds(at(r.cell))) {
+            continue;
+        }
+        let asks = rules
+            .iter()
+            .map(|r| {
+                format!(
+                    "the block {} to {} (there is `{}`)",
+                    crate::compiler::attached::beside(r.cell),
+                    r.describe(),
+                    at(r.cell)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; or ");
         // A broken relight fixture is a broken lighting guarantee: error now,
         // naming the cell precisely (there are never many).
         if fixture_cells.contains(cell) {
@@ -1030,32 +956,32 @@ fn check_support(
                 code: DW_EDIT_SUPPORT,
                 message: format!(
                     "after world-edits batch `{bid}`: the `relight` fixture `{block}` at \
-                     [{}, {}, {}] {} — vanilla pops it off as an item the first time \
-                     the chunk ticks, so the region silently loses the `min_light` the \
-                     `DW0211` proof accepted. Keep the fixture's support intact (order the \
-                     carving batch BEFORE the `relight`), or move the fixture; do NOT ship a \
-                     light source the world drops on the floor",
-                    cell[0], cell[1], cell[2], reason.0
+                     [{}, {}, {}] is held by none of its neighbours — it needs {asks} — so \
+                     the server pops it off as an item the first time a shape update reaches \
+                     it, and the region silently loses the `min_light` the `DW0211` proof \
+                     accepted. Keep the fixture's support intact (order the carving batch \
+                     BEFORE the `relight`), or move the fixture; do NOT ship a light source \
+                     the world drops on the floor",
+                    cell[0], cell[1], cell[2]
                 ),
             });
         }
-        let entry = agg
-            .entry((reason.1, base.to_string()))
-            .or_insert((0, *cell));
+        let entry = agg.entry(base.to_string()).or_insert((0, *cell, asks));
         entry.0 += 1;
     }
-    for ((reason, block), (count, first)) in agg {
+    for (block, (count, first, asks)) in agg {
         warnings.push(Diagnostic::warning(
             DW_EDIT_SUPPORT,
             "world-edits",
             format!("/content/batches/{bid}"),
             format!(
-                "after world-edits batch `{bid}`: {count} placed `{block}` block(s) {reason} \
-                 (first at [{}, {}, {}]). Vanilla pops a support-dependent block off \
-                 as an item the first time the chunk ticks, so these writes silently vanish in \
-                 the delivered world while every snapshot still shows them. Fix the support \
-                 (put soil under flora, keep the floor under a torch) or reorder the batches \
-                 so the carve happens first",
+                "after world-edits batch `{bid}`: {count} placed `{block}` block(s) are held by \
+                 none of their neighbours (first at [{}, {}, {}], which needs {asks}). The \
+                 server pops a block its `canSurvive` rule does not hold off as an item the \
+                 first time a shape update reaches it, so these writes vanish in the delivered \
+                 world while every snapshot still shows them, and a build that ships one is \
+                 refused (`DW1002`). Fix the support (put soil under flora, keep the floor \
+                 under a torch) or reorder the batches so the carve happens first",
                 first[0], first[1], first[2],
             ),
         ));
@@ -1932,8 +1858,7 @@ fn relight_region(
         assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         crate::compiler::nav::Premises::geometry_only(),
     );
-    let moves = crate::compiler::nav::plan_moves(plan, &nav).unwrap_or_default();
-    let required = nav.required_path_cells(plan, &moves);
+    let required = crate::compiler::light::fixture_keep_out(plan, &nav);
     let (amin, amax) = match bounds_of(cells.iter()) {
         Some(b) => b,
         None => return Ok(()), // unreachable: used_region rejects empty regions
@@ -2697,5 +2622,112 @@ mod tests {
             rows.iter().map(|r| r.domain).sum::<usize>()
         );
         assert_eq!(j["verbs"].as_array().map(Vec::len), Some(rows.len()));
+    }
+
+    /// An open stone strip at `y = 64`, `x = 0..=6`, one cell wide — the floor a
+    /// world edit writes over.
+    fn strip() -> Assembled {
+        let blocks: BTreeMap<[i32; 3], String> = (0..=6)
+            .map(|x| ([x, 64, 0], "minecraft:stone".to_string()))
+            .collect();
+        Assembled {
+            blocks: std::sync::Arc::new(crate::compiler::blockstate::interned(blocks)),
+            settled: Vec::new(),
+            open_gates: BTreeSet::new(),
+            gate_seals: Vec::new(),
+        }
+    }
+
+    /// The walk over `a` from the strip's west end, and the feet height of a body
+    /// standing over its middle column.
+    fn walk(a: &Assembled, at: [i32; 3]) -> (BTreeSet<[i32; 3]>, f64) {
+        let w = crate::compiler::light::geometry_world(a);
+        (w.reachable_walkable(&[[0, 65, 0]]), w.feet_y(at))
+    }
+
+    /// **What a world edit writes is classified by the collision table** — the
+    /// block a `set-block`/`fill` lays reaches the walk through
+    /// [`assembled::occupancy_over`], never a rule of its own. A block with no
+    /// collision box, or one under the auto-step line, written over a floor
+    /// leaves the walk exactly as it was: the body still stands in that cell, on
+    /// the floor beneath, at the floor's height. A carpet's 1/16 is under the
+    /// 8/16 line below which the model keeps no floor level of its own (it is
+    /// within the 0.6-block auto-step), so its body stands at the stone's top.
+    /// A climbable with nothing to hang on is removed by the game's first shape
+    /// update, so it reads as air too.
+    #[test]
+    fn a_block_with_no_footing_written_over_a_floor_leaves_the_walk_as_it_was() {
+        let at = [3, 65, 0];
+        let (open, feet) = walk(&strip(), at);
+        assert_eq!(open.len(), 7, "the bare strip walks end to end: {open:?}");
+        assert_eq!(feet, 65.0);
+        for block in [
+            "minecraft:white_carpet",
+            "minecraft:torch",
+            "minecraft:wall_torch[facing=north]",
+            "minecraft:poppy",
+            "minecraft:short_grass",
+            "minecraft:snow[layers=3]",
+            "minecraft:stone_pressure_plate",
+            "minecraft:ladder[facing=north]",
+            "minecraft:vine[north=true]",
+        ] {
+            let mut a = strip();
+            write_cell(&mut a, &mut BTreeMap::new(), at, block);
+            assert_eq!(
+                walk(&a, at),
+                (open.clone(), feet),
+                "`{block}` written over the floor must leave the walk and the feet \
+                 height as they were"
+            );
+        }
+    }
+
+    /// A partial floor is modelled at its measured height: a five-layer snow
+    /// drift written over the floor is a floor at 8/16, so the body stands one
+    /// cell up with its feet half a block above the stone; a `dirt_path` written
+    /// in place of the stone puts the feet one sixteenth down.
+    #[test]
+    fn a_partial_floor_written_by_an_edit_is_stood_on_at_its_measured_height() {
+        let mut snow = strip();
+        write_cell(
+            &mut snow,
+            &mut BTreeMap::new(),
+            [3, 65, 0],
+            "minecraft:snow[layers=5]",
+        );
+        let (walked, feet) = walk(&snow, [3, 66, 0]);
+        assert!(walked.contains(&[3, 66, 0]) && !walked.contains(&[3, 65, 0]));
+        assert!(
+            walked.contains(&[6, 65, 0]),
+            "a half-block rise is stepped over"
+        );
+        assert_eq!(feet, 65.5);
+        let mut path = strip();
+        write_cell(
+            &mut path,
+            &mut BTreeMap::new(),
+            [3, 64, 0],
+            "minecraft:dirt_path",
+        );
+        let (walked, feet) = walk(&path, [3, 65, 0]);
+        assert_eq!(walked.len(), 7);
+        assert_eq!(feet, 65.0 - 1.0 / 16.0);
+    }
+
+    /// A full cube written by an edit still blocks: two courses of stone across
+    /// the strip cut its east end off.
+    #[test]
+    fn a_stone_written_by_an_edit_blocks_the_walk() {
+        let mut a = strip();
+        for y in [65, 66] {
+            write_cell(&mut a, &mut BTreeMap::new(), [3, y, 0], "minecraft:stone");
+        }
+        let (walked, _) = walk(&a, [3, 65, 0]);
+        assert!(
+            !walked.contains(&[3, 65, 0]) && !walked.contains(&[4, 65, 0]),
+            "a stone wall across a one-wide strip is not walked through: {walked:?}"
+        );
+        assert!(walked.contains(&[2, 65, 0]));
     }
 }

@@ -1,0 +1,16 @@
+{
+  "code": "DW0997",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/actors/6/watch",
+      "value": {
+        "who": "nearest",
+        "within": 1
+      }
+    }
+  ],
+  "units": [],
+  "why": "The destrier, waiting at the annex threshold, set to watch whoever comes within one block of it. No cell the party can walk to from where the campaign puts it stands that close, so nothing could ever turn the body and the declaration is inert; the refusal names the body, its reach, and the nearest walked cell with its distance, which is the reach that would pass. Every other gallery body has a walked cell within one block of its feet, the rafter spider included, so a one-block watch on any of them is drawable. It declares no unit: `watch` is bound by `npc/warden` and `actor/standard-bearer`."
+}

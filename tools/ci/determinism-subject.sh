@@ -30,24 +30,37 @@
 # divergence in the generator and a divergence in emission are each visible, and
 # the report says which file moved.
 #
+# ## The second subject: the gallery primary
+#
+# `--subject gallery` digests the engine's own campaign (spec-0039): the prefab
+# directory `tools/ci/gallery-prefabs.py` generates (the generator and `delvec
+# detail`/`sculpt`), the primary as `tools/ci/gallery_domain.py` materialises
+# it, and its `--lang en` build. It is the subject that exercises every surface
+# the DSL declares, so it is the cross-OS probe of the gallery build that a
+# committed baseline used to be (ADR-0034). The prefab directory is generated
+# here on both hosts rather than handed in, so the invocation is identical and
+# the generator's own cross-OS bytes are compared too.
+#
 # ## Usage
 #
 #   tools/ci/determinism-subject.sh --delvec target/debug/delvec --out digest.txt
-#                                [--work DIR]
+#                                [--subject gym|gallery] [--work DIR]
 
 set -euo pipefail
 
 DELVEC=""
 OUT=""
 WORK=""
+SUBJECT="gym"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --delvec) DELVEC="$2"; shift 2;;
     --out)    OUT="$2"; shift 2;;
     --work)   WORK="$2"; shift 2;;
+    --subject) SUBJECT="$2"; shift 2;;
     -h|--help)
-      sed -n '2,40p' "$0"; exit 0;;
+      sed -n '2,52p' "$0"; exit 0;;
     *)
       echo "determinism-subject: unknown argument \`$1\`" >&2; exit 2;;
   esac
@@ -57,6 +70,10 @@ if [ -z "$DELVEC" ] || [ -z "$OUT" ]; then
   echo "determinism-subject: --delvec BIN and --out FILE are both required" >&2
   exit 2
 fi
+case "$SUBJECT" in
+  gym|gallery) ;;
+  *) echo "determinism-subject: --subject is \`gym\` or \`gallery\`, not \`$SUBJECT\`" >&2; exit 2;;
+esac
 if [ ! -x "$DELVEC" ]; then
   echo "determinism-subject: \`$DELVEC\` is not an executable file. Build one:" >&2
   echo "    cargo build --locked -p delvec --bin delvec" >&2
@@ -72,6 +89,7 @@ rm -rf "$WORK"
 mkdir -p "$WORK/campaign" "$WORK/prefabs"
 
 echo "determinism-subject: engine   — $("$DELVEC" --version)"
+echo "determinism-subject: subject  — $SUBJECT"
 echo "determinism-subject: cwd      — $(pwd)"
 echo "determinism-subject: work dir — $WORK"
 
@@ -96,6 +114,34 @@ run_verb() {
     exit "$status"
   fi
 }
+
+# Run one python tool of this tree, saying what is run first and printing what
+# it said on a non-zero exit, as `run_verb` does for the engine.
+run_tool() {
+  label="$1"; shift
+  echo "determinism-subject: $label — python3 $*"
+  set +e
+  python3 "$@" > "$WORK/$label.log" 2>&1
+  status=$?
+  set -e
+  if [ "$status" -ne 0 ]; then
+    echo "determinism-subject: \`$label\` exited $status. What it said:" >&2
+    sed 's/^/    /' "$WORK/$label.log" >&2
+    exit "$status"
+  fi
+}
+
+if [ "$SUBJECT" = "gallery" ]; then
+  # The pieces, the materialised primary and its build. The prefab directory,
+  # the campaign and the output tree are all digested; the logs are not.
+  mkdir -p "$WORK/subject"
+  run_tool prefabs "$here/tools/ci/gallery-prefabs.py" --delvec "$DELVEC" --out "$WORK/subject/prefabs"
+  run_tool materialise "$here/tools/ci/gallery_domain.py" materialise "$WORK/subject/campaign"
+  run_verb build --lang en build "$WORK/subject/campaign" -o "$WORK/subject/out" \
+    --prefabs "$WORK/subject/prefabs"
+  python3 "$here/tools/ci/tree-digest.py" --root "$WORK/subject" --out "$OUT"
+  exit 0
+fi
 
 # The campaign, generated from the compiler's own metrics table.
 run_verb metrics metrics --gym "$WORK/campaign"

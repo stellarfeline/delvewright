@@ -80,8 +80,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 GALLERY = REPO / "gallery"
 
-# Beside the stage documents, and never part of a campaign: the committed hash
-# baseline, the sculpt forms (library assets `gallery-prefabs.py` sculpts into the
+# Beside the stage documents, and never part of a campaign: the committed
+# expected-warnings ledger, the sculpt forms (library assets `gallery-prefabs.py` sculpts into the
 # prefab directory), the overlay set, the refusal probes. A point is the gallery MINUS
 # these, plus at most one of the points inside them.
 NOT_CAMPAIGN = ("baseline", "forms", "overlays", "probes")
@@ -282,13 +282,43 @@ def overlays() -> list[str]:
 
 
 def build_id(overlay: str | None, lang: str) -> str:
-    """The key one build of the domain is recorded under, in `gallery/baseline/`.
+    """The key one build of the domain is recorded under, in every baseline document.
 
     Shared because `gallery-build.py` cross-checks its own build against the
-    committed baseline row, and a second opinion about the KEY would let that
-    cross-check silently compare a build against nothing.
+    manifest row the baseline run measured, and a second opinion about the KEY
+    would let that cross-check silently compare a build against nothing.
     """
     return f"{overlay or 'primary'}.{lang}"
+
+
+def languages() -> list[str]:
+    """The languages the gallery declares beyond its source language `en`."""
+    world = json.loads((GALLERY / "world.json").read_text(encoding="utf-8"))
+    return list(world["content"].get("languages") or [])
+
+
+def points(langs: list[str] | None = None, overlay_names: list[str] | None = None) -> list[tuple[str | None, str]]:
+    """The builds of the domain (spec-0039 §3): the primary in `en` and in every
+    declared language, plus each overlay in `en`. `(overlay or None, lang)` pairs.
+
+    The one enumeration rule. Called with no arguments it reads this tree's
+    gallery; `gallery-baseline.py` hands it another tree's languages and overlays,
+    so both sides of a comparison are enumerated by the same rule over their own
+    sources. A probe is never a point: it exists to be refused, and
+    `check-gallery-coverage.py` runs it.
+    """
+    langs = languages() if langs is None else langs
+    names = overlays() if overlay_names is None else overlay_names
+    out: list[tuple[str | None, str]] = [(None, "en")]
+    out += [(None, lang) for lang in langs if lang != "en"]
+    out += [(name, "en") for name in names]
+    return out
+
+
+def probes() -> list[str]:
+    """The refusal probes' names, derived from the directory."""
+    d = GALLERY / "probes"
+    return sorted(p.name for p in d.iterdir() if p.is_dir()) if d.is_dir() else []
 
 
 def materialise(dest: Path, point: Path | None = None) -> int:
@@ -398,3 +428,35 @@ def _refuse_dangerous_dest(dest: Path) -> None:
         raise SystemExit(
             f"error: refusing to materialise over `{r}` — it contains the gallery"
         )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """`gallery_domain.py materialise DEST [--point NAME]` — one point, for a shell caller.
+
+    `tools/ci/determinism-subject.sh` builds the primary on two hosts and needs
+    the campaign this module materialises; a shell script has no other way to
+    reach the one authority.
+    """
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Materialise one point of the gallery domain.")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    m = sub.add_parser("materialise", help="write the campaign for one point to DEST")
+    m.add_argument("dest", type=Path)
+    m.add_argument("--point", default="primary", help="`primary` or an overlay name (default `primary`)")
+    args = ap.parse_args(argv)
+    if args.point == "primary":
+        point = None
+    elif args.point in overlays():
+        point = GALLERY / "overlays" / args.point
+    else:
+        raise SystemExit(f"error: `{args.point}` is not `primary` or an overlay of the gallery")
+    n = materialise(args.dest, point)
+    if n == 0:
+        raise SystemExit(f"error: materialising `{args.point}` wrote ZERO files")
+    print(f"gallery_domain: `{args.point}` materialised, {n} file(s) into `{args.dest}`")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

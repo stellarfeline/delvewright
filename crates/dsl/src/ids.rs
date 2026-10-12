@@ -189,6 +189,11 @@ prefixed_id!(
     /// finding blames.
     LoopId, "loop");
 prefixed_id!(
+    /// Pulse id: `pulse/<kebab>` (stage-5 `pulses` section, spec-0102). Unique
+    /// within the stage-5 pulse namespace; it names the pulse's emitted
+    /// function, its latch holder, its PackTest templates and its ledger row.
+    PulseId, "pulse");
+prefixed_id!(
     /// Shop id: `shop/<kebab>` (stage-5 `shops` section, DSL v0.10, spec-0032).
     /// Unique within the stage-5 shop namespace; it names the shop's interaction
     /// affordance, its dialog, its `/trigger` routing value and its l10n keys.

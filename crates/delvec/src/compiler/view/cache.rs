@@ -19,8 +19,10 @@ use std::path::{Path, PathBuf};
 use crate::compiler::view::diag::{DW_OUTPUT, Diagnostic};
 
 /// The extensions Chunky derives from a scene's chunk set, all invalidated the
-/// moment the scene description changes.
-pub const CACHE_SUFFIXES: [&str; 4] = ["octree2", "dump", "dump.backup", "emittergrid"];
+/// moment the scene description changes — and `budget`, the sample budget
+/// `validation/chunky.sh` records beside the scene (`tools/lib/chunky_budget.py`),
+/// which belongs to the emission that wrote it.
+pub const CACHE_SUFFIXES: [&str; 5] = ["octree2", "dump", "dump.backup", "emittergrid", "budget"];
 
 /// Delete the derived caches of the scene named by `scene_json` (a bare file
 /// name such as `spawn.json`) in `dir`. Returns the files actually removed, in
@@ -69,6 +71,7 @@ mod tests {
             "spawn.dump",
             "spawn.dump.backup",
             "spawn.emittergrid",
+            "spawn.budget",
         ] {
             std::fs::write(dir.join(f), b"stale").unwrap();
         }
@@ -79,12 +82,13 @@ mod tests {
         std::fs::write(dir.join("spawn.json"), b"{}").unwrap();
 
         let removed = purge_scene_caches(&dir, "spawn.json").unwrap();
-        assert_eq!(removed.len(), 4, "{removed:?}");
+        assert_eq!(removed.len(), 5, "{removed:?}");
         for f in [
             "spawn.octree2",
             "spawn.dump",
             "spawn.dump.backup",
             "spawn.emittergrid",
+            "spawn.budget",
         ] {
             assert!(!dir.join(f).exists(), "{f} survived");
         }

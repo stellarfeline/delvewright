@@ -196,7 +196,7 @@ It is not optional and not skippable by going around it: `owner-play.yaml` is
 the only file that publishes 25565, and it refuses to start the server without
 a token the gate minted for *that exact build tree*.
 
-**A site-plan build with no place detailed is refused outright** — with or
+**A build with no place detailed is refused outright** — with or
 without `--strict`, and out of `--stage-anyway`'s reach. A campaign is staged
 only once detailed; step 9 is what makes it so.
 

@@ -3,18 +3,14 @@
 
 ## The gap this closes
 
-Every build of the domain except the primary in `en` existed only inside
-`tools/ci/gallery-baseline.py`, in a temp directory it deletes on the way out. The
-baseline is right to do that — it keeps a hash, not a world — but it meant the
-site-plan overlay, the map pipeline's first walkable whole, was a tree **nothing
-in the repository could produce on demand**. The bot ladder walked it end to end
-and the run was reported against a build that no committed act could bring back,
-so the evidence named an object no later reader could re-make, and a round that
-went looking for the materialisation read the coverage checker's validate-only
-copy first.
+Every build of the domain except the primary in `en` exists otherwise only
+inside `tools/ci/gallery-baseline.py`, in a temp directory it deletes on the way
+out — it keeps a hash, not a world. So the site-plan overlay, the map pipeline's
+first walkable whole, would be a tree nothing in the repository could produce on
+demand, and a bot run over it would name an object no later reader could re-make.
 
-This is the missing step, and it is deliberately small: materialise, build,
-and prove the result is the one the baseline recorded.
+This is that step, and it is deliberately small: materialise, build, and prove
+the result is the one the baseline run measured.
 
 ## What it produces
 
@@ -32,10 +28,16 @@ Two persistent directories, both gitignored, both replaced on every run:
 The point of a regenerable tree is that it regenerates **identically**, and a
 tool that only says "exit 0" has not established that. So the build's own
 `manifest.json` — the compiler's SHA-256 index over every input and every output
-path — is compared to the row `gallery/baseline/manifests.json` already holds for
-this point. That row was written by a different tool, on a different machine, at a
-different time, which is what makes it a real second observer rather than this
-run agreeing with itself.
+path — is compared to the row the baseline run measured for this point: the
+`manifests.json` that `tools/ci/gallery-baseline.py` wrote under its `--work`,
+handed here by `--manifests` (in CI, by artifact from the baseline job). That row
+was written by a different tool, in a different job, from a prefab directory a
+different job generated — a real second observer, never this run agreeing with
+itself, and never an assumption that the same binary over the same input agrees.
+
+The document names the commit it measured (`tree`), and a document measured at
+any other commit than this checkout's HEAD is refused before any row is read: a
+stale report from an earlier run is not the run's.
 
 A mismatch is NOT classified here. `tools/ci/gallery-baseline.py` decides what KIND of
 finding a moved manifest is, and a second answer to that question is exactly the
@@ -57,8 +59,8 @@ spec-0049 §5.4 asks for is a campaign's gate, not the gallery's.
 
 Every run states the files materialised, the emitted paths compared, and the
 baseline row it compared them to. Materialising zero files, emitting zero paths,
-or finding no baseline row for the point is a red — a rebuild that reproduced
-nothing is vacuous, not a pass.
+or finding no row for the point is a red — a rebuild that reproduced nothing is
+vacuous, not a pass.
 """
 
 from __future__ import annotations
@@ -75,7 +77,6 @@ from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_domain import GALLERY, build_id, materialise, overlays  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-BASELINE = GALLERY / "baseline" / "manifests.json"
 
 PRIMARY = "primary"
 
@@ -100,21 +101,37 @@ def point_dir(point: str) -> Path | None:
     return GALLERY / "overlays" / point
 
 
-def baseline_row(point: str, lang: str) -> dict:
-    """The manifest the baseline recorded for this build, or a refusal saying why not."""
-    if not BASELINE.is_file():
+def head_commit() -> str:
+    r = subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def baseline_row(manifests: Path, point: str, lang: str, head: str | None = None) -> dict:
+    """The manifest the baseline run measured for this build, or a refusal saying why not."""
+    if not manifests.is_file():
         die(
-            f"`{BASELINE.relative_to(REPO)}` is missing, so there is nothing to check this "
-            "build against. Write it with `python3 tools/ci/gallery-baseline.py --write`."
+            f"`{manifests}` is missing, so there is nothing to check this build against. "
+            "It is written by `python3 tools/ci/gallery-baseline.py` (under its `--work`, "
+            "`report/manifests.json`) in the same run."
         )
-    rows = json.loads(BASELINE.read_text())
+    doc = json.loads(manifests.read_text())
+    if not isinstance(doc, dict) or "tree" not in doc or "manifests" not in doc:
+        die(f"`{manifests}` is not a baseline manifests document (`tree`, `manifests`)")
+    head = head_commit() if head is None else head
+    if doc["tree"] != head:
+        die(
+            f"`{manifests}` was measured at `{doc['tree'][:12] or '?'}` and this checkout is "
+            f"`{head[:12] or '?'}`. Those manifests are not this run's, so a build agreeing "
+            "with them would prove nothing about this tree."
+        )
+    rows = doc["manifests"]
     key = build_id(None if point == PRIMARY else point, lang)
     if key not in rows:
         die(
-            f"the baseline holds no row `{key}`, so a build of it would be measured against "
-            f"nothing. Recorded rows: {', '.join(sorted(rows))}. The domain is the primary in "
-            "every declared language plus each overlay in `en` — a point outside it is not a "
-            "build this repository has ever taken a baseline of."
+            f"the measured manifests hold no row `{key}`, so a build of it would be measured against "
+            f"nothing. Measured rows: {', '.join(sorted(rows))}. The domain is the primary in "
+            "every declared language plus each overlay in `en` (`gallery_domain.points`) — a "
+            "point outside it is not a build the baseline run measured."
         )
     return rows[key]
 
@@ -183,6 +200,14 @@ def main() -> int:
     ap.add_argument("--delvec", help="the `delvec` this tool runs. Default: `target/release/delvec` then `target/debug/delvec` in this tree — resolved, NAMED on stderr, and refused when it is older than the compiler sources it was built from (`tools/lib/delvec_bin.py`).")
     ap.add_argument("--prefabs", required=True)
     ap.add_argument(
+        "--manifests",
+        required=True,
+        type=Path,
+        help="the head manifests the baseline run measured (`gallery-baseline.py`'s "
+        "`<work>/report/manifests.json`). Required: the proof is against this run's "
+        "measurement and nothing else.",
+    )
+    ap.add_argument(
         "--src",
         default=None,
         help="where the campaign is written (default validation/gallery-src-<point>)",
@@ -205,7 +230,7 @@ def main() -> int:
 
     point = args.point
     overlay = point_dir(point)
-    expected = baseline_row(point, args.lang)
+    expected = baseline_row(args.manifests, point, args.lang)
 
     src = Path(args.src) if args.src else REPO / "validation" / f"gallery-src-{point}"
     out = Path(args.out) if args.out else REPO / "validation" / f"delve-output-gallery-{point}"
@@ -235,7 +260,7 @@ def main() -> int:
     if manifest != expected:
         differing = manifest_delta(expected, manifest)
         die(
-            f"this build of `{key}` is not the build `gallery/baseline/` recorded, so the tree "
+            f"this build of `{key}` is not the build the baseline run measured, so the tree "
             "written here is NOT the one the baseline measured and nothing downstream may cite "
             "it as such.\n"
             + "\n".join(f"  {line}" for line in differing[:40])
@@ -247,7 +272,7 @@ def main() -> int:
 
     print(f"  campaign:   {src.relative_to(REPO) if src.is_relative_to(REPO) else src}")
     print(f"  build tree: {out.relative_to(REPO) if out.is_relative_to(REPO) else out}")
-    print("  identical to the committed baseline for this point.")
+    print("  identical to the baseline run's measurement of this point.")
     if out.is_relative_to(REPO / "validation"):
         rel = out.relative_to(REPO / "validation")
         print(

@@ -1376,7 +1376,8 @@ pub(crate) fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
              `PersistenceRequired` does not save one — so every wave, hostile actor and \
              ambush in this campaign would silently cease to exist. Declare `easy`, `normal` \
              or `hard`; for a delve that is genuinely combat-free, simply omit `difficulty` \
-             (a campaign with no waves already ships peaceful by derivation)"
+             (a campaign that fields no wave and stages no body peaceful discards ships \
+             peaceful by derivation)"
                 .to_string(),
         ));
     }
@@ -1581,6 +1582,23 @@ pub(crate) fn world_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
     );
 }
 
+/// Every id a `place` reference may name (spec-0080, spec-0102): each area of
+/// `world.areas[]` and each site-plan box's `node/…`. The one set a
+/// [`crate::PlaceRef`]'s `place` resolves against.
+pub(crate) fn place_ids(c: &Campaign) -> BTreeSet<&str> {
+    let mut out: BTreeSet<&str> = c
+        .world
+        .content
+        .areas
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+    if let Some(sp) = &c.site_plan {
+        out.extend(sp.content.boxes.iter().map(|b| b.node.as_str()));
+    }
+    out
+}
+
 /// `DW0112` over every atmosphere reference (spec-0080): an atmosphere is named
 /// by a place for its first tick and by a `set-atmosphere` for a repaint, and a
 /// repaint's `place` names an area or a site-plan box. Each is the plain
@@ -1611,16 +1629,9 @@ pub(crate) fn atmosphere_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     }
-    let mut place_ids: BTreeSet<&str> = c
-        .world
-        .content
-        .areas
-        .iter()
-        .map(|a| a.id.as_str())
-        .collect();
+    let place_ids = place_ids(c);
     if let Some(sp) = &c.site_plan {
         for (i, b) in sp.content.boxes.iter().enumerate() {
-            place_ids.insert(b.node.as_str());
             if let Some(id) = &b.atmosphere {
                 dangling(
                     d,
@@ -1634,7 +1645,8 @@ pub(crate) fn atmosphere_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
     crate::for_each_campaign_effect(c, &mut |path, site, e| {
         let crate::Verb::SetAtmosphere {
-            atmosphere, place, ..
+            atmosphere,
+            at: crate::PlaceRef { place, .. },
         } = &e.verb
         else {
             return;

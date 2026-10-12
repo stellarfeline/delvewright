@@ -1,0 +1,53 @@
+{
+  "code": "DW1001",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/probe-cell",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                20,
+                2,
+                10
+              ],
+              "min": [
+                20,
+                2,
+                10
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:sculk_catalyst[bloom=false]",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/probe-cell",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/set-a-catalyst-in-the-floor",
+        "note": "A sculk catalyst set into the near hall's floor, under the walk."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A catalyst a death can reach. One floor cell of the near hall becomes a sculk catalyst, under a cell the party walks: a catalyst blooms on every death within eight blocks and, on one that drops experience, rewrites the blocks around it into sculk by the game's random, so the world the proofs judged would change mid-fight. The build refuses it naming the catalyst's cell, the nearest cell a body can stand in and its distance. It declares no unit."
+}

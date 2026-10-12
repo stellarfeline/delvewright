@@ -131,6 +131,7 @@ export class RunReport {
   private readonly staged: StagedRemoval[] = [];
   private readonly trials: DeathTrial[] = [];
   private readonly muster: string[] = [];
+  private readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
@@ -155,6 +156,10 @@ export class RunReport {
   private loadWindows: LoadWindowRecord[] = [];
   /** spec-0084 §11: what the server pushed and whether it is the build's pack. */
   private resourcePack: ResourcePackVerdict | undefined;
+  /** spec-0101 §5.4: what the walk found about the record's watching bodies. */
+  private watchBinding:
+    | { inRecord: number; withinReach: number; asserted: number; judgements: number; line: string }
+    | undefined;
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -205,6 +210,11 @@ export class RunReport {
   /** A declared fact the live bodies did not carry. */
   recordMusterFinding(finding: string): void {
     this.muster.push(finding);
+  }
+
+  /** What every pulse station heard (spec-0102 §5.3). */
+  recordPulseStations(stations: readonly import("./pulse.ts").StationRecord[]): void {
+    this.pulseStations.push(...stations);
   }
 
   /** Everything the musters found, for the stage that owns them. */
@@ -279,6 +289,21 @@ export class RunReport {
    */
   recordNamePreference(binding: NamePreference): void {
     this.namePreference = binding;
+  }
+
+  /**
+   * The watch binding (spec-0101 §5.4). Recorded on every run; written to the
+   * artifact only when the record carries a watcher, so a delve that declares
+   * none keeps the report it had.
+   */
+  recordWatch(binding: {
+    inRecord: number;
+    withinReach: number;
+    asserted: number;
+    judgements: number;
+    line: string;
+  }): void {
+    this.watchBinding = binding;
   }
 
   /** The resource pack the client was sent, judged against the build's manifest. */
@@ -556,6 +581,17 @@ export class RunReport {
       // means zero scripted deaths were taken, whatever the stage's `passed` says
       // — the two are different questions and only this one answers "was anything
       // about dying looked at".
+      ...(this.watchBinding !== undefined && this.watchBinding.inRecord > 0
+        ? {
+            watch_binding: {
+              in_record: this.watchBinding.inRecord,
+              within_reach: this.watchBinding.withinReach,
+              asserted: this.watchBinding.asserted,
+              judgements: this.watchBinding.judgements,
+              line: this.watchBinding.line,
+            },
+          }
+        : {}),
       die_retry_binding:
         this.dieRetryBinding === undefined
           ? null
@@ -616,6 +652,9 @@ export class RunReport {
       // run read. Empty beside a non-zero `declared_facts` is the pass; empty
       // beside zero is a build the muster could not bind to.
       muster_findings: [...this.muster],
+      // Every pulse station the walk stood at (spec-0102 §5.3), with the beats
+      // it heard; empty for a build that declares no pulse or stations none.
+      pulse_stations: this.pulseStations.map((s) => ({ ...s, cell: [...s.cell] })),
     };
   }
 }

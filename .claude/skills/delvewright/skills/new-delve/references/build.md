@@ -74,29 +74,21 @@ Compose cannot compute an absolute default, so this is a real pair and not
 something a better default removes. Set neither and everything above is
 unchanged.
 
-The build writes more than a datapack. Four things to read, and **the last two
-stand on site-plan campaigns only** — an `areas[]` build emits neither, and
-their absence there is the placement model, not a run that went wrong:
+The build writes more than a datapack. Four things to read, on every build:
 
 - `critical-path.json`, at the **root** of the output — the playthrough the
-  proof found, step by step. **Every campaign.** A step that crosses areas
-  carries a `transport` key; step 2A is about what puts it there.
+  proof found, step by step.
 - `render-plan.json` — the deterministic shot list, each shot with the `expect`
-  line step 12 checks it against. **Every campaign.**
-- **Site-plan campaigns**: `DW0822`, the pacing line — it stands beside
-  `DW0813` on every site-plan build and on no other. It measures the critical
-  path over the built
-  blockout — so many blocks of route, and about so many minutes at the
-  metrics table's blocks-per-minute rate — and it carries **no threshold and
-  refuses nothing**, so nothing in the engine compares it to your
-  `target_minutes`. **You do that.** A map that measures twelve minutes
-  against a `target_minutes` of 150 is not a warning anyone will raise; it is
-  a map whose walking is a twelfth of its billing, and the gap is either
-  content you have not written yet or a design that is smaller than it says.
-  **On an `areas[]` campaign there is no pacing measurement at all**, so
-  `target_minutes` there is your own estimate and nothing reads it — do not go
-  looking for this line, and do not read its absence as a build that skipped
-  something.
+  line step 12 checks it against.
+- `DW0822`, the pacing line — it stands beside `DW0813` on every build. It
+  measures the critical path over the built blockout — so many blocks of
+  route, and about so many minutes at the metrics table's blocks-per-minute
+  rate — and it carries **no threshold and refuses nothing**, so nothing in
+  the engine compares it to your `target_minutes`. **You do that.** A map that
+  measures twelve minutes against a `target_minutes` of 150 is not a warning
+  anyone will raise; it is a map whose walking is a twelfth of its billing, and
+  the gap is either content you have not written yet or a design that is
+  smaller than it says.
 
 **Every campaign: no place a player can get into and not out of.**
 The build moves a body the way a player does — walks, falls off edges, jumps
@@ -109,6 +101,26 @@ player jumps in from — and never answer it with an invisible barrier. A room
 the story shuts the party into is not this: its objective is inside it. The
 build prints the leave-proof binding line either way; the counts are in
 `validation/leave-proof.json`.
+
+**Every campaign: every block the build writes is one the server keeps.** A
+block that needs a neighbour to stay — a wall torch, a lever, a ladder, a
+lantern, a flower, a carpet, a door's upper half — is judged by the pinned
+server's own measured rule, over the world at load and over every
+configuration the critical path passes. One that no neighbour holds is
+`DW1002`, naming the block, its cell, the piece whose box holds it, and what
+each neighbour would have to give. Repair it where the block is authored — in
+the piece, the edit or the fill: give it the neighbour it asks for, hang it on a
+face that holds it, or choose a block that needs nothing there. The build prints
+`attached blocks (DW1002): …` either way, and a block the rule cannot judge is
+counted there, never refused. Rule:
+`$DELVEWRIGHT_ENGINE/docs/reference/delvec/compiler/attached.md`.
+
+**Three binding lines name what step 10 will assert**, zeroes included:
+`sculk walk: P of S sensor(s) predicted …` (a sculk device no leg predicts is
+named, and is never asserted), `pulse binding: … H of N with a listening
+station` (a pulse with no station is never heard by the ladder), and `watch
+binding: … D drawable, R refused, U unobservable`. Read them against what you
+declared before you run the ladder.
 
 **There is no blockout document and nothing to author early.** A site-plan
 campaign's geometry is derived from the plan and the metrics table by this

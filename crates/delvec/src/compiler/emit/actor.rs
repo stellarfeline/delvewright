@@ -52,7 +52,13 @@ pub(super) fn actor_puppet_summon(
 ) -> String {
     let safe = plan::safe_local(a.id.as_str());
     let p = ent_xyz(pos);
-    let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
+    // spec-0101: a watching puppet carries the live-watch tag from its summon.
+    let watch_tag = if a.watch.is_some() {
+        format!(",\"{}\"", crate::compiler::watching::WATCH_TAG)
+    } else {
+        String::new()
+    };
+    let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"{watch_tag}]");
     // The body that actually ships — the ONE authority both the router and the
     // emitter ask, so "which entity is this puppet" is answered in one place.
     let body = crate::compiler::nav::actor_body_entity(a);
@@ -512,6 +518,13 @@ pub(super) fn actor_fns(
                 "execute if score #arun_{bare} dw.sys matches 1 run return fail"
             ));
         }
+        // spec-0101: a watching puppet yields its yaw to the walk for as long
+        // as the walk runs; the arrival tick below hands it back.
+        let watches = crate::compiler::watching::body_watches(plan, &m.actor);
+        let body_sel = format!("tag=dw_pup_{safe}");
+        if watches {
+            start.push(crate::compiler::watching::yield_line(&body_sel));
+        }
         start.push(format!("scoreboard players set #arun_{bare} dw.sys 1"));
         start.push(format!("scoreboard players set #at_{bare} dw.sys 0"));
         start.push(format!("schedule function {ns}:ma_tick_{bare} 1t"));
@@ -534,6 +547,12 @@ pub(super) fn actor_fns(
                 fmt_f64(w[0]),
                 fmt_f64(w[1]),
                 fmt_f64(w[2])
+            ));
+        }
+        if watches {
+            tick.push(crate::compiler::watching::resume_line(
+                &format!("score #at_{bare} dw.sys matches {total}"),
+                &body_sel,
             ));
         }
         if !on_arrive.is_empty() {

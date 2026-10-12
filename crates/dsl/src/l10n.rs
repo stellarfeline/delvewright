@@ -1249,6 +1249,14 @@ pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
             });
         }
     });
+    // A pulse's sound (spec-0102), through the same registry rule.
+    for (i, p) in c.quests.content.pulses.iter().enumerate() {
+        out.push(SoundRef {
+            stage: "quests",
+            path: format!("/content/pulses/{i}/sound"),
+            sound: p.sound.clone(),
+        });
+    }
     out
 }
 

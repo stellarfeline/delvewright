@@ -576,7 +576,10 @@ pub fn claimed_areas(plan: &crate::compiler::plan::Plan) -> Vec<([i32; 3], [i32;
         .collect();
     for (_, _, eff) in crate::compiler::atmosphere::set_atmospheres(plan.campaign) {
         if let delvewright_dsl::Verb::SetAtmosphere {
-            place: Some(place), ..
+            at: delvewright_dsl::PlaceRef {
+                place: Some(place), ..
+            },
+            ..
         } = &eff.verb
         {
             painted.insert(place.as_str().to_string());
@@ -647,13 +650,19 @@ pub fn repaint_volume(
 ) -> Option<([i32; 3], [i32; 3])> {
     match &eff.verb {
         delvewright_dsl::Verb::SetAtmosphere {
-            region: Some(zone),
-            place: None,
+            at:
+                delvewright_dsl::PlaceRef {
+                    region: Some(zone),
+                    place: None,
+                },
             ..
         } => plan.zone_box(zone),
         delvewright_dsl::Verb::SetAtmosphere {
-            region: None,
-            place: Some(place),
+            at:
+                delvewright_dsl::PlaceRef {
+                    region: None,
+                    place: Some(place),
+                },
             atmosphere,
         } => place_paint(plan, place, atmosphere.as_ref().map(|a| a.as_str())),
         _ => None,

@@ -552,6 +552,12 @@ pub(crate) fn world_edits_checks(
                 format!("{path}/blocks/{i}/block"),
                 &b.block,
             );
+            crate::validate::check_sculk_rest(
+                &b.block,
+                stage,
+                format!("{path}/blocks/{i}/block"),
+                d,
+            );
         }
         if let Some(scale) = recipe.scale
             && !(scale.is_finite() && scale > 0.0)
@@ -945,6 +951,12 @@ pub(crate) fn world_edits_checks(
                             blocks,
                             format!("{epath}/items/{i}/block"),
                             &b.block,
+                        );
+                        crate::validate::check_sculk_rest(
+                            &b.block,
+                            stage,
+                            format!("{epath}/items/{i}/block"),
+                            d,
                         );
                     }
                     if !(density.is_finite() && *density > 0.0 && *density <= 1.0) {

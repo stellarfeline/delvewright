@@ -57,9 +57,9 @@ flowchart TD
 
 ## 地图
 
-地图有两种摆放方式。`areas[]` 从 piece 库中取 prefab，由原版 jigsaw 按编译器控制的种子拼装。site plan 先整体后局部——先是 geometry brief，再是 layout graph，然后是每个部分的包围盒、基准面和接缝——并在任何地点细化之前先作为 blockout 走一遍。库里没有的 piece，由 box-split 语法根据规则程序写出：Vesperhold 就是一个 area 里放着一个这样的 piece，整片场地，172 × 104 × 292 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都用 Chunky 渲染，并对照它所回应的概念图进行审查。
+每张地图都是一份 site plan，先整体后局部：先是 geometry brief，再是 layout graph，然后是每个地点的包围盒、基准面和接缝，以及地点之间的地面由什么填充；在任何地点细化之前，先作为 blockout 走一遍。之后每个地点就是一个 piece，在规划交给它的框里画出自己的墙、屋顶和地面，由 box-split 语法根据规则程序写出；只有一栋建筑的地图，就是只有一个包围盒的规划。上图的城堡 Vesperhold 就是单独一个语法 piece，装下整片场地，172 × 104 × 292 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都用 Chunky 渲染，并对照它所回应的概念图进行审查。
 
-延伸阅读：[选择摆放方式](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [地图先规划后建造](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [语法](docs/reference/grammar.md) · [收录一个 piece](docs/reference/prefab-procedure.md) · [室内照明](docs/reference/interior-lighting.md) · [视觉审查](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
+延伸阅读：[摆放地图](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [唯一的地图路线](docs/adr/0032-one-map-route.md) · [地图先规划后建造](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [语法](docs/reference/grammar.md) · [收录一个 piece](docs/reference/prefab-procedure.md) · [室内照明](docs/reference/interior-lighting.md) · [视觉审查](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 
 ## 故事
 

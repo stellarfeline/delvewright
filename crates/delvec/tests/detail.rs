@@ -2452,3 +2452,243 @@ fn dw0990_refuses_a_crack_and_passes_a_faced_edge_and_a_step() {
         errors_of(&b)
     );
 }
+
+// ---------------------------------------------------------------------------
+// A container a place's detail owes (DW0438 across the blockout)
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture with one adopting `collect`: a point station
+/// `anchor/heart` on `node/exit`, and `obj/take` filling the container that
+/// station names, between entering the cell and walking out.
+fn heart_dir(root: &Path) -> PathBuf {
+    let src = root.join("src");
+    common::copy_dir_all(&blockout_dir(), &src);
+    common::patch_file(&src.join("layout-graph.json"), |v| {
+        v["dsl_version"] = serde_json::json!(DSL_VERSION);
+        for n in v["content"]["nodes"].as_array_mut().unwrap() {
+            if n["id"] == "node/exit" {
+                n["stations"] = serde_json::json!([
+                    { "anchor": "anchor/heart", "kind": "point", "note": "A barrel set in the floor." }
+                ]);
+            }
+        }
+        v["content"]["beats"].as_array_mut().unwrap().insert(
+            2,
+            serde_json::json!({
+                "node": "node/exit", "objective": "obj/take", "quest": "quest/walk-the-whole"
+            }),
+        );
+    });
+    common::patch_file(&src.join("quests.json"), |v| {
+        v["dsl_version"] = serde_json::json!(DSL_VERSION);
+        let objs = v["content"]["quests"][0]["objectives"]
+            .as_array_mut()
+            .unwrap();
+        objs.insert(
+            2,
+            serde_json::json!({
+                "type": "collect",
+                "id": "obj/take",
+                "item": "minecraft:heart_of_the_sea",
+                "count": 1,
+                "anchor": "anchor/heart",
+                "container": "anchor/heart",
+                "title": "Take the heart",
+                "item_name": "The Heart",
+                "after": ["obj/enter-the-cell"],
+                "happening": {
+                    "subject": "item/heart",
+                    "text": "The party takes the heart out of the barrel.",
+                    "verb": "gains"
+                }
+            }),
+        );
+        objs[3]["after"] = serde_json::json!(["obj/take"]);
+    });
+    src
+}
+
+fn build_at(campaign: &Path, prefabs: &Path, out: &Path) -> (Option<i32>, String) {
+    let o = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "build",
+        campaign.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    (
+        o.status.code(),
+        String::from_utf8_lossy(&o.stderr).into_owned(),
+    )
+}
+
+/// **Step 8 builds a campaign whose container only step 9 can place.** On the
+/// blockout `node/exit` stands in its stand-in, so `anchor/heart` is a cell of
+/// massing nobody furnished; the adopting `collect` is an obligation the place's
+/// detail owes, deferred and counted on the binding line — never refused before
+/// the step that meets it, never passed silently.
+#[test]
+fn a_blockout_build_defers_a_container_its_place_owes_and_counts_it() {
+    let tmp = tempdir("container-deferred");
+    let src = heart_dir(&tmp);
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let (code, err) = build_at(&src, &prefabs, &tmp.join("out"));
+    assert_eq!(code, Some(0), "{err}");
+    assert!(
+        err.contains(
+            "container binding: 1 container fill(s) (0 loot, 1 adopting collect), 0 judged \
+             against the assembled world, 1 deferred"
+        ),
+        "the deferral is counted against its denominator: {err}"
+    );
+    assert!(
+        err.contains("collect `obj/take` in `node/exit`"),
+        "and named, with the place that owes it: {err}"
+    );
+}
+
+/// The detail is where the obligation is met, so a detailed place whose piece
+/// stands no container on the station is refused exactly as before.
+#[test]
+fn a_detailed_place_without_the_container_is_dw0438() {
+    let tmp = tempdir("container-missing");
+    let src = heart_dir(&tmp);
+    let d = detailed_from(&src, &tmp, &["node/exit"], &|_, _| None);
+    let (code, err) = build_at(&d.campaign, &d.prefabs, &tmp.join("out"));
+    assert_ne!(code, Some(0), "{err}");
+    assert!(err.contains("DW0438"), "{err}");
+    assert!(err.contains("obj/take"), "{err}");
+    assert!(
+        err.contains("0 deferred"),
+        "nothing is deferred once the place is detailed: {err}"
+    );
+}
+
+/// And a detailed place whose piece stands a barrel on the station builds, the
+/// fill judged against the world rather than deferred.
+#[test]
+fn a_detailed_place_with_the_container_builds_and_judges_it() {
+    let tmp = tempdir("container-present");
+    let src = heart_dir(&tmp);
+    let c = campaign_at(&src);
+    let exit = NodeId("node/exit".into());
+    let a = detail::allocation(&c, &exit).unwrap();
+    let cells = piece_cells(&c, &a, &unbound_massing(&c));
+    let seat = standing_cell(&a, &cells);
+    // The barrel goes on the next standable cell after the seat in the same
+    // scan, so the seat the piece's other owed names stand on is unchanged.
+    let solid: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .filter(|(_, b)| b != "minecraft:air" && b != "minecraft:structure_void")
+        .map(|(p, _)| *p)
+        .collect();
+    let barrel = (seat[0] + 1..a.extent[0] as i32)
+        .map(|x| [x, seat[1], seat[2]])
+        .find(|p| {
+            !solid.contains(p)
+                && !solid.contains(&[p[0], p[1] + 1, p[2]])
+                && solid.contains(&[p[0], p[1] - 1, p[2]])
+        })
+        .expect("a second standable cell beside the seat");
+    let at = [
+        i64::from(barrel[0]),
+        i64::from(barrel[1]),
+        i64::from(barrel[2]),
+    ];
+    let d = detailed_from(&src, &tmp, &["node/exit"], &|n, p| {
+        (n == "node/exit" && p == at).then(|| "minecraft:barrel[facing=up]".to_string())
+    });
+    patch_piece(&d, "exit", |v| {
+        v["anchors"]["heart"] = serde_json::json!({
+            "pos": barrel,
+            "facing": "north",
+            "resolves_to": "space:room",
+        });
+    });
+    patch_detail_plan(&d, |v| {
+        v["content"]["details"][0]["anchors"]["anchor/heart"] = serde_json::json!("heart");
+    });
+    let (code, err) = build_at(&d.campaign, &d.prefabs, &tmp.join("out"));
+    assert_eq!(code, Some(0), "{err}");
+    assert!(
+        err.contains("1 judged against the assembled world, 0 deferred"),
+        "{err}"
+    );
+}
+
+/// One rule for both container doors: a `loot` whose cell lies in a stand-in is
+/// owed by the place's detail on exactly the terms an adopting `collect` is.
+#[test]
+fn a_blockout_build_defers_loot_its_place_owes_by_the_same_rule() {
+    let tmp = tempdir("container-loot-deferred");
+    let src = heart_dir(&tmp);
+    common::patch_file(&src.join("layout-graph.json"), |v| {
+        for n in v["content"]["nodes"].as_array_mut().unwrap() {
+            if n["id"] == "node/exit" {
+                n["stations"].as_array_mut().unwrap().push(serde_json::json!(
+                    { "anchor": "anchor/stores", "kind": "point", "note": "A chest by the wall." }
+                ));
+            }
+        }
+    });
+    common::patch_file(&src.join("quests.json"), |v| {
+        v["content"]["loot"] = serde_json::json!([
+            { "id": "loot/stores", "anchor": "anchor/stores",
+              "items": [ { "item": "minecraft:bread", "count": 2 } ] }
+        ]);
+    });
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let (code, err) = build_at(&src, &prefabs, &tmp.join("out"));
+    assert_eq!(code, Some(0), "{err}");
+    assert!(
+        err.contains(
+            "container binding: 2 container fill(s) (1 loot, 1 adopting collect), 0 judged \
+             against the assembled world, 2 deferred"
+        ),
+        "{err}"
+    );
+    assert!(err.contains("loot `loot/stores` in `node/exit`"), "{err}");
+}
+
+/// A container that IS standing in a stand-in — a stage-7 batch put it there —
+/// is judged, not deferred: the deferral covers only the cell that cannot yet
+/// show its furniture.
+#[test]
+fn a_container_a_batch_stands_in_a_stand_in_is_judged_not_deferred() {
+    let tmp = tempdir("container-edited");
+    let src = heart_dir(&tmp);
+    let edits = serde_json::json!({
+        "dsl_version": DSL_VERSION,
+        "campaign_id": "blockout",
+        "stage": "world-edits",
+        "content": { "batches": [ {
+            "id": "batch/heart-barrel",
+            "area": "area/site",
+            "note": "Stand a barrel on the heart station.",
+            "edits": [
+                { "verb": "select", "name": "region/barrel",
+                  "shape": { "kind": "box",
+                             "frame": { "kind": "anchor-relative", "anchor": "anchor/heart" },
+                             "min": [0, 0, 0], "max": [0, 0, 0] } },
+                { "verb": "fill", "region": "region/barrel",
+                  "recipe": { "blocks": [ { "block": "minecraft:barrel", "weight": 1.0 } ] } }
+            ]
+        } ] }
+    });
+    std::fs::write(
+        src.join("world-edits.json"),
+        delvewright_dsl::to_canonical_string(&edits).unwrap(),
+    )
+    .unwrap();
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let (code, err) = build_at(&src, &prefabs, &tmp.join("out"));
+    assert_eq!(code, Some(0), "{err}");
+    assert!(
+        err.contains("1 judged against the assembled world, 0 deferred"),
+        "{err}"
+    );
+}

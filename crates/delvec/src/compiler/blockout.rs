@@ -194,6 +194,26 @@ impl Blockout {
         })
     }
 
+    /// **The place still standing in its stand-in whose play space holds
+    /// `cell`**, or `None` when the cell lies in a detailed place or in no place.
+    ///
+    /// A stand-in is massing nobody furnished: a cell inside one holds whatever
+    /// the derivation laid, and furniture a campaign document names there is an
+    /// obligation the place's detail owes, not a fact this world can show yet.
+    /// A proof of prefab furniture asks this before it refuses.
+    #[must_use]
+    pub fn stand_in_holding(&self, cell: [i32; 3]) -> Option<&str> {
+        let c = [i64::from(cell[0]), i64::from(cell[1]), i64::from(cell[2])];
+        self.boxes
+            .iter()
+            .filter(|b| self.massed.contains(&b.node.0))
+            .find(|b| {
+                let (lo, hi) = b.space();
+                (0..3).all(|i| c[i] >= lo[i] && c[i] <= hi[i])
+            })
+            .map(|b| b.node.0.as_str())
+    }
+
     /// The synthesized spatial vocabulary, ready to seat in a plan's anchor map
     /// — each name, where it is, and **what it is for** where that is a question
     /// the compiler has to answer without being told the name (spec-0046).

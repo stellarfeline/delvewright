@@ -30,6 +30,7 @@ pub(super) struct WorldProofs {
     pub(super) lightning_gate: Option<crate::compiler::lightning::LightningGate>,
     pub(super) stake_table: Option<crate::compiler::stake::StakeTable>,
     pub(super) death_plan: Option<Value>,
+    pub(super) pulse_gate: Option<crate::compiler::pulse::PulseGate>,
 }
 
 /// The proofs over the assembled world — walk, waves, lanes, branches,
@@ -134,6 +135,10 @@ pub(super) fn prove_world(
     // declares none of the three, and for one that assembles no world — a
     // contract nobody can walk is not the same fact as an empty one.
     let mut death_plan: Option<Value> = None;
+    // The pulse proofs' binding (`compiler::pulse`, spec-0102 §5.1), measured
+    // over the forced route's legs below. `None` for a campaign that assembles
+    // no world; the caller prints the line either way.
+    let mut pulse_gate: Option<crate::compiler::pulse::PulseGate> = None;
 
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::compiler::nav::MovePlan>,
@@ -509,6 +514,19 @@ pub(super) fn prove_world(
                     });
                 }
             }
+            // **spec-0100: the sculk family works** — every acting sculk block
+            // and every block a runtime write lays at rest (`DW0998`/`DW0999`),
+            // a sensor's power reaching no block that reads a signal (`DW1000`),
+            // and a catalyst where no body can die in its range (`DW1001`).
+            // After the seating pass, because a wave's seats root the mob half
+            // of the catalyst proof; it reads no route, so nothing below is lost
+            // by asking it here. Each line prints before its verdict, zeroes
+            // included.
+            crate::compiler::sculk::check(plan, world, blocks, campaign_spawn(plan), &waves)
+                .map_err(|f| BuildFailure::Diagnostic {
+                    code: f.code,
+                    message: f.message,
+                })?;
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
                 let m = crate::compiler::nav::plan_moves(plan, world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
@@ -814,12 +832,38 @@ pub(super) fn prove_world(
                         &route_cells,
                     )?;
                 }
+                // spec-0100 §4.6: the sensors the proven walk sets off, read off
+                // the world as placed, carried on the legs that set them off.
+                let listening = crate::compiler::sculk::Listening::of(
+                    &assembled.blocks,
+                    &crate::compiler::sculk::runtime_writes(plan),
+                );
+                // spec-0102: every pulse's derived range over the standable
+                // cells of its place, and its listening stations on these
+                // legs. The binding is printed before the verdict, a refusal
+                // included, and on every build that walks, zeroes included.
+                {
+                    let (gate, verdict) = crate::compiler::pulse::measure(plan, world, &routes);
+                    eprintln!("{}", gate.line());
+                    verdict.map_err(|f| BuildFailure::Diagnostic {
+                        code: f.code,
+                        message: f.message,
+                    })?;
+                    warnings.extend(gate.findings());
+                    pulse_gate = Some(gate);
+                }
                 if !routes.is_empty() {
-                    put_json(
-                        out,
-                        "validation/critical-path-waypoints.json",
-                        &crate::compiler::waypoints::waypoints_json(plan, &routes),
+                    let doc = crate::compiler::waypoints::waypoints_json(
+                        plan,
+                        &routes,
+                        &listening,
+                        &plan.critical_path_sneak,
                     );
+                    eprintln!(
+                        "{}",
+                        crate::compiler::waypoints::vibration_line(&doc, &listening)
+                    );
+                    put_json(out, "validation/critical-path-waypoints.json", &doc);
                 }
                 path_legs.push((
                     "critical-path".to_string(),
@@ -921,7 +965,12 @@ pub(super) fn prove_world(
                         if !branch_routes.is_empty() {
                             branch_waypoints.push((
                                 r.branch.slug.clone(),
-                                crate::compiler::waypoints::waypoints_json(plan, &branch_routes),
+                                crate::compiler::waypoints::waypoints_json(
+                                    plan,
+                                    &branch_routes,
+                                    &listening,
+                                    &cp.sneak_by_step,
+                                ),
                             ));
                         }
                         path_legs.push((r.branch.slug.clone(), cp.steps.clone(), branch_routes));
@@ -1094,6 +1143,7 @@ pub(super) fn prove_world(
         )
     };
     Ok(WorldProofs {
+        pulse_gate,
         moves,
         actor_moves,
         wave_placements,

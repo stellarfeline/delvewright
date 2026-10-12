@@ -161,16 +161,20 @@ def test_ci_runs_the_rebuild():
     )
 
 
-def test_the_rebuild_is_measured_against_the_baseline():
-    """Exit 0 is not reproduction. The manifest comparison is what makes it one."""
-    text = (TOOLS / "ci" / "gallery-build.py").read_text()
-    assert "manifests.json" in text, (
-        "`gallery-build.py` no longer compares its build to the committed baseline, so it "
-        "asserts that a tree compiles and not that it is the tree the baseline measured"
-    )
-    assert (GALLERY / "baseline" / "manifests.json").is_file(), (
-        "the baseline it compares against is gone"
-    )
+def test_the_rebuild_is_measured_against_the_runs_baseline():
+    """Exit 0 is not reproduction. The manifest comparison is what makes it one.
+
+    Every CI invocation hands it the manifests the `gallery baseline` job
+    measured, and `--manifests` is required, so no invocation can fall back to
+    assuming the same binary over the same input agrees with itself.
+    """
+    ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
+    calls = ci.split("python3 tools/ci/gallery-build.py")[1:]
+    assert calls, "no CI step runs `gallery-build.py`"
+    for call in calls:
+        assert "--manifests .gallery-baseline/report/manifests.json" in call.split("\n\n", 1)[0].split("bash ", 1)[0]
+    ap_src = (TOOLS / "ci" / "gallery-build.py").read_text()
+    assert '"--manifests",\n        required=True,' in ap_src
 
 
 # --------------------------------------------------- the refusal carries evidence

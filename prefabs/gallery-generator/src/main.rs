@@ -77,6 +77,64 @@ const CABIN_LADDER: (i32, i32) = (5, 28);
 /// The block state of every rung of [`CABIN_LADDER`].
 const CABIN_LADDER_STATE: &[(&str, &str)] = &[("facing", "east")];
 
+/// **The listening floor** (spec-0100 §6): a sculk sensor set into the far
+/// hall's floor course beside the walk the party takes off the loft stair to
+/// the ferry, so every footstep on that stretch sets it off; a shrieker on the
+/// floor four courses south of it, within its listener range (`distSqr` 17 ≤
+/// 64), summoning off, so it answers a player's footstep with sound and
+/// particles and nothing else; and a calibrated sensor at the foot of the long
+/// gallery's stair, facing north with air behind it, so its frequency filter
+/// stays open and it hears every vibration within sixteen blocks.
+///
+/// Nothing in either sensor's reach reads a redstone signal — the cells around
+/// them are floor stone and air — which is what `DW1000` judges. The plain
+/// sensor and the shrieker stand west of the loft, clear of the muster room's
+/// fight (`anchor/muster`), which is over before the party walks past them;
+/// the calibrated sensor is more than eight blocks from the shrieker, so only
+/// the plain sensor's click wakes it.
+const LISTENING_SENSOR: [i32; 3] = [8, 0, 23];
+
+/// The block state of [`LISTENING_SENSOR`]: at rest (`DW0999` refuses any other).
+const LISTENING_SENSOR_STATE: &[(&str, &str)] = &[
+    ("power", "0"),
+    ("sculk_sensor_phase", "inactive"),
+    ("waterlogged", "false"),
+];
+
+/// The shrieker that answers [`LISTENING_SENSOR`].
+const LISTENING_SHRIEKER: [i32; 3] = [8, 1, 27];
+
+/// The block state of [`LISTENING_SHRIEKER`]: `can_summon=false` (`DW0998`
+/// refuses `true`), at rest.
+const LISTENING_SHRIEKER_STATE: &[(&str, &str)] = &[
+    ("can_summon", "false"),
+    ("shrieking", "false"),
+    ("waterlogged", "false"),
+];
+
+/// The calibrated sensor at the long gallery stair's foot; its input side
+/// (`facing.getOpposite()`, south) is the air cell behind it.
+const LISTENING_CALIBRATED: [i32; 3] = [24, 1, 26];
+
+/// The block state of [`LISTENING_CALIBRATED`].
+const LISTENING_CALIBRATED_STATE: &[(&str, &str)] = &[
+    ("facing", "north"),
+    ("power", "0"),
+    ("sculk_sensor_phase", "inactive"),
+    ("waterlogged", "false"),
+];
+
+/// **The sealed catalyst** (spec-0100 §3.7, `DW1001`): a sculk catalyst set
+/// into the solid stone over the near hall's roof, three courses above it,
+/// east of the terrace and west of the long gallery. The nearest place a body
+/// can stand is the near hall's floor nine courses below (`distSqr` 81 > 64)
+/// — so it can hear no death, and the build states the nearest body cell. Set
+/// six cells further west, over the terrace annex's rim, it is `DW1001`.
+const SEALED_CATALYST: [i32; 3] = [18, 10, 8];
+
+/// The block state of [`SEALED_CATALYST`].
+const SEALED_CATALYST_STATE: &[(&str, &str)] = &[("bloom", "false")];
+
 /// MC 1.21.11 data version (ADR-0009).
 const DATA_VERSION: i32 = 4671;
 
@@ -1047,6 +1105,21 @@ fn block_at(
     &'static str,
     Option<&'static [(&'static str, &'static str)]>,
 ) {
+    if [x, y, z] == LISTENING_SENSOR {
+        return ("minecraft:sculk_sensor", Some(LISTENING_SENSOR_STATE));
+    }
+    if [x, y, z] == LISTENING_SHRIEKER {
+        return ("minecraft:sculk_shrieker", Some(LISTENING_SHRIEKER_STATE));
+    }
+    if [x, y, z] == LISTENING_CALIBRATED {
+        return (
+            "minecraft:calibrated_sculk_sensor",
+            Some(LISTENING_CALIBRATED_STATE),
+        );
+    }
+    if [x, y, z] == SEALED_CATALYST {
+        return ("minecraft:sculk_catalyst", Some(SEALED_CATALYST_STATE));
+    }
     if y == 0 {
         let (bx0, bx1, bz0, bz1) = BURNING_STRIP;
         if (bx0..=bx1).contains(&x) && (bz0..=bz1).contains(&z) {
@@ -1100,6 +1173,17 @@ fn block_at(
     {
         return ("minecraft:stone", None);
     }
+    // The lidded pit and the west well carry their own light, each on its west
+    // wall at the head height of a body on its bottom. A pit a lid or a hatch
+    // seals is out of reach of everything the hall's grid hangs, and the only
+    // cell a hung lantern could take there is the head cell of the body that
+    // falls in — where a lantern is a floor that body lands on, and the lid's
+    // stone is a beat's to clear, so a lantern hung from it would fall with it
+    // (`DW1002`). A wall torch is a light a falling body passes through, held by
+    // a wall no beat takes away.
+    if ((x, z) == LID_PIT || (x, z) == WELL) && y == 2 {
+        return ("minecraft:wall_torch", Some(&[("facing", "east")]));
+    }
     if z == WELL.1
         && TERRACE_STEPS
             .iter()
@@ -1121,6 +1205,18 @@ fn block_at(
     let (cx0, cx1, cy, cz0, cz1) = CANOPY;
     if y == cy && (cx0..=cx1).contains(&x) && (cz0..=cz1).contains(&z) {
         return ("minecraft:stone", None);
+    }
+    // The east bay carries its own light on the hall's east wall: the canopy
+    // over it shades it from the ceiling grid, and a lantern hung from the
+    // canopy falls with it when the collapse brings it down — light the bay
+    // would lose in the beat the debris lands. Torches on the wall stay. Each
+    // hangs in the cell west of the wall, held by the wall's full west face:
+    // the canopy ends a cell short of the wall, so a torch at the canopy's own
+    // east edge would hang on air (`DW1002`). None at the bay's south end,
+    // where the oak the lane's batch plants in the east corner spreads its
+    // leaves.
+    if x == SIZE[0] - 2 && y == cy - 2 && [cz0, (cz0 + cz1) / 2].contains(&z) {
+        return ("minecraft:wall_torch", Some(&[("facing", "west")]));
     }
     // The mezzanine: solid to its top course, and nothing carves a way into it.
     // The flight that climbs it is outside this footprint entirely, which is
@@ -1269,16 +1365,19 @@ fn assert_anchors_are_standable(s: &Structure) {
             "{ID}: anchor `{}` stands in a solid cell",
             a.name
         );
-        assert_eq!(
-            at([x, y + 1, z]),
-            "minecraft:air",
-            "{ID}: anchor `{}` has no headroom",
+        // Headroom and floor are what the engine's one collision table says
+        // they are: a wall torch at head height is headroom, a tuft of grass
+        // under the feet is no floor.
+        let head = at([x, y + 1, z]);
+        assert!(
+            delvewright_dsl::blockshape::passes_body(head),
+            "{ID}: anchor `{}` has no headroom: `{head}` is in it",
             a.name
         );
-        assert_ne!(
-            at([x, y - 1, z]),
-            "minecraft:air",
-            "{ID}: anchor `{}` has no floor under it",
+        let floor = at([x, y - 1, z]);
+        assert!(
+            delvewright_dsl::blockshape::supports_body(floor),
+            "{ID}: anchor `{}` has no floor under it: `{floor}` holds no body",
             a.name
         );
     }
@@ -2992,7 +3091,7 @@ fn build_shard() -> Structure {
     let mut palette = Palette::new();
     for (name, props) in [
         ("minecraft:polished_blackstone", None),
-        ("minecraft:lantern", Some(&[("hanging", "true")][..])),
+        ("minecraft:lantern", Some(&[("hanging", "false")][..])),
     ] {
         palette.idx(name, props);
     }
@@ -3000,12 +3099,15 @@ fn build_shard() -> Structure {
     for x in 0..SHARD_SIZE[0] {
         for y in 0..SHARD_SIZE[1] {
             for z in 0..SHARD_SIZE[2] {
-                // A hanging lantern at the top centre, so the stamp is visible
-                // and asymmetric — a rotation nobody can see is a rotation
-                // nobody can check.
+                // A lantern standing on one top corner, so the stamp is
+                // visible and asymmetric — a rotation nobody can see is a
+                // rotation nobody can check. It STANDS (`hanging=false`) on the
+                // blackstone under it: a hanging one asks the block above it
+                // for a ceiling, and over the stamp there is none, so the
+                // server drops it (`DW1002`).
                 let lantern = [x, y, z] == [0, SHARD_SIZE[1] - 1, 0];
                 let (name, props): (&str, Option<&[(&str, &str)]>) = if lantern {
-                    ("minecraft:lantern", Some(&[("hanging", "true")]))
+                    ("minecraft:lantern", Some(&[("hanging", "false")]))
                 } else {
                     ("minecraft:polished_blackstone", None)
                 };

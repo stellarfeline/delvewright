@@ -34,7 +34,7 @@ This module's rows of a section whose prose is on the [`delvec::compiler::cast` 
 
 | Code | Meaning |
 |------|---------|
-| `DW0469` | (**warning**; exit 0) A campaign stages actors meant to **fight** — unleashed into a real-AI twin, or declared `vulnerable` — but declares no `waves[]` and no `world.difficulty`, so it ships the derived `difficulty=peaceful` and a monster among them is discarded on the tick it spawns. "Meant to fight" is read off the campaign's own declarations (`unleash-actor`, `vulnerable`), never guessed from the species: the pinned entity registry is a membership set with no mob-category data, so *is this a monster* is exactly the question the compiler cannot answer — which is why this is advisory. Prescription: declare `world.difficulty`. |
+| `DW0469` | (**warning**; exit 0) A campaign stages actors meant to **fight** — unleashed into a real-AI twin, or declared `vulnerable` — declares no `world.difficulty`, and is derived `peaceful` (`delvewright_dsl::derived_difficulty`: no wave, and no staged body of a type peaceful discards). A fighter peaceful discards never reaches this: it moves the derivation to `easy`. What remains is a species peaceful keeps, and on peaceful `Player#hurtServer` scales every damage source that `scalesWithDifficulty()` — a living non-player attacker's melee and projectiles — to 0, so the fight lands no blow. "Meant to fight" is read off the campaign's own declarations (`unleash-actor` at any effect root, `vulnerable`). The message names each fighter with its entity type. Prescription: declare `world.difficulty`. |
 
 ### DW0490–DW0493 — declared drops (`dsl::wave`)
 

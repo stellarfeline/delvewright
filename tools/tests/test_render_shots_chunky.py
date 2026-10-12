@@ -95,7 +95,7 @@ def tree(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "tools" / "lib").mkdir(parents=True)
     (root / "validation").mkdir(parents=True)
-    for name in ("delvec-bin.sh", "versions.py", "chunky-home.sh", "chunky_core.py"):
+    for name in ("delvec-bin.sh", "versions.py", "chunky-home.sh", "chunky_core.py", "chunky_budget.py"):
         (root / "tools" / "lib" / name).write_bytes(
             (REPO / "tools" / "lib" / name).read_bytes()
         )
@@ -411,6 +411,54 @@ def test_chunky_sh_renders_with_the_pinned_classpath(tmp_path: Path) -> None:
     assert argv[argv.index("-cp") + 2] == "se.llbit.chunky.main.Chunky"
     assert argv[-4:] == ["-scene-dir", "s", "-render", "x"]
     assert f"rendering with {CORE_PIN}" in r.stderr
+
+
+def scene_with_budget(tmp_path: Path, target: int) -> Path:
+    d = tmp_path / "scenes"
+    d.mkdir(exist_ok=True)
+    (d / "x.json").write_text(json.dumps({"name": "x", "sppTarget": target}))
+    return d
+
+
+def target_of(argv: list[str]) -> str | None:
+    return argv[argv.index("-target") + 1] if "-target" in argv else None
+
+
+def test_a_pass_after_a_draft_is_handed_the_scenes_declared_budget(tmp_path: Path) -> None:
+    # Chunky saves the `-target` it ran with into the scene. The stub does the same,
+    # so the full pass finds the draft's number in the file, as the drill did.
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    d = scene_with_budget(tmp_path, 500)
+
+    r, out = render(root, home, "-scene-dir", str(d), "-render", "x", "-target", "64")
+    assert r.returncode == 0, r.stderr
+    assert target_of(out.read_text().splitlines()) == "64", "an explicit -target is the caller's"
+    (d / "x.json").write_text(json.dumps({"name": "x", "sppTarget": 64}))  # Chunky's re-save
+
+    r, out = render(root, home, "-scene-dir", str(d), "-render", "x", "-f", "-threads", "2")
+    assert r.returncode == 0, r.stderr
+    argv = out.read_text().splitlines()
+    assert target_of(argv) == "500", argv
+    assert "renders to its declared budget, -target 500" in r.stderr
+
+
+def test_a_re_emitted_scene_is_judged_by_its_new_budget(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    d = scene_with_budget(tmp_path, 500)
+    render(root, home, "-scene-dir", str(d), "-render", "x")
+    (d / "x.budget").unlink()  # what emission does to a scene it rewrites
+    scene_with_budget(tmp_path, 300)
+    r, out = render(root, home, "-scene-dir", str(d), "-render", "x")
+    assert target_of(out.read_text().splitlines()) == "300", r.stderr
+
+
+def test_a_scene_with_no_budget_is_left_to_chunky(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    r, out = render(root, chunky_home(tmp_path, [CORE_PIN]), "-scene-dir", "s", "-render", "x")
+    assert r.returncode == 0, r.stderr
+    assert target_of(out.read_text().splitlines()) is None
 
 
 def test_chunky_sh_refuses_a_home_without_the_pin(tmp_path: Path) -> None:

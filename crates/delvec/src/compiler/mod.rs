@@ -13,6 +13,7 @@
 //! - [`assembly`]: an assembly's hitbox, reach and strike judgements, and its emission (spec-0082).
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
 //! - [`atmosphere`]: a campaign's declared skies (spec-0080) — the attribute, paint and declaration refusals (`DW0928`–`DW0930`), the biome each atmosphere ships as, and the one writer of `fillbiome`.
+//! - [`attached`]: every block the build writes is one the server keeps, by the jar's measured `canSurvive` (`DW1002`).
 //! - [`batchstate`]: a generated PackTest that drives an outcome owns every `#party` term the gates on it read (`DW0807`).
 //! - [`blind`]: a blinding beside a drop — the reach a `give-effect` of blindness or darkness owes the world it lands in (`DW0943`).
 //! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans.
@@ -72,6 +73,7 @@
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
 //! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
 //! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
+//! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
 //! - [`raster`]: the shared RGBA canvas and bitmap-text primitives both renderers draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
@@ -79,6 +81,7 @@
 //! - [`render_plan`]: `render-plan.json` emission.
 //! - [`resourcepack`]: the per-delve skin resource pack.
 //! - [`respawn`]: what separates a retry from a soft-lock — the evidence `DW0478` accepts.
+//! - [`sculk`]: the sculk family works — at rest (`DW0998`/`DW0999`), a sensor's power reaching nothing (`DW1000`), a catalyst hearing no death (`DW1001`), and the walk's vibrations — spec-0100.
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
@@ -100,6 +103,7 @@
 //! - [`traversal`]: a walked leg may only contain moves the body walking it can make (`DW0452`/`DW0453`).
 //! - [`view`]: the CPU render surface — the visual channel that ships in the one binary a creator installs.
 //! - [`watch`]: runtime-watch coverage of per-object bodies, in two tiers.
+//! - [`watching`]: a still body that turns to face the nearest player in reach (spec-0101).
 //! - [`waypoints`]: the compiler-proven critical-path waypoint polyline, as validation metadata.
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
 //! - [`wrongside`]: which side of a sealed shortcut door a player is standing on.
@@ -110,6 +114,7 @@ pub mod assembled;
 pub mod assembly;
 pub mod atmos;
 pub mod atmosphere;
+pub mod attached;
 pub mod batchstate;
 pub mod blind;
 pub mod blocking;
@@ -170,6 +175,7 @@ pub mod png;
 pub mod pool;
 pub mod pressable;
 pub mod promise;
+pub mod pulse;
 pub mod raster;
 pub mod reach;
 pub mod registry;
@@ -177,6 +183,7 @@ pub mod rehearsal;
 pub mod render_plan;
 pub mod resourcepack;
 pub mod respawn;
+pub mod sculk;
 pub mod seating;
 pub mod seeding;
 pub mod served;
@@ -198,6 +205,7 @@ pub mod trap_trigger;
 pub mod traversal;
 pub mod view;
 pub mod watch;
+pub mod watching;
 pub mod waypoints;
 pub mod ways;
 pub mod wrongside;

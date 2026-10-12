@@ -6,7 +6,7 @@
   "yClipMin": 48,
   "yClipMax": 96,
   "exposure": 2.0,
-  "postprocess": "GAMMA",
+  "postprocess": "TONEMAP3",
   "outputMode": "PNG",
   "renderTime": 0,
   "spp": 0,
@@ -25,7 +25,39 @@
   "waterWorldClipEnabled": true,
   "sun": {
     "altitude": 0.480763,
-    "azimuth": 0.0
+    "azimuth": 0.0,
+    "intensity": 0.0,
+    "color": {
+      "red": 1.0,
+      "green": 1.0,
+      "blue": 1.0
+    },
+    "drawTexture": true
+  },
+  "sky": {
+    "mode": "SKYMAP_EQUIRECTANGULAR",
+    "color": {
+      "red": 1.0,
+      "green": 1.0,
+      "blue": 1.0
+    },
+    "skyLight": 0.967729,
+    "apparentSkyLight": 1.0,
+    "skymap": "isle_camera_hero.sky.pfm",
+    "skyMirrored": false
+  },
+  "fog": {
+    "mode": "UNIFORM",
+    "uniformDensity": 0.0,
+    "color": {
+      "red": 0.535642,
+      "green": 0.694081,
+      "blue": 1.0
+    },
+    "skyFogDensity": 0.0
+  },
+  "delvewrightSky": {
+    "daytimeTicks": 1000
   },
   "world": {
     "path": "/abs/world",

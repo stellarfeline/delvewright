@@ -188,6 +188,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
+    },
+    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -368,6 +373,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",
@@ -552,6 +562,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
+    },
+    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -734,6 +749,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
+    },
+    {
       "code": "DW0453",
       "pointer": "/content/actors/1",
       "stage": "quests"
@@ -914,6 +934,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",
@@ -1207,6 +1232,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",

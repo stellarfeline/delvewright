@@ -6,11 +6,11 @@ Three failure modes are pinned here, and they are different in kind.
 step exists to remove from `tools/creator/staging-gate.py`, so a step that stopped
 invoking `check-gallery-stageable.py` would put it straight back.
 
-**Unbound.** The domain is enumerated from `gallery/baseline/manifests.json`
-rather than typed, because a typed list goes stale silently the first time an
-overlay is added and the job then passes while judging less than the ladder
-builds. The enumeration is asserted to cover the gallery directory, which is the
-second observer that shares no configuration with the committed ledger.
+**Unbound.** The domain is enumerated by `gallery_domain.points()` from the
+gallery's own languages and overlay directories rather than typed, because a
+typed list goes stale silently the first time an overlay is added and the job
+then passes while judging less than the ladder builds. The count is asserted
+against the denominator counted from the objects.
 
 **A servable gallery.** A pass mints an admission token, and a token inside a
 build tree is exactly what the compose staging path looks for. spec-0039 §2 says
@@ -25,7 +25,7 @@ import pathlib
 
 TOOLS = pathlib.Path(__file__).resolve().parents[1]
 REPO = TOOLS.parent
-BASELINE = REPO / "gallery" / "baseline" / "manifests.json"
+GALLERY = REPO / "gallery"
 
 
 def _load(name: str, filename: str):
@@ -72,35 +72,42 @@ def test_the_step_lives_in_a_required_job():
 # ---------------------------------------------------------------------- unbound
 
 
-def test_the_domain_is_enumerated_from_the_build_ledger():
-    rows = cgs.ledger_rows()
-    recorded = json.loads(BASELINE.read_text())
-    assert rows, "the build ledger enumerated zero points — this gate would judge nothing"
-    assert len(rows) == len(recorded), (
-        f"enumerated {len(rows)} of the ledger's {len(recorded)} row(s): the gate would judge "
-        "fewer points than the ladder builds"
-    )
-    keys = {
-        cgs.build_id(None if point == cgs.PRIMARY else point, lang) for point, lang in rows
-    }
-    assert keys == set(recorded), "the pairs do not re-encode to the ledger's own keys"
+def test_the_domain_is_enumerated_from_the_objects():
+    """Counted from the directory and `world.json` by a second method, not by `points()`."""
+    rows = cgs.domain_rows()
+    overlays = sorted(p.name for p in (GALLERY / "overlays").iterdir() if p.is_dir())
+    langs = json.loads((GALLERY / "world.json").read_text())["content"].get("languages") or []
+    assert overlays, "the gallery declares no overlay — the enumeration binds to nothing"
+    expected = {("primary", "en")} | {("primary", lang) for lang in langs} | {(o, "en") for o in overlays}
+    assert set(rows) == expected
+    assert len(rows) == len(expected), "a point was enumerated twice"
+    den = cgs.denominator()
+    assert den["overlays"] == len(overlays)
+    assert den["languages"] == len({"en", *langs})
+    assert den["probes"] == len([p for p in (GALLERY / "probes").iterdir() if p.is_dir()])
+    assert den["probes"] > 0, "no probe is counted — the exclusion the count states binds nothing"
 
 
-def test_the_ledger_covers_the_gallery_directory():
-    """The cross-check, run against the real tree — the two must not have drifted."""
-    rows = cgs.ledger_rows()
-    declared = cgs.domain_points()
-    assert len(declared) > 1, "the gallery declares no overlay — the cross-check binds to nothing"
-    assert cgs.uncovered_points(rows, declared) == [], (
-        "the build ledger does not record every point the gallery directory has"
-    )
+def test_a_probe_is_never_a_point():
+    probes = set(cgs.gallery_domain.probes())
+    assert probes and not probes & {point for point, _ in cgs.domain_rows()}
 
 
-def test_a_point_the_ledger_lost_is_refused():
-    """Perturbed toward the vacuous shape: the gate must see a shrinking domain."""
-    rows = [("primary", "en"), ("easy", "en")]
-    assert cgs.uncovered_points(rows, ["primary", "easy"]) == []
-    assert cgs.uncovered_points(rows, ["primary", "easy", "site-plan"]) == ["site-plan"]
+def test_the_points_follow_the_directory(tmp_path):
+    """Perturbed toward the vacuous shape: an overlay added is a point added."""
+    gd = cgs.gallery_domain
+    assert gd.points(["zh-cn"], ["easy"]) == [(None, "en"), (None, "zh-cn"), ("easy", "en")]
+    assert gd.points(["zh-cn"], ["easy", "new"])[-1] == ("new", "en")
+    assert gd.points(["en"], []) == [(None, "en")], "the source language is one point, not two"
+
+
+def test_the_gate_hands_the_runs_manifests_to_every_build():
+    """Each point is proved against the manifests this run's baseline measured."""
+    src = (TOOLS / "ci" / "check-gallery-stageable.py").read_text()
+    assert '"--manifests",\n            str(manifests),' in src
+    ci = (REPO / ".github" / "workflows" / "ci.yml").read_text()
+    step = ci[ci.index("python3 tools/ci/check-gallery-stageable.py"):]
+    assert "--manifests .gallery-baseline/report/manifests.json" in step.split("\n\n", 1)[0]
 
 
 def test_which_verdicts_refuse_is_the_gates_own_answer():
