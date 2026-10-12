@@ -22,6 +22,35 @@ pub const OCEAN_WATER_LAYERS: i32 = 8;
 /// stone all the way to bedrock, which is why an ocean world has no void column
 /// anywhere.
 pub const SEA_FLOOR_TOP_Y: i32 = SEA_LEVEL - OCEAN_WATER_LAYERS;
+/// The lowest y of the pinned overworld (`min_y`): the first layer of a
+/// superflat stack stands here.
+pub const BUILD_FLOOR_Y: i32 = -64;
+/// **The `ocean` horizon superflat, bottom up**: each layer's block and height,
+/// from [`BUILD_FLOOR_Y`]. The one statement of the stack: emission writes it as
+/// `generator-settings` (`emit::emit_server`), and the world the engine writes
+/// lays it in every cell no build write reaches ([`ocean_layer_at`]), because
+/// that is what the server holds there.
+pub const OCEAN_LAYERS: [(&str, i32); 3] = [
+    ("minecraft:bedrock", 1),
+    ("minecraft:stone", 118),
+    ("minecraft:water", OCEAN_WATER_LAYERS),
+];
+const _: () = assert!(
+    BUILD_FLOOR_Y + OCEAN_LAYERS[0].1 + OCEAN_LAYERS[1].1 + OCEAN_LAYERS[2].1 - 1 == SEA_LEVEL,
+    "the ocean stack tops its water at SEA_LEVEL"
+);
+/// The block the `ocean` superflat generates at height `y`, or `None` above
+/// the stack (air) and below the build floor.
+pub fn ocean_layer_at(y: i32) -> Option<&'static str> {
+    let mut floor = BUILD_FLOOR_Y;
+    for (block, height) in OCEAN_LAYERS {
+        if (floor..floor + height).contains(&y) {
+            return Some(block);
+        }
+        floor += height;
+    }
+    None
+}
 /// **The origin Y of one area** (spec-0060 §3.2).
 ///
 /// A base whose datum is stated for the ORIGIN — `void` and `valley`, both

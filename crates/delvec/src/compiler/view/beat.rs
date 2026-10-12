@@ -194,6 +194,21 @@ pub struct Stands {
     pub stands: Vec<Stand>,
     /// Per distinct key, in first-asked order, the block map its world holds.
     pub worlds: Vec<(String, BlockMap)>,
+    /// Per distinct key, the regions its configuration's writes lay
+    /// ([`crate::compiler::nav::Configuration::laid_regions`]): the writer
+    /// holds the level generator's block out of them.
+    pub laid: Vec<(String, Vec<([i32; 3], [i32; 3])>)>,
+}
+
+impl Stands {
+    /// The regions the configuration of world `key` lays (empty for a key it
+    /// does not hold).
+    pub fn laid_in(&self, key: &str) -> &[([i32; 3], [i32; 3])] {
+        self.laid
+            .iter()
+            .find(|(k, _)| k == key)
+            .map_or(&[], |(_, r)| r.as_slice())
+    }
 }
 
 /// **The bytes a picture starts from**: the world as shipped
@@ -256,12 +271,23 @@ pub struct Stood {
     pub biome: Box<dyn Fn([i32; 3]) -> String>,
     /// The campaign's start cell.
     pub spawn: [i32; 3],
+    /// What a cell no write reached holds ([`crate::compiler::view::world::Ground`]):
+    /// the horizon's generator, held out of every cell the assembled world and
+    /// the shipped setup reach. A world's own laid writes ([`Stands::laid`])
+    /// are held out by the writer.
+    pub ground: crate::compiler::view::world::Ground,
 }
 
 /// The load configuration's bytes: the critical path's arrival at step 0 over
 /// the assembled map.
 pub fn load_blocks(plan: &Plan, world: &World, base: &BlockMap) -> BlockMap {
     PathModel::critical(plan).at(plan, world, 0).blocks(base)
+}
+
+/// The regions the load configuration's writes lay — every world-load seal
+/// and step-0 write ([`load_blocks`]'s writes).
+pub fn load_laid(plan: &Plan, world: &World) -> Vec<([i32; 3], [i32; 3])> {
+    PathModel::critical(plan).at(plan, world, 0).laid_regions()
 }
 
 /// **Where one camera stands**, or the record's refusal of its `after`.
@@ -275,7 +301,7 @@ pub fn stand(
     critical: &PathModel,
     branches: &mut dyn FnMut() -> Vec<(String, Option<PathModel>)>,
     cam: &Camera,
-) -> Result<(Stand, Option<BlockMap>), String> {
+) -> Result<(Stand, Option<(BlockMap, Vec<([i32; 3], [i32; 3])>)>), String> {
     let Some(after) = &cam.after else {
         return Ok((
             Stand {
@@ -386,7 +412,7 @@ pub fn stand(
             cells_moved: moved,
             unforced: cfg.unforced_writes(),
         },
-        Some(cfg.blocks(base)),
+        Some((cfg.blocks(base), cfg.laid_regions())),
     ))
 }
 
@@ -405,13 +431,15 @@ pub fn stands(
     let mut out = Stands {
         stands: Vec::new(),
         worlds: Vec::new(),
+        laid: Vec::new(),
     };
     for cam in cameras {
         let mut branches = || cache.get_or_insert_with(|| branch_paths(plan)).clone();
         let (s, blocks) = stand(plan, world, base, &load, &critical, &mut branches, cam)?;
         if !out.worlds.iter().any(|(k, _)| *k == s.key) {
-            out.worlds
-                .push((s.key.clone(), blocks.unwrap_or_else(|| load.clone())));
+            let (map, laid) = blocks.unwrap_or_else(|| (load.clone(), load_laid(plan, world)));
+            out.worlds.push((s.key.clone(), map));
+            out.laid.push((s.key.clone(), laid));
         }
         out.stands.push(s);
     }

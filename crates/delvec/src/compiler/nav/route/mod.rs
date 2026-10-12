@@ -521,6 +521,15 @@ impl Configuration {
             .count()
     }
 
+    /// **The regions this configuration's laid writes reach**, in the order
+    /// laid — whatever block each lays, air included: a write that lays air
+    /// clears what the level generator put in the cell, so a written world
+    /// asks this, never only the block map, which cannot tell a cleared cell
+    /// from one nothing wrote.
+    pub fn laid_regions(&self) -> Vec<([i32; 3], [i32; 3])> {
+        self.state.laid.iter().map(|(r, _)| *r).collect()
+    }
+
     /// How many regions an **unforced** write holds here — writes a beat
     /// nobody has to play lays, which [`RegionState::blocks_over`] does not lay
     /// (spec-0089 §7's `unforced write(s) not laid`).

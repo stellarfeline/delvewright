@@ -1121,6 +1121,7 @@ fn write_cell(
     } else {
         assembled.open_gates.remove(&cell);
     }
+    assembled.reached.mark(cell);
     batch_writes.insert(cell, block.to_string());
 }
 
@@ -2342,6 +2343,7 @@ mod tests {
             settled: Vec::new(),
             open_gates: BTreeSet::new(),
             gate_seals: Vec::new(),
+            reached: Default::default(),
         }
     }
 

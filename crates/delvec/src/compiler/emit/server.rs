@@ -369,9 +369,14 @@ pub(super) fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // every boot path installs the datapack before first boot.
     let ground = crate::compiler::horizon::biome_map(plan).ground;
     let generator_settings = if ocean {
+        let layers: Vec<String> = crate::compiler::plan::OCEAN_LAYERS
+            .iter()
+            .map(|(block, height)| format!("{{\"block\":\"{block}\",\"height\":{height}}}"))
+            .collect();
         format!(
-            "{{\"biome\":\"{}\",\"layers\":[{{\"block\":\"minecraft:bedrock\",\"height\":1}},{{\"block\":\"minecraft:stone\",\"height\":118}},{{\"block\":\"minecraft:water\",\"height\":8}}]}}",
-            ground.id
+            "{{\"biome\":\"{}\",\"layers\":[{}]}}",
+            ground.id,
+            layers.join(",")
         )
     } else {
         format!("{{\"biome\":\"{}\",\"layers\":[]}}", ground.id)

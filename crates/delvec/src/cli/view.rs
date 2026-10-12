@@ -239,6 +239,10 @@ pub(crate) fn load_stood(
                 delvec::compiler::view::beat::AT_LOAD.to_string(),
                 delvec::compiler::view::beat::load_blocks(plan, world, base),
             )],
+            laid: vec![(
+                delvec::compiler::view::beat::AT_LOAD.to_string(),
+                delvec::compiler::view::beat::load_laid(plan, world),
+            )],
         })
     })
 }
@@ -290,10 +294,21 @@ fn stood_over(
     let base = camera_base(plan, &assembled);
     let stands = configure(plan, &world, &base)?;
     let biomes = delvec::compiler::horizon::biome_map(plan);
+    // What a cell no write reached holds: the horizon's generator, held out of
+    // every cell a build write reached and every cell the shipped setup
+    // writes (the picture base's own cells).
+    let mut ground = delvec::compiler::view::world::Ground::of_base(
+        delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon),
+        assembled.reached.clone(),
+    );
+    for c in base.keys() {
+        ground.mark(*c);
+    }
     Ok(delvec::compiler::view::beat::Stood {
         stands,
         biome: Box::new(move |c| biomes.at(c).0.to_string()),
         spawn: plan.campaign_start().map_or([0, 64, 0], |(_, p)| p),
+        ground,
     })
 }
 
