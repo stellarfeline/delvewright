@@ -371,8 +371,9 @@ fn place_camera_writes_a_stated_sky_and_refuses_one_that_is_not() {
 /// declared sky (`gallery/world.json`); the weathers emitted are `{clear, rain,
 /// thunder}` and the daylight classes `{high, low, below}`, read off each
 /// emitted scene, and exactly one camera states its own sky. Changing the stated
-/// sky's weather from `clear` to `rain`, and the answered row's weather of a
-/// derived camera, each moves that camera's scene bytes.
+/// sky's weather from `clear` to `rain`, its time (the clear cell's tick), and
+/// the answered row's weather of a derived camera, each moves that camera's
+/// scene bytes.
 ///
 /// The plan is not the gallery's BUILT `render-plan.json`: a cargo test cannot
 /// build the gallery, whose pieces the gallery job generates. A camera's sky
@@ -460,6 +461,29 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     assert_ne!(
         after.scenes[i], emission.scenes[i],
         "the stated sky reaches a byte"
+    );
+    // The clear cell is bound by the gallery's stated clear camera: its tick
+    // moved (its time `just-risen` -> `high`) moves the sky block it writes,
+    // and keeps it the clear cell of the new tick.
+    assert_eq!(sheet.cameras[i].name, "hall-exterior");
+    let sky_of = |bytes: &[u8]| -> serde_json::Value {
+        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        v["sky"].clone()
+    };
+    let mut ticked = sheet.clone();
+    ticked.cameras[i].sky.as_mut().unwrap().time = WorldTime::Noon;
+    let noon = camera::emit(&plan, &ticked, &rows, &stood(&ticked)).unwrap();
+    assert_ne!(
+        sky_of(&noon.scenes[i].1),
+        sky_of(&emission.scenes[i].1),
+        "the stated sky's tick reaches the clear cell's bytes"
+    );
+    let v: serde_json::Value = serde_json::from_slice(&noon.scenes[i].1).unwrap();
+    assert!(carries_clear_cell(&v, WorldTime::Noon.daytime_ticks()), "{v}");
+    eprintln!(
+        "gallery clear cell: hall-exterior skyLight {} at its own tick, {} at noon",
+        sky_of(&emission.scenes[i].1)["skyLight"],
+        sky_of(&noon.scenes[i].1)["skyLight"]
     );
     // …and so does the answered row's weather, for a derived camera.
     let j = sheet.cameras.iter().position(|c| c.sky.is_none()).unwrap();

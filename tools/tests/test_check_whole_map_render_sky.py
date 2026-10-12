@@ -1,17 +1,16 @@
-"""The whole-map gate's clear-sky rule (spec-0079, departure 1).
+"""The whole-map gate's clear-sky rule: a clear scene carries the clear cell of
+its tick, derived in the gate from the vendored day timeline.
 
-A clear scene whose sky is lit or ramping carries no `sky` or `fog` key; a
-clear scene under the timeline's dark-sky plateau carries exactly the night
-cell. The cell below is the block `delvec cameras` emitted for the Treehouse
-Camp's `lantern-night` camera (`{"moon": "high"}` + clear), copied from the
-scene file — the engine's bytes, not the gate's derivation.
+The two blocks below are what `delvec cameras` emitted for the Treehouse Camp's
+`from-the-glade` camera (`{"sun": "setting"}` + clear, tick 12782) and its
+`lantern-night` camera (`{"moon": "high"}` + clear, tick 18000), copied from the
+scene files — the engine's bytes, not the gate's derivation.
 """
 
 from __future__ import annotations
 
 import copy
 import importlib.util
-import math
 from pathlib import Path
 
 CHECKER = Path(__file__).resolve().parents[1] / "ci" / "check-whole-map-render.py"
@@ -25,73 +24,117 @@ def gate():
     return mod
 
 
-NIGHT_SKY = {
-    "mode": "SOLID_COLOR",
-    "color": {"red": 0.478431, "green": 0.478431, "blue": 1.0},
-    "skyLight": 0.24,
-    "apparentSkyLight": 0.0,
+SETTING = {
+    "sun": {
+        "altitude": -3.7e-05,
+        "azimuth": 3.141593,
+        "intensity": 0.0,
+        "color": {"red": 1.0, "green": 1.0, "blue": 1.0},
+        "drawTexture": True,
+    },
+    "sky": {
+        "mode": "SOLID_COLOR",
+        "color": {"red": 0.357581, "green": 0.357581, "blue": 1.0},
+        "skyLight": 0.374446,
+        "apparentSkyLight": 0.197251,
+    },
+    "fog": {
+        "mode": "UNIFORM",
+        "uniformDensity": 0.0001,
+        "color": {"red": 0.12753, "green": 0.163641, "blue": 0.25084},
+        "skyFogDensity": 1.0,
+    },
 }
-NIGHT_FOG = {
-    "mode": "UNIFORM",
-    "uniformDensity": 0.0,
-    "color": {"red": 0.058824, "green": 0.058824, "blue": 0.086275},
-    "skyFogDensity": 0.0,
+NIGHT = {
+    "sun": {
+        "altitude": -1.570796,
+        "azimuth": 0.0,
+        "intensity": 0.0,
+        "color": {"red": 1.0, "green": 1.0, "blue": 1.0},
+        "drawTexture": False,
+    },
+    "sky": {
+        "mode": "SOLID_COLOR",
+        "color": {"red": 0.286661, "green": 0.286661, "blue": 1.0},
+        "skyLight": 0.209457,
+        "apparentSkyLight": 0.0,
+    },
+    "fog": {
+        "mode": "UNIFORM",
+        "uniformDensity": 0.0001,
+        "color": {"red": 0.000992, "green": 0.001202, "blue": 0.00456},
+        "skyFogDensity": 1.0,
+    },
 }
 DESIGN = {"content": {"references": [{"name": "concept/x", "time": "noon", "weather": "clear"}]}}
 CAM = {"answers": "concept/x"}
-
-
-def scene(alt_deg: float, block: bool) -> dict:
-    doc = {"sun": {"altitude": math.radians(alt_deg), "azimuth": 0.0}}
-    if block:
-        doc["sky"] = copy.deepcopy(NIGHT_SKY)
-        doc["fog"] = copy.deepcopy(NIGHT_FOG)
-        doc["sun"].update({"intensity": 0.0, "drawTexture": False})
-    return doc
 
 
 def judge(doc: dict) -> list[str]:
     return gate().sky_matches(doc, CAM, DESIGN, {}, {}, {})
 
 
-def test_the_dark_edge_is_read_off_the_timeline_by_the_closed_form():
+def test_the_tick_is_read_off_the_sun_by_the_closed_form():
     g = gate()
     assert abs(g.closed_form_altitude(18000) + 90.0) < 1e-9
     assert abs(g.closed_form_altitude(6000) - 90.0) < 1e-9
-    edge = g.dark_edge_altitude()
-    assert -15.0 < edge < -14.0, edge
+    assert g.tick_of_sun(-1.570796, 0.0) == 18000
+    assert g.tick_of_sun(1.570796, 0.0) == 6000
+    # The setting sun's tick by the closed form, within the slack of the track's.
+    assert abs(g.tick_of_sun(-3.7e-05, 3.141593) - 12782) <= g.TICK_SLACK
 
 
-def test_a_sun_up_clear_scene_carries_no_block():
-    assert judge(scene(30.0, False)) == []
-    assert any("lit or ramping" in f for f in judge(scene(30.0, True)))
+def test_the_engines_clear_cells_pass():
+    assert judge(copy.deepcopy(SETTING)) == []
+    assert judge(copy.deepcopy(NIGHT)) == []
 
 
-def test_a_ramping_clear_scene_keeps_the_renderers_sky():
-    # A sun setting or rising sits on the horizon, in the dusk/dawn ramp.
-    assert judge(scene(-0.002, False)) == []
-    assert any("lit or ramping" in f for f in judge(scene(-3.5, True)))
+def test_a_clear_scene_left_to_the_renderer_is_refused():
+    bare = {"sun": {"altitude": -3.7e-05, "azimuth": 3.141593}}
+    found = judge(bare)
+    assert any("`sky.mode`" in f for f in found), found
+    assert any("`sun.intensity`" in f for f in found), found
 
 
-def test_a_dark_clear_scene_carries_exactly_the_night_cell():
-    assert judge(scene(-90.0, True)) == []
-    missing = judge(scene(-90.0, False))
-    assert missing and all("clear dark sky" in f for f in missing), missing
-    altered = scene(-90.0, True)
-    altered["sky"]["skyLight"] = 0.5
-    assert any("`sky.skyLight` is 0.5" in f for f in judge(altered))
-    lens = scene(-90.0, True)
-    lens["sky"]["apparentSkyLight"] = 1.0
-    assert any("apparentSkyLight" in f for f in judge(lens))
-    tint = scene(-90.0, True)
-    tint["sky"]["color"]["blue"] = 0.5
-    assert any("`sky.color`" in f for f in judge(tint))
-    sunny = scene(-90.0, True)
-    sunny["sun"]["intensity"] = 1.25
-    assert any("`sun.intensity`" in f for f in judge(sunny))
+def test_each_value_of_the_cell_is_judged():
+    for path, value, needle in [
+        (("sky", "skyLight"), 0.5, "`sky.skyLight`"),
+        (("sky", "apparentSkyLight"), 1.0, "`sky.apparentSkyLight`"),
+        (("fog", "skyFogDensity"), 0.0, "`fog.skyFogDensity`"),
+        (("sun", "intensity"), 1.25, "`sun.intensity`"),
+        (("sun", "drawTexture"), False, "`sun.drawTexture`"),
+    ]:
+        doc = copy.deepcopy(SETTING)
+        doc[path[0]][path[1]] = value
+        assert any(needle in f for f in judge(doc)), (path, judge(doc))
+    tint = copy.deepcopy(SETTING)
+    tint["sky"]["color"]["red"] = 0.478431
+    assert any("`sky.color.red`" in f for f in judge(tint))
+    fog = copy.deepcopy(NIGHT)
+    fog["fog"]["color"]["blue"] = 0.086275
+    assert any("`fog.color.blue`" in f for f in judge(fog))
 
 
-def test_a_dark_scene_is_tallied():
+def test_a_cell_keyed_on_the_wrong_tick_is_refused():
+    # The night block under the setting sun's hour: every number is a real
+    # cell's, at the wrong tick.
+    doc = copy.deepcopy(NIGHT)
+    doc["sun"] = copy.deepcopy(SETTING["sun"])
+    found = judge(doc)
+    assert any("`sky.skyLight`" in f for f in found), found
+
+
+def test_clear_scenes_are_tallied_by_where_their_tick_falls():
     tally: dict[str, int] = {}
-    gate().sky_matches(scene(-90.0, True), CAM, DESIGN, {}, {}, tally)
-    assert tally == {"night cell": 1}
+    g = gate()
+    g.sky_matches(copy.deepcopy(SETTING), CAM, DESIGN, {}, {}, tally)
+    g.sky_matches(copy.deepcopy(NIGHT), CAM, DESIGN, {}, {}, tally)
+    assert tally == {"ramp": 1, "night plateau": 1}
+
+
+def test_an_overcast_scene_carries_the_overcast_block():
+    design = {"content": {"references": [{"name": "concept/x", "time": "dusk", "weather": "rain"}]}}
+    doc = copy.deepcopy(SETTING)
+    assert gate().sky_matches(doc, CAM, design, {}, {}, {}) == []
+    doc.pop("sky")
+    assert any("overcast" in f for f in gate().sky_matches(doc, CAM, design, {}, {}, {}))
