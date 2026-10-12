@@ -53,13 +53,10 @@ A campaign is a directory of JSON documents, written in stages, each conditioned
 ```mermaid
 flowchart TD
     P(["your prompt — a theme, or a full brief"]) --> WS["1 · the workspace<br/>campaigns/‹id›/ · world.json<br/>DESIGN.md · GENERATION.md"]
-    WS --> PICK{"which placement model?<br/>exactly one per campaign"}
-    PICK -->|"a few rooms the library already has"| AR["2A · world.json areas[]<br/>prefabs from the piece library,<br/>assembled by vanilla jigsaw from a seed<br/>delvec viewer · delvec prefab anchors"]
-    PICK -->|"the place itself is the content"| MR["2B · the map's reference views<br/>refimg.py: single full-frame views,<br/>every one anchored on view 1"]
+    WS --> MR["2 · the map's reference views<br/>refimg.py: single full-frame views,<br/>every one anchored on view 1"]
     MR --> GB["geometry-brief.json<br/>the whole, in numbers"]
-    GB --> LG["layout-graph.json<br/>what connects to what"]
-    LG --> SP["site-plan.json<br/>every place's box, datum and seams<br/>delvec metrics · delvec metrics --gym"]
-    AR --> ST
+    GB --> LG["layout-graph.json<br/>the places, and what connects to what"]
+    LG --> SP["site-plan.json<br/>every place's box, datum and seams,<br/>and what fills the ground between them<br/>delvec metrics · delvec metrics --gym"]
     SP --> ST
 
     subgraph LOOP ["every document, every stage"]
@@ -97,7 +94,7 @@ flowchart TD
         direction TB
         B1["load and validate<br/>every document against its schema,<br/>every reference resolved"]
         B1 --> B2["analyze<br/>every quest and dialogue path walked,<br/>the critical path replayed"]
-        B2 --> B3["place<br/>areas[]: jigsaw solved from the seed<br/>site plan: the blockout derived and its battery run"]
+        B2 --> B3["place<br/>the site plan's blockout derived and its seam battery run;<br/>each detailed place's piece seated in its frame"]
         B3 --> B4["prove over the placed blocks<br/>reachable floor is lit · no place a body enters and cannot leave<br/>every click is in reach · every killing volume is visible"]
         B4 --> B5["emit<br/>every mcfunction line parsed against<br/>the pinned 1.21.11 command tree"]
     end
@@ -107,17 +104,15 @@ flowchart TD
     OUT --> CAM["8b · the showcase cameras<br/>delvec cameras · delvec place-camera<br/>→ design/cameras.json, one per approved image"]
 ```
 
-The build tree holds no world save and no server jar ([ADR-0010](adr/0010-oci-packaging.md)). The server is vanilla on a void world; the datapack places every prefab template on first boot ([ADR-0004](adr/0004-prefab-jigsaw.md)). A piece the library does not have is written by the box-split grammar from a rule program (`delvec grammar`), and every piece enters the library through `delvec prefab` admission. Every diagnostic the compiler can print is in [`compiler.md`](reference/compiler.md).
+The build tree holds no world save and no server jar ([ADR-0010](adr/0010-oci-packaging.md)). The server is vanilla on a void world; the datapack places every piece's template on first boot ([ADR-0004](adr/0004-prefab-jigsaw.md)). Until a place is detailed, the build stands a plain stand-in in its box, so the map builds, walks and renders before any building exists; a stand-in never ships. A place's piece is written by the box-split grammar from a rule program (`delvec grammar`), or is a library piece admitted through `delvec prefab`. Every diagnostic the compiler can print is in [`compiler.md`](reference/compiler.md).
 
 ## 4 · Detail and ladder — the machines first
 
-On a site-plan campaign the derived blockout is detailed first, one place at a time, so that everything after it — the machines and the human — judges the world that ships. The ladder then plays the delve on a real server, in the same Docker Compose rig CI and releases use ([ADR-0005](adr/0005-two-layer-validation.md)).
+Every map is a site plan ([ADR-0032](adr/0032-one-map-route.md)), and its blockout is detailed first, one place at a time, so that everything after it — the machines and the human — judges the world that ships. The ladder then plays the delve on a real server, in the same Docker Compose rig CI and releases use ([ADR-0005](adr/0005-two-layer-validation.md)).
 
 ```mermaid
 flowchart TD
-    T(["the build tree"]) --> SPQ{"a site-plan campaign?"}
-    SPQ -->|"yes"| DET["9 · detail, one place at a time<br/>delvec allocation · delvec detail<br/>a grammar program inside the box the plan handed it,<br/>gated, frozen into the prefab library"]
-    SPQ -->|"no"| PT
+    T(["the build tree"]) --> DET["9 · detail, every place, one at a time<br/>delvec allocation · delvec detail<br/>a grammar program draws the place's walls, roof and ground<br/>inside the frame the plan hands it,<br/>gated, written into the prefab library"]
     DET --> PT
 
     subgraph LADDER ["10 · the machine ladder · validation/compose.yaml"]
