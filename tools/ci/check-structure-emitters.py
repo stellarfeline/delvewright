@@ -416,7 +416,11 @@ def check_generators_are_wired() -> tuple[list[str], int]:
     members = set(tomllib.loads(ws_manifest.read_text())["workspace"]["members"])
 
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
-    job = ci.split("prefab-generators:", 1)
+    # Split on the JOB KEY (two-space indent, own line), never on the bare text:
+    # `prefab-generators:` also opens the `changes` job's output map, and a split
+    # there made the "job body" every job up to `harness`, so another job's
+    # `workspaces:` was judged as this one's.
+    job = re.split(r"^  prefab-generators:\n", ci, maxsplit=1, flags=re.M)
     if len(job) != 2:
         return ["the `prefab-generators` job is gone from ci.yml — this check binds to nothing"], 0
     body = job[1].split("\n  harness:", 1)[0]

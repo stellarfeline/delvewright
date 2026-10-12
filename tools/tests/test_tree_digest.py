@@ -120,19 +120,29 @@ def test_a_manifest_this_tool_did_not_write_is_refused(tmp_path):
 def test_the_subject_script_and_the_job_name_the_same_thing():
     """The comparison is only about determinism if both hosts ran one subject.
 
-    Binding: the two `tools/ci/determinism-subject.sh` invocations in `ci.yml` — one
-    in `rust (fmt, clippy, test)`, one in the macOS job — and the required
-    context that names the second.
+    Binding: the four `tools/ci/determinism-subject.sh` invocations in `ci.yml` —
+    per subject (the metrics gym, the gallery primary) one Linux side and one in
+    the macOS job, identical but for the digest's file name — and the required
+    context that names the macOS job.
     """
+    import re
+
     ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     # INVOCATIONS, not mentions: a comment naming the script is not a caller,
     # and counting mentions would make a prose edit move a binding count.
-    invocations = ci.count("bash tools/ci/determinism-subject.sh")
-    assert invocations == 2, (
-        f"the two hosts must build the SAME subject and {invocations} site(s) "
-        "invoke it; a second statement of the subject in the workflow is how "
-        "they drift apart"
+    joined = re.sub(r"\\\n\s*", " ", ci)
+    calls = re.findall(r"bash tools/ci/determinism-subject\.sh[^\n]*", joined)
+    assert len(calls) == 4, (
+        f"the two hosts must build the SAME subjects and {len(calls)} site(s) "
+        "invoke the script; a further statement of a subject is how they drift apart"
     )
+    by_subject: dict[str, set[str]] = {}
+    for call in calls:
+        subject = "gallery" if "--subject gallery" in call else "gym"
+        by_subject.setdefault(subject, set()).add(re.sub(r"--out \S+", "--out <digest>", call))
+    assert sorted(by_subject) == ["gallery", "gym"]
+    for subject, shapes in by_subject.items():
+        assert len(shapes) == 1, f"the {subject} subject is invoked two different ways: {shapes}"
     context = "cross-OS determinism (macOS vs Linux bytes)"
     assert f"name: {context}" in ci
     manifest = (REPO / ".github" / "required-status-checks.txt").read_text(

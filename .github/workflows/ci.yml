@@ -417,28 +417,49 @@ jobs:
     # is a required status context in branch protection; renaming it deadlocks
     # every PR (see .github/required-status-checks.txt).
     name: cross-OS determinism (macOS vs Linux bytes)
-    needs: [changes, delvec-binary]
+    needs: [changes, delvec-binary, gallery-pieces]
     if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # Two workspaces: the engine, and `prefabs` (one workspace, target
+      # `prefabs/target`), whose `gallery-generator` member the gallery
+      # subject's `gallery-prefabs.py` compiles.
       - uses: Swatinem/rust-cache@v2
-        with: { key: determinism-macos }
+        with:
+          key: determinism-macos
+          workspaces: |
+            . -> target
+            prefabs -> target
       - name: build the engine under test
         run: cargo build --locked -p delvec --bin delvec
       - name: the macOS side's digest
         run: |
           bash tools/ci/determinism-subject.sh \
             --delvec target/debug/delvec --out determinism-macos.txt
+      # The gallery primary (ADR-0034): the subject that exercises every surface
+      # the DSL declares, built by the same invocation the Linux side ran.
+      - name: the macOS side's gallery digest
+        run: |
+          bash tools/ci/determinism-subject.sh --subject gallery \
+            --delvec target/debug/delvec --out determinism-macos-gallery.txt
       - uses: actions/download-artifact@v4
         with:
           name: determinism-digest-linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: determinism-digest-linux-gallery
       # The gate. Prints every differing path, so a divergence names the file
       # rather than a hash nobody can act on.
       - name: the two hosts wrote the same bytes
         run: |
           python3 tools/ci/tree-digest.py \
             --compare determinism-linux.txt determinism-macos.txt
+      - name: the two hosts wrote the same gallery bytes
+        if: '!cancelled()'
+        run: |
+          python3 tools/ci/tree-digest.py \
+            --compare determinism-linux-gallery.txt determinism-macos-gallery.txt
       # Both sides, kept, so a red can be read after the runners are gone.
       - uses: actions/upload-artifact@v4
         if: always()
@@ -447,6 +468,8 @@ jobs:
           path: |
             determinism-linux.txt
             determinism-macos.txt
+            determinism-linux-gallery.txt
+            determinism-macos-gallery.txt
 
   # ADR-0017: the release shelf must stay buildable as the repo grows, and the
   # way it silently stops is a new dependency that does not compile for gnu,
@@ -1349,7 +1372,7 @@ jobs:
     needs: [changes, delvec-binary]
     # Every consumer's group, so it runs whenever any consumer does
     # (`check-ci-reach.py` refuses a consumer this would not reach).
-    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-pieces == 'true' || needs.changes.outputs.gallery-coverage == 'true' || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-baseline == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-pieces == 'true' || needs.changes.outputs.gallery-coverage == 'true' || needs.changes.outputs.gallery-views == 'true' || needs.changes.outputs.gallery-baseline == 'true' || needs.changes.outputs.gallery-bot == 'true' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     outputs:
       sha256: ${{ steps.pack.outputs.sha256 }}
@@ -1395,6 +1418,20 @@ jobs:
           path: ${{ runner.temp }}/gallery-pieces/gallery-pieces.tar
           if-no-files-found: error
           retention-days: 1
+      # ADR-0006's LINUX HALF for the gallery (ADR-0034): the gallery primary —
+      # its generated pieces, the campaign `gallery_domain` materialises and its
+      # `en` build — digested by the same script, invoked identically, that the
+      # `cross-OS determinism (macOS vs Linux bytes)` job runs on macOS. A step
+      # of this job because the generator's cargo cache is here.
+      - name: ADR-0006 cross-OS — the Linux side's gallery digest
+        run: |
+          bash tools/ci/determinism-subject.sh --subject gallery \
+            --delvec target/debug/delvec --out determinism-linux-gallery.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-digest-linux-gallery
+          path: determinism-linux-gallery.txt
+          if-no-files-found: error
 
   gallery-coverage:
     name: gallery coverage (every surface written or refused)
@@ -1531,48 +1568,58 @@ jobs:
   gallery-baseline:
     name: gallery baseline (emission, warnings, served points)
     needs: [changes, delvec-binary, gallery-pieces]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-baseline == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-baseline == 'true' || needs.changes.outputs.gallery-bot == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # `gallery-baseline.py` classifies a manifest mismatch partly by what the
-          # diff touches, and that needs the merge base rather than a shallow head.
-          # Which verdicts it can reach is its own business and is not listed here.
-          #
-          # It also RECOMPUTES the review delta from the commit that artifact names
-          # (spec-0039 §5), which reads `gallery/baseline/manifests.json` at an
-          # ancestor commit. A shallow checkout would not have it, and the tool
-          # refuses rather than treating an unreachable commit as an empty
-          # baseline — so this depth is load-bearing for a second gate now, not
-          # only for the classifier.
+          # The comparison side is `merge-base(origin/main, HEAD)` (on `main`,
+          # `HEAD^1`), checked out into a worktree of its own: it needs history.
           fetch-depth: 0
       - uses: ./.github/actions/delvec-binary
         with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
       - uses: ./.github/actions/gallery-pieces
         with: { sha256: "${{ needs.gallery-pieces.outputs.sha256 }}" }
-      - name: emission baseline + expected-warnings ledger
+      # The comparison tree's own `cargo build` (engine and gallery generator)
+      # writes into one target directory outside it, cached here so the
+      # dependencies of the merge base are reused across runs.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: gallery-baseline-compare
+          workspaces: ". -> .gallery-baseline/target"
+      # ADR-0034 / spec-0039 §5. The domain is built twice, from source: the
+      # head with the run's engine and pieces, and the comparison tree with its
+      # own engine, its own pieces and its own `gallery_domain`. The summary
+      # says which this run is — red (a build failed, the warning ledger moved,
+      # or emission moved on a change reaching no emission input: ADR-0006),
+      # report (emission moved on a change that reaches it), or green.
+      - name: emission baseline (comparison vs head) + expected-warnings ledger
         if: '!cancelled()'
         run: |
           python3 tools/ci/gallery-baseline.py \
-            --delvec target/debug/delvec --prefabs gallery-prefabs
-      # The step above compiles every overlay and keeps only a hash — correctly,
-      # it is a baseline. The consequence was that the site-plan overlay, the map
-      # pipeline's first walkable whole, existed ONLY inside that tool's temp
-      # directory: the bot ladder walked it and the run was reported against a
-      # tree no committed act could bring back. This is that act, and it runs
-      # here so it cannot rot — a script nothing invokes is UNRUN exactly as a
-      # gate nothing invokes is.
-      #
-      # It reproduces rather than merely compiling: the tree it writes must carry
-      # the manifest `gallery/baseline/` already recorded for this point, so a
-      # green here is "the tree on disk is the one the baseline measured", not
-      # "exit 0". Classifying a mismatch stays with the baseline tool.
+            --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --work .gallery-baseline
+      # The head manifests are what `gallery-build.py` proves a tree against,
+      # here and in `gallery bot`; the delta and header pair are the review
+      # artifact.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-baseline
+          path: .gallery-baseline/report/
+          retention-days: 7
+      # The site-plan overlay, the map pipeline's first walkable whole, exists
+      # otherwise only inside the baseline tool's temp directory. This is the
+      # committed act that rebuilds it, run here so it cannot rot. It
+      # reproduces rather than merely compiling: the tree it writes must carry
+      # the manifest the step above measured for this point, so a green here is
+      # "the tree on disk is the one the baseline measured", not "exit 0".
       - name: the walked whole rebuilds from a committed act
         if: '!cancelled()'
         run: |
           python3 tools/ci/gallery-build.py --point site-plan \
-            --delvec target/debug/delvec --prefabs gallery-prefabs
+            --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --manifests .gallery-baseline/report/manifests.json
       # `tools/creator/staging-gate.py` decides whether a built delve may be served, and
       # its only consumer was `tools/creator/playtest-server.sh` — step 9 of the
       # `/new-delve` page. That binds it to the staging EVENT, correctly, and it
@@ -1580,12 +1627,13 @@ jobs:
       # engine could grow a campaign the gate refuses and the first thing to say
       # so would be a person at the end of the pipeline. This is that question
       # asked of the only build a push has — the gallery, in every point of its
-      # domain, enumerated from `gallery/baseline/manifests.json` rather than
-      # from a list typed here, because a job that judges fewer points than the
-      # ladder builds is the `unbound` vacuity wearing a green tick.
+      # domain, enumerated by `gallery_domain.points()` from the gallery itself
+      # rather than from a list typed here, because a job that judges fewer
+      # points than the ladder builds is the `unbound` vacuity wearing a green
+      # tick.
       #
       # It needs exactly what this job already has — the engine, the gallery's
-      # pieces, and the full history the baseline comparison reads.
+      # pieces, and the manifests the baseline step measured.
       #
       # The gallery is still never STAGED (spec-0039 §2): every admission token
       # this writes goes to the work directory, never into a build tree, and the
@@ -1595,6 +1643,7 @@ jobs:
         run: |
           python3 tools/ci/check-gallery-stageable.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --manifests .gallery-baseline/report/manifests.json \
             --work validation/gallery-stageable
 
   # spec-0039: the gallery is the engine's test surface, and the bot is the one
@@ -1610,7 +1659,7 @@ jobs:
   # through `.github/actions/delvec-binary`.
   gallery-bot:
     name: gallery bot (critical path + die-retry + death loop)
-    needs: [changes, delvec-binary]
+    needs: [changes, delvec-binary, gallery-baseline]
     if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-bot == 'true'
     runs-on: ubuntu-latest
     # The ladder's own budget is DELVEWRIGHT_RUN_TIMEOUT_MS below; this bound is
@@ -1635,13 +1684,20 @@ jobs:
         run: |
           python3 tools/ci/gallery-prefabs.py \
             --delvec target/debug/delvec --out gallery-prefabs
+      # The manifests the `gallery baseline` job measured for this commit — the
+      # second observer `gallery-build.py` proves its tree against.
+      - uses: actions/download-artifact@v4
+        with:
+          name: gallery-baseline
+          path: .gallery-baseline/report
       # The primary point, materialised and built, and refused unless the tree
-      # is the one `gallery/baseline/` recorded — so the bot walks the build the
+      # is the one the baseline job measured — so the bot walks the build the
       # baseline measured, never a neighbour of it.
-      - name: build the primary point the baseline recorded
+      - name: build the primary point the baseline measured
         run: |
           python3 tools/ci/gallery-build.py --point primary \
-            --delvec target/debug/delvec --prefabs gallery-prefabs
+            --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --manifests .gallery-baseline/report/manifests.json
       - name: the bot walks the gallery
         run: |
           bash validation/bot-run.sh --project dw-ci-gallery-bot \
@@ -1679,7 +1735,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/ci/gallery-build.py --point site-plan \
-            --delvec target/debug/delvec --prefabs gallery-prefabs
+            --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --manifests .gallery-baseline/report/manifests.json
           bash validation/world-save.sh validation/delve-output-gallery-site-plan \
             --project dw-ci-gallery-site-world
           target/debug/delvec --prefabs gallery-prefabs written-world \

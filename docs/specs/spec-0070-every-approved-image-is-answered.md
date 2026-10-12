@@ -376,8 +376,8 @@ satisfy is a debt, stated as such, never a pass.
    entries; every `DW0900` and new `DW0721` shape is asserted by a test.
    *Checked: debt — the file and the cross-check exist; no rows for this code.*
 8. **The gallery binds it.** Every point's `validation/design-record.json`
-   reads `answered: 6` of `references: 6` (denominator: the points enumerated
-   from `gallery/baseline/manifests.json`, 8 today); `camera_eye_proof.showcase`
+   reads `answered: 6` of `references: 6` (denominator: the points
+   `gallery_domain.points()` enumerates); `camera_eye_proof.showcase`
    is at least 6 on each; `check-gallery-stageable.py` reports `drill3-03`
    `BOUND` on each; the coverage line reports 0 in neither state.
    *Checked: debt — `answered` would read 1 of 6 on every point.*

@@ -43,7 +43,7 @@ remove the need for the hatch rather than to secure it:
 * **What this repository's own tools write is made canonical at the writer.**
   `tools/ci/gallery-baseline.py` wrote `gallery/baseline/warnings.json` with
   python's default `ensure_ascii=True`, so an em-dash inside a warning pointer
-  came out escaped. That is the only reason any of `gallery/baseline/` was
+  came out escaped. That is the only reason that ledger was
   non-canonical, and the fix belongs in the generator: it now writes
   `ensure_ascii=False` and its output is swept like anything else. A generated
   file that is *in* canonical form needs no exemption, and cannot be used as

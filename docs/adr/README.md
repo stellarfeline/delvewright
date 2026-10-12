@@ -37,6 +37,7 @@ edit. Template at the bottom.
 | [0031](0031-a-module-per-object-class.md) | A module per object class — no file that every feature touches | Proposed |
 | [0032](0032-one-map-route.md) | One map route — a site is a plan of scenes, and a scene is drawn whole | Accepted |
 | [0033](0033-the-plugin-version-is-the-engine-release-it-ships-at.md) | The plugin's version is the engine release it ships at: derived and checked, the pin names the unborn tag, the plugin release writes no branch | Accepted |
+| [0034](0034-the-gallery-baseline-is-computed-in-ci.md) | The gallery emission baseline is computed in CI from the merge base and the head, both built from source; only the expected-warnings ledger is committed | Accepted |
 
 ## Template
 
