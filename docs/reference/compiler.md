@@ -5696,7 +5696,18 @@ never across a long, `data` absent for a one-entry palette. Biomes are the
 build's biome map (`horizon::biome_map`) sampled at each 4-cell's centre. Every
 region timestamp is zero, zlib at level 6, chunks in index order, sectors
 contiguous; two writes of one map are byte-identical, and each world's sha-256
-over its region files in name order is printed. No light arrays, heightmaps,
+over its region files in name order is printed. **A cell no build write reached
+holds the horizon generator's block** (`world::Ground`), because the server's
+world is the generator's wherever the datapack writes nothing: under `horizon:
+ocean` the stack `plan::OCEAN_LAYERS` states once and `generator-settings` is
+built from (bedrock at −64, stone to 54, water to 62), laid in every written
+chunk's sections from −64 up; under `void` and `valley` nothing. Which cells a
+write reached is `assembled::Reached` (one bit per height per column over
+−64..63): a template's placed cells, its air included and its `structure_void`
+not; an area's mass and seals; the surround; every edit write; the picture
+base's cells; and the regions the world's own configuration lays
+(`Configuration::laid_regions`), air writes included. `<g>` on the binding line
+counts the cells the generator fills. No light arrays, heightmaps,
 entities, block entities or ticks. **`--world` is gone**: a showcase frame has
 one world source. The server save (`validation/world-save.sh`) is the
 instrument that checks the writer (`DW0955`, `tools/ci/check-written-world.py`),
@@ -5780,7 +5791,7 @@ of <n> on <the critical path | branch `<id>`'s path>): <c> cells moved from load
 <u> unforced write(s) not laid, <b> block entit(ies) omitted; biomes: at load;
 clock: as the picture` — `<c>` the cells whose block differs from the load
 world's (`Configuration::moved_from`); per written world, `world: <key> <chunks>
-chunk(s), <cells> cell(s), sha256 <hash> -> <dir>`; and `configurations: <k>
+chunk(s), <cells> cell(s), <g> ground cell(s), sha256 <hash> -> <dir>`; and `configurations: <k>
 written for <c> camera(s), <a> after a step, <l> at load`. A record with no
 `after` prints `0 after a step` and one world, `at-load`.
 
