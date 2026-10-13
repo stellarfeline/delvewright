@@ -2780,7 +2780,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   carries a `vibrations` array: each `{sensor, shriekers}` — the sensor's cell
   and the cells of the shriekers that answer it. A sensor is **predicted** for a
   leg when the leg is not a `sneak` leg and four consecutive cells of its proven
-  route (three blocks walked) lie within integer `distSqr ≤ 49` of it — one
+  route (three blocks walked) that the party **must walk** lie within integer
+  `distSqr ≤ 49` of it. A route cell the party need not walk is one it could
+  stop in: from which it could still be completing the step the leg starts from,
+  or could already complete the step it walks to (`Step::completes_from`: inside
+  a `reach`'s completion volume; within `INTERACTION_REACH` 3 of a talk, an
+  interact hitbox or a click trigger, `BLOCK_INTERACTION_REACH` 4.5 of a lever,
+  button or chest, an `approach` trigger's range, or 1.5 of a plate; never for a
+  fight, a drop pickup or a loop) — such a cell breaks the run
+  (`sculk::must_walk`). The sensor's earshot is one
   block inside its listener radius — each with no `#dampens_vibrations` block
   (wool, a wool carpet) in its feet cell or under it and no
   `#occludes_vibration_signals` block (wool) in the box it and the sensor span;
@@ -5696,7 +5704,18 @@ never across a long, `data` absent for a one-entry palette. Biomes are the
 build's biome map (`horizon::biome_map`) sampled at each 4-cell's centre. Every
 region timestamp is zero, zlib at level 6, chunks in index order, sectors
 contiguous; two writes of one map are byte-identical, and each world's sha-256
-over its region files in name order is printed. No light arrays, heightmaps,
+over its region files in name order is printed. **A cell no build write reached
+holds the horizon generator's block** (`world::Ground`), because the server's
+world is the generator's wherever the datapack writes nothing: under `horizon:
+ocean` the stack `plan::OCEAN_LAYERS` states once and `generator-settings` is
+built from (bedrock at −64, stone to 54, water to 62), laid in every written
+chunk's sections from −64 up; under `void` and `valley` nothing. Which cells a
+write reached is `assembled::Reached` (one bit per height per column over
+−64..63): a template's placed cells, its air included and its `structure_void`
+not; an area's mass and seals; the surround; every edit write; the picture
+base's cells; and the regions the world's own configuration lays
+(`Configuration::laid_regions`), air writes included. `<g>` on the binding line
+counts the cells the generator fills. No light arrays, heightmaps,
 entities, block entities or ticks. **`--world` is gone**: a showcase frame has
 one world source. The server save (`validation/world-save.sh`) is the
 instrument that checks the writer (`DW0955`, `tools/ci/check-written-world.py`),
@@ -5780,7 +5799,7 @@ of <n> on <the critical path | branch `<id>`'s path>): <c> cells moved from load
 <u> unforced write(s) not laid, <b> block entit(ies) omitted; biomes: at load;
 clock: as the picture` — `<c>` the cells whose block differs from the load
 world's (`Configuration::moved_from`); per written world, `world: <key> <chunks>
-chunk(s), <cells> cell(s), sha256 <hash> -> <dir>`; and `configurations: <k>
+chunk(s), <cells> cell(s), <g> ground cell(s), sha256 <hash> -> <dir>`; and `configurations: <k>
 written for <c> camera(s), <a> after a step, <l> at load`. A record with no
 `after` prints `0 after a step` and one world, `at-load`.
 

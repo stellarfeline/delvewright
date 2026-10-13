@@ -2,7 +2,7 @@
 
 import { linesSince, type ChatWindow } from "../death.ts";
 import { isRejection } from "../rejection.ts";
-import { echoCommand } from "../command-reply.ts";
+import { echoCommand, type BracketedReply } from "../command-reply.ts";
 import { delay } from "./connection.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
@@ -37,6 +37,23 @@ export const methods = {
   },
 
   /**
+   * **Send `commands` inside one reply bracket and return what the server said
+   * between its markers** (`command-reply.ts`). Every command is written in the
+   * same synchronous turn as the markers, so the lines are these commands' and
+   * no other's. A bracket whose closing marker never arrives within
+   * {@link BRACKET_TIMEOUT_MS} comes back `answered: false`.
+   */
+  async bracketed(this: MineflayerExecutor, commands: readonly string[]): Promise<BracketedReply> {
+    const bot = this.requireBot();
+    const bracket = this.brackets.begin();
+    // One synchronous turn: nothing else can reach the socket between these.
+    bot.chat(echoCommand(bracket.open));
+    for (const command of commands) bot.chat(command);
+    bot.chat(echoCommand(bracket.close));
+    return this.brackets.reply(bracket, BRACKET_TIMEOUT_MS);
+  },
+
+  /**
    * **Send `command` and return the server's refusal of it, or `undefined`.**
    *
    * The command is bracketed (`command-reply.ts`), so the refusal read is this
@@ -46,16 +63,7 @@ export const methods = {
    * a refusal saying so: silence is never read as consent.
    */
   async refusalOf(this: MineflayerExecutor, command: string, settleMs = STAGED_REPLY_MS): Promise<string | undefined> {
-    const bot = this.requireBot();
-    const bracket = this.brackets.begin();
-    // One synchronous turn: nothing else can reach the socket between these.
-    bot.chat(echoCommand(bracket.open));
-    bot.chat(command);
-    bot.chat(echoCommand(bracket.close));
-    const [reply] = await Promise.all([
-      this.brackets.reply(bracket, BRACKET_TIMEOUT_MS),
-      delay(settleMs),
-    ]);
+    const [reply] = await Promise.all([this.bracketed([command]), delay(settleMs)]);
     if (!reply.answered) {
       return (
         `no reply observed: the closing marker of \`${command}\` did not arrive within ` +

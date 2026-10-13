@@ -684,6 +684,8 @@ struct Placed {
     open_gates: BTreeSet<[i32; 3]>,
     /// The per-gate world-load measurement ([`Assembled::gate_seals`]).
     gate_seals: Vec<GateSeal>,
+    /// The cells a build write reached ([`Assembled::reached`]).
+    reached: Reached,
 }
 
 /// The un-settled cell→block map: placed structures + solver seals + gate clears,
@@ -698,6 +700,7 @@ const STRUCTURE_VOID: &str = "minecraft:structure_void";
 fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed {
     let mut blocks: BlockMap = BTreeMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut reached = Reached::default();
     for area in &plan.areas {
         // The area's own mass, before its templates: a derived blockout's blocks
         // arrive as region writes rather than in a `.nbt` (`crate::compiler::blockout`),
@@ -708,6 +711,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
         // Empty for every prefab-placed area, so this loop runs zero times and
         // such a world is byte-identical.
         for m in &area.mass {
+            reached.mark_box(m.from, m.to);
             if is_air(&m.block) {
                 for cell in region_cells(m.from, m.to) {
                     blocks.remove(&cell);
@@ -768,6 +772,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                     if base_id(&name) == STRUCTURE_VOID {
                         continue;
                     }
+                    reached.mark(cell);
                     // A template's air is placed too, and carves what stood
                     // there — the mass under it, an earlier template's block.
                     if is_air(&name) {
@@ -789,6 +794,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
         // else seals an unused one. Either way the sealed cell is no longer an
         // authored open gate.
         for s in &area.seals {
+            reached.mark_box(s.from, s.to);
             if is_air(&s.block) {
                 for cell in region_cells(s.from, s.to) {
                     blocks.remove(&cell);
@@ -844,6 +850,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                     if base_id(&name) == STRUCTURE_VOID {
                         continue;
                     }
+                    reached.mark(cell);
                     if is_fence_gate(&name) && open == Some(true) {
                         open_gates.insert(cell);
                     } else {
@@ -883,6 +890,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
         blocks,
         open_gates,
         gate_seals,
+        reached,
     }
 }
 
@@ -1017,7 +1025,74 @@ pub struct Assembled {
     /// happened to be shut" (CLAUDE.md: *a green gate that binds to nothing is
     /// vacuous*).
     pub gate_seals: Vec<GateSeal>,
+    /// **Every cell a build write reached** at or under [`Reached::CEILING`]:
+    /// a template's placed cell (its air included, its `structure_void` not),
+    /// an area's mass and seals, the surround, an edit's write. The block map
+    /// cannot say this — a written air and a cell nothing wrote are both
+    /// absent from it — and the server tells them apart: a cell nothing wrote
+    /// holds what the level generator laid there
+    /// ([`crate::compiler::plan::ocean_layer_at`] under `horizon: ocean`).
+    pub reached: Reached,
 }
+
+/// Which cells at or under [`Reached::CEILING`] a build write reached, as one
+/// bit per height per column — the band a superflat stack can occupy, held at
+/// a cost of one word per column rather than one entry per cell.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Reached {
+    columns: BTreeMap<(i32, i32), u128>,
+}
+
+impl Reached {
+    /// The lowest height a bit stands for: the build floor.
+    pub const FLOOR: i32 = crate::compiler::plan::BUILD_FLOOR_Y;
+    /// The highest height a bit stands for. Every generator layer the engine
+    /// emits lies at or under it (asserted below), so a cell above it is never
+    /// a generator's.
+    pub const CEILING: i32 = Self::FLOOR + 127;
+
+    /// Mark `c` reached (a no-op above [`Self::CEILING`] or under [`Self::FLOOR`]).
+    pub fn mark(&mut self, c: [i32; 3]) {
+        if (Self::FLOOR..=Self::CEILING).contains(&c[1]) {
+            *self.columns.entry((c[0], c[2])).or_default() |= 1u128 << (c[1] - Self::FLOOR);
+        }
+    }
+
+    /// Mark every cell of the inclusive box `a..=b` reached.
+    pub fn mark_box(&mut self, a: [i32; 3], b: [i32; 3]) {
+        let (lo, hi) = (
+            a[1].min(b[1]).max(Self::FLOOR),
+            a[1].max(b[1]).min(Self::CEILING),
+        );
+        if lo > hi {
+            return;
+        }
+        let mut mask = 0u128;
+        for y in lo..=hi {
+            mask |= 1u128 << (y - Self::FLOOR);
+        }
+        for x in a[0].min(b[0])..=a[0].max(b[0]) {
+            for z in a[2].min(b[2])..=a[2].max(b[2]) {
+                *self.columns.entry((x, z)).or_default() |= mask;
+            }
+        }
+    }
+
+    /// Whether a build write reached `c`. Above [`Self::CEILING`] the answer is
+    /// `false`: nothing there is a generator's to show through.
+    pub fn contains(&self, c: [i32; 3]) -> bool {
+        (Self::FLOOR..=Self::CEILING).contains(&c[1])
+            && self
+                .columns
+                .get(&(c[0], c[2]))
+                .is_some_and(|m| m & (1u128 << (c[1] - Self::FLOOR)) != 0)
+    }
+}
+
+const _: () = assert!(
+    crate::compiler::plan::SEA_LEVEL <= Reached::CEILING,
+    "every ocean layer lies in the band `Reached` records"
+);
 
 /// **The world as shipped, before any runtime write**: the assembled blocks,
 /// every gate the placed world authors shut, the relight fixtures and the
@@ -1094,6 +1169,7 @@ pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assemble
         settled,
         open_gates: placed.open_gates,
         gate_seals: placed.gate_seals,
+        reached: placed.reached,
     }
 }
 

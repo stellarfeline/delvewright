@@ -152,6 +152,10 @@ pub use delvewright_dsl::metrics::PLAYER_WIDTH;
 /// player 4 blocks out would have separated the bodies and lost the click.
 pub const INTERACTION_REACH: f64 = 3.0;
 
+/// `player.block_interaction_range`, the vanilla 1.21.11 default, in blocks —
+/// how far a player uses a block (a lever, a button, a chest).
+pub const BLOCK_INTERACTION_REACH: f64 = 4.5;
+
 /// The minimum horizontal centre separation at which a player can always find a
 /// stance where `w_target`'s box is the first thing the pick ray meets, with
 /// `w_other` provably not between. See the module docs for the derivation.

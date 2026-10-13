@@ -120,8 +120,9 @@ either path below: a build that does not reach READY is not handed over, and
 the staging gate it runs is what the report lists by class.
 
 **One command does all of it** — it builds the campaign, runs the staging gate
-against that exact tree, starts the container, and verifies over rcon that the
-datapack actually loaded before it says READY:
+against that exact tree, starts the container, waits for the datapack to report
+its world placed (a large map takes minutes; the budget is stated and printed),
+and verifies over rcon that the datapack actually loaded before it says READY:
 
 ```sh
 "$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" up campaigns/<id> \
