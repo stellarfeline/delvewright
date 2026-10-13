@@ -83,11 +83,54 @@ PIN_BYTES = b"the pinned core"
 OTHER_BYTES = b"a newer snapshot"
 
 
-def pins_toml(core: str, digest: str) -> str:
+# The denoise kit, stubbed: a plugin jar of known bytes and an Open Image Denoise
+# archive whose `oidnDenoise` copies its `--hdr` input to its `-o` output, both
+# served from `file://` URLs and pinned for the host platform only.
+OIDN_STUB = """#!/usr/bin/env bash
+src=""; out=""
+while [ $# -gt 0 ]; do case "$1" in --hdr) src="$2"; shift 2;; -o) out="$2"; shift 2;; *) shift;; esac; done
+cp "$src" "$out"
+"""
+
+
+def host_triple() -> str:
+    sys.path.insert(0, str(REPO / "tools" / "lib"))
+    import chunky_denoise
+
+    return chunky_denoise.host_triple()
+
+
+def denoise_kit(tmp_path: Path) -> dict[str, str]:
+    import tarfile
+
+    d = tmp_path / "kit-src"
+    (d / "oidn-stub" / "bin").mkdir(parents=True)
+    jar = d / "chunky-denoiser-stub.jar"
+    jar.write_bytes(b"the pinned denoiser plugin")
+    oidn = d / "oidn-stub" / "bin" / "oidnDenoise"
+    oidn.write_text(OIDN_STUB)
+    oidn.chmod(0o755)
+    archive = d / "oidn-stub.tar.gz"
+    with tarfile.open(archive, "w:gz") as t:
+        t.add(d / "oidn-stub", arcname="oidn-stub")
+    sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()  # noqa: E731
+    key = host_triple().replace("-", "_")
+    return {
+        "denoiser_plugin_url": jar.as_uri(),
+        "denoiser_plugin_sha256": sha(jar),
+        "oidn_version": "0.0.0",
+        "oidn_url_base": d.as_uri() + "/",
+        f"oidn_archive_{key}": archive.name,
+        f"oidn_sha256_{key}": sha(archive),
+    }
+
+
+def pins_toml(core: str, digest: str, kit: dict[str, str] | None = None) -> str:
+    extra = "".join(f'{k} = "{v}"\n' for k, v in (kit or {}).items())
     return (
         f'[engine]\nversion = "{ENGINE_PIN}"\n\n[render]\nchunky_core = "{core}"\n'
         f'chunky_core_content_sha256 = "{digest}"\nchunky_source = "file:///nowhere"\n'
-        f'chunky_revision = "the-pinned-revision"\nchunky_build_java = "17"\n'
+        f'chunky_revision = "the-pinned-revision"\nchunky_build_java = "17"\n' + extra
     )
 
 
@@ -95,15 +138,24 @@ def tree(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "tools" / "lib").mkdir(parents=True)
     (root / "validation").mkdir(parents=True)
-    for name in ("delvec-bin.sh", "versions.py", "chunky-home.sh", "chunky_core.py", "chunky_budget.py"):
+    for name in ("delvec-bin.sh", "versions.py", "chunky-home.sh", "chunky_core.py", "chunky_budget.py", "chunky_denoise.py"):
         (root / "tools" / "lib" / name).write_bytes(
             (REPO / "tools" / "lib" / name).read_bytes()
         )
     for name in ("render-shots.sh", "chunky.sh", "chunky-install.sh"):
         (root / "validation" / name).write_bytes((REPO / "validation" / name).read_bytes())
     pin_digest = digest_of(core_jar(tmp_path / "reference" / "pin.jar", PIN_BYTES))
-    (root / "versions.toml").write_text(pins_toml(CORE_PIN, pin_digest))
+    (root / "versions.toml").write_text(pins_toml(CORE_PIN, pin_digest, denoise_kit(tmp_path)))
     return root
+
+
+def install_kit(root: Path, home: Path) -> None:
+    r = subprocess.run(
+        [sys.executable, str(root / "tools" / "lib" / "chunky_denoise.py"), "install", "--home", str(home)],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
 
 
 def build_dir(tmp_path: Path) -> Path:
@@ -131,6 +183,7 @@ def chunky_home(
     home = tmp_path / "chunky"
     (home / "lib").mkdir(parents=True)
     (home / "versions").mkdir(parents=True)
+    (home / "resources").mkdir(parents=True)
     dep = home / "lib" / "gson-2.9.0.jar"
     dep.write_bytes(b"a library")
     for core in cores:
@@ -368,12 +421,48 @@ def test_an_unreadable_pin_refuses_rather_than_reporting_nothing(tmp_path: Path)
 # The step that renders
 # ---------------------------------------------------------------------------
 
-JAVA_STUB = """#!/usr/bin/env bash
-printf '%s\\n' "$@" > "$JAVA_ARGS_OUT"
+# A `java` that records each call (one block per call, `--` between) and plays the
+# core: a `-render` writes a 2 x 1 render dump into its scene directory, or — from
+# the derived denoise home — writes the albedo and normal maps, prints the core's
+# "Render job finished." line and then hangs as the plugin's thread makes the
+# real JVM do; a `-snapshot` writes a 2 x 1 PFM (or bytes, for a .png).
+JAVA_STUB = """#!/usr/bin/env python3
+import os, struct, sys, time
+a = sys.argv[1:]
+with open(os.environ["JAVA_ARGS_OUT"], "a") as f:
+    f.write("\\n".join(a) + "\\n--\\n")
+def val(flag):
+    return a[a.index(flag) + 1] if flag in a else None
+home = a[0].split("=", 1)[1]
+sd = val("-scene-dir") or "."
+pfm = b"PF\\n2 1\\n-1.0\\n" + struct.pack("<6f", 0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
+if "-snapshot" in a:
+    out = a[a.index("-snapshot") + 2]
+    open(out, "wb").write(pfm if out.endswith(".pfm") else b"png")
+elif "-render" in a:
+    scene = val("-render")
+    os.makedirs(sd, exist_ok=True)
+    if home.endswith(os.path.join("denoise", "home")):
+        for m in ("albedo", "normal"):
+            open(os.path.join(sd, f"{scene}.{m}.pfm"), "wb").write(pfm)
+        print("Render job finished.", flush=True)
+        time.sleep(600)
+    else:
+        dump = b"DUMP" + struct.pack(">iiiiq", 2, 2, 1, 8, 1) + struct.pack(">6d", *([0.5] * 6))
+        open(os.path.join(sd, f"{scene}.dump"), "wb").write(dump)
+        if not os.path.exists(os.path.join(sd, f"{scene}.json")):
+            open(os.path.join(sd, f"{scene}.json"), "w").write('{"name": "%s"}' % scene)
 """
 
 
-def render(root: Path, home: Path, *args: str) -> tuple[subprocess.CompletedProcess, Path]:
+def calls(out: Path) -> list[list[str]]:
+    blocks = out.read_text().split("--\n")
+    return [b.splitlines() for b in blocks if b.strip()]
+
+
+def render(root: Path, home: Path, *args: str, kit: bool = True) -> tuple[subprocess.CompletedProcess, Path]:
+    if kit and not (home / "denoise").exists():
+        install_kit(root, home)
     bindir = root.parent / "javabin"
     bindir.mkdir(exist_ok=True)
     java = bindir / "java"
@@ -388,11 +477,14 @@ def render(root: Path, home: Path, *args: str) -> tuple[subprocess.CompletedProc
     env["PATH"] = os.pathsep.join([str(bindir), str(shim), "/usr/bin", "/bin"])
     env["DELVEWRIGHT_CHUNKY_HOME"] = str(home)
     env["JAVA_ARGS_OUT"] = str(out)
+    if out.exists():
+        out.unlink()
     r = subprocess.run(
         ["bash", str(root / "validation" / "chunky.sh"), *args],
         env=env,
         capture_output=True,
         text=True,
+        cwd=root.parent,
     )
     return r, out
 
@@ -403,7 +495,7 @@ def test_chunky_sh_renders_with_the_pinned_classpath(tmp_path: Path) -> None:
     r, out = render(root, home, "-scene-dir", "s", "-render", "x")
 
     assert r.returncode == 0, r.stderr
-    argv = out.read_text().splitlines()
+    argv = calls(out)[0]
     assert argv[0] == f"-Dchunky.home={home}"
     classpath = argv[argv.index("-cp") + 1].split(os.pathsep)
     assert classpath == [str(home / "lib" / f"{CORE_PIN}.jar"), str(home / "lib" / "gson-2.9.0.jar")]
@@ -433,12 +525,12 @@ def test_a_pass_after_a_draft_is_handed_the_scenes_declared_budget(tmp_path: Pat
 
     r, out = render(root, home, "-scene-dir", str(d), "-render", "x", "-target", "64")
     assert r.returncode == 0, r.stderr
-    assert target_of(out.read_text().splitlines()) == "64", "an explicit -target is the caller's"
+    assert target_of(calls(out)[0]) == "64", "an explicit -target is the caller's"
     (d / "x.json").write_text(json.dumps({"name": "x", "sppTarget": 64}))  # Chunky's re-save
 
     r, out = render(root, home, "-scene-dir", str(d), "-render", "x", "-f", "-threads", "2")
     assert r.returncode == 0, r.stderr
-    argv = out.read_text().splitlines()
+    argv = calls(out)[0]
     assert target_of(argv) == "500", argv
     assert "renders to its declared budget, -target 500" in r.stderr
 
@@ -451,14 +543,14 @@ def test_a_re_emitted_scene_is_judged_by_its_new_budget(tmp_path: Path) -> None:
     (d / "x.budget").unlink()  # what emission does to a scene it rewrites
     scene_with_budget(tmp_path, 300)
     r, out = render(root, home, "-scene-dir", str(d), "-render", "x")
-    assert target_of(out.read_text().splitlines()) == "300", r.stderr
+    assert target_of(calls(out)[0]) == "300", r.stderr
 
 
 def test_a_scene_with_no_budget_is_left_to_chunky(tmp_path: Path) -> None:
     root = tree(tmp_path)
     r, out = render(root, chunky_home(tmp_path, [CORE_PIN]), "-scene-dir", "s", "-render", "x")
     assert r.returncode == 0, r.stderr
-    assert target_of(out.read_text().splitlines()) is None
+    assert target_of(calls(out)[0]) is None
 
 
 def test_chunky_sh_refuses_a_home_without_the_pin(tmp_path: Path) -> None:
@@ -546,8 +638,9 @@ def test_the_installer_leaves_a_home_that_holds_the_pin_alone(tmp_path: Path) ->
     r = install(root, chunky_home(tmp_path, [CORE_PIN]), None)
 
     assert r.returncode == 0, r.stderr
-    assert "nothing to do" in r.stdout
-    assert not (root.parent / "work").exists()
+    assert "the pinned core is already installed" in r.stdout
+    assert "denoise kit installed" in r.stdout
+    assert not (root.parent / "work").exists(), "a core build started"
 
 
 def test_the_installer_refuses_a_jdk_the_revision_does_not_build_under(tmp_path: Path) -> None:
@@ -560,3 +653,65 @@ def test_the_installer_refuses_a_jdk_the_revision_does_not_build_under(tmp_path:
         assert "--java-home" in r.stderr
         assert not (root.parent / "work").exists(), "a build started"
     assert not (home / "lib" / f"{CORE_PIN}.jar").exists()
+
+
+# ---------------------------------------------------------------------------
+# The denoise step every -render ends with
+# ---------------------------------------------------------------------------
+
+
+def test_a_render_is_denoised_and_the_raw_dump_is_kept(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    r, out = render(root, home, "-scene-dir", "s", "-render", "x", "-f", "-threads", "2")
+    assert r.returncode == 0, r.stderr
+    c = calls(out)
+    assert len(c) == 3, c  # the render, the raw snapshot, the passes
+    assert c[0][c[0].index("-render") + 1] == "x" and c[0][-2:] == ["-threads", "2"]
+    assert c[1][0] == f"-Dchunky.home={home}" and "-snapshot" in c[1]
+    assert c[2][0] == f"-Dchunky.home={home / 'denoise' / 'home'}"
+    assert c[2][c[2].index("-target") + 1] == "16"
+    s = root.parent / "s"
+    raw = (s / "x.dump.raw").read_bytes()
+    den = (s / "x.dump").read_bytes()
+    assert raw[:28] == den[:28], "the denoised dump keeps the raw header"
+    assert den[28:] != raw[28:], "the denoised samples replace the raw ones"
+    assert "x denoised" in r.stderr
+
+
+def test_a_second_render_starts_from_the_raw_dump(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    render(root, home, "-scene-dir", "s", "-render", "x")
+    r, _ = render(root, home, "-scene-dir", "s", "-render", "x")
+    assert r.returncode == 0, r.stderr
+    assert "restored the raw dump of x" in r.stderr
+
+
+def test_a_render_refuses_without_the_denoise_kit(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    r, out = render(root, home, "-scene-dir", "s", "-render", "x", kit=False)
+    assert r.returncode == 2
+    assert not out.exists(), "java was started"
+    assert "denoise kit" in r.stderr and "chunky-install.sh" in r.stderr
+
+
+def test_a_render_refuses_a_kit_whose_plugin_is_not_the_pin(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    install_kit(root, home)
+    jar = next((home / "denoise" / "home" / "plugins").glob("*.jar"))
+    jar.write_bytes(b"another plugin")
+    r, out = render(root, home, "-scene-dir", "s", "-render", "x")
+    assert r.returncode == 2
+    assert not out.exists(), "java was started"
+    assert "does not answer versions.toml [render] denoiser_plugin_sha256" in r.stderr
+
+
+def test_a_snapshot_is_not_denoised_again(tmp_path: Path) -> None:
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    r, out = render(root, home, "-scene-dir", "s", "-snapshot", "x", "x.png")
+    assert r.returncode == 0, r.stderr
+    assert len(calls(out)) == 1

@@ -177,8 +177,12 @@ def verify(home: pathlib.Path) -> dict:
 def fetch(url: str, dest: pathlib.Path, want: str) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
-    with urllib.request.urlopen(url) as r, open(part, "wb") as f:
-        shutil.copyfileobj(r, f)
+    if url.startswith("file://"):
+        # A local pin (the test suite's stub kit) is read as a file, not fetched.
+        shutil.copyfile(urllib.request.url2pathname(url[len("file://"):]), part)
+    else:
+        with urllib.request.urlopen(url) as r, open(part, "wb") as f:
+            shutil.copyfileobj(r, f)
     got = sha256(part)
     if got != want:
         part.unlink()
@@ -200,8 +204,12 @@ def install(home: pathlib.Path, work: pathlib.Path) -> dict:
     # Both downloads are verified in the work directory before anything enters the home.
     jar_tmp = work / plugin_name(pins)
     arc_tmp = work / archive
-    fetch(pin(pins, "denoiser_plugin_url"), jar_tmp, pin(pins, "denoiser_plugin_sha256"))
-    fetch(pin(pins, "oidn_url_base") + archive, arc_tmp, archive_sha)
+    try:
+        fetch(pin(pins, "denoiser_plugin_url"), jar_tmp, pin(pins, "denoiser_plugin_sha256"))
+        fetch(pin(pins, "oidn_url_base") + archive, arc_tmp, archive_sha)
+    except BaseException:
+        shutil.rmtree(work, ignore_errors=True)
+        raise
     root = kit / "oidn" / archive_sha
     if root.exists():
         shutil.rmtree(root)

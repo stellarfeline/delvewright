@@ -3649,8 +3649,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   denoised**: Open Image Denoise 2.5.1 (RT filter, HDR) over the raw sample
   buffer, with the chunky-denoiser plugin's albedo and normal passes (16
   samples each), the result written back as a core render dump so the core's
-  own `-snapshot` applies the scene's post-process (both tools in
-  `ACKNOWLEDGEMENTS.md`; the step is not yet one of `validation/`'s scripts).
+  own `-snapshot` applies the scene's post-process. `validation/chunky.sh` runs
+  the step after every `-render`, with both tools pinned in `versions.toml
+  [render]` and installed by `validation/chunky-install.sh`
+  (`tools/lib/chunky_denoise.py`; `tools.md` §4a).
   The scale is the one at which the mean display luma of lantern-lit pixels,
   denoised, under the anchored curve, equals the game model's (**authored from
   this measurement**): the twelve showcase frames at 400 × 225, each rendered

@@ -143,7 +143,10 @@ JDK17="$("$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/find-jdk.py" --major 
 It installs into the Chunky home Chunky itself reads — `.chunky` under your
 account's home, which is not necessarily what `$HOME` says — and it installs only
 a jar whose content is the pin's; it is a no-op on a machine that already holds
-it. `render-shots.sh` has already printed the `chunky home:` line and whether that
+it. Then it installs the denoise kit — the chunky-denoiser plugin and Open Image
+Denoise, each only when its download answers its pinned sha256 — because every
+render is denoised; on a platform with no pinned Open Image Denoise (aarch64
+Linux) it stops, named, and nothing can be rendered there. `render-shots.sh` has already printed the `chunky home:` line and whether that
 home holds the pin. If Chunky lives elsewhere on this machine, set
 `DELVEWRIGHT_CHUNKY_HOME` to it before both commands.
 
@@ -160,7 +163,10 @@ One process per scene, in parallel:
     -snapshot <scene-name> <out>.png
 ```
 
-`<scene-name>` is the file stem without `.json`. **`-target` is the sample
+The `-render` ends by denoising the frame (albedo and normal passes, then Open
+Image Denoise), keeps the raw samples as `<scene-name>.dump.raw`, and the
+`-snapshot` prints the denoised frame; a second `-render` of the scene continues
+from the raw samples. `<scene-name>` is the file stem without `.json`. **`-target` is the sample
 budget** — how many samples per pixel the path tracer accumulates before it
 stops — and it is the one knob that trades render time against noise; it is not
 a lighting, framing or quality setting, and nothing about the picture's content
