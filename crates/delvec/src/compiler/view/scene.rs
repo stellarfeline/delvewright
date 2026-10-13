@@ -54,13 +54,15 @@
 //! drill — 55 of 59 emitted scenes carried no `sun` and no `sky` key at all, and
 //! a delve declaring `dusk` rendered noon blue.
 //!
-//! ## A clear sky is the pinned game's day ([`clear_cell`])
+//! ## A sky is the pinned game's, at its tick under its weather ([`sky_cell`])
 //!
-//! A clear scene is lit as the pinned game lights its tick: the light the sky
-//! casts is the client lightmap's sky colour, the lens sees the timeline's sky
-//! colour and its fog at the horizon, and the sun gives no light, because no
-//! light term in the game depends on the sun's direction. Noon, the dusk and
-//! dawn ramps and the night are points of one function of the tick. Left to
+//! A scene is lit as the pinned game lights its tick under its weather: the
+//! light the sky casts is the client lightmap's sky colour, the lens sees the
+//! timeline's sky colour and its fog at the horizon, the weather moves both
+//! through the client's own weather layer ([`WeatherLayer`]), and the sun gives
+//! no light, because no light term in the game depends on the sun's direction.
+//! Noon, the dusk and dawn ramps, the night, rain and thunder are points of one
+//! function of the tick and the weather. Left to
 //! the renderer's simulated sky and default sun, a setting sun lit the
 //! Treehouse Camp with a horizontal beam over a yellow-brown haze, where the
 //! game draws a dim, flat, blue-violet evening.
@@ -184,7 +186,7 @@ pub const WATER_SURFACE_GAP: f64 = 0.125;
 ///
 /// Chosen by measurement over the five the core offers (`GAMMA`, `TONEMAP1`,
 /// `TONEMAP2` ACES, `TONEMAP3` Hable, `UE4_FILMIC`), each re-exposed from one
-/// accumulated render at exposure 1 under the clear cell ([`clear_cell`]) —
+/// accumulated render at exposure 1 under the clear sky ([`sky_cell`]) —
 /// the Treehouse Camp's `from-the-glade`, `north-east-aerial` and
 /// `lantern-night` drafts: Hable is the one curve that cuts the clipped share
 /// (any channel at 254 or more: 0.60 → 0.37%, 0.18 → 0.02%, 0.49 → 0.11%)
@@ -598,8 +600,8 @@ pub(crate) struct ChunkyScene {
     /// before it is known, never a scene that ships without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) sun: Option<ChunkySun>,
-    /// The sky of the scene's cell ([`sky_of`]): the overcast sky of a rain or
-    /// thunder scene, the clear cell of the tick otherwise. Every scene this
+    /// The sky of the scene's cell ([`sky_of`]): the game's sky of its tick
+    /// under its weather, as a map. Every scene this
     /// crate emits carries one; the `Option` is what lets the type be built
     /// before it is known.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -621,7 +623,7 @@ pub(crate) struct ChunkyScene {
     /// The tick a clear scene's sky map is drawn at, which the scene writer
     /// reads back to write the map beside the scene
     /// ([`crate::compiler::view::sky_image::companion`]). Chunky ignores it,
-    /// as it does every unknown key. Absent on an overcast scene.
+    /// as it does every unknown key.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) delvewright_sky: Option<SkyMarker>,
     pub(crate) world: WorldRef,
@@ -637,22 +639,22 @@ impl ChunkyScene {
     pub(crate) fn under(mut self, block: SkyBlock) -> Self {
         self.sun = Some(block.sun);
         let mut sky = block.sky;
-        if let Some(tick) = block.clear_tick {
-            // The clear sky is the game's own, as a map drawn for this camera
-            // (`sky_image`): the lens sees it whole, and `skyLight` is the
-            // multiplier that makes the light it casts the lightmap's.
-            let o = &self.camera.orientation;
-            let view = crate::compiler::view::sky_image::view_of(o.yaw, o.pitch);
-            let map = crate::compiler::view::sky_image::clear_sky(tick, view);
-            sky.mode = "SKYMAP_EQUIRECTANGULAR";
-            sky.sky_light = round6(map.sky_light);
-            sky.apparent_sky_light = 1.0;
-            sky.skymap = Some(format!("{}{SKY_MAP_SUFFIX}", self.name));
-            sky.sky_mirrored = Some(false);
-            self.delvewright_sky = Some(SkyMarker {
-                daytime_ticks: tick,
-            });
-        }
+        // The sky is the game's own, as a map drawn for this camera
+        // (`sky_image`): the lens sees it whole, and `skyLight` is the
+        // multiplier that makes the light it casts the lightmap's.
+        let at = block.sky_at;
+        let o = &self.camera.orientation;
+        let view = crate::compiler::view::sky_image::view_of(o.yaw, o.pitch);
+        let map = crate::compiler::view::sky_image::sky_map(at.daytime_ticks, at.weather, view);
+        sky.mode = "SKYMAP_EQUIRECTANGULAR";
+        sky.sky_light = round6(map.sky_light);
+        sky.apparent_sky_light = 1.0;
+        sky.skymap = Some(format!("{}{SKY_MAP_SUFFIX}", self.name));
+        sky.sky_mirrored = Some(false);
+        self.delvewright_sky = Some(SkyMarker {
+            daytime_ticks: at.daytime_ticks,
+            weather: (at.weather != WorldWeather::Clear).then(|| at.weather.keyword()),
+        });
         self.sky = Some(sky);
         self.fog = Some(block.fog);
         self
@@ -745,7 +747,7 @@ pub(crate) fn round6(v: f64) -> f64 {
 /// night: `PreethamSky.updateSun` clamps the altitude to `[0, π]` before it
 /// shades the sky, so a clear scene under a sun below the horizon would draw a
 /// sunset; no scene is left to that sky — every clear scene carries the clear
-/// cell of its tick ([`clear_cell`]). The azimuth is exactly east or exactly
+/// cell of its tick ([`sky_cell`]). The azimuth is exactly east or exactly
 /// west; at noon and midnight the sun
 /// is at the zenith or the nadir and the azimuth means nothing, so east is
 /// emitted and the bytes are still a function of the hour alone.
@@ -855,8 +857,8 @@ const fn rgb(red: f64, green: f64, blue: f64) -> Rgb {
     Rgb { red, green, blue }
 }
 
-/// Chunky's `sky` object, as an overcast scene writes it (`renderer/scene/sky/
-/// Sky.java` at the pinned core): a solid colour, the light the sky casts
+/// Chunky's `sky` object, as a scene writes it (`renderer/scene/sky/
+/// Sky.java` at the pinned core): its mode and colour, the light the sky casts
 /// (`skyLight`) and the brightness the lens sees (`apparentSkyLight`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -865,7 +867,7 @@ pub struct ChunkySkyMode {
     pub color: Rgb,
     pub sky_light: f64,
     pub apparent_sky_light: f64,
-    /// A clear scene's sky map, a file beside the scene (`Sky.importFromJson`
+    /// The scene's sky map, a file beside the scene (`Sky.importFromJson`
     /// reads `skymap` and resolves a relative name in the scene's directory,
     /// `SceneIOProvider.resolveLinkedFile`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -884,9 +886,12 @@ pub const SKY_MAP_SUFFIX: &str = ".sky.pfm";
 #[serde(rename_all = "camelCase")]
 pub struct SkyMarker {
     pub daytime_ticks: i64,
+    /// The weather the map is drawn under, absent under a clear sky.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weather: Option<&'static str>,
 }
 
-/// Chunky's `fog` object, as an overcast scene writes it (`renderer/scene/Fog.java`
+/// Chunky's `fog` object, as a scene writes it (`renderer/scene/Fog.java`
 /// at the pinned core). `skyFogDensity` is always 0, so the fog colour never
 /// paints over the sky colour.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -898,56 +903,8 @@ pub struct ChunkyFog {
     pub sky_fog_density: f64,
 }
 
-/// How much daylight an overcast sky passes, decided by **the emitted sun's
-/// altitude**, never by the hour's name: an hour added to `WorldTime` falls into a
-/// class by its sun, with no row to remember.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum DaylightClass {
-    /// The sun at or above [`HIGH_SUN_DEG`] (`noon`, `day`).
-    High,
-    /// The sun from the horizon up to [`HIGH_SUN_DEG`] (`dusk`).
-    Low,
-    /// The sun under the horizon (`night`, `midnight`, `dawn`).
-    Below,
-}
-
-impl DaylightClass {
-    /// Every class, in order.
-    pub const ALL: [DaylightClass; 3] = [
-        DaylightClass::High,
-        DaylightClass::Low,
-        DaylightClass::Below,
-    ];
-
-    /// The class's own spelling, as the binding line prints it.
-    pub fn name(self) -> &'static str {
-        match self {
-            DaylightClass::High => "high",
-            DaylightClass::Low => "low",
-            DaylightClass::Below => "below",
-        }
-    }
-}
-
-/// The altitude, in degrees, at and above which an overcast sky takes the
-/// `high` cell. Authored (spec-0079 §4.3).
-pub const HIGH_SUN_DEG: f64 = 20.0;
-
-/// The daylight class of a sun ([`DaylightClass`]), read off the emitted — already
-/// rounded — altitude.
-pub fn daylight_class(sun: &ChunkySun) -> DaylightClass {
-    if sun.altitude >= HIGH_SUN_DEG.to_radians() {
-        DaylightClass::High
-    } else if sun.altitude >= 0.0 {
-        DaylightClass::Low
-    } else {
-        DaylightClass::Below
-    }
-}
-
-/// One cell of the look table: every value a scene writes about its sky beyond
-/// the sun's direction. The overcast cells are constants; the clear cell is a
-/// function of the tick ([`clear_cell`]).
+/// Every value a scene writes about its sky beyond the sun's direction: the
+/// cell of its tick and weather ([`sky_cell`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LookCell {
     pub sky_color: Rgb,
@@ -965,81 +922,181 @@ pub struct LookCell {
     pub fog_color: Rgb,
 }
 
-/// The colours every cell shares: a neutral grey-slate sky, a warm-grey sun, a
-/// slate fog (`docs/reference/showcase-shots.md` §2b's measured block).
-const OVERCAST_SKY: Rgb = rgb(0.10, 0.11, 0.14);
-const OVERCAST_SUN: Rgb = rgb(0.9, 0.75, 0.65);
-const OVERCAST_FOG: Rgb = rgb(0.20, 0.22, 0.26);
+// ---- the weather: the pinned client's weather layer ---------------------------
 
-/// `low` × `rain`: the measured overcast dusk, adopted verbatim — the one cell
-/// anyone had looked at before the table existed.
-pub const LOW_RAIN: LookCell = LookCell {
-    sky_color: OVERCAST_SKY,
-    sky_light: 1.6,
-    apparent_sky_light: 0.6,
-    sun_intensity: 0.25,
-    sun_color: OVERCAST_SUN,
-    sun_draw_texture: false,
-    fog_density: 0.002,
-    sky_fog_density: 0.0,
-    fog_color: OVERCAST_FOG,
+/// **The pinned client's weather layer** (`WeatherAttributes`, read off its
+/// bytecode through Mojang's client mappings): the environment-attribute
+/// system lays it over the dimension, the biome and the day timeline in every
+/// level that `canHaveWeather` (`EnvironmentAttributeSystem.addDefaultLayers`),
+/// so every attribute the client reads — the lightmap's two included — is the
+/// timeline's value with this layer applied. Two maps, `RAIN` and `THUNDER`;
+/// the value `v` of an attribute becomes `lerp(rain − thunder, v, RAIN(v))`,
+/// then `lerp(thunder, ·, THUNDER(·))`, with the lerp the attribute type's own
+/// (`WeatherAttributes.addLayer`). A `rain` delve stands at rain level 1 and
+/// thunder level 0 and a `thunder` delve at both 1 (`Level.getThunderLevel` is
+/// the thunder level times the rain level), so under rain the `RAIN` map is
+/// applied whole and under thunder the `THUNDER` map alone. **Cited**, value by
+/// value (`WeatherAttributes.<clinit>`):
+///
+/// | attribute | `RAIN` | `THUNDER` |
+/// |---|---|---|
+/// | `visual/sky_color` | `blend_to_gray` 0.6, 0.75 | `blend_to_gray` 0.24, 0.94 |
+/// | `visual/fog_color`, `visual/sunrise_sunset_color` | `multiply` (0.5, 0.5, 0.6) | `multiply` (0.25, 0.25, 0.3) |
+/// | `visual/sky_light_color` | `alpha_blend` `#7a7aff` at 0.3125 | the same at 0.52734375 |
+/// | `visual/sky_light_factor` | `alpha_blend` 0.24 at 0.3125 | the same at 0.52734375 |
+///
+/// The layer also writes the cloud colour, the star brightness and the sky
+/// light level, which nothing a scene carries reads. `#7a7aff` is
+/// `Timelines.NIGHT_SKY_LIGHT_COLOR`, `ARGB.colorFromFloat(1, 0.48, 0.48, 1)`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WeatherLayer {
+    /// `blend_to_gray` on the sky colour: (brightness, factor).
+    pub sky_gray: (f32, f32),
+    /// `multiply` on the fog and sunrise colours, as the float channels
+    /// `ARGB.colorFromFloat` takes.
+    pub darken: [f32; 3],
+    /// The alpha of both `alpha_blend`s.
+    pub alpha: f32,
+}
+
+/// `WeatherAttributes.RAIN`. **Cited.**
+pub const RAIN_LAYER: WeatherLayer = WeatherLayer {
+    sky_gray: (0.6, 0.75),
+    darken: [0.5, 0.5, 0.6],
+    alpha: 0.3125,
 };
 
-/// `high` × `rain`: [`LOW_RAIN`] with both sky-light modifiers doubled.
-pub const HIGH_RAIN: LookCell = LookCell {
-    sky_light: 3.2,
-    apparent_sky_light: 1.2,
-    ..LOW_RAIN
+/// `WeatherAttributes.THUNDER`. **Cited.**
+pub const THUNDER_LAYER: WeatherLayer = WeatherLayer {
+    sky_gray: (0.24, 0.94),
+    darken: [0.25, 0.25, 0.3],
+    alpha: 0.52734375,
 };
 
-/// `below` × `rain`: [`LOW_RAIN`] with both sky-light modifiers at a tenth and the
-/// sun, which is under the horizon, at 0.
-pub const BELOW_RAIN: LookCell = LookCell {
-    sky_light: 0.16,
-    apparent_sky_light: 0.06,
-    sun_intensity: 0.0,
-    ..LOW_RAIN
-};
+/// The sky-light factor and colour both `alpha_blend`s blend toward.
+const WEATHER_SKY_LIGHT_FACTOR: f32 = 0.24;
+const NIGHT_SKY_LIGHT_COLOR: [f32; 3] = [0.48, 0.48, 1.0];
 
-/// `high` × `thunder`: [`HIGH_RAIN`] at 0.6 of its sky-light modifiers, half its
-/// sun, 1.5 times its fog.
-pub const HIGH_THUNDER: LookCell = LookCell {
-    sky_light: 1.92,
-    apparent_sky_light: 0.72,
-    sun_intensity: 0.125,
-    fog_density: 0.003,
-    ..HIGH_RAIN
-};
-
-/// `low` × `thunder`: [`LOW_RAIN`] by the same rule.
-pub const LOW_THUNDER: LookCell = LookCell {
-    sky_light: 0.96,
-    apparent_sky_light: 0.36,
-    sun_intensity: 0.125,
-    fog_density: 0.003,
-    ..LOW_RAIN
-};
-
-/// `below` × `thunder`: [`BELOW_RAIN`] by the same rule; its sun is already 0.
-pub const BELOW_THUNDER: LookCell = LookCell {
-    sky_light: 0.096,
-    apparent_sky_light: 0.036,
-    sun_intensity: 0.0,
-    fog_density: 0.003,
-    ..BELOW_RAIN
-};
-
-/// The overcast cell of a class and a weather; `None` for `clear`.
-pub fn overcast_cell(class: DaylightClass, weather: WorldWeather) -> Option<&'static LookCell> {
-    match (weather, class) {
-        (WorldWeather::Clear, _) => None,
-        (WorldWeather::Rain, DaylightClass::High) => Some(&HIGH_RAIN),
-        (WorldWeather::Rain, DaylightClass::Low) => Some(&LOW_RAIN),
-        (WorldWeather::Rain, DaylightClass::Below) => Some(&BELOW_RAIN),
-        (WorldWeather::Thunder, DaylightClass::High) => Some(&HIGH_THUNDER),
-        (WorldWeather::Thunder, DaylightClass::Low) => Some(&LOW_THUNDER),
-        (WorldWeather::Thunder, DaylightClass::Below) => Some(&BELOW_THUNDER),
+/// The map a weather's delve stands under whole, or `None` under a clear sky
+/// (rain level 0).
+pub fn weather_layer(weather: WorldWeather) -> Option<&'static WeatherLayer> {
+    match weather {
+        WorldWeather::Clear => None,
+        WorldWeather::Rain => Some(&RAIN_LAYER),
+        WorldWeather::Thunder => Some(&THUNDER_LAYER),
     }
+}
+
+/// The rain and thunder levels of a weather, as `Level.getRainLevel` and
+/// `Level.getThunderLevel` read once the weather has settled.
+pub fn weather_levels(weather: WorldWeather) -> (f32, f32) {
+    match weather {
+        WorldWeather::Clear => (0.0, 0.0),
+        WorldWeather::Rain => (1.0, 0.0),
+        WorldWeather::Thunder => (1.0, 1.0),
+    }
+}
+
+/// `ARGB.as8BitChannel`: `floor(f × 255)` in float. **Cited.**
+fn as_8bit(f: f32) -> i32 {
+    (f * 255.0).floor() as i32
+}
+
+/// `Mth.lerpInt`: `a + floor(f × (b − a))`, the product in float. **Cited.**
+fn lerp_int_f32(f: f32, a: i32, b: i32) -> i32 {
+    a + (f * (b - a) as f32).floor() as i32
+}
+
+/// `ARGB.scaleRGB` of one channel: `clamp((int)(c × f), 0, 255)`. **Cited.**
+fn scale_channel(c: i32, f: f32) -> i32 {
+    ((c as f32 * f) as i32).clamp(0, 255)
+}
+
+/// `ColorModifier.BLEND_TO_GRAY`: the colour's grey (`ARGB.greyscale`, `(int)
+/// (0.3 r + 0.59 g + 0.11 b)` in float) scaled by `brightness`, and the colour
+/// `srgbLerp`ed toward it by `factor`. **Cited.**
+pub fn blend_to_gray(c: [u8; 3], brightness: f32, factor: f32) -> [u8; 3] {
+    let [r, g, b] = c.map(f32::from);
+    let grey = (r * 0.3 + g * 0.59 + b * 0.11) as i32;
+    let scaled = scale_channel(grey, brightness);
+    c.map(|v| lerp_int_f32(factor, i32::from(v), scaled) as u8)
+}
+
+/// `ARGB.alphaBlend` of an opaque colour under a colour of alpha `a` (8-bit):
+/// `(src × a + dst × (255 − a)) / 255` per channel, in integers. Every colour
+/// the timeline or a biome writes as `#rrggbb` is opaque (`STRING_RGB_COLOR`
+/// decodes through `ARGB.opaque`). **Cited.**
+fn alpha_blend_rgb(dst: [u8; 3], src: [u8; 3], a: i32) -> [u8; 3] {
+    std::array::from_fn(|i| ((i32::from(src[i]) * a + i32::from(dst[i]) * (255 - a)) / 255) as u8)
+}
+
+/// **The sky attributes the pinned client reads at a tick under a weather**:
+/// the day timeline's value, over the biome a delve stands in, with the
+/// weather's layer applied ([`WeatherLayer`]). The one place a scene's sky
+/// reads the game's numbers: the light ([`sky_cell`]) and the map the lens sees
+/// ([`crate::compiler::view::sky_image`]) both take them from here.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SkyAttributes {
+    /// `visual/sky_light_factor`.
+    pub sky_light_factor: f64,
+    /// `visual/sky_light_color`.
+    pub sky_light_color: [u8; 3],
+    /// `visual/sky_color`: the timeline's multiplier times [`GROUND_SKY_RGB`].
+    pub sky_color: [u8; 3],
+    /// `visual/fog_color`: the timeline's multiplier times [`OVERWORLD_FOG_RGB`].
+    pub fog_color: [u8; 3],
+    /// `visual/sunrise_sunset_color`, `[a, r, g, b]`.
+    pub sunrise: [u8; 4],
+}
+
+/// See [`SkyAttributes`].
+pub fn sky_attributes(daytime_ticks: i64, weather: WorldWeather) -> SkyAttributes {
+    let t = daytime_ticks;
+    let mut at = SkyAttributes {
+        sky_light_factor: day_float("visual/sky_light_factor", t),
+        sky_light_color: day_rgb("visual/sky_light_color", t),
+        sky_color: multiply_rgb(day_rgb("visual/sky_color", t), GROUND_SKY_RGB),
+        fog_color: multiply_rgb(day_rgb("visual/fog_color", t), OVERWORLD_FOG_RGB),
+        sunrise: day_argb("visual/sunrise_sunset_color", t),
+    };
+    if let Some(layer) = weather_layer(weather) {
+        let a = layer.alpha;
+        // `Mth.lerp(alpha, v, 0.24)`, then the layer's own `lerp(1, v, ·)`, in float.
+        let f = at.sky_light_factor as f32;
+        let m = f + a * (WEATHER_SKY_LIGHT_FACTOR - f);
+        at.sky_light_factor = f64::from(f + (m - f));
+        let night = NIGHT_SKY_LIGHT_COLOR.map(|c| as_8bit(c) as u8);
+        at.sky_light_color = alpha_blend_rgb(at.sky_light_color, night, as_8bit(a));
+        at.sky_color = blend_to_gray(at.sky_color, layer.sky_gray.0, layer.sky_gray.1);
+        let darken = layer.darken.map(|c| as_8bit(c) as u8);
+        at.fog_color = multiply_rgb(at.fog_color, darken);
+        let [sa, sr, sg, sb] = at.sunrise;
+        let [r, g, b] = multiply_rgb([sr, sg, sb], darken);
+        at.sunrise = [sa, r, g, b];
+    }
+    at
+}
+
+/// `AtmosphericFogEnvironment.applyWeatherDarken`: the sky colour the clear
+/// colour is lerped toward, darkened by `(1 − 0.5r, 1 − 0.5r, 1 − 0.4r)` at
+/// rain level `r` and by `1 − 0.5t` at thunder level `t`, each an
+/// `ARGB.scaleRGB`. **Cited.**
+pub fn weather_darken(c: [u8; 3], weather: WorldWeather) -> [u8; 3] {
+    let (rain, thunder) = weather_levels(weather);
+    let mut c = c.map(i32::from);
+    if rain > 0.0 {
+        let (a, b) = (1.0 - rain * 0.5, 1.0 - rain * 0.4);
+        c = [
+            scale_channel(c[0], a),
+            scale_channel(c[1], a),
+            scale_channel(c[2], b),
+        ];
+    }
+    if thunder > 0.0 {
+        let a = 1.0 - thunder * 0.5;
+        c = c.map(|v| scale_channel(v, a));
+    }
+    c.map(|v| v as u8)
 }
 
 // ---- the clear sky: the pinned game's day, at the scene's tick ---------------
@@ -1080,7 +1137,7 @@ pub(crate) fn multiply_rgb(a: [u8; 3], b: [u8; 3]) -> [u8; 3] {
 /// it: each 8-bit channel interpolated on its own between the two keyframes
 /// the tick falls between (wrapping over the day), `a + floor(p × (b − a))` —
 /// `LerpFunction.ofColor` → `ARGB.srgbLerp` → `Mth.lerpInt` at the pinned
-/// client. **Cited.** The four tracks a clear cell reads declare no ease, and
+/// client. **Cited.** The tracks a sky cell reads declare no ease, and
 /// this reader refuses one that does.
 pub fn day_rgb(track: &str, daytime_ticks: i64) -> [u8; 3] {
     let (a, b, p) = day_segment(track, daytime_ticks);
@@ -1137,7 +1194,7 @@ fn day_segment(track: &str, daytime_ticks: i64) -> (serde_json::Value, serde_jso
     let id = format!("minecraft:{track}");
     assert!(
         day_ease(&id).is_none(),
-        "`{id}` declares an ease, and the clear cell reads linear tracks only"
+        "`{id}` declares an ease, and the sky cell reads linear tracks only"
     );
     let kf = day_keyframes(&id);
     let at = daytime_ticks.rem_euclid(DAY_TICKS);
@@ -1198,66 +1255,70 @@ pub fn to_linear(x: f64) -> f64 {
     x * x * y
 }
 
-/// **The clear sky of the pinned game at a `daytime` tick**, for every hour —
-/// noon, the dusk and dawn ramps and the night plateau are points of one
-/// function (spec-0079 §4; the departure recorded in `compiler.md` §4).
+/// **The sky of the pinned game at a `daytime` tick under a weather**, for
+/// every hour and every weather — noon, the dusk and dawn ramps, the night
+/// plateau, rain and thunder are points of one function (spec-0079 §4; the
+/// departures recorded in `compiler.md` §4).
 ///
 /// The game lights the world from the sky alone: a cell open to the sky is
 /// drawn at the lightmap's sky colour ([`lightmap_sky`]), whatever the sun's
 /// direction, and no block casts a shadow from it. The sun's direction moves
-/// only what is drawn in the sky. So:
+/// only what is drawn in the sky. The weather moves the attributes the
+/// lightmap and the sky are drawn from ([`sky_attributes`], [`WeatherLayer`]),
+/// and nothing else a scene can carry. So:
 ///
 /// - **`sky.color` and `skyLight` — the light the sky casts.** Cited: the
 ///   lightmap colour of `visual/sky_light_factor` and `visual/sky_light_color`
-///   at the tick ([`day_float`], [`day_rgb`]). Authored: the mapping — the
-///   colour decoded to linear ([`to_linear`]) is the radiance of a uniform sky
-///   that shows a top face at the shader's colour (a Lambertian face under an
-///   open uniform sky of radiance `L` returns `albedo × L`), written as its
-///   hue (the brightest channel 1) and that channel as `skyLight`.
-/// - **The sky the lens sees — the game's own, as a map.** A clear scene's sky
+///   at the tick under the weather ([`sky_attributes`]). Authored: the mapping
+///   — the colour decoded to linear ([`to_linear`]) is the radiance of a
+///   uniform sky that shows a top face at the shader's colour (a Lambertian
+///   face under an open uniform sky of radiance `L` returns `albedo × L`),
+///   written as its hue (the brightest channel 1) and that channel as
+///   `skyLight`.
+/// - **The sky the lens sees — the game's own, as a map.** Every scene's sky
 ///   is `SKYMAP_EQUIRECTANGULAR` over a map drawn for its camera at its tick
-///   ([`crate::compiler::view::sky_image`]): `visual/sky_color` in the sky
-///   disc with the client's sky fog, the clear colour (`visual/fog_color`,
-///   tinted toward `visual/sunrise_sunset_color` when the camera looks to the
-///   sun's side) at and under the horizon, and the sunrise fan blended over
-///   both — all cited from the pinned client. `apparentSkyLight` is 1.
-///   Authored: the pinned core lights the scene with the same map the lens
-///   sees, at `skyLight` instead of `apparentSkyLight`, so the map carries the
-///   least uniform veil that makes the light it casts on an open top face this
-///   cell's light ([`crate::compiler::view::sky_image::clear_sky`]), and the
-///   scene's `skyLight` is the multiplier that does it. `sky.color` and this
-///   cell's `sky_light` are the target light; `apparent_sky_light` is 1.
+///   and weather ([`crate::compiler::view::sky_image`]): `visual/sky_color` in
+///   the sky disc with the client's sky fog, the clear colour
+///   (`visual/fog_color`, tinted toward `visual/sunrise_sunset_color` when the
+///   camera looks to the sun's side, then toward the sky colour the weather
+///   darkens, [`weather_darken`]) at and under the horizon, and the sunrise
+///   fan blended over both — all cited from the pinned client.
+///   `apparentSkyLight` is 1. Authored: the pinned core lights the scene with
+///   the same map the lens sees, at `skyLight` instead of `apparentSkyLight`,
+///   so the map carries the least uniform veil that makes the light it casts
+///   on an open top face this cell's light
+///   ([`crate::compiler::view::sky_image::sky_map`]), and the scene's
+///   `skyLight` is the multiplier that does it. `sky.color` and this cell's
+///   `sky_light` are the target light; `apparent_sky_light` is 1.
 /// - **`fog` — none.** The client's sky fog is in the map; the core's fog is
 ///   written off (`uniformDensity` and `skyFogDensity` 0), its colour the
-///   timeline's fog colour (`visual/fog_color` × [`OVERWORLD_FOG_RGB`]), which
-///   no ray reads.
+///   attribute fog colour, which no ray reads.
 /// - **The sun — no light, its disc drawn while any of it stands above the
-///   horizon.** Cited: nothing in the lightmap depends on the sun's direction;
-///   the disc's half-width is [`delvewright_dsl::celestial::SUN_DISC_HALF_CENTIDEG`].
+///   horizon under a clear sky.** Cited: nothing in the lightmap depends on
+///   the sun's direction; the disc's half-width is
+///   [`delvewright_dsl::celestial::SUN_DISC_HALF_CENTIDEG`]; the client draws
+///   the sun at the alpha `1 − rain level` (`SkyRenderer.extractRenderState`
+///   → `renderSunMoonAndStars`), so under rain or thunder not at all.
 ///   Authored: the core's sun is a directional light the game does not have,
 ///   so it gives none; its colour is written white and lights nothing.
 /// - **Not expressed:** the stars, the moon and the clouds (the map draws none
-///   of them, and the core draws no moon), and the hue of the light where the
-///   veil is zero in a channel — the light is exact in every channel by
-///   construction, the lens carries the veil.
+///   of them, and the core draws no moon), the rain itself and the rain fog
+///   the client draws over the ground (`AtmosphericFogEnvironment.setupFog`
+///   pulls the fog's start and end in under rain: the pinned core's fog
+///   scatters only the sun's light, and these scenes carry none), and the hue
+///   of the light where the veil is zero in a channel — the light is exact in
+///   every channel by construction, the lens carries the veil.
 ///
-/// Integer channel arithmetic, [`to_linear`] and [`round6`] at the writer:
-/// deterministic (ADR-0006).
-pub fn clear_cell(daytime_ticks: i64) -> LookCell {
+/// Integer channel arithmetic, float arithmetic where the client's is float,
+/// [`to_linear`] and [`round6`] at the writer: deterministic (ADR-0006).
+pub fn sky_cell(daytime_ticks: i64, weather: WorldWeather) -> LookCell {
     let t = daytime_ticks;
-    let lit = lightmap_sky(
-        day_float("visual/sky_light_factor", t),
-        day_rgb("visual/sky_light_color", t),
-        DEFAULT_BRIGHTNESS,
-    );
+    let at = sky_attributes(t, weather);
+    let lit = lightmap_sky(at.sky_light_factor, at.sky_light_color, DEFAULT_BRIGHTNESS);
     let cast = lit.map(to_linear);
     let peak = cast[0].max(cast[1]).max(cast[2]);
     let hue = cast.map(|c| c / peak);
-    let lin8 = |c: [u8; 3]| c.map(|v| to_linear(f64::from(v) / 255.0));
-    let fog = lin8(multiply_rgb(
-        day_rgb("visual/fog_color", t),
-        OVERWORLD_FOG_RGB,
-    ));
+    let fog = at.fog_color.map(|v| to_linear(f64::from(v) / 255.0));
     let disc = (f64::from(delvewright_dsl::celestial::SUN_DISC_HALF_CENTIDEG) / 100.0).to_radians();
     LookCell {
         sky_color: rgb(hue[0], hue[1], hue[2]),
@@ -1265,20 +1326,10 @@ pub fn clear_cell(daytime_ticks: i64) -> LookCell {
         apparent_sky_light: 1.0,
         sun_intensity: 0.0,
         sun_color: rgb(1.0, 1.0, 1.0),
-        sun_draw_texture: sun_at(t).altitude >= -disc,
+        sun_draw_texture: weather == WorldWeather::Clear && sun_at(t).altitude >= -disc,
         fog_density: 0.0,
         sky_fog_density: 0.0,
         fog_color: rgb(fog[0], fog[1], fog[2]),
-    }
-}
-
-/// **The cell a scene's sky reads**: the overcast cell of a rain or thunder
-/// scene ([`overcast_cell`], keyed by the sun's [`DaylightClass`]); the clear
-/// cell of the tick ([`clear_cell`]) under a clear sky.
-pub fn look_cell(class: DaylightClass, weather: WorldWeather, daytime_ticks: i64) -> LookCell {
-    match overcast_cell(class, weather) {
-        Some(c) => *c,
-        None => clear_cell(daytime_ticks),
     }
 }
 
@@ -1289,26 +1340,21 @@ pub struct SkyBlock {
     pub sun: ChunkySun,
     pub sky: ChunkySkyMode,
     pub fog: ChunkyFog,
-    /// The class the sun put the scene in — the overcast table's row.
-    pub class: DaylightClass,
-    /// The tick of a clear scene, whose sky map [`ChunkyScene::under`] draws
-    /// for the scene's camera; `None` under rain or thunder.
-    pub clear_tick: Option<i64>,
+    /// The tick and weather whose sky map [`ChunkyScene::under`] draws for the
+    /// scene's camera.
+    pub sky_at: SceneSky,
 }
 
 /// **The whole sky of a scene** (spec-0079 §4): the one writer of every sky, sun
 /// and fog key under `crate::compiler::view`. Every scene carries the whole
-/// block: the hour's sun direction, and the cell of [`look_cell`] — the
-/// overcast cell of a `rain` or `thunder` scene (the sun dimmed and without its
-/// disc, a solid grey sky, uniform fog that never paints the sky), or the clear
-/// cell of the tick ([`clear_cell`]).
+/// block: the hour's sun direction, and the cell of its tick and weather
+/// ([`sky_cell`]), its map drawn by [`ChunkyScene::under`].
 ///
-/// Constants, the clear cell's arithmetic, a class decision on the rounded
-/// altitude and [`round6`] on every float: deterministic (ADR-0006).
+/// The cell's arithmetic and [`round6`] on every float: deterministic
+/// (ADR-0006).
 pub fn sky_of(sky: SceneSky) -> SkyBlock {
     let mut sun = sun_at(sky.daytime_ticks);
-    let class = daylight_class(&sun);
-    let cell = look_cell(class, sky.weather, sky.daytime_ticks);
+    let cell = sky_cell(sky.daytime_ticks, sky.weather);
     let r = |c: Rgb| rgb(round6(c.red), round6(c.green), round6(c.blue));
     sun.intensity = Some(round6(cell.sun_intensity));
     sun.color = Some(r(cell.sun_color));
@@ -1329,32 +1375,20 @@ pub fn sky_of(sky: SceneSky) -> SkyBlock {
             color: r(cell.fog_color),
             sky_fog_density: round6(cell.sky_fog_density),
         },
-        class,
-        clear_tick: (sky.weather == WorldWeather::Clear).then_some(sky.daytime_ticks),
+        sky_at: sky,
     }
 }
 
-/// The look-table cell a scene sky reads, as one phrase for a binding line: the
-/// clear cell of the tick or the overcast cell, with its judged numbers as the
-/// scene writes them.
-pub fn sky_phrase(class: DaylightClass, weather: WorldWeather, daytime_ticks: i64) -> String {
-    let c = look_cell(class, weather, daytime_ticks);
-    if weather == WorldWeather::Clear {
-        return format!(
-            "clear cell at daytime {daytime_ticks}: the game's sky as a map, its light {} \
-             (the lightmap's, peak channel), sun {}",
-            round6(c.sky_light),
-            round6(c.sun_intensity)
-        );
-    }
-    let head = { format!("overcast cell {}×{}", class.name(), weather.keyword()) };
+/// The cell a scene sky reads, as one phrase for a binding line, with its
+/// judged numbers as the scene writes them.
+pub fn sky_phrase(weather: WorldWeather, daytime_ticks: i64) -> String {
+    let c = sky_cell(daytime_ticks, weather);
     format!(
-        "{head}: skyLight {}, apparentSkyLight {}, sun {}, fog {}, sky fog {}",
+        "{} sky at daytime {daytime_ticks}: the game's sky as a map, its light {} \
+         (the lightmap's, peak channel), sun {}",
+        weather.keyword(),
         round6(c.sky_light),
-        round6(c.apparent_sky_light),
-        round6(c.sun_intensity),
-        round6(c.fog_density),
-        round6(c.sky_fog_density)
+        round6(c.sun_intensity)
     )
 }
 
@@ -2085,7 +2119,7 @@ mod tests {
         WorldWeather::Thunder,
     ];
 
-    /// The eleven keys an overcast block writes beyond the sun's direction, as
+    /// The eleven keys a sky block writes beyond the sun's direction, as
     /// JSON pointers into an emitted scene.
     const BLOCK_KEYS: [&str; 11] = [
         "/sky/mode",
@@ -2101,61 +2135,114 @@ mod tests {
         "/fog/skyFogDensity",
     ];
 
-    /// **Criterion 6 — the class is the sun's.** Each of the six hours' daylight
-    /// class is read off `sun_at`'s altitude, and the thunder cell of every class
-    /// is darker than its rain cell and denser in fog.
-    ///
-    /// One sub-claim is weaker than the spec's wording, and says so: `below`'s
-    /// rain cell already has the sun at 0 (§4.4: the sun is under the horizon),
-    /// so its thunder cell's sun can be no lower — it is EQUAL there (0 = 0), and
-    /// strictly lower in the two classes whose rain sun is above 0.
+    /// **The weather is the client's layer** (`WeatherAttributes`), value by
+    /// value at noon, where every attribute it touches is lit: the sky light's
+    /// factor and colour `alpha_blend`ed toward 0.24 and `#7a7aff` at 0.3125
+    /// (rain) and 0.52734375 (thunder), the sky colour `blend_to_gray`ed — the
+    /// void and ocean biomes' `#7ba4ff` to `#667187` under rain and
+    /// `#2b2d33` under thunder, worked by hand from `ARGB.greyscale`,
+    /// `scaleRGB` and `srgbLerp` — and the fog and sunrise colours multiplied.
+    /// Thunder is darker than rain and rain than clear wherever the sky is lit;
+    /// on the night plateau the layer blends toward the night's own light, so
+    /// the light is the clear night's; and under weather the sun's disc is never
+    /// drawn.
     #[test]
-    fn the_class_is_the_suns_and_thunder_is_darker_than_rain() {
-        use delvewright_dsl::WorldTime as T;
-        let want = [
-            (T::Noon, DaylightClass::High),
-            (T::Day, DaylightClass::High),
-            (T::Dusk, DaylightClass::Low),
-            (T::Night, DaylightClass::Below),
-            (T::Midnight, DaylightClass::Below),
-            (T::Dawn, DaylightClass::Below),
-        ];
-        for (t, class) in want {
-            let sun = sun_at(t.daytime_ticks());
-            eprintln!(
-                "class: {} altitude {:.4} rad ({:.2} deg) -> {}",
-                t.keyword(),
-                sun.altitude,
-                sun.altitude.to_degrees(),
-                daylight_class(&sun).name()
-            );
-            assert_eq!(daylight_class(&sun), class, "{}", t.keyword());
-        }
-        // The dusk altitude an emitted scene carries on the pinned track, to
-        // four places (0.2159 rad, 12.37°; spec-0081 §2.3).
-        let dusk = sun_at(T::Dusk.daytime_ticks()).altitude;
-        assert_eq!((dusk * 1e4).round() / 1e4, 0.2159, "{dusk}");
-        let mut compared = 0;
-        for class in DaylightClass::ALL {
-            let rain = overcast_cell(class, WorldWeather::Rain).unwrap();
-            let thunder = overcast_cell(class, WorldWeather::Thunder).unwrap();
-            assert!(thunder.sky_light < rain.sky_light, "{class:?} skyLight");
+    fn the_weather_is_the_clients_layer() {
+        let clear = sky_attributes(6000, WorldWeather::Clear);
+        let rain = sky_attributes(6000, WorldWeather::Rain);
+        let thunder = sky_attributes(6000, WorldWeather::Thunder);
+        assert_eq!(
+            (clear.sky_light_factor, clear.sky_light_color),
+            (1.0, [255; 3])
+        );
+        assert_eq!(
+            rain.sky_light_factor,
+            f64::from(1.0f32 + 0.3125f32 * (0.24f32 - 1.0))
+        );
+        assert_eq!(round6(rain.sky_light_factor), 0.7625);
+        assert_eq!(rain.sky_light_color, [213, 213, 255]);
+        assert_eq!(round6(thunder.sky_light_factor), 0.599219);
+        assert_eq!(thunder.sky_light_color, [185, 185, 255]);
+        assert_eq!(clear.sky_color, GROUND_SKY_RGB);
+        assert_eq!(rain.sky_color, [102, 113, 135]);
+        assert_eq!(thunder.sky_color, [43, 45, 51]);
+        assert_eq!(
+            rain.fog_color,
+            multiply_rgb(clear.fog_color, [127, 127, 153])
+        );
+        assert_eq!(
+            thunder.fog_color,
+            multiply_rgb(clear.fog_color, [63, 63, 76])
+        );
+        let light = |t: i64, w: WorldWeather| sky_cell(t, w).sky_light;
+        for t in [6000, 12782] {
             assert!(
-                thunder.apparent_sky_light < rain.apparent_sky_light,
-                "{class:?} apparentSkyLight"
+                light(t, WorldWeather::Thunder) < light(t, WorldWeather::Rain),
+                "{t}"
             );
-            if rain.sun_intensity > 0.0 {
-                assert!(thunder.sun_intensity < rain.sun_intensity, "{class:?} sun");
-            } else {
-                assert_eq!(thunder.sun_intensity, 0.0, "{class:?} sun");
-            }
-            assert!(thunder.fog_density > rain.fog_density, "{class:?} fog");
-            compared += 1;
+            assert!(
+                light(t, WorldWeather::Rain) < light(t, WorldWeather::Clear),
+                "{t}"
+            );
         }
-        assert_eq!(compared, 3);
+        for w in WEATHERS {
+            // Equal to the float the client blends in (the factor 0.24 read as a float).
+            let (n, c) = (
+                sky_cell(18000, w).sky_light,
+                sky_cell(18000, WorldWeather::Clear).sky_light,
+            );
+            assert!((n - c).abs() < 1e-6, "{w:?}: {n} vs {c}");
+            for t in (0..24000).step_by(500) {
+                let c = sky_cell(t, w);
+                if w != WorldWeather::Clear {
+                    assert!(!c.sun_draw_texture, "{t} {w:?}");
+                }
+                assert_eq!(
+                    (c.sun_intensity, c.fog_density, c.sky_fog_density),
+                    (0.0, 0.0, 0.0)
+                );
+            }
+        }
+        eprintln!(
+            "weather: noon light clear {} rain {} thunder {}; setting sun clear {} rain {} thunder {}",
+            round6(light(6000, WorldWeather::Clear)),
+            round6(light(6000, WorldWeather::Rain)),
+            round6(light(6000, WorldWeather::Thunder)),
+            round6(light(12782, WorldWeather::Clear)),
+            round6(light(12782, WorldWeather::Rain)),
+            round6(light(12782, WorldWeather::Thunder)),
+        );
     }
 
-    /// **The clear cell is the pinned timeline at its tick** — read back value
+    /// The weather's layer is the derivation's input: a different alpha moves
+    /// the emitted light, and a different `blend_to_gray` the emitted map.
+    #[test]
+    fn the_weather_layer_moves_the_emitted_sky() {
+        let plan = sky_plan(delvewright_dsl::WorldTime::Noon, WorldWeather::Rain);
+        let scenes = scenes_from_plan(&plan, &SceneOptions::default(), &[]).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&scenes[0].1).unwrap();
+        let o = &v["camera"]["orientation"];
+        let view = crate::compiler::view::sky_image::view_of(
+            o["yaw"].as_f64().unwrap(),
+            o["pitch"].as_f64().unwrap(),
+        );
+        let emitted = crate::compiler::view::sky_image::sky_map(6000, WorldWeather::Rain, view);
+        assert_eq!(v["sky"]["skyLight"], round6(emitted.sky_light));
+        let f = 1.0f32;
+        let moved = f + (RAIN_LAYER.alpha * 1.01) * (0.24 - f);
+        assert_ne!(
+            round6(f64::from(moved)),
+            round6(sky_attributes(6000, WorldWeather::Rain).sky_light_factor)
+        );
+        let grey = blend_to_gray(
+            GROUND_SKY_RGB,
+            RAIN_LAYER.sky_gray.0 * 1.1,
+            RAIN_LAYER.sky_gray.1,
+        );
+        assert_ne!(grey, sky_attributes(6000, WorldWeather::Rain).sky_color);
+    }
+
+    /// **The clear sky is the pinned timeline at its tick** — read back value
     /// by value from the vendored day timeline's keyframes, not from the
     /// cell's own arithmetic: on the night plateau the lens sees no sky (the
     /// visible sky's multiplier is black from 13670 to 22330) and the sky casts
@@ -2166,7 +2253,7 @@ mod tests {
     /// same file. The sun gives no light at any hour, and its disc is drawn
     /// exactly while some of it stands above the horizon.
     #[test]
-    fn the_clear_cell_is_the_timeline_at_its_tick() {
+    fn the_clear_sky_is_the_timeline_at_its_tick() {
         use delvewright_dsl::celestial::day_keyframes;
         let at = |track: &str, tick: i64| -> serde_json::Value {
             day_keyframes(&format!("minecraft:visual/{track}"))
@@ -2186,7 +2273,7 @@ mod tests {
         assert_eq!((night_factor, night_colour), (0.24, [0x7a, 0x7a, 0xff]));
         let lit = lightmap_sky(night_factor, night_colour, DEFAULT_BRIGHTNESS);
         for t in [13670, 18000, 22330] {
-            let c = clear_cell(t);
+            let c = sky_cell(t, WorldWeather::Clear);
             assert_eq!(
                 c.apparent_sky_light, 1.0,
                 "{t}: the lens sees the map whole"
@@ -2200,14 +2287,14 @@ mod tests {
             assert!(!c.sun_draw_texture, "{t}");
         }
         // Noon: the lightmap's white, the biome's blue seen at its luminance.
-        let noon = clear_cell(6000);
+        let noon = sky_cell(6000, WorldWeather::Clear);
         let white = lightmap_sky(1.0, [255; 3], DEFAULT_BRIGHTNESS);
         assert_eq!(noon.sky_light, to_linear(white[0]));
         assert_eq!(noon.sky_color, rgb(1.0, 1.0, 1.0));
         assert!(noon.sun_draw_texture);
         // The setting sun, as the scene writes it (`round6`), against the
         // checker's own derivation.
-        let set = clear_cell(12782);
+        let set = sky_cell(12782, WorldWeather::Clear);
         let w = |v: f64| round6(v);
         assert_eq!(w(set.sky_light), 0.374446);
         assert_eq!(
@@ -2228,7 +2315,7 @@ mod tests {
         );
         assert!(set.sun_draw_texture, "the setting sun's disc is half up");
         for t in (0..24000).step_by(250) {
-            let c = clear_cell(t);
+            let c = sky_cell(t, WorldWeather::Clear);
             assert_eq!(c.sun_intensity, 0.0, "{t}");
             assert_eq!((c.sky_fog_density, c.fog_density), (0.0, 0.0));
             let disc = f64::from(delvewright_dsl::celestial::SUN_DISC_HALF_CENTIDEG) / 100.0;
@@ -2241,31 +2328,33 @@ mod tests {
         }
     }
 
-    /// **One rule for the whole day**: the clear cell moves smoothly from tick
-    /// to tick over the whole day — no rule switches at a plateau's edge, so the
-    /// night is a point on the same curve as noon and the dusk ramp between.
-    /// Measured as the largest change of any written number between two
-    /// adjacent ticks, over all 24000.
+    /// **One rule for the whole day**: under each weather the cell moves
+    /// smoothly from tick to tick over the whole day — no rule switches at a
+    /// plateau's edge, so the night is a point on the same curve as noon and the
+    /// dusk ramp between. Measured as the largest change of any written number
+    /// between two adjacent ticks, over all 24000.
     #[test]
-    fn the_clear_cell_has_no_seam_over_the_day() {
-        let mut worst = [0.0f64; 3];
-        let mut prev = clear_cell(23999);
-        for t in 0..24000 {
-            let c = clear_cell(t);
-            for (k, (x, y)) in [
-                (c.sky_light, prev.sky_light),
-                (c.apparent_sky_light, prev.apparent_sky_light),
-                (c.sky_color.red, prev.sky_color.red),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                worst[k] = worst[k].max((x - y).abs());
+    fn the_sky_cell_has_no_seam_over_the_day() {
+        for w in WEATHERS {
+            let mut worst = [0.0f64; 3];
+            let mut prev = sky_cell(23999, w);
+            for t in 0..24000 {
+                let c = sky_cell(t, w);
+                for (k, (x, y)) in [
+                    (c.sky_light, prev.sky_light),
+                    (c.apparent_sky_light, prev.apparent_sky_light),
+                    (c.sky_color.red, prev.sky_color.red),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    worst[k] = worst[k].max((x - y).abs());
+                }
+                prev = c;
             }
-            prev = c;
+            eprintln!("{w:?} sky cell: largest step between adjacent ticks {worst:?}");
+            assert!(worst.iter().all(|w| *w < 0.01), "{w:?} {worst:?}");
         }
-        eprintln!("clear cell: largest step between adjacent ticks {worst:?}");
-        assert!(worst.iter().all(|w| *w < 0.01), "{worst:?}");
     }
 
     /// The lightmap port and the arithmetic power are the shader and `x^2.2`:
@@ -2289,47 +2378,6 @@ mod tests {
         assert!(worst < 1e-12, "{worst}");
     }
 
-    /// The table is the measured cell and the two authored rules of spec-0079
-    /// §4.4, and nothing else: `high` doubles the measured cell's light
-    /// modifiers, `below` takes a tenth of them and no sun, `thunder` is 0.6 of
-    /// its rain cell's modifiers, half its sun and 1.5 times its fog.
-    #[test]
-    fn the_look_table_is_the_measured_cell_and_two_rules() {
-        let close = |a: f64, b: f64| (a - b).abs() < 1e-12;
-        assert_eq!(LOW_RAIN.sky_light, 1.6);
-        assert_eq!(LOW_RAIN.apparent_sky_light, 0.6);
-        assert_eq!(LOW_RAIN.sun_intensity, 0.25);
-        assert_eq!(LOW_RAIN.fog_density, 0.002);
-        assert!(close(HIGH_RAIN.sky_light, 2.0 * LOW_RAIN.sky_light));
-        assert!(close(
-            HIGH_RAIN.apparent_sky_light,
-            2.0 * LOW_RAIN.apparent_sky_light
-        ));
-        assert!(close(BELOW_RAIN.sky_light, LOW_RAIN.sky_light / 10.0));
-        assert!(close(
-            BELOW_RAIN.apparent_sky_light,
-            LOW_RAIN.apparent_sky_light / 10.0
-        ));
-        assert_eq!(BELOW_RAIN.sun_intensity, 0.0);
-        for class in DaylightClass::ALL {
-            let r = overcast_cell(class, WorldWeather::Rain).unwrap();
-            let t = overcast_cell(class, WorldWeather::Thunder).unwrap();
-            assert!(close(t.sky_light, 0.6 * r.sky_light), "{class:?}");
-            assert!(
-                close(t.apparent_sky_light, 0.6 * r.apparent_sky_light),
-                "{class:?}"
-            );
-            assert!(close(t.sun_intensity, 0.5 * r.sun_intensity), "{class:?}");
-            assert!(close(t.fog_density, 1.5 * r.fog_density), "{class:?}");
-            for c in [r, t] {
-                assert_eq!(
-                    (c.sky_color, c.sun_color, c.fog_color),
-                    (LOW_RAIN.sky_color, LOW_RAIN.sun_color, LOW_RAIN.fog_color)
-                );
-            }
-        }
-    }
-
     /// A plan of `time`, `weather`, with one review shot.
     fn sky_plan(time: delvewright_dsl::WorldTime, weather: WorldWeather) -> Vec<u8> {
         format!(
@@ -2347,8 +2395,9 @@ mod tests {
     /// **Criterion 5 — the block is whole and one.** Over every hour and every
     /// weather, through all three scene builders (a review frame, a panorama, a
     /// showcase camera): every scene carries all eleven block keys with its
-    /// cell's values — an overcast cell under rain or thunder (no sun disc, no
-    /// sky fog), the clear cell of its tick under a clear sky (sky fog 1).
+    /// cell's values — the game's sky of its tick and weather as a map, the
+    /// light the map casts the lightmap's, no sun light, no fog, the sun's disc
+    /// only under a clear sky.
     #[test]
     fn every_scene_builder_writes_the_whole_block() {
         use crate::compiler::view::{camera, panorama};
@@ -2393,7 +2442,6 @@ mod tests {
                     },
                 )
                 .unwrap();
-                let class = daylight_class(&sun_at(time.daytime_ticks()));
                 for (kind, bytes) in [
                     ("review", &review[0].1),
                     ("panorama", &pano.bytes),
@@ -2401,7 +2449,7 @@ mod tests {
                 ] {
                     let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
                     let at = format!("{kind} {}+{}", time.keyword(), weather.keyword());
-                    let cell = look_cell(class, weather, time.daytime_ticks());
+                    let cell = sky_cell(time.daytime_ticks(), weather);
                     for k in BLOCK_KEYS {
                         assert!(v.pointer(k).is_some(), "{at}: missing {k}");
                     }
@@ -2413,36 +2461,42 @@ mod tests {
                         round6(cell.apparent_sky_light),
                         "{at}"
                     );
+                    // The game's sky as a map, written beside the scene; its
+                    // multiplier is the one the map answers.
+                    assert_eq!(v["sky"]["mode"], "SKYMAP_EQUIRECTANGULAR", "{at}");
+                    assert_eq!(v["sky"]["skyMirrored"], false, "{at}");
+                    let name = format!("{}{SKY_MAP_SUFFIX}", v["name"].as_str().unwrap());
+                    assert_eq!(v["sky"]["skymap"], name.as_str(), "{at}");
+                    assert_eq!(
+                        v["delvewrightSky"]["daytimeTicks"],
+                        time.daytime_ticks(),
+                        "{at}"
+                    );
                     if weather == WorldWeather::Clear {
-                        // The game's sky as a map, written beside the scene;
-                        // its multiplier is the one the map answers.
-                        assert_eq!(v["sky"]["mode"], "SKYMAP_EQUIRECTANGULAR", "{at}");
-                        assert_eq!(v["sky"]["skyMirrored"], false, "{at}");
-                        let name = format!("{}{SKY_MAP_SUFFIX}", v["name"].as_str().unwrap());
-                        assert_eq!(v["sky"]["skymap"], name.as_str(), "{at}");
-                        assert_eq!(
-                            v["delvewrightSky"]["daytimeTicks"],
-                            time.daytime_ticks(),
-                            "{at}"
-                        );
-                        let (map, bytes) =
-                            crate::compiler::view::sky_image::companion(bytes).expect("a map");
-                        assert_eq!(map, name, "{at}");
-                        assert!(bytes.starts_with(b"PF\n360 180\n-1.0\n"), "{at}");
-                        let o = &v["camera"]["orientation"];
-                        let view = crate::compiler::view::sky_image::view_of(
-                            o["yaw"].as_f64().unwrap(),
-                            o["pitch"].as_f64().unwrap(),
-                        );
-                        let sky =
-                            crate::compiler::view::sky_image::clear_sky(time.daytime_ticks(), view);
-                        assert_eq!(v["sky"]["skyLight"], round6(sky.sky_light), "{at}");
+                        assert!(v["delvewrightSky"].get("weather").is_none(), "{at}");
                     } else {
-                        assert_eq!(v["sky"]["mode"], "SOLID_COLOR", "{at}");
-                        assert!(v["sky"].get("skymap").is_none(), "{at}");
-                        assert!(v.get("delvewrightSky").is_none(), "{at}");
-                        assert_eq!(v["sky"]["skyLight"], round6(cell.sky_light), "{at}");
+                        assert_eq!(v["delvewrightSky"]["weather"], weather.keyword(), "{at}");
                     }
+                    let (map, bytes) =
+                        crate::compiler::view::sky_image::companion(bytes).expect("a map");
+                    assert_eq!(map, name, "{at}");
+                    assert!(bytes.starts_with(b"PF\n360 180\n-1.0\n"), "{at}");
+                    let o = &v["camera"]["orientation"];
+                    let view = crate::compiler::view::sky_image::view_of(
+                        o["yaw"].as_f64().unwrap(),
+                        o["pitch"].as_f64().unwrap(),
+                    );
+                    let sky = crate::compiler::view::sky_image::sky_map(
+                        time.daytime_ticks(),
+                        weather,
+                        view,
+                    );
+                    assert_eq!(v["sky"]["skyLight"], round6(sky.sky_light), "{at}");
+                    assert_eq!(
+                        bytes,
+                        crate::compiler::view::sky_image::pfm_bytes(&sky),
+                        "{at}: the companion is the scene's own sky"
+                    );
                     assert_eq!(v["sun"]["intensity"], cell.sun_intensity, "{at}");
                     assert_eq!(v["fog"]["uniformDensity"], cell.fog_density, "{at}");
                     assert_eq!(v["postprocess"], POSTPROCESS, "{at}");
@@ -2466,9 +2520,9 @@ mod tests {
         assert_eq!(judged, 6 * 3 * 3);
     }
 
-    /// An overcast scene is byte-deterministic: two emissions, one set of bytes.
+    /// A rain or thunder scene is byte-deterministic: two emissions, one set of bytes.
     #[test]
-    fn an_overcast_scene_is_byte_deterministic() {
+    fn a_weather_scene_is_byte_deterministic() {
         for weather in [WorldWeather::Rain, WorldWeather::Thunder] {
             let plan = sky_plan(delvewright_dsl::WorldTime::Dusk, weather);
             assert_eq!(

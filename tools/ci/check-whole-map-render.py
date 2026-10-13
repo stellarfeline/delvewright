@@ -71,25 +71,27 @@ And for `delvec cameras`, on every point whose campaign carries a
 - **every camera is under its picture's sky** (spec-0079): the camera's own
   `sky`, else the `time` and `weather` of the `design.json` row it answers —
   read here from the two documents, sharing nothing with the engine's
-  resolution. A `rain` or `thunder` scene carries `sky.mode SOLID_COLOR` and
-  `fog.mode UNIFORM`. A `clear` scene carries the **game's own sky of its
-  tick** (`compiler.md` §4): its `delvewrightSky.daytimeTicks` is held within
+  resolution. Every scene carries the **game's own sky of its tick under its
+  weather** (`compiler.md` §4): its `delvewrightSky.daytimeTicks` is held within
   `TICK_SLACK` ticks of the tick its own sun names by minecraft.wiki's
   closed-form sky angle, which the engine's emission (the vendored track) does
   not share; the fixed keys are `SKYMAP_EQUIRECTANGULAR`, `skyMirrored` false,
   `apparentSkyLight` 1, no fog, no sun light and the disc drawn exactly while
-  some of it stands above the horizon; the map written beside the scene is
-  held, on a 24 × 12 sample grid, to this gate's own Python port of the
-  client's sky (the clear colour with its look-dependent sunrise tint, the
-  octagonal sky disc with `sky.fsh`'s fog, the sunrise fan) plus ONE uniform
+  some of it stands above the horizon under a clear sky (never under rain or
+  thunder); the marker names the weather, absent under a clear sky; the map
+  written beside the scene is held, on a 24 × 12 sample grid, to this gate's
+  own Python port of the client's sky and its weather layer (the clear colour
+  with its look-dependent sunrise tint, lerped toward the sky colour the
+  weather darkens, the octagonal sky disc with `sky.fsh`'s fog, the sunrise
+  fan, every attribute through `WeatherAttributes`' map) plus ONE uniform
   non-negative veil; and `skyLight` times the map's cosine-weighted mean over
   the upper hemisphere is held to the lightmap shader's full-sky light of
-  `visual/sky_light_factor` and `visual/sky_light_color`. The panorama and
-  review scenes of a clear plan
-  are judged by the same rule. Over the domain the weathers emitted are `{clear, rain, thunder}`
-  and the daylight classes — read off each scene's sun altitude, at or above
-  20° `high`, from 0° `low`, under 0° `below` — are `{high, low, below}`; a
-  domain reaching fewer is a red, because the gallery owes every cell a frame.
+  `visual/sky_light_factor` and `visual/sky_light_color` under the weather. The
+  panorama and review scenes of a plan are judged by the same rule. Over the
+  domain the weathers emitted are `{clear, rain, thunder}` and the sun bands —
+  read off each scene's sun altitude, at or above 20° `high`, from 0° `low`,
+  under 0° `below` — are `{high, low, below}`; a domain reaching fewer is a
+  red, because the gallery owes every weather and every hour's band a frame.
 
 And on every scene of every arm: **mid-grey shows as the game shows it.** The
 scene's `postprocess` is `TONEMAP3` and its `postprocessSettings` are the seven
@@ -267,6 +269,18 @@ OVERWORLD_FOG = (0xC0, 0xD8, 0xFF)
 BRIGHTNESS = 0.5
 # Half the angle the sun's drawn disc spans: `atan(30 × 8/32 / 100)`.
 SUN_DISC_HALF_DEG = math.degrees(math.atan(30 * 8 / 32 / 100))
+# The pinned client's weather layer (`WeatherAttributes.<clinit>`, read off its
+# bytecode through Mojang's client mappings), ported here on its own: per
+# weather, `blend_to_gray` (brightness, factor) on the sky colour, a `multiply`
+# on the fog and sunrise colours (`ARGB.colorFromFloat` floats), and the alpha
+# both `alpha_blend`s take toward `visual/sky_light_factor` 0.24 and
+# `NIGHT_SKY_LIGHT_COLOR` (1, 0.48, 0.48, 1). A `thunder` delve stands at rain
+# and thunder level 1, so its map is applied alone; a `rain` delve's is.
+WEATHER_LAYER = {
+    "rain": {"gray": (0.6, 0.75), "darken": (0.5, 0.5, 0.6), "alpha": 0.3125},
+    "thunder": {"gray": (0.24, 0.94), "darken": (0.25, 0.25, 0.3), "alpha": 0.52734375},
+}
+WEATHER_LEVELS = {"clear": (0.0, 0.0), "rain": (1.0, 0.0), "thunder": (1.0, 1.0)}
 # How many ticks either side of the tick a scene's sun names by the closed form
 # the cell may come from: the closed form and the pinned track agree to 0.056°,
 # a few ticks where the sun is lowest.
@@ -348,12 +362,63 @@ def _mul(a, b):
     return [x * y // 255 for x, y in zip(a, b)]
 
 
-def lightmap_light(tick: int) -> list[float]:
+def _floor8(f: float) -> int:
+    """`ARGB.as8BitChannel`: floor(f x 255) in float."""
+    return math.floor(_f32(_f32(f) * 255.0))
+
+
+def weather_attrs(tick: int, weather: str) -> dict:
+    """The sky attributes the client reads at a tick under a weather: the
+    timeline's, over the ground biome, with the weather's layer applied."""
+    at = {
+        "factor": timeline_float("sky_light_factor", tick),
+        "light": list(timeline_rgb("sky_light_color", tick)),
+        "sky": _mul(timeline_rgb("sky_color", tick), GROUND_SKY),
+        "fog": _mul(timeline_rgb("fog_color", tick), OVERWORLD_FOG),
+        "sunrise": list(timeline_argb("sunrise_sunset_color", tick)),
+    }
+    layer = WEATHER_LAYER.get(weather)
+    if layer is None:
+        return at
+    a = _f32(layer["alpha"])
+    f = _f32(at["factor"])
+    m = _f32(f + _f32(a * _f32(_f32(0.24) - f)))
+    at["factor"] = _f32(f + _f32(m - f))  # the layer's own lerp at weight 1
+    sa = _floor8(a)
+    night = [_floor8(0.48), _floor8(0.48), _floor8(1.0)]
+    at["light"] = [(n * sa + c * (255 - sa)) // 255 for n, c in zip(night, at["light"])]
+    bright, factor = layer["gray"]
+    r, g, b = at["sky"]
+    grey = int(_f32(_f32(_f32(r * _f32(0.3)) + _f32(g * _f32(0.59))) + _f32(b * _f32(0.11))))
+    scaled = min(255, max(0, int(_f32(grey * _f32(bright)))))
+    at["sky"] = [c + math.floor(_f32(_f32(factor) * (scaled - c))) for c in at["sky"]]
+    darken = [_floor8(c) for c in layer["darken"]]
+    at["fog"] = _mul(at["fog"], darken)
+    at["sunrise"] = [at["sunrise"][0]] + _mul(at["sunrise"][1:], darken)
+    return at
+
+
+def weather_darken(c, weather: str) -> list[int]:
+    """`AtmosphericFogEnvironment.applyWeatherDarken` on the sky colour the
+    clear colour is lerped toward."""
+    rain, thunder = WEATHER_LEVELS[weather]
+    c = list(c)
+    if rain > 0:
+        k = (_f32(1 - rain * 0.5), _f32(1 - rain * 0.5), _f32(1 - rain * 0.4))
+        c = [min(255, max(0, int(_f32(v * f)))) for v, f in zip(c, k)]
+    if thunder > 0:
+        k2 = _f32(1 - thunder * 0.5)
+        c = [min(255, max(0, int(_f32(v * k2)))) for v in c]
+    return c
+
+
+def lightmap_light(tick: int, weather: str = "clear") -> list[float]:
     """The lightmap shader's full-sky colour (`lightmap.fsh`, sky light 15,
     block light 0, the gamma option at 0.5), decoded by Python's `**`: the light
-    a clear sky casts on an open top face."""
-    factor = timeline_float("sky_light_factor", tick)
-    light = timeline_rgb("sky_light_color", tick)
+    the sky casts on an open top face at a tick under a weather."""
+    at = weather_attrs(tick, weather)
+    factor = at["factor"]
+    light = at["light"]
     c = [min(1.0, max(0.0, (v / 255.0 * factor) * 0.96 + 0.03)) for v in light]
     top = max(c)
     curve = 1.0 - (1.0 - top) ** 4
@@ -371,12 +436,16 @@ SKY_FOG_END = 512.0
 MAP_W, MAP_H = 360, 180
 
 
-def game_sky_colours(tick: int, view: tuple[float, float, float]) -> dict:
-    """The clear colour, the sky colour and the fan of a tick for a look vector,
-    as display values — `AtmosphericFogEnvironment.getBaseColor`'s steps."""
-    fog = _mul(timeline_rgb("fog_color", tick), OVERWORLD_FOG)
-    sky = _mul(timeline_rgb("sky_color", tick), GROUND_SKY)
-    a, r, g, b = timeline_argb("sunrise_sunset_color", tick)
+def game_sky_colours(tick: int, view: tuple[float, float, float], weather: str = "clear") -> dict:
+    """The clear colour, the sky colour and the fan of a tick under a weather
+    for a look vector, as display values — `AtmosphericFogEnvironment.
+    getBaseColor`'s steps: the clear colour is lerped toward the sky colour the
+    weather darkens, the disc is drawn in the sky colour itself."""
+    at = weather_attrs(tick, weather)
+    fog = at["fog"]
+    sky = at["sky"]
+    toward = weather_darken(sky, weather)
+    a, r, g, b = at["sunrise"]
     alpha = a / 255.0
     angle = closed_form_angle(tick)
     west = 0.0 < angle < 180.0
@@ -386,7 +455,7 @@ def game_sky_colours(tick: int, view: tuple[float, float, float]) -> dict:
     if RENDER_DISTANCE >= 4 and dot > 0 and alpha > 0:
         fog = lerp(dot * alpha, fog, [r, g, b])
     reach = min(max(min(SKY_FOG_END / 16, RENDER_DISTANCE) / 32, 0.25), 1.0)
-    fog = lerp(1 - reach**0.25, fog, sky)
+    fog = lerp(1 - reach**0.25, fog, toward)
     return {
         "fog": [v / 255 for v in fog],
         "sky": [v / 255 for v in sky],
@@ -488,21 +557,27 @@ SAMPLE_COLUMNS = range(0, MAP_W, 15)
 SAMPLE_ROWS = range(7, MAP_H, 15)
 
 
-def clear_sky_findings(doc: dict, scene_dir: Path | None) -> tuple[list[str], int]:
-    """How a clear scene departs from the game's clear sky at its tick, if it
-    does, and the tick read. The tick is the scene's `delvewrightSky` marker,
-    held to the sun's own altitude by the closed form. The map must be the
-    game's sky — drawn here, with this gate's own port of the client — plus one
-    uniform non-negative veil; and `skyLight` times the map's cosine-weighted
-    mean over the upper hemisphere must be the lightmap's light."""
+def sky_findings(doc: dict, scene_dir: Path | None, weather: str = "clear") -> tuple[list[str], int]:
+    """How a scene departs from the game's sky at its tick under its weather,
+    if it does, and the tick read. The tick is the scene's `delvewrightSky`
+    marker, held to the sun's own altitude by the closed form, and the marker
+    names the weather (absent under a clear sky). The map must be the game's
+    sky — drawn here, with this gate's own port of the client and its weather
+    layer — plus one uniform non-negative veil; and `skyLight` times the map's
+    cosine-weighted mean over the upper hemisphere must be the lightmap's
+    light."""
     sun = doc.get("sun") or {}
     read = tick_of_sun(sun["altitude"], sun.get("azimuth", 0.0))
-    tick = (doc.get("delvewrightSky") or {}).get("daytimeTicks")
+    marker = doc.get("delvewrightSky") or {}
+    tick = marker.get("daytimeTicks")
     bad: list[str] = []
     if not isinstance(tick, int):
         return [f"carries no `delvewrightSky.daytimeTicks` (its sun reads tick {read})"], read
     if abs((tick - read + 12000) % 24000 - 12000) > TICK_SLACK:
         bad.append(f"names tick {tick}, and its sun stands where tick {read} puts it")
+    named = marker.get("weather", "clear")
+    if named != weather or (weather == "clear" and "weather" in marker):
+        bad.append(f"names the weather {marker.get('weather')!r}; its picture's is {weather!r}")
     sky, fog = doc.get("sky") or {}, doc.get("fog") or {}
     for (obj, key), want in {
         ("sky", "mode"): "SKYMAP_EQUIRECTANGULAR",
@@ -514,12 +589,13 @@ def clear_sky_findings(doc: dict, scene_dir: Path | None) -> tuple[list[str], in
     }.items():
         got = (doc.get(obj) or {}).get(key)
         if got != want:
-            bad.append(f"`{obj}.{key}` is {got!r}, the clear sky's is {want!r}")
-    disc = math.degrees(sun["altitude"]) >= -SUN_DISC_HALF_DEG
+            bad.append(f"`{obj}.{key}` is {got!r}, the game's sky's is {want!r}")
+    # The client draws the sun at the alpha 1 - rain level: not at all under weather.
+    disc = math.degrees(sun["altitude"]) >= -SUN_DISC_HALF_DEG and weather == "clear"
     if sun.get("drawTexture") != disc:
         bad.append(
             f"`sun.drawTexture` is {sun.get('drawTexture')!r}; the disc is "
-            f"{'partly up' if disc else 'wholly down'} at {math.degrees(sun['altitude']):.3f}°"
+            f"{'drawn' if disc else 'not drawn'} at {math.degrees(sun['altitude']):.3f}° under {weather}"
         )
     name = sky.get("skymap")
     if scene_dir is None or not isinstance(name, str):
@@ -537,7 +613,7 @@ def clear_sky_findings(doc: dict, scene_dir: Path | None) -> tuple[list[str], in
         -math.cos(pitch),
         -math.sin(yaw) * math.sin(pitch),
     )
-    colours = game_sky_colours(tick, view)
+    colours = game_sky_colours(tick, view, weather)
     veils = []
     for j in SAMPLE_ROWS:
         for i in SAMPLE_COLUMNS:
@@ -562,7 +638,7 @@ def clear_sky_findings(doc: dict, scene_dir: Path | None) -> tuple[list[str], in
         for c in range(3):
             acc[c] += w * sum(px[row + c : row + MAP_W * 3 : 3])
         weight += w * MAP_W
-    light = lightmap_light(tick)
+    light = lightmap_light(tick, weather)
     s = sky.get("skyLight")
     if not isinstance(s, (int, float)):
         bad.append(f"`sky.skyLight` is {s!r}")
@@ -572,7 +648,7 @@ def clear_sky_findings(doc: dict, scene_dir: Path | None) -> tuple[list[str], in
             if abs(cast - light[c]) > 2e-3 * max(light[c], 1e-3):
                 bad.append(
                     f"casts {cast:.6f} in channel {c} on an open top face (`skyLight` x the map's "
-                    f"mean), where the lightmap's light at tick {tick} is {light[c]:.6f}"
+                    f"mean), where the lightmap's light at tick {tick} under {weather} is {light[c]:.6f}"
                 )
     return bad, tick
 
@@ -606,22 +682,16 @@ def judge_sky(
     clear_cells: dict[str, int] | None = None,
     scene_dir: Path | None = None,
 ) -> list[str]:
-    """A scene under `weather`: an overcast block under rain or thunder, the
-    game's clear sky of its tick under a clear sky. Tallies clear scenes by
-    where on the day their tick falls."""
-    if weather != "clear":
-        if (doc.get("sky") or {}).get("mode") == "SOLID_COLOR" and (doc.get("fog") or {}).get(
-            "mode"
-        ) == "UNIFORM":
-            return []
-        return [f"is under {weather} and its scene carries no overcast sky and fog"]
-    bad, tick = clear_sky_findings(doc, scene_dir)
+    """A scene under `weather`: the game's sky of its tick under that weather.
+    Tallies scenes by weather and by where on the day their tick falls."""
+    bad, tick = sky_findings(doc, scene_dir, weather)
     if clear_cells is not None:
         sky_dark = all(v == 0 for v in timeline_rgb("sky_color", tick))
         light_full = timeline_float("sky_light_factor", tick) == 1.0
         where = "night plateau" if sky_dark else "day plateau" if light_full else "ramp"
-        clear_cells[where] = clear_cells.get(where, 0) + 1
-    return [f"is under a clear sky and {why}" for why in bad]
+        key = f"{weather} {where}"
+        clear_cells[key] = clear_cells.get(key, 0) + 1
+    return [f"is under {weather} and {why}" for why in bad]
 
 
 # The tone rule: the scene's curve, evaluated here as the pinned core
@@ -932,10 +1002,11 @@ def main() -> int:
                             )
 
     print(
-        f"camera skies: weathers {dict(sorted(weathers_seen.items()))}, daylight classes "
+        f"camera skies: weathers {dict(sorted(weathers_seen.items()))}, sun bands "
         f"{dict(sorted(classes_seen.items()))}, over {cameras_judged} camera scene(s) and "
-        f"{plan_skies} panorama/review scene(s); {sum(clear_seen.values())} clear scene(s) "
-        f"judged against the game's clear sky drawn here from the timeline "
+        f"{plan_skies} panorama/review scene(s); {sum(clear_seen.values())} scene(s) "
+        f"judged against the game's sky under their weather, drawn here from the timeline "
+        f"and the weather layer "
         f"({', '.join(f'{k} {v}' for k, v in sorted(clear_seen.items())) or 'none'})."
     )
     print(
@@ -950,8 +1021,8 @@ def main() -> int:
         )
     if builds and not clear_seen:
         findings.append(
-            "ZERO clear scenes were judged against the game's clear sky: the domain reaches no "
-            "clear sky, so the clear-cell rule examined nothing"
+            "ZERO scenes were judged against the game's sky: the domain reaches no sky, so the "
+            "sky rule examined nothing"
         )
     if cameras_judged and (
         set(weathers_seen) != {"clear", "rain", "thunder"}
@@ -959,8 +1030,8 @@ def main() -> int:
     ):
         findings.append(
             f"the domain's camera scenes reach weathers {sorted(weathers_seen)} and "
-            f"classes {sorted(classes_seen)}; the gallery owes every weather and every "
-            "daylight class a frame (spec-0079 §7)"
+            f"sun bands {sorted(classes_seen)}; the gallery owes every weather and every "
+            "sun band a frame (spec-0079 §7)"
         )
     print(
         f"whole-map render: {len(bases)} horizon base(s) declared "

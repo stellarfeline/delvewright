@@ -76,8 +76,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::compiler::view::diag::{DW_INPUT, Diagnostic};
 use crate::compiler::view::scene::{
-    self, ChunkyCamera, ChunkyScene, DaylightClass, Orientation, RenderPlan, SceneSky, WorldRef,
-    Xyz, chunky_orientation, round6,
+    self, ChunkyCamera, ChunkyScene, Orientation, RenderPlan, SceneSky, WorldRef, Xyz,
+    chunky_orientation, round6,
 };
 
 /// Where the record lives inside a campaign directory.
@@ -625,24 +625,21 @@ pub struct ResolvedSky {
     pub camera: String,
     pub sky: CameraSky,
     pub origin: SkyOrigin,
-    /// The daylight class the pair's sun falls in — the overcast table's row.
-    pub class: DaylightClass,
 }
 
 impl ResolvedSky {
     /// The per-camera binding line: `sky: <name> <time>+<weather> <derived from
-    /// <row> | stated> class <class> — <cell>`.
+    /// <row> | stated> — <cell>`.
     pub fn line(&self) -> String {
         format!(
-            "sky: {} {} {} class {} — {}{}",
+            "sky: {} {} {} — {}{}",
             self.camera,
             self.sky.label(),
             match &self.origin {
                 SkyOrigin::Derived(row) => format!("derived from {row}"),
                 SkyOrigin::Stated => "stated".to_string(),
             },
-            self.class.name(),
-            scene::sky_phrase(self.class, self.sky.weather, self.sky.time.daytime_ticks()),
+            scene::sky_phrase(self.sky.weather, self.sky.time.daytime_ticks()),
             // spec-0081 §5.4: the pinned renderer draws no moon, so a frame of a
             // sky whose moon is up carries no phase — said where it is read.
             if delvewright_dsl::celestial::moon_up(self.sky.time.daytime_ticks()) {
@@ -681,12 +678,10 @@ pub fn resolve_sky(cam: &Camera, rows: &[ApprovedRow]) -> Result<ResolvedSky, St
             ));
         }
     };
-    let class = scene::daylight_class(&scene::sky_of(sky.scene()).sun);
     Ok(ResolvedSky {
         camera: cam.name.clone(),
         sky,
         origin,
-        class,
     })
 }
 

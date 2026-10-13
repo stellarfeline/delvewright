@@ -48,20 +48,26 @@ fn log(o: &Output) -> String {
     )
 }
 
-/// Whether an emitted scene carries the clear sky of `tick`
-/// ([`scene::clear_cell`]): the game's sky as a map drawn for its camera at that
-/// tick, seen whole by the lens, its `skyLight` the multiplier that makes the
-/// light it casts the lightmap's ([`sky_image::clear_sky`]), and no light from
-/// the sun.
-fn carries_clear_cell(v: &serde_json::Value, tick: i64) -> bool {
+/// Whether an emitted scene carries the sky of `tick` under `weather`
+/// ([`scene::sky_cell`]): the game's sky as a map drawn for its camera at that
+/// tick and weather, seen whole by the lens, its `skyLight` the multiplier that
+/// makes the light it casts the lightmap's ([`sky_image::sky_map`]), and no
+/// light from the sun.
+fn carries_sky(v: &serde_json::Value, tick: i64, weather: WorldWeather) -> bool {
     let o = &v["camera"]["orientation"];
     let view = sky_image::view_of(o["yaw"].as_f64().unwrap(), o["pitch"].as_f64().unwrap());
-    let map = sky_image::clear_sky(tick, view);
+    let map = sky_image::sky_map(tick, weather, view);
     let near = |a: &serde_json::Value, b: f64| a.as_f64().is_some_and(|a| (a - b).abs() < 5e-7);
+    let marked = match weather {
+        WorldWeather::Clear => v["delvewrightSky"].get("weather").is_none(),
+        w => v["delvewrightSky"]["weather"] == w.keyword(),
+    };
     v["sky"]["mode"] == "SKYMAP_EQUIRECTANGULAR"
         && v["sky"]["skyMirrored"] == false
         && v["delvewrightSky"]["daytimeTicks"] == tick
+        && marked
         && v["fog"]["skyFogDensity"] == 0.0
+        && v["fog"]["uniformDensity"] == 0.0
         && v["sun"]["intensity"] == 0.0
         && near(&v["sky"]["skyLight"], map.sky_light)
         && v["sky"]["apparentSkyLight"] == 1.0
@@ -111,7 +117,7 @@ fn with_weather(plan: &[u8], weather: &str) -> Vec<u8> {
 
 /// **Criterion 2 — default and override.** A camera with no `sky` answering a
 /// `midnight`+`thunder` row, in a world played at `day` in the `clear`, emits a
-/// midnight sun and the thunder block of the `below` class; a camera stating
+/// midnight sun and the game's midnight sky under thunder; a camera stating
 /// `noon`+`clear` against that row emits a noon sun and nothing of the row's.
 #[test]
 fn a_camera_takes_its_pictures_sky_or_the_one_it_states() {
@@ -123,15 +129,12 @@ fn a_camera_takes_its_pictures_sky_or_the_one_it_states() {
     let derived = scene_of(OCEAN, cam("crypt", "concept/crypt", None), &rows);
     let midnight = scene::sun_at(WorldTime::Midnight.daytime_ticks());
     assert_eq!(derived["sun"]["altitude"], midnight.altitude, "{derived}");
-    assert_eq!(derived["sky"]["mode"], "SOLID_COLOR", "{derived}");
-    assert_eq!(
-        derived["sky"]["skyLight"],
-        scene::BELOW_THUNDER.sky_light,
-        "{derived}"
-    );
-    assert_eq!(
-        derived["fog"]["uniformDensity"],
-        scene::BELOW_THUNDER.fog_density,
+    assert!(
+        carries_sky(
+            &derived,
+            WorldTime::Midnight.daytime_ticks(),
+            WorldWeather::Thunder
+        ),
         "{derived}"
     );
 
@@ -150,11 +153,15 @@ fn a_camera_takes_its_pictures_sky_or_the_one_it_states() {
     let noon = scene::sun_at(WorldTime::Noon.daytime_ticks());
     assert_eq!(stated["sun"]["altitude"], noon.altitude, "{stated}");
     assert!(
-        carries_clear_cell(&stated, WorldTime::Noon.daytime_ticks()),
+        carries_sky(
+            &stated,
+            WorldTime::Noon.daytime_ticks(),
+            WorldWeather::Clear
+        ),
         "{stated}"
     );
 
-    // A stated overcast sky against a clear row: the stated pair, wholly.
+    // A stated rain sky against a clear row: the stated pair, wholly.
     let stormy = scene_of(
         OCEAN,
         cam(
@@ -171,12 +178,15 @@ fn a_camera_takes_its_pictures_sky_or_the_one_it_states() {
         stormy["sun"]["altitude"],
         scene::sun_at(WorldTime::Dusk.daytime_ticks()).altitude
     );
-    assert_eq!(stormy["sky"]["skyLight"], scene::LOW_RAIN.sky_light);
+    assert!(
+        carries_sky(&stormy, WorldTime::Dusk.daytime_ticks(), WorldWeather::Rain),
+        "{stormy}"
+    );
 }
 
 /// **Criterion 2 — each scene kind reads its sky from its own source** (§5): of
 /// one plan played at `dusk` in the `rain`, the panorama and a review frame are
-/// overcast, and a showcase camera stating `dusk`+`clear` — against a row drawn
+/// under its rain, and a showcase camera stating `dusk`+`clear` — against a row drawn
 /// in that rain — is not; a camera deriving a `clear` row is not either, because
 /// a camera's sky is its picture's, not the plan's.
 #[test]
@@ -185,13 +195,14 @@ fn each_scene_kind_reads_its_sky_from_its_own_source() {
     let pano =
         panorama::panorama_from_plan(&rain, &[], &panorama::PanoramaOptions::default()).unwrap();
     let pano: serde_json::Value = serde_json::from_slice(&pano.bytes).unwrap();
-    assert_eq!(pano["sky"]["skyLight"], scene::LOW_RAIN.sky_light, "{pano}");
+    let dusk = WorldTime::Dusk.daytime_ticks();
+    assert!(carries_sky(&pano, dusk, WorldWeather::Rain), "{pano}");
 
     let review = scene::scenes_from_plan(&rain, &scene::SceneOptions::default(), &[]).unwrap();
     assert!(!review.is_empty());
     for (name, bytes) in &review {
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        assert_eq!(v["sky"]["skyLight"], scene::LOW_RAIN.sky_light, "{name}");
+        assert!(carries_sky(&v, dusk, WorldWeather::Rain), "{name}");
     }
 
     let stated_clear = scene_of(
@@ -206,15 +217,20 @@ fn each_scene_kind_reads_its_sky_from_its_own_source() {
         ),
         &[row("concept/gate", WorldTime::Dusk, WorldWeather::Rain)],
     );
-    let dusk = WorldTime::Dusk.daytime_ticks();
-    assert!(carries_clear_cell(&stated_clear, dusk), "{stated_clear}");
+    assert!(
+        carries_sky(&stated_clear, dusk, WorldWeather::Clear),
+        "{stated_clear}"
+    );
 
     let derived_clear = scene_of(
         &rain,
         cam("gate", "concept/gate", None),
         &[row("concept/gate", WorldTime::Dusk, WorldWeather::Clear)],
     );
-    assert!(carries_clear_cell(&derived_clear, dusk), "{derived_clear}");
+    assert!(
+        carries_sky(&derived_clear, dusk, WorldWeather::Clear),
+        "{derived_clear}"
+    );
 }
 
 /// A campaign directory holding what `delvec cameras` and `delvec
@@ -360,7 +376,7 @@ fn place_camera_writes_a_stated_sky_and_refuses_one_that_is_not() {
     let said = log(&r);
     assert_eq!(r.status.code(), Some(0), "{said}");
     assert!(
-        said.contains("sky: gate noon+clear stated class high"),
+        said.contains("sky: gate noon+clear stated — clear sky at daytime 6000"),
         "{said}"
     );
     let written: serde_json::Value =
@@ -371,12 +387,13 @@ fn place_camera_writes_a_stated_sky_and_refuses_one_that_is_not() {
     );
 }
 
-/// **Criterion 7 — the gallery reaches every weather and every class.** Every
+/// **Criterion 7 — the gallery reaches every weather and every sun band.** Every
 /// camera of `gallery/design/cameras.json` is emitted in process against the
 /// rows of `gallery/design.json`, under a render plan carrying the gallery's own
 /// declared sky (`gallery/world.json`); the weathers emitted are `{clear, rain,
-/// thunder}` and the daylight classes `{high, low, below}`, read off each
-/// emitted scene, and exactly one camera states its own sky. Changing the stated
+/// thunder}` and the sun stands in each band `{high, low, below}` (at or above
+/// 20°, from the horizon up to 20°, under it), read off each emitted scene, and
+/// exactly one camera states its own sky. Changing the stated
 /// sky's weather from `clear` to `rain`, its time (the clear cell's tick), and
 /// the answered row's weather of a derived camera, each moves that camera's
 /// scene bytes.
@@ -415,23 +432,21 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     for (c, (_, bytes)) in sheet.cameras.iter().zip(&emission.scenes) {
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
         let resolved = camera::resolve_sky(c, &rows).unwrap();
-        // Read off the scene: the cell names its weather by its values — a
-        // clear scene carries the clear cell of its tick.
-        let weather = match v["sky"]["skyLight"].as_f64() {
-            None => panic!("{}: a scene with no sky block", c.name),
-            Some(_) if carries_clear_cell(&v, resolved.sky.time.daytime_ticks()) => "clear",
-            Some(light) => {
-                let class = resolved.class;
-                let rain = scene::overcast_cell(class, WorldWeather::Rain).unwrap();
-                let thunder = scene::overcast_cell(class, WorldWeather::Thunder).unwrap();
-                if light == rain.sky_light {
-                    "rain"
-                } else {
-                    assert_eq!(light, thunder.sky_light, "{}", c.name);
-                    "thunder"
-                }
-            }
-        };
+        // Read off the scene: its marker names the weather its map is drawn
+        // under, and the scene carries that sky of its tick.
+        let read: WorldWeather = serde_json::from_value(
+            v["delvewrightSky"]
+                .get("weather")
+                .cloned()
+                .unwrap_or(serde_json::json!("clear")),
+        )
+        .unwrap();
+        let weather = read.keyword();
+        assert!(
+            carries_sky(&v, resolved.sky.time.daytime_ticks(), read),
+            "{}: {v}",
+            c.name
+        );
         assert_eq!(weather, resolved.sky.weather.keyword(), "{}", c.name);
         let altitude = v["sun"]["altitude"].as_f64().unwrap().to_degrees();
         let class = if altitude >= 20.0 {
@@ -486,7 +501,7 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     );
     let v: serde_json::Value = serde_json::from_slice(&noon.scenes[i].1).unwrap();
     assert!(
-        carries_clear_cell(&v, WorldTime::Noon.daytime_ticks()),
+        carries_sky(&v, WorldTime::Noon.daytime_ticks(), WorldWeather::Clear),
         "{v}"
     );
     // …and the sky map written beside the scene: its bytes move with the tick,
@@ -554,13 +569,13 @@ fn a_camera_at_a_night_beat_renders_the_night_sky() {
         altitude < 0.0,
         "the moon high puts the sun under the horizon: {altitude}"
     );
-    assert!(carries_clear_cell(&night, 18000), "{night}");
+    assert!(carries_sky(&night, 18000, WorldWeather::Clear), "{night}");
     assert_eq!(night["sun"]["drawTexture"], false, "{night}");
 
     let dusk = scene_of(MINI, cam("evening", "concept/evening", None), &rows);
     assert!(dusk["sun"]["altitude"].as_f64().unwrap() > 0.0);
     assert!(
-        carries_clear_cell(&dusk, WorldTime::Dusk.daytime_ticks()),
+        carries_sky(&dusk, WorldTime::Dusk.daytime_ticks(), WorldWeather::Clear),
         "{dusk}"
     );
     assert!(

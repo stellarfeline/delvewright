@@ -66,8 +66,8 @@
 //!
 //! The sky is `scene::sky_of` of the plan's declared hour and weather — the same
 //! one every review scene gets (spec-0079 §5): it answers no `design.json` row,
-//! so it is the delve at its declared sky, overcast when that sky is rain or
-//! thunder. So the bearing is purely a choice of which side is in shot,
+//! so it is the delve at its declared sky, under its rain or thunder when it
+//! declares one. So the bearing is purely a choice of which side is in shot,
 //! and choosing it is the creator's job: at a given hour the sun stands east or
 //! west, and a bearing looking into it puts the sun's disc in frame (a clear
 //! sky lights from every side, as the game does, so no face is in its shadow). A delve declared at
