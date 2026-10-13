@@ -143,20 +143,25 @@ pub const CORE_EMITTER_INTENSITY: f64 = 13.0;
 /// `LightTexture` writes); the core's lantern is a small emitter whose light
 /// falls off with distance, and the only controls it gives a scene over
 /// emitted light are this global intensity, a per-material `emittance` and the
-/// emitter sampling strategy, which changes noise and not the mean. Chunky
-/// users close the same gap with the same lever, raising the intensity by eye
-/// (`docs/reference/chunky-lighting-practice.md`, **cited**). The scale
-/// is the one at which the mean display luma of lantern-lit pixels under
-/// [`tone_curve`] equals the game model's: over every pixel of the Treehouse
-/// Camp's twelve showcase frames that lands on a full cube of a single-texture
-/// block with game block light 1–15 (102 139 pixels at 400 × 225), equal weight
-/// per pixel, the render taken as the sky pass plus the scale times the emitter
-/// pass, each a raw sample buffer of the pinned core, the game model the
-/// texture's albedo × the pinned client's lightmap × `ClientLevel.getShade`
-/// with the game's light flooded over the same world. Resampling the twelve
-/// frames puts it between 9.8 and 27.5 (5–95%). `compiler.md` §4 holds the
-/// record. **Authored from that measurement.**
-pub const LANTERN_LIGHT_SCALE: f64 = 15.0414;
+/// emitter sampling strategy, whose sampled estimate at the pin averages the
+/// emitters near a point where the unsampled path sums them (measured: half
+/// the emitted light on two Treehouse Camp frames), so a scene keeps `NONE`.
+/// Chunky users close the same gap with the same lever, raising the intensity
+/// by eye, and pair it with a denoiser
+/// (`docs/reference/chunky-lighting-practice.md`, **cited**). The scale is the
+/// one at which the mean display luma of lantern-lit pixels under
+/// [`tone_curve`], **after denoising**, equals the game model's: over every
+/// pixel of the Treehouse Camp's twelve showcase frames that lands on a full
+/// cube of a single-texture block with game block light 1–15 (102 139 pixels
+/// at 400 × 225), equal weight per pixel, the render taken as the sky pass plus
+/// the scale times the emitter pass, each a raw sample buffer of the pinned
+/// core, denoised by Open Image Denoise with the denoiser plugin's albedo and
+/// normal passes; the game model the texture's albedo × the pinned client's
+/// lightmap × `ClientLevel.getShade` with the game's light flooded over the
+/// same world. Fitted on the noisy buffers instead the scale reads 15.04,
+/// because grain shown through the curve reads darker than its mean.
+/// `compiler.md` §4 holds the record. **Authored from that measurement.**
+pub const LANTERN_LIGHT_SCALE: f64 = 12.2310;
 
 /// The `emitterIntensity` every scene is written with:
 /// [`CORE_EMITTER_INTENSITY`] × [`LANTERN_LIGHT_SCALE`].
@@ -2041,7 +2046,7 @@ mod tests {
     /// `emitterIntensity`; the emulation's glow does not move with it.
     #[test]
     fn the_lantern_scale_moves_the_emitted_intensity() {
-        assert_eq!(emitter_intensity(), 195.5382);
+        assert_eq!(emitter_intensity(), 159.003);
         let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
         for (name, bytes) in &scenes {
             let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();

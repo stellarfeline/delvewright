@@ -44,7 +44,7 @@ PRESET = {
 }
 
 
-def scene(settings, post="TONEMAP3", intensity=195.5382):
+def scene(settings, post="TONEMAP3", intensity=159.003):
     doc = {"postprocess": post, "emitterIntensity": intensity}
     if settings is not None:
         doc["postprocessSettings"] = dict(settings)
@@ -85,7 +85,7 @@ def test_the_core_default_emitter_intensity_is_refused():
 
 def test_an_emulation_keeps_its_calibrated_glow():
     doc = scene(ANCHORED)
-    doc["materials"] = {"minecraft:stone": {"emittance": 0.003324}}
+    doc["materials"] = {"minecraft:stone": {"emittance": 0.004088}}
     assert gate().tone_findings(doc) == []
     doc["materials"] = {"minecraft:stone": {"emittance": 0.05}}
     bad = gate().tone_findings(doc)
