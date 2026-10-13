@@ -651,6 +651,26 @@ fn doc_links(campaign: &Campaign) -> Vec<DocLink<'_>> {
     out
 }
 
+/// **Where a body is set down in `node`** (spec-0083 §7): the `to` mark of every
+/// link whose `to` stands in `node` and whose `from` station stands in another
+/// place — the landings stage 5 matches to the `carry` edges (`DW0934`), read
+/// off the documents by the one enumeration of links that check reads. A link
+/// whose two anchors stand in one place is a move inside it and lands nothing.
+/// Empty for a campaign with no layout graph.
+pub fn landings(campaign: &Campaign, node: &delvewright_dsl::NodeId) -> BTreeSet<String> {
+    let Some(graph) = campaign.layout_graph.as_ref().map(|g| &g.content) else {
+        return BTreeSet::new();
+    };
+    doc_links(campaign)
+        .into_iter()
+        .filter(|l| {
+            node_of(graph, l.to).as_deref() == Some(node.as_str())
+                && node_of(graph, l.from).is_some_and(|a| a != node.as_str())
+        })
+        .map(|l| l.to.to_string())
+        .collect()
+}
+
 /// `DW0934` (spec-0083 §7): the layout graph and the quests disagree about
 /// carries — a `carry` direction no link realises, or a link whose `from`
 /// station and `to` mark stand in two places no `carry` edge joins in that

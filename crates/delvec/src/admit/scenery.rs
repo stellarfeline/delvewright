@@ -37,7 +37,12 @@ use delvewright_dsl::detailplan::DetailPlanContent;
 use delvewright_dsl::layout::LayoutGraphContent;
 use delvewright_dsl::{Envelope, NodeId};
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use delvewright_dsl::Campaign;
+
 use crate::compiler::load::{DETAIL_PLAN_FILE, LAYOUT_GRAPH_FILE};
+use crate::grammar::contract::Arrival;
 use crate::schem::prefab::PrefabMeta;
 
 /// **Whether `node` is scenery in `graph`** (spec-0098 §14): a place the graph
@@ -53,6 +58,68 @@ pub fn is_scenery(graph: &LayoutGraphContent, node: &NodeId) -> bool {
     graph.nodes.iter().any(|n| &n.id == node && !n.reached)
 }
 
+/// **Whether `node` is reached only by being carried** (spec-0083 §7): a
+/// reached place every one of whose body connections is a `carry` edge — at
+/// least one, and no edge the geometry owes a seam ([`Edge::has_seam`]). Such a
+/// place has no seam for its piece's entry to meet; a `vision` edge carries no
+/// body and changes nothing.
+///
+/// [`Edge::has_seam`]: delvewright_dsl::layout::Edge::has_seam
+#[must_use]
+pub fn is_carried_only(graph: &LayoutGraphContent, node: &NodeId) -> bool {
+    use delvewright_dsl::layout::Edge;
+    if !graph.nodes.iter().any(|n| &n.id == node && n.reached) {
+        return false;
+    }
+    let incident: Vec<&Edge> = graph
+        .edges
+        .iter()
+        .filter(|e| e.a() == node || e.b() == node)
+        .collect();
+    incident.iter().any(|e| matches!(e, Edge::Carry { .. }))
+        && !incident.iter().any(|e| e.has_seam())
+}
+
+/// **How a body arrives in `node`** ([`Arrival`]), in the campaign's own
+/// vocabulary: scenery when the graph says `reached: false`; carried when every
+/// body connection is a `carry` edge, set down at the `to` mark of each link
+/// landing in it ([`crate::compiler::link::landings`]); walked otherwise. The
+/// one rule `delvec detail` and the audit ([`place_kind`]) both read the kind
+/// through. A campaign with no layout graph places by `areas[]`, and every
+/// place of it is walked.
+#[must_use]
+pub fn arrival_of(campaign: &Campaign, node: &NodeId) -> Arrival {
+    let Some(graph) = campaign.layout_graph.as_ref().map(|g| &g.content) else {
+        return Arrival::Walked;
+    };
+    if is_scenery(graph, node) {
+        Arrival::Never
+    } else if is_carried_only(graph, node) {
+        Arrival::Carried {
+            landings: crate::compiler::link::landings(campaign, node),
+        }
+    } else {
+        Arrival::Walked
+    }
+}
+
+/// [`arrival_of`], with each landing renamed into the piece's vocabulary
+/// through a row's `anchors` map (campaign name → piece anchor). A landing the
+/// map does not bind keeps its campaign name, so the contract names the anchor
+/// it looked for and did not find.
+#[must_use]
+pub fn arrival_in_piece(arrival: Arrival, anchors: &BTreeMap<String, String>) -> Arrival {
+    match arrival {
+        Arrival::Carried { landings } => Arrival::Carried {
+            landings: landings
+                .into_iter()
+                .map(|l| anchors.get(&l).cloned().unwrap_or(l))
+                .collect::<BTreeSet<String>>(),
+        },
+        other => other,
+    }
+}
+
 /// The directory beside a prefab library that holds the campaigns built
 /// against it.
 pub const CAMPAIGNS_DIR: &str = "campaigns";
@@ -66,6 +133,9 @@ pub struct Owner {
     pub place: String,
     /// Whether that node is scenery in the campaign's layout graph.
     pub scenery: bool,
+    /// How a body arrives at that node, landings named in the piece's
+    /// vocabulary through the row's `anchors` map.
+    pub arrival: Arrival,
 }
 
 /// The place kind derived for one piece, with the evidence it was derived from.
@@ -73,6 +143,10 @@ pub struct Owner {
 pub struct PlaceKind {
     /// Judge the contract sealed.
     pub sealed: bool,
+    /// How the contract's entry is judged: the arrival every owner agrees on,
+    /// or [`Arrival::Walked`] — the strict kind — when they disagree or none
+    /// was consulted.
+    pub arrival: Arrival,
     /// Every row, across every campaign read, that places this piece.
     pub owners: Vec<Owner>,
     /// Campaign directories examined.
@@ -103,9 +177,11 @@ impl PlaceKind {
                         o.campaign,
                         o.place,
                         if o.scenery {
-                            "`reached: false`"
+                            "`reached: false`".to_string()
+                        } else if let Arrival::Carried { .. } = o.arrival {
+                            o.arrival.describe()
                         } else {
-                            "reached"
+                            "reached".to_string()
                         }
                     )
                 })
@@ -129,10 +205,14 @@ impl PlaceKind {
         format!(
             "place kind: {} — {} detail-plan row(s) of {} campaign(s) read place this piece: \
              {rows}{unread}",
-            if self.sealed {
-                "scenery (sealed: built to be seen and never entered)"
-            } else {
-                "reached (strict)"
+            match &self.arrival {
+                Arrival::Never =>
+                    "scenery (sealed: built to be seen and never entered)".to_string(),
+                Arrival::Carried { .. } => format!(
+                    "carried (joined to the map only by `carry` edges; {})",
+                    self.arrival.describe()
+                ),
+                Arrival::Walked => "reached (strict)".to_string(),
             },
             self.owners.len(),
             self.campaigns,
@@ -220,16 +300,51 @@ pub fn place_kind(meta_path: &Path, meta: &PrefabMeta) -> PlaceKind {
         let graph = std::fs::read_to_string(dir.join(LAYOUT_GRAPH_FILE))
             .ok()
             .and_then(|raw| serde_json::from_str::<Envelope<LayoutGraphContent>>(&raw).ok());
+        // A carried place's landings are the quests' links, so the campaign is
+        // read whole only when a row places the piece at one; a campaign that
+        // does not load is named unread and its row judged strictly.
+        let mut loaded: Option<Option<Campaign>> = None;
         for row in rows {
+            let scenery = graph
+                .as_ref()
+                .is_some_and(|g| is_scenery(&g.content, &row.place));
+            let carried = graph
+                .as_ref()
+                .is_some_and(|g| is_carried_only(&g.content, &row.place));
+            let arrival = if scenery {
+                Arrival::Never
+            } else if carried {
+                let campaign = loaded.get_or_insert_with(|| {
+                    crate::compiler::load::load_campaign_dir(&dir)
+                        .ok()
+                        .and_then(|l| crate::compiler::load::parse_loaded(&l).ok())
+                });
+                match campaign {
+                    Some(c) => arrival_in_piece(arrival_of(c, &row.place), &row.anchors),
+                    None => {
+                        if !kind.unread.contains(&name) {
+                            kind.unread.push(name.clone());
+                        }
+                        Arrival::Walked
+                    }
+                }
+            } else {
+                Arrival::Walked
+            };
             kind.owners.push(Owner {
                 campaign: name.clone(),
                 place: row.place.as_str().to_string(),
-                scenery: graph
-                    .as_ref()
-                    .is_some_and(|g| is_scenery(&g.content, &row.place)),
+                scenery,
+                arrival,
             });
         }
     }
     kind.sealed = !kind.owners.is_empty() && kind.owners.iter().all(|o| o.scenery);
+    kind.arrival = match kind.owners.split_first() {
+        Some((first, rest)) if rest.iter().all(|o| o.arrival == first.arrival) => {
+            first.arrival.clone()
+        }
+        _ => Arrival::Walked,
+    };
     kind
 }
