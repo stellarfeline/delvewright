@@ -143,7 +143,9 @@ pub const CORE_EMITTER_INTENSITY: f64 = 13.0;
 /// `LightTexture` writes); the core's lantern is a small emitter whose light
 /// falls off with distance, and the only controls it gives a scene over
 /// emitted light are this global intensity, a per-material `emittance` and the
-/// emitter sampling strategy, which changes noise and not the mean. The scale
+/// emitter sampling strategy, which changes noise and not the mean. Chunky
+/// users close the same gap with the same lever, raising the intensity by eye
+/// (`docs/reference/chunky-lighting-practice.md`, **cited**). The scale
 /// is the one at which the mean display luma of lantern-lit pixels under
 /// [`tone_curve`] equals the game model's: over every pixel of the Treehouse
 /// Camp's twelve showcase frames that lands on a full cube of a single-texture
