@@ -10,7 +10,10 @@
 # absolute paths here so the hook does not depend on where git runs it. The
 # hook lives in the worktree's private git directory and is bound with a
 # per-worktree `core.hooksPath`, so it guards this worktree and no other — the
-# planner's checkout and the siblings' worktrees are untouched.
+# planner's checkout and the siblings' worktrees are untouched. Binding a
+# per-worktree key needs `extensions.worktreeConfig` in the repository's shared
+# config (git's own mechanism for it); that one shared line is set, and changes
+# nothing for a worktree that has no `config.worktree` of its own.
 #
 # The rule itself is the subcommand's; this file only calls it. Exit 0 when the
 # hook is installed, 2 on a usage error.
