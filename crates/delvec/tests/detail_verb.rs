@@ -1577,3 +1577,279 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     });
     refused_strictly(&piece, "a piece no campaign places is judged strictly");
 }
+
+// ---------------------------------------------------------------------------
+// A place reached only by being carried
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture plus `node/skiff`: a box pinned clear of every other
+/// place and joined to the map only by a two-way `carry` edge to the hall,
+/// realised by two links — the hall's bell sets a body down at the skiff's
+/// seat, and the seat sets it back down at the bell (spec-0083 §7). No seam is
+/// allocated to it: a carry edge has none.
+fn carried_fixture(root: &Path) -> (PathBuf, PathBuf) {
+    let (campaign, prefabs) = fixture(root, &[]);
+    let edit = |name: &str, f: &dyn Fn(&mut Value)| {
+        let path = campaign.join(name);
+        let mut doc: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        f(&mut doc);
+        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+    };
+    edit("layout-graph.json", &|g| {
+        let c = &mut g["content"];
+        c["nodes"].as_array_mut().unwrap().push(json!({
+            "id": "node/skiff", "intent": "vessel",
+            "stations": [{"anchor": "anchor/skiff-seat", "kind": "point"}]
+        }));
+        for n in c["nodes"].as_array_mut().unwrap() {
+            if n["id"] == "node/hall" {
+                n["stations"] = json!([{"anchor": "anchor/hall-bell", "kind": "point"}]);
+            }
+        }
+        c["edges"].as_array_mut().unwrap().push(json!({
+            "id": "edge/row", "class": "carry", "a": "node/hall", "b": "node/skiff",
+            "gating": {"flags": ["flag/keeper-yields"]}
+        }));
+    });
+    edit("site-plan.json", &|s| {
+        s["content"]["boxes"].as_array_mut().unwrap().push(json!({
+            "node": "node/skiff", "min": [50, 50], "extent": [6, 6],
+            "floor": {"datum": "datum/grade"}, "ceiling": {"clearance": 4}
+        }));
+    });
+    let link = |id: &str, from: &str, to: &str| {
+        json!({
+            "id": id, "at": from, "on": {"on": "use"}, "once": false,
+            "prop": {"block": "minecraft:lever[face=floor,facing=north]"},
+            "requires_flags": ["flag/keeper-yields"],
+            "effects": [{"type": "teleport",
+                         "from": {"anchor": from, "extent": [1, 1, 1]},
+                         "to": {"anchor": to}}]
+        })
+    };
+    let links = json!([
+        link("trigger/row-out", "anchor/hall-bell", "anchor/skiff-seat"),
+        link("trigger/row-back", "anchor/skiff-seat", "anchor/hall-bell"),
+    ]);
+    edit("quests.json", &|q| q["content"]["triggers"] = links.clone());
+    (campaign, prefabs)
+}
+
+/// **A place joined to the map only by `carry` edges is detailed through the
+/// documented route, entered at its landing** (spec-0083 §7). A carry edge has
+/// no seam, so the skiff is handed none, and its piece's entry meets the mark
+/// the hall's link sets a body down at — `anchor/skiff-seat`, standing on the
+/// entry space's floor — instead of an `exterior` face nothing allocates. The
+/// verb writes the piece and the row, by name and through `--all`, and the
+/// whole builds with them, so the build's derivation stands no stand-in in it.
+///
+/// Red on the engine before this: `contract-well-formed` demanded an
+/// `exterior` traversal edge on the entry space, and `DW0844` refused any face
+/// no seam allocates, so no document could detail the place.
+#[test]
+fn a_carried_place_is_detailed_and_entered_at_its_landing() {
+    let tmp = tempdir("carried");
+    let (campaign, prefabs) = carried_fixture(&tmp);
+    let cs = campaign.to_str().unwrap();
+    let ps = prefabs.to_str().unwrap();
+    let c = common::campaign_at(&campaign);
+    let a = detail::allocation(&c, &NodeId("node/skiff".into())).unwrap();
+    assert!(a.seams.is_empty(), "a carry edge allocates no seam");
+    assert_eq!(
+        a.owed_anchors.iter().cloned().collect::<Vec<_>>(),
+        ["anchor/node-skiff", "anchor/skiff-seat"],
+        "the landing is a station, so the place owes it"
+    );
+    let program = program_for(&a, None, true);
+    assert_eq!(
+        program["contract"]["edges"],
+        json!([]),
+        "no way in from outside"
+    );
+    write_program(&campaign, "node/skiff", &program);
+
+    let out = delvec(&["--prefabs", ps, "detail", cs, "node/skiff"]);
+    assert_eq!(code(&out), 0, "{}", text(&out));
+    let t = text(&out);
+    assert!(
+        t.contains("node/skiff: `prefab/blockout-skiff` written from `programs/skiff.json`"),
+        "{t}"
+    );
+    let report: Value = serde_json::from_str(
+        &std::fs::read_to_string(prefabs.join("blockout-skiff.report.json")).unwrap(),
+    )
+    .unwrap();
+    let gate = |id: &str| {
+        report["gates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|g| g["id"] == id)
+            .unwrap_or_else(|| panic!("{id} in {report}"))
+            .clone()
+    };
+    let wf = gate("contract-well-formed");
+    assert!(
+        wf["detail"]
+            .as_str()
+            .unwrap()
+            .contains("carried in, and its entry space \"room\" holds all 1 landing(s) on floor: anchor/skiff-seat"),
+        "{wf}"
+    );
+    // Its zero exterior faces are stated with the reason, not refused.
+    assert!(
+        report["enumeration"].as_array().unwrap().iter().any(|l| {
+            l.as_str().unwrap().contains(
+                "`contract-exterior-faces` is not emitted over this piece: 0 exterior edge(s): \
+                 the place is carried in, set down at `anchor/skiff-seat`",
+            )
+        }),
+        "{report}"
+    );
+    let rows = detail_plan(&campaign)["content"]["details"].clone();
+    assert_eq!(rows[0]["place"], "node/skiff");
+    assert_eq!(rows[0]["anchors"]["anchor/skiff-seat"], "anchor/skiff-seat");
+
+    // The documented route over the whole: `--all` details it too, and moves
+    // no byte on the rerun.
+    let before = (snapshot(&prefabs), snapshot(&campaign));
+    let all = delvec(&["--prefabs", ps, "detail", cs, "--all"]);
+    assert_eq!(code(&all), 0, "{}", text(&all));
+    assert!(
+        text(&all).contains("detail: 1 place(s) detailed of 1 named"),
+        "{}",
+        text(&all)
+    );
+    assert_eq!(before, (snapshot(&prefabs), snapshot(&campaign)));
+
+    // The build's own record: the skiff is filled by its piece, not massed.
+    let out_dir = tmp.join("out");
+    let built = delvec(&[
+        "--prefabs",
+        ps,
+        "build",
+        cs,
+        "-o",
+        out_dir.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&built), 0, "{}", text(&built));
+    let blockout: Value = serde_json::from_str(
+        &std::fs::read_to_string(out_dir.join("validation/blockout.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        !blockout["massed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n == "node/skiff"),
+        "{blockout}"
+    );
+}
+
+/// **A carried place's piece still owes what a carried place has** — a refusal
+/// fires where it should. A way in from outside on a place no seam reaches is
+/// an opening facing nothing, refused by the contract before `DW0844` would
+/// meet it at the assembly; and the landing the link sets a body down at must
+/// stand on the entry space's floor, so a piece that does not mark it there is
+/// refused naming the landing.
+#[test]
+fn a_carried_place_with_a_way_in_from_outside_or_no_landing_is_refused() {
+    let tmp = tempdir("carried-refused");
+    let (campaign, prefabs) = carried_fixture(&tmp);
+    let c = common::campaign_at(&campaign);
+    let a = detail::allocation(&c, &NodeId("node/skiff".into())).unwrap();
+    let args = [
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        campaign.to_str().unwrap(),
+        "node/skiff",
+    ];
+
+    // An `exterior` walk edge whose space reaches the piece's outer face: a
+    // face no seam meets.
+    let mut faced = program_for(&a, None, true);
+    faced["contract"]["edges"] = json!([{"a": "exterior", "b": "room", "class": "walk"}]);
+    write_program(&campaign, "node/skiff", &faced);
+    let t = refused(&campaign, &prefabs, &args);
+    assert!(
+        t.contains("joined to the map only by `carry` edges, which have no seam, and edge exterior--walk--room claims a way in from outside"),
+        "{t}"
+    );
+
+    // No mark at all: the landing is not in the piece.
+    write_program(&campaign, "node/skiff", &program_for(&a, None, false));
+    let t = refused(&campaign, &prefabs, &args);
+    assert!(
+        t.contains("a link sets a body down at `anchor/skiff-seat` in this place, and the piece marks no anchor of that name"),
+        "{t}"
+    );
+}
+
+/// **The audit judges a carried piece exactly as its writer did.** `delvec
+/// prefab audit` derives the place kind from the campaigns beside the library,
+/// the same rule `delvec detail` reads it through: the skiff's piece is judged
+/// carried, entered at the landing its row binds, and passes. With the row
+/// placing it removed no campaign places it, and the strict judgement refuses
+/// it for claiming no way in.
+#[test]
+fn the_audit_judges_a_carried_piece_as_its_writer_did() {
+    let tmp = tempdir("audit-carried");
+    let (campaign, prefabs) = carried_fixture(&tmp);
+    let campaigns = tmp.join("campaigns");
+    std::fs::create_dir_all(&campaigns).unwrap();
+    let dir = campaigns.join("blockout");
+    std::fs::rename(&campaign, &dir).unwrap();
+    let c = common::campaign_at(&dir);
+    let a = detail::allocation(&c, &NodeId("node/skiff".into())).unwrap();
+    write_program(&dir, "node/skiff", &program_for(&a, None, true));
+    let out = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        dir.to_str().unwrap(),
+        "node/skiff",
+    ]);
+    assert_eq!(code(&out), 0, "the writer passes the skiff: {}", text(&out));
+    let piece = prefabs.join("blockout-skiff.nbt");
+    let audit = || delvec(&["prefab", "audit", piece.to_str().unwrap()]);
+
+    let out = audit();
+    let t = text(&out);
+    assert_eq!(code(&out), 0, "the audit agrees with the writer: {t}");
+    assert!(
+        t.contains("place kind: carried")
+            && t.contains(
+                "`blockout` at `node/skiff` (carried in, set down at `anchor/skiff-seat`)"
+            ),
+        "the kind is stated with the row it came from: {t}"
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).expect("the report is JSON");
+    assert_eq!(
+        report["contract"]["carried"], true,
+        "{}",
+        report["contract"]
+    );
+    assert_eq!(
+        report["contract"]["sealed"], false,
+        "{}",
+        report["contract"]
+    );
+
+    common::patch_file(&dir.join("detail-plan.json"), |v| {
+        v["content"]["details"] = json!([]);
+    });
+    let out = audit();
+    let t = text(&out);
+    assert_eq!(
+        code(&out),
+        1,
+        "a piece no campaign places is judged strictly: {t}"
+    );
+    assert!(
+        t.contains("place kind: reached (strict)") && t.contains("claims no way in"),
+        "{t}"
+    );
+}

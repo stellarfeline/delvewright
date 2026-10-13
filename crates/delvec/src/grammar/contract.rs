@@ -376,12 +376,70 @@ struct Element {
     cells: BTreeSet<[i32; 3]>,
 }
 
+/// **How a body arrives in the place a piece fills** — the place's kind, which
+/// decides what the piece's entry has to meet.
+///
+/// Derived from the campaign that places the piece (the layout graph, the site
+/// plan's seams and the quests' links, `crate::admit::scenery::arrival_of`),
+/// handed by `delvec detail` and derived the same way by `delvec prefab audit`,
+/// never the piece's own word: a kind relaxes an obligation, and a field a piece
+/// writes about itself is a property a defective piece can supply.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Arrival {
+    /// Walked in through the seams the site plan allocates: the entry space
+    /// carries an `exterior` edge of a traversal class, which the assembly
+    /// meets with an allocated seam (`DW0844`). The strict kind, and the
+    /// default.
+    #[default]
+    Walked,
+    /// **Carried in** (spec-0083 §7): the place's only connections are `carry`
+    /// edges, which have no seam, so no face of the piece meets anything. A body
+    /// arrives where a link sets it down — each link's `to` mark standing in
+    /// this place — so the entry space holds every one of those marks, on floor
+    /// a body stands on, and the piece claims no way in from outside. The
+    /// landings are the piece's own anchor names.
+    Carried {
+        /// The piece anchors a link sets a body down at, by exported name.
+        landings: BTreeSet<String>,
+    },
+    /// **Scenery** (`reached: false`, spec-0098 §14): built to be seen and
+    /// never entered, so the piece claims no way in and owes no floor.
+    Never,
+}
+
+impl Arrival {
+    /// Whether the place is scenery.
+    pub fn is_scenery(&self) -> bool {
+        matches!(self, Arrival::Never)
+    }
+
+    /// The kind as a reader of a verdict names it.
+    pub fn describe(&self) -> String {
+        match self {
+            Arrival::Walked => "walked in through its seams".to_string(),
+            Arrival::Carried { landings } => format!(
+                "carried in, set down at {}",
+                if landings.is_empty() {
+                    "no mark".to_string()
+                } else {
+                    landings
+                        .iter()
+                        .map(|l| format!("`{l}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
+            ),
+            Arrival::Never => "scenery, never entered".to_string(),
+        }
+    }
+}
+
 /// The contract, resolved into cell sets once so every obligation reads the same
 /// ones.
 struct Index<'a> {
     contract: &'a SpatialContract,
-    /// The piece's place is scenery: it claims no way in (see [`check_sealed`]).
-    sealed: bool,
+    /// How a body arrives in the piece's place (see [`check_arriving`]).
+    arrival: Arrival,
     /// Space name → cells.
     space_cells: BTreeMap<&'a str, BTreeSet<[i32; 3]>>,
     /// Out-of-walk region name → cells.
@@ -422,7 +480,7 @@ impl<'a> Index<'a> {
         let all_no_body_cells = no_body_cells.values().flatten().copied().collect();
         Index {
             contract,
-            sealed: false,
+            arrival: Arrival::Walked,
             space_cells,
             no_body_cells,
             via_cells,
@@ -441,6 +499,11 @@ impl<'a> Index<'a> {
                 })
                 .collect(),
         }
+    }
+
+    /// The piece's place is scenery: it claims no way in and owes no floor.
+    fn sealed(&self) -> bool {
+        self.arrival.is_scenery()
     }
 
     /// A space's cells, or an empty set for `exterior` / an undeclared name.
@@ -518,7 +581,7 @@ fn shell(set: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
 /// so the defect cannot reach this: a reached place's floor is still owed a
 /// declaration, and a reached place with nowhere to stand is still refused.
 fn scenery_zero(ix: &Index) -> Option<String> {
-    ix.sealed.then(|| {
+    ix.sealed().then(|| {
         format!(
             "the place is scenery (`reached: false`), built to be seen and never entered, and \
              none of the piece's {} standable cell(s) is stood in: there is no floor for this \
@@ -571,31 +634,38 @@ pub fn check(
     contract: &SpatialContract,
     anchors: &BTreeMap<String, [i32; 3]>,
 ) -> ContractReport {
-    check_sealed(model, contract, anchors, false)
+    check_arriving(model, contract, anchors, &Arrival::Walked)
 }
 
-/// [`check`] for a piece whose place is **scenery** (`reached: false`,
-/// spec-0098 §14) when `sealed`: the place is built to be seen and never
-/// entered, so the piece claims no way in — its entry carries no `exterior`
-/// edge of a traversal class, and declaring one is the contradiction this
-/// refuses — and its zero exterior faces are stated, not refused. The kind is
-/// the place's (the layout graph's `reached`, read through
-/// `admit::scenery::is_scenery`), handed by `delvec detail` and derived
-/// the same way by `delvec prefab audit` (`crate::admit::scenery`), never the
-/// piece's own word.
-pub fn check_sealed(
+/// [`check`] for a piece whose place a body arrives in as `arrival` says.
+///
+/// * [`Arrival::Walked`] — the strict judgement: the entry carries an
+///   `exterior` edge of a traversal class.
+/// * [`Arrival::Carried`] — the place is joined to the map only by `carry`
+///   edges, which have no seam: the piece claims no way in from outside
+///   (declaring one is an opening nothing meets, refused here), and its entry
+///   space holds every landing mark on floor a body stands on. Its zero exterior
+///   faces are stated, not refused.
+/// * [`Arrival::Never`] — **scenery** (`reached: false`, spec-0098 §14): built
+///   to be seen and never entered, so the piece claims no way in and its zero
+///   exterior faces are stated, not refused.
+///
+/// The kind is the place's, handed by `delvec detail` and derived the same way
+/// by `delvec prefab audit` (`crate::admit::scenery`), never the piece's own
+/// word.
+pub fn check_arriving(
     model: &VoxelModel,
     contract: &SpatialContract,
     anchors: &BTreeMap<String, [i32; 3]>,
-    sealed: bool,
+    arrival: &Arrival,
 ) -> ContractReport {
     let mut ix = Index::new(model, contract);
-    ix.sealed = sealed;
+    ix.arrival = arrival.clone();
     let mut gates = Vec::new();
     let mut findings = Vec::new();
     let mut enumeration = Vec::new();
 
-    gates.push(well_formed(&ix, model));
+    gates.push(well_formed(&ix, model, anchors));
     gates.push(coverage(&ix));
     gates.push(closure(&ix, model, &mut enumeration));
     gates.push(edge_proof(&ix, model, &mut enumeration));
@@ -631,10 +701,70 @@ pub fn check_sealed(
 
 // --- §2.1 well-formed ------------------------------------------------------
 
-fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
+/// **What a carried place's entry owes** (spec-0083 §7): the place is joined to
+/// the map only by `carry` edges, and a carry edge has no seam, so nothing
+/// meets a face of the piece. Its way in is where a link sets a body down —
+/// each link's `to` mark standing in this place, the landing stage 5 matches
+/// to the carry edge (`DW0934`). So the piece claims no way in from outside (a
+/// traversal face would be an opening no seam meets, which `DW0844` refuses at
+/// the assembly), names at least one landing, and stands every landing on floor
+/// of its entry space.
+fn carried_entry(
+    ix: &Index,
+    anchors: &BTreeMap<String, [i32; 3]>,
+    landings: &BTreeSet<String>,
+    bad: &mut Vec<String>,
+) {
+    let contract = ix.contract;
+    for e in contract
+        .edges
+        .iter()
+        .filter(|e| is_traversal(&e.class) && (e.a == EXTERIOR || e.b == EXTERIOR))
+    {
+        bad.push(format!(
+            "the piece's place is joined to the map only by `carry` edges, which have no seam, \
+             and edge {}--{}--{} claims a way in from outside: an opening no seam meets. A body \
+             arrives here where a link sets it down; seal the face, or allocate the connection \
+             in the layout graph and the site plan",
+            e.a, e.class, e.b
+        ));
+    }
+    if landings.is_empty() {
+        bad.push(format!(
+            "the piece's place is joined to the map only by `carry` edges, and no link sets a \
+             body down at a mark of it, so the entry space {:?} meets nothing: a carried place \
+             is entered where a link's `to` mark stands",
+            contract.entry
+        ));
+    }
+    let floor = ix.standable_in(&contract.entry);
+    for name in landings {
+        match anchors.get(name) {
+            None => bad.push(format!(
+                "a link sets a body down at `{name}` in this place, and the piece marks no anchor \
+                 of that name: a carried place's way in is its landing, so the piece marks it in \
+                 its entry space {:?}",
+                contract.entry
+            )),
+            Some(pos) if !floor.contains(pos) => bad.push(format!(
+                "a link sets a body down at `{name}`, which the piece marks at [{},{},{}] — not \
+                 a cell a body stands on in the entry space {:?}. A carried place is entered at \
+                 its landing, so the landing stands on floor of the entry space",
+                pos[0], pos[1], pos[2], contract.entry
+            )),
+            Some(_) => {}
+        }
+    }
+}
+
+fn well_formed(ix: &Index, model: &VoxelModel, anchors: &BTreeMap<String, [i32; 3]>) -> Gate {
     let contract = ix.contract;
     let mut bad: Vec<String> = Vec::new();
-    let bound = contract.spaces.len() + contract.no_body.len() + contract.edges.len();
+    let landed = match &ix.arrival {
+        Arrival::Carried { landings } => landings.len(),
+        _ => 0,
+    };
+    let bound = contract.spaces.len() + contract.no_body.len() + contract.edges.len() + landed;
 
     // The entry is a declared space, and the piece is enterable where it says.
     if !contract.spaces.contains_key(&contract.entry) {
@@ -642,7 +772,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             "`entry` names {:?}, which is not a declared space",
             contract.entry
         ));
-    } else if ix.sealed {
+    } else if ix.sealed() {
         if let Some(e) = contract
             .edges
             .iter()
@@ -654,6 +784,8 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                 e.a, e.class, e.b
             ));
         }
+    } else if let Arrival::Carried { landings } = &ix.arrival {
+        carried_entry(ix, anchors, landings, &mut bad);
     } else if !contract.edges.iter().any(|e| {
         is_traversal(&e.class)
             && ((e.a == contract.entry && e.b == EXTERIOR)
@@ -944,7 +1076,16 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                 contract.spaces.len(),
                 contract.no_body.len(),
                 contract.edges.len()
-            )
+            ) + &match &ix.arrival {
+                Arrival::Carried { landings } => format!(
+                    "; the place is carried in, and its entry space {:?} holds all {} landing(s) \
+                     on floor: {}",
+                    contract.entry,
+                    landings.len(),
+                    landings.iter().cloned().collect::<Vec<_>>().join(", ")
+                ),
+                _ => String::new(),
+            }
         } else {
             bad.join(" · ")
         },
@@ -2360,7 +2501,7 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
 
     Gate {
         id: "contract-reachability",
-        state: verdict(unreached.is_empty() && (!targets.is_empty() || ix.sealed)),
+        state: verdict(unreached.is_empty() && (!targets.is_empty() || ix.sealed())),
         undecided: 0,
         empty_ok: targets.is_empty().then(|| scenery_zero(ix)).flatten(),
         bound: targets.len(),
@@ -2765,11 +2906,19 @@ fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<Str
         id: "contract-exterior-faces",
         state: verdict(silent.is_empty()),
         undecided: 0,
-        empty_ok: (ix.sealed && declared == 0).then(|| {
-            "0 exterior edge(s): the place is scenery, built to be seen and never entered, so \
-             the piece claims no way in"
-                .to_string()
-        }),
+        empty_ok: match (&ix.arrival, declared) {
+            (Arrival::Never, 0) => Some(
+                "0 exterior edge(s): the place is scenery, built to be seen and never entered, \
+                 so the piece claims no way in"
+                    .to_string(),
+            ),
+            (Arrival::Carried { .. }, 0) => Some(format!(
+                "0 exterior edge(s): the place is {} — joined to the map only by `carry` \
+                 edges, which have no seam — so the piece claims no way in from outside",
+                ix.arrival.describe()
+            )),
+            _ => None,
+        },
         bound: declared,
         detail: if !silent.is_empty() {
             silent.join(" · ")

@@ -116,11 +116,12 @@ pub struct ExpandOptions {
     /// changes nothing about the expansion — the program already carries the
     /// values — and everything about what the export can honestly record.
     pub overrides: Overrides,
-    /// The place this expansion fills is **scenery** (`reached: false`,
-    /// spec-0098 §14): built to be seen and never entered, so its contract is
-    /// judged sealed — no way in is claimed. Set by `delvec detail` from the
-    /// layout graph, the place's kind, never the piece's own word.
-    pub sealed: bool,
+    /// How a body arrives in the place this expansion fills
+    /// ([`crate::grammar::contract::Arrival`]): walked in through its seams
+    /// (the default), carried in only by `carry` edges, or never — scenery
+    /// (`reached: false`, spec-0098 §14). Set by `delvec detail` from the
+    /// campaign, the place's kind, never the piece's own word.
+    pub arrival: crate::grammar::contract::Arrival,
 }
 
 impl ExpandOptions {
@@ -132,7 +133,7 @@ impl ExpandOptions {
             limits: Limits::default(),
             orientation: Orientation::IDENTITY,
             overrides: Overrides::none(),
-            sealed: false,
+            arrival: crate::grammar::contract::Arrival::Walked,
         }
     }
 
@@ -431,8 +432,9 @@ pub struct Expansion {
     pub stats: Stats,
     /// The orientation-sensitive fills seen, and which were unguarded.
     pub oriented: OrientedFillAudit,
-    /// Carried from [`ExpandOptions::sealed`]: the contract is judged sealed.
-    pub sealed: bool,
+    /// Carried from [`ExpandOptions::arrival`]: how the contract's entry is
+    /// judged.
+    pub arrival: crate::grammar::contract::Arrival,
 }
 
 /// The scope at a refusal site, in the terms guards read it.
@@ -941,7 +943,7 @@ pub fn expand(
             unguarded: expander.oriented_unguarded.into_iter().collect(),
             undecided: expander.oriented_undecided.into_iter().collect(),
         },
-        sealed: options.sealed,
+        arrival: options.arrival.clone(),
     })
 }
 
