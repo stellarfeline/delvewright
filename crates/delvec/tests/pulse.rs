@@ -769,7 +769,11 @@ fn each_template_counts_only_what_its_own_call_scheduled() {
     assert_eq!(keys.len(), 3, "templates: {keys:?}");
     for k in keys {
         let t = text(&out, k).unwrap();
-        let file = k.rsplit('/').next().unwrap().trim_end_matches(".mcfunction");
+        let file = k
+            .rsplit('/')
+            .next()
+            .unwrap()
+            .trim_end_matches(".mcfunction");
         let s = file.trim_start_matches("pulse_").trim_end_matches("_shut");
         let lines: Vec<&str> = t.lines().collect();
         let empty = format!("schedule clear hello-world:pulse_{s}");
