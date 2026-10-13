@@ -96,4 +96,4 @@ The full inventory — every binary, script and flag that exists today — is
   mode. It reclaims what the project owns — containers, volumes and networks —
   and proves it. The `--profile play` stack from step 13 pins a fixed container
   name, so tear that one down with `docker compose … down -v` or
-  `$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh down` rather than with `fresh-volumes.sh`.
+  `$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh down` rather than with `fresh-volumes.sh` (`down` keeps the playtest images that make the next `up` a reopen; `down --prune` removes them).

@@ -2056,9 +2056,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   pins 15. Every other key is left at the host default *on purpose*, and the
   distinction that matters is that a delve has two boot paths with two different
   default sources: the shipped image starts from the itzg base's own
-  `/image/server.properties` template, the owner's playtest server
-  (`tools/creator/playtest-server.sh`, `OVERRIDE_SERVER_PROPERTIES=false`) copies the
-  build's file in and lets the vanilla jar fill the rest. Measured on both paths
+  `/image/server.properties` template — and so does the owner's playtest server
+  on a campaign, which runs a kept image built over the shipped one — while
+  `tools/creator/playtest-server.sh` on a prefab (`OVERRIDE_SERVER_PROPERTIES=false`)
+  copies the build's file in and lets the vanilla jar fill the rest. Measured on both paths
   against the pinned version, the 55 unpinned keys resolve as follows.
   - **Diverge between the paths, harmless**: `enable-rcon` (image on, playtest
     server off until `playtest-server.sh` appends its own), `rcon.password` and
@@ -2105,10 +2106,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   operator named it. The validation compose serves the build output from a
   `pack` sidecar (busybox httpd, `versions.toml` `[images.pack_server]`) at
   `http://pack:8000/resourcepack.zip`; `tools/creator/playtest-server.sh`
-  serves it from `<name>-pack` on `127.0.0.1:25580` and writes
-  `resource-pack`, `resource-pack-sha1` and `resource-pack-prompt` into the
-  staged file (it runs with `OVERRIDE_SERVER_PROPERTIES=false`, under which
-  itzg applies none of its variables). `validation/owner-play.yaml` does not
+  serves it from `<name>-pack` on `127.0.0.1:25580` — on a campaign through
+  `DELVE_RESOURCE_PACK_URL` to the delve image's entrypoint, on a prefab by
+  writing `resource-pack`, `resource-pack-sha1` and `resource-pack-prompt` into
+  the staged file (that path runs with `OVERRIDE_SERVER_PROPERTIES=false`, under
+  which itzg applies none of its variables). `validation/owner-play.yaml` does not
   yet publish the sidecar on the loopback (`tools/ci/check-compose-isolation.py`
   admits one fixed binding there), so a host client joining through that hand
   path is pushed an address it cannot reach.

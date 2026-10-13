@@ -114,6 +114,11 @@
 #
 # ## The delve's resource pack is SERVED, never installed (spec-0084 §11)
 #
+# (What follows is the prefab path's staging. On a campaign the sidecar serves
+# the pack copied out of the playtest image, and the URL reaches the server as
+# DELVE_RESOURCE_PACK_URL, which the delve image's entrypoint turns into
+# `resource-pack` with the manifest's SHA-1.)
+#
 # A pack copied into a player's own `resourcepacks/` stays enabled in every world
 # and server they open until they find the toggle — a delve that replaces the
 # moon would replace it everywhere. Served, it applies while the player is
@@ -132,8 +137,9 @@
 # in the copied file as it stands. DELVEWRIGHT_RESOURCEPACKS_DIR is never
 # written: when it is set, this says so and leaves it alone.
 #
-# The container is a throwaway itzg/minecraft-server pinned to the project MC
-# version. It binds host 25565 — with `validation/owner-play.yaml`, one of the two
+# A campaign's container runs its playtest image (above); a prefab's is a
+# throwaway itzg/minecraft-server pinned to the project MC version over a
+# staged /data. Either binds host 25565 — with `validation/owner-play.yaml`, one of the two
 # sanctioned 25565 bindings; nothing else in the repo may publish that port
 # (`tools/ci/check-compose-isolation.py`, and validation ladders are project-scoped
 # with no host port at all). Because 25565 is the one genuinely shared resource
