@@ -39,7 +39,9 @@ CAMERA = "east-bay-after-the-muster"
 STEP = "obj/clear-the-muster"
 KEY = "after-obj-clear-the-muster"
 
-WORLD = re.compile(r"^world: (\S+) (\d+) chunk\(s\), (\d+) cell\(s\), sha256 ([0-9a-f]{64}) -> (.+)$", re.M)
+WORLD = re.compile(
+    r"^world: (\S+) (\d+) chunk\(s\), (\d+) cell\(s\), (\d+) ground cell\(s\), sha256 ([0-9a-f]{64}) -> (.+)$", re.M
+)
 AFTER = re.compile(rf"^after: {re.escape(CAMERA)} (?:at load|after (\S+) .*?: (\d+) cells moved from load)", re.M)
 
 
@@ -58,7 +60,10 @@ def run(delvec: Path, prefabs: Path, build: Path, campaign: Path, out: Path) -> 
     )
     if r.returncode != 0:
         fail(f"`delvec cameras` exited {r.returncode} over {campaign}:\n{r.stdout}{r.stderr}")
-    worlds = {m.group(1): {"chunks": int(m.group(2)), "cells": int(m.group(3)), "sha256": m.group(4)} for m in WORLD.finditer(r.stderr)}
+    worlds = {
+        m.group(1): {"chunks": int(m.group(2)), "cells": int(m.group(3)), "ground": int(m.group(4)), "sha256": m.group(5)}
+        for m in WORLD.finditer(r.stderr)
+    }
     m = AFTER.search(r.stderr)
     if not m:
         fail(f"`delvec cameras` printed no `after:` line for `{CAMERA}`:\n{r.stderr}")
@@ -100,7 +105,7 @@ def main(argv: list[str]) -> int:
     primary = run(a.delvec, a.prefabs, a.build_out, GALLERY, a.work / "primary")
     print(f"primary: {primary['summary']}")
     for key, w in sorted(primary["worlds"].items()):
-        print(f"  world {key}: {w['chunks']} chunk(s), {w['cells']} cell(s), sha256 {w['sha256']}")
+        print(f"  world {key}: {w['chunks']} chunk(s), {w['cells']} cell(s), {w['ground']} ground cell(s), sha256 {w['sha256']}")
     if sorted(primary["worlds"]) != sorted(["at-load", KEY]):
         fail(f"the gallery writes worlds {sorted(primary['worlds'])}, not ['at-load', '{KEY}']")
     if primary["step"] != STEP or primary["moved"] <= 0:

@@ -56,13 +56,85 @@ pub const ZLIB_LEVEL: u32 = 6;
 /// The region-file sector, bytes.
 const SECTOR: usize = 4096;
 
+/// **What a cell no build write reached holds**: the level generator's own
+/// block, which the server keeps wherever the datapack writes nothing.
+///
+/// Under `horizon: ocean` that is the pinned superflat stack
+/// ([`crate::compiler::plan::ocean_layer_at`]: bedrock, stone to the sea floor,
+/// water to sea level); under `void` and `valley` the stack is empty and every
+/// such cell is air. Which cells a write reached is the assembled world's
+/// [`crate::compiler::assembled::Reached`], widened by the caller with what the
+/// configuration's own writes and the shipped setup writes reach.
+#[derive(Clone)]
+pub struct Ground {
+    /// The generator's block at a height, or `None` where it lays air.
+    layer: Option<fn(i32) -> Option<&'static str>>,
+    /// The cells a write reached: the generator does not show through them.
+    reached: crate::compiler::assembled::Reached,
+}
+
+impl Ground {
+    /// A generator that lays nothing (`void`, `valley`): every cell no write
+    /// reached is air.
+    pub fn void() -> Ground {
+        Ground {
+            layer: None,
+            reached: Default::default(),
+        }
+    }
+
+    /// The ground a horizon base's generator lays, under the cells `reached`.
+    pub fn of_base(
+        base: delvewright_dsl::HorizonBase,
+        reached: crate::compiler::assembled::Reached,
+    ) -> Ground {
+        let layer: Option<fn(i32) -> Option<&'static str>> = match base {
+            delvewright_dsl::HorizonBase::Ocean => Some(crate::compiler::plan::ocean_layer_at),
+            delvewright_dsl::HorizonBase::Void | delvewright_dsl::HorizonBase::Valley => None,
+        };
+        Ground { layer, reached }
+    }
+
+    /// Mark a cell a write reached (a configuration's laid write, a setup write).
+    pub fn mark(&mut self, c: [i32; 3]) {
+        self.reached.mark(c);
+    }
+
+    /// Mark every cell of the inclusive box `a..=b` reached.
+    pub fn mark_box(&mut self, a: [i32; 3], b: [i32; 3]) {
+        self.reached.mark_box(a, b);
+    }
+
+    /// The generator's block at `c`, when no write reached it and the
+    /// generator lays a block there.
+    pub fn at(&self, c: [i32; 3]) -> Option<&'static str> {
+        let layer = self.layer?;
+        if self.reached.contains(c) {
+            return None;
+        }
+        layer(c[1])
+    }
+
+    /// The sections, bottom up, the generator can lay a block in: every
+    /// written chunk carries them, as every chunk of the server's world does.
+    fn sections(&self) -> Vec<i32> {
+        match self.layer {
+            Some(_) => (MIN_SECTION..=crate::compiler::assembled::Reached::CEILING.div_euclid(16))
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+}
+
 /// What a write produced, for the binding line (spec-0089 §7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrittenWorld {
     /// Chunks written.
     pub chunks: usize,
-    /// Non-air cells written.
+    /// Non-air cells written from the block map.
     pub cells: usize,
+    /// Cells holding the generator's block ([`Ground`]): no write reached them.
+    pub ground: usize,
     /// sha-256 over the region files' bytes, in file-name order.
     pub sha256: String,
     /// `(relative path, bytes)` of every file, `level.dat` first then the
@@ -212,15 +284,20 @@ fn palette_entry(text: &str) -> Tag {
 }
 
 /// A palette and its packed indices: first-seen order over `cells`.
-fn paletted(cells: impl Iterator<Item = String>, floor: u32) -> Tag {
+fn paletted<S: AsRef<str>>(cells: impl Iterator<Item = S>, floor: u32) -> Tag {
     let mut palette: Vec<String> = Vec::new();
     let mut index: BTreeMap<String, usize> = BTreeMap::new();
     let mut indices = Vec::new();
     for c in cells {
-        let i = *index.entry(c.clone()).or_insert_with(|| {
-            palette.push(c);
-            palette.len() - 1
-        });
+        let c = c.as_ref();
+        let i = match index.get(c) {
+            Some(i) => *i,
+            None => {
+                palette.push(c.to_string());
+                index.insert(c.to_string(), palette.len() - 1);
+                palette.len() - 1
+            }
+        };
         indices.push(i);
     }
     let mut entries: Vec<(&str, Tag)> = Vec::new();
@@ -261,6 +338,7 @@ pub fn encode(
     blocks: &BlockMap,
     biome: &dyn Fn([i32; 3]) -> String,
     spawn: [i32; 3],
+    ground: &Ground,
 ) -> WrittenWorld {
     // chunk (cx, cz) -> section Y -> present.
     let mut chunks: BTreeMap<(i32, i32), BTreeMap<i32, ()>> = BTreeMap::new();
@@ -275,6 +353,14 @@ pub fn encode(
             .or_default()
             .insert(c[1].div_euclid(16), ());
     }
+    // Every written chunk carries the sections the generator lays a block in,
+    // as every chunk of the server's world does.
+    for sections in chunks.values_mut() {
+        for sy in ground.sections() {
+            sections.insert(sy, ());
+        }
+    }
+    let mut ground_cells = 0usize;
     // region (rx, rz) -> chunk index -> payload.
     let mut regions: BTreeMap<(i32, i32), BTreeMap<usize, Vec<u8>>> = BTreeMap::new();
     for ((cx, cz), sections) in &chunks {
@@ -282,12 +368,21 @@ pub fn encode(
             .keys()
             .map(|sy| {
                 let (x0, y0, z0) = (cx * 16, sy * 16, cz * 16);
-                let block_cells = (0..4096).map(|i| {
-                    let cell = [x0 + (i % 16), y0 + i / 256, z0 + ((i / 16) % 16)];
-                    blocks
-                        .get(&cell)
-                        .map_or_else(|| AIR.to_string(), |s| s.as_str().to_string())
-                });
+                let block_cells: Vec<&str> = (0..4096)
+                    .map(|i| {
+                        let cell = [x0 + (i % 16), y0 + i / 256, z0 + ((i / 16) % 16)];
+                        match blocks.get(&cell) {
+                            Some(s) => s.as_str(),
+                            None => match ground.at(cell) {
+                                Some(g) => {
+                                    ground_cells += 1;
+                                    g
+                                }
+                                None => AIR,
+                            },
+                        }
+                    })
+                    .collect();
                 let biome_cells = (0..64).map(|i| {
                     biome([
                         x0 + 4 * (i % 4) + 2,
@@ -301,7 +396,7 @@ pub fn encode(
                     // chunk as empty (measured: an empty frame at rms 33.7
                     // against the server save's frame).
                     ("Y", Tag::Byte(*sy as i8)),
-                    ("block_states", paletted(block_cells, 4)),
+                    ("block_states", paletted(block_cells.into_iter(), 4)),
                     ("biomes", paletted(biome_cells, 0)),
                 ])
             })
@@ -339,6 +434,7 @@ pub fn encode(
     WrittenWorld {
         chunks: chunks.len(),
         cells,
+        ground: ground_cells,
         sha256: format!("{:x}", hasher.finalize()),
         files,
     }
@@ -395,9 +491,10 @@ pub fn write(
     blocks: &BlockMap,
     biome: &dyn Fn([i32; 3]) -> String,
     spawn: [i32; 3],
+    ground: &Ground,
     dir: &Path,
 ) -> std::io::Result<WrittenWorld> {
-    let w = encode(blocks, biome, spawn);
+    let w = encode(blocks, biome, spawn, ground);
     let region = dir.join("region");
     if region.is_dir() {
         for e in std::fs::read_dir(&region)? {
@@ -459,6 +556,38 @@ mod tests {
     }
 
     #[test]
+    fn the_ocean_ground_shows_through_only_where_no_write_reached() {
+        let mut reached = crate::compiler::assembled::Reached::default();
+        reached.mark([0, 58, 0]);
+        reached.mark_box([2, 40, 2], [3, 41, 3]);
+        let g = Ground::of_base(delvewright_dsl::HorizonBase::Ocean, reached);
+        assert_eq!(g.at([0, 58, 0]), None, "a written cell keeps its write");
+        assert_eq!(g.at([0, 57, 0]), Some("minecraft:water"));
+        assert_eq!(g.at([0, 62, 0]), Some("minecraft:water"));
+        assert_eq!(g.at([0, 63, 0]), None, "air above the stack");
+        assert_eq!(g.at([0, 54, 0]), Some("minecraft:stone"));
+        assert_eq!(g.at([0, -64, 0]), Some("minecraft:bedrock"));
+        assert_eq!(g.at([3, 41, 2]), None);
+        assert_eq!(g.at([3, 42, 2]), Some("minecraft:stone"));
+        let void = Ground::of_base(delvewright_dsl::HorizonBase::Void, Default::default());
+        assert_eq!(void.at([0, 57, 0]), None);
+        // The writer: one cell written at y 70 carries the stack under it, down
+        // to the build floor, everywhere no write reached.
+        let mut m = BlockMap::new();
+        m.insert([1, 70, 1], BlockState::new("minecraft:stone"));
+        let w = encode(&m, &|_| "minecraft:ocean".to_string(), [0, 71, 0], &g);
+        // 16x16 columns of 127 layers, less the three cells reached above.
+        assert_eq!(w.ground, 256 * 127 - 1 - 8, "{}", w.ground);
+        let v = encode(
+            &m,
+            &|_| "minecraft:ocean".to_string(),
+            [0, 71, 0],
+            &Ground::void(),
+        );
+        assert_eq!(v.ground, 0);
+    }
+
+    #[test]
     fn two_writes_are_byte_identical_and_hold_no_clock() {
         let mut m = BlockMap::new();
         m.insert([0, 64, 0], BlockState::new("minecraft:stone"));
@@ -467,8 +596,8 @@ mod tests {
             BlockState::new("minecraft:oak_stairs[facing=east,half=top]"),
         );
         let b = |_c: [i32; 3]| "minecraft:plains".to_string();
-        let a = encode(&m, &b, [0, 65, 0]);
-        let c = encode(&m, &b, [0, 65, 0]);
+        let a = encode(&m, &b, [0, 65, 0], &Ground::void());
+        let c = encode(&m, &b, [0, 65, 0], &Ground::void());
         assert_eq!(a, c);
         assert_eq!(a.chunks, 2);
         assert_eq!(a.cells, 2);
