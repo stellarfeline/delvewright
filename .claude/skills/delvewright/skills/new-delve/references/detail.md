@@ -62,7 +62,10 @@ included) is `DW0987`, one that writes the ring's fixed ground `DW0990`.
    them, at program version `1.10.0`, proved over the body's climb moves
    (`$DELVEWRIGHT_ENGINE/docs/reference/grammar.md`, the contract's edge
    classes). A scenery place (`"reached": false`) is judged sealed: no way in,
-   no floor or light owed.
+   no floor or light owed. A place joined to the map only by `carry` edges is
+   handed no seam: its contract declares no edge to `exterior`, and it is
+   entered where a link sets a body down, so mark each landing (a link's `to`
+   station in this place) on the entry space's floor.
    Iterate with `delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar expand --file …
    --region <the frame>` and a render until it reads as the place. A piece the
    library already has, or one admitted through `delvec prefab` instead of

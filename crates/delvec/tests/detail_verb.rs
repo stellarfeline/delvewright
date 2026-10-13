@@ -1839,15 +1839,37 @@ fn a_carried_place_with_a_way_in_from_outside_or_no_landing_is_refused() {
         "node/skiff",
     ];
 
-    // An `exterior` walk edge whose space reaches the piece's outer face: a
-    // face no seam meets.
+    // A door cut through the west ring wall and declared as an `exterior`
+    // walk edge: a real face on the piece's outer layer, which no seam meets.
     let mut faced = program_for(&a, None, true);
-    faced["contract"]["edges"] = json!([{"a": "exterior", "b": "room", "class": "walk"}]);
+    assert_eq!(a.space[0][0], 1, "the place carries its west ring");
+    faced["rules"]["ring_west"] = rule(split(
+        "z",
+        vec![abs(int(2)), abs(int(1)), rel()],
+        vec![
+            fill("wall"),
+            json!({"op": "claim", "region": "door", "body": split(
+                "y",
+                vec![abs(int(2)), rel()],
+                vec![json!({"op": "void"}), fill("wall")],
+            )}),
+            fill("wall"),
+        ],
+    ));
+    faced["contract"]["edges"] =
+        json!([{"a": "exterior", "b": "room", "class": "walk", "via": "door"}]);
     write_program(&campaign, "node/skiff", &faced);
     let t = refused(&campaign, &prefabs, &args);
     assert!(
-        t.contains("joined to the map only by `carry` edges, which have no seam, and edge exterior--walk--room claims a way in from outside"),
+        t.contains(
+            "joined to the map only by `carry` edges, which have no seam, and edge \
+             exterior--walk--room claims a way in from outside"
+        ),
         "{t}"
+    );
+    assert!(
+        t.contains("contract-exterior-faces pass"),
+        "the face is real — it exports — and still meets nothing: {t}"
     );
 
     // No mark at all: the landing is not in the piece.
