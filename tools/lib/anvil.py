@@ -300,3 +300,34 @@ def cells(world: pathlib.Path, box=None) -> dict[tuple[int, int, int], str]:
 
 
 AIR = frozenset({"minecraft:air", "minecraft:cave_air", "minecraft:void_air"})
+
+
+# ------------------------------------------------------------------ entities
+
+def count_tagged_entities(world: pathlib.Path, tag: str) -> int:
+    """How many entities in `world/entities/*.mca` carry `tag` in their `Tags`.
+
+    Entity storage is its own region family (minecraft.wiki *Entity format*):
+    each chunk root holds an `Entities` list of compounds, each with an optional
+    `Tags` list of strings. A save holds an entity whether or not its chunk is
+    loaded, which is what a probe that must not depend on chunk loading asks."""
+    n = 0
+    for f in sorted((world / "entities").glob("r.*.mca")):
+        for _cx, _cz, _ts, _comp, root in region_chunks(f):
+            for ent in root.value.get("Entities", Tag(T_LIST, [])).value:
+                tags = ent.value.get("Tags", Tag(T_LIST, [])).value
+                if any(t.value == tag for t in tags):
+                    n += 1
+    return n
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) == 4 and sys.argv[1] == "count-tagged-entities":
+        world = pathlib.Path(sys.argv[2])
+        if not (world / "level.dat").is_file():
+            sys.exit(f"anvil: {world} is not a world save (no level.dat)")
+        print(count_tagged_entities(world, sys.argv[3]))
+    else:
+        sys.exit("usage: anvil.py count-tagged-entities <world dir> <tag>")
