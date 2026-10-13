@@ -117,10 +117,11 @@ impl Ground {
 
     /// The sections, bottom up, the generator can lay a block in: every
     /// written chunk carries them, as every chunk of the server's world does.
-    fn sections(&self) -> std::ops::RangeInclusive<i32> {
+    fn sections(&self) -> Vec<i32> {
         match self.layer {
-            Some(_) => MIN_SECTION..=crate::compiler::assembled::Reached::CEILING.div_euclid(16),
-            None => 0..=-1,
+            Some(_) => (MIN_SECTION..=crate::compiler::assembled::Reached::CEILING.div_euclid(16))
+                .collect(),
+            None => Vec::new(),
         }
     }
 }
