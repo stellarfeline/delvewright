@@ -1,78 +1,18 @@
 {
-  "sdfVersion": 9,
-  "name": "mini_spawn",
-  "width": 1024,
-  "height": 1024,
-  "yClipMin": 56,
-  "yClipMax": 85,
-  "exposure": 1.0,
-  "postprocess": "TONEMAP3",
-  "outputMode": "PNG",
-  "renderTime": 0,
-  "spp": 0,
-  "sppTarget": 500,
-  "rayDepth": 5,
-  "pathTrace": true,
-  "dumpFrequency": 500,
-  "saveSnapshots": false,
-  "emittersEnabled": true,
-  "emitterIntensity": 13.0,
-  "sunEnabled": true,
-  "stillWater": false,
-  "sun": {
-    "altitude": 0.215917,
-    "azimuth": 3.141593,
-    "intensity": 0.0,
-    "color": {
-      "red": 1.0,
-      "green": 1.0,
-      "blue": 1.0
-    },
-    "drawTexture": true
-  },
-  "sky": {
-    "mode": "SKYMAP_EQUIRECTANGULAR",
-    "color": {
-      "red": 0.631909,
-      "green": 0.631909,
-      "blue": 1.0
-    },
-    "skyLight": 0.819187,
-    "apparentSkyLight": 1.0,
-    "skymap": "mini_spawn.sky.pfm",
-    "skyMirrored": false
-  },
-  "fog": {
-    "mode": "UNIFORM",
-    "uniformDensity": 0.0,
-    "color": {
-      "red": 0.453456,
-      "green": 0.585973,
-      "blue": 0.851252
-    },
-    "skyFogDensity": 0.0
-  },
-  "delvewrightSky": {
-    "daytimeTicks": 12000
-  },
-  "world": {
-    "path": "world",
-    "dimension": 0
-  },
   "camera": {
+    "fov": 70.0,
     "name": "camera 1",
+    "orientation": {
+      "pitch": -1.2925035775644007,
+      "roll": 0.0,
+      "yaw": 1.5707963267948966
+    },
     "position": {
       "x": 5.5,
       "y": 68.0,
       "z": -2.5
     },
-    "orientation": {
-      "roll": 0.0,
-      "pitch": -1.2925035775644007,
-      "yaw": 1.5707963267948966
-    },
-    "projectionMode": "PINHOLE",
-    "fov": 70.0
+    "projectionMode": "PINHOLE"
   },
   "chunkList": [
     [
@@ -83,5 +23,65 @@
       1,
       0
     ]
-  ]
+  ],
+  "delvewrightSky": {
+    "daytimeTicks": 12000
+  },
+  "dumpFrequency": 500,
+  "emitterIntensity": 13.0,
+  "emittersEnabled": true,
+  "exposure": 1.0,
+  "fog": {
+    "color": {
+      "blue": 0.851252,
+      "green": 0.585973,
+      "red": 0.453456
+    },
+    "mode": "UNIFORM",
+    "skyFogDensity": 0.0,
+    "uniformDensity": 0.0
+  },
+  "height": 1024,
+  "name": "mini_spawn",
+  "outputMode": "PNG",
+  "pathTrace": true,
+  "postprocess": "TONEMAP3",
+  "rayDepth": 5,
+  "renderTime": 0,
+  "saveSnapshots": false,
+  "sdfVersion": 9,
+  "sky": {
+    "apparentSkyLight": 1.0,
+    "color": {
+      "blue": 1.0,
+      "green": 0.631909,
+      "red": 0.631909
+    },
+    "mode": "SKYMAP_EQUIRECTANGULAR",
+    "skyLight": 0.819187,
+    "skyMirrored": false,
+    "skymap": "mini_spawn.sky.pfm"
+  },
+  "spp": 0,
+  "sppTarget": 500,
+  "stillWater": false,
+  "sun": {
+    "altitude": 0.215917,
+    "azimuth": 3.141593,
+    "color": {
+      "blue": 1.0,
+      "green": 1.0,
+      "red": 1.0
+    },
+    "drawTexture": true,
+    "intensity": 0.0
+  },
+  "sunEnabled": true,
+  "width": 1024,
+  "world": {
+    "dimension": 0,
+    "path": "world"
+  },
+  "yClipMax": 85,
+  "yClipMin": 56
 }
