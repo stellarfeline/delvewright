@@ -39,7 +39,10 @@
 # step runs (`tools/lib/chunky_denoise.py`): the chunky-denoiser plugin and Open
 # Image Denoise, each downloaded from `versions.toml [render]` and installed under
 # `<home>/denoise/` only when its bytes answer the pinned sha256. Open Image
-# Denoise is pinned per platform; on a platform with none (aarch64 Linux) this
+# Denoise is the project's own archive where it ships one, and is built from
+# its pinned source release (with pinned CMake, Ninja, ISPC and oneTBB) where it
+# does not (aarch64 Linux); the build needs a C and C++ compiler, and without one
+# — or on a platform with neither an archive nor a pinned source build — this
 # step refuses by name, exit 2, and `validation/chunky.sh` will not render there.
 # A home that already holds both is left alone.
 #

@@ -145,8 +145,9 @@ account's home, which is not necessarily what `$HOME` says — and it installs o
 a jar whose content is the pin's; it is a no-op on a machine that already holds
 it. Then it installs the denoise kit — the chunky-denoiser plugin and Open Image
 Denoise, each only when its download answers its pinned sha256 — because every
-render is denoised; on a platform with no pinned Open Image Denoise (aarch64
-Linux) it stops, named, and nothing can be rendered there. `render-shots.sh` has already printed the `chunky home:` line and whether that
+render is denoised. On aarch64 Linux, where Open Image Denoise ships no
+archive, it builds it from source (about a minute); that needs a C and C++
+compiler on the machine, and without one it stops and names them. `render-shots.sh` has already printed the `chunky home:` line and whether that
 home holds the pin. If Chunky lives elsewhere on this machine, set
 `DELVEWRIGHT_CHUNKY_HOME` to it before both commands.
 
