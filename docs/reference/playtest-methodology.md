@@ -223,9 +223,10 @@ is the owner's hour until the physics carries it.
 **The bot hears what the compiler predicted, and never a warden** (spec-0100).
 A leg whose proven route sets a sculk sensor off carries `vibrations[]` in
 `validation/critical-path-waypoints.json`: each sensor's cell and the shriekers
-that answer it, predicted by the compiler (four route cells within `distSqr ≤
-49`, no sneak, no dampening, no occluder; a shrieker within `distSqr ≤ 64` of its
-sensor). The harness predicts nothing: the parse refuses a sensor more than 8
+that answer it, predicted by the compiler (four consecutive route cells the
+party must walk — none from which it could still be finishing the leg's first
+step or could already finish its last — within `distSqr ≤ 49`, no sneak, no
+dampening, no occluder; a shrieker within `distSqr ≤ 64` of its sensor). The harness predicts nothing: the parse refuses a sensor more than 8
 blocks from its leg's route — the polyline through the leg's waypoints, on which
 every route cell the compiler predicted from lies, so a straight leg exported as
 two waypoints is measured along its length (`harness/src/route.ts`, the one route
@@ -233,18 +234,24 @@ rule the watch stops and the pulse stations also read) — and a shrieker more t
 8 from its sensor (`harness/src/waypoints.ts`). For each predicted sensor it waits for a
 `blockUpdate` at the sensor's cell whose new state has `sculk_sensor_phase=active`;
 for each predicted shrieker a `world_event` packet with id 3007 at its cell —
-from the leg's start to three seconds after its end (`harness/src/sculk.ts`). The
+from the leg's start to 60 game ticks after its end (`harness/src/sculk.ts`). The
 leg starts when the harness first walks any part of it: a run-back approach or a
 pulse station walk along the leg's proven cells, run before the step's own walk,
 opens the window, so a sensor between the leg's start and a station clicks
 inside it. A
-device the previous leg set off is deaf for its busy span — a sensor's active
-and cooldown ticks (2 s), a shrieker's `shrieking` (4.5 s) — so an event within
-that span before the leg's start answers for it. A predicted event not heard
-fails the step.
+device the previous leg set off is deaf for its busy span — a sensor's `active`
+and `cooldown` phases (30 + 10 game ticks; a calibrated sensor 10 + 10), a
+shrieker's `shrieking` (90) — so the leg's start asks the server, in one
+game-time reading, which of its predicted devices is in a busy state, and an
+event heard before the start answers for the leg only for a device busy then.
+Every span is the server's game ticks, read through a reply bracket and the
+shared rejection rule (`harness/src/game-time.ts`, `harness/src/executor/clock.ts`),
+never stood for by wall time: a server that falls behind stretches the game's
+spans, and one that catches up shrinks them. A predicted event not heard fails
+the step.
 
 **The binding count.** Every walk whose leg carries vibrations prints
-`[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s) predicted, M heard`.
+`[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s) predicted, M heard (leg start at game tick T, B predicted device(s) busy then[; heard through game tick U])`.
 At the end of every run, passed or failed, `[sculk] darkness D, warden W`
 counts every `darkness` effect on the bot and every `warden` that spawned; either
 non-zero fails the run, because a shrieker with `can_summon=false` applies no

@@ -33,7 +33,7 @@ import type { ResourcePackState } from "./resource-pack.ts";
 import { type LoadWindowTracer } from "./load-window.ts";
 import { type CensusMob, type CensusSummary } from "./markers.ts";
 import { RepaintWatch } from "./repaint.ts";
-import { SculkEar } from "./sculk.ts";
+import { SculkEar, type LegStart } from "./sculk.ts";
 import type { PulsePlan } from "./pulse.ts";
 import { type Waypoints } from "./waypoints.ts";
 import type { BotConfig } from "./executor/connection.ts";
@@ -73,6 +73,7 @@ import { methods as crosshairMethods } from "./executor/crosshair.ts";
 import { methods as collectMethods } from "./executor/collect.ts";
 import { methods as settleMethods } from "./executor/settle.ts";
 import { methods as placementMethods } from "./executor/placement.ts";
+import { methods as clockMethods } from "./executor/clock.ts";
 import { placementTimeoutFromEnv, type PlacementRecord } from "./placement.ts";
 
 export {
@@ -336,6 +337,8 @@ export class MineflayerExecutor implements StepExecutor {
   readonly placementTimeoutMs: number;
   /** Placement readings sent on this connection; numbers each reading's lines. */
   placementReads = 0;
+  /** Game-time readings sent on this connection (`executor/clock.ts`); numbers each reading's lines. */
+  clockReads = 0;
   /** What the placement wait measured, once the world read placed. */
   placement: PlacementRecord | undefined;
   /** spec-0086 §6: how long one loop crossing may take. Overridable
@@ -532,7 +535,7 @@ export class MineflayerExecutor implements StepExecutor {
    * partial walk sets off answers for the leg (spec-0100 §4.7). Reset by every
    * `beforeStep`; consumed by the walk that matches the leg.
    */
-  legHearingFrom: { leg: number; at: number } | undefined;
+  legHearingFrom: { leg: number; start: LegStart | undefined } | undefined;
   /** Timestamp (ms) of the last damage attributed from a packet-named source. */
   lastAttributionAt = 0;
   /** The body the server last named as hitting the bot, and when — the health drop
@@ -606,6 +609,7 @@ type Methods = typeof connectionMethods &
   typeof crosshairMethods &
   typeof collectMethods &
   typeof settleMethods &
-  typeof placementMethods;
+  typeof placementMethods &
+  typeof clockMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);

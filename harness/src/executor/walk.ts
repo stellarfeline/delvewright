@@ -28,7 +28,15 @@ import {
   unstagedCrushBoxes,
 } from "../timed-gate.ts";
 import { delay, withTimeout, fmt } from "./connection.ts";
-import { VIBRATION_TAIL_MS, legLine, type Vibration } from "../sculk.ts";
+import {
+  VIBRATION_TAIL_TICKS,
+  legLine,
+  legStartCommands,
+  parseLegStartBusy,
+  type LegStart,
+  type Vibration,
+} from "../sculk.ts";
+import { GameTimeStalledError, gameTicksBudgetMs } from "../game-time.ts";
 import { watchStops } from "../watch.ts";
 import { ControlTakenError } from "./cutscene.ts";
 import { type GateAssist, crossTimedGate } from "./timed-gate.ts";
@@ -570,7 +578,7 @@ export const methods = {
       // leg before it (a run-back approach, a pulse station walk), which is
       // the same leg being walked.
       let legVibrations: readonly Vibration[] = [];
-      let heardFrom = Date.now();
+      let heardFrom: LegStart | undefined;
       // spec-0016 §4: the timed gates that bind THIS walk. A gate is a world fact
       // the compiler exports for the whole campaign; a proven leg's `timed_gates`
       // narrows that table to the subset its route crosses. A walk with no proven
@@ -595,8 +603,11 @@ export const methods = {
         legClimbs = match.climbs;
         legVibrations = match.vibrations;
         if (match.matched) {
-          if (this.legHearingFrom?.leg === this.legCursor) heardFrom = this.legHearingFrom.at;
+          if (this.legHearingFrom?.leg === this.legCursor) heardFrom = this.legHearingFrom.start;
           this.legHearingFrom = undefined;
+          if (heardFrom === undefined && legVibrations.length > 0) {
+            heardFrom = await this.sculkLegStart(legVibrations);
+          }
         }
         if (match.matched && legWaypoints && this.legResume?.leg === this.legCursor) {
           legWaypoints = legWaypoints.slice(this.legResume.from);
@@ -765,7 +776,7 @@ export const methods = {
           : undefined,
         completion ? () => this.stepSettled(completion) : undefined,
       );
-      if (legVibrations.length > 0) {
+      if (legVibrations.length > 0 && heardFrom !== undefined) {
         await this.hearVibrations(label, legVibrations, heardFrom);
       }
     } finally {
@@ -774,27 +785,59 @@ export const methods = {
   },
 
   /**
-   * spec-0100 §4.7: wait up to {@link VIBRATION_TAIL_MS} after a leg's end for
-   * every sensor click and shriek the compiler predicted for it, print the leg's
-   * `[sculk]` line, and fail the step on a predicted event not heard.
+   * spec-0100 §4.7: open a leg's hearing. One game-time reading
+   * (`executor/clock.ts`) asks, in its own tick, which of the leg's predicted
+   * sensors and shriekers is busy ({@link legStartCommands}); an event the ear
+   * heard before the leg answers for it only for a device busy then.
+   */
+  async sculkLegStart(this: MineflayerExecutor, vibrations: readonly Vibration[]): Promise<LegStart> {
+    const at = Date.now();
+    const reading = await this.readGameTime("the sculk leg's start", (serial) =>
+      legStartCommands(serial, vibrations),
+    );
+    return { at, tick: reading.tick, readAt: Date.now(), busy: parseLegStartBusy(reading.serial, reading.lines) };
+  },
+
+  /**
+   * spec-0100 §4.7: wait, while a predicted event is missing, until the
+   * server's game time is {@link VIBRATION_TAIL_TICKS} past the leg's end, for
+   * every sensor click and shriek the compiler predicted for it; print the
+   * leg's `[sculk]` line, and fail the step on a predicted event not heard. An
+   * event the ear received before a reading's reply was sent in that reading's
+   * tick or earlier.
    */
   async hearVibrations(
     this: MineflayerExecutor,
     label: string,
     vibrations: readonly Vibration[],
-    from: number,
+    start: LegStart,
   ): Promise<void> {
-    const until = Date.now() + VIBRATION_TAIL_MS;
-    let heard = this.sculk.hear(vibrations, from, Date.now());
-    while (heard.missing.length > 0 && Date.now() < until) {
-      await delay(100);
-      heard = this.sculk.hear(vibrations, from, Date.now());
+    let heard = this.sculk.hear(vibrations, start, Date.now());
+    let end: number | undefined;
+    let through: number | undefined;
+    if (heard.missing.length > 0) {
+      const purpose = `${label}: the sculk tail`;
+      const budgetMs = gameTicksBudgetMs(VIBRATION_TAIL_TICKS);
+      const deadline = Date.now() + budgetMs;
+      for (;;) {
+        const reading = await this.readGameTime(purpose);
+        heard = this.sculk.hear(vibrations, start, Date.now());
+        end ??= reading.tick;
+        through = reading.tick;
+        if (heard.missing.length === 0 || reading.tick >= end + VIBRATION_TAIL_TICKS) break;
+        if (Date.now() >= deadline) {
+          throw new GameTimeStalledError(purpose, VIBRATION_TAIL_TICKS, reading.tick - end, budgetMs);
+        }
+        await delay(50);
+      }
     }
-    process.stderr.write(`${legLine(label, heard)}\n`);
+    process.stderr.write(`${legLine(label, heard, start, through)}\n`);
     if (heard.missing.length > 0) {
       throw new Error(
         `${label}: the compiler predicted this leg sets off sculk it did not hear — ` +
-          `${heard.missing.join("; ")} (from the leg's start to ${VIBRATION_TAIL_MS}ms after its end)`,
+          `${heard.missing.join("; ")} (from the leg's start at game tick ${start.tick}, when ` +
+          `${start.busy.size} predicted device(s) were busy, to game tick ${through}, ` +
+          `${VIBRATION_TAIL_TICKS} game ticks after its end at ${end})`,
       );
     }
   },

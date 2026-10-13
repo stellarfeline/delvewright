@@ -116,6 +116,14 @@ blocks: the build states the nearest body cell and its distance. The waypoint
 export carries the plain sensor and its shrieker on the legs that walk past them
 and the calibrated sensor on the legs up and down the stair, and the bot asserts
 each click and shriek and closes the run with `[sculk] darkness 0, warden 0`.
+A third sensor is set into the near hall's floor two cells south of the walk
+along the valves. Two legs pass within its earshot without predicting it: the
+walk from the emeralds to the first valve and the walk from the third valve to
+the counter, each walked only on cells from which the party could finish one of
+its two steps (a chest or a lever is used from 4.5 blocks, the counter is a
+volume), so neither is a walk the party must make. The first leg, from the
+arrival to the curator, and the walk from the arrival to the marshal pass it on
+cells no step completes from, and carry it.
 Four probes each refill one cell: the shrieker with summoning on (`DW0998`), the
 sensor caught mid-click (`DW0999`), an iron door in the floor beside the sensor
 (`DW1000`), and a catalyst set into the near hall's floor (`DW1001`).
