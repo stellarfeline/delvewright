@@ -399,6 +399,7 @@ reference means the file listed here.
 | `references/placement.md` | the three site-plan documents, in the order they compile | step 2 |
 | `references/workspace.md` | the campaign directory and every document in it | step 1 |
 | `references/map-reference.md` | drawing the map's own reference views | step 2 |
+| `references/partitioning.md` | dividing a map into districts, the unit a worker authors when a campaign is authored in parallel (spec-0103): the test, the bounds, connectors, two worked examples | step 2 |
 | `references/story.md` | npcs, classes, the quest plan, and where step 3 ends | step 3 |
 | `references/design-gate.md` | the walkthrough, the approval, `design.json` | step 4 |
 | `references/content.md` | quests and dialogue, and the codes that clear here | step 5 |
