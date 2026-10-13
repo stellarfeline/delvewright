@@ -1777,11 +1777,14 @@ fn a_carried_place_with_a_way_in_from_outside_or_no_landing_is_refused() {
         vec![abs(int(2)), abs(int(1)), rel()],
         vec![
             fill("wall"),
-            json!({"op": "claim", "region": "door", "body": split(
+            split(
                 "y",
                 vec![abs(int(2)), rel()],
-                vec![json!({"op": "void"}), fill("wall")],
-            )}),
+                vec![
+                    json!({"op": "claim", "region": "door", "body": {"op": "void"}}),
+                    fill("wall"),
+                ],
+            ),
             fill("wall"),
         ],
     ));
@@ -1797,8 +1800,9 @@ fn a_carried_place_with_a_way_in_from_outside_or_no_landing_is_refused() {
         "{t}"
     );
     assert!(
-        t.contains("contract-exterior-faces pass"),
-        "the face is real — it exports — and still meets nothing: {t}"
+        t.contains("contract-exterior-faces pass")
+            && !t.contains("not reached by the air outside the piece"),
+        "the face is real — a hole to the outside that exports — and still meets nothing: {t}"
     );
 
     // No mark at all: the landing is not in the piece.
