@@ -19,7 +19,10 @@
 //!   unexpanded quest (the whole's spine waiting on a district's quest — the
 //!   same absence, on the generic code's path);
 //! * `DW0816` and `DW0817` on the arm that carries the unwritten-mission
-//!   caveat (their message points at `DW0150`).
+//!   caveat (their message points at `DW0150`);
+//! * `DW0181` and `DW0187` on a sidecar row a sibling's unexpanded quest owns
+//!   (`quest.<stem>.…`, `obj.<stem>.…`, `fx.<stem>.…`) — an orphan only because
+//!   the quest is not in this tree.
 //!
 //! Without the flag, `validate` judges the whole, which is the planner's run
 //! after a wave is integrated.
@@ -119,6 +122,17 @@ fn on_absence(
     }
     if siblings.is_empty() {
         return false;
+    }
+    // A sidecar row of a sibling's unexpanded quest is an orphan only because
+    // the quest is not in this tree: the l10n keys a quest owns are
+    // `quest.<stem>.…`, `obj.<stem>.…` and `fx.<stem>.…`.
+    if matches!(d.code.as_str(), "DW0181" | "DW0187") {
+        return siblings.iter().any(|q| {
+            let stem = q.strip_prefix("quest/").unwrap_or(q);
+            ["quest", "obj", "fx"]
+                .iter()
+                .any(|k| d.message.contains(&format!("`{k}.{stem}.")))
+        });
     }
     match d.code.as_str() {
         "DW0150" => {

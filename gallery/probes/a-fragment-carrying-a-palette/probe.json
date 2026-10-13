@@ -1,0 +1,16 @@
+{
+  "code": "DW1005",
+  "patch": [
+    {
+      "doc": "districts/hall/detail-plan.json",
+      "op": "add",
+      "path": "/content/palette",
+      "value": {
+        "wall": "minecraft:stone_bricks"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "One edit on the site-plan point: the hall's detail-plan fragment states a `palette`. The pieces' palette is the whole's — every packet carries it verbatim — so the field is refused before the fragment is unioned, naming the whole's `detail-plan.json`."
+}

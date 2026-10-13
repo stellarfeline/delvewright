@@ -1,0 +1,6 @@
+{
+  "code": "DW1003",
+  "point": "site-plan",
+  "units": [],
+  "why": "The site-plan point plus one document the point does not hold: `districts/porch/npcs.json`, a fragment of a district the layout graph never declares. A `districts/<x>/` directory holds the fragments of a declared district, so the directory is refused before anything is unioned, listing the districts the graph does declare."
+}

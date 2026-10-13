@@ -36,6 +36,16 @@
         "node": "node/causeway",
         "objective": "obj/climb-the-crow",
         "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/annex",
+        "objective": "obj/count-the-benches",
+        "quest": "quest/count-the-benches"
+      },
+      {
+        "node": "node/exit",
+        "objective": "obj/try-the-stone",
+        "quest": "quest/try-the-yard-stone"
       }
     ],
     "critical_path": [
@@ -48,6 +58,36 @@
       "node/causeway",
       "node/far-hall",
       "node/exit"
+    ],
+    "districts": [
+      {
+        "id": "district/hall",
+        "nodes": [
+          "node/near-hall",
+          "node/annex",
+          "node/far-hall",
+          "node/loft",
+          "node/undercroft",
+          "node/causeway"
+        ],
+        "note": "The hall: stone rooms under one lid, split by the barred wall, with the gallery, the loft, the undercroft and the causeway that runs out of it. One continuity — cut stone and lantern light — and one builder."
+      },
+      {
+        "id": "district/yard",
+        "nodes": [
+          "node/exit",
+          "node/gantry",
+          "node/perch"
+        ],
+        "note": "The yard: the paved court outside the far door, the plank gantry hung over it and the lookout at the gantry's end. Open sky and timber; the far door's arch is its one boundary with the hall."
+      },
+      {
+        "id": "district/beacon",
+        "nodes": [
+          "node/beacon"
+        ],
+        "note": "The beacon alone: one scenery place nobody enters, declared a district of its own on purpose — it stands below the partitioning guide's lower bound, so `delvec district list` advises (DW1007) and refuses nothing."
+      }
     ],
     "edges": [
       {
@@ -229,13 +269,7 @@
       },
       {
         "id": "node/exit",
-        "intent": "goal-chamber",
-        "stations": [
-          {
-            "anchor": "anchor/exit-stone",
-            "kind": "point"
-          }
-        ]
+        "intent": "goal-chamber"
       },
       {
         "id": "node/causeway",

@@ -1,0 +1,22 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "npcs": [
+      {
+        "anchor": "anchor/node-perch",
+        "area": "area/site",
+        "base_entity": "minecraft:villager",
+        "id": "npc/porter",
+        "name": "The Porter",
+        "persona": {
+          "archetype": "yard porter",
+          "motivation": "See every visitor out through the yard, and the key back into the stone.",
+          "speech_style": "Plain and slow; says the court's name as if it were a person's."
+        },
+        "role": "flavor"
+      }
+    ]
+  },
+  "dsl_version": "0.39.0",
+  "stage": "npcs"
+}

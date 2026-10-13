@@ -1,0 +1,14 @@
+{
+  "code": "DW1003",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/districts/0/nodes/-",
+      "value": "node/exit"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "One edit on the site-plan point: the yard's court is also listed in `district/hall`. A place belongs to exactly one district — its worker is the one author of what stands in it — so the place named twice is refused at validation, naming both districts."
+}

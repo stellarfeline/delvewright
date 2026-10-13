@@ -1,0 +1,18 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "nodes": [
+      {
+        "id": "node/exit",
+        "stations": [
+          {
+            "anchor": "anchor/exit-stone",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.39.0",
+  "stage": "layout-graph"
+}

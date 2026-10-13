@@ -187,6 +187,11 @@ def load_stage_docs(campaign: Path, export: dict) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
     for stage, fn in stage_files(export).items():
         paths = sorted(campaign.glob(fn)) if "*" in fn else [campaign / fn]
+        # A district fragment (spec-0103 §7.1) is a document of its stage in a
+        # second file, `districts/<x>/<file>`: what it writes is bound exactly
+        # as what the whole's document writes.
+        if "*" not in fn:
+            paths += sorted(campaign.glob(f"districts/*/{fn}"))
         docs = [json.loads(p.read_text()) for p in paths if p.is_file()]
         if docs:
             out[stage] = docs
@@ -246,7 +251,13 @@ def _codes(r: subprocess.CompletedProcess) -> list[str]:
     return [c for c in codes if c]
 
 
-def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[str], str]:
+def run_probe(
+    delvec: Path,
+    campaign: Path,
+    prefabs: Path,
+    flags: list[str] | None = None,
+    detail_first: bool | None = None,
+) -> tuple[int, list[str], str]:
     """Put a probe through the engine and report how it was refused.
 
     **`detail` first where the probe carries a program, then `validate`, then
@@ -273,7 +284,12 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
     # materialised point carries `programs/`, `detail --all` runs first, over a
     # scratch copy of the prefab directory so a probe that is NOT refused
     # cannot write into the directory every other point builds from.
-    if (campaign / "programs").is_dir():
+    # A probe declared on an overlay's point (`"point"`, spec-0103 §11.1)
+    # carries the overlay's programs without having written any: `detail` runs
+    # first only when the probe itself ships or edits a program, which the
+    # caller decides from the manifest and passes as `detail_first`.
+    flags = flags or []
+    if (campaign / "programs").is_dir() if detail_first is None else detail_first:
         scratch = Path(tempfile.mkdtemp(prefix="gallery-probe-prefabs-")) / "prefabs"
         try:
             if gallery_domain.probe_prefabs(prefabs, scratch) == 0:
@@ -290,7 +306,7 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
         finally:
             shutil.rmtree(scratch.parent, ignore_errors=True)
     v = subprocess.run(
-        [str(delvec), "validate", str(campaign), "--prefabs", str(prefabs), "--json"],
+        [str(delvec), "validate", str(campaign), "--prefabs", str(prefabs), "--json", *flags],
         capture_output=True,
         text=True,
     )
@@ -489,7 +505,12 @@ def prepare_probe(pd: Path, tmp: Path) -> dict:
     own = sum(
         1 for f in pd.rglob("*") if f.is_file() and f.name not in gallery_domain.POINT_MANIFESTS
     )
-    if not ops and not own:
+    try:
+        flags = gallery_domain.probe_flags(pd)
+        base = gallery_domain.probe_base(pd)
+    except gallery_domain.PatchError as e:
+        die(f"probe `{pd.name}` {e}")
+    if not ops and not own and not flags:
         die(
             f"probe `{pd.name}` declares no edit and ships no document of its own, so "
             "it materialises the primary UNCHANGED. It is then refused — or not — by "
@@ -507,6 +528,14 @@ def prepare_probe(pd: Path, tmp: Path) -> dict:
         "ops": ops,
         "own": own,
         "dest": dest,
+        "flags": flags,
+        # A probe on the primary details whatever programs its point holds (the
+        # standing rule); a probe on an overlay's point details only when it
+        # ships or edits a program of its own.
+        "detail_first": (dest / "programs").is_dir()
+        if base is None
+        else (pd / "programs").is_dir()
+        or any(str(op.get("doc", "")).startswith("programs/") for op in ops),
     }
 
 
@@ -638,7 +667,10 @@ def main() -> int:
                 held = (said.getvalue(), e.code)
                 break
         runs = parallel.ordered(
-            lambda p: run_probe(delvec, p["dest"], prefabs), prepared
+            lambda p: run_probe(
+                delvec, p["dest"], prefabs, p["flags"], p["detail_first"]
+            ),
+            prepared,
         )
         with contextlib.closing(runs):
             for p, outcome in zip(prepared, runs):
@@ -662,6 +694,11 @@ def main() -> int:
             raise SystemExit(held[1])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # ------------------------------------------------- district run lines (§11.1)
+    district_lines = run_district_lines(delvec, prefabs)
+    for line in district_lines:
+        print(line)
 
     # ----------------------------------------------------------------- verdict
     bound_ids = {u for u in bound if u in units}
@@ -779,6 +816,85 @@ def main() -> int:
         )
         return 1
     return 0
+
+
+def run_district_lines(delvec: Path, prefabs: Path) -> list[str]:
+    """The two district surfaces a document cannot bind (spec-0103 §11.1).
+
+    `DW1006` is an informational line `delvec validate --district` prints, and
+    `DW1007` an advisory `delvec district list` prints; neither is a refusal, so
+    no probe can carry them. They are run here, on the overlay whose layout
+    graph declares districts: `validate --district` over that point with one
+    district's quests removed — so the line counts what a worker's tree really
+    lacks — and `district list` over the point as it is, whose scenery district
+    stands below the guide's lower bound on purpose. A gallery that declares no
+    district, or a run that prints neither line, is a red: the surfaces would
+    then be bound by nothing.
+    """
+    points = []
+    for name in gallery_domain.overlays():
+        graph = GALLERY / "overlays" / name / "layout-graph.json"
+        if graph.is_file() and json.loads(graph.read_text()).get("content", {}).get("districts"):
+            points.append(name)
+    if not points:
+        die(
+            "no overlay's layout graph declares a district, so the district surfaces "
+            "(`DW1006`, `DW1007`) are bound by nothing (spec-0103 §11.1)"
+        )
+    name = points[0]
+    tmp = Path(tempfile.mkdtemp(prefix="gallery-districts-"))
+    try:
+        dest = tmp / name
+        materialise_point("overlay", GALLERY / "overlays" / name, dest)
+        listed = subprocess.run(
+            [str(delvec), "--json", "district", "list", str(dest)],
+            capture_output=True,
+            text=True,
+        )
+        advised = [c for c in _codes(listed) if c == "DW1007"]
+        districts = json.loads((dest / "layout-graph.json").read_text())["content"]["districts"]
+        plan = json.loads((dest / "quest-plan.json").read_text())["content"]["quests"]
+        owned = {q.get("district") for q in plan if q.get("district")}
+        # The district whose quests are removed is the last one that owns any;
+        # the tree is judged as the first one's.
+        if len(owned) < 2:
+            die(f"overlay `{name}`'s plan assigns quests to {len(owned)} district(s); two are owed")
+        ids = [d["id"] for d in districts if d["id"] in owned]
+        judged, removed = ids[0], ids[-1]
+        frag = dest / "districts" / removed.split("/", 1)[1] / "quests.json"
+        if not frag.is_file():
+            die(f"overlay `{name}` holds no `{frag.relative_to(dest)}` to remove")
+        frag.unlink()
+        scoped = subprocess.run(
+            [str(delvec), "--json", "--prefabs", str(prefabs), "validate", str(dest), "--district", judged],
+            capture_output=True,
+            text=True,
+        )
+        info = [
+            json.loads(line)
+            for line in scoped.stdout.splitlines()
+            if line.startswith("{") and '"DW1006"' in line
+        ]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if listed.returncode != 0 or not advised:
+        die(
+            f"`delvec district list` over `{name}` exited {listed.returncode} with "
+            f"{len(advised)} DW1007 advisory(ies); the point declares a district below the "
+            "guide's lower bound and the advisory is owed (spec-0103 §11.1)"
+        )
+    if scoped.returncode != 0 or len(info) != 1:
+        die(
+            f"`delvec validate --district {judged}` over `{name}` without `{removed}`'s quests "
+            f"exited {scoped.returncode} with {len(info)} DW1006 line(s): "
+            + (scoped.stdout + scoped.stderr)[-2000:]
+        )
+    return [
+        f"district run lines: `{name}` declares {len(districts)} district(s); `district list` "
+        f"printed {len(advised)} DW1007 advisory(ies) and exited 0.",
+        f"district run lines: `validate --district {judged}` without `{removed}`'s quests "
+        f"exited 0 — DW1006: {info[0]['message'].split(';')[0]}.",
+    ]
 
 
 def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:

@@ -1,0 +1,17 @@
+{
+  "code": "DW1004",
+  "patch": [
+    {
+      "doc": "districts/hall/quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/trigger",
+      "value": {
+        "quest": "quest/try-the-yard-stone",
+        "type": "quest-complete"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "One edit on the site-plan point: the hall's bench quest is triggered by the yard's stone quest completing. A district refers only to the whole or to itself — the thing that joins two districts is the whole's — so the reference into the sibling is refused at validation, naming the district that declares the quest."
+}

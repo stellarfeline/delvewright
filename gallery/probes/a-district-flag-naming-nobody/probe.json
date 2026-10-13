@@ -1,0 +1,10 @@
+{
+  "code": "DW1009",
+  "flags": [
+    "--district",
+    "district/nobody"
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The site-plan point, validated as the tree of `district/nobody`: `delvec validate --district` names a district the layout graph does not declare, so it is refused before anything is judged as that district's tree, listing the districts the graph declares."
+}

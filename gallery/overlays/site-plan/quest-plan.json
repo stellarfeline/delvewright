@@ -28,6 +28,30 @@
           "npc/warden",
           "npc/marshal"
         ]
+      },
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "district": "district/hall",
+        "goal": "Sit a while on the bench in the side gallery.",
+        "id": "quest/count-the-benches",
+        "mandatory": false,
+        "npcs": [
+          "npc/factor"
+        ]
+      },
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "district": "district/yard",
+        "goal": "Turn the yard key in the stone beside the court.",
+        "id": "quest/try-the-yard-stone",
+        "mandatory": false,
+        "npcs": [
+          "npc/porter"
+        ]
       }
     ]
   },

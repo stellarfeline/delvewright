@@ -1,0 +1,20 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/porter-root",
+            "options": [],
+            "text": "The yard keeps its own key. The crow's nest has it, and the stone wants it back."
+          }
+        ],
+        "npc": "npc/porter",
+        "root": "dlg/porter-root"
+      }
+    ]
+  },
+  "dsl_version": "0.39.0",
+  "stage": "dialogue"
+}
