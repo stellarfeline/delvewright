@@ -2,16 +2,16 @@
 
 A delve builds its world after the server logs `Done (`: `setup` starts the
 build, the tick re-places templates, and `setup_finish` summons the NPCs, then
-releases every forceloaded chunk and sets `#placed dw.sys` to 1 as its last
-line. A probe that runs at `Done (` judges a world that is not there yet; a
-probe that asks `@e` after placement asks about chunks nobody has loaded. So
+releases forceloads and sets `#placed dw.sys` to 1 as its last line. A probe
+that runs at `Done (` judges a world that is not there yet, and `@e` answers
+only for chunks that happen to be loaded. So
 `up` waits for the shared placed reading (`tools/lib/rcon.sh`, the question the
 harness puts) inside a stated budget, then counts the NPCs in the world save.
 
 These tests drive the real verification seam (`dw_playtest_verify_campaign`,
 reached with `DW_PLAYTEST_SERVER_TEST_HOOK=1`) against a fake `docker` that
 plays a server: its placed reading answers `Test failed` until the Nth reading,
-`@e` never sees an NPC (unloaded chunks), and `save-all flush` writes the
+`@e` never sees an NPC (chunks not loaded), and `save-all flush` writes the
 entities region file the world holds at that moment — NPCs only once placed.
 Every rcon command is logged with the placed state it was answered in.
 """
@@ -196,3 +196,20 @@ def test_up_reaches_the_world_only_through_the_verification_seam():
     assert any("dw_playtest_verify_campaign" in ln for ln in code), campaign_arm
     assert not any(re.search(r"\brcon(_raw)?\b|dw_rcon", ln) for ln in code), campaign_arm
     assert not any(re.search(r"\brcon(_raw)? \"", ln) for ln in flow[:flow.index('if [ "$SUBJECT_KIND" = "campaign" ]')].splitlines())
+
+
+def test_a_reply_carrying_another_clients_text_is_not_an_answer(tmp_path):
+    """Measured on the pinned server: rcon clients share one output buffer, so a
+    reply can arrive as `Test passed` glued to someone else's answer."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    docker = bindir / "docker"
+    docker.write_text("#!/bin/sh\nprintf '%s\\n' \"$DW_FAKE_REPLY\"\n")
+    docker.chmod(0o755)
+    lib = ROOT / "tools" / "lib" / "rcon.sh"
+    for reply, expected in [("Test passed", "placed"), ("Test failed", "pending"),
+                            ("Test passed#placed has 2 [dw.sys]", "unanswered Test passed#placed has 2 [dw.sys]"),
+                            ("Test failed#placed has 2 [dw.sys]", "unanswered Test failed#placed has 2 [dw.sys]")]:
+        out = subprocess.run(["bash", "-c", f'. "{lib}"; dw_placed_reading c'], capture_output=True, text=True,
+                             env={"PATH": f"{bindir}:/usr/bin:/bin", "DW_FAKE_REPLY": reply})
+        assert out.stdout.strip() == expected, (reply, out.stdout, out.stderr)

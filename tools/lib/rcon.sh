@@ -142,9 +142,15 @@ dw_placed_reading() {
     printf 'unanswered %s\n' "$reply"
     return 0
   fi
+  # The WHOLE reply, never a prefix: vanilla answers every rcon client through
+  # one shared output buffer, so a reply read while another client is talking
+  # can carry that client's text (measured on the pinned server: a concurrent
+  # `scoreboard players get` came back as `Test failed#placed has 2 [dw.sys]`).
+  # A reply that is not exactly one of the two answers is not an answer.
+  reply="${reply%"${reply##*[![:space:]]}"}"
   case "$reply" in
-    "Test passed"*) echo "placed" ;;
-    "Test failed"*) echo "pending" ;;
+    "Test passed") echo "placed" ;;
+    "Test failed") echo "pending" ;;
     *) printf 'unanswered %s\n' "$reply" ;;
   esac
 }

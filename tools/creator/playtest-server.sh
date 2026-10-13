@@ -256,9 +256,9 @@ up_failed() {
 # The budget (seconds) from the server's `Done (` to the datapack's own
 # "placed", and the pause between readings. Stated, not derived: the world build
 # runs one block-write step a tick, and how long a tick takes is the host's
-# business, not the build's. Measured on The Stranding (a 20+ scene map) on the
-# creator's laptop under load: see docs/reference/tools.md. Running out of it is
-# a named failure, never a pass.
+# business, not the build's. Measured on The Stranding (55 places): placed 15 s
+# after `Done (` on the creator's laptop while other builds ran. Running out of
+# it is a named failure, never a pass.
 DW_PLAYTEST_PLACED_BUDGET_S=1200
 DW_PLAYTEST_PLACED_POLL_S=5
 
@@ -302,10 +302,10 @@ dw_npcs_at_world_init() {
 
 # dw_saved_world_npc_count <world dir> — the `dw_npc`-tagged entities the world
 # save holds, read through the one anvil parse rule (tools/lib/anvil.py). Asked
-# of the save and not of `@e`: `setup_finish` summons the NPCs and then releases
-# every forceloaded chunk, so with nobody online the NPCs stand in unloaded
-# chunks that `@e` cannot see, and the honest answer to "did the pack put its
-# NPCs in the world" is on disk once `save-all flush` has run.
+# of the save and not of `@e` so the answer does not depend on which chunks
+# happen to be loaded: `@e` sees only loaded chunks, `setup_finish` releases
+# forceloads, and nobody is online to load any, while a save holds every entity
+# once `save-all flush` has run.
 dw_saved_world_npc_count() {
   python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/lib/anvil.py" count-tagged-entities "$1" dw_npc
 }
