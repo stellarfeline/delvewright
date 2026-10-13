@@ -1057,7 +1057,7 @@ fn the_handout_is_complete_and_hands_each_seams_form_to_both_sides() {
     .unwrap();
     // The yard's piece is the gallery generator's, which this test does not
     // run; the annex alone is detailed.
-    common::patch_file(&dir.join("detail-plan.json"), |v| {
+    common::patch_detail_plans(&dir, |v| {
         v["content"]["details"]
             .as_array_mut()
             .unwrap()
@@ -1160,7 +1160,7 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
             }
         }
     });
-    common::patch_file(&dir.join("detail-plan.json"), |v| {
+    common::patch_detail_plans(&dir, |v| {
         v["content"]["details"] = json!([]);
     });
     let programs = dir.join("programs");
@@ -1326,7 +1326,7 @@ fn leafy_beacon() -> Value {
 fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged() {
     let tmp = tempdir("leafy-crown");
     let dir = gallery_site_plan(&tmp);
-    common::patch_file(&dir.join("detail-plan.json"), |v| {
+    common::patch_detail_plans(&dir, |v| {
         v["content"]["details"] = json!([]);
     });
     let programs = dir.join("programs");
@@ -1420,7 +1420,7 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
 fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
     let tmp = tempdir("unlit-scenery");
     let dir = gallery_site_plan(&tmp);
-    common::patch_file(&dir.join("detail-plan.json"), |v| {
+    common::patch_detail_plans(&dir, |v| {
         v["content"]["details"] = json!([]);
     });
     common::patch_file(&dir.join("programs/beacon.json"), |v| {
@@ -1477,7 +1477,7 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     let campaigns = tmp.join("campaigns");
     std::fs::create_dir_all(&campaigns).unwrap();
     let dir = gallery_site_plan(&campaigns);
-    common::patch_file(&dir.join("detail-plan.json"), |v| {
+    common::patch_detail_plans(&dir, |v| {
         v["content"]["details"] = json!([]);
     });
     let programs = dir.join("programs");
@@ -1572,7 +1572,7 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     std::fs::write(&graph, graph_bytes).unwrap();
     assert_eq!(code(&audit(&piece)), 0, "restored, it passes again");
     // ...and the row placing the piece removed: no campaign places it.
-    common::patch_file(&dir.join("detail-plan.json"), |v| {
+    common::patch_detail_plans(&dir, |v| {
         v["content"]["details"] = json!([]);
     });
     refused_strictly(&piece, "a piece no campaign places is judged strictly");

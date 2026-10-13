@@ -377,6 +377,25 @@ pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
 }
 
 /// [`patch_doc`] against a file, in place.
+/// Apply `f` to every detail-plan document of a campaign: the whole's
+/// `detail-plan.json` and each district fragment's (spec-0103 §7.4), where a
+/// district place's row stands.
+#[allow(dead_code)]
+pub fn patch_detail_plans(dir: &Path, mut f: impl FnMut(&mut serde_json::Value)) {
+    let mut docs = vec![dir.join("detail-plan.json")];
+    if let Ok(rd) = std::fs::read_dir(dir.join("districts")) {
+        let mut frags: Vec<PathBuf> = rd
+            .map(|e| e.unwrap().path().join("detail-plan.json"))
+            .filter(|p| p.is_file())
+            .collect();
+        frags.sort();
+        docs.extend(frags);
+    }
+    for d in docs.iter().filter(|d| d.is_file()) {
+        patch_file(d, &mut f);
+    }
+}
+
 pub fn patch_file(path: &Path, f: impl FnOnce(&mut serde_json::Value)) {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
     std::fs::write(path, patch_doc(&text, f)).unwrap();

@@ -1,18 +1,82 @@
 {
-  "camera": {
-    "fov": 50.0,
-    "name": "camera 1",
-    "orientation": {
-      "pitch": -1.396263,
-      "roll": 0.0,
-      "yaw": 1.047198
+  "sdfVersion": 9,
+  "name": "isle_camera_hero",
+  "width": 1600,
+  "height": 900,
+  "yClipMin": 48,
+  "yClipMax": 96,
+  "exposure": 2.0,
+  "postprocess": "TONEMAP3",
+  "outputMode": "PNG",
+  "renderTime": 0,
+  "spp": 0,
+  "sppTarget": 300,
+  "rayDepth": 5,
+  "pathTrace": true,
+  "dumpFrequency": 500,
+  "saveSnapshots": false,
+  "emittersEnabled": true,
+  "emitterIntensity": 13.0,
+  "sunEnabled": true,
+  "stillWater": false,
+  "waterWorldEnabled": true,
+  "waterWorldHeight": 62.875,
+  "waterWorldHeightOffsetEnabled": false,
+  "waterWorldClipEnabled": true,
+  "sun": {
+    "altitude": 0.480763,
+    "azimuth": 0.0,
+    "intensity": 0.0,
+    "color": {
+      "red": 1.0,
+      "green": 1.0,
+      "blue": 1.0
     },
+    "drawTexture": true
+  },
+  "sky": {
+    "mode": "SKYMAP_EQUIRECTANGULAR",
+    "color": {
+      "red": 1.0,
+      "green": 1.0,
+      "blue": 1.0
+    },
+    "skyLight": 0.967729,
+    "apparentSkyLight": 1.0,
+    "skymap": "isle_camera_hero.sky.pfm",
+    "skyMirrored": false
+  },
+  "fog": {
+    "mode": "UNIFORM",
+    "uniformDensity": 0.0,
+    "color": {
+      "red": 0.535642,
+      "green": 0.694081,
+      "blue": 1.0
+    },
+    "skyFogDensity": 0.0
+  },
+  "delvewrightSky": {
+    "daytimeTicks": 1000
+  },
+  "world": {
+    "path": "/abs/world",
+    "dimension": 0
+  },
+  "camera": {
+    "name": "camera 1",
     "position": {
       "x": 10.5,
       "y": 70.0,
       "z": -4.25
     },
-    "projectionMode": "PINHOLE"
+    "orientation": {
+      "roll": 0.0,
+      "pitch": -1.396263,
+      "yaw": 1.047198
+    },
+    "projectionMode": "PINHOLE",
+    "fov": 50.0
   },
   "chunkList": [
     [
@@ -39,69 +103,5 @@
       1,
       2
     ]
-  ],
-  "delvewrightSky": {
-    "daytimeTicks": 1000
-  },
-  "dumpFrequency": 500,
-  "emitterIntensity": 13.0,
-  "emittersEnabled": true,
-  "exposure": 2.0,
-  "fog": {
-    "color": {
-      "blue": 1.0,
-      "green": 0.694081,
-      "red": 0.535642
-    },
-    "mode": "UNIFORM",
-    "skyFogDensity": 0.0,
-    "uniformDensity": 0.0
-  },
-  "height": 900,
-  "name": "isle_camera_hero",
-  "outputMode": "PNG",
-  "pathTrace": true,
-  "postprocess": "TONEMAP3",
-  "rayDepth": 5,
-  "renderTime": 0,
-  "saveSnapshots": false,
-  "sdfVersion": 9,
-  "sky": {
-    "apparentSkyLight": 1.0,
-    "color": {
-      "blue": 1.0,
-      "green": 1.0,
-      "red": 1.0
-    },
-    "mode": "SKYMAP_EQUIRECTANGULAR",
-    "skyLight": 0.967729,
-    "skyMirrored": false,
-    "skymap": "isle_camera_hero.sky.pfm"
-  },
-  "spp": 0,
-  "sppTarget": 300,
-  "stillWater": false,
-  "sun": {
-    "altitude": 0.480763,
-    "azimuth": 0.0,
-    "color": {
-      "blue": 1.0,
-      "green": 1.0,
-      "red": 1.0
-    },
-    "drawTexture": true,
-    "intensity": 0.0
-  },
-  "sunEnabled": true,
-  "waterWorldClipEnabled": true,
-  "waterWorldEnabled": true,
-  "waterWorldHeight": 62.875,
-  "waterWorldHeightOffsetEnabled": false,
-  "width": 1600,
-  "world": {
-    "dimension": 0,
-    "path": "/abs/world"
-  },
-  "yClipMax": 96,
-  "yClipMin": 48
+  ]
 }
