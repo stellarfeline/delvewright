@@ -177,10 +177,8 @@ while [ "$waited" -lt "$timeout_s" ]; do
   # Unjudged on purpose: until rcon is listening and the datapack has run its
   # `load` function, every reply here is a refusal, and that is the state being
   # polled for. The judged read happens once, below, after this converges.
-  reply="$(dw_rcon_probe "$cid" "scoreboard players get #placed dw.sys" || true)"
-  case "$reply" in
-    *"has 1 [dw.sys]"*) placed=1; break ;;
-  esac
+  # The shared reading (tools/lib/rcon.sh): the question the harness puts.
+  if [ "$(dw_placed_reading "$cid")" = placed ]; then placed=1; break; fi
   sleep 5
   waited=$((waited + 5))
 done

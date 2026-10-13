@@ -632,6 +632,9 @@ pub struct LegRoute {
     pub from: [i32; 3],
     /// The raw visited anchor the leg walks TO (this critical position).
     pub to: [i32; 3],
+    /// The `critical_path` step index of the position the leg walks FROM — the
+    /// step the party has just completed when the leg begins.
+    pub from_step: usize,
     /// The `critical_path` step index of the destination position — the objective
     /// this leg walks toward. Lets the visual-tier POV planner
     /// (`crate::compiler::render_plan`) name the served objective without re-deriving the

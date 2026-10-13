@@ -2780,7 +2780,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   carries a `vibrations` array: each `{sensor, shriekers}` — the sensor's cell
   and the cells of the shriekers that answer it. A sensor is **predicted** for a
   leg when the leg is not a `sneak` leg and four consecutive cells of its proven
-  route (three blocks walked) lie within integer `distSqr ≤ 49` of it — one
+  route (three blocks walked) that the party **must walk** lie within integer
+  `distSqr ≤ 49` of it. A route cell the party need not walk is one it could
+  stop in: from which it could still be completing the step the leg starts from,
+  or could already complete the step it walks to (`Step::completes_from`: inside
+  a `reach`'s completion volume; within `INTERACTION_REACH` 3 of a talk, an
+  interact hitbox or a click trigger, `BLOCK_INTERACTION_REACH` 4.5 of a lever,
+  button or chest, an `approach` trigger's range, or 1.5 of a plate; never for a
+  fight, a drop pickup or a loop) — such a cell breaks the run
+  (`sculk::must_walk`). The sensor's earshot is one
   block inside its listener radius — each with no `#dampens_vibrations` block
   (wool, a wool carpet) in its feet cell or under it and no
   `#occludes_vibration_signals` block (wool) in the box it and the sensor span;

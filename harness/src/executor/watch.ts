@@ -21,8 +21,8 @@ import {
 import { delay } from "./connection.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
-/** One server tick, in ms. */
-const TICK_MS = 50;
+/** How often (ms) the settle loop looks at the bot's own velocity. */
+const SETTLE_POLL_MS = 50;
 
 /** How long the bot may take to come to rest before a body is judged. */
 const SETTLE_MS = 600;
@@ -104,11 +104,12 @@ export const methods = {
       Date.now() < settleUntil &&
       Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z) > 0.005
     ) {
-      await delay(TICK_MS);
+      await delay(SETTLE_POLL_MS);
     }
-    // At least one tick: the server runs the watch line with the position it
-    // now holds for the bot.
-    await delay(2 * TICK_MS);
+    // At least one tick of the server's: it runs the watch line with the
+    // position it now holds for the bot. Counted in its game time, which a
+    // server that falls behind does not keep in step with wall time.
+    await this.waitForGameTicks(2, `${label}: the watch line's tick`);
     const ownMarker = "[dw:watch-pos @s ";
     const reads: string[] = [
       `/tellraw @s ${JSON.stringify([{ text: ownMarker }, { nbt: "Pos", entity: "@s" }, { text: "]" }])}`,

@@ -63,6 +63,7 @@ pub(in crate::compiler::nav) fn route_walked_legs(
                 LegRoute {
                     from: pair[0].pos,
                     to: pair[1].pos,
+                    from_step: pair[0].src_step,
                     to_step: pair[1].src_step,
                     cells,
                     use_gates,
