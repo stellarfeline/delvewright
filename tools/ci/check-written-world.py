@@ -27,6 +27,18 @@ count, printed with its cells, never an allowlist of cells — or it reds as
   cannot keep — under a cover light does not pass — to dirt, and spreads onto
   lit dirt beside it; which cells have turned by the instant of the save is
   the tick's draw (1.21.11 server, Mojang mappings).
+  The same class holds copper the server weathered: the same block family,
+  unwaxed on the written side, one or more stages further along
+  unaffected -> exposed -> weathered -> oxidized on the server side, with every
+  property equal. Vanilla's `WeatheringCopper` (the interface, `WeatherState`
+  and its next-stage map) is advanced by `ChangeOverTimeBlock.changeOverTime`
+  on a random tick, and nothing else moves a block along it unprompted (1.21.11
+  server, Mojang mappings). The families are read from the pinned block
+  registry (`crates/dsl/data/blocks-1.21.11.json`): a name `exposed_<stem>`
+  whose `weathered_<stem>` and `oxidized_<stem>` also exist, the unaffected
+  stage being `<stem>` (`copper_block` for the stem `copper`). A waxed block
+  (`waxed_` prefix: honeycomb, never advanced by the tick) that changed, and a
+  stage going backwards, stay in no class.
 - **re-derived** — the same block on both sides, differing only in a property
   the server re-derives on a block update (a fence, wall, bar or pane's
   `north`/`south`/`east`/`west`/`up`, a stair's `shape`, leaves' `distance`).
@@ -62,6 +74,47 @@ GRAVITY = {"sand", "red_sand", "gravel", "anvil", "chipped_anvil", "damaged_anvi
 # The blocks `SpreadingSnowyDirtBlock.randomTick` turns into dirt, or spreads
 # onto dirt as (grass block and mycelium are its two subclasses).
 TURF = {"grass_block", "mycelium"}
+REGISTRY = Path(__file__).resolve().parents[2] / "crates" / "dsl" / "data" / "blocks-1.21.11.json"
+STAGES = ("exposed", "weathered", "oxidized")
+
+
+def weathering_stages(names) -> dict[str, tuple[int, str]]:
+    """Block name (bare) -> (stage index 0..3, family stem), for every block of a
+    complete unaffected/exposed/weathered/oxidized ladder among `names`."""
+    have = {base(n) for n in names}
+    out: dict[str, tuple[int, str]] = {}
+    for n in sorted(have):
+        if not n.startswith("exposed_"):
+            continue
+        stem = n[len("exposed_"):]
+        if not all(f"{s}_{stem}" in have for s in STAGES):
+            continue
+        unaffected = "copper_block" if stem == "copper" else stem
+        if unaffected not in have:
+            continue
+        out[unaffected] = (0, stem)
+        for i, s in enumerate(STAGES, 1):
+            out[f"{s}_{stem}"] = (i, stem)
+    return out
+
+
+_WEATHERING: dict[str, tuple[int, str]] | None = None
+
+
+def weathering() -> dict[str, tuple[int, str]]:
+    global _WEATHERING
+    if _WEATHERING is None:
+        _WEATHERING = weathering_stages(json.loads(REGISTRY.read_text()))
+    return _WEATHERING
+
+
+def is_weathered(na: str, pa: dict, nb: str, pb: dict) -> bool:
+    """The server's own rule could have produced `nb` from `na`."""
+    w = weathering()
+    a, b = w.get(base(na)), w.get(base(nb))
+    return a is not None and b is not None and a[1] == b[1] and b[0] > a[0] and pa == pb
+
+
 CLASSES = ("gravity", "fluid", "random-tick", "re-derived", "clock", "model")
 REDERIVED_KEYS = {"north", "south", "east", "west", "up", "shape", "distance"}
 SHOWN = 12
@@ -99,6 +152,8 @@ def classify(a: str | None, b: str | None, cell, clocked) -> str:
     if is_fluid(na) or is_fluid(nb):
         return "fluid"
     if {base(na), base(nb)} in ({"dirt", t} for t in TURF):
+        return "random-tick"
+    if is_weathered(na, pa, nb, pb):
         return "random-tick"
     if na == nb:
         differ = {k for k in set(pa) | set(pb) if pa.get(k) != pb.get(k)}
