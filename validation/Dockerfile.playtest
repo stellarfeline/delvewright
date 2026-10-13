@@ -1,0 +1,35 @@
+# The playtest image: an admitted delve image (validation/Dockerfile.delve) with
+# its world already placed. `tools/creator/playtest-server.sh up` builds it once
+# per admitted build and serves every later `up` of the same inputs by
+# `docker run`, so a reopen boots a world that is already built.
+#
+# Built only by playtest-server.sh, on the creator's machine, never pushed. The
+# context is a directory the script assembles:
+#
+#   placed-world/            the world the delve image placed at its first boot,
+#                            stopped cleanly after the datapack read `#placed
+#                            dw.sys` = 1 and every probe passed; without its
+#                            `datapacks/` (the boot copies those in from
+#                            /delve, below) and without `session.lock`
+#   staging-admission.json   the staging gate's token for this build
+#   extras/                  the creator overlay and the resource pack, when the
+#                            build has them
+#
+# The world is handed to the server through itzg's documented `WORLD` variable:
+# a directory there is copied into /data/<level> when /data holds no world yet
+# (/image/scripts/start-setupWorld). It is not written into /data in a layer:
+# /data is the base image's volume, and a fresh bind mount over it starts empty.
+#
+# ADR-0010 holds: no server jar enters a layer. The jar is fetched by the base
+# entrypoint, or copied into /data from the creator's own cache before start.
+ARG PLAYTEST_BUILD_IMAGE
+FROM ${PLAYTEST_BUILD_IMAGE}
+
+ARG DATAPACKS=/delve/datapack
+
+COPY placed-world /delve/placed-world
+COPY staging-admission.json /delve/staging-admission.json
+COPY extras /delve/extras
+
+ENV WORLD=/delve/placed-world \
+    DATAPACKS=${DATAPACKS}
