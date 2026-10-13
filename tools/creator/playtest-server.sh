@@ -270,10 +270,19 @@ dw_playtest_serve_argv() {
 # creator overlay, when the build has one, is mounted read-only where the
 # playtest image will carry it, and named in DATAPACKS, so the world is placed
 # with the same packs it is later served with.
+#
+# The vanilla watchdog is OFF here (`max-tick-time=-1`, itzg's MAX_TICK_TIME).
+# Placing a world is a few very long ticks by design, and how long a tick takes
+# is the host's business: on a laptop running other builds a placement tick
+# passed the default 60 s, the watchdog halted the server (`A single server tick
+# took 60.00 seconds`, exit 1) and the placement failed with nothing wrong with
+# the delve. A placement that truly hangs is still bounded, by name, by
+# DW_PLAYTEST_PLACED_BUDGET_S. The serving boot keeps the shipped default.
+DW_PLAYTEST_PLACE_TICK_ENV="MAX_TICK_TIME=-1"
 dw_playtest_place_argv() {
   local name="$1" image="$2" rcon_pw="$3" heap_env="$4" stage="$5" creator="$6"
   printf '%s\n' docker run -d --name "$name-place" \
-    -e EULA=TRUE -e RCON_PASSWORD="$rcon_pw" -e "$heap_env"
+    -e EULA=TRUE -e RCON_PASSWORD="$rcon_pw" -e "$heap_env" -e "$DW_PLAYTEST_PLACE_TICK_ENV"
   if [ -n "$creator" ]; then
     printf '%s\n' -v "$creator:/delve/extras/creator-datapack:ro" \
       -e "DATAPACKS=/delve/datapack,/delve/extras/creator-datapack"
@@ -385,6 +394,19 @@ dw_playtest_identity_check() {
     return 1
   fi
   printf '%s\n' "$verdict"
+}
+
+# The line the vanilla watchdog logs as it halts a server whose tick ran past
+# `max-tick-time`; read so a halt is reported as what it is, not as whatever
+# probe it interrupted.
+DW_SERVER_WATCHDOG_MARKER='A single server tick took'
+
+# dw_server_log_shows_watchdog <text>
+dw_server_log_shows_watchdog() {
+  case "${1-}" in
+    *"$DW_SERVER_WATCHDOG_MARKER"*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # dw_playtest_wait_done <container> <budget_s> <poll_s>
@@ -1148,6 +1170,9 @@ die_or_oom() {
   log="$(docker logs "$container" 2>&1 || true)"
   if dw_server_log_shows_oom "$log"; then
     die "$plain — AND $(dw_server_oom_advice) Current: $HEAP_ENV. $LOG_HINT"
+  fi
+  if dw_server_log_shows_watchdog "$log"; then
+    die "$plain — the vanilla watchdog halted it: one tick ran past max-tick-time (the host was too loaded to tick; the crash report is in crash-reports/ beside the log). $LOG_HINT"
   fi
   die "$plain. $LOG_HINT"
 }

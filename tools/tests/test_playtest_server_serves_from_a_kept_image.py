@@ -100,6 +100,27 @@ def test_the_placement_boot_publishes_no_port():
     assert argv[-1] == "delvewright/playtest-build:abc", argv
 
 
+def test_the_placement_boot_runs_without_the_vanilla_watchdog_and_the_serving_run_with_it():
+    """A placement tick past 60 s on a loaded host made the watchdog halt the
+    server (exit 1) mid-placement. Reproduced with `--cpus 0.15`: red with the
+    shipped default, placed with `MAX_TICK_TIME=-1`."""
+    place = run_hook('dw_playtest_place_argv dw-x img playtest MAX_MEMORY=6G /place ""').stdout.splitlines()
+    assert "MAX_TICK_TIME=-1" in place, place
+    assert place[place.index("MAX_TICK_TIME=-1") - 1] == "-e", place
+    serve = run_hook('dw_playtest_serve_argv dw-x img playtest MAX_MEMORY=6G /stage ""').stdout.splitlines()
+    assert not any(a.startswith("MAX_TICK_TIME=") for a in serve), "the serving run keeps the shipped watchdog"
+
+
+def test_a_watchdog_halt_is_named_as_one():
+    log = "[21:33:40] [Server Watchdog/ERROR]: A single server tick took 60.00 seconds (should be max 0.05)"
+    assert run_hook(f'dw_server_log_shows_watchdog "{log}"').returncode == 0
+    assert run_hook('dw_server_log_shows_watchdog "Done (3.0s)!"').returncode == 1
+    text = SCRIPT.read_text(encoding="utf-8")
+    body = text[text.index("die_or_oom() {"):]
+    body = body[: body.index("\n}\n")]
+    assert "dw_server_log_shows_watchdog" in body and "watchdog halted it" in body
+
+
 def test_the_placement_boot_places_with_the_creator_overlay_it_is_served_with():
     result = run_hook('dw_playtest_place_argv dw-x img playtest MAX_MEMORY=6G /place /out/creator-datapack')
     argv = result.stdout.splitlines()
