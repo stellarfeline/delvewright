@@ -175,9 +175,10 @@ pub(crate) fn run_edit(
     // `edit` proves exactly what `build` proves, so it emits the same bodies: each
     // skin carries this delve's own texture id here too, before anything reads one.
     let skin_sources = delvewright_dsl::namespace_skin_textures(&mut v.campaign);
-    let plan = match Plan::build(&v.campaign, &v.prefabs)
-        .map(|p| p.with_design_files(v.loaded.design_files.clone()))
-    {
+    let plan = match Plan::build(&v.campaign, &v.prefabs).map(|p| {
+        p.with_design_files(v.loaded.design_files.clone())
+            .with_fragments(v.loaded.fragments.clone())
+    }) {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:

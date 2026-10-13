@@ -119,6 +119,10 @@ pub struct LoadedCampaign {
     /// `None` when the plan's terrain is not a heightmap. Its bytes are a
     /// manifest input. Attached to the parsed campaign by [`parse_loaded`].
     pub heightmap: Option<delvewright_dsl::siteplan::HeightmapRead>,
+    /// The district fragments under `districts/<x>/` (spec-0103 §7.1), already
+    /// unioned into [`Self::raw`], with where each object landed. Empty for a
+    /// campaign that holds none. Every fragment's bytes are in [`Self::inputs`].
+    pub fragments: crate::compiler::district::fragment::Fragments,
 }
 
 /// **Parse a loaded campaign directory**, with the images the documents name
@@ -130,6 +134,11 @@ pub struct LoadedCampaign {
 pub fn parse_loaded(
     loaded: &LoadedCampaign,
 ) -> Result<delvewright_dsl::Campaign, Vec<delvewright_dsl::Diagnostic>> {
+    // A fragment the engine could not union stops the parse where a document
+    // that does not parse does: the union would be a campaign nobody wrote.
+    if !loaded.fragments.refusals.is_empty() {
+        return Err(loaded.fragments.refusals.clone());
+    }
     let mut c = delvewright_dsl::parse_campaign(&loaded.raw)?;
     c.heightmap = loaded.heightmap.clone();
     Ok(c)
@@ -413,21 +422,26 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     }
     let heightmap =
         heightmap_path(site_plan.as_deref()).map(|rel| read_heightmap(dir, &rel, &mut inputs));
+    let mut raw = RawCampaign {
+        world,
+        npcs,
+        classes,
+        quest_plan,
+        quests,
+        dialogue,
+        world_edits,
+        geometry_brief,
+        layout_graph,
+        site_plan,
+        detail_plan,
+        design,
+    };
+    // spec-0103 §7.1: the district fragments, unioned into the stage documents
+    // after the whole's own, in sorted district order; their bytes are inputs.
+    let fragments = crate::compiler::district::fragment::read(dir, &mut raw, &mut inputs)?;
     Ok(LoadedCampaign {
-        raw: RawCampaign {
-            world,
-            npcs,
-            classes,
-            quest_plan,
-            quests,
-            dialogue,
-            world_edits,
-            geometry_brief,
-            layout_graph,
-            site_plan,
-            detail_plan,
-            design,
-        },
+        raw,
+        fragments,
         design_files,
         inputs,
         l10n,

@@ -16,7 +16,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   other subcommand `delvec --help` lists — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.13.0`, `dsl 0.39.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.14.0`, `dsl 0.40.0`, `mc 1.21.11`.
   The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
   every stage document, map-pipeline document and l10n sidecar declares it, and
   any other number is refused at the envelope with `DW0102`, which names it. The
@@ -159,6 +159,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 
 ```
 delvec validate <dir>                      # stages 1–7 schema + referential
+delvec validate <dir> --district <d>       # judged as one district's tree (DW1006, DW1009)
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
 delvec build    <dir> --perturb <knob> [--perturb-place <place>]
@@ -174,6 +175,11 @@ delvec l10n-apply <dir> --lang <c> --table <f>
                                            # write the sidecar from an English → translation table
 delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place
 delvec detail   <dir> [<place>|--all]      # detail a place inside its allocation (spec-0058)
+delvec district list <dir>                 # per-district census, DW1007 advice (spec-0103)
+delvec district packet <dir> <d> -o <dir> [--wave story|build|repair [--finding f]]
+                                           # one district's handover packet (spec-0103 §6)
+delvec district writes <dir> <d> [--paths f|-]
+                                           # refuse a path outside the district's write set (DW1008)
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
 delvec edit apply   <dir> [--batch f] [-o dir]  # replay edit script (+ candidate), persist on green (§7)
@@ -426,6 +432,7 @@ flag only optional content produces is `DW0868`. The closure is
 
 | Element | Fields → behavior | Since |
 |---------|-------------------|-------|
+| `quests[].district` | `district/<kebab>`, optional (spec-0103 §3.2) — the district whose worker expands this quest in its fragment `districts/<x>/quests.json`. Absent: the quest is the whole's (a spine quest, a quest whose objects stand in two districts), expanded in the whole's `quests.json`. A name the layout graph does not declare is the ordinary `DW0112` on this path. Read by the located rule (`DW1004`: a fragment's quest is the plan's quest of the same district), by `delvec validate --district` (`DW1006`), by `delvec district list` and by the packet's `story.owed`. | 0.40 |
 | `branch_points[]` | `{id, opens_at, forks_on[], branches[]}` (spec-0025) — the campaign's declared **story forks**. `forks_on` is the flag set this fork owns; `opens_at` the quest at which it opens. Each branch is `{id, flags[], leads_to}`: `flags` is the subset of `forks_on` this branch holds (the rest of `forks_on` is pinned **unset** on it — that half is what makes `DW0484` decidable), and `leads_to` is a **single** field whose id prefix says which kind of terminus it is — a `quest/<kebab>` the branches converge at, or an `ending/<kebab>` this branch runs to. One field rather than two mutually exclusive ones, so "exactly one of them" is an unrepresentable state instead of a rule some diagnostic polices: a value with neither prefix is the ordinary `DW0110`, one naming nothing is the ordinary `DW0112`. Enumerated branches are the **product of the declared points**, so the branch set is authored and small. Empty/absent = a campaign claiming to have no branch, which the compiler then *verifies* rather than assumes (`DW0480`). Proofs: `DW0480`–`DW0485`. | 0.8 |
 
 ### Stage 5 — `quests` (+ v0.3/v0.4 gameplay surface)
@@ -750,6 +757,7 @@ includes both.
 | `edges[].gating` | `{flags[]?, quest?}` — what a body must already hold to pass. **Deliberately not the campaign's `Gate`.** A gate is a runtime object emission evaluates against an acting player; a layout-graph edge is evaluated by nothing at run time, so making it a gate consumer would push a never-emitted object into machinery whose whole subject is emission. It is also narrower on purpose: the closure below is monotone, so a negative flag term and a numeric comparison are terms no proof here could honour, and a surface an author may write and nothing honours is worse than one that is absent. What it states is a **projection** of the campaign's runtime gating into topology, and `DW0818` keeps it a projection — every flag it names must be one the campaign really produces, and every quest must exist. |
 | `entry` / `goal` | Node ids. Every proof over the graph starts or ends at one, so a name nothing defines is `DW0814`. |
 | `critical_path[]` | An authored node sequence from `entry` to `goal`. **Authored rather than derived**, so that it is a claim the machine verifies (`DW0817`) rather than an answer with no author to disagree with. |
+| `districts[]` | `{id: district/<kebab>, nodes[], note?}` (spec-0103 §3.2) — **the partition of the places into districts**, the unit one worker authors when a campaign is authored in parallel and a design record before that. Every place is in exactly one district, a district holds at least one place, every member is a declared node, and a district's places are joined among themselves through edges whose both ends lie in it (every edge class counts, a scenery crown joins its tree by its vision edge): each shape is `DW1003`, naming the place or district, with the graph edit as the remedy; a place in no district is one diagnostic listing every such place. Ids are the ordinary `DW0110`/`DW0111`. `note` is recorded judgement for the reviewer and the packet that no check keys on. Absent is the whole authored by one agent: nothing reads it, nothing refuses, and the binding line says `district binding: 0 district(s): the whole`. The craft is `references/partitioning.md` on the `/new-delve` page. |
 | `beats[]` | `{quest, objective, node}` — where each quest beat happens. **Every objective is place-bound**: a body has to be standing somewhere to talk, to reach, to fight or to take, so every objective in the quest documents binds to exactly one node, and one that does not is `DW0818`. |
 | Reachability | Judged under a **monotone closure**: from `entry` holding nothing, mark every edge whose gating the obtained set satisfies, mark every node reachable over those edges respecting one-way direction, add what every beat bound to a reached node grants, iterate to fixpoint. A beat grants the flags the campaign sets when that objective completes and — for a `talk-to` — everything reachable in the spoken-to NPC's dialogue tree, because the conversation happens where the speaker stands; a quest grants itself and its `on_complete` flags once every one of its beats is somewhere a body can stand. The closure is **optimistic in every direction it cannot decide**, which is one property rather than a list of exceptions: it is branch-blind, so a campaign whose branch points set mutually exclusive flags can reach a node no single playthrough reaches. That can only under-report at graph time; the branch-aware battery over the assembled world is what stops it shipping. |
 | `nodes[].stations[]` | `{anchor: anchor/<kebab>, kind, note?}` (spec-0052) — **the named places INSIDE a place**. A station is a name and a shape, never a position: there is no coordinate, offset or hint field, and that absence is the design. Declared names join the campaign's anchor vocabulary at the same authority as every synthesized one, so a quest can name the fire pit in the camp rather than flattening it onto the camp's box centre. `note` is recorded judgement for the reviewer that no check keys on, exactly as `intent` is. Refusals: `DW0869` (a name in the engine's derived namespace), `DW0870` (two claims on one name, scoped to the area), `DW0871` (a reference demanding a shape the station is not). A station no quest references is **legal** — that is the mid-authoring state, and the binding line counts it. |
@@ -757,6 +765,138 @@ includes both.
 | A station while its place is **massed** | The derivation realizes every station of every box at a stand-in, from the same authority validation resolved the name against — so a name that validates cannot fail to exist in the built world, massed or detailed. A point lands on its own standable cell (the first not already taken, ordered by Chebyshev distance from the floor centre then lexicographically — the order `footing` searches by); a gate lands on a minimal region of the derivation's own bar, **written into the mass** so the world-load seal measures it shut rather than taking the anchor's word. The author cannot state where a stand-in goes. |
 | A station once its place is **bound** | It joins the node's owed set beside its `anchor/node-…`, its `spawn` when it is the entry, and its `anchor/unlock-…` sides, and the `detail-plan` `anchors` map must bind it to an anchor of the piece. The map's shape and its gate are unchanged — it still refuses every key outside the owed set, so a binding cannot invent vocabulary and a typo cannot pass as intent. The bound anchor's **shape** is checked against the station's `kind` (`DW0842`), so the kind validation read off the graph and the kind the built world has cannot drift. Two owed names bound to one piece anchor is legal: one spot may carry two roles. |
 | Binding | Every run that carries either document prints one line: places, connections (traversal, one-way, shortcut, gated, carry), **stations and how many of them are gates**, beats and **how many of them are on the mandatory quest spine**, critical-path steps and brief facts. Three zeroes are called out as findings rather than counted: a graph with no traversal connection (a set of places with no space between them), a graph none of whose beats belongs to a quest the finale depends on (a critical path over an unbound graph), and a brief with no fact. A station count of zero is stated rather than omitted — a campaign naming its places at node granularity is a fact about that campaign, not a silence. |
+
+### District fragments — `districts/<x>/` (optional; spec-0103)
+
+A campaign whose layout graph declares `districts[]` may hold `districts/<x>/`
+for each declared district `district/<x>`, and in it **fragments** of six stage
+documents. An object's owner is a property of where it is written: the whole's
+documents are the planner's, a fragment is its district's worker's. A
+fragment is the same stage's envelope (`dsl_version`, `campaign_id`, `stage`
+naming the stage it fragments, `content`), and its lists are read against that
+stage's own schema, so a malformed object is a `DW0100` naming the fragment.
+
+| Fragment | May carry | The whole owns (`DW1005` in a fragment) |
+|----------|-----------|------------------------------------------|
+| `npcs.json` | `npcs[]` | — |
+| `quests.json` | `quests[]`, `triggers[]`, `waves[]`, `actors[]`, `assemblies[]`, `lethal_volumes[]`, `pulses[]` | every other key — `state`, `guidance` and the rest |
+| `dialogue.json` | `dialogues[]` | — |
+| `layout-graph.json` | `nodes[]`, each carrying `id` and `stations[]` only | every other field of the graph and of a place |
+| `detail-plan.json` | `details[]` | `palette` |
+| `design.json` | rows under `design/places/<stem>/` | the map's and the scenes' rows (`concept/`, `reference/`) |
+
+A `.json` file of any other name under `districts/<x>/` is `DW1005` naming its
+stage; a `districts/<x>/` directory whose `district/<x>` the graph does not
+declare is `DW1003`. Either refusal, or any malformed fragment, stops the parse:
+nothing is unioned.
+
+**The union.** `compiler::load::load_campaign_dir` reads `districts/*/` in sorted
+district order and appends each fragment's lists to the stage document's after
+the whole's own (a layout-graph fragment's stations are appended to the named
+node's `stations[]`; a detail-plan or design fragment with no whole document
+beside it unions into an empty one). Every check runs over the union, so an id
+declared twice across a fragment and the whole, or across two fragments, is the
+duplicate it already is (`DW0111`). Every fragment's bytes are a manifest input
+(`districts/<x>/<file>`). The union order is a function of the files' names and
+contents, so the same objects build the same bytes whether they stand in the
+whole or in a fragment (ADR-0006): `crates/delvec/tests/districts.rs` builds the
+fixture both ways and holds every emitted file but `manifest.json` (whose
+`inputs` name the fragment files) and `validation/districts.json` (which records
+who wrote each object) byte-identical, and `crates/delvec/tests/district_gallery.rs`
+does the same on the gallery's site-plan point.
+
+**The located rule** (`DW1004`, `compiler::district::located`): every object a
+fragment carries stands in its district, and every reference it makes resolves
+to the whole or to its own district. One walk over each object as the fragment
+spells it — every string and every key at every depth — locates every anchor
+(`spawn`, `anchor/node-…`, a station, an `anchor/unlock-…`, a mark's anchor, the
+centre of an anchor-centred region: the place it stands in, by
+`compiler::district::Partition`), every `node/…` and every plan `region/…`
+(the whole's); a name the derivation does not provide is `DW0112`'s, never this
+code's. A barred seam's gate region (`anchor/seam-…`) stands in a district only
+when both its ends do: a boundary seam is the whole's. The same walk refuses a
+**join**: an id a sibling fragment declares (a quest, an objective, an NPC, a
+dialogue node, a station, a trigger, a wave, an actor, an assembly, a killing
+volume, a pulse), and a `flag/…` two fragments both write or read. The finer
+rows: a fragment's quest is the plan's quest of the same district; a dialogue
+tree is referenced only from quests of its own fragment; a station is declared
+on a place of the district; a detail row's place and a design row's place stem
+are places of the district. **A cast row that only records where an NPC the
+quest does not act on stands** — the ledger (spec-0020) demands every live NPC
+in every quest's `cast` — is the whole's state, not a placement, so it is
+neither located nor a join; a row for an NPC the quest names anywhere outside
+its `cast` is judged. **The whole may name anything.** A region is located by
+its centre anchor: its cells need the derivation's positions, which validation
+does not have (a recorded debt of spec-0103 §7.3). Binding: `district fragments:
+F fragment file(s) of D declared district(s), O object(s) located, N map name(s)
+resolved, R object(s) refused (DW1004)` on every run of a campaign that declares
+districts or holds a fragment.
+
+**A diagnostic about a fragment's object names the fragment.** A union pointer
+(`quests` `/content/quests/7/…`) into an object a fragment wrote is relocated to
+`districts/<x>/quests` `/content/quests/<i>/…`, and every printed diagnostic
+that names an object of exactly one district carries `[district/<x>]` at the
+head of its message — by its pointer when it has one, by the ids its message
+names when it is a build refusal with none (`compiler::district::ledger::
+Attribution`, installed once per run and applied by every printer). A finding
+naming objects of two districts, or of none, and every diagnostic about an
+object of the whole's documents, carries nothing.
+
+**`delvec validate --district <x>`** (`compiler::district::scope`) judges the
+tree as `x`'s worker's: the planned quests of other districts that stage 5 does
+not expand are counted into one informational `DW1006` line, and the refusals
+that stand only on that absence are reported as advisories beneath it —
+`DW0150` naming only siblings' quests, `DW0818` naming one, `DW0172`, `DW0482`
+and `DW0197` while any sibling quest is unexpanded, `DW0112` on a branch's
+`leads_to` or naming a sibling's unexpanded quest, `DW0816`/`DW0817` on the
+arm carrying the unwritten-mission caveat, and `DW0181`/`DW0187` on a sidecar row
+a sibling's unexpanded quest owns — together with `DW0460` on a quest
+not of `x` about an NPC `x`'s fragment declares (another quest's cast names it
+once the wave is integrated). Everything else is judged as it always is. A name
+the graph does not declare is `DW1009`, listing the declared set.
+
+**`delvec detail <place>`** writes the place's row into
+`districts/<x>/detail-plan.json` when the place is in district `x`, and into
+`detail-plan.json` on a campaign that declares no districts: the place decides
+the file.
+
+**`delvec district list <dir>`** prints one row per district — places reached and
+scenery, seams inside, boundary seams and carries, stations, beats, planned
+quests (expanded of planned), places detailed, critical-path steps, acts — and
+`DW1007` beside a district outside `references/partitioning.md`'s bounds (no
+reached place holding a beat or a station; more than 12 places; quests in more
+than one act). It advises and exits 0.
+
+**`delvec district packet <dir> <d> -o <dir>`** writes `packet.json`,
+`PACKET.md` rendered from it, and `images/` holding a copy of every image it
+names: the campaign (title, theme, premise, sky, minutes, languages, dsl, the
+map reference views, view 1's anchor and style contract from its sidecar,
+`design/README.md`), the district (places, inner edges, the critical path's steps
+in it with the entering and leaving steps marked, its beats), the story (acts,
+the quests it owes with their beat objectives, the whole's quests with objects
+in its places, the cast rows of the NPCs its quests name), its concept images,
+`places[]` — each place's allocation exactly as `delvec allocation` prints it —
+`neighbours[]` with one **connection contract** per boundary edge (`edge`,
+`class`, `form`; `opening`; `height` — sill, rise, `stair_in`; `landing` — the
+cells one step either side of the opening's foot; `facing`; `gating`; `passes`
+— the party's crossings of the critical path, NPCs placed on both sides, items
+given on one side and required on the other, the two places' atmospheres,
+pulses sounding on one side and heard on the other, vision edges and
+sightlines), the wave (`story`, `build`, or `repair` with the finding verbatim),
+the write set, the tools line and the baseline commit. Derived on every
+invocation and an input to nothing. Refused when `--prefabs` resolves outside
+the campaign's repository.
+
+**`delvec district writes <dir> <d> [--paths f|-]`** reads repository-relative
+paths and refuses every path outside the district's write set (`DW1008`), naming
+its owner — the whole, or the district whose set holds it — at exit 1. The set:
+`<campaign>/districts/<x>/**`; `<campaign>/programs/<stem>.json` and
+`<campaign>/design/places/<stem>/**` per place; and under the prefab directory
+the files `delvec detail` writes for those places (`<piece>.nbt`, its tiles,
+`<piece>.json`, `<piece>.report.json`, `<piece>` = `compiler::detail::piece_id`)
+and for the pieces the district's rows name. Two call sites, one rule:
+`tools/creator/district-hook.sh` (the worker's pre-commit hook) and
+`tools/creator/district-integrate.sh` (the planner's gate before a merge).
 
 ### The map pipeline — `site-plan` (optional; spec-0049)
 
@@ -2748,6 +2888,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS`, default 20 s) and, outside a `loop`
   step, when any walk is moved by the offset of a loop the path exercises. It carries no
   `objective`.
+- `<out>/validation/districts.json` (spec-0103 §8.3), written only for a campaign
+  whose layout graph declares districts: `districts` (the declared ids), one map
+  per object class — `places`, `stations`, `anchors` (every synthesized anchor),
+  `quests`, `objectives`, `triggers`, `waves`, `actors`, `assemblies`,
+  `lethal_volumes`, `pulses`, `npcs`, `details` — from id to `district/<x>` or
+  `whole` (an object's owner is where it is written; a place's is its district),
+  `legs` — every leg of `critical-path-waypoints.json` with the place and the
+  district its start and end cells stand in — and `examined`, the object count.
+  A harness or PackTest finding names a step, a leg or an object; this ledger
+  resolves it to the district its repair is dispatched to.
 - `<out>/validation/critical-path-waypoints.json`: the DW0311-proven per-leg route
   thinned to sparse waypoints (`from`/`to` = the `critical-path.json` step
   positions; a waypoint at each corner/floor-height change **and the corridor commit

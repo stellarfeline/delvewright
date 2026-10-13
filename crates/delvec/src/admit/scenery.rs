@@ -37,6 +37,7 @@ use delvewright_dsl::detailplan::DetailPlanContent;
 use delvewright_dsl::layout::LayoutGraphContent;
 use delvewright_dsl::{Envelope, NodeId};
 
+use crate::compiler::district::DISTRICTS_DIR;
 use crate::compiler::load::{DETAIL_PLAN_FILE, LAYOUT_GRAPH_FILE};
 use crate::schem::prefab::PrefabMeta;
 
@@ -193,25 +194,44 @@ pub fn place_kind(meta_path: &Path, meta: &PrefabMeta) -> PlaceKind {
             .and_then(|n| n.to_str())
             .unwrap_or("?")
             .to_string();
-        let raw = match std::fs::read_to_string(dir.join(DETAIL_PLAN_FILE)) {
-            Ok(raw) => raw,
-            // Not a detailed campaign: it places no piece.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(_) => {
-                kind.campaigns += 1;
-                kind.unread.push(name);
-                continue;
+        // The rows stand in the whole's `detail-plan.json` and in every
+        // district fragment's (spec-0103 §7.4), where `delvec detail` writes
+        // the row of a place that is in a district.
+        let mut docs = vec![dir.join(DETAIL_PLAN_FILE)];
+        let mut fragments: Vec<_> = std::fs::read_dir(dir.join(DISTRICTS_DIR))
+            .map(|rd| {
+                rd.filter_map(Result::ok)
+                    .map(|e| e.path().join(DETAIL_PLAN_FILE))
+                    .filter(|p| p.is_file())
+                    .collect()
+            })
+            .unwrap_or_default();
+        fragments.sort();
+        docs.extend(fragments);
+        let mut plans: Vec<DetailPlanContent> = Vec::new();
+        let mut unread = false;
+        for doc in &docs {
+            match std::fs::read_to_string(doc) {
+                Ok(raw) => match serde_json::from_str::<Envelope<DetailPlanContent>>(&raw) {
+                    Ok(plan) => plans.push(plan.content),
+                    Err(_) => unread = true,
+                },
+                // Not a detailed campaign, or not this district: it places no piece.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => unread = true,
             }
-        };
+        }
+        if plans.is_empty() && !unread {
+            continue;
+        }
         kind.campaigns += 1;
-        let Ok(plan) = serde_json::from_str::<Envelope<DetailPlanContent>>(&raw) else {
+        if unread {
             kind.unread.push(name);
             continue;
-        };
-        let rows: Vec<_> = plan
-            .content
-            .details
+        }
+        let rows: Vec<_> = plans
             .iter()
+            .flat_map(|p| p.details.iter())
             .filter(|d| d.piece.as_str() == meta.prefab_id)
             .collect();
         if rows.is_empty() {

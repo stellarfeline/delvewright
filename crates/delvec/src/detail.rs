@@ -60,10 +60,9 @@ delvewright_dsl::dw_code! {
     const DW_NOT_HANDED: DwCode = DwCode::new("DW0882", ExitTier::Build);
 }
 
-/// Where a campaign keeps its detail programs: `<campaign>/programs/<place
-/// stem>.json`. The address is derived from the place, as the piece id is; the
-/// document at it is the creator's.
-pub const PROGRAMS_DIR: &str = "programs";
+/// Where a campaign keeps its detail programs — the library's constant, which
+/// the district write set reads too.
+pub use delvec::compiler::detail::PROGRAMS_DIR;
 
 /// The prefix a program reads a handed value through (spec-0058 §2.3).
 pub const HANDED_PREFIX: &str = "handed/";
@@ -333,7 +332,7 @@ fn prepare(
     let stem = stem_of(node);
     let place = node.0.as_str();
     let a = engine::allocation(campaign, node).expect("a target is a place the plan allocates");
-    let id = format!("{}-{stem}", campaign.world.campaign_id.0);
+    let id = engine::piece_id(campaign, node);
     if !export::is_valid_id(&id) {
         eprintln!(
             "error: `{place}`: the piece id `{id}` (campaign id plus place stem) is not a usable \
@@ -847,10 +846,27 @@ fn with_row(campaign: &Campaign, row: &Detail) -> Campaign {
     c
 }
 
-/// Write the row into `detail-plan.json`, canonical, creating the document when
-/// the campaign has none. A re-run that changes nothing moves no byte.
+/// Write the row where the place belongs, canonical, creating the document
+/// when there is none: the fragment `districts/<x>/detail-plan.json` of the
+/// district the place is in (spec-0103 §7.4), or the whole's
+/// `detail-plan.json` on a campaign that declares no districts. **The place
+/// determines the file**; no flag chooses it. A re-run that changes nothing
+/// moves no byte.
 fn write_row(campaign_dir: &Path, campaign: &Campaign, row: &Detail) -> Result<(), u8> {
-    let path = campaign_dir.join(delvec::compiler::load::DETAIL_PLAN_FILE);
+    let partition = delvec::compiler::district::Partition::of(campaign);
+    let path = match partition.of_node(row.place.0.as_str()) {
+        Some(x) => {
+            let dir = campaign_dir
+                .join(delvec::compiler::district::DISTRICTS_DIR)
+                .join(delvec::compiler::district::dir_of(x));
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                eprintln!("internal error: cannot create {}: {e}", dir.display());
+                return Err(EXIT_INTERNAL);
+            }
+            dir.join(delvec::compiler::load::DETAIL_PLAN_FILE)
+        }
+        None => campaign_dir.join(delvec::compiler::load::DETAIL_PLAN_FILE),
+    };
     let mut env: Envelope<DetailPlanContent> = if path.is_file() {
         let text = std::fs::read_to_string(&path).map_err(|e| {
             eprintln!("internal error: cannot read {}: {e}", path.display());
@@ -939,9 +955,10 @@ fn battery(campaign_dir: &Path, prefabs_dir: &Path, lang: &str, json: bool) -> R
     // images the campaign directory holds are attached to the plan, which
     // cannot read them for itself (spec-0061).
     let skin_sources = delvewright_dsl::namespace_skin_textures(&mut campaign);
-    let plan = match Plan::build(&campaign, &v.prefabs)
-        .map(|p| p.with_design_files(v.loaded.design_files.clone()))
-    {
+    let plan = match Plan::build(&campaign, &v.prefabs).map(|p| {
+        p.with_design_files(v.loaded.design_files.clone())
+            .with_fragments(v.loaded.fragments.clone())
+    }) {
         Ok(p) => p,
         Err(e) => {
             print_diags(&e.warnings, json);

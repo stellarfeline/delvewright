@@ -394,6 +394,7 @@ def test_a_demonstration_discharges_nothing_and_the_verdict_says_so(tmp_path, mo
             lambda *_a, **_k: pathlib.Path("/nonexistent/delvec"),
         )
         monkeypatch.setattr(mod, "run_probe", lambda *_a: (1, ["DW9999"], "validate"))
+        monkeypatch.setattr(mod, "run_district_lines", lambda *_a: [])
         monkeypatch.setattr(
             sys, "argv", ["check", "--prefabs", str(prefabs), "--report", str(report)]
         )
@@ -544,6 +545,7 @@ def test_a_probe_that_perturbs_nothing_is_refused_by_name(tmp_path, monkeypatch)
         mod, "resolve_delvec", lambda *_a, **_k: pathlib.Path("/nonexistent/delvec")
     )
     monkeypatch.setattr(mod, "run_probe", lambda *_a: (1, ["DW9999"], "validate"))
+    monkeypatch.setattr(mod, "run_district_lines", lambda *_a: [])
     monkeypatch.setattr(sys, "argv", ["check", "--prefabs", str(prefabs)])
     with pytest.raises(SystemExit):
         mod.main()
@@ -600,3 +602,18 @@ def test_a_loop_ledger_that_binds_nothing_is_a_zero_binding(tmp_path):
     (out / "critical-path.json").write_text(json.dumps({"steps": [{"action": "loop"}]}))
     zeroes = mod.read_build_ledgers(out)[1]
     assert len(zeroes) == 1 and zeroes[0].startswith("loop-gate.json: absent"), zeroes
+
+
+def test_the_district_run_lines_red_when_no_overlay_declares_a_district(tmp_path, monkeypatch):
+    """`DW1006` and `DW1007` are bound only by the gate's own run lines
+    (spec-0103 §11.1); a gallery none of whose overlays declares a district
+    binds them to nothing, and that is a red, not a skipped line."""
+    mod = _load_checker()
+    gallery = tmp_path / "gallery"
+    (gallery / "overlays" / "plain").mkdir(parents=True)
+    (gallery / "overlays" / "plain" / "overlay.json").write_text('{"binds": ["X.y"]}')
+    (gallery / "overlays" / "plain" / "layout-graph.json").write_text('{"content": {"nodes": []}}')
+    monkeypatch.setattr(mod, "GALLERY", gallery)
+    monkeypatch.setattr(mod.gallery_domain, "GALLERY", gallery)
+    with pytest.raises(SystemExit):
+        mod.run_district_lines(pathlib.Path("/nonexistent/delvec"), tmp_path)

@@ -67,6 +67,12 @@ enum Command {
     Validate {
         /// Campaign directory.
         campaign_dir: PathBuf,
+        /// Judge this tree as one district's (spec-0103 §7.5): the planned
+        /// quests of other districts are counted into one `DW1006` line, and
+        /// the refusals that stand only on their absence are reported under it
+        /// as advisories. A name the layout graph does not declare is `DW1009`.
+        #[arg(long, value_name = "DISTRICT")]
+        district: Option<String>,
     },
     /// Quest-graph reachability analysis (implies validate).
     Analyze {
@@ -353,6 +359,13 @@ enum Command {
     /// GPU renders through Nucleation/wgpu: one piece's shot set, a whole
     /// library, or the missing-texture fidelity gate.
     Render(delvec::render::cli::RenderArgs),
+    /// A district of a campaign authored in parallel (spec-0103): the census
+    /// of every district (`list`), one district's handover packet (`packet`),
+    /// and the refusal of a write outside its write set (`writes`).
+    District {
+        #[command(subcommand)]
+        action: crate::cli::district::DistrictAction,
+    },
     /// An assembly's rig (spec-0082): the parts and clips a generator wrote
     /// beside the prefab library, at `<prefabs>/rigs/<name>/rig.json`.
     Rig {
@@ -375,7 +388,11 @@ fn main() -> ExitCode {
     };
 
     match command {
-        Command::Validate { campaign_dir } => run_validate(campaign_dir, &cli.prefabs, cli.json),
+        Command::Validate {
+            campaign_dir,
+            district,
+        } => run_validate(campaign_dir, &cli.prefabs, cli.json, district.as_deref()),
+        Command::District { action } => crate::cli::district::run(action, &cli.prefabs, cli.json),
         Command::Analyze { campaign_dir } => run_analyze(campaign_dir, &cli.prefabs, cli.json),
         Command::Build {
             campaign_dir,

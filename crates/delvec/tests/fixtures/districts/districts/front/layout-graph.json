@@ -1,0 +1,19 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "nodes": [
+      {
+        "id": "node/loft",
+        "stations": [
+          {
+            "anchor": "anchor/loft-window",
+            "kind": "point",
+            "note": "The window the sleeper leans against."
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.40.0",
+  "stage": "layout-graph"
+}

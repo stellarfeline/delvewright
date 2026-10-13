@@ -174,17 +174,25 @@ delegating them would hand the design's intent to somebody who never held it:
   `DESIGN.md`.
 - **Step 12, visual review.** Judging a frame is the whole task.
 
-None of this appears on the skill page, and that is deliberate: a person
-following the page does all of it themselves, and the page reads identically
-either way because every step is written as work to do rather than as work to
-route.
+None of the table above appears on the skill page, and that is deliberate: a
+person following the page does all of it themselves, and the page reads
+identically either way because every step is written as work to do rather than
+as work to route.
 
-A second shape is specified and not built: a campaign authored in parallel,
-one planner agent over the whole and one worker per **district** — a declared
-set of the layout graph's places (spec-0103). The craft of dividing a map into
-districts is the page's own `references/partitioning.md`, already bundled; the
-planner's dispatch, which that spec puts on the page because the creator's
-session is where the workers run, lands with the implementation.
+**The one dispatch the page does carry is the planner-and-workers shape**
+(spec-0103), because the creator's session is where the workers run. When the
+layout graph declares `districts[]` and the creator names more than one worker
+at the design gate, the agent running the page is the **planner**: it authors
+the whole — the plan, the story documents, the spine, the design gate, every
+proof — and dispatches one fresh `Agent` per district into a worktree of its
+own at step 5 (wave A, the district's quests) and step 9 (wave B, its places),
+each knowing only its packet (`delvec district packet`). The planner reviews,
+gates and merges every return and runs the ladder, the renders and the play
+server on the assembled whole alone. The craft of the partition is the page's
+`references/partitioning.md`; the planner's procedure — the worker count, a
+wave, the `Agent` call, the gates, the merge, a repair — is
+`references/parallel.md`. The page carries no model tier for the workers; the
+tiers in the table above are this record's.
 
 ## 3. Inside one stage
 

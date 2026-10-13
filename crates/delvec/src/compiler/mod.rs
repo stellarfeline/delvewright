@@ -40,6 +40,7 @@
 //! - [`deathplan`]: `validation/death-plan.json` — the bot tier's contract for dying.
 //! - [`design`]: the approved hour is the built hour — the design record against the world's reachable skies (`DW0890`).
 //! - [`detail`]: a place is detailed inside the box the whole gave it.
+//! - [`district`]: a campaign authored in parallel by district — fragments, the located rule, the packet, the write set and the ledger.
 //! - [`eclipse`]: no body stands in front of an affordance the party clicks (`DW0359`), no affordance shares a cell with a sealed gate's hitboxes (`DW0422`), and no two affordances share a cell with each other (`DW0878`).
 //! - [`edit`]: the map editor's stage-7 edit-script replay.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
@@ -141,6 +142,7 @@ pub mod daylight;
 pub mod deathplan;
 pub mod design;
 pub mod detail;
+pub mod district;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;

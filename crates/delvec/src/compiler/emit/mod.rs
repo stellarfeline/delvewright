@@ -1321,6 +1321,24 @@ pub fn build_with_warnings(
             &crate::compiler::design::record(&binding, &findings),
         );
     }
+    // **The object-to-district ledger** (spec-0103 §8.3): every object with its
+    // district or `whole`, and every critical-path leg with the district of
+    // the place it starts and ends in, read off the waypoint artifact already
+    // in the tree. Written only for a campaign that declares districts — the
+    // whole is otherwise the only owner — and before the manifest, so its hash
+    // is covered.
+    {
+        let legs: Option<serde_json::Value> = out
+            .get("validation/critical-path-waypoints.json")
+            .and_then(|b| serde_json::from_slice(b).ok());
+        if let Some(ledger) = crate::compiler::district::ledger::document(
+            plan.campaign,
+            &plan.fragments,
+            legs.as_ref(),
+        ) {
+            put_json(&mut out, "validation/districts.json", &ledger);
+        }
+    }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
     let manifest = emit_manifest(plan, input_bytes, &out, language, resource_pack.as_ref());

@@ -39,7 +39,7 @@ you stop, hand over exactly what is needed, and **wait for an answer**:
 | where | what you hand the user | what you wait for |
 |---|---|---|
 | **Init I5** the client jar | the two ways it can reach the machine, download named as the default | which one — or the directory to copy from |
-| **§4** the design gate | the design walkthrough — every scene, near view and far | an explicit yes |
+| **§4** the design gate | the design walkthrough — every scene, near view and far; when the graph declares districts, the partition table and how many to author at once | an explicit yes (and a worker count, default three) |
 
 Stopping means: say what you have done, hand over the thing, say what you need
 back, and **end your turn there**. Do not proceed on silence, do not substitute
@@ -117,12 +117,12 @@ Init            every run: I0 · I1 · I1b, the pin check      ── §Init
  2  placement   the map's reference, then brief → graph → plan
  3  story       npcs · classes · quest-plan
  4  GATE        STOP — the design walkthrough, the user says yes
- 5  content     quests · dialogue
+ 5  content     quests · dialogue        (wave A when districts are declared)
  6  fmt         delvec fmt              ← every campaign, not optional
  7  analyze     analyze the quest graph
  8  build       build the datapack and the world
  8b cameras     one showcase camera per approved image
- 9  detail      every place, one at a time
+ 9  detail      every place, one at a time  (wave B when districts are declared)
 10  ladder      PackTest · bot · branch runs, on the detailed build
 11  chronicle   only when the plan declares branch_points
 12  visual      the POV sequence, then the renders
@@ -260,7 +260,12 @@ optional fields commit you to, and what a stub owes.
 
 **Needs**: step 1. **Produces**: `geometry-brief.json` + `layout-graph.json` +
 `site-plan.json`. **Read**: `references/placement.md`. The map's own reference
-is drawn first: `references/map-reference.md`.
+is drawn first: `references/map-reference.md`. **The partition**: after the
+graph's nodes and edges and before the site plan, divide the places into
+districts — `districts[]` in `layout-graph.json`, by `references/partitioning.md`
+— and run `delvec --prefabs "$DELVEWRIGHT_PREFABS" district list campaigns/<id>`; a small map may declare none.
+A partition with more than one district makes steps 5 and 9 waves, and
+`references/parallel.md` is the planner's procedure: read it now.
 Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
@@ -279,7 +284,11 @@ every scene, a near view and a far view, each image shown with the `time` and
 `weather` tokens it was drawn under. **Waits for**: an explicit yes, from the
 user, never inferred from silence and never from a reviewer you invented.
 **Produces**, once they say yes: `campaigns/<id>/design/`, `design/README.md`
-and `design.json`. **Read**: `references/design-gate.md`.
+and `design.json`. **Read**: `references/design-gate.md`. **When the graph
+declares districts**, the hand-over carries the census table (`delvec --prefabs "$DELVEWRIGHT_PREFABS" district list`)
+beneath the walkthrough and one question — how many districts to author at
+once; the default is three, and a yes with no number takes it. The gate is one
+gate for the whole campaign, never split by district.
 
 ## 5. The content documents — `quests` and `dialogue`
 
@@ -291,7 +300,10 @@ written (its L1 rule decides what the level shows and what is
 written at all) — both before writing, not after a refusal. A custom face, or a
 vanilla texture the delve replaces (the moon, a mob's skin, a block), is
 `references/npc-skins.md`. Other languages are a final document stage:
-`references/other-languages.md`.
+`references/other-languages.md`. **With districts declared and a worker count
+above one, this step is wave A**: you write the whole's quests, then dispatch
+one worker per district by `references/parallel.md` and integrate every return
+before step 6.
 
 ## 6. `delvec fmt` — every campaign, every time
 
@@ -337,7 +349,11 @@ detail plan, or with any place still standing in its stand-in. **Needs**:
 step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`; a row that binds a piece the shipped library holds
-takes the library through `references/the-shipped-library.md`.
+takes the library through `references/the-shipped-library.md`. **With districts
+declared and a worker count above one, this step is wave B**: each district's
+worker details its places — `delvec detail` writes a district place's row into
+`districts/<x>/detail-plan.json` itself — by `references/parallel.md`, and you run
+`detail --all` over the integrated whole before step 10.
 
 ## 10. The machine ladder
 
@@ -400,6 +416,7 @@ reference means the file listed here.
 | `references/workspace.md` | the campaign directory and every document in it | step 1 |
 | `references/map-reference.md` | drawing the map's own reference views | step 2 |
 | `references/partitioning.md` | dividing a map into districts, the unit a worker authors when a campaign is authored in parallel (spec-0103): the test, the bounds, connectors, two worked examples | step 2 |
+| `references/parallel.md` | the planner's procedure when districts are authored at once: the worker count, a wave, the packet, the `Agent` call, the gates, the merge, a repair | steps 2, 4, 5, 9 |
 | `references/story.md` | npcs, classes, the quest plan, and where step 3 ends | step 3 |
 | `references/design-gate.md` | the walkthrough, the approval, `design.json` | step 4 |
 | `references/content.md` | quests and dialogue, and the codes that clear here | step 5 |

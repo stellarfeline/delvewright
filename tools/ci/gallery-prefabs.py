@@ -103,34 +103,54 @@ def generate(out: Path, skins: Path, design: Path, textures: Path, terrain: Path
     return sum(1 for p in out.iterdir() if p.suffix == ".nbt")
 
 
+def plan_documents(campaign: Path) -> list[Path]:
+    """Every document a campaign's `details[]` rows stand in: the whole's
+    `detail-plan.json` and each district fragment's (spec-0103 §7.4), where
+    `delvec detail` writes the row of a place that is in a district."""
+    docs = [campaign / "detail-plan.json"] if (campaign / "detail-plan.json").is_file() else []
+    docs += sorted((campaign / "districts").glob("*/detail-plan.json"))
+    return docs
+
+
+def plan_rows(campaign: Path) -> dict[str, dict]:
+    """place -> its committed row, across every document rows stand in."""
+    rows: dict[str, dict] = {}
+    for doc in plan_documents(campaign):
+        for row in json.loads(doc.read_text())["content"]["details"]:
+            rows[row["place"]] = row
+    return rows
+
+
 def detail(delvec: Path, out: Path, name: str) -> tuple[int, int]:
     """Detail every program-bound place of one overlay point into `out`.
 
     Returns (places detailed, rows compared to the committed document).
     """
     overlay = GALLERY / "overlays" / name
-    committed = json.loads((overlay / "detail-plan.json").read_text())
+    committed = plan_rows(overlay)
     with tempfile.TemporaryDirectory(prefix="gallery-detail-") as tmp:
         point = Path(tmp) / name
         n = materialise(point, overlay)
         if n == 0:
             die(f"materialising `{name}` wrote ZERO files")
         # The verb writes every program place's row; the committed rows it is
-        # about to write are taken out of the materialised plan first, so a
-        # place is never judged against a row naming a piece this run has not
-        # made yet. The rows it writes are compared to the committed ones below.
+        # about to write are taken out of the materialised plan first — out of
+        # the whole's document and every district fragment's — so a place is
+        # never judged against a row naming a piece this run has not made yet.
+        # The rows it writes are compared to the committed ones below.
         stems = {p.stem for p in (overlay / "programs").glob("*.json")}
-        plan_path = point / "detail-plan.json"
-        plan = json.loads(plan_path.read_text())
-        kept = [r for r in plan["content"]["details"] if r["place"].split("/", 1)[1] not in stems]
-        stripped = len(plan["content"]["details"]) - len(kept)
+        stripped = 0
+        for plan_path in plan_documents(point):
+            plan = json.loads(plan_path.read_text())
+            kept = [r for r in plan["content"]["details"] if r["place"].split("/", 1)[1] not in stems]
+            stripped += len(plan["content"]["details"]) - len(kept)
+            plan["content"]["details"] = kept
+            plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
         if stripped != len(stems):
             die(
-                f"`{overlay.relative_to(REPO)}/detail-plan.json` commits {stripped} row(s) for the "
+                f"`{overlay.relative_to(REPO)}` commits {stripped} row(s) for the "
                 f"{len(stems)} program(s) under `programs/`; every program place's row is committed"
             )
-        plan["content"]["details"] = kept
-        plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n")
         r = subprocess.run(
             [str(delvec), "--prefabs", str(out), "detail", str(point), "--all"],
             capture_output=True,
@@ -143,25 +163,35 @@ def detail(delvec: Path, out: Path, name: str) -> tuple[int, int]:
                 "program-detailed place did not detail, so the prefab directory is "
                 "incomplete.\n" + r.stdout
             )
-        written = json.loads((point / "detail-plan.json").read_text())
+        written = plan_rows(point)
+        # Where the verb wrote each row, which the place decides.
+        written_in = {
+            row["place"]: str(doc.relative_to(point))
+            for doc in plan_documents(point)
+            for row in json.loads(doc.read_text())["content"]["details"]
+        }
+    committed_in = {
+        row["place"]: str(doc.relative_to(overlay))
+        for doc in plan_documents(overlay)
+        for row in json.loads(doc.read_text())["content"]["details"]
+    }
     # Which rows the verb wrote: every row whose place has a program.
     programs = {p.stem for p in (overlay / "programs").glob("*.json")}
-    by_place = {row["place"]: row for row in committed["content"]["details"]}
     compared = 0
-    for row in written["content"]["details"]:
-        stem = row["place"].split("/", 1)[1]
+    for place, row in sorted(written.items()):
+        stem = place.split("/", 1)[1]
         if stem not in programs:
             continue
         compared += 1
-        have = by_place.get(row["place"])
-        if have != row:
+        have = committed.get(place)
+        if have != row or committed_in.get(place) != written_in.get(place):
             die(
-                f"the row `delvec detail` writes for `{row['place']}` is not the row "
-                f"`{overlay.relative_to(REPO)}/detail-plan.json` commits.\n"
-                f"  verb:      {json.dumps(row, sort_keys=True)}\n"
-                f"  committed: {json.dumps(have, sort_keys=True)}\n"
+                f"the row `delvec detail` writes for `{place}` is not the row "
+                f"`{overlay.relative_to(REPO)}` commits.\n"
+                f"  verb:      {json.dumps(row, sort_keys=True)} in `{written_in.get(place)}`\n"
+                f"  committed: {json.dumps(have, sort_keys=True)} in `{committed_in.get(place)}`\n"
                 "A committed row is what the program produces, never a hand edit: run "
-                "the verb over the materialised point and commit `detail-plan.json` as "
+                "the verb over the materialised point and commit the detail plan as "
                 "it leaves it."
             )
     if compared == 0:

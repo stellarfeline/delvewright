@@ -227,6 +227,52 @@ def patch_ops(point: Path | None) -> list[dict]:
     return ops
 
 
+def probe_base(point: Path | None) -> Path | None:
+    """The overlay a probe is a perturbation OF, when its manifest names one.
+
+    A probe is a point plus a declared edit, and most probes are the primary's.
+    Some rules live only at an overlay's parameter point — a district fragment
+    exists only beside a layout graph that declares districts, which is the
+    site-plan overlay's (spec-0103 §11.1) — so `probe.json` may say
+    `"point": "<overlay>"`. The probe is then that overlay's campaign plus its
+    edit: its `patch` names documents by their path in that campaign
+    (`districts/yard/npcs.json`), and everything it does not name is the
+    overlay's, on every run, exactly as everything a primary probe does not name
+    is the primary's.
+    """
+    if point is None:
+        return None
+    manifest = Path(point) / "probe.json"
+    if not manifest.is_file():
+        return None
+    name = json.loads(manifest.read_text()).get("point")
+    if not name:
+        return None
+    base = GALLERY / "overlays" / name
+    if not (base / "overlay.json").is_file():
+        raise PatchError(f"names the point `{name}`, which is not an overlay of the gallery")
+    return base
+
+
+def probe_flags(point: Path | None) -> list[str]:
+    """The extra arguments a probe's engine run takes (`"flags"` in `probe.json`).
+
+    A refusal that is about how a verb is CALLED rather than what a document
+    says — `delvec validate --district <a name no district carries>` is `DW1009`
+    (spec-0103 §7.5) — is demonstrated by the point plus the call, and the call
+    is part of what the probe declares, read from the same manifest.
+    """
+    if point is None:
+        return []
+    manifest = Path(point) / "probe.json"
+    if not manifest.is_file():
+        return []
+    flags = json.loads(manifest.read_text()).get("flags") or []
+    if not isinstance(flags, list) or not all(isinstance(f, str) for f in flags):
+        raise PatchError(f"`{manifest}` has `flags` that are not a list of strings")
+    return flags
+
+
 def shadowed_documents(point: Path | None) -> list[str]:
     """Files a probe ships that the PRIMARY also holds — the copy shape, by name.
 
@@ -242,12 +288,13 @@ def shadowed_documents(point: Path | None) -> list[str]:
     point = Path(point)
     if not (point / "probe.json").is_file():
         return []
+    base = probe_base(point)
     out = []
     for f in sorted(point.rglob("*")):
         if not f.is_file() or f.name in POINT_MANIFESTS:
             continue
         rel = f.relative_to(point)
-        if (GALLERY / rel).is_file():
+        if (GALLERY / rel).is_file() or (base is not None and (base / rel).is_file()):
             out.append(str(rel))
     return out
 
@@ -341,10 +388,15 @@ def materialise(dest: Path, point: Path | None = None) -> int:
     """
     dest = Path(dest)
     _refuse_dangerous_dest(dest)
-    shutil.rmtree(dest, ignore_errors=True)
-    shutil.copytree(GALLERY, dest)
-    for junk in NOT_CAMPAIGN:
-        shutil.rmtree(dest / junk, ignore_errors=True)
+    base = probe_base(point)
+    if base is not None:
+        # The overlay's campaign first; the probe's own files and edits land on it.
+        materialise(dest, base)
+    else:
+        shutil.rmtree(dest, ignore_errors=True)
+        shutil.copytree(GALLERY, dest)
+        for junk in NOT_CAMPAIGN:
+            shutil.rmtree(dest / junk, ignore_errors=True)
     if point is not None:
         shadowed = shadowed_documents(point)
         if shadowed:
@@ -369,7 +421,7 @@ def materialise(dest: Path, point: Path | None = None) -> int:
             # campaign's own — the probe is then the primary plus that overlay
             # document plus one declared edit, and nothing is a copy. Any other
             # path is a document of the primary, or a refusal.
-            campaign_rel = _overlay_document(rel)
+            campaign_rel = _overlay_document(rel) if base is None else None
             if campaign_rel is not None:
                 source = GALLERY / rel
                 if not source.is_file():
@@ -387,7 +439,8 @@ def materialise(dest: Path, point: Path | None = None) -> int:
             target = dest / rel
             if not rel or not target.is_file():
                 raise PatchError(
-                    f"declares an edit to `{rel}`, which is not a document of the primary"
+                    f"declares an edit to `{rel}`, which is not a document of the "
+                    + (f"`{base.name}` point" if base is not None else "primary")
                 )
             doc = json.loads(target.read_text())
             try:

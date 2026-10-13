@@ -1,0 +1,14 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "details": [
+      {
+        "anchors": {},
+        "piece": "prefab/gallery-beacon",
+        "place": "node/beacon"
+      }
+    ]
+  },
+  "dsl_version": "0.40.0",
+  "stage": "detail-plan"
+}

@@ -1,0 +1,14 @@
+{
+  "code": "DW1004",
+  "patch": [
+    {
+      "doc": "districts/yard/npcs.json",
+      "op": "replace",
+      "path": "/content/npcs/0/anchor",
+      "value": "anchor/node-near-hall"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "One edit on the site-plan point: the porter, an NPC `district/yard`'s fragment declares, is stood in the near hall. Every object a district's fragment carries stands in its district, so the NPC is refused at validation, naming the district the anchor stands in and the whole's document to move a crossing NPC to."
+}

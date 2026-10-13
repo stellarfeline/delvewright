@@ -1,0 +1,14 @@
+{
+  "code": "DW1005",
+  "patch": [
+    {
+      "doc": "districts/hall/quests.json",
+      "op": "add",
+      "path": "/content/state",
+      "value": []
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "One edit on the site-plan point: the hall's quest fragment declares `state`. The campaign's runtime state is the whole's (spec-0103 §7.1), so the field is refused before the fragment is unioned, naming the whole's `quests.json` to write it in."
+}

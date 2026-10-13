@@ -46,8 +46,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use delvewright_dsl::{
-    CONCEPT_DIR, Campaign, Diagnostic, DwCode, ExitTier, REFERENCE_DIR, REFERENCE_DIRS, Reference,
-    WorldTime, WorldWeather, is_image_extension,
+    CONCEPT_DIR, Campaign, Diagnostic, DwCode, ExitTier, PLACES_DIR, REFERENCE_DIR, REFERENCE_DIRS,
+    Reference, WorldTime, WorldWeather, is_image_extension,
 };
 
 use crate::compiler::view::camera::Answers;
@@ -161,6 +161,53 @@ impl DesignFiles {
                 });
             }
         }
+        // A place's own pictures (spec-0103 §5): one subdirectory per place
+        // stem under `design/places/`, each image named `places/<stem>/<file
+        // stem>`.
+        let places = campaign_dir.join("design").join(PLACES_DIR);
+        match std::fs::read_dir(&places) {
+            Ok(entries) => {
+                let mut stems: Vec<std::path::PathBuf> = Vec::new();
+                for entry in entries {
+                    let p = entry?.path();
+                    if p.is_dir() {
+                        stems.push(p);
+                    }
+                }
+                stems.sort();
+                for dir in stems {
+                    let Some(stem) = dir.file_name().and_then(|s| s.to_str()) else {
+                        continue;
+                    };
+                    for entry in std::fs::read_dir(&dir)? {
+                        let p = entry?.path();
+                        let Some(ext) = p.extension().and_then(|e| e.to_str()) else {
+                            continue;
+                        };
+                        if !is_image_extension(&ext.to_ascii_lowercase()) {
+                            continue;
+                        }
+                        let (Some(fstem), Some(file)) = (
+                            p.file_stem().and_then(|s| s.to_str()),
+                            p.file_name().and_then(|s| s.to_str()),
+                        ) else {
+                            continue;
+                        };
+                        images.push(DesignImage {
+                            name: format!("{PLACES_DIR}/{stem}/{fstem}"),
+                            file: format!("{PLACES_DIR}/{stem}/{file}"),
+                        });
+                    }
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return Err(std::io::Error::new(
+                    e.kind(),
+                    format!("design/{PLACES_DIR}: {e}"),
+                ));
+            }
+        }
         images.sort();
         let record = campaign_dir.join(crate::compiler::view::camera::CAMERAS_FILE);
         let cameras = match std::fs::read(&record) {
@@ -209,6 +256,9 @@ pub struct DesignBinding {
     pub concept_files: usize,
     /// Of those, the ones under `reference/`.
     pub reference_files: usize,
+    /// Of those, a place's own, under `places/<stem>/` (spec-0103 §5) — stated
+    /// only when non-zero, so a campaign with none reads as it always has.
+    pub places_files: usize,
     /// The distinct `(time, weather)` pairs the rows state, with how many rows
     /// state each, in declaration order of the two enums.
     pub skies_stated: Vec<(WorldTime, WorldWeather, usize)>,
@@ -294,12 +344,17 @@ impl DesignBinding {
         };
         format!(
             "design record: {} reference(s) recorded over {} image file(s) under `design/` \
-             ({CONCEPT_DIR}/ {}, {REFERENCE_DIR}/ {}); skies stated: {skies}; world reaches times \
+             ({CONCEPT_DIR}/ {}, {REFERENCE_DIR}/ {}{}); skies stated: {skies}; world reaches times \
              {} weathers {} (DW0890); {}",
             self.references,
             self.image_files,
             self.concept_files,
             self.reference_files,
+            if self.places_files > 0 {
+                format!(", {PLACES_DIR}/ {}", self.places_files)
+            } else {
+                String::new()
+            },
             set_line(&self.world_times, WorldTime::keyword),
             set_line(&self.world_weathers, WorldWeather::keyword),
             self.cameras_line(),
@@ -354,10 +409,7 @@ pub fn record(binding: &DesignBinding, findings: &Findings) -> serde_json::Value
     serde_json::json!({
         "references": binding.references,
         "image_files": binding.image_files,
-        "by_directory": {
-            CONCEPT_DIR: binding.concept_files,
-            REFERENCE_DIR: binding.reference_files,
-        },
+        "by_directory": by_directory(binding),
         "skies_stated": binding
             .skies_stated
             .iter()
@@ -377,6 +429,19 @@ pub fn record(binding: &DesignBinding, findings: &Findings) -> serde_json::Value
         "answered": binding.cameras.answered(),
         "unanswered_rows": findings.unanswered_rows,
     })
+}
+
+/// Images per directory; `places` is stated only when non-zero, so a campaign
+/// with no place images writes the record it always has.
+fn by_directory(binding: &DesignBinding) -> serde_json::Value {
+    let mut by = serde_json::json!({
+        CONCEPT_DIR: binding.concept_files,
+        REFERENCE_DIR: binding.reference_files,
+    });
+    if binding.places_files > 0 {
+        by[PLACES_DIR] = serde_json::json!(binding.places_files);
+    }
+    by
 }
 
 /// The two lists `validation/design-record.json` carries beside its counts: the
@@ -414,6 +479,7 @@ pub fn check(c: &Campaign, files: &DesignFiles) -> (Vec<Diagnostic>, DesignBindi
         image_files: files.images.len(),
         concept_files: files.count_in(CONCEPT_DIR),
         reference_files: files.count_in(REFERENCE_DIR),
+        places_files: files.count_in(PLACES_DIR),
         skies_stated: Vec::new(),
         world_times: world_times.clone(),
         world_weathers: world_weathers.clone(),
@@ -874,6 +940,7 @@ mod tests {
             image_files: 4,
             concept_files: 4,
             reference_files: 0,
+            places_files: 0,
             skies_stated: vec![(WorldTime::Night, WorldWeather::Clear, 4)],
             world_times: vec![WorldTime::Night],
             world_weathers: vec![WorldWeather::Clear],

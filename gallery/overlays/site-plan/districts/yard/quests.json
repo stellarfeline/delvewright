@@ -1,0 +1,66 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/curator": {
+            "at": "anchor/node-near-hall",
+            "dialogue": "dlg/curator-root",
+            "doing": "standing in the middle of the near hall with the catalogue open"
+          },
+          "npc/factor": {
+            "at": "anchor/node-annex",
+            "dialogue": "dlg/factor-root",
+            "doing": "minding the counter in the side gallery"
+          },
+          "npc/marshal": {
+            "at": "anchor/node-loft",
+            "dialogue": "dlg/marshal-root",
+            "doing": "looking down on the far hall from the loft"
+          },
+          "npc/porter": {
+            "at": "anchor/node-perch",
+            "dialogue": "dlg/porter-root",
+            "doing": "keeping watch from the lookout at the gantry's end"
+          },
+          "npc/warden": {
+            "at": "anchor/node-far-hall",
+            "dialogue": "dlg/warden-root",
+            "doing": "watching the barred wall from the far side"
+          }
+        },
+        "happening": {
+          "text": "The party comes out into the yard.",
+          "verb": "arrives"
+        },
+        "id": "quest/try-the-yard-stone",
+        "objectives": [
+          {
+            "anchor": "anchor/exit-stone",
+            "happening": {
+              "subject": "anchor/exit-stone",
+              "text": "The key turns in the stone and the yard's latch falls.",
+              "verb": "opens"
+            },
+            "hint": "The stone stands at the court's edge.",
+            "id": "obj/try-the-stone",
+            "missing_item_hint": "The stone wants the Yard Key, from the crow's nest over the causeway.",
+            "prop": {
+              "block": "minecraft:stone_button"
+            },
+            "requires_item": "minecraft:tripwire_hook",
+            "title": "Turn the yard key",
+            "type": "interact"
+          }
+        ],
+        "on_complete": [],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.40.0",
+  "stage": "quests"
+}

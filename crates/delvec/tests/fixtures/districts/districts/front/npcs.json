@@ -1,0 +1,25 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "npcs": [
+      {
+        "anchor": "anchor/loft-window",
+        "area": "area/site",
+        "base_entity": "minecraft:villager",
+        "id": "npc/sleeper",
+        "name": "The Sleeper",
+        "persona": {
+          "archetype": "drowsy watchman",
+          "backstory": "He was set to watch the cell door before the hall had walls, and he has not been relieved since.",
+          "demeanor": "Wary and unmoving at first; yields only to a traveler who asks rather than demands.",
+          "motivation": "Keep the cell shut until someone proves they mean to walk out the far side.",
+          "secret": "He dreams the hall is full of people.",
+          "speech_style": "Terse, formal, archaic; clipped declarations and no contractions."
+        },
+        "role": "quest-giver"
+      }
+    ]
+  },
+  "dsl_version": "0.40.0",
+  "stage": "npcs"
+}

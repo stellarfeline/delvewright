@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{AreaId, BranchId, BranchPointId, EndingId, FlagId, NpcId, QuestId};
+use crate::{AreaId, BranchId, BranchPointId, DistrictId, EndingId, FlagId, NpcId, QuestId};
 
 #[cfg(doc)]
 use crate::QuestEffect;
@@ -262,6 +262,12 @@ pub struct PlannedQuest {
     pub mandatory: bool,
     /// Act number (informational).
     pub act: u32,
+    /// **The district whose worker expands this quest** (spec-0103 §3.2).
+    /// Absent: the quest is the whole's — a spine quest, a quest whose objects
+    /// stand in two districts — and the planner expands it. Names a district the
+    /// layout graph declares (`DW0112`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub district: Option<DistrictId>,
 }
 
 // ---------------------------------------------------------------------------
@@ -974,6 +980,34 @@ pub(crate) fn plan_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 format!(
                     "quest depends on unknown quest `{dep}` — declare it in the stage-4 quest \
                      plan or correct the `depends_on` entry"
+                ),
+            );
+        }
+        if let Some(district) = &q.district {
+            let declared: Vec<&str> = c
+                .layout_graph
+                .iter()
+                .flat_map(|g| g.content.districts.iter().map(|d| d.id.as_str()))
+                .collect();
+            dangling(
+                d,
+                declared.contains(&district.as_str()),
+                "quest-plan",
+                format!("/content/quests/{i}/district"),
+                format!(
+                    "quest names district `{district}`, which the layout graph does not declare \
+                     (it declares {}). Correct the name, declare the district in \
+                     `layout-graph.json` `districts[]`, or drop the field to make the quest \
+                     the whole's",
+                    if declared.is_empty() {
+                        "none".to_string()
+                    } else {
+                        declared
+                            .iter()
+                            .map(|d| format!("`{d}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    }
                 ),
             );
         }

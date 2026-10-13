@@ -1,0 +1,13 @@
+{
+  "code": "DW1003",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "remove",
+      "path": "/content/districts/1/nodes/2"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "One edit on the site-plan point: the perch is taken out of `district/yard`, so it stands in no district. Once a graph declares districts every place belongs to one, because a place in none has no author on the parallel route; refused at validation, listing every unassigned place, with the graph edit as the remedy."
+}

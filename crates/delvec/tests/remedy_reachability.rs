@@ -3664,3 +3664,144 @@ fn dw0995_a_gate_the_route_opens_is_heard() {
     assert!(!after.contains("DW0995"), "{after}");
     assert!(after.contains("1 of 1 with a listening station"), "{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW1003 — the partition into districts (spec-0103 §3.3): every shape names a
+// graph edit, and each edit reaches a campaign the partition no longer refuses
+// ---------------------------------------------------------------------------
+
+/// The districts fixture — the blockout's seven places in two districts — at
+/// a scratch directory of its own.
+fn districts_campaign(tag: &str) -> (PathBuf, PathBuf) {
+    let camp = tmp(&format!("districts-{tag}"));
+    common::copy_dir_all(
+        &common::repo_root().join("crates/delvec/tests/fixtures/districts"),
+        &camp,
+    );
+    let prefabs = tmp(&format!("districts-{tag}-prefabs"));
+    (camp, prefabs)
+}
+
+fn graph(camp: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
+    common::patch_file(&camp.join("layout-graph.json"), edit);
+}
+
+/// The partition's verdict: whether `DW1003` refuses, and everything said.
+fn partition(camp: &Path, prefabs: &Path) -> (bool, String) {
+    let (code, out) = validate_at(camp, prefabs);
+    let refused = out.contains("DW1003 [error]");
+    assert!(
+        refused || code == 0,
+        "the move reached some other refusal:\n{out}"
+    );
+    (refused, out)
+}
+
+fn district_nodes(g: &mut serde_json::Value, i: usize) -> &mut Vec<serde_json::Value> {
+    g["content"]["districts"][i]["nodes"]
+        .as_array_mut()
+        .unwrap()
+}
+
+#[test]
+fn dw1003_adding_the_unassigned_place_to_a_district_clears_the_partition() {
+    let (camp, prefabs) = districts_campaign("none");
+    graph(&camp, |g| {
+        district_nodes(g, 1).retain(|n| n != "node/tunnel")
+    });
+    let (refused, out) = partition(&camp, &prefabs);
+    assert!(refused, "{out}");
+    assert!(out.contains("stand in no district: `node/tunnel`"), "{out}");
+    assert!(
+        out.contains("Add each to the district"),
+        "the message names the move:\n{out}"
+    );
+    graph(&camp, |g| {
+        district_nodes(g, 1).push(serde_json::json!("node/tunnel"))
+    });
+    let (refused, out) = partition(&camp, &prefabs);
+    assert!(!refused, "{out}");
+}
+
+#[test]
+fn dw1003_removing_a_place_from_one_of_its_two_districts_clears_the_partition() {
+    let (camp, prefabs) = districts_campaign("two");
+    graph(&camp, |g| {
+        district_nodes(g, 0).push(serde_json::json!("node/cell"))
+    });
+    let (refused, out) = partition(&camp, &prefabs);
+    assert!(
+        refused && out.contains("remove it from one of the two"),
+        "{out}"
+    );
+    graph(&camp, |g| district_nodes(g, 0).retain(|n| n != "node/cell"));
+    assert!(!partition(&camp, &prefabs).0);
+}
+
+#[test]
+fn dw1003_correcting_an_undeclared_place_clears_the_partition() {
+    let (camp, prefabs) = districts_campaign("undeclared");
+    graph(&camp, |g| {
+        district_nodes(g, 1).retain(|n| n != "node/tunnel");
+        district_nodes(g, 1).push(serde_json::json!("node/tunel"));
+    });
+    let (refused, out) = partition(&camp, &prefabs);
+    assert!(
+        refused && out.contains("Correct the name to a place of `nodes[]`"),
+        "{out}"
+    );
+    graph(&camp, |g| {
+        district_nodes(g, 1).retain(|n| n != "node/tunel");
+        district_nodes(g, 1).push(serde_json::json!("node/tunnel"));
+    });
+    assert!(!partition(&camp, &prefabs).0);
+}
+
+#[test]
+fn dw1003_deleting_an_empty_district_clears_the_partition() {
+    let (camp, prefabs) = districts_campaign("empty");
+    graph(&camp, |g| {
+        g["content"]["districts"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"id": "district/empty", "nodes": []}));
+    });
+    let (refused, out) = partition(&camp, &prefabs);
+    assert!(refused && out.contains("or delete it"), "{out}");
+    graph(&camp, |g| {
+        g["content"]["districts"].as_array_mut().unwrap().pop();
+    });
+    assert!(!partition(&camp, &prefabs).0);
+}
+
+#[test]
+fn dw1003_moving_the_stray_place_to_the_district_it_is_joined_to_clears_the_partition() {
+    let (camp, prefabs) = districts_campaign("apart");
+    graph(&camp, |g| {
+        district_nodes(g, 1).retain(|n| n != "node/exit");
+        district_nodes(g, 0).push(serde_json::json!("node/exit"));
+    });
+    let (refused, out) = partition(&camp, &prefabs);
+    assert!(
+        refused && out.contains("move the stray place(s) to the district they are joined to"),
+        "{out}"
+    );
+    graph(&camp, |g| {
+        district_nodes(g, 0).retain(|n| n != "node/exit");
+        district_nodes(g, 1).push(serde_json::json!("node/exit"));
+    });
+    assert!(!partition(&camp, &prefabs).0);
+}
+
+#[test]
+fn dw1003_renaming_an_undeclared_fragment_directory_clears_the_partition() {
+    let (camp, prefabs) = districts_campaign("dir");
+    std::fs::rename(camp.join("districts/back"), camp.join("districts/rear")).unwrap();
+    let (refused, out) = partition(&camp, &prefabs);
+    assert!(
+        refused && out.contains("rename the directory to a declared district"),
+        "{out}"
+    );
+    std::fs::rename(camp.join("districts/rear"), camp.join("districts/back")).unwrap();
+    assert!(!partition(&camp, &prefabs).0);
+}

@@ -370,9 +370,12 @@ def test_every_committed_probe_is_the_primary_plus_its_declared_edit():
         own += sum(
             1 for f in pd.rglob("*") if f.is_file() and f.name not in gallery_domain.POINT_MANIFESTS
         )
+        base = gallery_domain.probe_base(pd)
         for op in ops:
-            assert (GALLERY / op["doc"]).is_file(), (
-                f"probe `{pd.name}` edits `{op['doc']}`, which is not a primary document"
+            home = base if base is not None else GALLERY
+            assert (home / op["doc"]).is_file(), (
+                f"probe `{pd.name}` edits `{op['doc']}`, which is not a document of "
+                f"`{home.relative_to(GALLERY.parent)}`"
             )
     assert edits or own, (
         f"{len(probes)} probe(s) examined and not one perturbs anything — every probe would "
@@ -405,3 +408,42 @@ def test_a_probe_may_edit_an_overlay_document_named_by_its_path(tmp_path):
     }))
     with pytest.raises(gallery_domain.PatchError, match="no overlay holds"):
         gallery_domain.materialise(dest, p)
+
+
+def test_a_probe_may_name_the_overlay_point_it_perturbs(tmp_path):
+    """`"point": "<overlay>"`: the overlay's campaign plus the declared edit,
+    the edit naming documents by their path in that campaign (spec-0103 §11.1)."""
+    p = tmp_path / "a-point-edit"
+    p.mkdir()
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW1004",
+        "point": "site-plan",
+        "patch": [{"doc": "districts/yard/npcs.json", "op": "replace",
+                   "path": "/content/npcs/0/anchor", "value": "anchor/node-near-hall"}],
+    }))
+    dest = tmp_path / "out"
+    gallery_domain.materialise(dest, p)
+    npcs = json.loads((dest / "districts/yard/npcs.json").read_text())
+    assert npcs["content"]["npcs"][0]["anchor"] == "anchor/node-near-hall"
+    # Everything else is the overlay's: its site plan is in the campaign.
+    assert (dest / "site-plan.json").is_file()
+    assert not (dest / "overlays").exists()
+    # A copy of a point document is refused, as a copy of a primary one is.
+    (p / "site-plan.json").write_text("{}")
+    with pytest.raises(gallery_domain.PatchError, match="primary also holds"):
+        gallery_domain.materialise(dest, p)
+    (p / "site-plan.json").unlink()
+    # A point that is not an overlay is a refusal.
+    (p / "probe.json").write_text(json.dumps({"code": "DW1004", "point": "no-such", "patch": []}))
+    with pytest.raises(gallery_domain.PatchError, match="not an overlay"):
+        gallery_domain.materialise(dest, p)
+
+
+def test_a_probe_declares_its_flags_in_its_manifest(tmp_path):
+    p = tmp_path / "flags"
+    p.mkdir()
+    (p / "probe.json").write_text(json.dumps({"code": "DW1009", "flags": ["--district", "district/x"]}))
+    assert gallery_domain.probe_flags(p) == ["--district", "district/x"]
+    (p / "probe.json").write_text(json.dumps({"code": "DW1009", "flags": "--district"}))
+    with pytest.raises(gallery_domain.PatchError):
+        gallery_domain.probe_flags(p)

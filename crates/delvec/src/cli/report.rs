@@ -15,7 +15,48 @@ pub(super) fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::write(path, bytes)
 }
 
+/// **The run's router** (spec-0103 §8.3): set once the campaign is read, and
+/// applied by every printer here, so a line that names an object of one
+/// district carries `[district/<x>]` whichever pass produced it. Absent, a
+/// diagnostic prints exactly as it was raised.
+static ROUTER: std::sync::Mutex<Option<delvec::compiler::district::ledger::Attribution>> =
+    std::sync::Mutex::new(None);
+
+/// Install the router for the rest of the run.
+pub(crate) fn set_router(router: delvec::compiler::district::ledger::Attribution) {
+    *ROUTER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(router);
+}
+
+/// A diagnostic as the router prints it.
+fn routed(d: &Diagnostic) -> Diagnostic {
+    match &*ROUTER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    {
+        Some(r) => r.route(d),
+        None => d.clone(),
+    }
+}
+
+/// A build message as the router prints it: tagged when the objects it names
+/// belong to one district.
+fn routed_message(message: &str) -> String {
+    match &*ROUTER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    {
+        Some(r) => match r.of_message(message) {
+            Some(x) if !message.starts_with("[district/") => format!("[{x}] {message}"),
+            _ => message.to_string(),
+        },
+        None => message.to_string(),
+    }
+}
+
 pub(crate) fn print_one_diag(d: &Diagnostic, json: bool) {
+    let d = &routed(d);
     if json {
         println!(
             "{}",
@@ -29,6 +70,7 @@ pub(crate) fn print_one_diag(d: &Diagnostic, json: bool) {
 /// Print a `DW03xx` build/solver diagnostic (exit 3), honoring `--json`. Mirrors
 /// the spec-0002 one-object-per-line JSON shape used for validation diagnostics.
 pub(crate) fn print_build_error(code: DwCode, message: &str, json: bool) {
+    let message = &routed_message(message);
     if json {
         let d = serde_json::json!({
             "code": code,
@@ -94,6 +136,9 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
     }
     let b = delvewright_dsl::LayoutBinding::of(campaign);
     out.push(b.line());
+    if campaign.layout_graph.is_some() {
+        out.push(b.district_line());
+    }
     if campaign.site_plan.is_some() {
         out.push(b.plan_line());
         // The derivation, handed back: every box's corner and how it was
@@ -163,7 +208,8 @@ fn layout_binding_lines(campaign: &delvewright_dsl::Campaign, out: &mut Vec<Stri
 /// Headings are human-output only: `--json` is one JSON object per line and
 /// stays that way (spec-0002).
 pub(crate) fn print_diags(diags: &[Diagnostic], json: bool) {
-    let mut ordered: Vec<&delvewright_dsl::Diagnostic> = diags.iter().collect();
+    let routed: Vec<Diagnostic> = diags.iter().map(routed).collect();
+    let mut ordered: Vec<&delvewright_dsl::Diagnostic> = routed.iter().collect();
     ordered.sort_by_key(|d| d.group());
 
     let mut heading: Option<delvewright_dsl::Group> = None;

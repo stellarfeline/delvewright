@@ -226,6 +226,16 @@ pub fn copy_dir_all(src: &Path, dst: &Path) {
 /// share a `dir` delete each other's output mid-write.
 #[allow(dead_code)]
 pub fn gallery_site_plan_at(dir: &Path) {
+    let pieces = dir.with_extension("generator-out");
+    gallery_site_plan_with_pieces(dir, &pieces);
+    let _ = std::fs::remove_dir_all(&pieces);
+}
+
+/// [`gallery_site_plan_at`], keeping the generator's pieces at `pieces` — the
+/// hand-built half of the point's prefab directory, for a test that details
+/// and builds the point.
+#[allow(dead_code)]
+pub fn gallery_site_plan_with_pieces(dir: &Path, pieces: &Path) {
     let gallery = repo_root().join("gallery");
     copy_dir_all(&gallery, dir);
     for junk in [
@@ -248,14 +258,13 @@ pub fn gallery_site_plan_at(dir: &Path) {
     }
     copy_dir_all(&gallery.join("overlays/site-plan"), dir);
     let _ = std::fs::remove_file(dir.join("overlay.json"));
-    let pieces = dir.with_extension("generator-out");
-    let _ = std::fs::remove_dir_all(&pieces);
-    std::fs::create_dir_all(&pieces).unwrap();
+    let _ = std::fs::remove_dir_all(pieces);
+    std::fs::create_dir_all(pieces).unwrap();
     let out = std::process::Command::new(env!("CARGO"))
         .args(["run", "-q", "--locked", "--release", "--manifest-path"])
         .arg(repo_root().join("prefabs/gallery-generator/Cargo.toml"))
         .arg("--")
-        .arg(&pieces)
+        .arg(pieces)
         .arg("--skins")
         .arg(dir.join("skins"))
         .arg("--design")
@@ -276,7 +285,6 @@ pub fn gallery_site_plan_at(dir: &Path) {
         dir.join("terrain/site.png").is_file(),
         "the generator wrote no heightmap"
     );
-    let _ = std::fs::remove_dir_all(&pieces);
 }
 
 /// Materialize a full campaign directory at `dst` = the valid hello-world base
@@ -369,6 +377,25 @@ pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
 }
 
 /// [`patch_doc`] against a file, in place.
+/// Apply `f` to every detail-plan document of a campaign: the whole's
+/// `detail-plan.json` and each district fragment's (spec-0103 §7.4), where a
+/// district place's row stands.
+#[allow(dead_code)]
+pub fn patch_detail_plans(dir: &Path, mut f: impl FnMut(&mut serde_json::Value)) {
+    let mut docs = vec![dir.join("detail-plan.json")];
+    if let Ok(rd) = std::fs::read_dir(dir.join("districts")) {
+        let mut frags: Vec<PathBuf> = rd
+            .map(|e| e.unwrap().path().join("detail-plan.json"))
+            .filter(|p| p.is_file())
+            .collect();
+        frags.sort();
+        docs.extend(frags);
+    }
+    for d in docs.iter().filter(|d| d.is_file()) {
+        patch_file(d, &mut f);
+    }
+}
+
 pub fn patch_file(path: &Path, f: impl FnOnce(&mut serde_json::Value)) {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
     std::fs::write(path, patch_doc(&text, f)).unwrap();

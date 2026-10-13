@@ -1,0 +1,61 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/curator": {
+            "at": "anchor/node-near-hall",
+            "dialogue": "dlg/curator-root",
+            "doing": "standing in the middle of the near hall with the catalogue open"
+          },
+          "npc/factor": {
+            "at": "anchor/node-annex",
+            "dialogue": "dlg/factor-root",
+            "doing": "minding the counter in the side gallery"
+          },
+          "npc/marshal": {
+            "at": "anchor/node-loft",
+            "dialogue": "dlg/marshal-root",
+            "doing": "looking down on the far hall from the loft"
+          },
+          "npc/porter": {
+            "at": "anchor/node-perch",
+            "dialogue": "dlg/porter-root",
+            "doing": "keeping watch from the lookout at the gantry's end"
+          },
+          "npc/warden": {
+            "at": "anchor/node-far-hall",
+            "dialogue": "dlg/warden-root",
+            "doing": "watching the barred wall from the far side"
+          }
+        },
+        "happening": {
+          "text": "The party turns aside into the side gallery.",
+          "verb": "arrives"
+        },
+        "id": "quest/count-the-benches",
+        "objectives": [
+          {
+            "anchor": "anchor/annex-bench",
+            "happening": {
+              "text": "The party sits on the bench in the side gallery.",
+              "verb": "arrives"
+            },
+            "hint": "The bench stands against the side gallery's wall.",
+            "id": "obj/count-the-benches",
+            "radius": 2,
+            "title": "Sit on the gallery bench",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.40.0",
+  "stage": "quests"
+}

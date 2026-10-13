@@ -1,0 +1,19 @@
+{
+  "code": "DW1003",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "remove",
+      "path": "/content/districts/0/nodes/5"
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/districts/1/nodes/-",
+      "value": "node/causeway"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "One edit on the site-plan point: the causeway moves from `district/hall` into `district/yard`. The causeway joins only the far hall, so the yard's places no longer join one another through edges inside the district: two sets declared as one district are two districts, and the disconnected one is refused at validation, naming the place that stands apart."
+}

@@ -82,6 +82,20 @@ delvewright_dsl::dw_code! {
 // The frames, and what they hand out
 // ---------------------------------------------------------------------------
 
+/// Where a campaign keeps its detail programs: `<campaign>/programs/<place
+/// stem>.json`. The address is derived from the place, as the piece id is; the
+/// document at it is the creator's.
+pub const PROGRAMS_DIR: &str = "programs";
+
+/// **The piece id `delvec detail` freezes a place as**: the campaign id and
+/// the place stem (`<campaign>-<stem>`). Derived, never typed — the verb writes
+/// it, the district write set (spec-0103 §7.6) reads it, and both ask here.
+#[must_use]
+pub fn piece_id(c: &Campaign, node: &NodeId) -> String {
+    let stem = node.0.strip_prefix("node/").unwrap_or(&node.0);
+    format!("{}-{stem}", c.world.campaign_id.0)
+}
+
 /// Every place's frame, by node name, in plan document order.
 #[must_use]
 pub fn frames(c: &Campaign) -> Vec<(Frame, PlacedBox)> {

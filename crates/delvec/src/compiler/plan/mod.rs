@@ -184,6 +184,12 @@ pub struct Plan<'a> {
     /// it, so there are no approved image files to find. A run that has one
     /// attaches it with [`Plan::with_design_files`].
     pub design_files: crate::compiler::design::DesignFiles,
+    /// **The district fragments the loader unioned** (spec-0103 §7.1), so
+    /// emission can write `validation/districts.json` with each object's owner.
+    /// Default is *none*, the honest reading for a plan built from documents
+    /// alone; a run that read a directory attaches them with
+    /// [`Plan::with_fragments`].
+    pub fragments: crate::compiler::district::fragment::Fragments,
     /// What the ocean-datum invariant (`DW0344`) examined in this build, printed
     /// as its own line by [`crate::compiler::emit::build`]. `NOT_AN_OCEAN` for
     /// every world that declares another horizon.
@@ -551,7 +557,8 @@ impl<'a> Plan<'a> {
     pub fn relinked(&self, prefabs: &PrefabRegistry, takes: LinkTakes) -> Result<Self, PlanError> {
         Ok(
             Self::build_linked(self.campaign, prefabs, self.perturb.clone(), takes, false)?
-                .with_design_files(self.design_files.clone()),
+                .with_design_files(self.design_files.clone())
+                .with_fragments(self.fragments.clone()),
         )
     }
 
@@ -1256,6 +1263,7 @@ impl<'a> Plan<'a> {
             blockout,
             surround,
             design_files: crate::compiler::design::DesignFiles::default(),
+            fragments: crate::compiler::district::fragment::Fragments::default(),
             waterline,
             face_binding: binding,
         })
@@ -1271,6 +1279,16 @@ impl<'a> Plan<'a> {
     #[must_use]
     pub fn with_design_files(mut self, files: crate::compiler::design::DesignFiles) -> Self {
         self.design_files = files;
+        self
+    }
+
+    /// Attach the district fragments the loader unioned (spec-0103 §8.3).
+    #[must_use]
+    pub fn with_fragments(
+        mut self,
+        fragments: crate::compiler::district::fragment::Fragments,
+    ) -> Self {
+        self.fragments = fragments;
         self
     }
 }

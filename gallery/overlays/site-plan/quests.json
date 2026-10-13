@@ -19,6 +19,11 @@
             "dialogue": "dlg/marshal-root",
             "doing": "looking down on the far hall from the loft"
           },
+          "npc/porter": {
+            "at": "anchor/node-perch",
+            "dialogue": "dlg/porter-root",
+            "doing": "keeping watch from the lookout at the gantry's end"
+          },
           "npc/warden": {
             "at": "anchor/node-far-hall",
             "dialogue": "dlg/warden-root",
@@ -122,6 +127,11 @@
             "at": "anchor/node-loft",
             "dialogue": "dlg/marshal-root",
             "doing": "looking down on the far hall from the loft"
+          },
+          "npc/porter": {
+            "at": "anchor/node-perch",
+            "dialogue": "dlg/porter-root",
+            "doing": "keeping watch from the lookout at the gantry's end"
           },
           "npc/warden": {
             "at": "anchor/node-far-hall",
@@ -241,6 +251,15 @@
               "type": "set-weather",
               "weather": "thunder"
             }
+          ],
+          "obj/climb-the-crow": [
+            {
+              "carrier": "all",
+              "count": 1,
+              "item": "minecraft:tripwire_hook",
+              "name": "Yard Key",
+              "type": "give-item"
+            }
           ]
         },
         "trigger": {
@@ -301,6 +320,6 @@
       }
     ]
   },
-  "dsl_version": "0.39.0",
+  "dsl_version": "0.40.0",
   "stage": "quests"
 }
