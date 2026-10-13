@@ -16,7 +16,7 @@ docker run -e EULA=TRUE -p 25565:25565 ghcr.io/stellarfeline/delve-vesperhold:la
 
 ## [The Treehouse Camp](the-treehouse-camp/README.md)
 
-[![The Treehouse Camp: four giant trees with houses round their trunks and rope bridges between them, seen from high in the east-north-east, looking toward the setting sun](the-treehouse-camp/01-hero-whole-map-south-southwest.jpg)](the-treehouse-camp/README.md)
+[![The Treehouse Camp: four giant trees with houses round their trunks and rope bridges between them, seen from high in the east-north-east, looking toward the setting sun](the-treehouse-camp/01-hero-whole-map-east-northeast.jpg)](the-treehouse-camp/README.md)
 
 A gentle walk and climb for one to four guests, under half an hour, with nothing hostile in it. A forest clan lives in houses built round four giant trees, joined by rope bridges and rope ladders; on Lantern Night you fetch a lantern and its oil from two houses, carry it up the tallest tree, and watch the whole camp light up below you.
 

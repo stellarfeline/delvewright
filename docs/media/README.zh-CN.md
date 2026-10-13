@@ -16,7 +16,7 @@ docker run -e EULA=TRUE -p 25565:25565 ghcr.io/stellarfeline/delve-vesperhold:la
 
 ## [树屋营地（The Treehouse Camp）](the-treehouse-camp/README.md)
 
-[![树屋营地：从东北偏东的高处朝着落日望去，四棵巨树的树干上各绕着一座屋子，屋与屋之间拉着绳桥](the-treehouse-camp/01-hero-whole-map-south-southwest.jpg)](the-treehouse-camp/README.md)
+[![树屋营地：从东北偏东的高处朝着落日望去，四棵巨树的树干上各绕着一座屋子，屋与屋之间拉着绳桥](the-treehouse-camp/01-hero-whole-map-east-northeast.jpg)](the-treehouse-camp/README.md)
 
 一场轻松的漫步加攀爬，一到四位客人，不到半小时，没有任何敌意。一个森林部族把家安在四棵巨树上，靠绳桥和绳梯来往；灯笼夜里，你们从两户人家那里分别取来灯笼和灯油，把它带上最高的那棵树，然后看着整个营地在脚下一盏盏亮起来。
 
