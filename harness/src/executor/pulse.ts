@@ -1,6 +1,7 @@
 // MineflayerExecutor: the pulse plan, its stations and its verdicts (spec-0102 §5.3).
 
 import type { Step } from "../critical-path.ts";
+import type { Vibration } from "../sculk.ts";
 import {
   isBeat,
   judgeListening,
@@ -45,9 +46,12 @@ export const methods = {
    * pulse station walk) is the leg being walked, and a sensor it sets off is
    * the leg's vibration (spec-0100 §4.7).
    */
-  openLegHearing(this: MineflayerExecutor): void {
+  async openLegHearing(this: MineflayerExecutor, vibrations: readonly Vibration[]): Promise<void> {
     if (this.legHearingFrom?.leg !== this.legCursor) {
-      this.legHearingFrom = { leg: this.legCursor, at: Date.now() };
+      this.legHearingFrom = {
+        leg: this.legCursor,
+        start: vibrations.length > 0 ? await this.sculkLegStart(vibrations) : undefined,
+      };
     }
   },
 
@@ -87,7 +91,7 @@ export const methods = {
     let walked = this.legResume?.leg === this.legCursor ? this.legResume.from : 0;
     for (const d of [...due].sort((a, b) => along(a.station.cell) - along(b.station.cell))) {
       const k = cells ? routeIndexAfter(d.station.cell, cells) : 0;
-      if (cells) this.openLegHearing();
+      if (cells) await this.openLegHearing(leg?.vibrations ?? []);
       await this.walkTo(
         d.station.cell,
         0,
@@ -111,7 +115,9 @@ export const methods = {
       };
       bot.on("soundEffectHeard", listener);
       try {
-        await bot.waitForTicks(standTicks(d.pulse));
+        // The stand is a span of the server's ticks, the ones the pulse beats
+        // on; the client's own physics ticks run on wall time.
+        await this.waitForGameTicks(standTicks(d.pulse), `${d.kind} station of ${d.pulse.id}`);
       } finally {
         bot.removeListener("soundEffectHeard", listener);
       }
