@@ -263,7 +263,7 @@ optional fields commit you to, and what a stub owes.
 is drawn first: `references/map-reference.md`. **The partition**: after the
 graph's nodes and edges and before the site plan, divide the places into
 districts — `districts[]` in `layout-graph.json`, by `references/partitioning.md`
-— and run `delvec district list campaigns/<id>`; a small map may declare none.
+— and run `delvec --prefabs "$DELVEWRIGHT_PREFABS" district list campaigns/<id>`; a small map may declare none.
 A partition with more than one district makes steps 5 and 9 waves, and
 `references/parallel.md` is the planner's procedure: read it now.
 Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
@@ -285,7 +285,7 @@ every scene, a near view and a far view, each image shown with the `time` and
 user, never inferred from silence and never from a reviewer you invented.
 **Produces**, once they say yes: `campaigns/<id>/design/`, `design/README.md`
 and `design.json`. **Read**: `references/design-gate.md`. **When the graph
-declares districts**, the hand-over carries `delvec district list`'s table
+declares districts**, the hand-over carries the census table (`delvec --prefabs "$DELVEWRIGHT_PREFABS" district list`)
 beneath the walkthrough and one question — how many districts to author at
 once; the default is three, and a yes with no number takes it. The gate is one
 gate for the whole campaign, never split by district.

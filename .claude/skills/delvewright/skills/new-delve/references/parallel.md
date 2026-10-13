@@ -46,8 +46,8 @@ a sibling is `DW1004`, and a committed path outside a district's write set is
 | Init, 1, 2 | everything: the map reference, `geometry-brief.json`, `layout-graph.json` with `districts[]`, `site-plan.json` | nothing — the plan is yours and a worker never moves a box |
 | 3, 4 | `npcs.json` (the cast the gate approves), `classes.json`, `quest-plan.json` with `district` on each quest a district expands; the one design gate | nothing |
 | 5, wave A | every quest with no `district`: the spine, a quest whose objects stand in two districts, every NPC who moves between districts and the quests that move them, every item given in one district and needed in another; `quests.json`'s `state` and `guidance`; dialogue for your quests | `districts/<x>/quests.json`, `dialogue.json`, `npcs.json` (an NPC whose every anchor is in the district), `layout-graph.json` (its places' `stations[]` only) |
-| 6–8b | `fmt`, `analyze`, `build`, the showcase cameras — on the assembled whole | `delvec fmt` on its tree before every commit; `delvec validate --district` |
-| 9, wave B | `detail-plan.json`'s `palette`; every `world-edits.json` edit; `delvec detail --all` over the assembled whole | per place: the concept image under `design/places/<stem>/` and its row in `districts/<x>/design.json`, `programs/<stem>.json`, `delvec detail <place>` (which writes the row into `districts/<x>/detail-plan.json` itself) |
+| 6–8b | `fmt`, `analyze`, `build`, the showcase cameras — on the assembled whole | `delvec fmt` on its tree before every commit; `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate --district` |
+| 9, wave B | `detail-plan.json`'s `palette`; every `world-edits.json` edit; `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail --all` over the assembled whole | per place: the concept image under `design/places/<stem>/` and its row in `districts/<x>/design.json`, `programs/<stem>.json`, `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail campaigns/<id> <place>` (which writes the row into `districts/<x>/detail-plan.json` itself) |
 | 10–13 | everything; a finding routed to a district goes back to it as a repair | a repair dispatch |
 
 **Nothing of the ladder, the world save, the renders of the whole or the play
@@ -72,7 +72,7 @@ same way whoever wrote it.
 At step 2, once the partition is written, run
 
 ```sh
-delvec district list campaigns/<id>
+delvec --prefabs "$DELVEWRIGHT_PREFABS" district list campaigns/<id>
 ```
 
 and keep its table: one row per district — places, seams, boundary seams and
@@ -149,16 +149,19 @@ flag; the worktree is cut from the current commit, which is the baseline.
 
 These lines go after `PACKET.md`, word for word:
 
-- First, in your worktree, install the commit hook that holds your writes to
-  your district: `"$DELVEWRIGHT_ENGINE/tools/creator/district-hook.sh"
-  "$(git rev-parse --show-toplevel)" <campaign> district/<x> <prefabs>
-  "$(command -v delvec)"`, with the campaign and prefab paths from the packet's
-  `tools` line.
+- First, in your worktree, point the prefab directory at your worktree's own
+  — the packet's `tools.prefabs`, relative to the repository — with
+  `export DELVEWRIGHT_PREFABS="$(git rev-parse --show-toplevel)/<tools.prefabs>"`,
+  then install the commit hook that holds your writes to your district:
+  `"$DELVEWRIGHT_ENGINE/tools/creator/district-hook.sh"
+  "$(git rev-parse --show-toplevel)" <campaign> district/<x>
+  "$DELVEWRIGHT_PREFABS" "$(command -v delvec)"`, with the campaign path from the
+  packet's `tools` line.
 - Commit as you go. Run `delvec fmt` over the campaign before every commit.
-- Judge your tree with `delvec --prefabs <prefabs> validate <campaign> --district
-  district/<x>`. Its `DW1006` line counts your siblings' quests, which are not
-  in your tree; the refusals it reports beneath it are theirs, not yours.
-  Everything else it refuses is yours.
+- Judge your tree with `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate
+  <campaign> --district district/<x>`. Its `DW1006` line counts your siblings'
+  quests, which are not in your tree; the refusals it reports beneath it are
+  theirs, not yours. Everything else it refuses is yours.
 - Never start a server, never write under `/tmp`, never edit the plan. A place
   that does not fit its box, or a thing that must cross a boundary and is not in
   your contract, is a **request** in your report — name the contract it concerns.
@@ -185,7 +188,7 @@ The gates on the worker's branch, the first three re-run by you on its head:
    district/<x>` carries no refusal; its `DW1006` count equals the planned quests
    of the other districts not yet in this tree.
 4. Wave B only: every place of the district has a row in
-   `districts/<x>/detail-plan.json`, and `delvec detail <place>` exited 0 on each
+   `districts/<x>/detail-plan.json`, and `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail campaigns/<id> <place>` exited 0 on each
    — the verdict lines are in the report.
 5. The report names per place every refusal met, and every request.
 
@@ -227,7 +230,7 @@ with `--wave build`. A worker makes each of its places' concept image under
 `design/places/<stem>/`, anchored on the map's view 1 under the style contract
 its packet carries, with its row (and the sky it was drawn under) in
 `districts/<x>/design.json`; writes `programs/<stem>.json`; and runs
-`delvec detail <place>` for each place, which writes the place's row into the
+`delvec --prefabs "$DELVEWRIGHT_PREFABS" detail campaigns/<id> <place>` for each place, which writes the place's row into the
 district's fragment. When the wave is integrated, run
 `delvec --prefabs "$DELVEWRIGHT_PREFABS" detail campaigns/<id> --all` over the
 whole — every program-detailed place re-made over the assembled campaign; it
@@ -238,7 +241,7 @@ next build (step 8b's rule).
 ## A worker that fails or runs out of context
 
 The branch is the state, not the worker's memory. Read the branch (`git log`,
-and `delvec district list campaigns/<id>` on it — places detailed of total,
+and `delvec --prefabs "$DELVEWRIGHT_PREFABS" district list campaigns/<id>` on it — places detailed of total,
 quests expanded of planned), derive the packet again, and dispatch a fresh
 worker on the same district with the packet and one line: *continue from the
 branch; what is committed stands.* Never resume by amending, and never dispatch
