@@ -247,6 +247,119 @@ up_failed() {
   return 0
 }
 
+# The shared rejection rule and the shared "the world is placed" reading
+# (tools/lib/rcon.sh), sourced above the test seam so a test reaches the
+# verification below through the same functions `up` calls.
+# shellcheck source=tools/lib/rcon.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/lib/rcon.sh"
+
+# The budget (seconds) from the server's `Done (` to the datapack's own
+# "placed", and the pause between readings. Stated, not derived: the world build
+# runs one block-write step a tick, and how long a tick takes is the host's
+# business, not the build's. Measured on The Stranding (55 places): placed 15 s
+# after `Done (` on the creator's laptop while other builds ran. Running out of
+# it is a named failure, never a pass.
+DW_PLAYTEST_PLACED_BUDGET_S=1200
+DW_PLAYTEST_PLACED_POLL_S=5
+
+# dw_playtest_wait_placed <container> <budget_s> <poll_s> — poll the shared
+# reading until the server says the world is placed. Prints the first reading
+# and the one that settled it; on a container that stopped, or a budget that ran
+# out, sets DW_VERIFY_FAILURE to the reason and returns 1.
+dw_playtest_wait_placed() {
+  local container="$1" budget="$2" poll="$3" waited=0 reading="" first="" state
+  while :; do
+    state="$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)"
+    if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+      DW_VERIFY_FAILURE="the server stopped ($state) before the datapack reported the world placed (last reading: ${reading:-none})"
+      return 1
+    fi
+    reading="$(dw_placed_reading "$container")"
+    if [ -z "$first" ]; then
+      first="$reading"
+      echo "placement: first reading after Done, at ${waited}s: $reading"
+    fi
+    if [ "$reading" = "placed" ]; then
+      echo "placement: the datapack reports the world placed ($DW_PLACED_HOLDER $DW_PLACED_OBJECTIVE matches $DW_PLACED_DONE) after ${waited}s of a ${budget}s budget"
+      return 0
+    fi
+    if [ "$waited" -ge "$budget" ]; then
+      DW_VERIFY_FAILURE="the datapack did not report the world placed ($DW_PLACED_HOLDER $DW_PLACED_OBJECTIVE matches $DW_PLACED_DONE) within the ${budget}s budget; last reading: $reading"
+      return 1
+    fi
+    sleep "$poll"
+    waited=$((waited + poll))
+  done
+}
+
+# dw_npcs_at_world_init <npcs.json> — how many NPCs the campaign has standing in
+# the world once it is placed: every declared NPC that is not `deferred`
+# (a deferred one is summoned only by a `spawn-npc` effect, which needs the
+# story to move, so none is owed before a player has joined).
+dw_npcs_at_world_init() {
+  python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(sum(1 for n in json.load(open(sys.argv[1]))["content"]["npcs"] if not n.get("deferred", False)))' "$1"
+}
+
+# dw_saved_world_npc_count <world dir> — the `dw_npc`-tagged entities the world
+# save holds, read through the one anvil parse rule (tools/lib/anvil.py). Asked
+# of the save and not of `@e` so the answer does not depend on which chunks
+# happen to be loaded: `@e` sees only loaded chunks, `setup_finish` releases
+# forceloads, and nobody is online to load any, while a save holds every entity
+# once `save-all flush` has run.
+dw_saved_world_npc_count() {
+  python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/lib/anvil.py" count-tagged-entities "$1" dw_npc
+}
+
+# dw_playtest_verify_campaign <container> <campaign dir> <world dir> <budget_s> <poll_s>
+#
+# Every command's response is READ (CLAUDE.md) — a world that booted is not a
+# world that loaded its pack, and the difference is invisible from the outside:
+# a single unparseable line drops a whole function and the server comes up empty
+# and cheerful. Nothing about the world is judged before the server itself says
+# the world is placed: `Done (` comes ticks before `setup` has even started the
+# build, and the NPCs are summoned by `setup_finish`, its last step.
+#
+# Then: the pack's objectives exist, and every NPC the campaign has standing at
+# world init is in the saved world — counted, against the campaign's own
+# declaration. A campaign that declares none (a one-room demo level) is
+# legitimate and owes none. On failure sets DW_VERIFY_FAILURE and returns 1.
+dw_playtest_verify_campaign() {
+  local container="$1" campaign="$2" world="$3" budget="$4" poll="$5"
+  local objectives declared owed saved found
+  DW_VERIFY_FAILURE=""
+  dw_playtest_wait_placed "$container" "$budget" "$poll" || return 1
+  if ! objectives="$(dw_rcon "$container" "scoreboard objectives list")"; then
+    DW_VERIFY_FAILURE="the server refused \`scoreboard objectives list\`"; return 1
+  fi
+  if [[ $objectives != *"dw."* ]]; then
+    DW_VERIFY_FAILURE="no dw.* objectives — datapack not loaded"; return 1
+  fi
+  if ! declared="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(len(json.load(open(sys.argv[1]))["content"]["npcs"]))' "$campaign/npcs.json")"; then
+    DW_VERIFY_FAILURE="cannot read the NPC count from $campaign/npcs.json"; return 1
+  fi
+  if [ "$declared" -eq 0 ]; then
+    echo "npc probe: 0 NPC(s) declared in npcs.json, so no dw_npc entity is owed"
+    return 0
+  fi
+  if ! owed="$(dw_npcs_at_world_init "$campaign/npcs.json")"; then
+    DW_VERIFY_FAILURE="cannot read the deferred flags from $campaign/npcs.json"; return 1
+  fi
+  if ! saved="$(dw_rcon "$container" "save-all flush")"; then
+    DW_VERIFY_FAILURE="the server refused \`save-all flush\`: $saved"; return 1
+  fi
+  if [[ $saved != *"Saved the game"* ]]; then
+    DW_VERIFY_FAILURE="\`save-all flush\` did not answer \"Saved the game\": $saved"; return 1
+  fi
+  if ! found="$(dw_saved_world_npc_count "$world")"; then
+    DW_VERIFY_FAILURE="cannot read the entities of the world save at $world"; return 1
+  fi
+  if [ "$found" != "$owed" ]; then
+    DW_VERIFY_FAILURE="the saved world holds $found dw_npc entit(ies) where npcs.json has $owed standing at world init ($declared declared, $((declared - owed)) deferred)"
+    return 1
+  fi
+  echo "npc probe: $found of $owed NPC(s) standing at world init are in the saved world ($declared declared, $((declared - owed)) deferred to a spawn-npc)"
+}
+
 # A seam for tests: sourcing this file with DW_PLAYTEST_SERVER_TEST_HOOK=1
 # stops here, before any argument parsing or side effect, leaving every
 # function above (and mutex.sh's, already sourced above) callable directly —
@@ -282,11 +395,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Checked by default (tools/lib/rcon.sh): a staging command the server
-# refused must not pass for one that worked. `rcon_raw` is the unjudged form, for
-# the one call whose failure is genuinely uninteresting.
-# shellcheck source=tools/lib/rcon.sh
-. "$(cd "$(dirname "$0")/../.." && pwd)/tools/lib/rcon.sh"
+# Checked by default (tools/lib/rcon.sh, sourced above): a staging command the
+# server refused must not pass for one that worked. `rcon_raw` is the unjudged
+# form, for the one call whose failure is genuinely uninteresting.
 DW_RCON_ARGS=(--password "$RCON_PW")
 rcon() { dw_rcon "$NAME" "$1"; }
 rcon_raw() { dw_rcon_probe "$NAME" "$1"; }
@@ -698,32 +809,19 @@ for _ in $(seq 1 60); do
 done
 [ "$READY" = 1 ] || die "server did not come up after 600s. $LOG_HINT"
 
-# rcon verification. Every command's response is READ (CLAUDE.md) — a world that
-# booted is not a world that loaded its pack, and the difference is invisible
-# from the outside: a single unparseable line drops a whole function and the
-# server comes up empty and cheerful.
-#
-# What is asked differs by kind because what each kind CLAIMS differs. Both
-# assertions are of the same strength: the pack's own objectives exist, and the
-# thing the pack was supposed to put in the world is in it.
-OBJECTIVES="$(rcon "scoreboard objectives list")"
+# rcon verification (dw_playtest_verify_campaign, above). What is asked differs
+# by kind because what each kind CLAIMS differs. Both assertions are of the same
+# strength: the pack's own objectives exist, and the thing the pack was supposed
+# to put in the world is in it. Display slots are the campaign's: nothing here
+# sets or clears one (tools/tests/test_playtest_server_leaves_the_display_slots.py).
 if [ "$SUBJECT_KIND" = "campaign" ]; then
-  # campaign objectives present, and at least one campaign NPC when the campaign
-  # declares any: a campaign with an empty `npcs.json` (a one-room demo level) is
-  # legitimate and has nothing to probe. Display slots are the campaign's: nothing
-  # here sets or clears one (tools/tests/test_playtest_server_leaves_the_display_slots.py).
-  [[ $OBJECTIVES == *"dw."* ]] || die_or_oom "no dw.* objectives — datapack not loaded"
-  NPCS_DECLARED="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(len(json.load(open(sys.argv[1]))["content"]["npcs"]))' "$CAMPAIGN/npcs.json")" \
-    || die "cannot read the NPC count from $CAMPAIGN/npcs.json"
-  if [ "$NPCS_DECLARED" -gt 0 ]; then
-    NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
-    [[ $NPC_PROBE == *"Test passed"* ]] || die_or_oom "no dw_npc entities found ($NPCS_DECLARED declared in npcs.json)"
-  else
-    echo "npc probe: 0 NPC(s) declared in npcs.json, so no dw_npc entity is owed"
-  fi
+  dw_playtest_verify_campaign "$NAME" "$CAMPAIGN" "$STAGE/world" \
+    "$DW_PLAYTEST_PLACED_BUDGET_S" "$DW_PLAYTEST_PLACED_POLL_S" \
+    || die_or_oom "$DW_VERIFY_FAILURE"
 else
   # `admit.sys` is created by `admit:load`, so its absence is a pack the server
   # dropped rather than a world that is merely slow.
+  OBJECTIVES="$(rcon "scoreboard objectives list")"
   [[ $OBJECTIVES == *"admit.sys"* ]] || die_or_oom "no admit.sys objective — the gallery datapack did not load"
   # One label per exhibit, COUNTED against the layout the same build wrote.
   # `execute if entity` answers only pass/fail, and a pass over one label of nine

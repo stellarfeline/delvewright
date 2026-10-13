@@ -216,8 +216,9 @@ wait_placed() { # wait_placed <cid> <timeout-s> — the datapack's own "geometry
     fi
     # Unjudged on purpose: until rcon is listening every reply here is a refusal,
     # and that is the state being polled for.
-    reply="$(dw_rcon_probe "$cid" "scoreboard players get #placed dw.sys" || true)"
-    case "$reply" in *"has 1 [dw.sys]"*)
+    # The shared reading (tools/lib/rcon.sh): the question the harness puts.
+    reply="$(dw_placed_reading "$cid")"
+    case "$reply" in placed)
       # The CONTAINER's clock, because the other end of this interval is a docker
       # log timestamp. Two clocks produced a dead time of "-0s", which is the
       # measurement failing rather than a fast boot.

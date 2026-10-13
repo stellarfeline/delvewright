@@ -3917,6 +3917,7 @@ mod tests {
             settled: Vec::new(),
             open_gates: BTreeSet::new(),
             gate_seals: Vec::new(),
+            reached: Default::default(),
         };
         let walk_with = |placements: &[([i32; 3], &str)]| {
             let relight = Relight {

@@ -122,11 +122,7 @@ fn trigger_root_configs(plan: &Plan, world: &World) -> Vec<TriggerRootConfig> {
         .collect()
 }
 
-/// How far from a `step` trigger's cell a standing body can fire it: a body's
-/// hitbox reaches 0.3 past its own cell, so a body standing in any of the eight
-/// horizontal neighbours can lean into the plate's cell, and the farthest of
-/// them (a corner) is sqrt(2) away. Rooting from more cells roots no later.
-const STEP_REACH: f64 = 1.5;
+use crate::compiler::plan::STEP_REACH;
 
 /// Where a trigger-set checkpoint is rooted (spec-0093 §6.2).
 struct TriggerRoot {

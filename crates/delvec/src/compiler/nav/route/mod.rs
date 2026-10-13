@@ -529,6 +529,15 @@ impl Configuration {
         over
     }
 
+    /// **The regions this configuration's laid writes reach**, in the order
+    /// laid — whatever block each lays, air included: a write that lays air
+    /// clears what the level generator put in the cell, so a written world
+    /// asks this, never only the block map, which cannot tell a cleared cell
+    /// from one nothing wrote.
+    pub fn laid_regions(&self) -> Vec<([i32; 3], [i32; 3])> {
+        self.state.laid.iter().map(|(r, _)| *r).collect()
+    }
+
     /// How many regions an **unforced** write holds here — writes a beat
     /// nobody has to play lays, which [`RegionState::blocks_over`] does not lay
     /// (spec-0089 §7's `unforced write(s) not laid`).
@@ -623,6 +632,9 @@ pub struct LegRoute {
     pub from: [i32; 3],
     /// The raw visited anchor the leg walks TO (this critical position).
     pub to: [i32; 3],
+    /// The `critical_path` step index of the position the leg walks FROM — the
+    /// step the party has just completed when the leg begins.
+    pub from_step: usize,
     /// The `critical_path` step index of the destination position — the objective
     /// this leg walks toward. Lets the visual-tier POV planner
     /// (`crate::compiler::render_plan`) name the served objective without re-deriving the

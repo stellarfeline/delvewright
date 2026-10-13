@@ -153,6 +153,15 @@ pub fn reach_completion(pos: [i32; 3], radius: u32) -> ReachCompletion {
 }
 
 impl ReachCompletion {
+    /// Whether a body whose feet are in `cell` is inside the volume.
+    pub fn contains_cell(&self, cell: [i32; 3]) -> bool {
+        match self {
+            ReachCompletion::Cube { lo, hi } => {
+                (0..3).all(|i| lo[i] <= cell[i] && cell[i] <= hi[i])
+            }
+        }
+    }
+
     /// The `@s[...]` selector arguments the tick line adjudicates with.
     pub fn selector_args(&self) -> String {
         match self {

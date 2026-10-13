@@ -124,6 +124,18 @@ const LISTENING_CALIBRATED_STATE: &[(&str, &str)] = &[
     ("waterlogged", "false"),
 ];
 
+/// **The sensor between the valves and the door** (spec-0100 §4.6, the
+/// must-walk rule): a sculk sensor set into the near hall's floor course two
+/// cells south of the walk along the north wall. The legs from the emeralds to
+/// the first valve and from the third valve to the counter walk only cells a
+/// party can finish one of their two steps from (a lever is used from 4.5
+/// blocks, a chest likewise, the counter is a volume), so neither predicts it
+/// although four of their route cells are in its earshot; the first leg, from
+/// the arrival west to the curator, and the walk from the arrival south to the
+/// marshal pass it on cells no step completes from, and predict it there. Off
+/// every route, so no body stands on it.
+const MUST_WALK_SENSOR: [i32; 3] = [17, 0, 3];
+
 /// **The sealed catalyst** (spec-0100 §3.7, `DW1001`): a sculk catalyst set
 /// into the solid stone over the near hall's roof, three courses above it,
 /// east of the terrace and west of the long gallery. The nearest place a body
@@ -1106,6 +1118,9 @@ fn block_at(
     Option<&'static [(&'static str, &'static str)]>,
 ) {
     if [x, y, z] == LISTENING_SENSOR {
+        return ("minecraft:sculk_sensor", Some(LISTENING_SENSOR_STATE));
+    }
+    if [x, y, z] == MUST_WALK_SENSOR {
         return ("minecraft:sculk_sensor", Some(LISTENING_SENSOR_STATE));
     }
     if [x, y, z] == LISTENING_SHRIEKER {

@@ -5563,35 +5563,129 @@ function sensorUpdate(pos: [number, number, number], phase: string): unknown {
   };
 }
 
+/**
+ * A fake server's game clock and its sculk devices, answering the harness's
+ * game-time readings (`game-time.ts`) the way 1.21.11 does: the reply bracket's
+ * markers, `time query gametime` stored and printed, and `execute if loaded …
+ * if block <cell> <state>` against each device's busy phases — a sensor
+ * `active` for 30 ticks after it was set off, then `cooldown` for 10, a
+ * shrieker `shrieking` for 90. The clock advances only when the test says:
+ * `perReading` ticks for each reading answered, and whatever {@link advance}
+ * adds. Wall time moves it not at all, which is a server lagging as far as a
+ * lag can go, deterministically.
+ */
+class FakeGameServer {
+  tick = 1_000;
+  perReading = 1;
+  private stored = 0;
+  /** Cell key → the tick the device was last set off. */
+  private readonly setOffAt = new Map<string, number>();
+  readonly readings: number[] = [];
+  private readonly bot: EventEmitter;
+  constructor(bot: EventEmitter) {
+    this.bot = bot;
+  }
+
+  advance(ticks: number): void {
+    this.tick += ticks;
+  }
+
+  private phase(cell: string): string {
+    const t0 = this.setOffAt.get(cell);
+    if (t0 === undefined) return "inactive";
+    const d = this.tick - t0;
+    return d < 30 ? "active" : d < 40 ? "cooldown" : "inactive";
+  }
+
+  /** A footstep within earshot of the sensor at `cell`: it clicks only when inactive. */
+  stepNear(cell: [number, number, number]): boolean {
+    const key = cell.join(" ");
+    if (this.phase(key) !== "inactive") return false;
+    this.setOffAt.set(key, this.tick);
+    this.bot.emit("blockUpdate", null, sensorUpdate(cell, "active"));
+    return true;
+  }
+
+  /** One command the bot chatted. */
+  answer(message: string): void {
+    if (message.startsWith("/execute store result storage dw_harness:clock t int 1 run time query gametime")) {
+      this.stored = this.tick;
+      this.readings.push(this.tick);
+      this.bot.emit("messagestr", `The time is ${this.tick}`);
+      return;
+    }
+    const cond = /^\/execute if loaded (\S+ \S+ \S+) if block \S+ \S+ \S+ (\S+) run tellraw @s (.*)$/.exec(message);
+    if (cond) {
+      const [, cell, state, json] = cond;
+      const p = this.phase(cell!);
+      const busy =
+        (state!.includes("sculk_sensor_phase=active") && p === "active") ||
+        (state!.includes("sculk_sensor_phase=cooldown") && p === "cooldown");
+      if (busy) this.bot.emit("messagestr", (JSON.parse(json!) as { text: string }).text);
+      return;
+    }
+    if (!message.startsWith("/tellraw @s ")) return;
+    const body = JSON.parse(message.slice("/tellraw @s ".length)) as unknown;
+    if (Array.isArray(body)) {
+      const text = body
+        .map((part) => (typeof part === "string" ? part : String(this.stored)))
+        .join("");
+      this.bot.emit("messagestr", text);
+      return;
+    }
+    const text = (body as { text?: unknown }).text;
+    if (typeof text !== "string") return;
+    if (/^\[dw:cmd \d+ open\]$/.test(text)) this.tick += this.perReading;
+    this.bot.emit("messagestr", text);
+  }
+}
+
+/** Give `bot` a chat that `server` answers. */
+function serve(bot: FakeBot): FakeGameServer {
+  const server = new FakeGameServer(bot);
+  (bot as unknown as { chat: (m: string) => void }).chat = (m: string) => server.answer(m);
+  return server;
+}
+
 test("a predicted shrieker whose 3007 is never heard fails the step; heard, it passes", async () => {
   const bot = new FakeBot();
   const client = new EventEmitter();
   (bot as unknown as { _client: EventEmitter })._client = client;
+  const server = serve(bot);
+  server.perReading = 10;
   const executor = attach(bot);
   const vibrations = [{ sensor: [8, 66, 23] as [number, number, number], shriekers: [[8, 67, 27] as [number, number, number]] }];
-  const from = Date.now();
+  const start = await executor.sculkLegStart(vibrations);
+  assert.equal(start.busy.size, 0, "nothing was set off before the leg");
   // The sensor clicks; the shrieker never shrieks.
-  bot.emit("blockUpdate", null, sensorUpdate([8, 66, 23], "active"));
+  server.stepNear([8, 66, 23]);
+  const readsBefore = server.readings.length;
   await within(
     "hearVibrations(unheard shrieker)",
     assert.rejects(
-      () => executor.hearVibrations("walk to [9, 67, 21]", vibrations, from),
-      (err: unknown) => err instanceof Error && /shrieker at \[8, 67, 27\] never shrieked/.test(err.message),
+      () => executor.hearVibrations("walk to [9, 67, 21]", vibrations, start),
+      (err: unknown) =>
+        err instanceof Error &&
+        /shrieker at \[8, 67, 27\] never shrieked/.test(err.message) &&
+        /60 game ticks after its end/.test(err.message),
     ),
   );
+  // The tail is waited in the server's ticks: the last reading is 60 past the first.
+  const tail = server.readings.slice(readsBefore);
+  assert.ok(tail.at(-1)! - tail[0]! >= 60, `tail readings ${tail.join(", ")}`);
   // The shriek arrives: the same leg passes, and a block update of another
   // phase or another cell is not a click.
   bot.emit("blockUpdate", null, sensorUpdate([8, 66, 24], "active"));
   client.emit("world_event", { effectId: 2001, location: { x: 8, y: 67, z: 27 }, data: 0, global: false });
   client.emit("world_event", { effectId: 3007, location: { x: 8, y: 67, z: 27 }, data: 0, global: false });
-  await within("hearVibrations(heard)", executor.hearVibrations("walk to [9, 67, 21]", vibrations, from));
-  // A leg that started after the click and the shriek, beyond their busy
-  // spans, cannot borrow them.
+  await within("hearVibrations(heard)", executor.hearVibrations("walk to [9, 67, 21]", vibrations, start));
+  // A leg that starts after the click and the shriek, with neither device busy
+  // in its tick, cannot borrow them.
   const ear = executor.sculk;
-  const later = ear.hear(vibrations, Date.now() + 10_000, Date.now() + 11_000);
+  const later = ear.hear(vibrations, { at: Date.now() + 1, tick: 0, readAt: Date.now() + 1, busy: new Set() }, Date.now() + 2);
   assert.equal(later.sensorsHeard, 0);
   assert.equal(later.shriekersHeard, 0);
-  const now = ear.hear(vibrations, from, Date.now());
+  const now = ear.hear(vibrations, start, Date.now());
   assert.deepEqual(
     [now.sensorsPredicted, now.sensorsHeard, now.shriekersPredicted, now.shriekersHeard],
     [1, 1, 1, 1],
@@ -5625,28 +5719,29 @@ test("a darkness effect on the bot, or a warden, fails the run; others do not", 
 import { parsePulsePlan } from "../src/pulse.ts";
 
 /**
- * A pathfinder that walks to any goal, a sensor that clicks the first time the
- * body reaches a goal past it, and a stand that takes real time — longer than
- * a sensor's busy span, as a pulse station's `2 · every + 10` ticks do.
+ * A pathfinder that walks to any goal, each walk taking `walkTicks` of the fake
+ * server's game time, and a sensor within earshot of every goal past
+ * `clickAtX`: the server sets it off when it is not busy (once only, under
+ * `clickOnce`).
  */
 class SensorWalkBot extends HeldRadiusBot {
   clickAtX = Infinity;
   clickCell: [number, number, number] = [0, 0, 0];
+  clickOnce = false;
   clicked = false;
-  standMs = 0;
+  walkTicks = 2;
+  readonly server: FakeGameServer;
   constructor() {
     super();
+    this.server = serve(this);
     const goto = this.pathfinder.goto;
     this.pathfinder.goto = async (goal?: { x: number; y: number; z: number }): Promise<void> => {
       await goto(goal);
-      if (!this.clicked && goal && goal.x >= this.clickAtX) {
-        this.clicked = true;
-        this.emit("blockUpdate", null, sensorUpdate(this.clickCell, "active"));
+      this.server.advance(this.walkTicks);
+      if (goal && goal.x >= this.clickAtX && !(this.clickOnce && this.clicked)) {
+        if (this.server.stepNear(this.clickCell)) this.clicked = true;
       }
     };
-  }
-  async waitForTicks(): Promise<void> {
-    await delay(this.standMs);
   }
 }
 
@@ -5660,7 +5755,10 @@ test("a sensor the pulse station walk sets off answers for the leg the station i
   bot.entity.position = new FakeVec3(0.5, 64, 0.5);
   bot.clickAtX = 5;
   bot.clickCell = [5, 63, 3];
-  bot.standMs = 2_500; // > SENSOR_BUSY_MS
+  bot.clickOnce = true;
+  // The station stand (2 · 20 + 10 = 50 game ticks) outlasts the sensor's
+  // 40 busy ticks, so the sensor is no longer busy when the step's walk starts.
+  bot.server.perReading = 10;
   const executor = attach(bot);
   executor.useCampaign("sensor-walk");
   executor.useWaypoints(
@@ -5711,4 +5809,88 @@ test("a sensor the pulse station walk sets off answers for the leg the station i
   await within("executor.walkTo(far)", executor.walkTo([30, 64, 0], 1, "walk to anchor/far"));
   assert.equal(executor.legCursor, 1, "the step's walk consumed the leg");
   assert.equal(executor.legHearingFrom, undefined, "and its window");
+});
+
+// --- a sensor's busy span is counted in the server's game ticks (spec-0100 §4.7) ---
+
+/** Two consecutive legs that both pass within earshot of one sensor. */
+function twoLegsPastOneSensor(): ReturnType<typeof parseWaypoints> {
+  return parseWaypoints({
+    version: "0.0.0-fixture",
+    campaign_id: "sensor-lag",
+    legs: [
+      {
+        from: [0, 64, 0],
+        to: [10, 64, 0],
+        waypoints: [
+          [0, 64, 0],
+          [10, 64, 0],
+        ],
+        vibrations: [{ sensor: [5, 63, 3], shriekers: [] }],
+      },
+      {
+        from: [10, 64, 0],
+        to: [12, 64, 0],
+        waypoints: [
+          [10, 64, 0],
+          [12, 64, 0],
+        ],
+        vibrations: [{ sensor: [5, 63, 3], shriekers: [] }],
+      },
+    ],
+  });
+}
+
+test("a click the previous leg made answers for the next leg while the server says the sensor is still busy, however long the wall clock ran", async () => {
+  // The Stranding's valve room: the compiler predicts one sensor on two legs in
+  // a row. The first leg sets it off; the second starts inside the sensor's 40
+  // busy game ticks, so its own footsteps cannot set it off again. Between the
+  // two legs the server falls behind: more than two seconds of wall time pass
+  // and almost no game ticks. A busy span judged on the wall clock closes before
+  // the game's has, and fails a leg the compiler predicted correctly.
+  const bot = new SensorWalkBot();
+  (bot as unknown as { _client: EventEmitter })._client = new EventEmitter();
+  bot.entity.position = new FakeVec3(0.5, 64, 0.5);
+  bot.clickAtX = 5;
+  bot.clickCell = [5, 63, 3];
+  const executor = attach(bot);
+  executor.useCampaign("sensor-lag");
+  executor.useWaypoints(twoLegsPastOneSensor());
+  await within("walk the first leg", executor.walkTo([10, 64, 0], 1, "walk to valve-east"));
+  assert.ok(bot.clicked, "the first leg set the sensor off");
+  // The server lags: 2.1 s of wall time, no game ticks.
+  await delay(2_100);
+  await within("walk the second leg", executor.walkTo([12, 64, 0], 1, "walk to valve-middle"));
+  assert.equal(executor.legCursor, 2, "both legs were walked and heard");
+});
+
+test("a click before the leg does not answer for it once the server says the sensor is listening again, however short the wall clock ran", async () => {
+  // The other direction: the server catches up (a lagging server runs its
+  // missed ticks back to back), so 60 game ticks pass in no wall time at all.
+  // The sensor listens again before the second leg, and that leg's walk does not
+  // reach it: the prediction is wrong, and a wall-clock span would credit the
+  // first leg's click to it.
+  const bot = new SensorWalkBot();
+  (bot as unknown as { _client: EventEmitter })._client = new EventEmitter();
+  bot.entity.position = new FakeVec3(0.5, 64, 0.5);
+  bot.clickAtX = 5;
+  bot.clickCell = [5, 63, 3];
+  bot.server.perReading = 10;
+  const executor = attach(bot);
+  executor.useCampaign("sensor-lag");
+  executor.useWaypoints(twoLegsPastOneSensor());
+  await within("walk the first leg", executor.walkTo([10, 64, 0], 1, "walk to valve-east"));
+  assert.ok(bot.clicked, "the first leg set the sensor off");
+  bot.server.advance(60);
+  bot.clickAtX = Infinity; // the second leg's walk sets nothing off
+  await within(
+    "walk the second leg",
+    assert.rejects(
+      () => executor.walkTo([12, 64, 0], 1, "walk to valve-middle"),
+      (err: unknown) =>
+        err instanceof Error &&
+        /the sensor at \[5, 63, 3\] never turned active/.test(err.message) &&
+        /0 predicted device\(s\) were busy/.test(err.message),
+    ),
+  );
 });
