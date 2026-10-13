@@ -155,14 +155,20 @@ fn item_flow(c: &Campaign, p: &Partition) -> ItemFlow {
                 .unwrap_or("")
                 .to_string();
             let ds = districts_named(p, o);
-            // An objective that requires an item, by any spelling the
-            // objective carries it in.
-            let mut items = Vec::new();
-            collect_items(o, false, &mut items);
-            for it in items {
-                let e = flow.entry(it).or_default();
+            // An item an `interact` objective requires in the hand is required
+            // where that objective stands; an item a `collect` objective hands
+            // out of its container is given there.
+            if let Some(item) = o.get("requires_item").and_then(Value::as_str) {
+                let e = flow.entry(item.to_string()).or_default();
                 e.1.extend(ds.iter().cloned());
                 e.3.insert(qid.clone());
+            }
+            if o.get("type").and_then(Value::as_str) == Some("collect")
+                && let Some(item) = o.get("item").and_then(Value::as_str)
+            {
+                let e = flow.entry(item.to_string()).or_default();
+                e.0.extend(ds.iter().cloned());
+                e.2.insert(qid.clone());
             }
             obj_district.insert(id, ds);
         }
@@ -201,31 +207,12 @@ fn collect_given(v: &Value, out: &mut Vec<String>) {
     match v {
         Value::Array(a) => a.iter().for_each(|x| collect_given(x, out)),
         Value::Object(o) => {
-            if o.get("verb").and_then(Value::as_str) == Some("give-item")
+            if o.get("type").and_then(Value::as_str) == Some("give-item")
                 && let Some(item) = o.get("item").and_then(Value::as_str)
             {
                 out.push(item.to_string());
             }
             o.values().for_each(|x| collect_given(x, out));
-        }
-        _ => {}
-    }
-}
-
-/// Every item an objective requires: an `item` field outside a nested effect.
-fn collect_items(v: &Value, in_effect: bool, out: &mut Vec<String>) {
-    match v {
-        Value::Array(a) => a.iter().for_each(|x| collect_items(x, in_effect, out)),
-        Value::Object(o) => {
-            let effect = in_effect || o.contains_key("verb");
-            if !effect {
-                for key in ["item", "requires_item"] {
-                    if let Some(item) = o.get(key).and_then(Value::as_str) {
-                        out.push(item.to_string());
-                    }
-                }
-            }
-            o.values().for_each(|x| collect_items(x, effect, out));
         }
         _ => {}
     }

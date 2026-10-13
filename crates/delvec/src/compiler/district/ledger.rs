@@ -208,6 +208,16 @@ impl Attribution {
         }
     }
 
+    /// A router over fragments alone — for a run whose campaign did not parse,
+    /// so its refusals still name the fragment and its district.
+    #[must_use]
+    pub fn from_fragments(fragments: &Fragments) -> Attribution {
+        Attribution {
+            fragments: fragments.clone(),
+            ids: BTreeMap::new(),
+        }
+    }
+
     /// The district a message's named objects belong to, when they belong to
     /// exactly one.
     #[must_use]

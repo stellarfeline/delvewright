@@ -1,0 +1,44 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/node-hall",
+            "dialogue": "dlg/greeting",
+            "doing": "standing in the middle of the hall with his back to the cell door"
+          },
+          "npc/sleeper": {
+            "at": "anchor/loft-window",
+            "dialogue": "dlg/sleeper-murmur",
+            "doing": "asleep against the loft window"
+          }
+        },
+        "happening": {
+          "text": "The party looks out of the loft window.",
+          "verb": "arrives"
+        },
+        "id": "quest/look-in-the-loft",
+        "objectives": [
+          {
+            "anchor": "anchor/loft-window",
+            "happening": {
+              "text": "The party looks out of the loft window.",
+              "verb": "arrives"
+            },
+            "id": "obj/see-the-loft",
+            "radius": 3,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.39.0",
+  "stage": "quests"
+}

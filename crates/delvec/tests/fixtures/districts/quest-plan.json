@@ -1,0 +1,41 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "finale": "quest/walk-the-whole",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "goal": "Get the keeper to open the cell door and walk out the far side.",
+        "id": "quest/walk-the-whole",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "district": "district/front",
+        "goal": "Climb to the loft and look out of its window.",
+        "id": "quest/look-in-the-loft",
+        "mandatory": false,
+        "npcs": []
+      },
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "district": "district/back",
+        "goal": "Go down into the tunnel under the cell.",
+        "id": "quest/see-the-tunnel",
+        "mandatory": false,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.39.0",
+  "stage": "quest-plan"
+}

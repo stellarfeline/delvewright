@@ -1,0 +1,20 @@
+{
+  "campaign_id": "blockout",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/sleeper-murmur",
+            "options": [],
+            "text": "Mm. Not yet. The hall is still full."
+          }
+        ],
+        "npc": "npc/sleeper",
+        "root": "dlg/sleeper-murmur"
+      }
+    ]
+  },
+  "dsl_version": "0.39.0",
+  "stage": "dialogue"
+}

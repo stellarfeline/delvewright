@@ -77,11 +77,7 @@ pub fn unknown(c: &Campaign, district: &str) -> Option<Diagnostic> {
 }
 
 fn names_any(d: &Diagnostic, ids: &BTreeSet<String>) -> bool {
-    ids.iter().any(|q| {
-        d.message.contains(&format!("`{q}`"))
-            || d.message.contains(q.as_str())
-            || d.path.contains(q.as_str())
-    })
+    ids.iter().any(|q| d.message.contains(&format!("`{q}`")))
 }
 
 /// Every planned quest id a diagnostic names.
@@ -91,13 +87,37 @@ fn planned_named<'a>(c: &'a Campaign, d: &Diagnostic) -> Vec<&'a str> {
         .quests
         .iter()
         .map(|q| q.id.as_str())
-        .filter(|q| d.message.contains(q))
+        .filter(|q| d.message.contains(&format!("`{q}`")))
         .collect()
 }
 
-/// Whether `d` stands only on the absence of the siblings' quests.
-fn on_absence(c: &Campaign, d: &Diagnostic, siblings: &BTreeSet<String>) -> bool {
-    if siblings.is_empty() || d.severity != Severity::Error {
+/// Whether `d` stands only on the absence of the siblings' quests — or, for
+/// the cast ledger, on the whole's and the siblings' quests not yet naming an
+/// NPC this district declares.
+fn on_absence(
+    c: &Campaign,
+    d: &Diagnostic,
+    siblings: &BTreeSet<String>,
+    own_npcs: &BTreeSet<String>,
+    own_quests: &BTreeSet<String>,
+) -> bool {
+    if d.severity != Severity::Error {
+        return false;
+    }
+    // `DW0460` on a quest that is not this district's, about an NPC this
+    // district's fragment declares: the whole's and the siblings' casts name it
+    // once the wave is integrated, and they are not this worker's to write.
+    if d.code == "DW0460"
+        && own_npcs
+            .iter()
+            .any(|n| d.message.contains(&format!("`{n}`")))
+        && !own_quests
+            .iter()
+            .any(|q| d.message.contains(&format!("`{q}`")))
+    {
+        return true;
+    }
+    if siblings.is_empty() {
         return false;
     }
     match d.code.as_str() {
@@ -115,11 +135,35 @@ fn on_absence(c: &Campaign, d: &Diagnostic, siblings: &BTreeSet<String>) -> bool
 
 /// **Apply the scope**: demote the refusals that stand only on the siblings'
 /// absence to advisories, and add the one `DW1006` line that counts them.
-pub fn apply(c: &Campaign, district: &str, diags: &mut Vec<Diagnostic>) {
+pub fn apply(
+    c: &Campaign,
+    fragments: &super::fragment::Fragments,
+    district: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
     let (siblings, n_districts) = siblings_unexpanded(c, district);
+    let own_npcs: BTreeSet<String> = fragments
+        .of_district(district)
+        .flat_map(|f| f.items.iter())
+        .filter(|i| i.list == "npcs")
+        .filter_map(|i| {
+            i.value
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
+        .collect();
+    let own_quests: BTreeSet<String> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .filter(|q| q.district.as_ref().map(|d| d.as_str()) == Some(district))
+        .map(|q| q.id.as_str().to_string())
+        .collect();
     let mut demoted: Vec<String> = Vec::new();
     for d in diags.iter_mut() {
-        if on_absence(c, d, &siblings) {
+        if on_absence(c, d, &siblings, &own_npcs, &own_quests) {
             d.severity = Severity::Warning;
             d.message = format!(
                 "(reported under DW1006 — this stands on the absence of other districts' \
@@ -140,8 +184,9 @@ pub fn apply(c: &Campaign, district: &str, diags: &mut Vec<Diagnostic>) {
         format!(
             "{n} planned quest(s) of {n_districts} other district(s) are not expanded in this tree \
              ({list}); validated as `{district}`'s tree, {k} diagnostic(s) standing only on that \
-             absence are reported as advisories{codes}. They are the siblings' to write; the \
-             whole's `delvec validate` after the wave is integrated judges them.",
+             absence — or on another quest's cast not yet naming an NPC this district declares — \
+             are reported as advisories{codes}. They are the siblings' and the planner's to \
+             write; the whole's `delvec validate` after the wave is integrated judges them.",
             n = siblings.len(),
             list = super::ticked(&siblings.iter().cloned().collect::<Vec<_>>()),
             k = demoted.len(),

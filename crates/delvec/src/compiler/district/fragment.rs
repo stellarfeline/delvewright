@@ -523,6 +523,67 @@ fn judge(
             });
         }
     }
+    // The fragment's lists read against their stage's own schema, so a
+    // malformed object is refused naming the fragment that wrote it rather
+    // than as a position in a union nobody wrote.
+    if refusals.len() == before {
+        let mut probe = serde_json::Map::new();
+        for l in kind.lists {
+            probe.insert(
+                (*l).to_string(),
+                content.get(*l).cloned().unwrap_or(Value::Array(Vec::new())),
+            );
+        }
+        let probe = Value::Object(probe);
+        let shape: Result<(), String> = match kind.file {
+            "npcs.json" => serde_json::from_value::<delvewright_dsl::NpcsContent>(probe)
+                .map(drop)
+                .map_err(|e| e.to_string()),
+            "quests.json" => serde_json::from_value::<delvewright_dsl::QuestsContent>(probe)
+                .map(drop)
+                .map_err(|e| e.to_string()),
+            "dialogue.json" => serde_json::from_value::<delvewright_dsl::DialogueContent>(probe)
+                .map(drop)
+                .map_err(|e| e.to_string()),
+            "detail-plan.json" => {
+                serde_json::from_value::<delvewright_dsl::detailplan::DetailPlanContent>(probe)
+                    .map(drop)
+                    .map_err(|e| e.to_string())
+            }
+            "design.json" => serde_json::from_value::<delvewright_dsl::DesignContent>(probe)
+                .map(drop)
+                .map_err(|e| e.to_string()),
+            _ => probe["nodes"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|n| {
+                    n.get("stations")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                })
+                .try_for_each(|st| {
+                    serde_json::from_value::<delvewright_dsl::Station>(st.clone())
+                        .map(drop)
+                        .map_err(|e| e.to_string())
+                }),
+        };
+        if let Err(e) = shape {
+            refuse(
+                refusals,
+                codes::SCHEMA,
+                label,
+                "/content",
+                format!(
+                    "`{rel}` does not conform to the `{stage}` schema: {e}. A district fragment \
+                     is the same schema as its stage — run `delvec schema --stage {stage}` for \
+                     the shape of every list it may carry.",
+                    stage = kind.stage.name()
+                ),
+            );
+        }
+    }
     // The finer shapes: what one object of a fragment may say.
     for it in &items {
         match kind.file {

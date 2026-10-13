@@ -93,8 +93,21 @@ fn declared_ids(f: &Fragment) -> Vec<String> {
     for it in &f.items {
         match it.list.as_str() {
             // A tree is keyed by its NPC, and the tree's own rule (referenced
-            // only from its fragment's quests) is judged on the tree.
-            "dialogues" => {}
+            // only from its fragment's quests) is judged on the tree; its
+            // nodes are ids a sibling's `next` may not name.
+            "dialogues" => {
+                for n in it
+                    .value
+                    .get("nodes")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some(id) = n.get("id").and_then(Value::as_str) {
+                        out.push(id.to_string());
+                    }
+                }
+            }
             "nodes" => {
                 for s in it
                     .value
@@ -147,11 +160,53 @@ fn flags_of(f: &Fragment) -> BTreeSet<String> {
     out
 }
 
-/// The npc ids every stage-5 quest of the campaign mentions, by quest id.
+/// The NPC ids a fragment declares.
+fn declared_here(f: &Fragment) -> BTreeSet<String> {
+    f.items
+        .iter()
+        .filter(|i| i.list == "npcs")
+        .filter_map(|i| {
+            i.value
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+/// A quest with the cast rows that are only records removed: rows for NPCs
+/// the fragment does not declare and the quest names nowhere outside its
+/// `cast`. Anything that is not a quest is returned as it is.
+fn without_records(v: &Value, declared: &BTreeSet<String>) -> Value {
+    let Some(cast) = v.get("cast").and_then(Value::as_object) else {
+        return v.clone();
+    };
+    let mut rest = v.clone();
+    if let Some(o) = rest.as_object_mut() {
+        o.remove("cast");
+    }
+    let mut named = Vec::new();
+    strings(&rest, String::new(), &mut named);
+    let acted: BTreeSet<&str> = named.iter().map(|(_, s)| *s).collect();
+    let kept: serde_json::Map<String, Value> = cast
+        .iter()
+        .filter(|(npc, _)| declared.contains(npc.as_str()) || acted.contains(npc.as_str()))
+        .map(|(k, x)| (k.clone(), x.clone()))
+        .collect();
+    let mut out = v.clone();
+    out["cast"] = Value::Object(kept);
+    out
+}
+
+/// The npc ids every stage-5 quest of the campaign acts on, by quest id — its
+/// cast rows that only record where an NPC stands are not a reference to it.
 fn npcs_by_quest(c: &Campaign) -> BTreeMap<String, BTreeSet<String>> {
     let mut out = BTreeMap::new();
     for q in &c.quests.content.quests {
-        let v = serde_json::to_value(q).unwrap_or(Value::Null);
+        let v = without_records(
+            &serde_json::to_value(q).unwrap_or(Value::Null),
+            &BTreeSet::new(),
+        );
         let mut all = Vec::new();
         strings(&v, String::new(), &mut all);
         out.insert(
@@ -347,8 +402,15 @@ pub fn check(c: &Campaign, fragments: &Fragments) -> (Vec<Diagnostic>, LocatedBi
                             );
                         }
                     }
+                    // A cast row that only records where an NPC the quest does
+                    // not act on stands is the whole's state, restated because
+                    // the ledger demands every live NPC (spec-0020); it places
+                    // nothing, so it is neither located nor a join. A row for an
+                    // NPC the quest names anywhere else — an objective, an
+                    // effect, a happening — is a placement and is judged.
+                    let judged = without_records(&it.value, &declared_here(f));
                     let mut all = Vec::new();
-                    strings(&it.value, at.clone(), &mut all);
+                    strings(&judged, at.clone(), &mut all);
                     let mut said: BTreeSet<String> = BTreeSet::new();
                     for (path, s) in all {
                         let mut reason: Option<String> = None;

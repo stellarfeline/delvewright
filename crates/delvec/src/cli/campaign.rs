@@ -18,7 +18,7 @@ use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabReg
 use delvewright_dsl::{Diagnostic, DwCode, validate_campaign_with};
 
 use crate::EXIT_INTERNAL;
-use crate::cli::report::{print_build_error, print_diags, report_binding_notes};
+use crate::cli::report::{print_build_error, print_diags, report_binding_notes, set_router};
 
 /// `DW0309`: a staged **body** — a stage-2 npc or a stage-5 actor alike —
 /// declares a `skin.texture_id` for which the campaign ships no
@@ -197,8 +197,21 @@ pub(crate) fn validate_stage(
     prefabs_dir: &Path,
     json: bool,
 ) -> Result<Validated, u8> {
+    validate_stage_scoped(campaign_dir, prefabs_dir, json, None)
+}
+
+/// [`validate_stage`] judged as one district's tree (spec-0103 §7.5): with
+/// `Some(district)`, the refusals that stand only on the siblings' unexpanded
+/// quests are reported under one `DW1006` line, and a district the graph does
+/// not declare is `DW1009`.
+pub(crate) fn validate_stage_scoped(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+    district: Option<&str>,
+) -> Result<Validated, u8> {
     let loaded = load_or_refuse(campaign_dir, json)?;
-    validate_loaded(loaded, prefabs_dir, json)
+    validate_loaded_scoped(loaded, prefabs_dir, json, district)
 }
 
 /// [`validate_stage`] over an already-loaded (possibly augmented) campaign —
@@ -208,6 +221,15 @@ pub(super) fn validate_loaded(
     loaded: delvec::compiler::load::LoadedCampaign,
     prefabs_dir: &Path,
     json: bool,
+) -> Result<Validated, u8> {
+    validate_loaded_scoped(loaded, prefabs_dir, json, None)
+}
+
+fn validate_loaded_scoped(
+    loaded: delvec::compiler::load::LoadedCampaign,
+    prefabs_dir: &Path,
+    json: bool,
+    district: Option<&str>,
 ) -> Result<Validated, u8> {
     let prefabs = PrefabRegistry::load_dir(prefabs_dir).map_err(|e| {
         eprintln!(
@@ -223,6 +245,21 @@ pub(super) fn validate_loaded(
 
     match delvec::compiler::load::parse_loaded(&loaded) {
         Ok(campaign) => {
+            // spec-0103 §8.3: every line this run prints that names an object
+            // of one district is routed to it — relocated to the fragment that
+            // wrote it and tagged `[district/<x>]`.
+            set_router(delvec::compiler::district::ledger::Attribution::of(
+                &campaign,
+                &loaded.fragments,
+            ));
+            // spec-0103 §7.5: a district the graph does not declare is refused
+            // before anything is judged as its tree.
+            if let Some(x) = district
+                && let Some(d) = delvec::compiler::district::scope::unknown(&campaign, x)
+            {
+                print_diags(&[d], json);
+                return Err(1);
+            }
             let mut diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
             // **What this run examined, held back until the author's lines are
             // out.** These counts are not optional — a check that reports no
@@ -555,6 +592,27 @@ pub(super) fn validate_loaded(
                 examined.push(dbind.line());
                 diags.extend(dd);
             }
+            // spec-0103 §7.3: every object a district's fragment carries stands
+            // in its district and reaches into no sibling (`DW1004`). Stated on
+            // every run of a campaign that declares districts or holds a
+            // fragment, zeroes included.
+            {
+                let (ld, lbind) =
+                    delvec::compiler::district::located::check(&campaign, &loaded.fragments);
+                if lbind.districts > 0 || !loaded.fragments.is_empty() {
+                    examined.push(lbind.line());
+                }
+                diags.extend(ld);
+            }
+            // spec-0103 §7.5: whose tree this is.
+            if let Some(x) = district {
+                delvec::compiler::district::scope::apply(
+                    &campaign,
+                    &loaded.fragments,
+                    x,
+                    &mut diags,
+                );
+            }
             // spec-0081 §5.5: every time value the campaign states, as the clock
             // it resolves to — printed on every run, zeroes included.
             examined.extend(delvec::compiler::clock::binding_lines(&campaign));
@@ -572,6 +630,9 @@ pub(super) fn validate_loaded(
             })
         }
         Err(diags) => {
+            set_router(
+                delvec::compiler::district::ledger::Attribution::from_fragments(&loaded.fragments),
+            );
             print_diags(&diags, json);
             Err(1)
         }
@@ -589,8 +650,13 @@ pub(crate) fn has_error(diags: &[Diagnostic]) -> bool {
         .any(|d| d.severity == delvewright_dsl::Severity::Error)
 }
 
-pub(crate) fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
-    match validate_stage(campaign_dir, prefabs_dir, json) {
+pub(crate) fn run_validate(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+    district: Option<&str>,
+) -> ExitCode {
+    match validate_stage_scoped(campaign_dir, prefabs_dir, json, district) {
         Ok(v) if !has_error(&v.diags) => ExitCode::SUCCESS,
         Ok(_) => ExitCode::from(1),
         Err(code) => ExitCode::from(code),
@@ -848,7 +914,10 @@ pub(crate) fn run_build(
             Plan::build_with(&campaign, &prefabs, p.clone())
         }
     };
-    let plan = match built.map(|p| p.with_design_files(loaded.design_files.clone())) {
+    let plan = match built.map(|p| {
+        p.with_design_files(loaded.design_files.clone())
+            .with_fragments(loaded.fragments.clone())
+    }) {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:
