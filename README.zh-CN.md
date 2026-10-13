@@ -2,13 +2,15 @@
 
 # Delvewright
 
-![Delvewright 建成的 Vesperhold：从西南高处望去，整座要塞立在峭岩上，堤道一路延伸到路边神龛](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
-
-**[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼与王座厅。
-
 **Delvewright 是一个 AI Minecraft 冒险地图生成器：它把一个创意提示变成一座供一到四位朋友游玩的、由故事驱动的 RPG 地牢——一个带任务与 NPC 的原版数据包——并在交付之前由机器证明它能被通关。**
 
-它自动化的是繁琐的劳动和验证，而不是设计：它会停下来等你认可设计，最后把完成的 delve 交到你手里去玩；当它拒绝某样东西时，它会指明该改什么，而不是替你去改。
+![Delvewright 建成的 Vesperhold：从西南高处望去，整座要塞立在峭岩上，堤道一路延伸到路边神龛](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
+
+这些图是用 [Chunky](https://chunky-dev.github.io/docs/) 对建成的世界做路径追踪渲染出来的；在游戏里，它就是原版 Minecraft 的样子，除非你自己另装了光影或资源包。
+
+**[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼与王座厅。**[更多战役](docs/media/README.zh-CN.md)**：树屋营地、杜恩城堡。
+
+Delvewright 自动化的是繁琐的劳动和验证，而不是设计：它会停下来等你认可设计，最后把完成的 delve 交到你手里去玩；当它拒绝某样东西时，它会指明该改什么，而不是替你去改。
 
 **现在就来玩：** 用 Minecraft Java 1.21.11 客户端加入 `minecraft.stellarfeline.ca`，进入时接受资源包提示。服务器上运行的是 Vesperhold，也就是图中这座城堡。
 
