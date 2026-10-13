@@ -1729,7 +1729,7 @@ fn a_carried_place_is_detailed_and_entered_at_its_landing() {
     let a = detail::allocation(&c, &NodeId("node/skiff".into())).unwrap();
     assert!(a.seams.is_empty(), "a carry edge allocates no seam");
     assert_eq!(
-        a.owed_anchors.iter().cloned().collect::<Vec<_>>(),
+        a.owed_anchors.to_vec(),
         ["anchor/node-skiff", "anchor/skiff-seat"],
         "the landing is a station, so the place owes it"
     );
