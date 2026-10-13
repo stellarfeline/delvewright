@@ -3628,50 +3628,65 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   1.19 (east and west, which the game shades to 0.6). Those figures are at the
   core's default emitter intensity; the lantern scale below answers them.
 - **The lantern light** (`scene::emitter_intensity`, `scene::LANTERN_LIGHT_SCALE`):
-  every scene is written with `emitterIntensity` 195.5382, the core's default 13
-  (`Scene.DEFAULT_EMITTER_INTENSITY`, **cited**) times 15.0414. The pinned core
-  gives a scene three controls over emitted light — this global intensity, a
-  per-material `emittance` and the emitter sampling strategy, which moves noise
-  and not the mean — and nothing that limits how far an emitter reaches
-  (`PathTracer` at the pin: emission = texel colour² × emittance × intensity;
-  the lantern's emittance 1.0, `BlockPalette`). Chunky users close the
-  torch-light gap with the same lever, raising the intensity by eye
-  ([`chunky-lighting-practice.md`](chunky-lighting-practice.md), which compares
-  every setting here with that practice). The scale is the one at which the
-  mean display luma of lantern-lit pixels under the anchored curve equals the
-  game model's (**authored from this measurement**): the twelve showcase frames
-  at 400 × 225, each rendered as a sky pass (emitters off, 256 spp) and an
-  emitter pass (sky light 0, 1024 spp), whose sum at scale 1 matches a normal
-  render within 1%; render(k) = sky + k × emitters; over the 102 139 pixels on
-  full cubes of single-texture blocks with game block light 1–15, equal weight,
-  bisection gives 15.0414 (least squares would give 5.90, lit mean 32.4 against
-  the game's 42.4); resampling the twelve frames puts it between 9.81 and 27.54
-  (5–95%). A night-vision emulation writes its `emittance` as `0.05 × 13 /
-  emitterIntensity` (0.003324), so its glow stays calibrated. Rendered in full
-  (1600 × 900, the published frames' spp, the anchored curve; method 1 the
-  core's PNGs read by Pillow, method 2 the raw buffers through the numpy port —
-  they agree):
+  every scene is written with `emitterIntensity` 159.003, the core's default 13
+  (`Scene.DEFAULT_EMITTER_INTENSITY`, **cited**) times 12.2310, and leaves
+  emitter sampling at the core's `NONE`. The pinned core gives a scene three
+  controls over emitted light — this global intensity, a per-material
+  `emittance` and the emitter sampling strategy — and nothing that limits how
+  far an emitter reaches (`PathTracer` at the pin: emission = texel colour² ×
+  emittance × intensity; the lantern's emittance 1.0, `BlockPalette`). The
+  sampling strategies change the light, not only the noise: measured at the
+  lantern scale on Root Glade and Loom House (two independent runs each,
+  noise the standard deviation of their difference over √2, time the core's
+  `renderTime`), `ONE`, `ONE_BLOCK` and `ALL` cut noise² × time to 0.04–0.13,
+  0.05–0.11 and 0.36–0.37 of `NONE` and cut the emitted light to 0.527–0.538
+  of it, because at the pin the sampled estimate averages the emitters near a
+  point (`ONE` draws one of n without the factor n; `ALL` scales by π / n) and
+  takes the texel colour where the unsampled path takes its square. Chunky
+  users close the torch-light gap by raising the intensity by eye and pair it
+  with a denoiser ([`chunky-lighting-practice.md`](chunky-lighting-practice.md),
+  which compares every setting here with that practice). **A showcase frame is
+  denoised**: Open Image Denoise 2.5.1 (RT filter, HDR) over the raw sample
+  buffer, with the chunky-denoiser plugin's albedo and normal passes (16
+  samples each), the result written back as a core render dump so the core's
+  own `-snapshot` applies the scene's post-process (both tools in
+  `ACKNOWLEDGEMENTS.md`; the step is not yet one of `validation/`'s scripts).
+  The scale is the one at which the mean display luma of lantern-lit pixels,
+  denoised, under the anchored curve, equals the game model's (**authored from
+  this measurement**): the twelve showcase frames at 400 × 225, each rendered
+  as a sky pass (emitters off, 256 spp) and an emitter pass (sky light 0, 1024
+  spp), whose sum at scale 1 matches a normal render within 1%; render(k) =
+  denoise(sky + k × emitters); over the 102 139 pixels on full cubes of
+  single-texture blocks with game block light 1–15, equal weight, bisection
+  gives 12.2310. Fitted on the noisy buffers it reads 15.04, because grain shown
+  through the curve reads darker than its mean. A night-vision emulation writes
+  its `emittance` as `0.05 × 13 / emitterIntensity` (0.004088), so its glow
+  stays calibrated. Rendered in full and denoised (1600 × 900, the published
+  frames' spp; method 1 the core's PNGs read by Pillow, method 2 the denoised
+  buffers through the numpy port of the curve — they agree):
 
   | Frame | mean luma, anchored → lantern scale | crushed | clipped |
   |---|---|---|---|
-  | whole camp | 58.9 → 62.6 | 0.32 → 0.18% | 0.40 → 0.50% |
-  | the eight place frames, Root Glade to Watch House | 28.9–38.6 → 36.0–45.6 | 0.88–5.87 → 0.51–3.49% | 0.12–0.21 → 0.30–0.75% |
-  | the climb | 31.8 → 55.5 | 4.97 → 0.92% | 0.44 → 0.81% |
-  | Crown Lookout | 53.4 → 57.6 | 0.51 → 0.38% | 0.38 → 0.52% |
-  | Lantern Night | 24.2 → 40.5 | 0.60 → 0.28% | 0.18 → 0.69% |
+  | whole camp | 58.9 → 62.6 | 0.32 → 0.04% | 0.40 → 0.48% |
+  | the eight place frames, Root Glade to Watch House | 28.9–38.6 → 36.7–47.1 | 0.88–5.87 → 0.02–1.63% | 0.12–0.21 → 0.28–0.67% |
+  | the climb | 31.8 → 53.6 | 4.97 → 0.16% | 0.44 → 0.79% |
+  | Crown Lookout | 53.4 → 57.9 | 0.51 → 0.15% | 0.38 → 0.50% |
+  | Lantern Night | 24.2 → 39.5 | 0.60 → 0.06% | 0.18 → 0.60% |
 
-  On the 3 637 398 full-resolution lantern-lit pixels the frames read 39.7
-  against the game model's 46.1 (23.7 under the anchored curve alone; mean
-  absolute error 20.6, from 22.6), and per frame from 21 luma under (Loom
-  House 40.4 against 61.5) to 19 over (the climb 58.0 against 39.4); the
-  1 697 997 sky-only pixels read 38.1 against 35.7, because the core's lantern
-  light has no 14-block edge. **What is left**: the falloff's shape — near a
-  lantern the render is brighter than the game, far from it dimmer — which no
-  control of the core expresses; the lantern itself, which reads 208 where the
-  game draws its texture at 94 (the core scales the lit area and the lamp
-  together); and grain: at the published frames' 512–2048 spp the frames'
-  mean distance from a 5 × 5 median grows about threefold (Root Glade 3.5 →
-  12.6), where the manual asks 16384 spp or more for an emitter-lit scene.
+  Grain, as the mean distance of a pixel's luma from its 5 × 5 median, is at
+  or under the anchored set's on every frame (1.16–2.52 against 1.81–3.46;
+  undenoised at the lantern scale 4.03–12.55). On the 3 637 398
+  full-resolution lantern-lit pixels the frames read 40.8 against the game
+  model's 46.1 (23.7 under the anchored curve alone; mean absolute error 16.0,
+  from 22.6), and per frame from 20 luma under (Loom House 41.5 against 61.5)
+  to 16 over (the climb 55.0 against 39.4); the 1 697 997 sky-only pixels read
+  38.7 against 35.7, because the core's lantern light has no 14-block edge.
+  **What is left**: the falloff's shape — near a lantern the render is brighter
+  than the game, far from it dimmer — which no control of the core expresses;
+  and the lantern itself, which reads 204 where the game draws its texture at
+  94: the core scales the lamp and the light it casts together, and the
+  control that would part them (an emittance map) is an open draft upstream,
+  not in the pinned core.
 - **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
   ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
   ships a world save holding only the chunks its layout occupies — the sea around
