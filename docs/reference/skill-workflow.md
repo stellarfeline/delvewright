@@ -179,6 +179,13 @@ following the page does all of it themselves, and the page reads identically
 either way because every step is written as work to do rather than as work to
 route.
 
+A second shape is specified and not built: a campaign authored in parallel,
+one planner agent over the whole and one worker per **district** — a declared
+set of the layout graph's places (spec-0103). The craft of dividing a map into
+districts is the page's own `references/partitioning.md`, already bundled; the
+planner's dispatch, which that spec puts on the page because the creator's
+session is where the workers run, lands with the implementation.
+
 ## 3. Inside one stage
 
 ```mermaid
