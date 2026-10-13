@@ -1021,6 +1021,11 @@
     },
     {
       "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/porter",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/warden",
       "stage": "quests"
     },
