@@ -141,6 +141,7 @@ pub mod daylight;
 pub mod deathplan;
 pub mod design;
 pub mod detail;
+pub mod district;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;

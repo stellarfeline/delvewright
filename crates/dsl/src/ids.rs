@@ -246,6 +246,11 @@ prefixed_id!(
     /// Site-plan view id: `view/<kebab>` (spec-0049 §4.1). A named exterior
     /// vantage the walk judges the silhouette from. Unique within the site plan.
     ViewId, "view");
+prefixed_id!(
+    /// District id: `district/<kebab>` (spec-0103 §3.2). A named set of the
+    /// layout graph's places — the unit one worker authors when a campaign is
+    /// authored in parallel. Unique within the layout graph.
+    DistrictId, "district");
 
 /// Campaign id: a bare kebab-case token (no type prefix).
 #[derive(

@@ -60,10 +60,9 @@ delvewright_dsl::dw_code! {
     const DW_NOT_HANDED: DwCode = DwCode::new("DW0882", ExitTier::Build);
 }
 
-/// Where a campaign keeps its detail programs: `<campaign>/programs/<place
-/// stem>.json`. The address is derived from the place, as the piece id is; the
-/// document at it is the creator's.
-pub const PROGRAMS_DIR: &str = "programs";
+/// Where a campaign keeps its detail programs — the library's constant, which
+/// the district write set reads too.
+pub use delvec::compiler::detail::PROGRAMS_DIR;
 
 /// The prefix a program reads a handed value through (spec-0058 §2.3).
 pub const HANDED_PREFIX: &str = "handed/";
@@ -333,7 +332,7 @@ fn prepare(
     let stem = stem_of(node);
     let place = node.0.as_str();
     let a = engine::allocation(campaign, node).expect("a target is a place the plan allocates");
-    let id = format!("{}-{stem}", campaign.world.campaign_id.0);
+    let id = engine::piece_id(campaign, node);
     if !export::is_valid_id(&id) {
         eprintln!(
             "error: `{place}`: the piece id `{id}` (campaign id plus place stem) is not a usable \

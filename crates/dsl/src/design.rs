@@ -39,9 +39,15 @@ pub const CONCEPT_DIR: &str = "concept";
 /// `design/`.
 pub const REFERENCE_DIR: &str = "reference";
 
-/// The two directories a [`Reference::name`] may name, in the order a
+/// The two flat directories a [`Reference::name`] may name, in the order a
 /// diagnostic lists them.
 pub const REFERENCE_DIRS: [&str; 2] = [CONCEPT_DIR, REFERENCE_DIR];
+
+/// **The directory a place's own approved images live in**, one subdirectory
+/// per place stem, relative to `design/` (spec-0103 §5): `places/<place
+/// stem>/<kebab>`. The per-place concept image a district's worker makes at the
+/// detail wave lives here, and its row is the district's to write.
+pub const PLACES_DIR: &str = "places";
 
 /// **The image extensions this engine counts as an approved image**, and the
 /// one place the set is written down.
@@ -107,24 +113,39 @@ impl Reference {
                 .strip_prefix(dir)
                 .and_then(|r| r.strip_prefix('/'))
                 .is_some_and(is_kebab)
-        })
+        }) || self.place().is_some()
+    }
+
+    /// The place stem of a `places/<stem>/<kebab>` row, when the name is one.
+    #[must_use]
+    pub fn place(&self) -> Option<&str> {
+        let rest = self
+            .name
+            .strip_prefix(PLACES_DIR)
+            .and_then(|r| r.strip_prefix('/'))?;
+        let (stem, image) = rest.split_once('/')?;
+        (is_kebab(stem) && is_kebab(image)).then_some(stem)
     }
 
     /// The form a [`Reference::name`] has to take, for the refusal that rejected
     /// one.
     #[must_use]
     pub fn name_form() -> String {
-        REFERENCE_DIRS
+        let mut forms: Vec<String> = REFERENCE_DIRS
             .iter()
             .map(|d| format!("`{d}/<kebab>`"))
-            .collect::<Vec<_>>()
-            .join(" or ")
+            .collect();
+        forms.push(format!("`{PLACES_DIR}/<place stem>/<kebab>`"));
+        forms.join(" or ")
     }
 
     /// Which of [`REFERENCE_DIRS`] this row's name is under, when it is
     /// well-formed.
     #[must_use]
     pub fn directory(&self) -> Option<&'static str> {
+        if self.place().is_some() {
+            return Some(PLACES_DIR);
+        }
         REFERENCE_DIRS
             .iter()
             .copied()
@@ -175,16 +196,17 @@ pub fn check(c: &crate::envelope::Campaign, d: &mut Vec<crate::diagnostic::Diagn
                 format!("/content/references/{i}/name"),
                 format!(
                     "reference name `{name}` is not a path this record can resolve. A name is the \
-                     image's stem relative to `design/`, under one of the two directories an \
-                     approved image lives in: {form}. `{concept}/` holds a picture of one scene \
-                     and `{reference}/` a view of the whole map; nothing else under `design/` is \
-                     an approved image. Write the name without its extension — the row resolves \
+                     image's stem relative to `design/`, under one of the directories an \
+                     approved image lives in: {form}. `{concept}/` holds a picture of one scene, \
+                     `{reference}/` a view of the whole map, and `{places}/<place stem>/` a \
+                     place's own pictures; nothing else under `design/` is an approved image. Write the name without its extension — the row resolves \
                      against the directory, so it names the picture rather than one encoding of \
                      it.",
                     name = r.name,
                     form = Reference::name_form(),
                     concept = CONCEPT_DIR,
                     reference = REFERENCE_DIR,
+                    places = PLACES_DIR,
                 ),
             ));
         }
@@ -229,6 +251,10 @@ mod tests {
         assert!(!row("concept/Shore_Far").is_valid_name());
         assert!(!row("concept/shore/far").is_valid_name());
         assert!(!row("concept/").is_valid_name());
+        assert!(row("places/toll-house/from-the-green").is_valid_name());
+        assert!(!row("places/toll-house").is_valid_name());
+        assert!(!row("places/Toll/x").is_valid_name());
+        assert!(!row("places/a/b/c").is_valid_name());
     }
 
     #[test]
@@ -236,6 +262,8 @@ mod tests {
         assert_eq!(row("concept/a").directory(), Some("concept"));
         assert_eq!(row("reference/a").directory(), Some("reference"));
         assert_eq!(row("nope/a").directory(), None);
+        assert_eq!(row("places/a/b").directory(), Some("places"));
+        assert_eq!(row("places/a/b").place(), Some("a"));
     }
 
     /// The extension set is one constant, and the sidecars `design/` also

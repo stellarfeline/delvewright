@@ -62,7 +62,7 @@ use serde::{Deserialize, Serialize};
 use crate::Objective;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 use crate::envelope::Campaign;
-use crate::ids::{AnchorId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId};
+use crate::ids::{AnchorId, DistrictId, EdgeId, FactId, FlagId, NodeId, ObjectiveId, QuestId};
 use crate::metrics::{MetricKind, Metrics, Reads};
 
 crate::dw_code! {
@@ -100,6 +100,15 @@ crate::dw_code! {
 crate::dw_code! {
     /// `DW0822`: the pacing measurement — a projection, printed with no threshold.
     pub const DW_PACING: DwCode = DwCode::new("DW0822", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `DW1003`: the partition of the graph's places into districts is
+    /// ill-formed (spec-0103 §3.3) — a place in no district, a place in two, a
+    /// district naming a place the graph does not declare, an empty district, a
+    /// district whose places are not connected among themselves, or a
+    /// `districts/<x>/` directory naming no declared district.
+    pub const DW_PARTITION: DwCode = DwCode::new("DW1003", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -181,6 +190,48 @@ pub struct LayoutGraphContent {
     /// mission* case — stated as a zero binding rather than passed over.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub beats: Vec<Beat>,
+    /// **The partition of the places into districts** (spec-0103 §3.2).
+    ///
+    /// A district is a named, non-empty set of this graph's places, and the
+    /// districts partition them: every place in exactly one, the places of one
+    /// district connected among themselves through the graph's own edges
+    /// (`DW1003`). It is the unit one worker authors when the campaign is
+    /// authored in parallel, and a design record before that: which scenes
+    /// belong together. Empty is the whole authored by one agent, and nothing
+    /// that reads districts applies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub districts: Vec<District>,
+}
+
+/// **A district**: a named set of the graph's places (spec-0103 §3.2).
+///
+/// It has no box and no coordinate of its own — a box is a place's geometry —
+/// and it is not a place: it is entered "inside of" and holds several scenes
+/// that share one continuity.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct District {
+    /// District id (`district/<kebab>`), unique within the graph.
+    pub id: DistrictId,
+    /// The places it holds — every one a declared node, none in another
+    /// district.
+    pub nodes: Vec<NodeId>,
+    /// Recorded judgement for the reviewer and for the worker's packet — the
+    /// continuity and the fiction's name for the set. **No check keys on it**,
+    /// for the reason none keys on [`Node::intent`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+impl LayoutGraphContent {
+    /// The district holding `node`, if the graph declares one that does.
+    #[must_use]
+    pub fn district_of(&self, node: &NodeId) -> Option<&DistrictId> {
+        self.districts
+            .iter()
+            .find(|d| d.nodes.contains(node))
+            .map(|d| &d.id)
+    }
 }
 
 /// A **place**: a room, a courtyard, an arena, a stretch of shore, a cavern.
@@ -909,6 +960,9 @@ pub struct LayoutBinding {
     pub path_steps: usize,
     /// Facts the geometry brief states — what a site plan's identities bind to.
     pub brief_facts: usize,
+    /// Districts the graph declares (spec-0103) — zero is the whole authored by
+    /// one agent, and is stated as that.
+    pub districts: usize,
     /// What the site plan offers the stage-4 checks.
     pub plan: crate::siteplan::PlanBinding,
 }
@@ -930,6 +984,7 @@ impl LayoutBinding {
         };
         b.plan = crate::siteplan::PlanBinding::of(c);
         b.nodes = graph.nodes.len();
+        b.districts = graph.districts.len();
         b.edges = graph.edges.len();
         b.beats = graph.beats.len();
         let spine = c.quest_plan.content.spine();
@@ -991,6 +1046,20 @@ impl LayoutBinding {
         )
     }
 
+    /// The partition's line (spec-0103 §3.2): how many districts the graph
+    /// declares over how many places, and the zero said as what it is.
+    #[must_use]
+    pub fn district_line(&self) -> String {
+        if self.districts == 0 {
+            "district binding: 0 district(s): the whole — one author, no partition.".to_string()
+        } else {
+            format!(
+                "district binding: {} district(s) over {} place(s).",
+                self.districts, self.nodes
+            )
+        }
+    }
+
     /// The site-plan half, when the campaign carries one.
     #[must_use]
     pub fn plan_line(&self) -> String {
@@ -1024,6 +1093,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     let known: BTreeSet<&str> = graph.nodes.iter().map(|n| n.id.0.as_str()).collect();
     let malformed = wellformed(graph, &known, d);
     stations(graph, d);
+    partition(graph, &known, d);
     if malformed {
         return;
     }
@@ -1035,6 +1105,178 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     // an author to loop `validate` at the graph step; this is what makes that
     // instruction true.
     d.extend(reachability(c));
+}
+
+/// **The partition of the places into districts** (spec-0103 §3.3): `DW1003`
+/// per shape, and the ordinary `DW0110`/`DW0111` for a district's id.
+///
+/// A graph with no `districts[]` is the whole authored by one agent and raises
+/// nothing. Runs before the malformed-graph return: every shape is judged
+/// against the declared node set, which needs no edge to resolve.
+fn partition(graph: &LayoutGraphContent, known: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
+    if graph.districts.is_empty() {
+        return;
+    }
+    let remedy = "The partition is a graph edit: `districts[]` in `layout-graph.json` lists \
+                  every place of the graph in exactly one district, each district's places \
+                  joined to one another through the graph's own edges \
+                  (`references/partitioning.md` is the craft).";
+    let mut seen_ids: BTreeSet<&str> = BTreeSet::new();
+    let mut owner: BTreeMap<&str, &str> = BTreeMap::new();
+    for (i, district) in graph.districts.iter().enumerate() {
+        let id = district.id.as_str();
+        if !district.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                crate::codes::ID_SYNTAX,
+                "layout-graph",
+                format!("/content/districts/{i}/id"),
+                format!(
+                    "malformed district id `{id}` — a district is named `district/<kebab-case>`."
+                ),
+            ));
+        }
+        if !seen_ids.insert(id) {
+            d.push(Diagnostic::error(
+                crate::codes::ID_DUPLICATE,
+                "layout-graph",
+                format!("/content/districts/{i}/id"),
+                format!(
+                    "duplicate district id `{id}` — two districts cannot share a name, because \
+                     every quest and every fragment directory naming it would then name both."
+                ),
+            ));
+        }
+        if district.nodes.is_empty() {
+            d.push(Diagnostic::error(
+                DW_PARTITION,
+                "layout-graph",
+                format!("/content/districts/{i}/nodes"),
+                format!(
+                    "district `{id}` holds no place. A district is a non-empty set of the \
+                     graph's places; give it the places it stands for, or delete it. {remedy}"
+                ),
+            ));
+        }
+        for (j, n) in district.nodes.iter().enumerate() {
+            let name = n.0.as_str();
+            if !known.contains(name) {
+                d.push(Diagnostic::error(
+                    DW_PARTITION,
+                    "layout-graph",
+                    format!("/content/districts/{i}/nodes/{j}"),
+                    format!(
+                        "district `{id}` names `{name}`, which the graph does not declare. \
+                         Correct the name to a place of `nodes[]`, or declare the place first. \
+                         {remedy}"
+                    ),
+                ));
+                continue;
+            }
+            match owner.get(name) {
+                Some(first) if *first == id => d.push(Diagnostic::error(
+                    DW_PARTITION,
+                    "layout-graph",
+                    format!("/content/districts/{i}/nodes/{j}"),
+                    format!(
+                        "district `{id}` names `{name}` twice. Delete the second entry. {remedy}"
+                    ),
+                )),
+                Some(first) => d.push(Diagnostic::error(
+                    DW_PARTITION,
+                    "layout-graph",
+                    format!("/content/districts/{i}/nodes/{j}"),
+                    format!(
+                        "place `{name}` is in two districts, `{first}` and `{id}`. A place \
+                         belongs to exactly one district, because the district's worker is the \
+                         one author of what stands in it; remove it from one of the two. \
+                         {remedy}"
+                    ),
+                )),
+                None => {
+                    owner.insert(name, id);
+                }
+            }
+        }
+    }
+    let unassigned: Vec<&str> = graph
+        .nodes
+        .iter()
+        .map(|n| n.id.0.as_str())
+        .filter(|n| !owner.contains_key(n))
+        .collect();
+    if !unassigned.is_empty() {
+        d.push(Diagnostic::error(
+            DW_PARTITION,
+            "layout-graph",
+            "/content/districts",
+            format!(
+                "{n} of the graph's {total} place(s) stand in no district: {list}. Once a graph \
+                 declares districts, every place belongs to one — a place in none has no author \
+                 on the parallel route. Add each to the district whose continuity it shares \
+                 (a connector place belongs to the district it is the approach to). {remedy}",
+                n = unassigned.len(),
+                total = graph.nodes.len(),
+                list = unassigned
+                    .iter()
+                    .map(|n| format!("`{n}`"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+        ));
+    }
+    // Connectivity: a district is entered "inside of" (Lynch), so its places are
+    // joined among themselves through edges whose both ends lie in it. Every
+    // edge class counts — a scenery crown joins its tree by the vision edge
+    // that sees it.
+    for (i, district) in graph.districts.iter().enumerate() {
+        let members: BTreeSet<&str> = district
+            .nodes
+            .iter()
+            .map(|n| n.0.as_str())
+            .filter(|n| known.contains(n))
+            .collect();
+        let Some(start) = members.iter().next().copied() else {
+            continue;
+        };
+        let mut reached: BTreeSet<&str> = BTreeSet::from([start]);
+        let mut frontier = vec![start];
+        while let Some(at) = frontier.pop() {
+            for e in &graph.edges {
+                let (a, b) = (e.a().0.as_str(), e.b().0.as_str());
+                if !members.contains(a) || !members.contains(b) {
+                    continue;
+                }
+                for (from, to) in [(a, b), (b, a)] {
+                    if from == at && reached.insert(to) {
+                        frontier.push(to);
+                    }
+                }
+            }
+        }
+        if reached.len() < members.len() {
+            let apart: Vec<String> = members
+                .iter()
+                .filter(|n| !reached.contains(*n))
+                .map(|n| format!("`{n}`"))
+                .collect();
+            d.push(Diagnostic::error(
+                DW_PARTITION,
+                "layout-graph",
+                format!("/content/districts/{i}/nodes"),
+                format!(
+                    "district `{}` is not one connected set: from `{start}`, the edges whose both \
+                     ends lie in it reach {r} of its {m} place(s), and {apart} stand apart. Two \
+                     sets no edge inside the district joins are two districts; split it, move \
+                     the stray place(s) to the district they are joined to, or add the \
+                     connection that joins them. {remedy}",
+                    district.id,
+                    r = reached.len(),
+                    m = members.len(),
+                    apart = apart.join(", "),
+                ),
+            ));
+        }
+    }
 }
 
 /// **The two refusals a declared station owes** (spec-0052 §7.1 and §7.2).
