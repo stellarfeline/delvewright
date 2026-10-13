@@ -113,3 +113,38 @@ dw_rcon_probe() {
     return 1
   fi
 }
+
+# ---- "the world is placed": the datapack's own signal ------------------------
+#
+# A delve builds its world AFTER the server logs `Done (`: `setup` sets
+# `#placed dw.sys` 0, the tick re-places every template, the world build latches
+# it at 2 while its block writes run, and `setup_finish` sets it to 1 as its last
+# line, after it has summoned the NPCs. Until then the world a probe would judge
+# does not exist yet. These three values are the ones the harness reads
+# (`PLACED_HOLDER`, `PLACED_OBJECTIVE`, `PLACED_DONE` in
+# `harness/src/placement.ts`; `tools/tests/test_placed_reading.py` holds the two
+# in lockstep), and the question is the one the harness puts: `execute if score
+# … matches 1`, adjudicated by the server.
+DW_PLACED_HOLDER="#placed"
+DW_PLACED_OBJECTIVE="dw.sys"
+DW_PLACED_DONE=1
+
+# dw_placed_reading <container> — one reading, printed as exactly one of:
+#   `placed`              the server answered that the world is placed;
+#   `pending`             the server answered that it is not, yet;
+#   `unanswered <reply>`  anything else: rcon not listening, the pack's `load`
+#                         not yet run (`Unknown scoreboard objective`), a cut
+#                         reply. Never a pass; the reply is carried so a caller
+#                         whose budget runs out can say what it last heard.
+dw_placed_reading() {
+  local reply
+  if ! reply="$(dw_rcon_probe "$1" "execute if score $DW_PLACED_HOLDER $DW_PLACED_OBJECTIVE matches $DW_PLACED_DONE" 2>/dev/null)"; then
+    printf 'unanswered %s\n' "$reply"
+    return 0
+  fi
+  case "$reply" in
+    "Test passed"*) echo "placed" ;;
+    "Test failed"*) echo "pending" ;;
+    *) printf 'unanswered %s\n' "$reply" ;;
+  esac
+}
