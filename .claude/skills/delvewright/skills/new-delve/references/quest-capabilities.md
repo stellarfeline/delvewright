@@ -475,6 +475,8 @@ this section is what they are *for* and the traps in each.
      the same flag, each direction it allows realised by a link — the build
      refuses either without the other (`DW0934`); the volume's anchor a
      station of the near place and `to`'s anchor a station of the far one.
+     A place reached only this way is handed no seam: its piece declares
+     no way in from outside and marks each landing on its entry floor.
   The build then takes the link only where a walk fails, splices the press
   into `critical-path.json` (`stand`, `transport`) and counts it on the
   `DW0311 binding:` line (`N carried by a link`) — read that line to confirm.

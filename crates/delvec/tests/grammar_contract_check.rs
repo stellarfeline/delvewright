@@ -1994,7 +1994,7 @@ fn an_all_open_piece_states_its_zero_and_passes() {
 /// **A sealed scenery piece owes nothing a body would** (spec-0098 §14). A
 /// beacon built to be seen and never entered: a stone block around a hollow one
 /// course tall, so no cell of it is stood in. Judged as scenery
-/// (`check_sealed`), the zero standable cells are stated with their count and
+/// (`check_arriving` with `Arrival::Never`), the zero standable cells are stated with their count and
 /// pass; the very same piece judged as a place a body reaches still reds on
 /// the zero — a reached place with nowhere to stand is the defect the
 /// reachability gate exists for.
@@ -2013,7 +2013,12 @@ fn a_sealed_scenery_piece_states_its_zero_standable_cells() {
         "the beacon holds no cell a body stands in — without that this proves nothing"
     );
 
-    let sealed = delvec::grammar::contract::check_sealed(&b.model, &c, &no_anchors(), true);
+    let sealed = delvec::grammar::contract::check_arriving(
+        &b.model,
+        &c,
+        &no_anchors(),
+        &delvec::grammar::contract::Arrival::Never,
+    );
     let red: Vec<String> = sealed
         .gates
         .iter()
@@ -2238,7 +2243,7 @@ fn a_climb_without_its_volume_or_its_rise_is_refused() {
 /// 25 leaf tops are standable cells. The place is scenery, proven unreached
 /// both ways by the build (`DW0816`, `DW0837`), so no cell of it is stood in
 /// and the contract owes it neither a space nor an out-of-walk region: judged
-/// as scenery (`check_sealed`), every floor gate passes and states the count
+/// as scenery (`check_arriving` with `Arrival::Never`), every floor gate passes and states the count
 /// it excuses, with the entry space declared over air and holding no
 /// standable cell. The very same piece judged as a place a body reaches reds
 /// on the leaf tops no declaration accounts for.
@@ -2258,7 +2263,12 @@ fn a_leafy_scenery_crown_owes_no_floor_and_a_reached_one_does() {
         space("open", vec![region([0, 4, 0], [4, 4, 4])]),
     );
 
-    let sealed = delvec::grammar::contract::check_sealed(&b.model, &c, &no_anchors(), true);
+    let sealed = delvec::grammar::contract::check_arriving(
+        &b.model,
+        &c,
+        &no_anchors(),
+        &delvec::grammar::contract::Arrival::Never,
+    );
     let red: Vec<String> = sealed
         .gates
         .iter()

@@ -457,14 +457,17 @@ fn prepare(
 
     // ---- 3. the expansion, at the frame ----
     let seed = seed_of(node);
-    // Scenery (`reached: false`, spec-0098 §14): the place is built to be
-    // seen and never entered, so its piece's contract is judged sealed.
-    let scenery = campaign
-        .layout_graph
-        .as_ref()
-        .is_some_and(|g| delvec::admit::scenery::is_scenery(&g.content, node));
+    // How a body arrives here — the place's kind, never the piece's word.
+    // Scenery (`reached: false`, spec-0098 §14) is built to be seen and never
+    // entered, so its piece's contract is judged sealed; a place joined to the
+    // map only by `carry` edges (spec-0083 §7) has no seam, and its piece's
+    // entry is judged against the marks its links set a body down at. Those
+    // marks are owed names, and `row_for` binds each owed `anchor/<stem>` to
+    // the piece's anchor of the same name, so they are already the piece's.
+    let arrival = delvec::admit::scenery::arrival_of(campaign, node);
+    let scenery = arrival.is_scenery();
     let mut opts = ExpandOptions::seeded(seed).with_overrides(overrides);
-    opts.sealed = scenery;
+    opts.arrival = arrival.clone();
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];
     let region = Box3::at_origin(size);
     let expansion = match expand(&program, region, &opts) {
@@ -548,6 +551,15 @@ fn prepare(
                 }
             }
             out
+        })
+        // A carried place is entered where a link sets a body down: each
+        // landing's cell is a way in, as a seam's cells are.
+        .chain(match &arrival {
+            delvec::grammar::contract::Arrival::Carried { landings } => landings
+                .iter()
+                .filter_map(|l| expansion.anchors.get(l).map(|a| a.pos))
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
         })
         .collect();
     // Scenery is lit for nobody: a body never stands in it — the build proves

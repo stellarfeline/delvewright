@@ -23,7 +23,7 @@ use std::path::Path;
 
 use crate::admit::scenery;
 use crate::grammar::block::BlockState;
-use crate::grammar::contract::{ContractReport, check_sealed};
+use crate::grammar::contract::{Arrival, ContractReport, check_arriving};
 use crate::grammar::geom::Box3;
 use crate::grammar::model::VoxelModel;
 use crate::schem::prefab::PrefabMeta;
@@ -147,6 +147,10 @@ pub struct DoorBinding {
     /// Whether the contract was judged sealed: every one of `owners` places
     /// the piece at a scenery node (spec-0098 §14).
     pub sealed: bool,
+    /// Whether the contract was judged carried: every one of `owners` places
+    /// the piece at a node joined to the map only by `carry` edges, with the
+    /// same landings (spec-0083 §7).
+    pub carried: bool,
 }
 
 /// The word a report prints for a door that was never opened.
@@ -175,6 +179,7 @@ impl Default for DoorBinding {
             resolved_anchors: 0,
             owners: 0,
             sealed: false,
+            carried: false,
         }
     }
 }
@@ -271,7 +276,7 @@ impl Door {
         // never read from the piece itself; judged by the one checker the
         // writer judged it by, with the kind `delvec detail` sealed it on.
         let kind = scenery::place_kind(meta_path, &meta);
-        let mut report = check_sealed(model, contract, &anchors, kind.sealed);
+        let mut report = check_arriving(model, contract, &anchors, &kind.arrival);
         report.enumeration.insert(0, kind.line());
         let binding = DoorBinding {
             spaces: contract.spaces.len(),
@@ -284,6 +289,7 @@ impl Door {
             resolved_anchors,
             owners: kind.owners.len(),
             sealed: kind.sealed,
+            carried: matches!(kind.arrival, Arrival::Carried { .. }),
             ..DoorBinding::blocks("judged", files, model)
         };
         Door::Judged { report, binding }
