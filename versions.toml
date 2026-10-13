@@ -342,6 +342,34 @@ chunky_build_java = "17"
 chunky_core_content_sha256 = "6710920a30882d3e8a32121c8d97ce940a9f35539137ef91fff0e70256a809fc"
 chunky_license = "GPL-3.0"
 
+# The denoise step after every Chunky `-render` (`compiler.md` §4): the
+# chunky-denoiser plugin renders a scene's albedo and normal passes, and Open
+# Image Denoise removes the grain the lantern-scaled emitters leave. Both are
+# external programs, acquired by `validation/chunky-install.sh` into the Chunky
+# home only when the downloaded bytes answer these sha256s, and run by
+# `validation/chunky.sh` (`tools/lib/chunky_denoise.py`). Open Image Denoise is
+# pinned per platform its project ships an archive for; on any other platform
+# (aarch64 Linux among the engine's targets) the render route refuses by name.
+# Digests: GitHub's release-asset sha256, cross-checked by hashing each
+# downloaded file. GPL-3.0 (plugin) and Apache-2.0 (Open Image Denoise).
+# Consumed by: tools/lib/chunky_denoise.py, validation/chunky-install.sh,
+# validation/chunky.sh + docs/reference/tools.md §4a.
+denoiser_plugin_version = "0.5.0-pre3"
+denoiser_plugin_url = "https://github.com/chunky-dev/chunky-denoiser/releases/download/v0.5.0-pre3/chunky-denoiser-v0.5.0-pre3.jar"
+denoiser_plugin_sha256 = "70157d9936b38b0a14efe6c8317b812e5c7c0429d7049d2e106e1b30093bc812"
+denoiser_plugin_license = "GPL-3.0"
+oidn_version = "2.5.1"
+oidn_license = "Apache-2.0"
+oidn_url_base = "https://github.com/RenderKit/oidn/releases/download/v2.5.1/"
+oidn_archive_aarch64_apple_darwin = "oidn-2.5.1.arm64.macos.tar.gz"
+oidn_sha256_aarch64_apple_darwin = "98e0aca8e7ab69e9f4f0191582a500fd8b0d9085d68662f18ab6469e934a6efd"
+oidn_archive_x86_64_apple_darwin = "oidn-2.5.1.x86_64.macos.tar.gz"
+oidn_sha256_x86_64_apple_darwin = "a4341639005a33ce0d944bd7c771ce34de1465be7eb3189b7c3b5b0064429832"
+oidn_archive_x86_64_unknown_linux_gnu = "oidn-2.5.1.x86_64.linux.tar.gz"
+oidn_sha256_x86_64_unknown_linux_gnu = "743c3e2aff8c220d5d70fe6cb970fb3d36f2702d2693c61d1d148e404cf37cd6"
+oidn_archive_x86_64_pc_windows_msvc = "oidn-2.5.1.x64.windows.zip"
+oidn_sha256_x86_64_pc_windows_msvc = "f11f91bc072a5e3a564515724cb72ab8fcfbc445c84a84c197ff9b16cc01396f"
+
 # deepslate (MIT) — the rendering core of the prefab review page
 # (`delvec viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is
 # one self-contained file, so the renderer ships inside it as

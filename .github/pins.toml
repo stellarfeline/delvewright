@@ -407,6 +407,51 @@ contains rather than its name or its zip bytes: the installer installs nothing
 that does not answer it, and `validation/chunky.sh` renders with nothing else.
 """
 
+[[pin]]
+id = "chunky-denoiser-jar"
+value = "70157d9936b38b0a14efe6c8317b812e5c7c0429d7049d2e106e1b30093bc812"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the chunky-denoiser v0.5.0-pre3 plugin jar the render route's albedo and normal passes run (versions.toml [render]); `tools/lib/chunky_denoise.py` installs nothing else and refuses a home whose jar does not answer it.
+"""
+
+[[pin]]
+id = "oidn-aarch64-apple-darwin"
+value = "98e0aca8e7ab69e9f4f0191582a500fd8b0d9085d68662f18ab6469e934a6efd"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the Open Image Denoise 2.5.1 macOS arm64 archive (versions.toml [render]); the render route installs and runs nothing else on that platform.
+"""
+
+[[pin]]
+id = "oidn-x86_64-apple-darwin"
+value = "a4341639005a33ce0d944bd7c771ce34de1465be7eb3189b7c3b5b0064429832"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the Open Image Denoise 2.5.1 macOS x86_64 archive (versions.toml [render]).
+"""
+
+[[pin]]
+id = "oidn-x86_64-unknown-linux-gnu"
+value = "743c3e2aff8c220d5d70fe6cb970fb3d36f2702d2693c61d1d148e404cf37cd6"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the Open Image Denoise 2.5.1 Linux x86_64 archive (versions.toml [render]).
+"""
+
+[[pin]]
+id = "oidn-x86_64-pc-windows-msvc"
+value = "f11f91bc072a5e3a564515724cb72ab8fcfbc445c84a84c197ff9b16cc01396f"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+sha256 of the Open Image Denoise 2.5.1 Windows x64 archive (versions.toml [render]).
+"""
+
 # --- misode/mcmeta data dumps, from which generated tables are extracted ------
 # Each names one retrieval of one file at the pinned Minecraft version. The
 # extractor refuses bytes that do not match, so these are what make a
