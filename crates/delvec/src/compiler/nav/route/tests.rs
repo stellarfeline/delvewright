@@ -498,6 +498,7 @@ fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
     let routes = vec![LegRoute {
         from: [0, 65, 0],
         to: [3, 65, 0],
+        from_step: 0,
         to_step: 1,
         cells: vec![[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0]],
         use_gates: Vec::new(),
@@ -517,6 +518,7 @@ fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
     let dry = vec![LegRoute {
         from: [0, 65, 0],
         to: [1, 65, 0],
+        from_step: 0,
         to_step: 1,
         cells: vec![[0, 65, 0], [1, 65, 0]],
         use_gates: Vec::new(),

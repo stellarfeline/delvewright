@@ -700,20 +700,28 @@ impl Listening {
 
     /// **The vibrations a leg makes** (spec-0100 §4.6): none on a `sneak` leg;
     /// otherwise every sensor for which [`PREDICTED_RUN`] consecutive route
-    /// cells lie within `distSqr ≤ 49` of it, each step undampened
+    /// cells the party must walk (`must_walk`: a cell it may stop in, having
+    /// completed the leg's last step or able to complete its next one, breaks
+    /// the run — see [`must_walk`]) lie within `distSqr ≤ 49` of it, each step undampened
     /// (`#dampens_vibrations` in the feet cell or the cell under it) and with no
     /// occluder in the box the cell and the sensor span; and for each such
     /// sensor the shriekers within `distSqr ≤ 64` of it with no occluder
     /// between.
-    pub fn leg_vibrations(&self, cells: &[[i32; 3]], sneak: bool) -> Vec<Vibration> {
+    pub fn leg_vibrations(
+        &self,
+        cells: &[[i32; 3]],
+        must_walk: &[bool],
+        sneak: bool,
+    ) -> Vec<Vibration> {
         if sneak || self.sensors.is_empty() {
             return Vec::new();
         }
         let mut out = Vec::new();
         for &(s, r2) in &self.sensors {
             let mut run = 0usize;
-            let heard = cells.iter().any(|c| {
-                let counts = dist_sq(*c, s) <= r2
+            let heard = cells.iter().enumerate().any(|(i, c)| {
+                let counts = must_walk.get(i).copied().unwrap_or(false)
+                    && dist_sq(*c, s) <= r2
                     && !self.dampeners.contains(c)
                     && !self.dampeners.contains(&[c[0], c[1] - 1, c[2]])
                     && !self.occluded(*c, s);
@@ -736,6 +744,23 @@ impl Listening {
         }
         out
     }
+}
+
+/// **Which of a leg's route cells the party must walk** (spec-0100 §4.6): every
+/// cell from which it could neither still be finishing the step the leg starts
+/// from (`from_done`) nor already finish the step the leg walks to (`to_done`).
+/// A party may stop anywhere it can complete a step, so a footstep on such a
+/// cell is one the walk may never make, and a prediction resting on it is one
+/// the walk cannot be held to.
+pub fn must_walk(
+    cells: &[[i32; 3]],
+    from_done: impl Fn([i32; 3]) -> bool,
+    to_done: impl Fn([i32; 3]) -> bool,
+) -> Vec<bool> {
+    cells
+        .iter()
+        .map(|c| !from_done(*c) && !to_done(*c))
+        .collect()
 }
 
 /// Everything the build's sculk block proved, for its lines.
@@ -1041,7 +1066,8 @@ mod tests {
         let l = Listening::of(&blocks, &[]);
         assert_eq!((l.sensors(), l.shriekers()), (2, 1));
         let route: Vec<[i32; 3]> = (0..=10).map(|x| [x, 1, 0]).collect();
-        let v = l.leg_vibrations(&route, false);
+        let all = vec![true; route.len()];
+        let v = l.leg_vibrations(&route, &all, false);
         assert_eq!(
             v,
             vec![Vibration {
@@ -1049,21 +1075,28 @@ mod tests {
                 shriekers: vec![[5, 0, 10]],
             }]
         );
-        assert!(l.leg_vibrations(&route, true).is_empty(), "a sneak leg");
+        assert!(
+            l.leg_vibrations(&route, &all, true).is_empty(),
+            "a sneak leg"
+        );
         // A leg that walks fewer than four cells inside the radius sets off
         // nothing a bot can be held to.
         assert!(
-            l.leg_vibrations(&route[..3], false).is_empty(),
+            l.leg_vibrations(&route[..3], &all, false).is_empty(),
             "three cells"
         );
-        assert_eq!(l.leg_vibrations(&route[..4], false).len(), 1, "four cells");
+        assert_eq!(
+            l.leg_vibrations(&route[..4], &all, false).len(),
+            1,
+            "four cells"
+        );
         // Wool between the shrieker and the sensor occludes.
         let walled = map(&[
             ([5, 0, 3], "minecraft:sculk_sensor"),
             ([5, 0, 7], "minecraft:white_wool"),
             ([5, 0, 10], "minecraft:sculk_shrieker"),
         ]);
-        let v = Listening::of(&walled, &[]).leg_vibrations(&route, false);
+        let v = Listening::of(&walled, &[]).leg_vibrations(&route, &all, false);
         assert_eq!(v.len(), 1);
         assert!(v[0].shriekers.is_empty(), "{v:?}");
         // A carpet underfoot dampens every step.
@@ -1071,7 +1104,7 @@ mod tests {
         for x in 0..=10 {
             carpeted.push(([x, 0, 0], "minecraft:red_carpet"));
         }
-        let v = Listening::of(&map(&carpeted), &[]).leg_vibrations(&route, false);
+        let v = Listening::of(&map(&carpeted), &[]).leg_vibrations(&route, &all, false);
         assert!(v.is_empty(), "{v:?}");
         // A sensor a runtime write covers is not predicted.
         let w = Write {
@@ -1081,5 +1114,61 @@ mod tests {
         };
         let l = Listening::of(&blocks, &[w]);
         assert_eq!(l.rewritten().len(), 1);
+    }
+
+    /// The Stranding's valve room: three valves on one line, three blocks
+    /// apart, a sensor three blocks off the middle one. The leg from the east
+    /// valve to the middle one walks four cells within earshot, and every one
+    /// of them is a cell a party can click both valves from, so it need not
+    /// walk at all: nothing is predicted. A leg whose route leaves both valves'
+    /// reach still predicts the sensor it walks past.
+    #[test]
+    fn a_leg_predicts_only_from_the_cells_the_party_must_walk() {
+        let blocks = map(&[([163, 63, 622], "minecraft:sculk_sensor")]);
+        let l = Listening::of(&blocks, &[]);
+        let reach = |pos: [i32; 3]| {
+            move |c: [i32; 3]| {
+                let d2: i32 = (0..3).map(|i| (c[i] - pos[i]).pow(2)).sum();
+                f64::from(d2) <= 9.0
+            }
+        };
+        let east_to_middle: Vec<[i32; 3]> = (163..=166).rev().map(|x| [x, 64, 625]).collect();
+        let all = vec![true; east_to_middle.len()];
+        assert_eq!(
+            l.leg_vibrations(&east_to_middle, &all, false).len(),
+            1,
+            "over every route cell, the sensor is predicted"
+        );
+        let walked = must_walk(
+            &east_to_middle,
+            reach([166, 64, 625]),
+            reach([163, 64, 625]),
+        );
+        assert_eq!(
+            walked,
+            vec![false; 4],
+            "each cell clicks one valve or the other"
+        );
+        assert!(
+            l.leg_vibrations(&east_to_middle, &walked, false).is_empty(),
+            "a leg the party need not walk predicts nothing"
+        );
+        // From the middle valve south to a talk at [163, 64, 616]: the route
+        // walks x = 162 from z = 623 down, and z = 622..619 lies beyond both
+        // ends' reach, four cells within earshot.
+        let mut south: Vec<[i32; 3]> = vec![[163, 64, 625], [163, 64, 624], [163, 64, 623]];
+        south.extend((617..=623).rev().map(|z| [162, 64, z]));
+        south.push([163, 64, 617]);
+        south.push([163, 64, 616]);
+        let walked = must_walk(&south, reach([163, 64, 625]), reach([163, 64, 616]));
+        assert_eq!(walked.iter().filter(|w| **w).count(), 4, "{walked:?}");
+        assert_eq!(
+            l.leg_vibrations(&south, &walked, false),
+            vec![Vibration {
+                sensor: [163, 63, 622],
+                shriekers: vec![],
+            }],
+            "a sensor the walk must pass is still predicted"
+        );
     }
 }

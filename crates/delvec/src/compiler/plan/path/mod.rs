@@ -11,6 +11,12 @@ pub(in crate::compiler::plan) use ancestors::*;
 pub use region::*;
 pub(crate) use triggers::*;
 
+/// How far from a `step` trigger's cell a standing body can fire it: a body's
+/// hitbox reaches 0.3 past its own cell, so a body standing in any of the eight
+/// horizontal neighbours can lean into the plate's cell, and the farthest of
+/// them (a corner) is sqrt(2) away.
+pub const STEP_REACH: f64 = 1.5;
+
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
 ///
 /// Every step that stands for a DSL objective carries that objective's id
@@ -215,6 +221,58 @@ impl Step {
         match self {
             Step::Trigger { trigger_id, .. } => Some(trigger_id.as_str()),
             _ => None,
+        }
+    }
+
+    /// **Whether a body standing in `cell` can complete this step** without
+    /// walking further: inside a `reach`'s completion volume; within interaction
+    /// reach of the NPC, the hitbox or the struck body for a talk, an interact or
+    /// a click trigger ([`crate::compiler::crosshair::INTERACTION_REACH`]), or of
+    /// the block a lever, button or chest is used on
+    /// ([`crate::compiler::crosshair::BLOCK_INTERACTION_REACH`]); within an
+    /// `approach` trigger's range; within [`STEP_REACH`] of a plate. Measured
+    /// from the feet cell to the step's cell. `false` for a step whose party
+    /// ends wherever the act takes it — a fight, a drop pickup, a loop — and for
+    /// the two path-frame steps: no cell is known to complete them.
+    pub fn completes_from(&self, cell: [i32; 3]) -> bool {
+        use crate::compiler::crosshair::{BLOCK_INTERACTION_REACH, INTERACTION_REACH};
+        let within = |pos: [i32; 3], r: f64| {
+            let d2: i64 = (0..3).map(|i| i64::from(cell[i] - pos[i]).pow(2)).sum();
+            (d2 as f64) <= r * r
+        };
+        match self {
+            Step::Reach { completion, .. } => completion.contains_cell(cell),
+            Step::TalkTo { pos, .. } => within(*pos, INTERACTION_REACH),
+            Step::Interact { pos, block, .. } => within(
+                *pos,
+                if block.is_some() {
+                    BLOCK_INTERACTION_REACH
+                } else {
+                    INTERACTION_REACH
+                },
+            ),
+            Step::Collect {
+                pos, dropped: None, ..
+            } => within(*pos, BLOCK_INTERACTION_REACH),
+            Step::Trigger {
+                pos,
+                on,
+                range,
+                block,
+                ..
+            } => match (*on, range) {
+                ("approach", Some(r)) => within(*pos, f64::from(*r)),
+                ("step", _) => within(*pos, STEP_REACH),
+                _ if block.is_some() => within(*pos, BLOCK_INTERACTION_REACH),
+                _ => within(*pos, INTERACTION_REACH),
+            },
+            Step::Collect {
+                dropped: Some(_), ..
+            }
+            | Step::Kill { .. }
+            | Step::Loop { .. }
+            | Step::SelectClass { .. }
+            | Step::AssertComplete { .. } => false,
         }
     }
 
