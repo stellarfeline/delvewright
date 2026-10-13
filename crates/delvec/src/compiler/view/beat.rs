@@ -186,6 +186,12 @@ pub fn after_key(step: &str, slug: Option<&str>) -> String {
     }
 }
 
+/// An inclusive box of cells, `(min, max)`.
+pub type Region = ([i32; 3], [i32; 3]);
+
+/// A configuration's bytes and the regions its writes lay.
+pub type Laid = (BlockMap, Vec<Region>);
+
 /// What a set of cameras stands in: the load map, and per distinct key the
 /// configuration's bytes.
 #[derive(Debug, Clone, PartialEq)]
@@ -197,13 +203,13 @@ pub struct Stands {
     /// Per distinct key, the regions its configuration's writes lay
     /// ([`crate::compiler::nav::Configuration::laid_regions`]): the writer
     /// holds the level generator's block out of them.
-    pub laid: Vec<(String, Vec<([i32; 3], [i32; 3])>)>,
+    pub laid: Vec<(String, Vec<Region>)>,
 }
 
 impl Stands {
     /// The regions the configuration of world `key` lays (empty for a key it
     /// does not hold).
-    pub fn laid_in(&self, key: &str) -> &[([i32; 3], [i32; 3])] {
+    pub fn laid_in(&self, key: &str) -> &[Region] {
         self.laid
             .iter()
             .find(|(k, _)| k == key)
@@ -286,7 +292,7 @@ pub fn load_blocks(plan: &Plan, world: &World, base: &BlockMap) -> BlockMap {
 
 /// The regions the load configuration's writes lay — every world-load seal
 /// and step-0 write ([`load_blocks`]'s writes).
-pub fn load_laid(plan: &Plan, world: &World) -> Vec<([i32; 3], [i32; 3])> {
+pub fn load_laid(plan: &Plan, world: &World) -> Vec<Region> {
     PathModel::critical(plan).at(plan, world, 0).laid_regions()
 }
 
@@ -301,7 +307,7 @@ pub fn stand(
     critical: &PathModel,
     branches: &mut dyn FnMut() -> Vec<(String, Option<PathModel>)>,
     cam: &Camera,
-) -> Result<(Stand, Option<(BlockMap, Vec<([i32; 3], [i32; 3])>)>), String> {
+) -> Result<(Stand, Option<Laid>), String> {
     let Some(after) = &cam.after else {
         return Ok((
             Stand {
