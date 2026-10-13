@@ -283,6 +283,66 @@
           "on": "use"
         },
         "once": false
+      },
+      {
+        "at": "anchor/exit-stone",
+        "effects": [
+          {
+            "from": {
+              "anchor": "anchor/exit-stone",
+              "extent": [
+                1,
+                1,
+                1
+              ]
+            },
+            "to": {
+              "anchor": "anchor/cabin-seat"
+            },
+            "type": "teleport"
+          }
+        ],
+        "id": "trigger/ferry-out",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
+        "requires_flags": [
+          "flag/muster-cleared"
+        ]
+      },
+      {
+        "at": "anchor/cabin-tiller",
+        "effects": [
+          {
+            "from": {
+              "anchor": "anchor/cabin-tiller",
+              "extent": [
+                1,
+                1,
+                1
+              ]
+            },
+            "to": {
+              "anchor": "anchor/exit-stone"
+            },
+            "type": "teleport"
+          }
+        ],
+        "id": "trigger/ferry-back",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
+        "requires_flags": [
+          "flag/muster-cleared"
+        ]
       }
     ],
     "waves": [

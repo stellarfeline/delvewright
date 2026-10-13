@@ -80,6 +80,15 @@
         },
         "piece": "prefab/gallery-perch",
         "place": "node/perch"
+      },
+      {
+        "anchors": {
+          "anchor/cabin-seat": "anchor/cabin-seat",
+          "anchor/cabin-tiller": "anchor/cabin-tiller",
+          "anchor/node-ferry-cabin": "anchor/node-ferry-cabin"
+        },
+        "piece": "prefab/gallery-ferry-cabin",
+        "place": "node/ferry-cabin"
       }
     ],
     "palette": {

@@ -151,6 +151,23 @@
           "datum": "datum/loft"
         },
         "node": "node/perch"
+      },
+      {
+        "ceiling": {
+          "clearance": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/grade"
+        },
+        "min": [
+          54,
+          44
+        ],
+        "node": "node/ferry-cabin"
       }
     ],
     "datums": [
