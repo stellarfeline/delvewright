@@ -240,6 +240,47 @@ def test_an_image_with_no_token_is_refused(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# The bake context
+# ---------------------------------------------------------------------------
+
+
+def test_the_bake_context_carries_a_readable_world_without_its_packs_or_lock(tmp_path):
+    world = tmp_path / "data" / "world"
+    (world / "datapacks" / "datapack").mkdir(parents=True)
+    (world / "region").mkdir()
+    (world / "level.dat").write_bytes(b"level")
+    (world / "level.dat").chmod(0o600)
+    (world / "region" / "r.0.0.mca").write_bytes(b"r")
+    (world / "region" / "r.0.0.mca").chmod(0o600)
+    (world / "session.lock").write_bytes(b"lock")
+    token = tmp_path / "staging-admission.json"
+    token.write_bytes(token_for(MANIFEST))
+    creator = tmp_path / "creator-datapack"
+    creator.mkdir()
+    (creator / "pack.mcmeta").write_text("{}", encoding="utf-8")
+    pack = tmp_path / "resourcepack.zip"
+    pack.write_bytes(b"zip")
+    bake = tmp_path / "bake"
+    r = run_hook(f'dw_playtest_bake_context "{world}" "{bake}" "{token}" "{creator}" "{pack}"')
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "/delve/datapack,/delve/extras/creator-datapack", r.stdout
+    placed = bake / "placed-world"
+    assert not world.exists(), "the world is moved, not copied"
+    assert (placed / "level.dat").is_file() and (placed / "region" / "r.0.0.mca").is_file()
+    assert not (placed / "datapacks").exists() and not (placed / "session.lock").exists()
+    for f in (placed / "level.dat", placed / "region" / "r.0.0.mca"):
+        assert f.stat().st_mode & 0o004, f"{f} is not readable by the image's server user"
+    assert (bake / "staging-admission.json").read_bytes() == token.read_bytes()
+    assert (bake / "extras" / "creator-datapack" / "pack.mcmeta").is_file()
+    assert (bake / "extras" / "resourcepack.zip").read_bytes() == b"zip"
+    world2 = tmp_path / "data2" / "world"
+    world2.mkdir(parents=True)
+    r = run_hook(f'dw_playtest_bake_context "{world2}" "{tmp_path / "bake2"}" "{token}" "" ""')
+    assert r.stdout.strip() == "/delve/datapack", r.stdout
+    assert not any((tmp_path / "bake2" / "extras").iterdir())
+
+
+# ---------------------------------------------------------------------------
 # The server runtime cache
 # ---------------------------------------------------------------------------
 

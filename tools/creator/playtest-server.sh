@@ -413,6 +413,29 @@ dw_playtest_wait_done() {
   done
 }
 
+# dw_playtest_bake_context <world> <bake dir> <token> <creator dir or ""> <pack zip or "">
+#
+# Assembles validation/Dockerfile.playtest's context and prints the DATAPACKS
+# value the image boots with. The world MOVES (no copy). Its `datapacks/` stay
+# behind, because every boot copies them in from /delve, and so does the lock
+# of a server now stopped. Every file is made readable by any user: the server
+# writes level.dat 0600, a layer keeps that mode under root, and the image's
+# server runs as another user, which then cannot read the world it is handed.
+dw_playtest_bake_context() {
+  local world="$1" bake="$2" token="$3" creator="$4" pack="$5" datapacks="/delve/datapack"
+  mkdir -p "$bake/extras" || return 1
+  mv "$world" "$bake/placed-world" || return 1
+  rm -rf "$bake/placed-world/datapacks" "$bake/placed-world/session.lock"
+  cp "$token" "$bake/staging-admission.json" || return 1
+  if [ -n "$creator" ]; then
+    cp -R "$creator" "$bake/extras/creator-datapack" || return 1
+    datapacks="$datapacks,/delve/extras/creator-datapack"
+  fi
+  if [ -n "$pack" ]; then cp "$pack" "$bake/extras/resourcepack.zip" || return 1; fi
+  chmod -R a+rX "$bake" || return 1
+  printf '%s\n' "$datapacks"
+}
+
 # The server runtime a fresh /data needs before it can start without fetching:
 # the pinned jar, itzg's "already installed" marker, and what the jar unpacks
 # on its first start (`libraries/`, `versions/`). Kept on the creator's own
@@ -1194,16 +1217,10 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
     # The world moves (no copy); its datapacks stay behind because every boot
     # copies them in from /delve, and so does the lock of a server now stopped.
     BAKE="$PLACE/bake"
-    mkdir -p "$BAKE/extras"
-    mv "$PLACE/world" "$BAKE/placed-world"
-    rm -rf "$BAKE/placed-world/datapacks" "$BAKE/placed-world/session.lock"
-    cp "$OUT_DIR/staging-admission.json" "$BAKE/staging-admission.json"
-    BAKE_DATAPACKS="/delve/datapack"
-    if [ -n "$CREATOR_DIR" ]; then
-      cp -R "$CREATOR_DIR" "$BAKE/extras/creator-datapack"
-      BAKE_DATAPACKS="$BAKE_DATAPACKS,/delve/extras/creator-datapack"
-    fi
-    if [ -n "$PACK_SHA1" ]; then cp "$OUT_DIR/resourcepack.zip" "$BAKE/extras/resourcepack.zip"; fi
+    BAKE_PACK=""
+    if [ -n "$PACK_SHA1" ]; then BAKE_PACK="$OUT_DIR/resourcepack.zip"; fi
+    BAKE_DATAPACKS="$(dw_playtest_bake_context "$PLACE/world" "$BAKE" "$OUT_DIR/staging-admission.json" "$CREATOR_DIR" "$BAKE_PACK")" \
+      || die "cannot assemble the bake context at $BAKE"
     PLAYTEST_IMAGE="$(dw_playtest_image_tag "$PLAYTEST_REPO" "$MANIFEST_SHA")"
     echo "image: the placed world ($(human_kib "$(dir_kib "$BAKE/placed-world")")) -> $PLAYTEST_IMAGE (validation/Dockerfile.playtest)"
     docker build -q -f "$REPO_ROOT/validation/Dockerfile.playtest" \
