@@ -100,7 +100,8 @@ game's transfer of a decoded colour (`compiler.md` §4), and the white point
 shows white. Settings absent, a key missing, or the core's bare preset (which
 shows 0.18 at 0.393) is a red. **And its emitters carry the lantern scale**:
 `emitterIntensity` is the core's default 13 (`Scene.DEFAULT_EMITTER_INTENSITY`)
-times the scale `compiler.md` §4 measured, 12.2310, within 1e-6; on a
+times the scale `compiler.md` §4 measured, 12.2310 — fitted on frames that
+`validation/chunky.sh` denoises after every `-render` — within 1e-6; on a
 night-vision emulation every overridden `emittance` times that intensity is the
 calibrated 0.05 × 13, so the emulation's glow does not move with the lanterns.
 
