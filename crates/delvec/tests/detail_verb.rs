@@ -1190,8 +1190,9 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
         "{t}"
     );
     assert!(
-        t.contains("aloft binding: 4 aloft place(s) of 10"),
-        "the causeway and the beacon hang beside the gantry and the perch: {t}"
+        t.contains("aloft binding: 4 aloft place(s) of 11"),
+        "the causeway and the beacon hang beside the gantry and the perch, of the eleven \
+         places the ferry cabin makes: {t}"
     );
 
     let report = |piece: &str| -> Value {
