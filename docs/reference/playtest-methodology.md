@@ -223,9 +223,10 @@ is the owner's hour until the physics carries it.
 **The bot hears what the compiler predicted, and never a warden** (spec-0100).
 A leg whose proven route sets a sculk sensor off carries `vibrations[]` in
 `validation/critical-path-waypoints.json`: each sensor's cell and the shriekers
-that answer it, predicted by the compiler (four route cells within `distSqr ≤
-49`, no sneak, no dampening, no occluder; a shrieker within `distSqr ≤ 64` of its
-sensor). The harness predicts nothing: the parse refuses a sensor more than 8
+that answer it, predicted by the compiler (four consecutive route cells the
+party must walk — none from which it could still be finishing the leg's first
+step or could already finish its last — within `distSqr ≤ 49`, no sneak, no
+dampening, no occluder; a shrieker within `distSqr ≤ 64` of its sensor). The harness predicts nothing: the parse refuses a sensor more than 8
 blocks from its leg's route — the polyline through the leg's waypoints, on which
 every route cell the compiler predicted from lies, so a straight leg exported as
 two waypoints is measured along its length (`harness/src/route.ts`, the one route

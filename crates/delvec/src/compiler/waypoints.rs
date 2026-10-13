@@ -101,8 +101,24 @@ pub fn waypoints_json(
             // off and the shriekers that answer each, predicted by the
             // compiler for the bot to assert. Emitted only when present, so a
             // campaign with no sensor stays byte-identical.
-            let heard = listening
-                .leg_vibrations(&leg.cells, sneak.get(leg.to_step).copied().unwrap_or(false));
+            // Only the cells the party must walk carry a prediction: a cell it
+            // may stop in, having finished the step the leg starts from or able
+            // to finish the one it walks to, is one the walk may never step on.
+            let step_done = |i: usize, c: [i32; 3]| {
+                plan.critical_path
+                    .get(i)
+                    .is_some_and(|s| s.completes_from(c))
+            };
+            let walked = crate::compiler::sculk::must_walk(
+                &leg.cells,
+                |c| step_done(leg.from_step, c),
+                |c| step_done(leg.to_step, c),
+            );
+            let heard = listening.leg_vibrations(
+                &leg.cells,
+                &walked,
+                sneak.get(leg.to_step).copied().unwrap_or(false),
+            );
             if !heard.is_empty() {
                 leg_json["vibrations"] = json!(
                     heard
