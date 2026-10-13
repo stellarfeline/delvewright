@@ -23,6 +23,7 @@ def load():
     spec = importlib.util.spec_from_file_location("chunky_denoise_t", LIB)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = mod  # a dataclass resolves its module by name
     spec.loader.exec_module(mod)
     return mod
 
@@ -55,7 +56,7 @@ def home(tmp_path: Path) -> Path:
     return h
 
 
-def test_a_platform_without_an_archive_is_refused_by_name(tmp_path, monkeypatch):
+def test_a_platform_with_neither_archive_nor_source_build_is_refused_by_name(tmp_path, monkeypatch):
     m = load()
     pins = kit_pins(tmp_path, "aarch64-apple-darwin")
     monkeypatch.setattr(m, "render_pins", lambda: pins)
@@ -63,19 +64,87 @@ def test_a_platform_without_an_archive_is_refused_by_name(tmp_path, monkeypatch)
     with pytest.raises(m.KitError) as e:
         m.install(home(tmp_path), tmp_path / "work")
     assert e.value.code == 4
-    assert "ships no archive for aarch64-unknown-linux-gnu" in str(e.value)
+    assert "ships no archive for aarch64-unknown-linux-gnu and no source build is pinned" in str(e.value)
     assert "aarch64-apple-darwin" in str(e.value)
 
 
-def test_the_real_pins_name_every_shipped_platform_and_refuse_aarch64_linux(monkeypatch):
+def test_the_real_pins_choose_archive_source_or_refusal_per_platform(monkeypatch):
     m = load()
     pins = m.render_pins()
     for t in ("aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"):
-        name, sha = m.oidn_archive(pins, t)
-        assert name.startswith("oidn-2.5.1.") and len(sha) == 64
+        plan = m.oidn_plan(pins, t)
+        assert plan.kind == "archive" and plan.name.startswith("oidn-2.5.1.") and len(plan.sha) == 64
+    plan = m.oidn_plan(pins, "aarch64-unknown-linux-gnu")
+    assert plan.kind == "source" and plan.name == "oidn-2.5.1.src.tar.gz"
+    assert sorted(plan.tools) == ["cmake", "ispc", "ninja", "tbb"]
+    assert all(len(v[1]) == 64 for v in plan.tools.values())
     with pytest.raises(m.KitError) as e:
-        m.oidn_archive(pins, "aarch64-unknown-linux-gnu")
+        m.oidn_plan(pins, "riscv64-unknown-linux-gnu")
     assert e.value.code == 4
+    assert "source builds: aarch64-unknown-linux-gnu" in str(e.value)
+    assert "x86_64-apple-darwin" in str(e.value)
+
+
+def source_pins(tmp_path: Path, triple: str) -> dict:
+    """Stub pins that send `triple` to a source build: a source archive and four tool archives."""
+    d = tmp_path / "srcpins"
+    d.mkdir()
+    out = {"denoiser_plugin_url": (d / "plugin.jar").as_uri(), "oidn_version": "0.0.0", "oidn_url_base": d.as_uri() + "/"}
+    (d / "plugin.jar").write_bytes(b"plugin")
+    out["denoiser_plugin_sha256"] = hashlib.sha256(b"plugin").hexdigest()
+    key = triple.replace("-", "_")
+    for name, content in (("oidn.src.tar.gz", b"src"), ("cmake.tgz", b"cm"), ("ninja.zip", b"nj"), ("ispc.tgz", b"is"), ("tbb.tgz", b"tb")):
+        (d / name).write_bytes(content)
+    sha = lambda b: hashlib.sha256(b).hexdigest()  # noqa: E731
+    out.update({
+        "oidn_source_archive": "oidn.src.tar.gz", "oidn_source_sha256": sha(b"src"),
+        "oidn_build_tbb_name": "tbb.tgz", "oidn_build_tbb_url": (d / "tbb.tgz").as_uri(), "oidn_build_tbb_sha256": sha(b"tb"),
+    })
+    for t, f, b in (("cmake", "cmake.tgz", b"cm"), ("ninja", "ninja.zip", b"nj"), ("ispc", "ispc.tgz", b"is")):
+        out[f"oidn_build_{t}_url_base"] = d.as_uri() + "/"
+        out[f"oidn_build_{t}_{key}"] = f
+        out[f"oidn_build_{t}_sha256_{key}"] = sha(b)
+    return out
+
+
+def test_a_source_build_without_a_compiler_is_refused_with_what_is_missing(tmp_path, monkeypatch):
+    m = load()
+    pins = source_pins(tmp_path, "aarch64-unknown-linux-gnu")
+    monkeypatch.setattr(m, "render_pins", lambda: pins)
+    monkeypatch.setattr(m, "host_triple", lambda: "aarch64-unknown-linux-gnu")
+    monkeypatch.setattr(m, "compilers", lambda: {"c": None, "c++": None})
+    h = home(tmp_path)
+    with pytest.raises(m.KitError) as e:
+        m.install(h, tmp_path / "work")
+    assert e.value.code == 4
+    assert "a c compiler" in str(e.value) and "a c++ compiler" in str(e.value)
+    assert not (h / "denoise" / "oidn").exists()
+
+
+def test_a_source_build_is_recorded_and_held_to_its_pins(tmp_path, monkeypatch):
+    m = load()
+    pins = source_pins(tmp_path, "aarch64-unknown-linux-gnu")
+    monkeypatch.setattr(m, "render_pins", lambda: pins)
+    monkeypatch.setattr(m, "host_triple", lambda: "aarch64-unknown-linux-gnu")
+    monkeypatch.setattr(m, "compilers", lambda: {"c": "/usr/bin/cc", "c++": "/usr/bin/c++"})
+    built = []
+
+    def fake_build(plan, src, work, prefix):
+        built.append(sorted(plan.tools))
+        (prefix / "bin").mkdir(parents=True)
+        (prefix / "bin" / "oidnDenoise").write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr(m, "build_from_source", fake_build)
+    h = home(tmp_path)
+    k = m.install(h, tmp_path / "work")
+    assert built == [["cmake", "ispc", "ninja", "tbb"]] and k["kind"] == "source"
+    assert Path(k["oidn"]).name == "oidnDenoise"
+    # A tool pin that moves makes the build stale: verify refuses until it is rebuilt.
+    key = "aarch64_unknown_linux_gnu"
+    pins[f"oidn_build_ispc_sha256_{key}"] = "0" * 64
+    with pytest.raises(m.KitError) as e:
+        m.verify(h)
+    assert "not made from the pinned source and tools" in str(e.value)
 
 
 def test_a_download_that_is_not_the_pin_installs_nothing(tmp_path, monkeypatch):

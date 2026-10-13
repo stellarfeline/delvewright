@@ -32,10 +32,17 @@ scaled emitters leave grain, so every `-render` is followed by this step.
 
 `versions.toml [render]`: the plugin jar by URL and sha256, and Open Image Denoise
 by version with one archive and one sha256 per platform its project ships. A
-platform with no archive (`aarch64-unknown-linux-gnu`) is refused by name; a
-download whose sha256 differs installs nothing; a home whose installed files no
-longer answer the pins is refused before the render starts. Denoising is never
-skipped silently.
+platform it ships no archive for builds it from the pinned source release
+(`aarch64-unknown-linux-gnu`): the pinned oneTBB source first, then Open Image
+Denoise's CPU device with the RT filter's weights and its apps, with the pinned
+CMake, Ninja and ISPC for that platform — the machine supplies only a C and C++
+compiler (`build_from_source`; `DELVEWRIGHT_BUILD_JOBS` caps the jobs, default
+every core). The build records what it was made from (`built-from.json`) and a
+later verify holds that record to the pins. A platform with neither an archive
+nor a pinned source build, or a source build with no compiler, is refused by
+name with what is missing (exit 4); a download whose sha256 differs installs
+nothing; a home whose installed files no longer answer the pins is refused before
+the render starts. Denoising is never skipped silently.
 
     python3 tools/lib/chunky_denoise.py platform
     python3 tools/lib/chunky_denoise.py install --home <chunky home> [--work DIR]
@@ -55,7 +62,9 @@ remedy); 4 when the platform has no pinned archive; 2 when a pin cannot be read;
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
+import subprocess
 import json
 import os
 import pathlib
@@ -111,18 +120,80 @@ def host_triple() -> str:
     return f"{arch}-{system.lower()}"
 
 
-def oidn_archive(pins: dict, triple: str) -> tuple[str, str]:
+@dataclasses.dataclass
+class Plan:
+    """How Open Image Denoise reaches this platform: the project's own archive, or a
+    build from its pinned source release with pinned build tools."""
+
+    kind: str  # "archive" or "source"
+    name: str  # the archive kept under <kit>/archives (prebuilt or source)
+    sha: str
+    url: str
+    tools: dict  # source builds: tool -> (file name, sha256, url)
+
+
+BUILD_TOOLS = ("cmake", "ninja", "ispc")
+
+
+def oidn_plan(pins: dict, triple: str) -> Plan:
     key = triple.replace("-", "_")
     name, sha = pins.get(f"oidn_archive_{key}"), pins.get(f"oidn_sha256_{key}")
-    if not name or not sha:
-        shipped = sorted(k[len("oidn_archive_"):].replace("_", "-") for k in pins if k.startswith("oidn_archive_"))
+    if name and sha:
+        return Plan("archive", name, sha, pin(pins, "oidn_url_base") + name, {})
+    if all(pins.get(f"oidn_build_{t}_{key}") for t in BUILD_TOOLS) and pins.get("oidn_source_archive"):
+        tools = {}
+        for t in BUILD_TOOLS:
+            fname = pin(pins, f"oidn_build_{t}_{key}")
+            tools[t] = (fname, pin(pins, f"oidn_build_{t}_sha256_{key}"), pin(pins, f"oidn_build_{t}_url_base") + fname)
+        tbb = pin(pins, "oidn_build_tbb_url")
+        tools["tbb"] = (pin(pins, "oidn_build_tbb_name"), pin(pins, "oidn_build_tbb_sha256"), tbb)
+        src = pin(pins, "oidn_source_archive")
+        return Plan("source", src, pin(pins, "oidn_source_sha256"), pin(pins, "oidn_url_base") + src, tools)
+    def triple_of(key: str) -> str:
+        return key.replace("_", "-").replace("x86-64", "x86_64")
+
+    shipped = sorted(triple_of(k[len("oidn_archive_"):]) for k in pins if k.startswith("oidn_archive_"))
+    built = sorted(triple_of(k[len("oidn_build_cmake_"):]) for k in pins
+                   if k.startswith("oidn_build_cmake_") and not k.startswith("oidn_build_cmake_sha256_")
+                   and not k.startswith("oidn_build_cmake_url"))
+    raise KitError(
+        f"Open Image Denoise {pins.get('oidn_version', '?')} ships no archive for {triple} and no source build "
+        f"is pinned for it (archives: {', '.join(shipped) or 'none'}; source builds: {', '.join(built) or 'none'}), "
+        "so a frame rendered here cannot be denoised and validation/chunky.sh refuses to render it.",
+        4,
+    )
+
+
+def compilers() -> dict:
+    """The C and C++ compilers a source build would use, or the names of the missing."""
+    found = {}
+    for lang, env, names in (("c", "CC", ("cc", "gcc", "clang")), ("c++", "CXX", ("c++", "g++", "clang++"))):
+        cand = [os.environ[env]] if os.environ.get(env) else list(names)
+        hit = next((shutil.which(c) for c in cand if shutil.which(c)), None)
+        found[lang] = hit
+    return found
+
+
+def require_compilers() -> dict:
+    found = compilers()
+    missing = [f"a {lang} compiler ({'/'.join(n)} on PATH, or ${e})" for lang, e, n in
+               (("c", "CC", ("cc", "gcc", "clang")), ("c++", "CXX", ("c++", "g++", "clang++"))) if not found[lang]]
+    if missing:
         raise KitError(
-            f"Open Image Denoise {pins.get('oidn_version', '?')} ships no archive for {triple} "
-            f"(pinned: {', '.join(shipped)}), so a frame rendered here cannot be denoised and "
-            "validation/chunky.sh refuses to render it. Render on one of the pinned platforms.",
+            "Open Image Denoise is built from source on this platform, and the build cannot run here: missing "
+            + " and ".join(missing) + ". Install them (e.g. `apt-get install g++`) and run "
+            f"{INSTALLER} again; nothing was installed.",
             4,
         )
-    return name, sha
+    return found
+
+
+def oidn_archive(pins: dict, triple: str) -> tuple[str, str]:
+    """The prebuilt archive for `triple`; raises when the platform builds from source or is refused."""
+    plan = oidn_plan(pins, triple)
+    if plan.kind != "archive":
+        raise KitError(f"{triple} builds Open Image Denoise from source; it has no prebuilt archive", 4)
+    return plan.name, plan.sha
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -149,11 +220,16 @@ def oidn_binary(root: pathlib.Path) -> pathlib.Path:
     raise KitError(f"no oidnDenoise under {root}", 3)
 
 
+def built_from(plan: Plan) -> dict:
+    """What a source build was made from: the record a later verify compares."""
+    return {"source": plan.sha, **{t: v[1] for t, v in sorted(plan.tools.items())}}
+
+
 def verify(home: pathlib.Path) -> dict:
     """The installed kit, held to the pins; raises KitError naming what is wrong."""
     pins = render_pins()
     triple = host_triple()
-    archive, archive_sha = oidn_archive(pins, triple)
+    plan = oidn_plan(pins, triple)
     kit = kit_dir(home)
     remedy = f"Run {INSTALLER}."
     jar = kit / "home" / "plugins" / plugin_name(pins)
@@ -161,17 +237,22 @@ def verify(home: pathlib.Path) -> dict:
         raise KitError(f"the denoiser plugin is not installed at {jar}. {remedy}")
     if sha256(jar) != pin(pins, "denoiser_plugin_sha256"):
         raise KitError(f"{jar} does not answer versions.toml [render] denoiser_plugin_sha256. {remedy}")
-    arc = kit / "archives" / archive
+    arc = kit / "archives" / plan.name
     if not arc.is_file():
         raise KitError(f"Open Image Denoise is not installed: {arc} is missing. {remedy}")
-    if sha256(arc) != archive_sha:
-        raise KitError(f"{arc} does not answer versions.toml [render] oidn_sha256 for {triple}. {remedy}")
-    root = kit / "oidn" / archive_sha
+    which = "oidn_sha256" if plan.kind == "archive" else "oidn_source_sha256"
+    if sha256(arc) != plan.sha:
+        raise KitError(f"{arc} does not answer versions.toml [render] {which} for {triple}. {remedy}")
+    root = kit / "oidn" / plan.sha
+    if plan.kind == "source":
+        rec = root / "built-from.json"
+        if not rec.is_file() or json.loads(rec.read_text()) != built_from(plan):
+            raise KitError(f"the Open Image Denoise build at {root} was not made from the pinned source and tools. {remedy}")
     binary = oidn_binary(root)
     for link in ("lib", "versions", "resources"):
         if not (kit / "home" / link).exists():
             raise KitError(f"the derived Chunky home {kit / 'home'} has no {link}. {remedy}")
-    return {"plugin": str(jar), "oidn": str(binary), "home": str(kit / "home"), "triple": triple}
+    return {"plugin": str(jar), "oidn": str(binary), "home": str(kit / "home"), "triple": triple, "kind": plan.kind}
 
 
 def fetch(url: str, dest: pathlib.Path, want: str) -> None:
@@ -190,38 +271,120 @@ def fetch(url: str, dest: pathlib.Path, want: str) -> None:
     part.replace(dest)
 
 
+def _extract(archive: pathlib.Path, dest: pathlib.Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    if archive.name.endswith(".zip"):
+        with zipfile.ZipFile(archive) as z:
+            for info in z.infolist():
+                z.extract(info, dest)
+                mode = info.external_attr >> 16
+                if mode:
+                    os.chmod(dest / info.filename, mode)
+    else:
+        with tarfile.open(archive) as t:
+            t.extractall(dest, filter="tar")
+
+
+def _find(root: pathlib.Path, name: str) -> pathlib.Path:
+    hits = sorted(p for p in root.rglob(name) if p.is_file())
+    if not hits:
+        raise KitError(f"no {name} under {root}", 1)
+    return hits[0]
+
+
+def build_jobs() -> int:
+    return max(1, int(os.environ.get("DELVEWRIGHT_BUILD_JOBS") or os.cpu_count() or 1))
+
+
+def _run(cmd: list, log: pathlib.Path, **kw) -> None:
+    with open(log, "a") as f:
+        f.write("$ " + " ".join(str(c) for c in cmd) + "\n")
+        f.flush()
+        r = subprocess.run([str(c) for c in cmd], stdout=f, stderr=subprocess.STDOUT, **kw)
+    if r.returncode != 0:
+        tail = log.read_text(errors="replace").splitlines()[-15:]
+        raise KitError(f"`{cmd[0]}` exited {r.returncode} while building Open Image Denoise (log {log}):\n  " + "\n  ".join(tail), 1)
+
+
+def build_from_source(plan: Plan, src_archive: pathlib.Path, work: pathlib.Path, prefix: pathlib.Path) -> None:
+    """oneTBB, then Open Image Denoise (CPU device, the RT filter's weights, its apps),
+    with the pinned CMake, Ninja and ISPC, into `prefix` (bin/oidnDenoise, lib/ with
+    TBB beside it)."""
+    found = require_compilers()
+    jobs = build_jobs()
+    log = work / "build.log"
+    t0 = time.monotonic()
+    tools = {}
+    for t, (fname, sha, url) in plan.tools.items():
+        f = work / "dl" / fname
+        fetch(url, f, sha)
+        tools[t] = f
+    for t in ("cmake", "ninja", "ispc"):
+        _extract(tools[t], work / "tools" / t)
+    cmake = _find(work / "tools" / "cmake", "cmake")
+    ninja = _find(work / "tools" / "ninja", "ninja")
+    ispc = _find(work / "tools" / "ispc", "ispc")
+    for b in (cmake, ninja, ispc):
+        b.chmod(b.stat().st_mode | 0o111)
+    env = dict(os.environ, CC=found["c"], CXX=found["c++"])
+    common = [f"-DCMAKE_MAKE_PROGRAM={ninja}", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
+    _extract(tools["tbb"], work / "tbb-src")
+    tbb_src = next(p for p in (work / "tbb-src").iterdir() if p.is_dir())
+    tbb_prefix = work / "tbb"
+    _run([cmake, "-S", tbb_src, "-B", work / "tbb-build", *common, f"-DCMAKE_INSTALL_PREFIX={tbb_prefix}",
+          "-DTBB_TEST=OFF", "-DTBB_EXAMPLES=OFF", "-DTBB_STRICT=OFF"], log, env=env)
+    _run([cmake, "--build", work / "tbb-build", "-j", jobs], log, env=env)
+    _run([cmake, "--install", work / "tbb-build"], log, env=env)
+    _extract(src_archive, work / "oidn-src")
+    oidn_src = next(p for p in (work / "oidn-src").iterdir() if p.is_dir())
+    _run([cmake, "-S", oidn_src, "-B", work / "oidn-build", *common, f"-DCMAKE_INSTALL_PREFIX={prefix}",
+          f"-DTBB_ROOT={tbb_prefix}", f"-DISPC_EXECUTABLE={ispc}", "-DOIDN_APPS=ON", "-DOIDN_FILTER_RTLIGHTMAP=OFF",
+          "-DOIDN_INSTALL_DEPENDENCIES=ON", "-DCMAKE_INSTALL_RPATH=$ORIGIN/../lib"], log, env=env)
+    _run([cmake, "--build", work / "oidn-build", "-j", jobs], log, env=env)
+    _run([cmake, "--install", work / "oidn-build"], log, env=env)
+    for lib in sorted((tbb_prefix).rglob("libtbb*.so*")):
+        dest = prefix / "lib" / lib.name
+        if not dest.exists():
+            shutil.copy2(lib, dest, follow_symlinks=False)
+    oidn_binary(prefix.parent)
+    print(f"chunky_denoise: built Open Image Denoise from source in {time.monotonic() - t0:.0f} s with {jobs} job(s)",
+          file=sys.stderr)
+
+
 def install(home: pathlib.Path, work: pathlib.Path) -> dict:
     pins = render_pins()
     triple = host_triple()
-    archive, archive_sha = oidn_archive(pins, triple)
+    plan = oidn_plan(pins, triple)
     try:
         return verify(home)
     except KitError as e:
         if e.code == 4:
             raise
+    if plan.kind == "source":
+        require_compilers()
     kit = kit_dir(home)
     work.mkdir(parents=True, exist_ok=True)
-    # Both downloads are verified in the work directory before anything enters the home.
+    # Every download is verified in the work directory before anything enters the home.
     jar_tmp = work / plugin_name(pins)
-    arc_tmp = work / archive
+    arc_tmp = work / plan.name
+    root = kit / "oidn" / plan.sha
     try:
         fetch(pin(pins, "denoiser_plugin_url"), jar_tmp, pin(pins, "denoiser_plugin_sha256"))
-        fetch(pin(pins, "oidn_url_base") + archive, arc_tmp, archive_sha)
+        fetch(plan.url, arc_tmp, plan.sha)
+        if root.exists():
+            shutil.rmtree(root)
+        if plan.kind == "archive":
+            _extract(arc_tmp, root)
+        else:
+            build_from_source(plan, arc_tmp, work, root / f"oidn-{pins.get('oidn_version', 'source')}-source")
+            (root / "built-from.json").write_text(json.dumps(built_from(plan), indent=2, sort_keys=True) + "\n")
     except BaseException:
         shutil.rmtree(work, ignore_errors=True)
+        if root.exists():
+            shutil.rmtree(root, ignore_errors=True)
         raise
-    root = kit / "oidn" / archive_sha
-    if root.exists():
-        shutil.rmtree(root)
-    root.mkdir(parents=True)
-    if archive.endswith(".zip"):
-        with zipfile.ZipFile(arc_tmp) as z:
-            z.extractall(root)
-    else:
-        with tarfile.open(arc_tmp) as t:
-            t.extractall(root, filter="tar")
     (kit / "archives").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(arc_tmp, kit / "archives" / archive)
+    shutil.copy2(arc_tmp, kit / "archives" / plan.name)
     dh = kit / "home"
     (dh / "plugins").mkdir(parents=True, exist_ok=True)
     shutil.copy2(jar_tmp, dh / "plugins" / plugin_name(pins))
