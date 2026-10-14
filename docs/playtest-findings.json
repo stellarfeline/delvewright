@@ -3002,14 +3002,14 @@
         "kind": "campaign"
       },
       "binding": {
-        "kind": "artifact",
         "file": "containers.json",
+        "kind": "artifact",
         "path": "cells"
       },
       "campaign": "the-stranding",
       "carrier": {
-        "kind": "dw",
-        "code": "DW1018"
+        "code": "DW1018",
+        "kind": "dw"
       },
       "finding": "empty decorative containers stood in reach and cost the player time searching them",
       "general_form": "every placed container is declared loot or decoration; a loot container is never empty; when any decoration container exists, the opening tells the player in the campaign's words",
