@@ -2725,11 +2725,11 @@ fn a_blockout_build_defers_a_notice_its_places_owe_and_says_so() {
     assert_eq!(code, Some(0), "{err}");
     let line = err
         .lines()
-        .find(|l| l.starts_with("container census:"))
+        .find(|l| l.starts_with("holder census:"))
         .unwrap_or_else(|| panic!("no census line: {err}"));
     let n = every_place().len();
     assert!(
-        line.contains("0 container cell(s)") && line.contains("notice declared"),
+        line.contains("0 holder(s)") && line.contains("notice declared"),
         "{line}"
     );
     assert!(

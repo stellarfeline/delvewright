@@ -33,7 +33,6 @@
 //! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
-//! - [`containers`]: the container census — loot, device or scenery (`DW1018`, `DW1024`).
 //! - [`continuity`]: the NPC location-continuity lint (`DW0351`).
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`).
 //! - [`crosshair`]: two things the party must click may not stand where the crosshair cannot tell them apart (`DW0489`).
@@ -54,6 +53,7 @@
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
 //! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`hold`]: how long a cutscene holds the party, per critical-path step — what a step's completion schedules and what its walk passes.
+//! - [`holders`]: the holder census — every container and holder entity is loot, a collect, a device, scenery or exempt (`DW1018`, `DW1024`) — and the holder entities a piece carries, owned, summoned and proven takeable (`DW1037`, `DW1038`).
 //! - [`horizon`]: the one place a resolved `horizon` becomes the physical facts the rest of the compiler reads.
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
 //! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.

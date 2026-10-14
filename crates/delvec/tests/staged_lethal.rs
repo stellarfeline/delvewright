@@ -1055,7 +1055,7 @@ fn a_staged_volume_is_emitted_behind_its_gate() {
         "an unstaged volume has no shut template"
     );
     let plan_json = json(&out, "validation/death-plan.json");
-    assert_eq!(plan_json["format_version"], 5);
+    assert_eq!(plan_json["format_version"], 4);
     let rows = plan_json["lethal_volumes"].as_array().unwrap();
     assert_eq!(rows[0]["gate"]["terms"][0]["objective"], "dw.f_lid_fell");
     assert_eq!(rows[1]["gate"]["terms"], serde_json::json!([]));
