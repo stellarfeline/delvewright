@@ -143,6 +143,10 @@ export class MineflayerExecutor implements StepExecutor {
    * marching through hollow remaining steps.
    */
   campaignCompleteAtStep: number | undefined;
+  /** Where the bot stood when the campaign-completion marker arrived (spec-0108 §6.3). */
+  campaignStoodAt: [number, number, number] | undefined;
+  /** What the bot read of the world the ending left (spec-0108 §6.3). */
+  aftermathResults: import("./aftermath.ts").AftermathResult[] = [];
   /** The step index currently executing, for marker attribution. */
   currentStep = -1;
   /**

@@ -540,6 +540,7 @@ async function main(): Promise<number> {
     // spec-0029: the name-preference binding, always recorded — including a zero.
     report.recordNamePreference(executor.namePreference());
     report.recordRests(executor.performedRests());
+    report.recordAftermath(executor.aftermathResults);
     report.recordLoadWindows(executor.loadWindows());
     for (const w of executor.loadWindows()) {
       process.stderr.write(

@@ -18,6 +18,7 @@
 // compiler put here (CLAUDE.md: assertions and navigation, no game logic).
 
 import type { Watcher } from "./watch.ts";
+import type { AftermathEntry } from "./aftermath.ts";
 
 /**
  * `version` is the `dsl_version` the compiler built the campaign at. The harness
@@ -382,6 +383,12 @@ export interface AssertCompleteStep {
    * ending, which keeps paths that predate the field byte-identical.
    */
   readonly endingTailTicks?: number;
+  /**
+   * spec-0108 §6.3: what the world the ending left looks like — each aftermath
+   * effect of the scene of the ending this path fires, with what it left to
+   * look at. Absent for a path whose ending changes nothing.
+   */
+  readonly aftermath?: readonly AftermathEntry[];
 }
 
 export type Step =
@@ -1136,7 +1143,7 @@ function parseStep(value: unknown, pointer: string): Step {
       };
     }
     case "assert-complete": {
-      rejectUnknownKeys(obj, ["action", "scoreboard", "ending_tail_ticks"], pointer);
+      rejectUnknownKeys(obj, ["action", "scoreboard", "ending_tail_ticks", "aftermath"], pointer);
       const board = requireScoreboard(obj, pointer);
       const tail = obj["ending_tail_ticks"];
       if (tail !== undefined) {
@@ -1147,11 +1154,20 @@ function parseStep(value: unknown, pointer: string): Step {
           );
         }
       }
+      const rawAftermath = obj["aftermath"];
+      let aftermath: AftermathEntry[] | undefined;
+      if (rawAftermath !== undefined) {
+        if (!Array.isArray(rawAftermath)) {
+          fail(`${pointer}/aftermath`, `must be an array, got ${describe(rawAftermath)}`);
+        }
+        aftermath = rawAftermath.map((a, i) => parseAftermathEntry(a, `${pointer}/aftermath/${i}`));
+      }
       return {
         action: "assert-complete",
         objective: board.objective,
         value: board.value,
         ...(tail !== undefined ? { endingTailTicks: tail as number } : {}),
+        ...(aftermath !== undefined ? { aftermath } : {}),
       };
     }
     default:
@@ -1389,4 +1405,96 @@ function describe(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
   return typeof value;
+}
+
+/**
+ * One `assert-complete.aftermath[]` row (spec-0108 §6.3): `path` and `verb`
+ * strings, and an `observable` that is `"emission-only"` or an object naming
+ * its `kind`. The kinds the bot reads are checked for the fields it reads;
+ * every other kind is carried as the server-only reading it is.
+ */
+function parseAftermathEntry(value: unknown, pointer: string): AftermathEntry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    fail(pointer, `must be an object, got ${describe(value)}`);
+  }
+  const o = value as Record<string, unknown>;
+  const path = o["path"];
+  const verb = o["verb"];
+  if (typeof path !== "string" || typeof verb !== "string") {
+    fail(pointer, "must carry string `path` and `verb`");
+  }
+  const obs = o["observable"];
+  if (obs === "emission-only") return { path, verb, observable: "emission-only" };
+  if (typeof obs !== "object" || obs === null || Array.isArray(obs)) {
+    fail(`${pointer}/observable`, `must be "emission-only" or an object, got ${describe(obs)}`);
+  }
+  const ob = obs as Record<string, unknown>;
+  const kind = ob["kind"];
+  if (typeof kind !== "string") fail(`${pointer}/observable/kind`, "must be a string");
+  const vec = (v: unknown, at: string): [number, number, number] => {
+    if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => typeof n === "number")) {
+      fail(at, `must be an [x, y, z] of numbers, got ${describe(v)}`);
+    }
+    return [v[0] as number, v[1] as number, v[2] as number];
+  };
+  switch (kind) {
+    case "block":
+      if (typeof ob["block"] !== "string") fail(`${pointer}/observable/block`, "must be a string");
+      return {
+        path,
+        verb,
+        observable: {
+          kind,
+          first: vec(ob["first"], `${pointer}/observable/first`),
+          last: vec(ob["last"], `${pointer}/observable/last`),
+          block: ob["block"] as string,
+        },
+      };
+    case "position": {
+      const from = ob["from"] as Record<string, unknown> | undefined;
+      if (typeof from !== "object" || from === null) {
+        fail(`${pointer}/observable/from`, "must be an object with min and max");
+      }
+      return {
+        path,
+        verb,
+        observable: {
+          kind,
+          from: {
+            min: vec(from["min"], `${pointer}/observable/from/min`),
+            max: vec(from["max"], `${pointer}/observable/from/max`),
+          },
+          to: vec(ob["to"], `${pointer}/observable/to`),
+        },
+      };
+    }
+    case "time":
+      if (typeof ob["daytime"] !== "number") {
+        fail(`${pointer}/observable/daytime`, "must be a number");
+      }
+      return { path, verb, observable: { kind, daytime: ob["daytime"] as number } };
+    case "weather":
+      if (typeof ob["weather"] !== "string") {
+        fail(`${pointer}/observable/weather`, "must be a string");
+      }
+      return { path, verb, observable: { kind, weather: ob["weather"] as string } };
+    case "health":
+      return { path, verb, observable: { kind, amount: Number(ob["amount"] ?? 0) } };
+    case "effect":
+      if (typeof ob["effect"] !== "string") {
+        fail(`${pointer}/observable/effect`, "must be a string");
+      }
+      return { path, verb, observable: { kind, effect: ob["effect"] as string } };
+    case "no-effect":
+      return {
+        path,
+        verb,
+        observable: {
+          kind,
+          effect: typeof ob["effect"] === "string" ? (ob["effect"] as string) : null,
+        },
+      };
+    default:
+      return { path, verb, observable: { kind } };
+  }
 }

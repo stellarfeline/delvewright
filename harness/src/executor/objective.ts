@@ -1,6 +1,7 @@
 // MineflayerExecutor: objective markers: observing them, awaiting them, the campaign's completion.
 
 import type { AssertCompleteStep } from "../critical-path.ts";
+import { aftermathFailures, observeAftermath } from "../aftermath.ts";
 import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "../markers.ts";
 import { delay, fmt } from "./connection.ts";
 import { SCORE_POLL_MS } from "./score.ts";
@@ -80,6 +81,10 @@ export const methods = {
     }
     if (marker.token === CAMPAIGN_TOKEN) {
       this.campaignCompleteAtStep ??= this.currentStep;
+      if (this.campaignStoodAt === undefined) {
+        const p = this.bot?.entity?.position;
+        if (p) this.campaignStoodAt = [p.x, p.y, p.z];
+      }
       return;
     }
     this.markerArrivals.set(marker.token, (this.markerArrivals.get(marker.token) ?? 0) + 1);
@@ -148,6 +153,52 @@ export const methods = {
     );
   },
 
+  /**
+   * spec-0108 §6.3: after the campaign marker, wait out the ending's tail (the
+   * compiler's `ending_tail_ticks`, which counts a cutscene's `then`) plus the
+   * settle, then read each aftermath effect the path's ending leaves — a block,
+   * the bot's own position, the clock, the weather, its health and effects —
+   * and fail the run on any reading that disagrees. Every row, observed or not,
+   * goes to the run report.
+   */
+  async readAftermath(this: MineflayerExecutor, step: AssertCompleteStep): Promise<void> {
+    const entries = step.aftermath ?? [];
+    if (entries.length === 0) return;
+    const bot = this.requireBot();
+    await delay(((step.endingTailTicks ?? 0) * 1000) / 20 + EFFECT_SETTLE_MS);
+    const p = bot.entity.position;
+    const effects = new Set<string>();
+    for (const id of Object.keys(bot.entity.effects ?? {})) {
+      const name = bot.registry.effects?.[Number(id)]?.name;
+      if (name) effects.add(name);
+    }
+    const results = observeAftermath(entries, {
+      blockAt: (pos) => {
+        // The cell, reached from the bot's own position the way every other
+        // block read in this harness reaches it.
+        const b = bot.blockAt(p.offset(pos[0] - p.x, pos[1] - p.y, pos[2] - p.z));
+        return b ? `minecraft:${b.name}` : undefined;
+      },
+      position: [p.x, p.y, p.z],
+      stoodAt: this.campaignStoodAt,
+      timeOfDay: bot.time.timeOfDay,
+      raining: bot.isRaining,
+      thundering: (bot.thunderState ?? 0) > 0,
+      health: bot.health,
+      effects,
+    });
+    this.aftermathResults = results;
+    for (const r of results) {
+      process.stderr.write(`aftermath ${r.status}: ${r.verb} (${r.path}) — ${r.detail}\n`);
+    }
+    const failures = aftermathFailures(results);
+    if (failures.length > 0) {
+      throw new Error(
+        `the world the ending left is not the world it says it left:\n  ${failures.join("\n  ")}`,
+      );
+    }
+  },
+
   async assertComplete(this: MineflayerExecutor, step: AssertCompleteStep): Promise<void> {
     const bot = this.requireBot();
     // Completion is observed two ways, whichever surfaces first:
@@ -166,10 +217,12 @@ export const methods = {
     while (Date.now() < deadline) {
       if (this.death) throw this.death;
       if (this.campaignCompleteAtStep !== undefined) {
+        await this.readAftermath(step);
         return;
       }
       const board = bot.scoreboards[step.objective];
       if (board?.itemsMap[bot.username]?.value === step.value) {
+        await this.readAftermath(step);
         return;
       }
       await delay(SCORE_POLL_MS);
