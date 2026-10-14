@@ -136,7 +136,7 @@ delvewright_dsl::dw_code! {
     /// examined zero objects on any campaign whose only pressable thing was a door.
     /// And the contest is tested against the **cell**, not the emitted `1.02f` box:
     /// the protrusion exists to beat the block the body stands in, and
-    /// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
+    /// `clickbox::CLICK_MARGIN`'s own contract is that a hundredth of a block never reaches
     /// into a neighbouring cell's affordances.
     pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::new("DW0422", ExitTier::Build);
 }
@@ -670,14 +670,14 @@ pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, Failure> {
 }
 
 /// The box one seal-answer hitbox occupies: its cell, grown by
-/// [`crate::compiler::emit::SEAL_MARGIN`] on every side so the entity is strictly nearer
+/// [`crate::compiler::clickbox::CLICK_MARGIN`] on every side so the entity is strictly nearer
 /// the player than the sealed block it stands in (an exactly-coincident box loses
 /// the client's ray-pick to the block, and the seal answers with silence).
 fn seal_box(cell: [i32; 3]) -> [Span; 3] {
     // **The cell, not the emitted box.** The shipped entity is one
-    // `SEAL_MARGIN` larger on every face, and that protrusion exists for exactly
+    // `CLICK_MARGIN` larger on every face, and that protrusion exists for exactly
     // one purpose: to be strictly nearer the eye than the BLOCK it stands in, so
-    // the press reaches the entity instead of the wall. `SEAL_MARGIN`'s own doc
+    // the press reaches the entity instead of the wall. `CLICK_MARGIN`'s own doc
     // states the other half of that contract — *a hundredth of a block never
     // reaches into a neighbouring cell's own affordances*.
     //
@@ -1132,9 +1132,9 @@ mod press_hitbox_tests {
     /// **The cell-not-box correction, as geometry.** A press body and an
     /// affordance in the SAME cell are an exact ray-pick tie — that is `DW0422`.
     /// Two in *adjoining* cells are not, and must not be reported: the shipped
-    /// entity is one `SEAL_MARGIN` larger on every face, and that centimetre
+    /// entity is one `CLICK_MARGIN` larger on every face, and that centimetre
     /// exists to beat the block it stands in, never to claim the neighbour's
-    /// space (`emit::SEAL_MARGIN`'s own contract).
+    /// space (`clickbox::CLICK_MARGIN`'s own contract).
     ///
     /// Both directions are asserted, because a check that can only fail in the
     /// direction that never happens is the fourth way to be vacuous.

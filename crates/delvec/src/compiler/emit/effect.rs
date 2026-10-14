@@ -742,8 +742,10 @@ pub(super) fn emit_quest_effect(
                 let v = ent_xyz(bf.pos);
                 let i = bf.index;
                 body.push(format!(
-                    "execute unless entity @e[tag=dw_bonfire_{i}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_bonfire_{i}\"]}}",
-                    v[0], v[1], v[2]
+                    "execute unless entity @e[tag=dw_bonfire_{i}] run {}",
+                    crate::compiler::clickbox::ClickBox::column(bf.pos, 2).summon(&format!(
+                        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_bonfire_{i}\"]"
+                    ))
                 ));
                 // …and the visible hardware, under the same absence guard so a
                 // re-fired beat never stacks a second one. A rest point the

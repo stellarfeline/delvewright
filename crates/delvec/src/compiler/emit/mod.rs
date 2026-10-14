@@ -122,7 +122,7 @@ use quest::*;
 use removal::*;
 use respawn::*;
 use routes::*;
-pub use seal::*;
+use seal::*;
 use sequence::*;
 pub use server::*;
 use shortcut::*;

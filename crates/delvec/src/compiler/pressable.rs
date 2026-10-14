@@ -25,7 +25,7 @@
 //!
 //! `close-gate` already solved exactly this, privately, inside one verb: its seal
 //! arms one interaction per **shell cell** of the region, each one block plus
-//! [`crate::compiler::emit::SEAL_MARGIN`] so it protrudes past the block it stands in
+//! [`crate::compiler::clickbox::CLICK_MARGIN`] so it protrudes past the block it stands in
 //! ([`crate::compiler::plan::SealHintPlan`]). That machinery was never available to
 //! anything else, which is why the same press works on a sealed boulder and not
 //! on a barred shortcut door.

@@ -29,6 +29,7 @@
 //! - [`chain`]: a tick's command chain stays under the game's limit, and one-shot work is split across ticks (`DW0984`).
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
+//! - [`clickbox`]: the one rule every compiler-placed click box is built by — each face near the block grid pushed one margin past it — and its proof over the shipped bytes that a box is strictly nearer than any block it stands in (`DW1013`).
 //! - [`clock`]: the clock binding line — every time value the campaign states, as the clock it resolves to (spec-0081 §5.5).
 //! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
@@ -130,6 +131,7 @@ pub mod cellset;
 pub mod chain;
 pub mod claims;
 pub mod clearance;
+pub mod clickbox;
 pub mod clock;
 pub mod cohabit;
 pub mod combat;

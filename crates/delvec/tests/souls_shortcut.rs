@@ -351,13 +351,17 @@ fn the_unlock_affordance_has_visible_hardware_at_its_own_cell() {
         .find(|l| l.contains("summon minecraft:item_display") && l.contains("dw_hw_dw_sc_"))
         .expect("…and so is its visible hardware — an invisible affordance is a soft-lock");
 
-    // Same cell: hardware anywhere else marks the wrong thing.
+    // Same cell: hardware anywhere else marks the wrong thing. The hitbox's floor
+    // stands one click-box margin below its cell's floor (`compiler::clickbox`),
+    // so a position names its cell by the nearest floor plane.
     let cell = |line: &str| {
-        line.split_whitespace()
+        let v: Vec<f64> = line
+            .split_whitespace()
             .skip(2)
             .take(3)
-            .collect::<Vec<_>>()
-            .join(" ")
+            .map(|t| t.parse().expect("an absolute coordinate"))
+            .collect();
+        (v[0].floor(), v[1].round(), v[2].floor())
     };
     assert_eq!(
         cell(hitbox),
